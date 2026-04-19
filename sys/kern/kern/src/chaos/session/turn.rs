@@ -12,6 +12,7 @@ use crate::chaos::SessionSettingsUpdate;
 use crate::chaos::TurnContext;
 use crate::chaos::turn_context::make_turn_context;
 use crate::config::StartedNetworkProxy;
+use crate::prompt_images::response_input_item_from_user_input;
 
 use super::Session;
 
@@ -50,7 +51,10 @@ impl Session {
                 Ok(next) => {
                     let previous_cwd = state.session_configuration.cwd.clone();
                     let sandbox_policy_changed =
-                        state.session_configuration.sandbox_policy != next.sandbox_policy;
+                        state.session_configuration.file_system_sandbox_policy
+                            != next.file_system_sandbox_policy
+                            || state.session_configuration.network_sandbox_policy
+                                != next.network_sandbox_policy;
                     let chaos_home = next.chaos_home.clone();
                     let session_source = next.session_source.clone();
                     state.session_configuration = next.clone();
@@ -122,7 +126,10 @@ impl Session {
 
         if sandbox_policy_changed {
             let sandbox_state = SandboxState {
-                sandbox_policy: per_turn_config.permissions.sandbox_policy.get().clone(),
+                file_system_sandbox_policy: session_configuration
+                    .file_system_sandbox_policy
+                    .clone(),
+                network_sandbox_policy: session_configuration.network_sandbox_policy,
                 alcatraz_macos_exe: per_turn_config.alcatraz_macos_exe.clone(),
                 alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
                 alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),
@@ -220,7 +227,7 @@ impl Session {
         }
 
         let mut turn_state = active_turn.turn_state.lock().await;
-        turn_state.push_pending_input(input.into());
+        turn_state.push_pending_input(response_input_item_from_user_input(input));
         Ok(active_turn_id.clone())
     }
 

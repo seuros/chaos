@@ -274,7 +274,12 @@ mod tests {
                 service_tier: None,
                 approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
-                sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                    &SandboxPolicy::new_read_only_policy(),
+                ),
+                network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                    &SandboxPolicy::new_read_only_policy(),
+                ),
                 cwd: PathBuf::from("/home/user/project"),
                 reasoning_effort: Some(ReasoningEffort::default()),
                 history_log_id: 1,
@@ -316,7 +321,12 @@ mod tests {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: Some(ReasoningEffort::default()),
             history_log_id: 1,
@@ -354,9 +364,8 @@ mod tests {
                 "model_provider_id": "test-provider",
                 "approval_policy": "headless",
                 "approvals_reviewer": "user",
-                "sandbox_policy": {
-                    "type": "read-only"
-                },
+                "file_system_sandbox_policy": session_configured_event.file_system_sandbox_policy,
+                "network_sandbox_policy": session_configured_event.network_sandbox_policy,
                 "cwd": "/home/user/project",
                 "reasoning_effort": session_configured_event.reasoning_effort,
                 "history_log_id": session_configured_event.history_log_id,
@@ -382,7 +391,12 @@ mod tests {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: Some(ReasoningEffort::default()),
             history_log_id: 1,

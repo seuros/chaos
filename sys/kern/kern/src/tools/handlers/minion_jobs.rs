@@ -31,14 +31,14 @@ use uuid::Uuid;
 
 pub struct BatchJobHandler;
 
-const DEFAULT_AGENT_JOB_CONCURRENCY: usize = 16;
-const MAX_AGENT_JOB_CONCURRENCY: usize = 64;
+const DEFAULT_MINION_JOB_CONCURRENCY: usize = 16;
+const MAX_MINION_JOB_CONCURRENCY: usize = 64;
 const STATUS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_secs(1);
-const DEFAULT_AGENT_JOB_ITEM_TIMEOUT: Duration = Duration::from_secs(60 * 30);
+const DEFAULT_MINION_JOB_ITEM_TIMEOUT: Duration = Duration::from_secs(60 * 30);
 
 #[derive(Debug, Deserialize)]
-struct SpawnAgentsOnCsvArgs {
+struct SpawnMinionsOnCsvArgs {
     csv_path: String,
     instruction: String,
     id_column: Option<String>,
@@ -50,7 +50,7 @@ struct SpawnAgentsOnCsvArgs {
 }
 
 #[derive(Debug, Deserialize)]
-struct ReportAgentJobResultArgs {
+struct ReportMinionJobResultArgs {
     job_id: String,
     item_id: String,
     result: Value,
@@ -58,7 +58,7 @@ struct ReportAgentJobResultArgs {
 }
 
 #[derive(Debug, Serialize)]
-struct SpawnAgentsOnCsvResult {
+struct SpawnMinionsOnCsvResult {
     job_id: String,
     status: String,
     output_csv_path: String,
@@ -66,18 +66,18 @@ struct SpawnAgentsOnCsvResult {
     completed_items: usize,
     failed_items: usize,
     job_error: Option<String>,
-    failed_item_errors: Option<Vec<AgentJobFailureSummary>>,
+    failed_item_errors: Option<Vec<MinionJobFailureSummary>>,
 }
 
 #[derive(Debug, Serialize)]
-struct AgentJobFailureSummary {
+struct MinionJobFailureSummary {
     item_id: String,
     source_id: Option<String>,
     last_error: String,
 }
 
 #[derive(Debug, Serialize)]
-struct AgentJobProgressUpdate {
+struct MinionJobProgressUpdate {
     job_id: String,
     total_items: usize,
     pending_items: usize,
@@ -88,7 +88,7 @@ struct AgentJobProgressUpdate {
 }
 
 #[derive(Debug, Serialize)]
-struct ReportAgentJobResultToolResult {
+struct ReportMinionJobResultToolResult {
     accepted: bool,
 }
 
@@ -128,7 +128,7 @@ impl JobProgressEmitter {
         session: &Session,
         turn: &TurnContext,
         job_id: &str,
-        progress: &chaos_proc::AgentJobProgress,
+        progress: &chaos_proc::MinionJobProgress,
         force: bool,
     ) -> anyhow::Result<()> {
         let processed = progress.completed_items + progress.failed_items;
@@ -151,7 +151,7 @@ impl JobProgressEmitter {
         } else {
             None
         };
-        let update = AgentJobProgressUpdate {
+        let update = MinionJobProgressUpdate {
             job_id: job_id.to_string(),
             total_items: progress.total_items,
             pending_items: progress.pending_items,
@@ -162,7 +162,7 @@ impl JobProgressEmitter {
         };
         let payload = serde_json::to_string(&update)?;
         session
-            .notify_background_event(turn, format!("agent_job_progress:{payload}"))
+            .notify_background_event(turn, format!("minion_job_progress:{payload}"))
             .await;
         self.last_emit_at = Instant::now();
         self.last_processed = processed;
@@ -195,42 +195,44 @@ impl ToolHandler for BatchJobHandler {
             ToolPayload::Function { arguments } => arguments,
             _ => {
                 return Err(FunctionCallError::RespondToModel(
-                    "agent jobs handler received unsupported payload".to_string(),
+                    "minion jobs handler received unsupported payload".to_string(),
                 ));
             }
         };
 
         match tool_name.as_str() {
-            "spawn_agents_on_csv" => spawn_agents_on_csv::handle(session, turn, arguments).await,
-            "report_agent_job_result" => report_agent_job_result::handle(session, arguments).await,
+            "spawn_minions_on_csv" => spawn_minions_on_csv::handle(session, turn, arguments).await,
+            "report_minion_job_result" => {
+                report_minion_job_result::handle(session, arguments).await
+            }
             other => Err(FunctionCallError::RespondToModel(format!(
-                "unsupported agent job tool {other}"
+                "unsupported minion job tool {other}"
             ))),
         }
     }
 }
 
-mod spawn_agents_on_csv {
+mod spawn_minions_on_csv {
     use super::{
-        AgentJobFailureSummary, Arc, FunctionCallError, FunctionToolOutput, HashSet, PathBuf,
-        Session, SpawnAgentsOnCsvArgs, SpawnAgentsOnCsvResult, TurnContext, Uuid,
+        Arc, FunctionCallError, FunctionToolOutput, HashSet, MinionJobFailureSummary, PathBuf,
+        Session, SpawnMinionsOnCsvArgs, SpawnMinionsOnCsvResult, TurnContext, Uuid,
         build_runner_options, default_output_csv_path, ensure_unique_headers,
         export_job_csv_snapshot, normalize_max_runtime_seconds, parse_arguments, parse_csv,
-        required_runtime_db, run_agent_job_loop,
+        required_runtime_db, run_minion_job_loop,
     };
     use serde_json::Value;
 
-    /// Create a new agent job from a CSV and run it to completion.
+    /// Create a new minion job from a CSV and run it to completion.
     ///
     /// Each CSV row becomes a job item. The instruction string is a template where `{column}`
     /// placeholders are filled with values from that row. Results are reported by tasks via
-    /// `report_agent_job_result`, then exported to CSV on completion.
+    /// `report_minion_job_result`, then exported to CSV on completion.
     pub async fn handle(
         session: Arc<Session>,
         turn: Arc<TurnContext>,
         arguments: String,
     ) -> Result<FunctionToolOutput, FunctionCallError> {
-        let args: SpawnAgentsOnCsvArgs = parse_arguments(arguments.as_str())?;
+        let args: SpawnMinionsOnCsvArgs = parse_arguments(arguments.as_str())?;
         if args.instruction.trim().is_empty() {
             return Err(FunctionCallError::RespondToModel(
                 "instruction must be non-empty".to_string(),
@@ -300,7 +302,7 @@ mod spawn_agents_on_csv {
                 .zip(row.iter())
                 .map(|(header, value)| (header.clone(), Value::String(value.clone())))
                 .collect::<serde_json::Map<_, _>>();
-            items.push(chaos_proc::AgentJobItemCreateParams {
+            items.push(chaos_proc::MinionJobItemCreateParams {
                 item_id,
                 row_index: idx as i64,
                 source_id,
@@ -314,14 +316,15 @@ mod spawn_agents_on_csv {
             |path| turn.resolve_path(Some(path)),
         );
         let job_suffix = &job_id[..8];
-        let job_name = format!("agent-job-{job_suffix}");
+        let job_name = format!("minion-job-{job_suffix}");
         let max_runtime_seconds = normalize_max_runtime_seconds(
             args.max_runtime_seconds
-                .or(turn.config.agent_job_max_runtime_seconds),
+                .or(turn.config.minion_job_max_runtime_seconds),
         )?;
         let _job = db
-            .create_agent_job(
-                &chaos_proc::AgentJobCreateParams {
+            .minion_jobs()
+            .create(
+                &chaos_proc::MinionJobCreateParams {
                     id: job_id.clone(),
                     name: job_name,
                     instruction: args.instruction,
@@ -336,7 +339,7 @@ mod spawn_agents_on_csv {
             )
             .await
             .map_err(|err| {
-                FunctionCallError::RespondToModel(format!("failed to create agent job: {err}"))
+                FunctionCallError::RespondToModel(format!("failed to create minion job: {err}"))
             })?;
 
         let requested_concurrency = args.max_concurrency.or(args.max_workers);
@@ -345,25 +348,27 @@ mod spawn_agents_on_csv {
             Err(err) => {
                 let error_message = err.to_string();
                 let _ = db
-                    .mark_agent_job_failed(job_id.as_str(), error_message.as_str())
+                    .minion_jobs()
+                    .mark_failed(job_id.as_str(), error_message.as_str())
                     .await;
                 return Err(err);
             }
         };
-        db.mark_agent_job_running(job_id.as_str())
+        db.minion_jobs()
+            .mark_running(job_id.as_str())
             .await
             .map_err(|err| {
                 FunctionCallError::RespondToModel(format!(
-                    "failed to transition agent job {job_id} to running: {err}"
+                    "failed to transition minion job {job_id} to running: {err}"
                 ))
             })?;
         let max_threads = turn.config.agent_max_threads;
         let effective_concurrency = options.max_concurrency;
         let message = format!(
-            "agent job concurrency: job_id={job_id} requested={requested_concurrency:?} max_threads={max_threads:?} effective={effective_concurrency}"
+            "minion job concurrency: job_id={job_id} requested={requested_concurrency:?} max_threads={max_threads:?} effective={effective_concurrency}"
         );
         let _ = session.notify_background_event(&turn, message).await;
-        if let Err(err) = run_agent_job_loop(
+        if let Err(err) = run_minion_job_loop(
             session.clone(),
             turn.clone(),
             db.clone(),
@@ -374,23 +379,25 @@ mod spawn_agents_on_csv {
         {
             let error_message = format!("job runner failed: {err}");
             let _ = db
-                .mark_agent_job_failed(job_id.as_str(), error_message.as_str())
+                .minion_jobs()
+                .mark_failed(job_id.as_str(), error_message.as_str())
                 .await;
             return Err(FunctionCallError::RespondToModel(format!(
-                "agent job {job_id} failed: {err}"
+                "minion job {job_id} failed: {err}"
             )));
         }
 
         let job = db
-            .get_agent_job(job_id.as_str())
+            .minion_jobs()
+            .get(job_id.as_str())
             .await
             .map_err(|err| {
                 FunctionCallError::RespondToModel(format!(
-                    "failed to load agent job {job_id}: {err}"
+                    "failed to load minion job {job_id}: {err}"
                 ))
             })?
             .ok_or_else(|| {
-                FunctionCallError::RespondToModel(format!("agent job {job_id} not found"))
+                FunctionCallError::RespondToModel(format!("minion job {job_id} not found"))
             })?;
         let output_path = PathBuf::from(job.output_csv_path.clone());
         if !tokio::fs::try_exists(&output_path).await.unwrap_or(false) {
@@ -403,19 +410,21 @@ mod spawn_agents_on_csv {
                 })?;
         }
         let progress = db
-            .get_agent_job_progress(job_id.as_str())
+            .minion_jobs()
+            .progress(job_id.as_str())
             .await
             .map_err(|err| {
                 FunctionCallError::RespondToModel(format!(
-                    "failed to load agent job progress {job_id}: {err}"
+                    "failed to load minion job progress {job_id}: {err}"
                 ))
             })?;
         let mut job_error = job.last_error.clone().filter(|err| !err.trim().is_empty());
         let failed_item_errors = if progress.failed_items > 0 {
             let items = db
-                .list_agent_job_items(
+                .minion_jobs()
+                .list_items(
                     job_id.as_str(),
-                    Some(chaos_proc::AgentJobItemStatus::Failed),
+                    Some(chaos_proc::MinionJobItemStatus::Failed),
                     Some(5),
                 )
                 .await
@@ -427,7 +436,7 @@ mod spawn_agents_on_csv {
                     if last_error.trim().is_empty() {
                         return None;
                     }
-                    Some(AgentJobFailureSummary {
+                    Some(MinionJobFailureSummary {
                         item_id: item.item_id,
                         source_id: item.source_id,
                         last_error,
@@ -437,7 +446,8 @@ mod spawn_agents_on_csv {
             if summaries.is_empty() {
                 if job_error.is_none() {
                     job_error = Some(
-                        "agent job has failed items but no error details were recorded".to_string(),
+                        "minion job has failed items but no error details were recorded"
+                            .to_string(),
                     );
                 }
                 None
@@ -447,7 +457,7 @@ mod spawn_agents_on_csv {
         } else {
             None
         };
-        let content = serde_json::to_string(&SpawnAgentsOnCsvResult {
+        let content = serde_json::to_string(&SpawnMinionsOnCsvResult {
             job_id,
             status: job.status.as_str().to_string(),
             output_csv_path: job.output_csv_path,
@@ -459,24 +469,24 @@ mod spawn_agents_on_csv {
         })
         .map_err(|err| {
             FunctionCallError::Fatal(format!(
-                "failed to serialize spawn_agents_on_csv result: {err}"
+                "failed to serialize spawn_minions_on_csv result: {err}"
             ))
         })?;
         Ok(FunctionToolOutput::from_text(content, Some(true)))
     }
 }
 
-mod report_agent_job_result {
+mod report_minion_job_result {
     use super::{
-        Arc, FunctionCallError, FunctionToolOutput, ReportAgentJobResultArgs,
-        ReportAgentJobResultToolResult, Session, parse_arguments, required_runtime_db,
+        Arc, FunctionCallError, FunctionToolOutput, ReportMinionJobResultArgs,
+        ReportMinionJobResultToolResult, Session, parse_arguments, required_runtime_db,
     };
 
     pub async fn handle(
         session: Arc<Session>,
         arguments: String,
     ) -> Result<FunctionToolOutput, FunctionCallError> {
-        let args: ReportAgentJobResultArgs = parse_arguments(arguments.as_str())?;
+        let args: ReportMinionJobResultArgs = parse_arguments(arguments.as_str())?;
         if !args.result.is_object() {
             return Err(FunctionCallError::RespondToModel(
                 "result must be a JSON object".to_string(),
@@ -485,7 +495,8 @@ mod report_agent_job_result {
         let db = required_runtime_db(&session)?;
         let reporting_process_id = session.conversation_id.to_string();
         let accepted = db
-            .report_agent_job_item_result(
+            .minion_jobs()
+            .report_item_result(
                 args.job_id.as_str(),
                 args.item_id.as_str(),
                 reporting_process_id.as_str(),
@@ -496,19 +507,20 @@ mod report_agent_job_result {
                 let job_id = args.job_id.as_str();
                 let item_id = args.item_id.as_str();
                 FunctionCallError::RespondToModel(format!(
-                    "failed to record agent job result for {job_id} / {item_id}: {err}"
+                    "failed to record minion job result for {job_id} / {item_id}: {err}"
                 ))
             })?;
         if accepted && args.stop.unwrap_or(false) {
             let message = "cancelled by task request";
             let _ = db
-                .mark_agent_job_cancelled(args.job_id.as_str(), message)
+                .minion_jobs()
+                .mark_cancelled(args.job_id.as_str(), message)
                 .await;
         }
-        let content =
-            serde_json::to_string(&ReportAgentJobResultToolResult { accepted }).map_err(|err| {
+        let content = serde_json::to_string(&ReportMinionJobResultToolResult { accepted })
+            .map_err(|err| {
                 FunctionCallError::Fatal(format!(
-                    "failed to serialize report_agent_job_result result: {err}"
+                    "failed to serialize report_minion_job_result result: {err}"
                 ))
             })?;
         Ok(FunctionToolOutput::from_text(content, Some(true)))
@@ -547,8 +559,8 @@ async fn build_runner_options(
 }
 
 fn normalize_concurrency(requested: Option<usize>, max_threads: Option<usize>) -> usize {
-    let requested = requested.unwrap_or(DEFAULT_AGENT_JOB_CONCURRENCY).max(1);
-    let requested = requested.min(MAX_AGENT_JOB_CONCURRENCY);
+    let requested = requested.unwrap_or(DEFAULT_MINION_JOB_CONCURRENCY).max(1);
+    let requested = requested.min(MAX_MINION_JOB_CONCURRENCY);
     if let Some(max_threads) = max_threads {
         requested.min(max_threads.max(1))
     } else {
@@ -568,7 +580,7 @@ fn normalize_max_runtime_seconds(requested: Option<u64>) -> Result<Option<u64>, 
     Ok(Some(requested))
 }
 
-async fn run_agent_job_loop(
+async fn run_minion_job_loop(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
     db: crate::runtime_db::RuntimeDbHandle,
@@ -576,9 +588,10 @@ async fn run_agent_job_loop(
     options: JobRunnerOptions,
 ) -> anyhow::Result<()> {
     let job = db
-        .get_agent_job(job_id.as_str())
+        .minion_jobs()
+        .get(job_id.as_str())
         .await?
-        .ok_or_else(|| anyhow::anyhow!("agent job {job_id} was not found"))?;
+        .ok_or_else(|| anyhow::anyhow!("minion job {job_id} was not found"))?;
     let runtime_timeout = job_runtime_timeout(&job);
     let mut active_items: HashMap<ProcessId, ActiveJobItem> = HashMap::new();
     let mut progress_emitter = JobProgressEmitter::new();
@@ -590,7 +603,7 @@ async fn run_agent_job_loop(
         runtime_timeout,
     )
     .await?;
-    let initial_progress = db.get_agent_job_progress(job_id.as_str()).await?;
+    let initial_progress = db.minion_jobs().progress(job_id.as_str()).await?;
     progress_emitter
         .maybe_emit(
             &session,
@@ -601,16 +614,16 @@ async fn run_agent_job_loop(
         )
         .await?;
 
-    let mut cancel_requested = db.is_agent_job_cancelled(job_id.as_str()).await?;
+    let mut cancel_requested = db.minion_jobs().is_cancelled(job_id.as_str()).await?;
     loop {
         let mut progressed = false;
 
-        if !cancel_requested && db.is_agent_job_cancelled(job_id.as_str()).await? {
+        if !cancel_requested && db.minion_jobs().is_cancelled(job_id.as_str()).await? {
             cancel_requested = true;
             let _ = session
                 .notify_background_event(
                     &turn,
-                    format!("agent job {job_id} cancellation requested; stopping new tasks"),
+                    format!("minion job {job_id} cancellation requested; stopping new tasks"),
                 )
                 .await;
         }
@@ -618,9 +631,10 @@ async fn run_agent_job_loop(
         if !cancel_requested && active_items.len() < options.max_concurrency {
             let slots = options.max_concurrency - active_items.len();
             let pending_items = db
-                .list_agent_job_items(
+                .minion_jobs()
+                .list_items(
                     job_id.as_str(),
-                    Some(chaos_proc::AgentJobItemStatus::Pending),
+                    Some(chaos_proc::MinionJobItemStatus::Pending),
                     Some(slots),
                 )
                 .await?;
@@ -637,35 +651,38 @@ async fn run_agent_job_loop(
                         options.spawn_config.clone(),
                         items,
                         Some(SessionSource::SubAgent(SubAgentSource::Other(format!(
-                            "agent_job:{job_id}"
+                            "minion_job:{job_id}"
                         )))),
                     )
                     .await
                 {
                     Ok(process_id) => process_id,
                     Err(ChaosErr::AgentLimitReached { .. }) => {
-                        db.mark_agent_job_item_pending(
-                            job_id.as_str(),
-                            item.item_id.as_str(),
-                            /*error_message*/ None,
-                        )
-                        .await?;
+                        db.minion_jobs()
+                            .mark_item_pending(
+                                job_id.as_str(),
+                                item.item_id.as_str(),
+                                /*error_message*/ None,
+                            )
+                            .await?;
                         break;
                     }
                     Err(err) => {
                         let error_message = format!("failed to spawn task: {err}");
-                        db.mark_agent_job_item_failed(
-                            job_id.as_str(),
-                            item.item_id.as_str(),
-                            error_message.as_str(),
-                        )
-                        .await?;
+                        db.minion_jobs()
+                            .mark_item_failed(
+                                job_id.as_str(),
+                                item.item_id.as_str(),
+                                error_message.as_str(),
+                            )
+                            .await?;
                         progressed = true;
                         continue;
                     }
                 };
                 let assigned = db
-                    .mark_agent_job_item_running_with_thread(
+                    .minion_jobs()
+                    .mark_item_running_with_thread(
                         job_id.as_str(),
                         item.item_id.as_str(),
                         process_id.to_string().as_str(),
@@ -704,7 +721,7 @@ async fn run_agent_job_loop(
 
         let finished = find_finished_threads(session.clone(), &active_items).await;
         if finished.is_empty() {
-            let progress = db.get_agent_job_progress(job_id.as_str()).await?;
+            let progress = db.minion_jobs().progress(job_id.as_str()).await?;
             if cancel_requested {
                 if progress.running_items == 0 && active_items.is_empty() {
                     break;
@@ -731,7 +748,7 @@ async fn run_agent_job_loop(
             )
             .await?;
             active_items.remove(&process_id);
-            let progress = db.get_agent_job_progress(job_id.as_str()).await?;
+            let progress = db.minion_jobs().progress(job_id.as_str()).await?;
             progress_emitter
                 .maybe_emit(
                     &session,
@@ -744,18 +761,19 @@ async fn run_agent_job_loop(
         }
     }
 
-    let progress = db.get_agent_job_progress(job_id.as_str()).await?;
+    let progress = db.minion_jobs().progress(job_id.as_str()).await?;
     if let Err(err) = export_job_csv_snapshot(db.clone(), &job).await {
         let message = format!("auto-export failed: {err}");
-        db.mark_agent_job_failed(job_id.as_str(), message.as_str())
+        db.minion_jobs()
+            .mark_failed(job_id.as_str(), message.as_str())
             .await?;
         return Ok(());
     }
-    let cancelled = cancel_requested || db.is_agent_job_cancelled(job_id.as_str()).await?;
+    let cancelled = cancel_requested || db.minion_jobs().is_cancelled(job_id.as_str()).await?;
     if cancelled {
         let pending_items = progress.pending_items;
         let message =
-            format!("agent job {job_id} cancelled with {pending_items} unprocessed items");
+            format!("minion job {job_id} cancelled with {pending_items} unprocessed items");
         let _ = session.notify_background_event(&turn, message).await;
         progress_emitter
             .maybe_emit(
@@ -770,11 +788,11 @@ async fn run_agent_job_loop(
     }
     if progress.failed_items > 0 {
         let failed_items = progress.failed_items;
-        let message = format!("agent job completed with {failed_items} failed items");
+        let message = format!("minion job completed with {failed_items} failed items");
         let _ = session.notify_background_event(&turn, message).await;
     }
-    db.mark_agent_job_completed(job_id.as_str()).await?;
-    let progress = db.get_agent_job_progress(job_id.as_str()).await?;
+    db.minion_jobs().mark_completed(job_id.as_str()).await?;
+    let progress = db.minion_jobs().progress(job_id.as_str()).await?;
     progress_emitter
         .maybe_emit(
             &session,
@@ -789,10 +807,11 @@ async fn run_agent_job_loop(
 
 async fn export_job_csv_snapshot(
     db: crate::runtime_db::RuntimeDbHandle,
-    job: &chaos_proc::AgentJob,
+    job: &chaos_proc::MinionJob,
 ) -> anyhow::Result<()> {
     let items = db
-        .list_agent_job_items(job.id.as_str(), /*status*/ None, /*limit*/ None)
+        .minion_jobs()
+        .list_items(job.id.as_str(), /*status*/ None, /*limit*/ None)
         .await?;
     let csv_content = render_job_csv(job.input_headers.as_slice(), items.as_slice())
         .map_err(|err| anyhow::anyhow!("failed to render job csv for auto-export: {err}"))?;
@@ -812,16 +831,18 @@ async fn recover_running_items(
     runtime_timeout: Duration,
 ) -> anyhow::Result<()> {
     let running_items = db
-        .list_agent_job_items(
+        .minion_jobs()
+        .list_items(
             job_id,
-            Some(chaos_proc::AgentJobItemStatus::Running),
+            Some(chaos_proc::MinionJobItemStatus::Running),
             /*limit*/ None,
         )
         .await?;
     for item in running_items {
         if is_item_stale(&item, runtime_timeout) {
             let error_message = format!("task exceeded max runtime of {runtime_timeout:?}");
-            db.mark_agent_job_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
+            db.minion_jobs()
+                .mark_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
                 .await?;
             if let Some(assigned_process_id) = item.assigned_process_id.as_ref()
                 && let Ok(process_id) = ProcessId::from_string(assigned_process_id.as_str())
@@ -835,24 +856,22 @@ async fn recover_running_items(
             continue;
         }
         let Some(assigned_process_id) = item.assigned_process_id.clone() else {
-            db.mark_agent_job_item_failed(
-                job_id,
-                item.item_id.as_str(),
-                "running item is missing assigned_process_id",
-            )
-            .await?;
+            db.minion_jobs()
+                .mark_item_failed(
+                    job_id,
+                    item.item_id.as_str(),
+                    "running item is missing assigned_process_id",
+                )
+                .await?;
             continue;
         };
         let process_id = match ProcessId::from_string(assigned_process_id.as_str()) {
             Ok(process_id) => process_id,
             Err(err) => {
                 let error_message = format!("invalid assigned_process_id: {err:?}");
-                db.mark_agent_job_item_failed(
-                    job_id,
-                    item.item_id.as_str(),
-                    error_message.as_str(),
-                )
-                .await?;
+                db.minion_jobs()
+                    .mark_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
+                    .await?;
                 continue;
             }
         };
@@ -909,7 +928,8 @@ async fn reap_stale_active_items(
     }
     for (process_id, item_id) in stale {
         let error_message = format!("task exceeded max runtime of {runtime_timeout:?}");
-        db.mark_agent_job_item_failed(job_id, item_id.as_str(), error_message.as_str())
+        db.minion_jobs()
+            .mark_item_failed(job_id, item_id.as_str(), error_message.as_str())
             .await?;
         let _ = session
             .services
@@ -929,7 +949,8 @@ async fn finalize_finished_item(
     process_id: ProcessId,
 ) -> anyhow::Result<()> {
     let mut item = db
-        .get_agent_job_item(job_id, item_id)
+        .minion_jobs()
+        .get_item(job_id, item_id)
         .await?
         .ok_or_else(|| {
             anyhow::anyhow!("job item not found for finalization: {job_id}/{item_id}")
@@ -937,28 +958,35 @@ async fn finalize_finished_item(
     if item.result_json.is_none() {
         tokio::time::sleep(Duration::from_millis(250)).await;
         item = db
-            .get_agent_job_item(job_id, item_id)
+            .minion_jobs()
+            .get_item(job_id, item_id)
             .await?
             .ok_or_else(|| {
                 anyhow::anyhow!("job item not found after grace period: {job_id}/{item_id}")
             })?;
     }
     if item.result_json.is_some() {
-        if !db.mark_agent_job_item_completed(job_id, item_id).await? {
-            db.mark_agent_job_item_failed(
-                job_id,
-                item_id,
-                "task reported result but item could not transition to completed",
-            )
-            .await?;
+        if !db
+            .minion_jobs()
+            .mark_item_completed(job_id, item_id)
+            .await?
+        {
+            db.minion_jobs()
+                .mark_item_failed(
+                    job_id,
+                    item_id,
+                    "task reported result but item could not transition to completed",
+                )
+                .await?;
         }
     } else {
-        db.mark_agent_job_item_failed(
-            job_id,
-            item_id,
-            "task finished without calling report_agent_job_result",
-        )
-        .await?;
+        db.minion_jobs()
+            .mark_item_failed(
+                job_id,
+                item_id,
+                "task finished without calling report_minion_job_result",
+            )
+            .await?;
     }
     let _ = session
         .services
@@ -969,8 +997,8 @@ async fn finalize_finished_item(
 }
 
 fn build_worker_prompt(
-    job: &chaos_proc::AgentJob,
-    item: &chaos_proc::AgentJobItem,
+    job: &chaos_proc::MinionJob,
+    item: &chaos_proc::MinionJobItem,
 ) -> anyhow::Result<String> {
     let job_id = job.id.as_str();
     let item_id = item.item_id.as_str();
@@ -983,7 +1011,7 @@ fn build_worker_prompt(
         .unwrap_or_else(|| "{}".to_string());
     let row_json = serde_json::to_string_pretty(&item.row_json)?;
     Ok(format!(
-        "You are processing one item for a generic agent job.\n\
+        "You are processing one item for a generic minion job.\n\
 Job ID: {job_id}\n\
 Item ID: {item_id}\n\n\
 Task instruction:\n\
@@ -992,7 +1020,7 @@ Input row (JSON):\n\
 {row_json}\n\n\
 Expected result schema (JSON Schema or {{}}):\n\
 {output_schema}\n\n\
-You MUST call the `report_agent_job_result` tool exactly once with:\n\
+You MUST call the `report_minion_job_result` tool exactly once with:\n\
 1. `job_id` = \"{job_id}\"\n\
 2. `item_id` = \"{item_id}\"\n\
 3. `result` = a JSON object that contains your analysis result for this row.\n\n\
@@ -1038,13 +1066,13 @@ fn ensure_unique_headers(headers: &[String]) -> Result<(), FunctionCallError> {
     Ok(())
 }
 
-fn job_runtime_timeout(job: &chaos_proc::AgentJob) -> Duration {
+fn job_runtime_timeout(job: &chaos_proc::MinionJob) -> Duration {
     job.max_runtime_seconds
         .map(Duration::from_secs)
-        .unwrap_or(DEFAULT_AGENT_JOB_ITEM_TIMEOUT)
+        .unwrap_or(DEFAULT_MINION_JOB_ITEM_TIMEOUT)
 }
 
-fn started_at_from_item(item: &chaos_proc::AgentJobItem) -> Instant {
+fn started_at_from_item(item: &chaos_proc::MinionJobItem) -> Instant {
     let now_secs = jiff::Timestamp::now().as_second();
     let item_secs = item.updated_at.as_second();
     let age_secs = now_secs.saturating_sub(item_secs);
@@ -1057,7 +1085,7 @@ fn started_at_from_item(item: &chaos_proc::AgentJobItem) -> Instant {
     }
 }
 
-fn is_item_stale(item: &chaos_proc::AgentJobItem, runtime_timeout: Duration) -> bool {
+fn is_item_stale(item: &chaos_proc::MinionJobItem, runtime_timeout: Duration) -> bool {
     let now_secs = jiff::Timestamp::now().as_second();
     let item_secs = item.updated_at.as_second();
     let age_secs = now_secs.saturating_sub(item_secs);
@@ -1072,9 +1100,9 @@ fn default_output_csv_path(input_csv_path: &Path, job_id: &str) -> PathBuf {
     let stem = input_csv_path
         .file_stem()
         .and_then(|stem| stem.to_str())
-        .unwrap_or("agent_job_output");
+        .unwrap_or("minion_job_output");
     let job_suffix = &job_id[..8];
-    input_csv_path.with_file_name(format!("{stem}.agent-job-{job_suffix}.csv"))
+    input_csv_path.with_file_name(format!("{stem}.minion-job-{job_suffix}.csv"))
 }
 
 fn parse_csv(content: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
@@ -1101,7 +1129,7 @@ fn parse_csv(content: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
 
 fn render_job_csv(
     headers: &[String],
-    items: &[chaos_proc::AgentJobItem],
+    items: &[chaos_proc::MinionJobItem],
 ) -> Result<String, FunctionCallError> {
     let mut csv = String::new();
     let mut output_headers = headers.to_vec();
@@ -1195,5 +1223,5 @@ fn csv_escape(value: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "agent_jobs_tests.rs"]
+#[path = "minion_jobs_tests.rs"]
 mod tests;

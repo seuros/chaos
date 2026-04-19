@@ -21,6 +21,9 @@ impl ChatWidget {
         &mut self,
         event: chaos_ipc::protocol::SessionConfiguredEvent,
     ) {
+        let sandbox_policy = event
+            .file_system_sandbox_policy
+            .to_sandbox_policy(event.network_sandbox_policy, &event.cwd);
         self.bottom_pane
             .set_history_metadata(event.history_log_id, event.history_entry_count);
         self.session_network_proxy = event.network_proxy.clone();
@@ -39,15 +42,25 @@ impl ChatWidget {
             self.config.permissions.approval_policy =
                 Constrained::allow_only(event.approval_policy);
         }
-        if let Err(err) = self
-            .config
-            .permissions
-            .sandbox_policy
-            .set(event.sandbox_policy.clone())
-        {
-            tracing::warn!(%err, "failed to sync sandbox_policy from SessionConfigured");
-            self.config.permissions.sandbox_policy =
-                Constrained::allow_only(event.sandbox_policy.clone());
+        self.config.permissions.file_system_sandbox_policy =
+            event.file_system_sandbox_policy.clone();
+        self.config.permissions.network_sandbox_policy = event.network_sandbox_policy;
+        match sandbox_policy {
+            Ok(sandbox_policy) => {
+                if let Err(err) = self
+                    .config
+                    .permissions
+                    .sandbox_policy
+                    .set(sandbox_policy.clone())
+                {
+                    tracing::warn!(%err, "failed to sync sandbox_policy from SessionConfigured");
+                    self.config.permissions.sandbox_policy =
+                        Constrained::allow_only(sandbox_policy);
+                }
+            }
+            Err(err) => {
+                tracing::warn!(%err, "failed to project sandbox_policy from SessionConfigured");
+            }
         }
         self.config.approvals_reviewer = event.approvals_reviewer;
         let initial_messages = event.initial_messages.clone();

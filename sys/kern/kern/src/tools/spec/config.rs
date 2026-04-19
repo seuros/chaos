@@ -7,7 +7,7 @@ use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::WebSearchToolType;
-use chaos_ipc::protocol::SandboxPolicy;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 
@@ -40,8 +40,8 @@ pub(crate) struct ToolsConfig {
     pub request_user_input: bool,
     pub default_mode_request_user_input: bool,
     pub experimental_supported_tools: Vec<String>,
-    pub agent_jobs_tools: bool,
-    pub agent_jobs_worker_tools: bool,
+    pub minion_jobs_tools: bool,
+    pub minion_jobs_worker_tools: bool,
     /// Native server-side tools declared by the model/provider ABI.
     pub native_server_side_tools: Vec<String>,
 }
@@ -52,11 +52,13 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) features: &'a Features,
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
-    pub(crate) sandbox_policy: &'a SandboxPolicy,
+    pub(crate) file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
     pub(crate) collab_enabled: bool,
 }
 
-fn unified_exec_allowed_in_environment(_sandbox_policy: &SandboxPolicy) -> bool {
+fn unified_exec_allowed_in_environment(
+    _file_system_sandbox_policy: &FileSystemSandboxPolicy,
+) -> bool {
     true
 }
 
@@ -68,18 +70,18 @@ impl ToolsConfig {
             features,
             web_search_mode,
             session_source,
-            sandbox_policy,
+            file_system_sandbox_policy,
             collab_enabled,
         } = params;
         let include_collab_tools = *collab_enabled;
-        let include_agent_jobs = features.enabled(Feature::SpawnCsv);
+        let include_minion_jobs = features.enabled(Feature::SpawnCsv);
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input = include_request_user_input;
         let include_original_image_detail = can_request_original_image_detail(model_info);
         let include_image_gen_tool = false;
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
-        let unified_exec_allowed = unified_exec_allowed_in_environment(sandbox_policy);
+        let unified_exec_allowed = unified_exec_allowed_in_environment(file_system_sandbox_policy);
         let shell_type = if unified_exec_allowed {
             ConfigShellToolType::UnifiedExec
         } else if model_info.shell_type == ConfigShellToolType::UnifiedExec {
@@ -90,11 +92,11 @@ impl ToolsConfig {
 
         let apply_patch_tool_type = model_info.apply_patch_tool_type.clone();
 
-        let agent_jobs_worker_tools = include_agent_jobs
+        let minion_jobs_worker_tools = include_minion_jobs
             && matches!(
                 session_source,
                 SessionSource::SubAgent(SubAgentSource::Other(label))
-                    if label.starts_with("agent_job:")
+                    if label.starts_with("minion_job:")
             );
 
         Self {
@@ -115,8 +117,8 @@ impl ToolsConfig {
             request_user_input: include_request_user_input,
             default_mode_request_user_input: include_default_mode_request_user_input,
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
-            agent_jobs_tools: include_agent_jobs,
-            agent_jobs_worker_tools,
+            minion_jobs_tools: include_minion_jobs,
+            minion_jobs_worker_tools,
             native_server_side_tools: model_info.native_server_side_tools.clone(),
         }
     }

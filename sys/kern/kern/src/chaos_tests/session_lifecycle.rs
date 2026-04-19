@@ -11,17 +11,6 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
     let docs_dir = chaos_realpath::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
 
     session_configuration.cwd = original_cwd;
-    session_configuration.sandbox_policy =
-        chaos_sysctl::Constrained::allow_any(SandboxPolicy::WorkspaceWrite {
-            writable_roots: Vec::new(),
-            read_only_access: ReadOnlyAccess::Restricted {
-                include_platform_defaults: true,
-                readable_roots: vec![docs_dir.clone()],
-            },
-            network_access: false,
-            exclude_tmpdir_env_var: true,
-            exclude_slash_tmp: true,
-        });
     session_configuration.file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
             path: FileSystemPath::Special {
@@ -49,7 +38,7 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
 }
 
 #[tokio::test]
-async fn session_configuration_apply_rederives_legacy_file_system_policy_on_cwd_update() {
+async fn session_configuration_apply_rederives_projected_file_system_policy_on_cwd_update() {
     let mut session_configuration = make_session_configuration_for_tests().await;
     let workspace = tempfile::tempdir().expect("create temp dir");
     let project_root = workspace.path().join("project");
@@ -59,36 +48,28 @@ async fn session_configuration_apply_rederives_legacy_file_system_policy_on_cwd_
     let docs_dir = chaos_realpath::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
 
     session_configuration.cwd = original_cwd;
-    session_configuration.sandbox_policy =
-        chaos_sysctl::Constrained::allow_any(SandboxPolicy::WorkspaceWrite {
-            writable_roots: Vec::new(),
-            read_only_access: ReadOnlyAccess::Restricted {
-                include_platform_defaults: true,
-                readable_roots: vec![docs_dir],
-            },
-            network_access: false,
-            exclude_tmpdir_env_var: true,
-            exclude_slash_tmp: true,
-        });
-    session_configuration.file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-            session_configuration.sandbox_policy.get(),
-            &session_configuration.cwd,
-        );
+    let sandbox_policy = SandboxPolicy::WorkspaceWrite {
+        writable_roots: Vec::new(),
+        read_only_access: ReadOnlyAccess::Restricted {
+            include_platform_defaults: true,
+            readable_roots: vec![docs_dir],
+        },
+        network_access: false,
+        exclude_tmpdir_env_var: true,
+        exclude_slash_tmp: true,
+    };
 
     let updated = session_configuration
         .apply(&SessionSettingsUpdate {
             cwd: Some(project_root.clone()),
+            sandbox_policy: Some(sandbox_policy.clone()),
             ..Default::default()
         })
-        .expect("cwd-only update should succeed");
+        .expect("sandbox update should succeed");
 
     assert_eq!(
         updated.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-            updated.sandbox_policy.get(),
-            &project_root,
-        )
+        FileSystemSandboxPolicy::from_sandbox_policy(&sandbox_policy, &project_root,)
     );
 }
 

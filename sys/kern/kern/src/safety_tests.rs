@@ -4,6 +4,7 @@ use chaos_ipc::protocol::FileSystemPath;
 use chaos_ipc::protocol::FileSystemSandboxEntry;
 use chaos_ipc::protocol::FileSystemSpecialPath;
 use chaos_ipc::protocol::GranularApprovalConfig;
+use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -74,7 +75,6 @@ fn external_sandbox_auto_approves_in_on_request() {
         assess_patch_safety(
             &add_inside,
             ApprovalPolicy::Interactive,
-            &policy,
             &FileSystemSandboxPolicy::from(&policy),
             &cwd,
         ),
@@ -104,7 +104,6 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
         assess_patch_safety(
             &add_outside,
             ApprovalPolicy::Interactive,
-            &policy_workspace_only,
             &FileSystemSandboxPolicy::from(&policy_workspace_only),
             &cwd,
         ),
@@ -119,7 +118,6 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            &policy_workspace_only,
             &FileSystemSandboxPolicy::from(&policy_workspace_only),
             &cwd,
         ),
@@ -151,7 +149,6 @@ fn granular_sandbox_approval_false_rejects_out_of_root_patch() {
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            &policy_workspace_only,
             &FileSystemSandboxPolicy::from(&policy_workspace_only),
             &cwd,
         ),
@@ -168,7 +165,7 @@ fn explicit_unreadable_paths_prevent_auto_approval_for_external_sandbox() {
     let blocked_path = cwd.join("blocked.txt");
     let blocked_absolute = AbsolutePathBuf::from_absolute_path(blocked_path.clone()).unwrap();
     let action = ApplyPatchAction::new_add_for_test(&blocked_path, "".to_string());
-    let sandbox_policy = SandboxPolicy::ExternalSandbox {
+    let _sandbox_policy = SandboxPolicy::ExternalSandbox {
         network_access: chaos_ipc::protocol::NetworkAccess::Restricted,
     };
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
@@ -195,7 +192,6 @@ fn explicit_unreadable_paths_prevent_auto_approval_for_external_sandbox() {
         assess_patch_safety(
             &action,
             ApprovalPolicy::Interactive,
-            &sandbox_policy,
             &file_system_sandbox_policy,
             &cwd,
         ),
@@ -210,7 +206,7 @@ fn explicit_read_only_subpaths_prevent_auto_approval_for_external_sandbox() {
     let blocked_path = cwd.join("docs").join("blocked.txt");
     let docs_absolute = AbsolutePathBuf::resolve_path_against_base("docs", &cwd).unwrap();
     let action = ApplyPatchAction::new_add_for_test(&blocked_path, "".to_string());
-    let sandbox_policy = SandboxPolicy::ExternalSandbox {
+    let _sandbox_policy = SandboxPolicy::ExternalSandbox {
         network_access: chaos_ipc::protocol::NetworkAccess::Restricted,
     };
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
@@ -237,7 +233,6 @@ fn explicit_read_only_subpaths_prevent_auto_approval_for_external_sandbox() {
         assess_patch_safety(
             &action,
             ApprovalPolicy::Interactive,
-            &sandbox_policy,
             &file_system_sandbox_policy,
             &cwd,
         ),

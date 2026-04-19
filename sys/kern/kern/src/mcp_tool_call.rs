@@ -26,7 +26,6 @@ use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ReviewDecision;
-use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_ipc::request_user_input::RequestUserInputQuestion;
 use chaos_ipc::request_user_input::RequestUserInputQuestionOption;
@@ -563,8 +562,9 @@ fn is_full_access_mode(turn_context: &TurnContext) -> bool {
         turn_context.approval_policy.value(),
         ApprovalPolicy::Headless
     ) && matches!(
-        turn_context.sandbox_policy.get(),
-        SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }
+        turn_context.file_system_sandbox_policy.kind,
+        chaos_ipc::permissions::FileSystemSandboxKind::Unrestricted
+            | chaos_ipc::permissions::FileSystemSandboxKind::ExternalSandbox
     )
 }
 

@@ -22,7 +22,6 @@ use crate::protocol::Event;
 use crate::protocol::EventMsg;
 use crate::protocol::ExecCommandOutputDeltaEvent;
 use crate::protocol::ExecOutputStream;
-use crate::protocol::SandboxPolicy;
 use crate::sandboxing::CommandSpec;
 use crate::sandboxing::ExecRequest;
 use crate::sandboxing::SandboxManager;
@@ -173,7 +172,6 @@ pub struct StdoutStream {
 }
 
 pub struct ExecSandboxContext<'a> {
-    pub sandbox_policy: &'a SandboxPolicy,
     pub file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
     pub network_sandbox_policy: NetworkSandboxPolicy,
     pub sandbox_cwd: &'a Path,
@@ -185,7 +183,6 @@ pub struct ExecSandboxContext<'a> {
 #[allow(clippy::too_many_arguments)]
 pub async fn process_exec_tool_call(
     params: ExecParams,
-    sandbox_policy: &SandboxPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
@@ -197,7 +194,6 @@ pub async fn process_exec_tool_call(
     let exec_req = build_exec_request(
         params,
         ExecSandboxContext {
-            sandbox_policy,
             file_system_sandbox_policy,
             network_sandbox_policy,
             sandbox_cwd,
@@ -218,7 +214,6 @@ pub fn build_exec_request(
     sandbox: ExecSandboxContext<'_>,
 ) -> Result<ExecRequest> {
     let ExecSandboxContext {
-        sandbox_policy,
         file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_cwd,
@@ -273,7 +268,6 @@ pub fn build_exec_request(
     let exec_req = manager
         .transform(crate::sandboxing::SandboxTransformRequest {
             spec,
-            policy: sandbox_policy,
             file_system_policy: file_system_sandbox_policy,
             network_policy: network_sandbox_policy,
             sandbox: sandbox_type,
@@ -293,7 +287,6 @@ pub fn build_exec_request(
 
 pub(crate) async fn execute_exec_request(
     exec_request: ExecRequest,
-    sandbox_policy: &SandboxPolicy,
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
 ) -> Result<ExecToolCallOutput> {
@@ -305,13 +298,11 @@ pub(crate) async fn execute_exec_request(
         expiration,
         sandbox,
         sandbox_permissions,
-        sandbox_policy: _sandbox_policy_from_env,
-        file_system_sandbox_policy,
+        file_system_sandbox_policy: _,
         network_sandbox_policy,
         justification,
         arg0,
     } = exec_request;
-    let _ = _sandbox_policy_from_env;
 
     let params = ExecParams {
         command,
@@ -328,8 +319,6 @@ pub(crate) async fn execute_exec_request(
     let raw_output_result = exec(
         params,
         sandbox,
-        sandbox_policy,
-        &file_system_sandbox_policy,
         network_sandbox_policy,
         stdout_stream,
         after_spawn,
@@ -425,6 +414,9 @@ pub(crate) mod errors {
                 SandboxTransformError::SeatbeltUnavailable => ChaosErr::UnsupportedOperation(
                     "seatbelt sandbox is only available on macOS".to_string(),
                 ),
+                SandboxTransformError::InvalidSandboxPolicyProjection { source } => {
+                    ChaosErr::Io(source)
+                }
             }
         }
     }
@@ -606,8 +598,6 @@ impl Default for ExecToolCallOutput {
 async fn exec(
     params: ExecParams,
     sandbox: SandboxType,
-    sandbox_policy: &SandboxPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
@@ -619,6 +609,8 @@ async fn exec(
         network,
         arg0,
         expiration,
+        sandbox_permissions: _,
+        justification: _,
         ..
     } = params;
     if let Some(network) = network.as_ref() {

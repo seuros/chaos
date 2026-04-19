@@ -4,13 +4,13 @@ use std::path::PathBuf;
 
 use chaos_diff::ApplyPatchAction;
 use chaos_diff::ApplyPatchFileChange;
+use chaos_parole::sandbox::can_write_path;
 
 use crate::exec::SandboxType;
 use crate::util::resolve_path;
 
 use crate::protocol::ApprovalPolicy;
 use crate::protocol::FileSystemSandboxPolicy;
-use crate::protocol::SandboxPolicy;
 
 #[derive(Debug, PartialEq)]
 pub enum SafetyCheck {
@@ -27,7 +27,6 @@ pub enum SafetyCheck {
 pub fn assess_patch_safety(
     action: &ApplyPatchAction,
     policy: ApprovalPolicy,
-    sandbox_policy: &SandboxPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     cwd: &Path,
 ) -> SafetyCheck {
@@ -57,8 +56,9 @@ pub fn assess_patch_safety(
     // writable roots, so we should still run `apply_patch` in a sandbox in that case.
     if is_write_patch_constrained_to_writable_paths(action, file_system_sandbox_policy, cwd) {
         if matches!(
-            sandbox_policy,
-            SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }
+            file_system_sandbox_policy.kind,
+            crate::protocol::FileSystemSandboxKind::Unrestricted
+                | crate::protocol::FileSystemSandboxKind::ExternalSandbox
         ) {
             // RootAccess is intended to bypass sandboxing entirely.
             SafetyCheck::AutoApprove {
@@ -140,7 +140,7 @@ fn is_write_patch_constrained_to_writable_paths(
             None => return false,
         };
 
-        file_system_sandbox_policy.can_write_path_with_cwd(&abs, cwd)
+        can_write_path(file_system_sandbox_policy, &abs, cwd)
     };
 
     for (path, change) in action.changes() {

@@ -3,6 +3,13 @@
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_parole::sandbox::has_full_disk_read_access;
+use chaos_parole::sandbox::has_full_disk_write_access;
+use chaos_parole::sandbox::include_platform_defaults;
+use chaos_parole::sandbox::readable_roots;
+use chaos_parole::sandbox::unreadable_roots;
+use chaos_parole::sandbox::writable_roots;
 use chaos_pf::NetworkProxy;
 use chaos_pf::PROXY_URL_ENV_KEYS;
 use chaos_pf::has_proxy_url_env_vars;
@@ -375,7 +382,7 @@ pub fn create_seatbelt_command_args_with_extensions(
 ) -> Vec<String> {
     create_seatbelt_command_args_for_policies_with_extensions(
         command,
-        &FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd),
+        &file_system_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd),
         NetworkSandboxPolicy::from(sandbox_policy),
         sandbox_policy_cwd,
         enforce_managed_network,
@@ -393,10 +400,9 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
     network: Option<&NetworkProxy>,
     extensions: Option<&MacOsSeatbeltProfileExtensions>,
 ) -> Vec<String> {
-    let unreadable_roots =
-        file_system_sandbox_policy.get_unreadable_roots_with_cwd(sandbox_policy_cwd);
+    let unreadable_roots = unreadable_roots(file_system_sandbox_policy, sandbox_policy_cwd);
     let (file_write_policy, file_write_dir_params) =
-        if file_system_sandbox_policy.has_full_disk_write_access() {
+        if has_full_disk_write_access(file_system_sandbox_policy) {
             if unreadable_roots.is_empty() {
                 // Allegedly, this is more permissive than `(allow file-write*)`.
                 (
@@ -417,8 +423,7 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
             build_seatbelt_access_policy(
                 "file-write*",
                 "WRITABLE_ROOT",
-                file_system_sandbox_policy
-                    .get_writable_roots_with_cwd(sandbox_policy_cwd)
+                writable_roots(file_system_sandbox_policy, sandbox_policy_cwd)
                     .into_iter()
                     .map(|root| SeatbeltAccessRoot {
                         root: root.root,
@@ -429,7 +434,7 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
         };
 
     let (file_read_policy, file_read_dir_params) =
-        if file_system_sandbox_policy.has_full_disk_read_access() {
+        if has_full_disk_read_access(file_system_sandbox_policy) {
             if unreadable_roots.is_empty() {
                 (
                     "; allow read-only file operations\n(allow file-read*)".to_string(),
@@ -453,8 +458,7 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
             let (policy, params) = build_seatbelt_access_policy(
                 "file-read*",
                 "READABLE_ROOT",
-                file_system_sandbox_policy
-                    .get_readable_roots_with_cwd(sandbox_policy_cwd)
+                readable_roots(file_system_sandbox_policy, sandbox_policy_cwd)
                     .into_iter()
                     .map(|root| SeatbeltAccessRoot {
                         excluded_subpaths: unreadable_roots
@@ -487,7 +491,7 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
         build_seatbelt_extensions,
     );
 
-    let include_platform_defaults = file_system_sandbox_policy.include_platform_defaults();
+    let include_platform_defaults = include_platform_defaults(file_system_sandbox_policy);
     let mut policy_sections = vec![
         MACOS_SEATBELT_BASE_POLICY.to_string(),
         file_read_policy,

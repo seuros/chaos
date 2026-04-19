@@ -18,6 +18,7 @@ workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 alcatraz-base = { workspace = true }
+chaos-parole = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chaos-ipc = { workspace = true }
 chaos-realpath = { workspace = true }

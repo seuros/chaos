@@ -3,10 +3,10 @@ use chaos_uptime::format_duration;
 use std::io::Write;
 use std::time::Duration;
 
-use super::AgentJobProgressMessage;
 use super::EventProcessorWithHumanOutput;
+use super::MinionJobProgressMessage;
 
-pub(super) struct AgentJobProgressStats {
+pub(super) struct MinionJobProgressStats {
     pub(super) processed: usize,
     pub(super) total: usize,
     pub(super) percent: i64,
@@ -23,10 +23,10 @@ pub(super) fn should_print_final_message_to_stdout(
     final_message.is_some() && !(stdout_is_terminal && stderr_is_terminal)
 }
 
-pub(super) fn format_agent_job_progress_line(
+pub(super) fn format_minion_job_progress_line(
     columns: Option<usize>,
     job_label: &str,
-    stats: AgentJobProgressStats,
+    stats: MinionJobProgressStats,
     eta: &str,
 ) -> String {
     let rest = format!(
@@ -76,9 +76,9 @@ pub(super) fn format_agent_job_progress_line(
 }
 
 impl EventProcessorWithHumanOutput {
-    pub(super) fn parse_agent_job_progress(message: &str) -> Option<AgentJobProgressMessage> {
-        let payload = message.strip_prefix("agent_job_progress:")?;
-        serde_json::from_str::<AgentJobProgressMessage>(payload).ok()
+    pub(super) fn parse_minion_job_progress(message: &str) -> Option<MinionJobProgressMessage> {
+        let payload = message.strip_prefix("minion_job_progress:")?;
+        serde_json::from_str::<MinionJobProgressMessage>(payload).ok()
     }
 
     pub(super) fn is_silent_event(msg: &EventMsg) -> bool {
@@ -156,7 +156,7 @@ impl EventProcessorWithHumanOutput {
         }
     }
 
-    pub(super) fn render_agent_job_progress(&mut self, update: AgentJobProgressMessage) {
+    pub(super) fn render_minion_job_progress(&mut self, update: MinionJobProgressMessage) {
         let total = update.total_items.max(1);
         let processed = update.completed_items + update.failed_items;
         let percent = (processed as f64 / total as f64 * 100.0).round() as i64;
@@ -169,10 +169,10 @@ impl EventProcessorWithHumanOutput {
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|value| *value > 0);
-        let line = format_agent_job_progress_line(
+        let line = format_minion_job_progress_line(
             columns,
             job_label.as_str(),
-            AgentJobProgressStats {
+            MinionJobProgressStats {
                 processed,
                 total,
                 percent,

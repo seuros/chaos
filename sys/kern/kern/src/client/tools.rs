@@ -10,6 +10,8 @@ use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::WarningEvent;
+use chaos_parole::sandbox::can_read_path;
+use chaos_parole::sandbox::can_write_path;
 use chaos_realpath::AbsolutePathBuf;
 use serde_json::Value;
 
@@ -211,7 +213,7 @@ pub(crate) fn clamp_tool_permission_decision(
             local_tool_name,
             kind: ClampLocalToolKind::FsRead,
         } => match clamp_resolve_input_path(input, cwd, &["file_path", "path"]) {
-            Some(path) if file_system_policy.can_read_path_with_cwd(path.as_path(), cwd) => {
+            Some(path) if can_read_path(file_system_policy, path.as_path(), cwd) => {
                 ClampToolPermissionDecision::Allow
             }
             Some(path) => ClampToolPermissionDecision::AskPermissions {
@@ -228,7 +230,7 @@ pub(crate) fn clamp_tool_permission_decision(
             local_tool_name,
             kind: ClampLocalToolKind::FsWrite,
         } => match clamp_resolve_input_path(input, cwd, &["file_path", "path"]) {
-            Some(path) if file_system_policy.can_write_path_with_cwd(path.as_path(), cwd) => {
+            Some(path) if can_write_path(file_system_policy, path.as_path(), cwd) => {
                 ClampToolPermissionDecision::Allow
             }
             Some(path) => ClampToolPermissionDecision::AskPermissions {
@@ -245,7 +247,7 @@ pub(crate) fn clamp_tool_permission_decision(
             local_tool_name,
             kind: ClampLocalToolKind::FsReadPathOptional,
         } => match clamp_resolve_input_path(input, cwd, &["path"]) {
-            Some(path) if file_system_policy.can_read_path_with_cwd(path.as_path(), cwd) => {
+            Some(path) if can_read_path(file_system_policy, path.as_path(), cwd) => {
                 ClampToolPermissionDecision::Allow
             }
             Some(path) => ClampToolPermissionDecision::AskPermissions {
@@ -397,7 +399,6 @@ pub(crate) async fn handle_clamp_tool_permission(
                 .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                     command: &command,
                     approval_policy: turn_context.approval_policy.value(),
-                    sandbox_policy: turn_context.sandbox_policy.get(),
                     file_system_sandbox_policy: &turn_context.file_system_sandbox_policy,
                     sandbox_permissions: chaos_ipc::models::SandboxPermissions::UseDefault,
                     prefix_rule: None,

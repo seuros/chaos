@@ -9,3 +9,5 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+chaos-ipc = { workspace = true }
+chaos-realpath = { workspace = true }

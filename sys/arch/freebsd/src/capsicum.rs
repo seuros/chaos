@@ -19,6 +19,9 @@ use alcatraz_base::error::Result;
 use chaos_ipc::protocol::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_parole::sandbox::has_full_disk_read_access;
+use chaos_parole::sandbox::has_full_disk_write_access;
 use chaos_pf::NetworkProxy;
 use std::collections::HashMap;
 use std::path::Path;
@@ -101,7 +104,7 @@ where
     P: AsRef<Path>,
 {
     let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
+        file_system_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
     let network_sandbox_policy = NetworkSandboxPolicy::from(sandbox_policy);
     let prepared = prepare_command(
         executable,
@@ -167,8 +170,8 @@ pub fn apply_sandbox_policy_to_current_thread(
     }
 
     // ── Layer 3: filesystem confinement ──────────────────────────────────
-    if !file_system_sandbox_policy.has_full_disk_write_access() {
-        if !file_system_sandbox_policy.has_full_disk_read_access() {
+    if !has_full_disk_write_access(file_system_sandbox_policy) {
+        if !has_full_disk_read_access(file_system_sandbox_policy) {
             unsupported_restrictions.push(
                 "restricted read-only filesystem access requested but jail-based confinement is not yet implemented on FreeBSD",
             );

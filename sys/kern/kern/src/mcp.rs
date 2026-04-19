@@ -10,8 +10,9 @@ use async_channel::unbounded;
 use chaos_ipc::mcp::Resource;
 use chaos_ipc::mcp::ResourceTemplate;
 use chaos_ipc::mcp::Tool;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::McpListToolsResponseEvent;
-use chaos_ipc::protocol::SandboxPolicy;
 use serde_json::Value;
 
 use crate::config::Config;
@@ -65,7 +66,21 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
 
     // Use ReadOnly sandbox policy for MCP snapshot collection (safest default)
     let sandbox_state = SandboxState {
-        sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        file_system_sandbox_policy: FileSystemSandboxPolicy::restricted(vec![
+            chaos_ipc::permissions::FileSystemSandboxEntry {
+                path: chaos_ipc::permissions::FileSystemPath::Special {
+                    value: chaos_ipc::permissions::FileSystemSpecialPath::CurrentWorkingDirectory,
+                },
+                access: chaos_ipc::permissions::FileSystemAccessMode::Read,
+            },
+            chaos_ipc::permissions::FileSystemSandboxEntry {
+                path: chaos_ipc::permissions::FileSystemPath::Special {
+                    value: chaos_ipc::permissions::FileSystemSpecialPath::Minimal,
+                },
+                access: chaos_ipc::permissions::FileSystemAccessMode::Read,
+            },
+        ]),
+        network_sandbox_policy: NetworkSandboxPolicy::Restricted,
         alcatraz_macos_exe: config.alcatraz_macos_exe.clone(),
         alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),

@@ -4,6 +4,7 @@ use crate::spawn::StdioPolicy;
 use crate::spawn::spawn_child_async;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
 use chaos_pf::NetworkProxy;
 use std::collections::HashMap;
 use std::path::Path;
@@ -33,7 +34,7 @@ where
     P: AsRef<Path>,
 {
     let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
+        file_system_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
     let network_sandbox_policy = NetworkSandboxPolicy::from(sandbox_policy);
     let args = create_linux_sandbox_command_args_for_policies(
         command,

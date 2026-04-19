@@ -66,12 +66,12 @@ fn root_write_read_only_carveout_requires_direct_runtime_enforcement() {
 }
 
 #[test]
-fn resolve_sandbox_policies_derives_split_policies_from_legacy_policy() {
+fn resolve_sandbox_policies_derives_split_policies_from_sandbox_policy() {
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
 
     let resolved =
         resolve_sandbox_policies(Path::new("/tmp"), Some(sandbox_policy.clone()), None, None)
-            .expect("legacy policy should resolve");
+            .expect("sandbox policy should resolve");
 
     assert_eq!(resolved.sandbox_policy, sandbox_policy);
     assert_eq!(
@@ -85,7 +85,7 @@ fn resolve_sandbox_policies_derives_split_policies_from_legacy_policy() {
 }
 
 #[test]
-fn resolve_sandbox_policies_derives_legacy_policy_from_split_policies() {
+fn resolve_sandbox_policies_derives_sandbox_policy_from_split_policies() {
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
     let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
@@ -120,18 +120,18 @@ fn resolve_sandbox_policies_rejects_partial_split_policies() {
 }
 
 #[test]
-fn resolve_sandbox_policies_rejects_mismatched_legacy_and_split_inputs() {
+fn resolve_sandbox_policies_rejects_mismatched_sandbox_and_split_inputs() {
     let err = resolve_sandbox_policies(
         Path::new("/tmp"),
         Some(SandboxPolicy::new_read_only_policy()),
         Some(FileSystemSandboxPolicy::unrestricted()),
         Some(NetworkSandboxPolicy::Enabled),
     )
-    .expect_err("mismatched legacy and split policies should fail");
+    .expect_err("mismatched sandbox and split policies should fail");
     assert!(
         matches!(
             err,
-            ResolveSandboxPoliciesError::MismatchedLegacyPolicy { .. }
+            ResolveSandboxPoliciesError::MismatchedSandboxPolicy { .. }
         ),
         "{err}"
     );
@@ -163,7 +163,7 @@ fn resolve_sandbox_policies_accepts_split_policies_requiring_direct_runtime_enfo
         Some(file_system_sandbox_policy.clone()),
         Some(NetworkSandboxPolicy::Restricted),
     )
-    .expect("split-only policy should preserve provided legacy fallback");
+    .expect("split-only policy should preserve provided sandbox fallback");
 
     assert_eq!(resolved.sandbox_policy, sandbox_policy);
     assert_eq!(
@@ -198,7 +198,7 @@ fn resolve_sandbox_policies_accepts_semantically_equivalent_workspace_write_inpu
         Some(file_system_sandbox_policy.clone()),
         Some(NetworkSandboxPolicy::Restricted),
     )
-    .expect("semantically equivalent legacy workspace-write policy should resolve");
+    .expect("semantically equivalent workspace-write policy should resolve");
 
     assert_eq!(resolved.sandbox_policy, sandbox_policy);
     assert_eq!(

@@ -10,7 +10,6 @@ use chaos_ipc::permissions::FileSystemSandboxEntry;
 use chaos_ipc::permissions::FileSystemSpecialPath;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::GranularApprovalConfig;
-use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -425,7 +424,6 @@ prefix_rule {pattern={"rm"}, decision="forbidden"}
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &forbidden_script,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -476,7 +474,6 @@ async fn evaluates_heredoc_script_against_prefix_rules() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -504,7 +501,6 @@ async fn omits_auto_amendment_for_heredoc_fallback_prompts() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -533,7 +529,6 @@ async fn drops_requested_amendment_for_heredoc_fallback_prompts_when_it_wont_mat
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: Some(requested_prefix.clone()),
@@ -573,7 +568,6 @@ prefix_rule {
                 "/some/important/folder".to_string(),
             ],
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -603,7 +597,6 @@ async fn exec_approval_requirement_prefers_execpolicy_match() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -640,7 +633,6 @@ prefix_rule {{pattern={{"git"}}, decision="allow"}}
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -678,7 +670,6 @@ prefix_rule {{pattern={{"git"}}, decision="prompt"}}
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -707,7 +698,6 @@ async fn requested_prefix_rule_can_approve_absolute_path_commands() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
@@ -741,7 +731,6 @@ async fn exec_approval_requirement_respects_approval_policy() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Headless,
-            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -769,7 +758,6 @@ fn unmatched_granular_policy_still_prompts_for_restricted_sandbox_escalation() {
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            &SandboxPolicy::new_read_only_policy(),
             &read_only_file_system_sandbox_policy(),
             &command,
             SandboxPermissions::RequireEscalated,
@@ -787,7 +775,6 @@ fn unmatched_on_request_uses_split_filesystem_policy_for_escalation_prompts() {
         Decision::Prompt,
         render_decision_for_unmatched_command(
             ApprovalPolicy::Interactive,
-            &SandboxPolicy::RootAccess,
             &restricted_file_system_policy,
             &command,
             SandboxPermissions::RequireEscalated,
@@ -810,7 +797,6 @@ async fn exec_approval_requirement_rejects_unmatched_sandbox_escalation_when_gra
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: None,
@@ -848,7 +834,6 @@ async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision()
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: None,
@@ -884,7 +869,6 @@ async fn mixed_rule_and_sandbox_prompt_rejects_when_granular_rules_are_disabled(
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: None,
@@ -908,7 +892,6 @@ async fn exec_approval_requirement_falls_back_to_heuristics() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -933,7 +916,6 @@ async fn empty_bash_lc_script_falls_back_to_original_command() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -962,7 +944,6 @@ async fn whitespace_bash_lc_script_falls_back_to_original_command() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -991,7 +972,6 @@ async fn request_rule_uses_prefix_rule() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
@@ -1023,7 +1003,6 @@ async fn request_rule_falls_back_when_prefix_rule_does_not_approve_all_commands(
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
@@ -1062,7 +1041,6 @@ async fn heuristics_apply_when_other_commands_match_policy() {
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &command,
                 approval_policy: ApprovalPolicy::Supervised,
-                sandbox_policy: &SandboxPolicy::RootAccess,
                 file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
                 sandbox_permissions: SandboxPermissions::UseDefault,
                 prefix_rule: None,
@@ -1137,7 +1115,6 @@ async fn proposed_execpolicy_amendment_is_present_for_single_command_without_pol
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -1168,7 +1145,6 @@ async fn proposed_execpolicy_amendment_is_omitted_when_policy_prompts() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -1196,7 +1172,6 @@ async fn proposed_execpolicy_amendment_is_present_for_multi_command_scripts() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Supervised,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -1235,7 +1210,6 @@ async fn proposed_execpolicy_amendment_uses_first_no_match_in_multi_command_scri
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &command,
                 approval_policy: ApprovalPolicy::Supervised,
-                sandbox_policy: &SandboxPolicy::new_read_only_policy(),
                 file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
                 sandbox_permissions: SandboxPermissions::UseDefault,
                 prefix_rule: None,
@@ -1259,7 +1233,6 @@ async fn proposed_execpolicy_amendment_is_present_when_heuristics_allow() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -1290,7 +1263,6 @@ async fn proposed_execpolicy_amendment_is_suppressed_when_policy_matches_allow()
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -1449,7 +1421,6 @@ async fn dangerous_rm_rf_requires_approval_in_root_access() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: ApprovalPolicy::Interactive,
-            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,

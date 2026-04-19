@@ -1,11 +1,11 @@
 pub(crate) mod job {
-    use crate::AgentJobStatus;
+    use crate::MinionJobStatus;
     use state_machines::state_machine;
 
     // Agent job lifecycle: Pending → Running → Completed/Failed/Cancelled
     // Cancellation is allowed from Pending or Running.
     state_machine! {
-        name: AgentJobLifecycle,
+        name: MinionJobLifecycle,
         dynamic: true,
         initial: Pending,
         states: [Pending, Running, Completed, Failed, Cancelled],
@@ -27,35 +27,35 @@ pub(crate) mod job {
     }
 
     #[derive(Debug)]
-    pub(crate) struct AgentJobWorkflow {
-        machine: DynamicAgentJobLifecycle<()>,
+    pub(crate) struct MinionJobWorkflow {
+        machine: DynamicMinionJobLifecycle<()>,
     }
 
-    impl AgentJobWorkflow {
+    impl MinionJobWorkflow {
         pub(crate) fn new() -> Self {
             Self {
-                machine: DynamicAgentJobLifecycle::new(()),
+                machine: DynamicMinionJobLifecycle::new(()),
             }
         }
 
         /// Reconstruct the workflow at a known persisted state by replaying
         /// the minimal events needed to reach it.
-        pub(crate) fn from_status(status: AgentJobStatus) -> Self {
+        pub(crate) fn from_status(status: MinionJobStatus) -> Self {
             let mut wf = Self::new();
             match status {
-                AgentJobStatus::Pending => {}
-                AgentJobStatus::Running => {
+                MinionJobStatus::Pending => {}
+                MinionJobStatus::Running => {
                     wf.start();
                 }
-                AgentJobStatus::Completed => {
+                MinionJobStatus::Completed => {
                     wf.start();
                     wf.complete();
                 }
-                AgentJobStatus::Failed => {
+                MinionJobStatus::Failed => {
                     wf.start();
                     wf.fail();
                 }
-                AgentJobStatus::Cancelled => {
+                MinionJobStatus::Cancelled => {
                     wf.cancel();
                 }
             }
@@ -63,21 +63,21 @@ pub(crate) mod job {
         }
 
         pub(crate) fn start(&mut self) -> bool {
-            self.machine.handle(AgentJobLifecycleEvent::Start).is_ok()
+            self.machine.handle(MinionJobLifecycleEvent::Start).is_ok()
         }
 
         pub(crate) fn complete(&mut self) -> bool {
             self.machine
-                .handle(AgentJobLifecycleEvent::Complete)
+                .handle(MinionJobLifecycleEvent::Complete)
                 .is_ok()
         }
 
         pub(crate) fn fail(&mut self) -> bool {
-            self.machine.handle(AgentJobLifecycleEvent::Fail).is_ok()
+            self.machine.handle(MinionJobLifecycleEvent::Fail).is_ok()
         }
 
         pub(crate) fn cancel(&mut self) -> bool {
-            self.machine.handle(AgentJobLifecycleEvent::Cancel).is_ok()
+            self.machine.handle(MinionJobLifecycleEvent::Cancel).is_ok()
         }
 
         #[cfg(test)]
@@ -92,7 +92,7 @@ pub(crate) mod job {
 
         #[test]
         fn happy_path_pending_to_completed() {
-            let mut wf = AgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             assert_eq!(wf.current_state(), "Pending");
 
             assert!(wf.start());
@@ -104,7 +104,7 @@ pub(crate) mod job {
 
         #[test]
         fn can_fail_from_running() {
-            let mut wf = AgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             wf.start();
 
             assert!(wf.fail());
@@ -113,14 +113,14 @@ pub(crate) mod job {
 
         #[test]
         fn cancel_from_pending() {
-            let mut wf = AgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             assert!(wf.cancel());
             assert_eq!(wf.current_state(), "Cancelled");
         }
 
         #[test]
         fn cancel_from_running() {
-            let mut wf = AgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             wf.start();
             assert!(wf.cancel());
             assert_eq!(wf.current_state(), "Cancelled");
@@ -128,7 +128,7 @@ pub(crate) mod job {
 
         #[test]
         fn cannot_complete_from_pending() {
-            let mut wf = AgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             assert!(!wf.complete());
             assert_eq!(wf.current_state(), "Pending");
         }
@@ -136,14 +136,14 @@ pub(crate) mod job {
         #[test]
         fn from_status_roundtrip() {
             let cases = [
-                (AgentJobStatus::Pending, "Pending"),
-                (AgentJobStatus::Running, "Running"),
-                (AgentJobStatus::Completed, "Completed"),
-                (AgentJobStatus::Failed, "Failed"),
-                (AgentJobStatus::Cancelled, "Cancelled"),
+                (MinionJobStatus::Pending, "Pending"),
+                (MinionJobStatus::Running, "Running"),
+                (MinionJobStatus::Completed, "Completed"),
+                (MinionJobStatus::Failed, "Failed"),
+                (MinionJobStatus::Cancelled, "Cancelled"),
             ];
             for (status, expected) in cases {
-                let wf = AgentJobWorkflow::from_status(status);
+                let wf = MinionJobWorkflow::from_status(status);
                 assert_eq!(wf.current_state(), expected);
             }
         }
@@ -151,13 +151,13 @@ pub(crate) mod job {
 }
 
 pub(crate) mod item {
-    use crate::AgentJobItemStatus;
+    use crate::MinionJobItemStatus;
     use state_machines::state_machine;
 
     // Agent job item lifecycle: Pending → Running → Completed/Failed
     // Items can be retried: Running → Pending.
     state_machine! {
-        name: AgentJobItemLifecycle,
+        name: MinionJobItemLifecycle,
         dynamic: true,
         initial: Pending,
         states: [Pending, Running, Completed, Failed],
@@ -178,30 +178,30 @@ pub(crate) mod item {
     }
 
     #[derive(Debug)]
-    pub(crate) struct AgentJobItemWorkflow {
-        machine: DynamicAgentJobItemLifecycle<()>,
+    pub(crate) struct MinionJobItemWorkflow {
+        machine: DynamicMinionJobItemLifecycle<()>,
     }
 
-    impl AgentJobItemWorkflow {
+    impl MinionJobItemWorkflow {
         pub(crate) fn new() -> Self {
             Self {
-                machine: DynamicAgentJobItemLifecycle::new(()),
+                machine: DynamicMinionJobItemLifecycle::new(()),
             }
         }
 
         /// Reconstruct the workflow at a known persisted state.
-        pub(crate) fn from_status(status: AgentJobItemStatus) -> Self {
+        pub(crate) fn from_status(status: MinionJobItemStatus) -> Self {
             let mut wf = Self::new();
             match status {
-                AgentJobItemStatus::Pending => {}
-                AgentJobItemStatus::Running => {
+                MinionJobItemStatus::Pending => {}
+                MinionJobItemStatus::Running => {
                     wf.start();
                 }
-                AgentJobItemStatus::Completed => {
+                MinionJobItemStatus::Completed => {
                     wf.start();
                     wf.complete();
                 }
-                AgentJobItemStatus::Failed => {
+                MinionJobItemStatus::Failed => {
                     wf.start();
                     wf.fail();
                 }
@@ -211,25 +211,25 @@ pub(crate) mod item {
 
         pub(crate) fn start(&mut self) -> bool {
             self.machine
-                .handle(AgentJobItemLifecycleEvent::Start)
+                .handle(MinionJobItemLifecycleEvent::Start)
                 .is_ok()
         }
 
         pub(crate) fn complete(&mut self) -> bool {
             self.machine
-                .handle(AgentJobItemLifecycleEvent::Complete)
+                .handle(MinionJobItemLifecycleEvent::Complete)
                 .is_ok()
         }
 
         pub(crate) fn fail(&mut self) -> bool {
             self.machine
-                .handle(AgentJobItemLifecycleEvent::Fail)
+                .handle(MinionJobItemLifecycleEvent::Fail)
                 .is_ok()
         }
 
         pub(crate) fn retry(&mut self) -> bool {
             self.machine
-                .handle(AgentJobItemLifecycleEvent::Retry)
+                .handle(MinionJobItemLifecycleEvent::Retry)
                 .is_ok()
         }
 
@@ -245,7 +245,7 @@ pub(crate) mod item {
 
         #[test]
         fn happy_path() {
-            let mut wf = AgentJobItemWorkflow::new();
+            let mut wf = MinionJobItemWorkflow::new();
             assert_eq!(wf.current_state(), "Pending");
 
             assert!(wf.start());
@@ -257,7 +257,7 @@ pub(crate) mod item {
 
         #[test]
         fn retry_returns_to_pending() {
-            let mut wf = AgentJobItemWorkflow::new();
+            let mut wf = MinionJobItemWorkflow::new();
             wf.start();
 
             assert!(wf.retry());
@@ -269,7 +269,7 @@ pub(crate) mod item {
 
         #[test]
         fn cannot_retry_from_pending() {
-            let mut wf = AgentJobItemWorkflow::new();
+            let mut wf = MinionJobItemWorkflow::new();
             assert!(!wf.retry());
             assert_eq!(wf.current_state(), "Pending");
         }

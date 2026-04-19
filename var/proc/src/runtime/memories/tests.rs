@@ -31,6 +31,7 @@ async fn stage1_claim_skips_when_up_to_date() {
     let owner_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
 
     let claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_a, 100, 3600, 64)
         .await
         .expect("claim stage1 job");
@@ -41,6 +42,7 @@ async fn stage1_claim_skips_when_up_to_date() {
 
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 ownership_token.as_str(),
@@ -55,12 +57,14 @@ async fn stage1_claim_skips_when_up_to_date() {
     );
 
     let up_to_date = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_b, 100, 3600, 64)
         .await
         .expect("claim stage1 up-to-date");
     assert_eq!(up_to_date, Stage1JobClaimOutcome::SkippedUpToDate);
 
     let needs_rerun = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_b, 101, 3600, 64)
         .await
         .expect("claim stage1 newer source");
@@ -89,12 +93,14 @@ async fn stage1_running_stale_can_be_stolen_but_fresh_running_is_skipped() {
         .expect("upsert thread");
 
     let claim_a = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_a, 100, 3600, 64)
         .await
         .expect("claim a");
     assert!(matches!(claim_a, Stage1JobClaimOutcome::Claimed { .. }));
 
     let claim_b_fresh = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_b, 100, 3600, 64)
         .await
         .expect("claim b fresh");
@@ -107,6 +113,7 @@ async fn stage1_running_stale_can_be_stolen_but_fresh_running_is_skipped() {
         .expect("force stale lease");
 
     let claim_b_stale = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_b, 100, 3600, 64)
         .await
         .expect("claim b stale");
@@ -144,6 +151,7 @@ async fn stage1_concurrent_claim_for_same_thread_is_conflict_safe() {
     let claim_with_retry = |runtime: Arc<StateRuntime>, process_id: ProcessId, owner: ProcessId| async move {
         for attempt in 0..5 {
             match runtime
+                .memories()
                 .try_claim_stage1_job(process_id, owner, 100, 3_600, 64)
                 .await
             {
@@ -215,12 +223,14 @@ async fn stage1_concurrent_claims_respect_running_cap() {
     let (claim_a, claim_b) = tokio::join!(
         async move {
             runtime_a
+                .memories()
                 .try_claim_stage1_job(thread_a, owner_a, 100, 3_600, 1)
                 .await
                 .expect("claim stage1 thread a")
         },
         async move {
             runtime_b
+                .memories()
                 .try_claim_stage1_job(thread_b, owner_b, 101, 3_600, 1)
                 .await
                 .expect("claim stage1 thread b")
@@ -320,6 +330,7 @@ async fn claim_stage1_jobs_filters_by_age_idle_and_current_process() {
 
     let allowed_sources = vec!["cli".to_string()];
     let claims = runtime
+        .memories()
         .claim_stage1_jobs_for_startup(
             current_process_id,
             Stage1StartupClaimParams {
@@ -381,6 +392,7 @@ async fn claim_stage1_jobs_prefilters_threads_with_up_to_date_memory() {
         .expect("upsert up-to-date thread");
 
     let up_to_date_claim = runtime
+        .memories()
         .try_claim_stage1_job(
             up_to_date_process_id,
             worker_id,
@@ -396,6 +408,7 @@ async fn claim_stage1_jobs_prefilters_threads_with_up_to_date_memory() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 up_to_date_process_id,
                 up_to_date_token.as_str(),
@@ -419,6 +432,7 @@ async fn claim_stage1_jobs_prefilters_threads_with_up_to_date_memory() {
 
     let allowed_sources = vec!["cli".to_string()];
     let claims = runtime
+        .memories()
         .claim_stage1_jobs_for_startup(
             current_process_id,
             Stage1StartupClaimParams {
@@ -492,6 +506,7 @@ async fn claim_stage1_jobs_skips_threads_with_disabled_memory_mode() {
 
     let allowed_sources = vec!["cli".to_string()];
     let claims = runtime
+        .memories()
         .claim_stage1_jobs_for_startup(
             current_process_id,
             Stage1StartupClaimParams {
@@ -536,6 +551,7 @@ async fn reset_memory_data_for_fresh_start_clears_rows_and_disables_processes() 
         .expect("upsert enabled thread");
 
     let claim = runtime
+        .memories()
         .try_claim_stage1_job(
             enabled_process_id,
             worker_id,
@@ -551,6 +567,7 @@ async fn reset_memory_data_for_fresh_start_clears_rows_and_disables_processes() 
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 enabled_process_id,
                 ownership_token.as_str(),
@@ -564,6 +581,7 @@ async fn reset_memory_data_for_fresh_start_clears_rows_and_disables_processes() 
         "stage1 success should be recorded"
     );
     runtime
+        .memories()
         .enqueue_global_consolidation(enabled.updated_at.as_second())
         .await
         .expect("enqueue global consolidation");
@@ -586,6 +604,7 @@ async fn reset_memory_data_for_fresh_start_clears_rows_and_disables_processes() 
         .expect("disable existing process");
 
     runtime
+        .memories()
         .reset_memory_data_for_fresh_start()
         .await
         .expect("reset memory data");
@@ -699,6 +718,7 @@ INSERT INTO jobs (
 
     let allowed_sources = vec!["cli".to_string()];
     let claims = runtime
+        .memories()
         .claim_stage1_jobs_for_startup(
             current_process_id,
             Stage1StartupClaimParams {
@@ -733,6 +753,7 @@ WHERE kind = 'memory_stage1'
     assert_eq!(running_count, 64);
 
     let more_claims = runtime
+        .memories()
         .claim_stage1_jobs_for_startup(
             current_process_id,
             Stage1StartupClaimParams {
@@ -787,6 +808,7 @@ async fn claim_stage1_jobs_processes_two_full_batches_across_startup_passes() {
 
     let allowed_sources = vec!["cli".to_string()];
     let first_claims = runtime
+        .memories()
         .claim_stage1_jobs_for_startup(
             current_process_id,
             Stage1StartupClaimParams {
@@ -805,6 +827,7 @@ async fn claim_stage1_jobs_processes_two_full_batches_across_startup_passes() {
     for claim in first_claims {
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     claim.thread.id,
                     claim.ownership_token.as_str(),
@@ -820,6 +843,7 @@ async fn claim_stage1_jobs_processes_two_full_batches_across_startup_passes() {
     }
 
     let second_claims = runtime
+        .memories()
         .claim_stage1_jobs_for_startup(
             current_process_id,
             Stage1StartupClaimParams {
@@ -854,6 +878,7 @@ async fn stage1_output_cascades_on_thread_delete() {
         .expect("upsert thread");
 
     let claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
         .await
         .expect("claim stage1");
@@ -863,6 +888,7 @@ async fn stage1_output_cascades_on_thread_delete() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 ownership_token.as_str(),
@@ -925,6 +951,7 @@ async fn mark_stage1_job_succeeded_no_output_skips_phase2_when_output_was_alread
         .expect("upsert thread");
 
     let claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
         .await
         .expect("claim stage1");
@@ -934,6 +961,7 @@ async fn mark_stage1_job_succeeded_no_output_skips_phase2_when_output_was_alread
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded_no_output(process_id, ownership_token.as_str())
             .await
             .expect("mark stage1 succeeded without output"),
@@ -954,6 +982,7 @@ async fn mark_stage1_job_succeeded_no_output_skips_phase2_when_output_was_alread
     );
 
     let up_to_date = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_b, 100, 3600, 64)
         .await
         .expect("claim stage1 up-to-date");
@@ -972,6 +1001,7 @@ async fn mark_stage1_job_succeeded_no_output_skips_phase2_when_output_was_alread
     );
 
     let claim_phase2 = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -1004,6 +1034,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
         .expect("upsert thread");
 
     let first_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
         .await
         .expect("claim initial stage1");
@@ -1013,6 +1044,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(process_id, first_token.as_str(), 100, "raw", "sum", None)
             .await
             .expect("mark initial stage1 succeeded"),
@@ -1020,6 +1052,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
     );
 
     let phase2_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2 after initial output");
@@ -1033,6 +1066,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
     assert_eq!(phase2_input_watermark, 100);
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(phase2_token.as_str(), phase2_input_watermark, &[],)
             .await
             .expect("mark initial phase2 succeeded"),
@@ -1040,6 +1074,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
     );
 
     let no_output_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner_b, 101, 3600, 64)
         .await
         .expect("claim stage1 for no-output delete");
@@ -1049,6 +1084,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded_no_output(process_id, no_output_token.as_str())
             .await
             .expect("mark stage1 no-output after existing output"),
@@ -1066,6 +1102,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
     assert_eq!(output_row_count, 0);
 
     let claim_phase2 = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2 after no-output deletion");
@@ -1079,6 +1116,7 @@ async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_outpu
     assert_eq!(phase2_input_watermark, 101);
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(phase2_token.as_str(), phase2_input_watermark, &[],)
             .await
             .expect("mark phase2 succeeded after no-output delete")
@@ -1107,6 +1145,7 @@ async fn stage1_retry_exhaustion_does_not_block_newer_watermark() {
 
     for attempt in 0..3 {
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, 100, 3_600, 64)
             .await
             .expect("claim stage1 for retry exhaustion");
@@ -1119,6 +1158,7 @@ async fn stage1_retry_exhaustion_does_not_block_newer_watermark() {
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_failed(process_id, ownership_token.as_str(), "boom", 0)
                 .await
                 .expect("mark stage1 failed"),
@@ -1128,6 +1168,7 @@ async fn stage1_retry_exhaustion_does_not_block_newer_watermark() {
     }
 
     let exhausted_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3_600, 64)
         .await
         .expect("claim stage1 after retry exhaustion");
@@ -1137,6 +1178,7 @@ async fn stage1_retry_exhaustion_does_not_block_newer_watermark() {
     );
 
     let newer_source_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 101, 3_600, 64)
         .await
         .expect("claim stage1 with newer source watermark");
@@ -1179,11 +1221,13 @@ async fn phase2_global_consolidation_reruns_when_watermark_advances() {
     let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
 
     runtime
+        .memories()
         .enqueue_global_consolidation(100)
         .await
         .expect("enqueue global consolidation");
 
     let claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -1196,6 +1240,7 @@ async fn phase2_global_consolidation_reruns_when_watermark_advances() {
     };
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(ownership_token.as_str(), input_watermark, &[],)
             .await
             .expect("mark phase2 succeeded"),
@@ -1203,17 +1248,20 @@ async fn phase2_global_consolidation_reruns_when_watermark_advances() {
     );
 
     let claim_up_to_date = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2 up-to-date");
     assert_eq!(claim_up_to_date, Phase2JobClaimOutcome::SkippedNotDirty);
 
     runtime
+        .memories()
         .enqueue_global_consolidation(101)
         .await
         .expect("enqueue global consolidation again");
 
     let claim_rerun = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2 rerun");
@@ -1252,6 +1300,7 @@ async fn list_stage1_outputs_for_global_returns_latest_outputs() {
         .expect("upsert thread b");
 
     let claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id_a, owner, 100, 3600, 64)
         .await
         .expect("claim stage1 a");
@@ -1261,6 +1310,7 @@ async fn list_stage1_outputs_for_global_returns_latest_outputs() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id_a,
                 ownership_token.as_str(),
@@ -1275,6 +1325,7 @@ async fn list_stage1_outputs_for_global_returns_latest_outputs() {
     );
 
     let claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id_b, owner, 101, 3600, 64)
         .await
         .expect("claim stage1 b");
@@ -1284,6 +1335,7 @@ async fn list_stage1_outputs_for_global_returns_latest_outputs() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id_b,
                 ownership_token.as_str(),
@@ -1298,6 +1350,7 @@ async fn list_stage1_outputs_for_global_returns_latest_outputs() {
     );
 
     let outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(10)
         .await
         .expect("list stage1 outputs for global");
@@ -1373,6 +1426,7 @@ VALUES (?, ?, ?, ?, ?)
         .expect("insert empty stage1 output");
 
     let outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(1)
         .await
         .expect("list stage1 outputs for global");
@@ -1411,6 +1465,7 @@ async fn list_stage1_outputs_for_global_skips_polluted_processes() {
             .expect("upsert thread");
 
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
             .await
             .expect("claim stage1");
@@ -1420,6 +1475,7 @@ async fn list_stage1_outputs_for_global_skips_polluted_processes() {
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -1440,6 +1496,7 @@ async fn list_stage1_outputs_for_global_skips_polluted_processes() {
         .expect("mark thread polluted");
 
     let outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(10)
         .await
         .expect("list stage1 outputs for global");
@@ -1482,6 +1539,7 @@ async fn get_phase2_input_selection_reports_added_retained_and_removed_rows() {
         (process_id_c, 102, Some("rollout-c")),
     ] {
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, updated_at, 3600, 64)
             .await
             .expect("claim stage1");
@@ -1491,6 +1549,7 @@ async fn get_phase2_input_selection_reports_added_retained_and_removed_rows() {
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -1506,6 +1565,7 @@ async fn get_phase2_input_selection_reports_added_retained_and_removed_rows() {
     }
 
     let claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -1518,6 +1578,7 @@ async fn get_phase2_input_selection_reports_added_retained_and_removed_rows() {
     };
     assert_eq!(input_watermark, 102);
     let selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(10)
         .await
         .expect("list stage1 outputs for global")
@@ -1526,6 +1587,7 @@ async fn get_phase2_input_selection_reports_added_retained_and_removed_rows() {
         .collect::<Vec<_>>();
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 ownership_token.as_str(),
                 input_watermark,
@@ -1537,6 +1599,7 @@ async fn get_phase2_input_selection_reports_added_retained_and_removed_rows() {
     );
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(2, 36_500)
         .await
         .expect("load phase2 input selection");
@@ -1582,6 +1645,7 @@ async fn get_phase2_input_selection_marks_polluted_previous_selection_as_removed
             .expect("upsert thread");
 
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, updated_at, 3600, 64)
             .await
             .expect("claim stage1");
@@ -1591,6 +1655,7 @@ async fn get_phase2_input_selection_marks_polluted_previous_selection_as_removed
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -1606,6 +1671,7 @@ async fn get_phase2_input_selection_marks_polluted_previous_selection_as_removed
     }
 
     let claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -1617,11 +1683,13 @@ async fn get_phase2_input_selection_marks_polluted_previous_selection_as_removed
         other => panic!("unexpected phase2 claim outcome: {other:?}"),
     };
     let selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(10)
         .await
         .expect("list stage1 outputs for global");
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 ownership_token.as_str(),
                 input_watermark,
@@ -1638,6 +1706,7 @@ async fn get_phase2_input_selection_marks_polluted_previous_selection_as_removed
         .expect("mark thread polluted");
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(2, 36_500)
         .await
         .expect("load phase2 input selection");
@@ -1683,6 +1752,7 @@ async fn mark_process_memory_mode_polluted_enqueues_phase2_for_selected_processe
         .expect("upsert thread");
 
     let claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
         .await
         .expect("claim stage1");
@@ -1692,6 +1762,7 @@ async fn mark_process_memory_mode_polluted_enqueues_phase2_for_selected_processe
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 ownership_token.as_str(),
@@ -1706,6 +1777,7 @@ async fn mark_process_memory_mode_polluted_enqueues_phase2_for_selected_processe
     );
 
     let phase2_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -1717,11 +1789,13 @@ async fn mark_process_memory_mode_polluted_enqueues_phase2_for_selected_processe
         other => panic!("unexpected phase2 claim outcome: {other:?}"),
     };
     let selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(10)
         .await
         .expect("list stage1 outputs");
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 phase2_token.as_str(),
                 input_watermark,
@@ -1734,6 +1808,7 @@ async fn mark_process_memory_mode_polluted_enqueues_phase2_for_selected_processe
 
     assert!(
         runtime
+            .memories()
             .mark_process_memory_mode_polluted(process_id)
             .await
             .expect("mark thread polluted"),
@@ -1741,6 +1816,7 @@ async fn mark_process_memory_mode_polluted_enqueues_phase2_for_selected_processe
     );
 
     let next_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2 after pollution");
@@ -1768,6 +1844,7 @@ async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() 
         .expect("upsert thread");
 
     let first_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
         .await
         .expect("claim initial stage1");
@@ -1777,6 +1854,7 @@ async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() 
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 first_token.as_str(),
@@ -1791,6 +1869,7 @@ async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() 
     );
 
     let phase2_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -1802,11 +1881,13 @@ async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() 
         other => panic!("unexpected phase2 claim outcome: {other:?}"),
     };
     let selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(1)
         .await
         .expect("list selected outputs");
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 phase2_token.as_str(),
                 input_watermark,
@@ -1818,6 +1899,7 @@ async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() 
     );
 
     let refreshed_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 101, 3600, 64)
         .await
         .expect("claim refreshed stage1");
@@ -1827,6 +1909,7 @@ async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() 
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 refreshed_token.as_str(),
@@ -1841,6 +1924,7 @@ async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() 
     );
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(1, 36_500)
         .await
         .expect("load phase2 input selection");
@@ -1901,6 +1985,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
         (process_id_d, 98, Some("rollout-d-98")),
     ] {
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, updated_at, 3600, 64)
             .await
             .expect("claim initial stage1");
@@ -1910,6 +1995,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -1925,6 +2011,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
     }
 
     let phase2_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -1936,6 +2023,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
         other => panic!("unexpected phase2 claim outcome: {other:?}"),
     };
     let selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(2)
         .await
         .expect("list selected outputs");
@@ -1948,6 +2036,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
     );
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 phase2_token.as_str(),
                 input_watermark,
@@ -1964,6 +2053,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
         (process_id_d, 104, Some("rollout-d-104")),
     ] {
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, updated_at, 3600, 64)
             .await
             .expect("claim refreshed stage1");
@@ -1973,6 +2063,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -1988,6 +2079,7 @@ async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_re
     }
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(2, 36_500)
         .await
         .expect("load phase2 input selection");
@@ -2039,6 +2131,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
         .expect("upsert thread");
 
     let initial_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
         .await
         .expect("claim initial stage1");
@@ -2048,6 +2141,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 initial_token.as_str(),
@@ -2062,6 +2156,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
     );
 
     let first_phase2_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim first phase2");
@@ -2073,11 +2168,13 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
         other => panic!("unexpected first phase2 claim outcome: {other:?}"),
     };
     let first_selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(1)
         .await
         .expect("list first selected outputs");
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 first_phase2_token.as_str(),
                 first_input_watermark,
@@ -2089,6 +2186,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
     );
 
     let refreshed_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 101, 3600, 64)
         .await
         .expect("claim refreshed stage1");
@@ -2098,6 +2196,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 refreshed_token.as_str(),
@@ -2112,6 +2211,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
     );
 
     let second_phase2_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim second phase2");
@@ -2123,6 +2223,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
         other => panic!("unexpected second phase2 claim outcome: {other:?}"),
     };
     let second_selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(1)
         .await
         .expect("list second selected outputs");
@@ -2132,6 +2233,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
     );
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 second_phase2_token.as_str(),
                 second_input_watermark,
@@ -2143,6 +2245,7 @@ async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() 
     );
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(1, 36_500)
         .await
         .expect("load phase2 input selection after refresh");
@@ -2181,6 +2284,7 @@ async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() 
         .expect("upsert thread");
 
     let initial_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 100, 3600, 64)
         .await
         .expect("claim initial stage1");
@@ -2190,6 +2294,7 @@ async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() 
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 initial_token.as_str(),
@@ -2204,6 +2309,7 @@ async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() 
     );
 
     let phase2_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim phase2");
@@ -2215,12 +2321,14 @@ async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() 
         other => panic!("unexpected phase2 claim outcome: {other:?}"),
     };
     let selected_outputs = runtime
+        .memories()
         .list_stage1_outputs_for_global(1)
         .await
         .expect("list selected outputs");
     assert_eq!(selected_outputs[0].source_updated_at.as_second(), 100);
 
     let refreshed_claim = runtime
+        .memories()
         .try_claim_stage1_job(process_id, owner, 101, 3600, 64)
         .await
         .expect("claim refreshed stage1");
@@ -2230,6 +2338,7 @@ async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() 
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(
                 process_id,
                 refreshed_token.as_str(),
@@ -2245,6 +2354,7 @@ async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() 
 
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(
                 phase2_token.as_str(),
                 input_watermark,
@@ -2267,6 +2377,7 @@ async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() 
     assert_eq!(selected_for_phase2_source_updated_at, None);
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(1, 36_500)
         .await
         .expect("load phase2 input selection");
@@ -2307,6 +2418,7 @@ async fn record_stage1_output_usage_updates_usage_metadata() {
         .expect("upsert thread b");
 
     let claim_a = runtime
+        .memories()
         .try_claim_stage1_job(thread_a, owner, 100, 3600, 64)
         .await
         .expect("claim stage1 a");
@@ -2316,12 +2428,14 @@ async fn record_stage1_output_usage_updates_usage_metadata() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(thread_a, token_a.as_str(), 100, "raw a", "sum a", None)
             .await
             .expect("mark stage1 succeeded a")
     );
 
     let claim_b = runtime
+        .memories()
         .try_claim_stage1_job(thread_b, owner, 101, 3600, 64)
         .await
         .expect("claim stage1 b");
@@ -2331,12 +2445,14 @@ async fn record_stage1_output_usage_updates_usage_metadata() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(thread_b, token_b.as_str(), 101, "raw b", "sum b", None)
             .await
             .expect("mark stage1 succeeded b")
     );
 
     let updated_rows = runtime
+        .memories()
         .record_stage1_output_usage(&[thread_a, thread_a, thread_b, missing])
         .await
         .expect("record stage1 output usage");
@@ -2423,6 +2539,7 @@ async fn get_phase2_input_selection_prioritizes_usage_count_then_recent_usage() 
     ] {
         let source_updated_at = generated_at.as_second();
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, source_updated_at, 3600, 64)
             .await
             .expect("claim stage1");
@@ -2432,6 +2549,7 @@ async fn get_phase2_input_selection_prioritizes_usage_count_then_recent_usage() 
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -2471,6 +2589,7 @@ async fn get_phase2_input_selection_prioritizes_usage_count_then_recent_usage() 
     }
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(3, 30)
         .await
         .expect("load phase2 input selection");
@@ -2534,6 +2653,7 @@ async fn get_phase2_input_selection_excludes_stale_used_memories_but_keeps_fresh
     ] {
         let source_updated_at = generated_at.as_second();
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, source_updated_at, 3600, 64)
             .await
             .expect("claim stage1");
@@ -2543,6 +2663,7 @@ async fn get_phase2_input_selection_excludes_stale_used_memories_but_keeps_fresh
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -2582,6 +2703,7 @@ async fn get_phase2_input_selection_excludes_stale_used_memories_but_keeps_fresh
     }
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(3, 30)
         .await
         .expect("load phase2 input selection");
@@ -2630,6 +2752,7 @@ async fn get_phase2_input_selection_prefers_recent_thread_updates_over_recent_ge
         (newer_thread, 200_i64, "summary-newer"),
     ] {
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, source_updated_at, 3600, 64)
             .await
             .expect("claim stage1");
@@ -2639,6 +2762,7 @@ async fn get_phase2_input_selection_prefers_recent_thread_updates_over_recent_ge
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -2667,6 +2791,7 @@ async fn get_phase2_input_selection_prefers_recent_thread_updates_over_recent_ge
         .expect("update newer generated_at");
 
     let selection = runtime
+        .memories()
         .get_phase2_input_selection(1, 36_500)
         .await
         .expect("load phase2 input selection");
@@ -2716,6 +2841,7 @@ async fn prune_stage1_outputs_for_retention_prunes_stale_unselected_rows_only() 
         (fresh_used, now - 10 * 86400, "fresh-used"),
     ] {
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, source_updated_at, 3600, 64)
             .await
             .expect("claim stage1");
@@ -2725,6 +2851,7 @@ async fn prune_stage1_outputs_for_retention_prunes_stale_unselected_rows_only() 
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -2768,6 +2895,7 @@ async fn prune_stage1_outputs_for_retention_prunes_stale_unselected_rows_only() 
             .expect("count stage1 jobs before prune");
 
     let pruned = runtime
+        .memories()
         .prune_stage1_outputs_for_retention(30, 100)
         .await
         .expect("prune stage1 outputs");
@@ -2827,6 +2955,7 @@ async fn prune_stage1_outputs_for_retention_respects_batch_limit() {
         (thread_c, now - 40 * 86400, "stale-c"),
     ] {
         let claim = runtime
+            .memories()
             .try_claim_stage1_job(process_id, owner, source_updated_at, 3600, 64)
             .await
             .expect("claim stage1");
@@ -2836,6 +2965,7 @@ async fn prune_stage1_outputs_for_retention_respects_batch_limit() {
         };
         assert!(
             runtime
+                .memories()
                 .mark_stage1_job_succeeded(
                     process_id,
                     ownership_token.as_str(),
@@ -2851,6 +2981,7 @@ async fn prune_stage1_outputs_for_retention_respects_batch_limit() {
     }
 
     let pruned = runtime
+        .memories()
         .prune_stage1_outputs_for_retention(30, 2)
         .await
         .expect("prune stage1 outputs with limit");
@@ -2894,6 +3025,7 @@ async fn mark_stage1_job_succeeded_enqueues_global_consolidation() {
         .expect("upsert thread b");
 
     let claim_a = runtime
+        .memories()
         .try_claim_stage1_job(thread_a, owner, 100, 3600, 64)
         .await
         .expect("claim stage1 a");
@@ -2903,6 +3035,7 @@ async fn mark_stage1_job_succeeded_enqueues_global_consolidation() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(thread_a, token_a.as_str(), 100, "raw-a", "summary-a", None,)
             .await
             .expect("mark stage1 succeeded a"),
@@ -2910,6 +3043,7 @@ async fn mark_stage1_job_succeeded_enqueues_global_consolidation() {
     );
 
     let claim_b = runtime
+        .memories()
         .try_claim_stage1_job(thread_b, owner, 101, 3600, 64)
         .await
         .expect("claim stage1 b");
@@ -2919,6 +3053,7 @@ async fn mark_stage1_job_succeeded_enqueues_global_consolidation() {
     };
     assert!(
         runtime
+            .memories()
             .mark_stage1_job_succeeded(thread_b, token_b.as_str(), 101, "raw-b", "summary-b", None,)
             .await
             .expect("mark stage1 succeeded b"),
@@ -2926,6 +3061,7 @@ async fn mark_stage1_job_succeeded_enqueues_global_consolidation() {
     );
 
     let claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3600)
         .await
         .expect("claim global consolidation");
@@ -2948,6 +3084,7 @@ async fn phase2_global_lock_allows_only_one_fresh_runner() {
         .expect("initialize runtime");
 
     runtime
+        .memories()
         .enqueue_global_consolidation(200)
         .await
         .expect("enqueue global consolidation");
@@ -2956,6 +3093,7 @@ async fn phase2_global_lock_allows_only_one_fresh_runner() {
     let owner_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner b");
 
     let running_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner_a, 3600)
         .await
         .expect("claim global lock");
@@ -2965,6 +3103,7 @@ async fn phase2_global_lock_allows_only_one_fresh_runner() {
     );
 
     let second_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner_b, 3600)
         .await
         .expect("claim global lock from second owner");
@@ -2981,6 +3120,7 @@ async fn phase2_global_lock_stale_lease_allows_takeover() {
         .expect("initialize runtime");
 
     runtime
+        .memories()
         .enqueue_global_consolidation(300)
         .await
         .expect("enqueue global consolidation");
@@ -2989,6 +3129,7 @@ async fn phase2_global_lock_stale_lease_allows_takeover() {
     let owner_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner b");
 
     let initial_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner_a, 3600)
         .await
         .expect("claim initial global lock");
@@ -3008,6 +3149,7 @@ async fn phase2_global_lock_stale_lease_allows_takeover() {
         .expect("expire global consolidation lease");
 
     let takeover_claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner_b, 3600)
         .await
         .expect("claim stale global lock");
@@ -3023,6 +3165,7 @@ async fn phase2_global_lock_stale_lease_allows_takeover() {
 
     assert_eq!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(token_a.as_str(), 300, &[])
             .await
             .expect("mark stale owner success result"),
@@ -3031,6 +3174,7 @@ async fn phase2_global_lock_stale_lease_allows_takeover() {
     );
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(token_b.as_str(), 300, &[])
             .await
             .expect("mark takeover owner success"),
@@ -3048,11 +3192,13 @@ async fn phase2_backfilled_inputs_below_last_success_still_become_dirty() {
         .expect("initialize runtime");
 
     runtime
+        .memories()
         .enqueue_global_consolidation(500)
         .await
         .expect("enqueue initial consolidation");
     let owner_a = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner a");
     let claim_a = runtime
+        .memories()
         .try_claim_global_phase2_job(owner_a, 3_600)
         .await
         .expect("claim initial consolidation");
@@ -3068,6 +3214,7 @@ async fn phase2_backfilled_inputs_below_last_success_still_become_dirty() {
     };
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_succeeded(token_a.as_str(), 500, &[])
             .await
             .expect("mark initial phase2 success"),
@@ -3075,12 +3222,14 @@ async fn phase2_backfilled_inputs_below_last_success_still_become_dirty() {
     );
 
     runtime
+        .memories()
         .enqueue_global_consolidation(400)
         .await
         .expect("enqueue backfilled consolidation");
 
     let owner_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner b");
     let claim_b = runtime
+        .memories()
         .try_claim_global_phase2_job(owner_b, 3_600)
         .await
         .expect("claim backfilled consolidation");
@@ -3107,12 +3256,14 @@ async fn phase2_failure_fallback_updates_unowned_running_job() {
         .expect("initialize runtime");
 
     runtime
+        .memories()
         .enqueue_global_consolidation(400)
         .await
         .expect("enqueue global consolidation");
 
     let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner");
     let claim = runtime
+        .memories()
         .try_claim_global_phase2_job(owner, 3_600)
         .await
         .expect("claim global consolidation");
@@ -3132,6 +3283,7 @@ async fn phase2_failure_fallback_updates_unowned_running_job() {
 
     assert_eq!(
         runtime
+            .memories()
             .mark_global_phase2_job_failed(ownership_token.as_str(), "lost", 3_600)
             .await
             .expect("mark phase2 failed with strict ownership"),
@@ -3140,6 +3292,7 @@ async fn phase2_failure_fallback_updates_unowned_running_job() {
     );
     assert!(
         runtime
+            .memories()
             .mark_global_phase2_job_failed_if_unowned(ownership_token.as_str(), "lost", 3_600)
             .await
             .expect("fallback failure update should match unowned running job"),
@@ -3147,6 +3300,7 @@ async fn phase2_failure_fallback_updates_unowned_running_job() {
     );
 
     let claim = runtime
+        .memories()
         .try_claim_global_phase2_job(ProcessId::new(), 3_600)
         .await
         .expect("claim after fallback failure");

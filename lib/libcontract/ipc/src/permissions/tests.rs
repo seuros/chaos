@@ -23,7 +23,7 @@ fn unknown_special_paths_are_ignored_by_legacy_bridge() -> std::io::Result<()> {
         access: FileSystemAccessMode::Write,
     }]);
 
-    let sandbox_policy = policy.to_legacy_sandbox_policy(
+    let sandbox_policy = policy.to_sandbox_policy(
         NetworkSandboxPolicy::Restricted,
         Path::new("/tmp/workspace"),
     )?;

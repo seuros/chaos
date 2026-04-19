@@ -46,6 +46,7 @@ chaos-services = { workspace = true }
 chaos-sysctl = { workspace = true }
 chaos-sh = { workspace = true }
 chaos-selinux = { workspace = true }
+chaos-parole = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-scm = { workspace = true }
 chaos-dtrace = { workspace = true }
@@ -81,6 +82,7 @@ os_info = { workspace = true }
 include_dir = { workspace = true }
 rand = { workspace = true }
 regex-lite = { workspace = true }
+mime_guess = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

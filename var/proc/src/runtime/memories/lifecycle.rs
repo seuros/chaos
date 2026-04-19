@@ -11,7 +11,7 @@ impl StateRuntime {
     /// This removes every `stage1_outputs` row and all `jobs` rows for the
     /// stage-1 (`memory_stage1`) and phase-2 (`memory_consolidate_global`)
     /// memory pipelines.
-    pub async fn clear_memory_data(&self) -> anyhow::Result<()> {
+    pub(crate) async fn clear_memory_data(&self) -> anyhow::Result<()> {
         self.clear_memory_data_inner(/*disable_existing_threads*/ false)
             .await
     }
@@ -21,7 +21,7 @@ impl StateRuntime {
     /// In addition to clearing persisted stage-1 outputs and memory pipeline
     /// jobs, this disables memory generation for all existing processes so
     /// historical rollouts are not immediately picked up again.
-    pub async fn reset_memory_data_for_fresh_start(&self) -> anyhow::Result<()> {
+    pub(crate) async fn reset_memory_data_for_fresh_start(&self) -> anyhow::Result<()> {
         self.clear_memory_data_inner(/*disable_existing_threads*/ true)
             .await
     }
@@ -69,7 +69,7 @@ WHERE memory_mode = 'enabled'
 
     /// Marks a thread as polluted and enqueues phase-2 forgetting when the
     /// thread participated in the last successful phase-2 baseline.
-    pub async fn mark_process_memory_mode_polluted(
+    pub(crate) async fn mark_process_memory_mode_polluted(
         &self,
         process_id: ProcessId,
     ) -> anyhow::Result<bool> {

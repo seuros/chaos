@@ -3,27 +3,14 @@
 //! This module provides a `tracing_subscriber::Layer` that captures events and
 //! inserts them into the runtime `logs` table. The writer runs in a background
 //! task and batches inserts to keep logging overhead low.
-//!
-//! ## Usage
-//!
-//! ```no_run
-//! use chaos_proc::log_db;
-//! use tracing_subscriber::prelude::*;
-//!
-//! # async fn example(runtime_db: std::sync::Arc<chaos_proc::StateRuntime>) {
-//! let layer = log_db::start(runtime_db);
-//! let _ = tracing_subscriber::registry()
-//!     .with(layer)
-//!     .try_init();
-//! # }
-//! ```
 
+use chaos_proc::LogEntry;
+use chaos_proc::StateRuntime;
 use jiff::ToSpan;
 use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::Event;
@@ -36,9 +23,6 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::registry::LookupSpan;
 use uuid::Uuid;
 
-use crate::LogEntry;
-use crate::StateRuntime;
-
 const LOG_QUEUE_CAPACITY: usize = 512;
 const LOG_BATCH_SIZE: usize = 128;
 const LOG_FLUSH_INTERVAL: Duration = Duration::from_secs(2);
@@ -49,7 +33,7 @@ pub struct LogDbLayer {
     process_uuid: String,
 }
 
-pub fn start(state_db: std::sync::Arc<StateRuntime>) -> LogDbLayer {
+pub fn start_runtime_db_layer(state_db: std::sync::Arc<StateRuntime>) -> LogDbLayer {
     let process_uuid = current_process_log_uuid().to_string();
     let (sender, receiver) = mpsc::channel(LOG_QUEUE_CAPACITY);
     tokio::spawn(run_inserter(std::sync::Arc::clone(&state_db), receiver));
@@ -335,18 +319,16 @@ impl Visit for MessageVisitor {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::io;
     use std::sync::Arc;
     use std::sync::Mutex;
     use std::time::Duration;
-
     use tokio::time::Instant;
     use tracing_subscriber::filter::Targets;
     use tracing_subscriber::fmt::writer::MakeWriter;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-
-    use super::*;
 
     #[derive(Clone, Default)]
     struct SharedWriter {
@@ -407,7 +389,7 @@ mod tests {
                     .with_filter(Targets::new().with_default(tracing::Level::TRACE)),
             )
             .with(
-                start(runtime.clone())
+                start_runtime_db_layer(runtime.clone())
                     .with_filter(Targets::new().with_default(tracing::Level::TRACE)),
             );
         let guard = subscriber.set_default();
@@ -420,8 +402,6 @@ mod tests {
 
         drop(guard);
 
-        // SQLite exports now include timestamps, while this test writer has
-        // `.without_time()`. Compare bodies after stripping the SQLite prefix.
         let feedback_logs = writer
             .snapshot()
             .replace("feedback-thread{process_id=\"thread-1\"}: ", "");
@@ -466,7 +446,7 @@ mod tests {
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
-        let layer = start(runtime.clone());
+        let layer = start_runtime_db_layer(runtime.clone());
 
         let guard = tracing_subscriber::registry()
             .with(
@@ -482,7 +462,7 @@ mod tests {
         drop(guard);
 
         let after_flush = runtime
-            .query_logs(&crate::LogQuery::default())
+            .query_logs(&chaos_proc::LogQuery::default())
             .await
             .expect("query logs after flush");
         assert_eq!(after_flush.len(), 1);

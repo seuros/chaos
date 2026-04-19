@@ -7,6 +7,7 @@ use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::ModelInfo;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_parrot::sanitize::AdditionalProperties;
 use chaos_parrot::sanitize::JsonSchema;
 use chaos_parrot::sanitize::ResponsesApiTool;
@@ -433,7 +434,7 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&config, None, None, &[]).build();
@@ -558,7 +559,7 @@ fn arsenal_tools_keep_closed_object_schemas() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -595,7 +596,7 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -640,7 +641,7 @@ fn test_build_specs_collab_tools_enabled() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -648,11 +649,11 @@ fn test_build_specs_collab_tools_enabled() {
         &tools,
         &["spawn_agent", "send_input", "wait_agent", "close_agent"],
     );
-    assert_lacks_tool_name(&tools, "spawn_agents_on_csv");
+    assert_lacks_tool_name(&tools, "spawn_minions_on_csv");
 }
 
 #[test]
-fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
+fn test_build_specs_enable_fanout_enables_minion_jobs_and_collab_tools() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
@@ -665,7 +666,7 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -676,7 +677,7 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
             "send_input",
             "wait_agent",
             "close_agent",
-            "spawn_agents_on_csv",
+            "spawn_minions_on_csv",
         ],
     );
 }
@@ -695,7 +696,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -718,7 +719,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
 }
 
 #[test]
-fn test_build_specs_agent_job_worker_tools_enabled() {
+fn test_build_specs_minion_job_worker_tools_enabled() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
@@ -731,9 +732,9 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::SubAgent(SubAgentSource::Other(
-            "agent_job:test".to_string(),
+            "minion_job:test".to_string(),
         )),
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -745,8 +746,8 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
             "resume_agent",
             "wait_agent",
             "close_agent",
-            "spawn_agents_on_csv",
-            "report_agent_job_result",
+            "spawn_minions_on_csv",
+            "report_minion_job_result",
         ],
     );
     assert_lacks_tool_name(&tools, "request_user_input");
@@ -764,7 +765,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -789,7 +790,7 @@ fn request_permissions_requires_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -804,7 +805,7 @@ fn request_permissions_requires_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -828,7 +829,7 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -851,7 +852,7 @@ fn assert_model_tools(
         features,
         web_search_mode,
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let router = ToolRouter::from_config(
@@ -1011,7 +1012,7 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1042,7 +1043,7 @@ fn web_search_mode_live_sets_external_web_access_true() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1086,7 +1087,7 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     })
     .with_web_search_config(Some(web_search_config.clone()));
@@ -1124,7 +1125,7 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1159,7 +1160,7 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1185,7 +1186,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
@@ -1214,7 +1215,7 @@ fn spawn_agent_tool_description_uses_current_role_names() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1297,7 +1298,7 @@ fn test_build_specs_default_shell_present() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
@@ -1324,7 +1325,7 @@ fn test_parallel_support_flags() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1354,7 +1355,7 @@ fn test_test_model_info_includes_sync_tool() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1390,7 +1391,7 @@ fn test_build_specs_mcp_tools_converted() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(
@@ -1483,7 +1484,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1532,7 +1533,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1592,7 +1593,7 @@ fn test_mcp_tool_integer_normalized_to_number() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1648,7 +1649,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1707,7 +1708,7 @@ fn test_mcp_tool_anyof_defaults_to_string() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1878,7 +1879,7 @@ fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(

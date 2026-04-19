@@ -373,8 +373,8 @@ exclude_slash_tmp = true
         let sandbox_policy = config.permissions.sandbox_policy.get();
         assert_eq!(
             config.permissions.file_system_sandbox_policy,
-            FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, cwd.path()),
-            "case `{name}` should preserve filesystem semantics from legacy config"
+            FileSystemSandboxPolicy::from_sandbox_policy(sandbox_policy, cwd.path()),
+            "case `{name}` should preserve filesystem semantics from sandbox config"
         );
         assert_eq!(
             config.permissions.network_sandbox_policy,
@@ -385,7 +385,7 @@ exclude_slash_tmp = true
             config
                 .permissions
                 .file_system_sandbox_policy
-                .to_legacy_sandbox_policy(config.permissions.network_sandbox_policy, cwd.path())
+                .to_sandbox_policy(config.permissions.network_sandbox_policy, cwd.path())
                 .unwrap_or_else(|err| panic!("case `{name}` should round-trip: {err}")),
             sandbox_policy.clone(),
             "case `{name}` should round-trip through split policies without drift"
@@ -612,8 +612,10 @@ fn web_search_mode_disabled_from_config() {
 #[test]
 fn web_search_mode_for_turn_uses_preference_for_read_only() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Cached);
-    let mode =
-        resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::new_read_only_policy());
+    let mode = resolve_web_search_mode_for_turn(
+        &web_search_mode,
+        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_read_only_policy()),
+    );
 
     assert_eq!(mode, WebSearchMode::Cached);
 }
@@ -621,7 +623,10 @@ fn web_search_mode_for_turn_uses_preference_for_read_only() {
 #[test]
 fn web_search_mode_for_turn_prefers_live_for_root_access() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Cached);
-    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::RootAccess);
+    let mode = resolve_web_search_mode_for_turn(
+        &web_search_mode,
+        &FileSystemSandboxPolicy::unrestricted(),
+    );
 
     assert_eq!(mode, WebSearchMode::Live);
 }
@@ -629,7 +634,10 @@ fn web_search_mode_for_turn_prefers_live_for_root_access() {
 #[test]
 fn web_search_mode_for_turn_respects_disabled_for_root_access() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Disabled);
-    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::RootAccess);
+    let mode = resolve_web_search_mode_for_turn(
+        &web_search_mode,
+        &FileSystemSandboxPolicy::unrestricted(),
+    );
 
     assert_eq!(mode, WebSearchMode::Disabled);
 }
@@ -649,7 +657,10 @@ fn web_search_mode_for_turn_falls_back_when_live_is_disallowed() -> anyhow::Resu
             })
         }
     })?;
-    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::RootAccess);
+    let mode = resolve_web_search_mode_for_turn(
+        &web_search_mode,
+        &FileSystemSandboxPolicy::unrestricted(),
+    );
 
     assert_eq!(mode, WebSearchMode::Cached);
     Ok(())
@@ -892,7 +903,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
+        minion_job_max_runtime_seconds: DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
         chaos_home: fixture.chaos_home(),
         sqlite_home: fixture.chaos_home(),
         log_dir: fixture.chaos_home().join("log"),

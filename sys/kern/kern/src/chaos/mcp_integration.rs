@@ -404,7 +404,8 @@ impl Session {
         let config = self.get_config().await;
         let auth_statuses = compute_auth_statuses(mcp_servers.iter(), store_mode).await;
         let sandbox_state = SandboxState {
-            sandbox_policy: turn_context.sandbox_policy.get().clone(),
+            file_system_sandbox_policy: turn_context.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: turn_context.network_sandbox_policy,
             alcatraz_macos_exe: turn_context.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),

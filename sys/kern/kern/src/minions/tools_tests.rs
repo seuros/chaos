@@ -368,14 +368,11 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         turn.config.permissions.sandbox_policy.get().clone(),
     );
     let expected_file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(&expected_sandbox, &turn.cwd);
+        FileSystemSandboxPolicy::from_sandbox_policy(&expected_sandbox, &turn.cwd);
     let expected_network_sandbox_policy = NetworkSandboxPolicy::from(&expected_sandbox);
     turn.approval_policy
         .set(ApprovalPolicy::Interactive)
         .expect("approval policy should be set");
-    turn.sandbox_policy
-        .set(expected_sandbox.clone())
-        .expect("sandbox policy should be set");
     turn.file_system_sandbox_policy = expected_file_system_sandbox_policy.clone();
     turn.network_sandbox_policy = expected_network_sandbox_policy;
     assert_ne!(
@@ -414,7 +411,14 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         .expect("spawned agent thread should exist")
         .config_snapshot()
         .await;
-    assert_eq!(snapshot.sandbox_policy, expected_sandbox);
+    assert_eq!(
+        snapshot.file_system_sandbox_policy,
+        expected_file_system_sandbox_policy
+    );
+    assert_eq!(
+        snapshot.network_sandbox_policy,
+        expected_network_sandbox_policy
+    );
     assert_eq!(snapshot.approval_policy, ApprovalPolicy::Interactive);
     let child_thread = manager
         .get_process(agent_id)
@@ -1029,11 +1033,8 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         turn.config.permissions.sandbox_policy.get().clone(),
     );
     let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(&sandbox_policy, &turn.cwd);
+        FileSystemSandboxPolicy::from_sandbox_policy(&sandbox_policy, &turn.cwd);
     let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
-    turn.sandbox_policy
-        .set(sandbox_policy)
-        .expect("sandbox policy set");
     turn.file_system_sandbox_policy = file_system_sandbox_policy.clone();
     turn.network_sandbox_policy = network_sandbox_policy;
     turn.approval_policy
@@ -1060,7 +1061,11 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     expected
         .permissions
         .sandbox_policy
-        .set(turn.sandbox_policy.get().clone())
+        .set(
+            turn.file_system_sandbox_policy
+                .to_sandbox_policy(turn.network_sandbox_policy, &turn.cwd)
+                .expect("sandbox policy projection"),
+        )
         .expect("sandbox policy set");
     expected.permissions.file_system_sandbox_policy = file_system_sandbox_policy;
     expected.permissions.network_sandbox_policy = network_sandbox_policy;
@@ -1114,7 +1119,11 @@ async fn build_agent_resume_config_clears_base_instructions() {
     expected
         .permissions
         .sandbox_policy
-        .set(turn.sandbox_policy.get().clone())
+        .set(
+            turn.file_system_sandbox_policy
+                .to_sandbox_policy(turn.network_sandbox_policy, &turn.cwd)
+                .expect("sandbox policy projection"),
+        )
         .expect("sandbox policy set");
     assert_eq!(config, expected);
 }

@@ -1,4 +1,5 @@
 use super::*;
+use chaos_ipc::protocol::SandboxPolicy;
 
 use serde_json::Value;
 use tempfile::TempDir;
@@ -64,14 +65,17 @@ async fn build_turn_metadata_header_includes_has_changes_for_clean_repo() {
 fn turn_metadata_state_uses_platform_sandbox_tag() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().to_path_buf();
-    let sandbox_policy = SandboxPolicy::new_read_only_policy();
+    let file_system_sandbox_policy = chaos_ipc::permissions::FileSystemSandboxPolicy::from(
+        &SandboxPolicy::new_read_only_policy(),
+    );
 
-    let state = TurnMetadataState::new("turn-a".to_string(), cwd, &sandbox_policy);
+    let state = TurnMetadataState::new("turn-a".to_string(), cwd, &file_system_sandbox_policy);
 
     let header = state.current_header_value().expect("header");
     let json: Value = serde_json::from_str(&header).expect("json");
     let sandbox_name = json.get("sandbox").and_then(Value::as_str);
 
-    let expected_sandbox = sandbox_tag(&sandbox_policy);
+    let expected_sandbox =
+        crate::sandbox_tags::sandbox_tag_for_file_system_policy(&file_system_sandbox_policy);
     assert_eq!(sandbox_name, Some(expected_sandbox));
 }

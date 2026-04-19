@@ -2,7 +2,7 @@ use super::StateRuntime;
 use crate::model::backfill_machine::BackfillWorkflow;
 
 impl StateRuntime {
-    pub async fn get_backfill_state(&self) -> anyhow::Result<crate::BackfillState> {
+    pub(crate) async fn get_backfill_state(&self) -> anyhow::Result<crate::BackfillState> {
         self.ensure_backfill_state_row().await?;
         let row = sqlx::query(
             r#"
@@ -21,7 +21,7 @@ WHERE id = 1
     /// Returns `true` when this runtime claimed the backfill worker slot.
     /// Returns `false` if backfill is already complete or currently owned by a
     /// non-expired worker.
-    pub async fn try_claim_backfill(&self, lease_seconds: i64) -> anyhow::Result<bool> {
+    pub(crate) async fn try_claim_backfill(&self, lease_seconds: i64) -> anyhow::Result<bool> {
         self.ensure_backfill_state_row().await?;
         let now = jiff::Timestamp::now().as_second();
         let lease_cutoff = now.saturating_sub(lease_seconds.max(0));
@@ -45,9 +45,9 @@ WHERE id = 1
     }
 
     /// Mark persisted runtime metadata backfill as running.
-    pub async fn mark_backfill_running(&self) -> anyhow::Result<()> {
+    pub(crate) async fn mark_backfill_running(&self) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
-        let state = self.get_backfill_state().await?;
+        let state = self.backfill().get_state().await?;
         if state.status == crate::BackfillStatus::Running {
             return Ok(());
         }
@@ -74,7 +74,7 @@ WHERE id = 1 AND status = ?
     }
 
     /// Persist runtime metadata backfill progress.
-    pub async fn checkpoint_backfill(&self, watermark: &str) -> anyhow::Result<()> {
+    pub(crate) async fn checkpoint_backfill(&self, watermark: &str) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
         sqlx::query(
             r#"
@@ -92,9 +92,12 @@ WHERE id = 1
     }
 
     /// Mark runtime metadata backfill as complete.
-    pub async fn mark_backfill_complete(&self, last_watermark: Option<&str>) -> anyhow::Result<()> {
+    pub(crate) async fn mark_backfill_complete(
+        &self,
+        last_watermark: Option<&str>,
+    ) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
-        let state = self.get_backfill_state().await?;
+        let state = self.backfill().get_state().await?;
         let mut wf = BackfillWorkflow::from_status(state.status);
         anyhow::ensure!(
             wf.complete(),
@@ -176,7 +179,8 @@ mod tests {
             .expect("initialize runtime");
 
         let initial = runtime
-            .get_backfill_state()
+            .backfill()
+            .get_state()
             .await
             .expect("get initial backfill state");
         assert_eq!(initial.status, crate::BackfillStatus::Pending);
@@ -184,16 +188,19 @@ mod tests {
         assert_eq!(initial.last_success_at, None);
 
         runtime
-            .mark_backfill_running()
+            .backfill()
+            .mark_running()
             .await
             .expect("mark backfill running");
         runtime
-            .checkpoint_backfill("cursor-a")
+            .backfill()
+            .checkpoint("cursor-a")
             .await
             .expect("checkpoint backfill");
 
         let running = runtime
-            .get_backfill_state()
+            .backfill()
+            .get_state()
             .await
             .expect("get running backfill state");
         assert_eq!(running.status, crate::BackfillStatus::Running);
@@ -201,11 +208,13 @@ mod tests {
         assert_eq!(running.last_success_at, None);
 
         runtime
-            .mark_backfill_complete(Some("cursor-b"))
+            .backfill()
+            .mark_complete(Some("cursor-b"))
             .await
             .expect("mark backfill complete");
         let completed = runtime
-            .get_backfill_state()
+            .backfill()
+            .get_state()
             .await
             .expect("get completed backfill state");
         assert_eq!(completed.status, crate::BackfillStatus::Complete);
@@ -223,13 +232,15 @@ mod tests {
             .expect("initialize runtime");
 
         let claimed = runtime
-            .try_claim_backfill(3600)
+            .backfill()
+            .try_claim(3600)
             .await
             .expect("initial backfill claim");
         assert_eq!(claimed, true);
 
         let duplicate_claim = runtime
-            .try_claim_backfill(3600)
+            .backfill()
+            .try_claim(3600)
             .await
             .expect("duplicate backfill claim");
         assert_eq!(duplicate_claim, false);
@@ -249,17 +260,20 @@ WHERE id = 1
         .expect("force stale backfill lease");
 
         let stale_claim = runtime
-            .try_claim_backfill(10)
+            .backfill()
+            .try_claim(10)
             .await
             .expect("stale backfill claim");
         assert_eq!(stale_claim, true);
 
         runtime
-            .mark_backfill_complete(None)
+            .backfill()
+            .mark_complete(None)
             .await
             .expect("mark complete");
         let claim_after_complete = runtime
-            .try_claim_backfill(3600)
+            .backfill()
+            .try_claim(3600)
             .await
             .expect("claim after complete");
         assert_eq!(claim_after_complete, false);
@@ -275,18 +289,21 @@ WHERE id = 1
             .expect("initialize runtime");
 
         let claimed = runtime
-            .try_claim_backfill(3600)
+            .backfill()
+            .try_claim(3600)
             .await
             .expect("claim backfill");
         assert_eq!(claimed, true);
 
         runtime
-            .mark_backfill_running()
+            .backfill()
+            .mark_running()
             .await
             .expect("mark running after claim");
 
         let state = runtime
-            .get_backfill_state()
+            .backfill()
+            .get_state()
             .await
             .expect("get backfill state after claim");
         assert_eq!(state.status, crate::BackfillStatus::Running);

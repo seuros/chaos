@@ -33,12 +33,12 @@ use chaos_kern::path_utils;
 use chaos_kern::runtime_db::get_runtime_db;
 use chaos_kern::terminal::Multiplexer;
 use chaos_proc::StateRuntime;
-use chaos_proc::log_db;
 use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_snitch::BoxedLogLayer;
 use chaos_snitch::open_debug_log_file_layer;
 use chaos_snitch::open_log_file_layer;
+use chaos_snitch::runtime_db;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;
 use cwd_prompt::CwdSelection;
@@ -384,7 +384,7 @@ pub async fn run_main(
     };
     let log_db_layer = log_state_db
         .as_ref()
-        .map(|db| log_db::start(db.clone()).with_filter(env_filter()));
+        .map(|db| runtime_db::start_runtime_db_layer(db.clone()).with_filter(env_filter()));
 
     let _ = tracing_subscriber::registry()
         .with(debug_file_layer)

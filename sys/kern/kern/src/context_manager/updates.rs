@@ -34,14 +34,16 @@ fn build_permissions_update_item(
     exec_policy: &Policy,
 ) -> Option<DeveloperInstructions> {
     let prev = previous?;
-    if prev.sandbox_policy == *next.sandbox_policy.get()
+    if prev.file_system_sandbox_policy == next.file_system_sandbox_policy
+        && prev.network_sandbox_policy == next.network_sandbox_policy
         && prev.approval_policy == next.approval_policy.value()
     {
         return None;
     }
 
-    Some(DeveloperInstructions::from_policy(
-        next.sandbox_policy.get(),
+    Some(crate::developer_instructions::from_policies(
+        &next.file_system_sandbox_policy,
+        next.network_sandbox_policy,
         next.approval_policy.value(),
         exec_policy,
         &next.cwd,

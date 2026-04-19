@@ -2,6 +2,7 @@ use super::*;
 use crate::sandboxing::SandboxPermissions;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::NetworkAccess;
+use chaos_ipc::protocol::SandboxPolicy;
 use pretty_assertions::assert_eq;
 
 #[test]

@@ -21,13 +21,13 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
 
-struct AgentJobsResponder {
+struct MinionJobsResponder {
     spawn_args_json: String,
     seen_main: AtomicBool,
     call_counter: AtomicUsize,
 }
 
-impl AgentJobsResponder {
+impl MinionJobsResponder {
     fn new(spawn_args_json: String) -> Self {
         Self {
             spawn_args_json,
@@ -80,7 +80,7 @@ impl Respond for StopAfterFirstResponder {
             });
             return sse_response(sse(vec![
                 ev_response_created("resp-worker"),
-                ev_function_call(&call_id, "report_agent_job_result", &args_json),
+                ev_function_call(&call_id, "report_minion_job_result", &args_json),
                 ev_completed("resp-worker"),
             ]));
         }
@@ -88,7 +88,7 @@ impl Respond for StopAfterFirstResponder {
         if !self.seen_main.swap(true, Ordering::SeqCst) {
             return sse_response(sse(vec![
                 ev_response_created("resp-main"),
-                ev_function_call("call-spawn", "spawn_agents_on_csv", &self.spawn_args_json),
+                ev_function_call("call-spawn", "spawn_minions_on_csv", &self.spawn_args_json),
                 ev_completed("resp-main"),
             ]));
         }
@@ -100,7 +100,7 @@ impl Respond for StopAfterFirstResponder {
     }
 }
 
-impl Respond for AgentJobsResponder {
+impl Respond for MinionJobsResponder {
     fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
         let body_bytes = decode_body_bytes(request);
         let body: Value = serde_json::from_slice(&body_bytes).unwrap_or(Value::Null);
@@ -127,7 +127,7 @@ impl Respond for AgentJobsResponder {
             });
             return sse_response(sse(vec![
                 ev_response_created("resp-worker"),
-                ev_function_call(&call_id, "report_agent_job_result", &args_json),
+                ev_function_call(&call_id, "report_minion_job_result", &args_json),
                 ev_completed("resp-worker"),
             ]));
         }
@@ -135,7 +135,7 @@ impl Respond for AgentJobsResponder {
         if !self.seen_main.swap(true, Ordering::SeqCst) {
             return sse_response(sse(vec![
                 ev_response_created("resp-main"),
-                ev_function_call("call-spawn", "spawn_agents_on_csv", &self.spawn_args_json),
+                ev_function_call("call-spawn", "spawn_minions_on_csv", &self.spawn_args_json),
                 ev_completed("resp-main"),
             ]));
         }
@@ -183,7 +183,7 @@ fn extract_job_and_item(body: &Value) -> Option<(String, String)> {
         combined.push('\n');
         combined.push_str(instructions);
     }
-    if !combined.contains("You are processing one item for a generic agent job.") {
+    if !combined.contains("You are processing one item for a generic minion job.") {
         return None;
     }
     let job_id = Regex::new(r"Job ID:\s*([^\n]+)")
@@ -219,7 +219,7 @@ fn parse_simple_csv_line(line: &str) -> Vec<String> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
+async fn report_minion_job_result_rejects_wrong_thread() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_chaos().with_config(|config| {
         config
@@ -229,8 +229,8 @@ async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
     });
     let test = builder.build(&server).await?;
 
-    let input_path = test.cwd_path().join("agent_jobs_wrong_thread.csv");
-    let output_path = test.cwd_path().join("agent_jobs_wrong_process_out.csv");
+    let input_path = test.cwd_path().join("minion_jobs_wrong_thread.csv");
+    let output_path = test.cwd_path().join("minion_jobs_wrong_process_out.csv");
     fs::write(&input_path, "path\nfile-1\n")?;
 
     let args = json!({
@@ -240,7 +240,7 @@ async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
     });
     let args_json = serde_json::to_string(&args)?;
 
-    let responder = AgentJobsResponder::new(args_json);
+    let responder = MinionJobsResponder::new(args_json);
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
         .respond_with(responder)
@@ -262,14 +262,16 @@ async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
                 .cloned()
         })
         .expect("job_id from csv");
-    let job = db.get_agent_job(job_id.as_str()).await?.expect("job");
+    let job = db.minion_jobs().get(job_id.as_str()).await?.expect("job");
     let items = db
-        .list_agent_job_items(job.id.as_str(), None, Some(10))
+        .minion_jobs()
+        .list_items(job.id.as_str(), None, Some(10))
         .await?;
     let item = items.first().expect("item");
     let wrong_process_id = "00000000-0000-0000-0000-000000000000";
     let accepted = db
-        .report_agent_job_item_result(
+        .minion_jobs()
+        .report_item_result(
             job.id.as_str(),
             item.item_id.as_str(),
             wrong_process_id,
@@ -281,7 +283,7 @@ async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn spawn_agents_on_csv_runs_and_exports() -> Result<()> {
+async fn spawn_minions_on_csv_runs_and_exports() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_chaos().with_config(|config| {
         config
@@ -291,8 +293,8 @@ async fn spawn_agents_on_csv_runs_and_exports() -> Result<()> {
     });
     let test = builder.build(&server).await?;
 
-    let input_path = test.cwd_path().join("agent_jobs_input.csv");
-    let output_path = test.cwd_path().join("agent_jobs_output.csv");
+    let input_path = test.cwd_path().join("minion_jobs_input.csv");
+    let output_path = test.cwd_path().join("minion_jobs_output.csv");
     fs::write(&input_path, "path,area\nfile-1,test\nfile-2,test\n")?;
 
     let args = json!({
@@ -302,7 +304,7 @@ async fn spawn_agents_on_csv_runs_and_exports() -> Result<()> {
     });
     let args_json = serde_json::to_string(&args)?;
 
-    let responder = AgentJobsResponder::new(args_json);
+    let responder = MinionJobsResponder::new(args_json);
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
         .respond_with(responder)
@@ -319,7 +321,7 @@ async fn spawn_agents_on_csv_runs_and_exports() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn spawn_agents_on_csv_dedupes_item_ids() -> Result<()> {
+async fn spawn_minions_on_csv_dedupes_item_ids() -> Result<()> {
     let server = start_mock_server().await;
 
     let mut builder = test_chaos().with_config(|config| {
@@ -330,8 +332,8 @@ async fn spawn_agents_on_csv_dedupes_item_ids() -> Result<()> {
     });
     let test = builder.build(&server).await?;
 
-    let input_path = test.cwd_path().join("agent_jobs_dupe.csv");
-    let output_path = test.cwd_path().join("agent_jobs_dupe_out.csv");
+    let input_path = test.cwd_path().join("minion_jobs_dupe.csv");
+    let output_path = test.cwd_path().join("minion_jobs_dupe_out.csv");
     fs::write(&input_path, "id,path\nfoo,alpha\nfoo,beta\n")?;
 
     let args = json!({
@@ -342,7 +344,7 @@ async fn spawn_agents_on_csv_dedupes_item_ids() -> Result<()> {
     });
     let args_json = serde_json::to_string(&args)?;
 
-    let responder = AgentJobsResponder::new(args_json);
+    let responder = MinionJobsResponder::new(args_json);
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
         .respond_with(responder)
@@ -374,7 +376,7 @@ async fn spawn_agents_on_csv_dedupes_item_ids() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn spawn_agents_on_csv_stop_halts_future_items() -> Result<()> {
+async fn spawn_minions_on_csv_stop_halts_future_items() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_chaos().with_config(|config| {
         config
@@ -384,8 +386,8 @@ async fn spawn_agents_on_csv_stop_halts_future_items() -> Result<()> {
     });
     let test = builder.build(&server).await?;
 
-    let input_path = test.cwd_path().join("agent_jobs_stop.csv");
-    let output_path = test.cwd_path().join("agent_jobs_stop_out.csv");
+    let input_path = test.cwd_path().join("minion_jobs_stop.csv");
+    let output_path = test.cwd_path().join("minion_jobs_stop_out.csv");
     fs::write(&input_path, "path\nfile-1\nfile-2\nfile-3\n")?;
 
     let args = json!({
@@ -419,9 +421,9 @@ async fn spawn_agents_on_csv_stop_halts_future_items() -> Result<()> {
         })
         .expect("job_id from csv");
     let db = test.process.runtime_db().expect("runtime db");
-    let job = db.get_agent_job(job_id.as_str()).await?.expect("job");
-    assert_eq!(job.status, chaos_proc::AgentJobStatus::Cancelled);
-    let progress = db.get_agent_job_progress(job_id.as_str()).await?;
+    let job = db.minion_jobs().get(job_id.as_str()).await?.expect("job");
+    assert_eq!(job.status, chaos_proc::MinionJobStatus::Cancelled);
+    let progress = db.minion_jobs().progress(job_id.as_str()).await?;
     assert_eq!(progress.total_items, 3);
     assert_eq!(progress.completed_items, 1);
     assert_eq!(progress.failed_items, 0);

@@ -9,6 +9,8 @@ use alcatraz_base::sandbox_policy::{EffectiveSandboxPolicies, resolve_sandbox_po
 use chaos_ipc::protocol::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_parole::sandbox::has_full_disk_write_access;
+use chaos_parole::sandbox::needs_direct_runtime_enforcement;
 use url::Url;
 
 const MANAGED_PROXY_ENV_ERROR: &str = "managed proxy mode requires proxy environment variables";
@@ -134,15 +136,17 @@ pub fn run_main() -> ! {
         std::process::exit(1);
     }
 
-    if file_system_sandbox_policy
-        .needs_direct_runtime_enforcement(network_sandbox_policy, sandbox_policy_cwd.as_path())
-    {
+    if needs_direct_runtime_enforcement(
+        &file_system_sandbox_policy,
+        network_sandbox_policy,
+        sandbox_policy_cwd.as_path(),
+    ) {
         eprintln!("alcatraz-linux: {UNSUPPORTED_SPLIT_POLICY_ERROR}");
         std::process::exit(1);
     }
 
     let apply_landlock_fs =
-        !file_system_sandbox_policy.has_full_disk_write_access() || allow_network_for_proxy;
+        !has_full_disk_write_access(&file_system_sandbox_policy) || allow_network_for_proxy;
 
     if let Err(e) = apply_sandbox_policy_to_current_thread(
         &sandbox_policy,

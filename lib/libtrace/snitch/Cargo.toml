@@ -9,6 +9,10 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+chaos-proc = { workspace = true }
+jiff = { workspace = true }
+tokio = { workspace = true, features = ["fs", "rt", "sync", "time"] }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+uuid = { workspace = true }

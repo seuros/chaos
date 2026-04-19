@@ -13,14 +13,11 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-chaos-selinux = { workspace = true }
 chaos-scm = { workspace = true }
 chaos-realpath = { workspace = true }
-chaos-pixbuf = { workspace = true }
 icu_decimal = { workspace = true }
 icu_locale_core = { workspace = true }
 icu_provider = { workspace = true, features = ["sync"] }
-mime_guess = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -38,6 +35,7 @@ uuid = { workspace = true, features = ["serde", "v7", "v4"] }
 
 [dev-dependencies]
 anyhow = { workspace = true }
+chaos-selinux = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 

@@ -27,6 +27,7 @@ use crate::compact::InitialContextInjection;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::parse_turn_item;
+use crate::prompt_images::response_input_item_from_user_input;
 use crate::stream_events_utils::last_assistant_message_from_item;
 use crate::tools::ToolRouter;
 use crate::tools::router::ToolRouterParams;
@@ -125,7 +126,8 @@ pub(crate) async fn run_turn(
     } else {
         HashMap::new()
     };
-    let initial_input_for_turn: ResponseInputItem = ResponseInputItem::from(input.clone());
+    let initial_input_for_turn: ResponseInputItem =
+        response_input_item_from_user_input(input.clone());
     let response_item: ResponseItem = initial_input_for_turn.clone().into();
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
         .await;

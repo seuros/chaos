@@ -13,7 +13,6 @@ use crate::exec::StdoutStream;
 use crate::exec::execute_exec_request;
 use crate::landlock::allow_network_for_proxy;
 use crate::landlock::create_linux_sandbox_command_args_for_policies;
-use crate::protocol::SandboxPolicy;
 #[cfg(target_os = "macos")]
 use crate::spawn::CHAOS_SANDBOX_ENV_VAR;
 use crate::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
@@ -23,6 +22,7 @@ use alcatraz_macos::permissions::merge_seatbelt_profile_extensions;
 #[cfg(target_os = "macos")]
 use alcatraz_macos::seatbelt::create_seatbelt_command_args_for_policies_with_extensions;
 use chaos_ipc::models::FileSystemPermissions;
+#[cfg(target_os = "macos")]
 use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 use chaos_ipc::models::NetworkPermissions;
 use chaos_ipc::models::PermissionProfile;
@@ -33,8 +33,7 @@ use chaos_ipc::permissions::FileSystemSandboxEntry;
 use chaos_ipc::permissions::FileSystemSandboxKind;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_ipc::protocol::NetworkAccess;
-use chaos_ipc::protocol::ReadOnlyAccess;
+use chaos_parole::sandbox::has_full_disk_write_access;
 use chaos_pf::NetworkProxy;
 use chaos_realpath::AbsolutePathBuf;
 use std::collections::HashMap;
@@ -64,7 +63,6 @@ pub struct ExecRequest {
     pub expiration: ExecExpiration,
     pub sandbox: SandboxType,
     pub sandbox_permissions: SandboxPermissions,
-    pub sandbox_policy: SandboxPolicy,
     pub file_system_sandbox_policy: FileSystemSandboxPolicy,
     pub network_sandbox_policy: NetworkSandboxPolicy,
     pub justification: Option<String>,
@@ -76,7 +74,6 @@ pub struct ExecRequest {
 /// This keeps call sites self-documenting when several fields are optional.
 pub(crate) struct SandboxTransformRequest<'a> {
     pub spec: CommandSpec,
-    pub policy: &'a SandboxPolicy,
     pub file_system_policy: &'a FileSystemSandboxPolicy,
     pub network_policy: NetworkSandboxPolicy,
     pub sandbox: SandboxType,
@@ -114,38 +111,8 @@ pub(crate) enum SandboxTransformError {
     #[cfg(not(target_os = "macos"))]
     #[error("seatbelt sandbox is only available on macOS")]
     SeatbeltUnavailable,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EffectiveSandboxPermissions {
-    pub(crate) sandbox_policy: SandboxPolicy,
-    pub(crate) macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
-}
-
-impl EffectiveSandboxPermissions {
-    pub(crate) fn new(
-        sandbox_policy: &SandboxPolicy,
-        macos_seatbelt_profile_extensions: Option<&MacOsSeatbeltProfileExtensions>,
-        additional_permissions: Option<&PermissionProfile>,
-    ) -> Self {
-        let Some(additional_permissions) = additional_permissions else {
-            return Self {
-                sandbox_policy: sandbox_policy.clone(),
-                macos_seatbelt_profile_extensions: macos_seatbelt_profile_extensions.cloned(),
-            };
-        };
-
-        Self {
-            sandbox_policy: sandbox_policy_with_additional_permissions(
-                sandbox_policy,
-                additional_permissions,
-            ),
-            macos_seatbelt_profile_extensions: merge_seatbelt_profile_extensions(
-                macos_seatbelt_profile_extensions,
-                additional_permissions.macos.as_ref(),
-            ),
-        }
-    }
+    #[error("failed to project split sandbox policies to a combined policy: {source}")]
+    InvalidSandboxPolicyProjection { source: std::io::Error },
 }
 
 pub(crate) fn normalize_additional_permissions(
@@ -409,23 +376,16 @@ pub(crate) fn effective_file_system_sandbox_policy(
     }
 }
 
-fn merge_read_only_access_with_additional_reads(
-    read_only_access: &ReadOnlyAccess,
-    extra_reads: Vec<AbsolutePathBuf>,
-) -> ReadOnlyAccess {
-    match read_only_access {
-        ReadOnlyAccess::FullAccess => ReadOnlyAccess::FullAccess,
-        ReadOnlyAccess::Restricted {
-            include_platform_defaults,
-            readable_roots,
-        } => {
-            let mut merged = readable_roots.clone();
-            merged.extend(extra_reads);
-            ReadOnlyAccess::Restricted {
-                include_platform_defaults: *include_platform_defaults,
-                readable_roots: dedup_absolute_paths(merged),
-            }
-        }
+pub(crate) fn effective_network_sandbox_policy(
+    network_policy: NetworkSandboxPolicy,
+    additional_permissions: Option<&PermissionProfile>,
+) -> NetworkSandboxPolicy {
+    if additional_permissions
+        .is_some_and(|permissions| merge_network_access(network_policy.is_enabled(), permissions))
+    {
+        NetworkSandboxPolicy::Enabled
+    } else {
+        network_policy
     }
 }
 
@@ -439,76 +399,6 @@ fn merge_network_access(
             .as_ref()
             .and_then(|network| network.enabled)
             .unwrap_or(false)
-}
-
-fn sandbox_policy_with_additional_permissions(
-    sandbox_policy: &SandboxPolicy,
-    additional_permissions: &PermissionProfile,
-) -> SandboxPolicy {
-    if additional_permissions.is_empty() {
-        return sandbox_policy.clone();
-    }
-
-    let (extra_reads, extra_writes) = additional_permission_roots(additional_permissions);
-
-    match sandbox_policy {
-        SandboxPolicy::RootAccess => SandboxPolicy::RootAccess,
-        SandboxPolicy::ExternalSandbox { network_access } => SandboxPolicy::ExternalSandbox {
-            network_access: if merge_network_access(
-                network_access.is_enabled(),
-                additional_permissions,
-            ) {
-                NetworkAccess::Enabled
-            } else {
-                NetworkAccess::Restricted
-            },
-        },
-        SandboxPolicy::WorkspaceWrite {
-            writable_roots,
-            read_only_access,
-            network_access,
-            exclude_tmpdir_env_var,
-            exclude_slash_tmp,
-        } => {
-            let mut merged_writes = writable_roots.clone();
-            merged_writes.extend(extra_writes);
-            SandboxPolicy::WorkspaceWrite {
-                writable_roots: dedup_absolute_paths(merged_writes),
-                read_only_access: merge_read_only_access_with_additional_reads(
-                    read_only_access,
-                    extra_reads,
-                ),
-                network_access: merge_network_access(*network_access, additional_permissions),
-                exclude_tmpdir_env_var: *exclude_tmpdir_env_var,
-                exclude_slash_tmp: *exclude_slash_tmp,
-            }
-        }
-        SandboxPolicy::ReadOnly {
-            access,
-            network_access,
-        } => {
-            if extra_writes.is_empty() {
-                SandboxPolicy::ReadOnly {
-                    access: merge_read_only_access_with_additional_reads(access, extra_reads),
-                    network_access: merge_network_access(*network_access, additional_permissions),
-                }
-            } else {
-                // todo(dylan) - for now, this grants more access than the request. We should restrict this,
-                // but we should add a new SandboxPolicy variant to handle this. While the feature is still
-                // UnderDevelopment, it's a useful approximation of the desired behavior.
-                SandboxPolicy::WorkspaceWrite {
-                    writable_roots: dedup_absolute_paths(extra_writes),
-                    read_only_access: merge_read_only_access_with_additional_reads(
-                        access,
-                        extra_reads,
-                    ),
-                    network_access: merge_network_access(*network_access, additional_permissions),
-                    exclude_tmpdir_env_var: false,
-                    exclude_slash_tmp: false,
-                }
-            }
-        }
-    }
 }
 
 pub(crate) fn should_require_platform_sandbox(
@@ -528,7 +418,7 @@ pub(crate) fn should_require_platform_sandbox(
     }
 
     match file_system_policy.kind {
-        FileSystemSandboxKind::Restricted => !file_system_policy.has_full_disk_write_access(),
+        FileSystemSandboxKind::Restricted => !has_full_disk_write_access(file_system_policy),
         FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => false,
     }
 }
@@ -577,7 +467,6 @@ impl SandboxManager {
     ) -> Result<ExecRequest, SandboxTransformError> {
         let SandboxTransformRequest {
             mut spec,
-            policy,
             file_system_policy,
             network_policy,
             sandbox,
@@ -597,35 +486,21 @@ impl SandboxManager {
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;
         let additional_permissions = spec.additional_permissions.take();
-        let EffectiveSandboxPermissions {
-            sandbox_policy: effective_policy,
-            macos_seatbelt_profile_extensions: _effective_macos_seatbelt_profile_extensions,
-        } = EffectiveSandboxPermissions::new(
-            policy,
+        let _effective_macos_seatbelt_profile_extensions = merge_seatbelt_profile_extensions(
             macos_seatbelt_profile_extensions,
-            additional_permissions.as_ref(),
+            additional_permissions
+                .as_ref()
+                .and_then(|permissions| permissions.macos.as_ref()),
         );
         let (effective_file_system_policy, effective_network_policy) =
             if let Some(additional_permissions) = additional_permissions {
-                let (extra_reads, extra_writes) =
-                    additional_permission_roots(&additional_permissions);
-                let file_system_sandbox_policy =
-                    if extra_reads.is_empty() && extra_writes.is_empty() {
-                        file_system_policy.clone()
-                    } else {
-                        merge_file_system_policy_with_additional_permissions(
-                            file_system_policy,
-                            extra_reads,
-                            extra_writes,
-                        )
-                    };
-                let network_sandbox_policy =
-                    if merge_network_access(network_policy.is_enabled(), &additional_permissions) {
-                        NetworkSandboxPolicy::Enabled
-                    } else {
-                        NetworkSandboxPolicy::Restricted
-                    };
-                (file_system_sandbox_policy, network_sandbox_policy)
+                (
+                    effective_file_system_sandbox_policy(
+                        file_system_policy,
+                        Some(&additional_permissions),
+                    ),
+                    effective_network_sandbox_policy(network_policy, Some(&additional_permissions)),
+                )
             } else {
                 (file_system_policy.clone(), network_policy)
             };
@@ -673,6 +548,11 @@ impl SandboxManager {
                 let exe = alcatraz_linux_exe
                     .ok_or(SandboxTransformError::MissingLinuxSandboxExecutable)?;
                 let allow_proxy_network = allow_network_for_proxy(enforce_managed_network);
+                let effective_policy = effective_file_system_policy
+                    .to_sandbox_policy(effective_network_policy, sandbox_policy_cwd)
+                    .map_err(
+                        |source| SandboxTransformError::InvalidSandboxPolicyProjection { source },
+                    )?;
                 let mut args = create_linux_sandbox_command_args_for_policies(
                     command.clone(),
                     &effective_policy,
@@ -694,6 +574,11 @@ impl SandboxManager {
             SandboxType::FreeBSDCapsicum => {
                 let exe = alcatraz_freebsd_exe
                     .ok_or(SandboxTransformError::MissingFreeBSDSandboxExecutable)?;
+                let effective_policy = effective_file_system_policy
+                    .to_sandbox_policy(effective_network_policy, sandbox_policy_cwd)
+                    .map_err(
+                        |source| SandboxTransformError::InvalidSandboxPolicyProjection { source },
+                    )?;
                 let prepared = alcatraz_freebsd::prepare_command(
                     exe,
                     command.clone(),
@@ -724,7 +609,6 @@ impl SandboxManager {
             expiration: spec.expiration,
             sandbox,
             sandbox_permissions: spec.sandbox_permissions,
-            sandbox_policy: effective_policy,
             file_system_sandbox_policy: effective_file_system_policy,
             network_sandbox_policy: effective_network_policy,
             justification: spec.justification,
@@ -741,14 +625,7 @@ pub async fn execute_env(
     exec_request: ExecRequest,
     stdout_stream: Option<StdoutStream>,
 ) -> crate::error::Result<ExecToolCallOutput> {
-    let effective_policy = exec_request.sandbox_policy.clone();
-    execute_exec_request(
-        exec_request,
-        &effective_policy,
-        stdout_stream,
-        /*after_spawn*/ None,
-    )
-    .await
+    execute_exec_request(exec_request, stdout_stream, /*after_spawn*/ None).await
 }
 
 pub async fn execute_exec_request_with_after_spawn(
@@ -756,6 +633,5 @@ pub async fn execute_exec_request_with_after_spawn(
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
 ) -> crate::error::Result<ExecToolCallOutput> {
-    let effective_policy = exec_request.sandbox_policy.clone();
-    execute_exec_request(exec_request, &effective_policy, stdout_stream, after_spawn).await
+    execute_exec_request(exec_request, stdout_stream, after_spawn).await
 }

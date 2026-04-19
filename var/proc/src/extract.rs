@@ -1,5 +1,6 @@
 use crate::model::ProcessMetadata;
 use chaos_ipc::models::ResponseItem;
+use chaos_ipc::permissions::FileSystemSandboxKind;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionMetaLine;
@@ -70,8 +71,35 @@ fn apply_turn_context(metadata: &mut ProcessMetadata, turn_ctx: &TurnContextItem
     if metadata.cwd.as_os_str().is_empty() {
         metadata.cwd = turn_ctx.cwd.clone();
     }
-    metadata.sandbox_policy = enum_to_string(&turn_ctx.sandbox_policy);
+    metadata.sandbox_policy = sandbox_policy_label(turn_ctx);
     metadata.approval_mode = enum_to_string(&turn_ctx.approval_policy);
+}
+
+fn sandbox_policy_label(turn_ctx: &TurnContextItem) -> String {
+    match turn_ctx.file_system_sandbox_policy.kind {
+        FileSystemSandboxKind::ExternalSandbox => "external-sandbox".to_string(),
+        FileSystemSandboxKind::Unrestricted => "root-access".to_string(),
+        FileSystemSandboxKind::Restricted => {
+            if turn_ctx
+                .file_system_sandbox_policy
+                .has_full_disk_write_access()
+            {
+                if turn_ctx.network_sandbox_policy.is_enabled() {
+                    "root-access".to_string()
+                } else {
+                    "workspace-write".to_string()
+                }
+            } else if turn_ctx
+                .file_system_sandbox_policy
+                .get_writable_roots_with_cwd(&turn_ctx.cwd)
+                .is_empty()
+            {
+                "read-only".to_string()
+            } else {
+                "workspace-write".to_string()
+            }
+        }
+    }
 }
 
 fn apply_event_msg(metadata: &mut ProcessMetadata, event: &EventMsg) {
@@ -139,6 +167,8 @@ mod tests {
     use chaos_ipc::config_types::ReasoningSummary;
     use chaos_ipc::models::ContentItem;
     use chaos_ipc::models::ResponseItem;
+    use chaos_ipc::permissions::FileSystemSandboxPolicy;
+    use chaos_ipc::permissions::NetworkSandboxPolicy;
     use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::RolloutItem;
@@ -266,7 +296,8 @@ mod tests {
                 current_date: None,
                 timezone: None,
                 approval_policy: ApprovalPolicy::Headless,
-                sandbox_policy: SandboxPolicy::RootAccess,
+                file_system_sandbox_policy: FileSystemSandboxPolicy::unrestricted(),
+                network_sandbox_policy: NetworkSandboxPolicy::Enabled,
                 network: None,
                 model: "gpt-5".to_string(),
                 personality: None,
@@ -282,10 +313,7 @@ mod tests {
         );
 
         assert_eq!(metadata.cwd, PathBuf::from("/child/worktree"));
-        assert_eq!(
-            metadata.sandbox_policy,
-            super::enum_to_string(&SandboxPolicy::RootAccess)
-        );
+        assert_eq!(metadata.sandbox_policy, "root-access");
         assert_eq!(metadata.approval_mode, "headless");
     }
 
@@ -303,7 +331,10 @@ mod tests {
                 current_date: None,
                 timezone: None,
                 approval_policy: ApprovalPolicy::Interactive,
-                sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                file_system_sandbox_policy: FileSystemSandboxPolicy::from(
+                    &SandboxPolicy::new_read_only_policy(),
+                ),
+                network_sandbox_policy: NetworkSandboxPolicy::Restricted,
                 network: None,
                 model: "gpt-5".to_string(),
                 personality: None,

@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 chaos-ipc = { workspace = true }
+chaos-parole = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

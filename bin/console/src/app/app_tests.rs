@@ -174,7 +174,12 @@ async fn enqueue_primary_event_delivers_session_configured_before_buffered_appro
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -346,7 +351,12 @@ async fn replay_process_snapshot_restores_draft_and_queued_input() {
                     service_tier: None,
                     approval_policy: ApprovalPolicy::Headless,
                     approvals_reviewer: ApprovalsReviewer::User,
-                    sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                    file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                        &SandboxPolicy::new_read_only_policy(),
+                    ),
+                    network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                        &SandboxPolicy::new_read_only_policy(),
+                    ),
                     cwd: PathBuf::from("/tmp/project"),
                     reasoning_effort: None,
                     history_log_id: 0,
@@ -423,7 +433,12 @@ async fn replayed_turn_complete_submits_restored_queued_follow_up() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -507,7 +522,12 @@ async fn replay_only_thread_keeps_restored_queue_visible() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -590,7 +610,12 @@ async fn replay_process_snapshot_keeps_queue_when_running_state_only_comes_from_
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -667,7 +692,12 @@ async fn replay_process_snapshot_does_not_submit_queue_before_replay_catches_up(
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -783,7 +813,12 @@ async fn replay_process_snapshot_restores_pending_pastes_for_submit() {
                     service_tier: None,
                     approval_policy: ApprovalPolicy::Headless,
                     approvals_reviewer: ApprovalsReviewer::User,
-                    sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                    file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                        &SandboxPolicy::new_read_only_policy(),
+                    ),
+                    network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                        &SandboxPolicy::new_read_only_policy(),
+                    ),
                     cwd: PathBuf::from("/tmp/project"),
                     reasoning_effort: None,
                     history_log_id: 0,
@@ -852,7 +887,12 @@ async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() 
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -955,7 +995,12 @@ async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -1030,7 +1075,12 @@ async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -1270,7 +1320,12 @@ async fn inactive_process_approval_bubbles_into_active_view() -> Result<()> {
                     service_tier: None,
                     approval_policy: ApprovalPolicy::Interactive,
                     approvals_reviewer: ApprovalsReviewer::User,
-                    sandbox_policy: SandboxPolicy::new_workspace_write_policy(),
+                    file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                        &SandboxPolicy::new_workspace_write_policy(),
+                    ),
+                    network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                        &SandboxPolicy::new_workspace_write_policy(),
+                    ),
                     cwd: PathBuf::from("/tmp/agent"),
                     reasoning_effort: None,
                     history_log_id: 0,
@@ -1489,7 +1544,12 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: Some(ReasoningEffortConfig::High),
             history_log_id: 0,
@@ -1820,7 +1880,12 @@ async fn refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd() -> Res
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: next_cwd.clone(),
             reasoning_effort: None,
             history_log_id: 0,
@@ -1921,7 +1986,12 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -1977,7 +2047,12 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -2069,7 +2144,12 @@ async fn backtrack_resubmit_preserves_data_image_urls_in_user_turn() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -2134,7 +2214,12 @@ async fn replayed_initial_messages_apply_rollback_in_queue_order() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -2214,7 +2299,12 @@ async fn live_rollback_during_replay_is_applied_in_app_event_order() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: None,
             history_log_id: 0,
@@ -2382,7 +2472,12 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+            &SandboxPolicy::new_read_only_policy(),
+        ),
+        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+            &SandboxPolicy::new_read_only_policy(),
+        ),
         cwd: PathBuf::from("/home/user/project"),
         reasoning_effort: None,
         history_log_id: 0,
@@ -2451,7 +2546,12 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,

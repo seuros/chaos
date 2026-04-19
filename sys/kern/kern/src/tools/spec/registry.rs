@@ -17,10 +17,10 @@ use super::tool_builders::{
     create_call_mcp_tool_async_tool, create_cancel_mcp_task_tool, create_close_agent_tool,
     create_exec_command_tool, create_list_mcp_resource_templates_tool,
     create_list_mcp_resources_tool, create_read_mcp_resource_tool,
-    create_report_agent_job_result_tool, create_request_permissions_tool,
+    create_report_minion_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_send_input_tool,
     create_shell_command_tool, create_shell_tool, create_spawn_agent_tool,
-    create_spawn_agents_on_csv_tool, create_test_sync_tool, create_view_image_tool,
+    create_spawn_minions_on_csv_tool, create_test_sync_tool, create_view_image_tool,
     create_wait_agent_tool, create_write_stdin_tool,
 };
 
@@ -448,22 +448,22 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("close_agent", Arc::new(CloseAgentHandler));
     }
 
-    if config.agent_jobs_tools {
-        use crate::tools::handlers::agent_jobs::BatchJobHandler;
-        let agent_jobs_handler = Arc::new(BatchJobHandler);
+    if config.minion_jobs_tools {
+        use crate::tools::handlers::minion_jobs::BatchJobHandler;
+        let minion_jobs_handler = Arc::new(BatchJobHandler);
         push_tool_spec(
             &mut builder,
-            create_spawn_agents_on_csv_tool(),
+            create_spawn_minions_on_csv_tool(),
             /*supports_parallel_tool_calls*/ false,
         );
-        builder.register_handler("spawn_agents_on_csv", agent_jobs_handler.clone());
-        if config.agent_jobs_worker_tools {
+        builder.register_handler("spawn_minions_on_csv", minion_jobs_handler.clone());
+        if config.minion_jobs_worker_tools {
             push_tool_spec(
                 &mut builder,
-                create_report_agent_job_result_tool(),
+                create_report_minion_job_result_tool(),
                 /*supports_parallel_tool_calls*/ false,
             );
-            builder.register_handler("report_agent_job_result", agent_jobs_handler);
+            builder.register_handler("report_minion_job_result", minion_jobs_handler);
         }
     }
 

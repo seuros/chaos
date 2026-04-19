@@ -7,7 +7,10 @@
 #![warn(clippy::all)]
 
 mod file_logging;
+pub mod runtime_db;
 
 pub use file_logging::BoxedLogLayer;
 pub use file_logging::open_debug_log_file_layer;
 pub use file_logging::open_log_file_layer;
+pub use runtime_db::LogDbLayer;
+pub use runtime_db::start_runtime_db_layer;

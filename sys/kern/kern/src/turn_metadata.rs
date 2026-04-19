@@ -12,8 +12,8 @@ use crate::git_info::get_git_remote_urls_assume_git_repo;
 use crate::git_info::get_git_repo_root;
 use crate::git_info::get_has_changes;
 use crate::git_info::get_head_commit_hash;
-use crate::sandbox_tags::sandbox_tag;
-use chaos_ipc::protocol::SandboxPolicy;
+use crate::sandbox_tags::sandbox_tag_for_file_system_policy;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
 
 #[derive(Clone, Debug, Default)]
 struct WorkspaceGitMetadata {
@@ -126,9 +126,14 @@ pub(crate) struct TurnMetadataState {
 }
 
 impl TurnMetadataState {
-    pub(crate) fn new(turn_id: String, cwd: PathBuf, sandbox_policy: &SandboxPolicy) -> Self {
+    pub(crate) fn new(
+        turn_id: String,
+        cwd: PathBuf,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    ) -> Self {
         let repo_root = get_git_repo_root(&cwd).map(|root| root.to_string_lossy().into_owned());
-        let sandbox = Some(sandbox_tag(sandbox_policy).to_string());
+        let sandbox =
+            Some(sandbox_tag_for_file_system_policy(file_system_sandbox_policy).to_string());
         let base_metadata = build_turn_metadata_bag(
             Some(turn_id),
             sandbox,

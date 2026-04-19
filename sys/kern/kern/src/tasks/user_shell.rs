@@ -169,7 +169,6 @@ pub(crate) async fn execute_user_shell_command(
         expiration: USER_SHELL_TIMEOUT_MS.into(),
         sandbox: SandboxType::None,
         sandbox_permissions: SandboxPermissions::UseDefault,
-        sandbox_policy: sandbox_policy.clone(),
         file_system_sandbox_policy: FileSystemSandboxPolicy::from(&sandbox_policy),
         network_sandbox_policy: NetworkSandboxPolicy::from(&sandbox_policy),
         justification: None,
@@ -182,14 +181,9 @@ pub(crate) async fn execute_user_shell_command(
         tx_event: session.get_tx_event(),
     });
 
-    let exec_result = execute_exec_request(
-        exec_env,
-        &sandbox_policy,
-        stdout_stream,
-        /*after_spawn*/ None,
-    )
-    .or_cancel(&cancellation_token)
-    .await;
+    let exec_result = execute_exec_request(exec_env, stdout_stream, /*after_spawn*/ None)
+        .or_cancel(&cancellation_token)
+        .await;
 
     match exec_result {
         Err(CancelErr::Cancelled) => {

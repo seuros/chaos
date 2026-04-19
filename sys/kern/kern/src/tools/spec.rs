@@ -30,7 +30,6 @@ pub(crate) use chaos_ipc::openai_models::ConfigShellToolType;
 #[cfg(test)]
 pub(crate) use chaos_ipc::openai_models::WebSearchToolType;
 #[cfg(test)]
-pub(crate) use chaos_ipc::protocol::SandboxPolicy;
 #[cfg(test)]
 pub(crate) use chaos_ipc::protocol::SessionSource;
 #[cfg(test)]

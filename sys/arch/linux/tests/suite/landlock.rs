@@ -116,7 +116,7 @@ async fn run_cmd_result_with_writable_roots(
 #[expect(clippy::expect_used)]
 async fn run_cmd_result_with_policies(
     cmd: &[&str],
-    sandbox_policy: SandboxPolicy,
+    _sandbox_policy: SandboxPolicy,
     file_system_sandbox_policy: FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     timeout_ms: u64,
@@ -140,7 +140,6 @@ async fn run_cmd_result_with_policies(
 
     process_exec_tool_call(
         params,
-        &sandbox_policy,
         &file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_cwd.as_path(),
@@ -332,7 +331,6 @@ async fn assert_network_blocked(cmd: &[&str]) {
     let alcatraz_freebsd_exe: Option<PathBuf> = None;
     let result = process_exec_tool_call(
         params,
-        &sandbox_policy,
         &FileSystemSandboxPolicy::from(&sandbox_policy),
         NetworkSandboxPolicy::from(&sandbox_policy),
         sandbox_cwd.as_path(),

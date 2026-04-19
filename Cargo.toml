@@ -12,6 +12,8 @@ members = [
     "sys/exec/fork",
     "sys/exec/sh",
     "sys/exec/doas",
+    # sys/recall — semantic memory / vector recall
+    "sys/recall",
     # sys/modules — loadable modules
     "sys/modules/clamp",
     # sys/kern/providers — kernel-side provider adapters
@@ -130,6 +132,7 @@ chaos-abi = { path = "lib/libcontract/abi" }
 chaos-ipc = { path = "lib/libcontract/ipc" }
 chaos-traits = { path = "lib/libcontract/traits" }
 chaos-storage = { path = "sys/storage" }
+chaos-recall = { path = "sys/recall" }
 alcatraz-base = { path = "sys/arch/base" }
 alcatraz-linux = { path = "sys/arch/linux" }
 alcatraz-freebsd = { path = "sys/arch/freebsd" }
@@ -299,6 +302,7 @@ os_info = "3.14.0"
 owo-colors = "4.3.0"
 path-absolutize = "3.1.1"
 pathdiff = "0.2"
+pgvector = { version = "0.4", default-features = false }
 portable-pty = "0.9.0"
 predicates = "3"
 pretty_assertions = "1.4.1"
@@ -461,6 +465,7 @@ ignored = [
     "fd-lock",
     "chaos-minions",
     "chaos-parole",
+    "chaos-recall",
 ]
 
 [profile.release]
@@ -480,3 +485,4 @@ codegen-units = 8
 debug = 1         # Reduce debug symbol size
 inherits = "test"
 opt-level = 0
+

@@ -10,8 +10,8 @@ use async_channel::unbounded;
 use chaos_ipc::mcp::Resource;
 use chaos_ipc::mcp::ResourceTemplate;
 use chaos_ipc::mcp::Tool;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::McpListToolsResponseEvent;
 use serde_json::Value;
 
@@ -66,21 +66,21 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
 
     // Use ReadOnly sandbox policy for MCP snapshot collection (safest default)
     let sandbox_state = SandboxState {
-        file_system_sandbox_policy: FileSystemSandboxPolicy::restricted(vec![
-            chaos_ipc::permissions::FileSystemSandboxEntry {
-                path: chaos_ipc::permissions::FileSystemPath::Special {
-                    value: chaos_ipc::permissions::FileSystemSpecialPath::CurrentWorkingDirectory,
+        vfs_policy: VfsPolicy::restricted(vec![
+            chaos_ipc::permissions::VfsEntry {
+                path: chaos_ipc::permissions::VfsPath::Special {
+                    value: chaos_ipc::permissions::VfsSpecialPath::CurrentWorkingDirectory,
                 },
-                access: chaos_ipc::permissions::FileSystemAccessMode::Read,
+                access: chaos_ipc::permissions::VfsAccessMode::Read,
             },
-            chaos_ipc::permissions::FileSystemSandboxEntry {
-                path: chaos_ipc::permissions::FileSystemPath::Special {
-                    value: chaos_ipc::permissions::FileSystemSpecialPath::Minimal,
+            chaos_ipc::permissions::VfsEntry {
+                path: chaos_ipc::permissions::VfsPath::Special {
+                    value: chaos_ipc::permissions::VfsSpecialPath::Minimal,
                 },
-                access: chaos_ipc::permissions::FileSystemAccessMode::Read,
+                access: chaos_ipc::permissions::VfsAccessMode::Read,
             },
         ]),
-        network_sandbox_policy: NetworkSandboxPolicy::Restricted,
+        socket_policy: SocketPolicy::Restricted,
         alcatraz_macos_exe: config.alcatraz_macos_exe.clone(),
         alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),

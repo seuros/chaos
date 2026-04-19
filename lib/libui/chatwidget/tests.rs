@@ -186,10 +186,8 @@ async fn resumed_initial_messages_render_history() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -295,10 +293,8 @@ async fn replayed_item_completed_user_message_renders_history_cell() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -372,10 +368,8 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -436,10 +430,8 @@ async fn replayed_user_message_preserves_remote_image_urls() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -508,10 +500,8 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &expected_sandbox,
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(&expected_sandbox),
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&expected_sandbox),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(&expected_sandbox),
         cwd: expected_cwd.clone(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         history_log_id: 0,
@@ -552,10 +542,8 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -608,10 +596,8 @@ async fn replayed_user_message_with_only_local_images_does_not_render_history_ce
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -688,10 +674,8 @@ async fn submission_preserves_text_elements_and_local_images() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -775,10 +759,8 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -873,10 +855,8 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -941,10 +921,8 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -984,10 +962,8 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -1027,10 +1003,8 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),
@@ -5172,10 +5146,8 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),
         cwd: PathBuf::from("/home/user/project"),

@@ -19,9 +19,9 @@ use ts_rs::TS;
 
 use super::ApprovalPolicy;
 use super::EventMsg;
-use super::FileSystemSandboxPolicy;
-use super::NetworkSandboxPolicy;
 use super::ReasoningEffortConfig;
+use super::SocketPolicy;
+use super::VfsPolicy;
 
 // Conversation kept for backward compatibility.
 /// Response payload for `Op::GetHistory` containing the current session's
@@ -350,8 +350,8 @@ pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timezone: Option<String>,
     pub approval_policy: ApprovalPolicy,
-    pub file_system_sandbox_policy: FileSystemSandboxPolicy,
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub vfs_policy: VfsPolicy,
+    pub socket_policy: SocketPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network: Option<TurnContextNetworkItem>,
     pub model: String,
@@ -441,10 +441,10 @@ pub struct SessionConfiguredEvent {
     pub approvals_reviewer: ApprovalsReviewer,
 
     /// Filesystem sandbox policy applied to spawned commands.
-    pub file_system_sandbox_policy: FileSystemSandboxPolicy,
+    pub vfs_policy: VfsPolicy,
 
     /// Network sandbox policy applied to spawned commands.
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub socket_policy: SocketPolicy,
 
     /// Working directory that should be treated as the *root* of the
     /// session.

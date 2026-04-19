@@ -27,14 +27,14 @@ fn split_policy_flags_are_included() {
     let command = vec!["/bin/true".to_string()];
     let cwd = Path::new("/tmp");
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
-    let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
+    let vfs_policy = VfsPolicy::from(&sandbox_policy);
+    let socket_policy = SocketPolicy::from(&sandbox_policy);
 
     let args = create_linux_sandbox_command_args_for_policies(
         command,
         &sandbox_policy,
-        &file_system_sandbox_policy,
-        network_sandbox_policy,
+        &vfs_policy,
+        socket_policy,
         cwd,
         false,
     );

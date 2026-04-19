@@ -5,7 +5,7 @@ async fn start_managed_network_proxy_applies_execpolicy_network_rules() -> anyho
     let spec = crate::config::NetworkProxySpec::from_config_and_constraints(
         NetworkProxyConfig::default(),
         None,
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
+        &VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
     )?;
     let mut exec_policy = Policy::empty();
     exec_policy.add_network_rule(
@@ -18,7 +18,7 @@ async fn start_managed_network_proxy_applies_execpolicy_network_rules() -> anyho
     let (started_proxy, _) = Session::start_managed_network_proxy(
         &spec,
         &exec_policy,
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
+        &VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
         None,
         None,
         false,
@@ -44,7 +44,7 @@ async fn start_managed_network_proxy_ignores_invalid_execpolicy_network_rules() 
             managed_allowed_domains_only: Some(true),
             ..Default::default()
         }),
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
+        &VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
     )?;
     let mut exec_policy = Policy::empty();
     exec_policy.add_network_rule(
@@ -57,7 +57,7 @@ async fn start_managed_network_proxy_ignores_invalid_execpolicy_network_rules() 
     let (started_proxy, _) = Session::start_managed_network_proxy(
         &spec,
         &exec_policy,
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
+        &VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
         None,
         None,
         false,
@@ -384,8 +384,8 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
         approval_policy: turn_context.approval_policy.value(),
-        file_system_sandbox_policy: turn_context.file_system_sandbox_policy.clone(),
-        network_sandbox_policy: turn_context.network_sandbox_policy,
+        vfs_policy: turn_context.vfs_policy.clone(),
+        socket_policy: turn_context.socket_policy,
         network: None,
         model: previous_model.to_string(),
         personality: turn_context.personality,
@@ -755,8 +755,8 @@ async fn set_rate_limits_retains_previous_credits() {
         compact_prompt: config.compact_prompt.clone(),
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
-        file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
-        network_sandbox_policy: config.permissions.network_sandbox_policy,
+        vfs_policy: config.permissions.vfs_policy.clone(),
+        socket_policy: config.permissions.socket_policy,
 
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),

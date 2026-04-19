@@ -204,21 +204,19 @@ impl ApplyPatchRuntime {
     ) -> Result<ExecToolCallOutput, ToolError> {
         use crate::error::ChaosErr;
         use crate::error::SandboxErr;
-        use crate::sandboxing::effective_file_system_sandbox_policy;
-        use crate::sandboxing::effective_network_sandbox_policy;
+        use crate::sandboxing::effective_socket_policy;
+        use crate::sandboxing::effective_vfs_policy;
         use std::io::Read as _;
         use std::io::Write as _;
         use std::os::fd::FromRawFd;
 
-        let file_system_sandbox_policy = effective_file_system_sandbox_policy(
+        let vfs_policy = effective_vfs_policy(
             attempt.file_system_policy,
             req.additional_permissions.as_ref(),
         );
-        let network_policy = effective_network_sandbox_policy(
-            attempt.network_policy,
-            req.additional_permissions.as_ref(),
-        );
-        let sandbox_policy = file_system_sandbox_policy
+        let network_policy =
+            effective_socket_policy(attempt.network_policy, req.additional_permissions.as_ref());
+        let sandbox_policy = vfs_policy
             .to_sandbox_policy(network_policy, attempt.sandbox_cwd)
             .map_err(|err| {
                 ToolError::Rejected(format!("invalid sandbox policy projection: {err}"))

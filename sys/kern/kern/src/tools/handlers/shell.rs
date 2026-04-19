@@ -397,7 +397,7 @@ impl ShellHandler {
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &exec_params.command,
                 approval_policy: turn.approval_policy.value(),
-                file_system_sandbox_policy: &turn.file_system_sandbox_policy,
+                vfs_policy: &turn.vfs_policy,
                 sandbox_permissions: if effective_additional_permissions.permissions_preapproved {
                     chaos_ipc::models::SandboxPermissions::UseDefault
                 } else {

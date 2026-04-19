@@ -11,7 +11,7 @@ use crate::client_common::tools::FreeformToolFormat;
 use crate::client_common::tools::ResponsesApiTool;
 use crate::client_common::tools::ToolSpec;
 use crate::function_tool::FunctionCallError;
-use crate::sandboxing::effective_file_system_sandbox_policy;
+use crate::sandboxing::effective_vfs_policy;
 use crate::sandboxing::merge_permission_profiles;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
@@ -95,7 +95,7 @@ async fn effective_patch_permissions(
 ) -> (
     Vec<AbsolutePathBuf>,
     crate::tools::handlers::EffectiveAdditionalPermissions,
-    chaos_ipc::permissions::FileSystemSandboxPolicy,
+    chaos_ipc::permissions::VfsPolicy,
 ) {
     let file_paths = file_paths_for_action(action);
     let granted_permissions = merge_permission_profiles(
@@ -108,16 +108,9 @@ async fn effective_patch_permissions(
         write_permissions_for_paths(&file_paths),
     )
     .await;
-    let file_system_sandbox_policy = effective_file_system_sandbox_policy(
-        &turn.file_system_sandbox_policy,
-        granted_permissions.as_ref(),
-    );
+    let vfs_policy = effective_vfs_policy(&turn.vfs_policy, granted_permissions.as_ref());
 
-    (
-        file_paths,
-        effective_additional_permissions,
-        file_system_sandbox_policy,
-    )
+    (file_paths, effective_additional_permissions, vfs_policy)
 }
 
 impl ToolHandler for ApplyPatchHandler {
@@ -171,11 +164,9 @@ impl ToolHandler for ApplyPatchHandler {
         let command = vec!["apply_patch".to_string(), patch_input.clone()];
         match chaos_diff::maybe_parse_apply_patch_verified(&command, &cwd) {
             chaos_diff::MaybeApplyPatchVerified::Body(changes) => {
-                let (file_paths, effective_additional_permissions, file_system_sandbox_policy) =
+                let (file_paths, effective_additional_permissions, vfs_policy) =
                     effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
-                match apply_patch::apply_patch(turn.as_ref(), &file_system_sandbox_policy, changes)
-                    .await
-                {
+                match apply_patch::apply_patch(turn.as_ref(), &vfs_policy, changes).await {
                     InternalApplyPatchInvocation::Output(item) => {
                         let content = item?;
                         Ok(FunctionToolOutput::from_text(content, Some(true)))
@@ -274,11 +265,9 @@ pub(crate) async fn intercept_apply_patch(
                     turn.as_ref(),
                 )
                 .await;
-            let (approval_keys, effective_additional_permissions, file_system_sandbox_policy) =
+            let (approval_keys, effective_additional_permissions, vfs_policy) =
                 effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
-            match apply_patch::apply_patch(turn.as_ref(), &file_system_sandbox_policy, changes)
-                .await
-            {
+            match apply_patch::apply_patch(turn.as_ref(), &vfs_policy, changes).await {
                 InternalApplyPatchInvocation::Output(item) => {
                     let content = item?;
                     Ok(Some(FunctionToolOutput::from_text(content, Some(true))))

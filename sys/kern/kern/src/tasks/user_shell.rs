@@ -37,8 +37,8 @@ use super::SessionTaskContext;
 use crate::chaos::Session;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 
 const USER_SHELL_TIMEOUT_MS: u64 = 60 * 60 * 1000; // 1 hour
 
@@ -169,8 +169,8 @@ pub(crate) async fn execute_user_shell_command(
         expiration: USER_SHELL_TIMEOUT_MS.into(),
         sandbox: SandboxType::None,
         sandbox_permissions: SandboxPermissions::UseDefault,
-        file_system_sandbox_policy: FileSystemSandboxPolicy::from(&sandbox_policy),
-        network_sandbox_policy: NetworkSandboxPolicy::from(&sandbox_policy),
+        vfs_policy: VfsPolicy::from(&sandbox_policy),
+        socket_policy: SocketPolicy::from(&sandbox_policy),
         justification: None,
         arg0: None,
     };

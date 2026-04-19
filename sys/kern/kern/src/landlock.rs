@@ -2,9 +2,9 @@ use crate::protocol::SandboxPolicy;
 use crate::spawn::SpawnChildRequest;
 use crate::spawn::StdioPolicy;
 use crate::spawn::spawn_child_async;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 use chaos_pf::NetworkProxy;
 use std::collections::HashMap;
 use std::path::Path;
@@ -33,14 +33,13 @@ pub async fn spawn_command_under_linux_sandbox<P>(
 where
     P: AsRef<Path>,
 {
-    let file_system_sandbox_policy =
-        file_system_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
-    let network_sandbox_policy = NetworkSandboxPolicy::from(sandbox_policy);
+    let vfs_policy = vfs_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
+    let socket_policy = SocketPolicy::from(sandbox_policy);
     let args = create_linux_sandbox_command_args_for_policies(
         command,
         sandbox_policy,
-        &file_system_sandbox_policy,
-        network_sandbox_policy,
+        &vfs_policy,
+        socket_policy,
         sandbox_policy_cwd,
         allow_network_for_proxy(/*enforce_managed_network*/ false),
     );
@@ -50,7 +49,7 @@ where
         args,
         arg0,
         cwd: command_cwd,
-        network_sandbox_policy,
+        socket_policy,
         network,
         stdio_policy,
         env,
@@ -75,16 +74,16 @@ pub(crate) fn allow_network_for_proxy(enforce_managed_network: bool) -> bool {
 pub(crate) fn create_linux_sandbox_command_args_for_policies(
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: &VfsPolicy,
+    socket_policy: SocketPolicy,
     sandbox_policy_cwd: &Path,
     allow_network_for_proxy: bool,
 ) -> Vec<String> {
     let sandbox_policy_json = serde_json::to_string(sandbox_policy)
         .unwrap_or_else(|err| panic!("failed to serialize sandbox policy: {err}"));
-    let file_system_policy_json = serde_json::to_string(file_system_sandbox_policy)
+    let file_system_policy_json = serde_json::to_string(vfs_policy)
         .unwrap_or_else(|err| panic!("failed to serialize filesystem sandbox policy: {err}"));
-    let network_policy_json = serde_json::to_string(&network_sandbox_policy)
+    let network_policy_json = serde_json::to_string(&socket_policy)
         .unwrap_or_else(|err| panic!("failed to serialize network sandbox policy: {err}"));
     let sandbox_policy_cwd = sandbox_policy_cwd
         .to_str()

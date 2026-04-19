@@ -10,7 +10,7 @@ use crate::exec::SandboxType;
 use crate::util::resolve_path;
 
 use crate::protocol::ApprovalPolicy;
-use crate::protocol::FileSystemSandboxPolicy;
+use crate::protocol::VfsPolicy;
 
 #[derive(Debug, PartialEq)]
 pub enum SafetyCheck {
@@ -27,7 +27,7 @@ pub enum SafetyCheck {
 pub fn assess_patch_safety(
     action: &ApplyPatchAction,
     policy: ApprovalPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    vfs_policy: &VfsPolicy,
     cwd: &Path,
 ) -> SafetyCheck {
     if action.is_empty() {
@@ -54,11 +54,11 @@ pub fn assess_patch_safety(
     // Even though the patch appears to be constrained to writable paths, it is
     // possible that paths in the patch are hard links to files outside the
     // writable roots, so we should still run `apply_patch` in a sandbox in that case.
-    if is_write_patch_constrained_to_writable_paths(action, file_system_sandbox_policy, cwd) {
+    if is_write_patch_constrained_to_writable_paths(action, vfs_policy, cwd) {
         if matches!(
-            file_system_sandbox_policy.kind,
-            crate::protocol::FileSystemSandboxKind::Unrestricted
-                | crate::protocol::FileSystemSandboxKind::ExternalSandbox
+            vfs_policy.kind,
+            crate::protocol::VfsPolicyKind::Unrestricted
+                | crate::protocol::VfsPolicyKind::ExternalSandbox
         ) {
             // RootAccess is intended to bypass sandboxing entirely.
             SafetyCheck::AutoApprove {
@@ -111,7 +111,7 @@ pub fn get_platform_sandbox() -> Option<SandboxType> {
 
 fn is_write_patch_constrained_to_writable_paths(
     action: &ApplyPatchAction,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    vfs_policy: &VfsPolicy,
     cwd: &Path,
 ) -> bool {
     // Normalize a path by removing `.` and resolving `..` without touching the
@@ -140,7 +140,7 @@ fn is_write_patch_constrained_to_writable_paths(
             None => return false,
         };
 
-        can_write_path(file_system_sandbox_policy, &abs, cwd)
+        can_write_path(vfs_policy, &abs, cwd)
     };
 
     for (path, change) in action.changes() {

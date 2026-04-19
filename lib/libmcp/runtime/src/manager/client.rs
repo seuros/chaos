@@ -21,8 +21,8 @@ use anyhow::Result;
 use anyhow::anyhow;
 use chaos_epoll::CancelErr;
 use chaos_epoll::OrCancelExt;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::McpServerTransportConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
@@ -44,8 +44,8 @@ pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxState {
-    pub file_system_sandbox_policy: FileSystemSandboxPolicy,
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub vfs_policy: VfsPolicy,
+    pub socket_policy: SocketPolicy,
     pub alcatraz_macos_exe: Option<PathBuf>,
     pub alcatraz_linux_exe: Option<PathBuf>,
     pub alcatraz_freebsd_exe: Option<PathBuf>,

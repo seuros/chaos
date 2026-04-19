@@ -1,14 +1,14 @@
 #![cfg(target_os = "macos")]
 
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
 use chaos_parole::sandbox::has_full_disk_read_access;
 use chaos_parole::sandbox::has_full_disk_write_access;
 use chaos_parole::sandbox::include_platform_defaults;
 use chaos_parole::sandbox::readable_roots;
 use chaos_parole::sandbox::unreadable_roots;
+use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 use chaos_parole::sandbox::writable_roots;
 use chaos_pf::NetworkProxy;
 use chaos_pf::PROXY_URL_ENV_KEYS;
@@ -241,14 +241,14 @@ fn dynamic_network_policy(
     proxy: &ProxyPolicyInputs,
 ) -> String {
     dynamic_network_policy_for_network(
-        NetworkSandboxPolicy::from(sandbox_policy),
+        SocketPolicy::from(sandbox_policy),
         enforce_managed_network,
         proxy,
     )
 }
 
 fn dynamic_network_policy_for_network(
-    network_policy: NetworkSandboxPolicy,
+    network_policy: SocketPolicy,
     enforce_managed_network: bool,
     proxy: &ProxyPolicyInputs,
 ) -> String {
@@ -382,8 +382,8 @@ pub fn create_seatbelt_command_args_with_extensions(
 ) -> Vec<String> {
     create_seatbelt_command_args_for_policies_with_extensions(
         command,
-        &file_system_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd),
-        NetworkSandboxPolicy::from(sandbox_policy),
+        &vfs_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd),
+        SocketPolicy::from(sandbox_policy),
         sandbox_policy_cwd,
         enforce_managed_network,
         network,
@@ -393,96 +393,94 @@ pub fn create_seatbelt_command_args_with_extensions(
 
 pub fn create_seatbelt_command_args_for_policies_with_extensions(
     command: Vec<String>,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: &VfsPolicy,
+    socket_policy: SocketPolicy,
     sandbox_policy_cwd: &Path,
     enforce_managed_network: bool,
     network: Option<&NetworkProxy>,
     extensions: Option<&MacOsSeatbeltProfileExtensions>,
 ) -> Vec<String> {
-    let unreadable_roots = unreadable_roots(file_system_sandbox_policy, sandbox_policy_cwd);
-    let (file_write_policy, file_write_dir_params) =
-        if has_full_disk_write_access(file_system_sandbox_policy) {
-            if unreadable_roots.is_empty() {
-                // Allegedly, this is more permissive than `(allow file-write*)`.
-                (
-                    r#"(allow file-write* (regex #"^/"))"#.to_string(),
-                    Vec::new(),
-                )
-            } else {
-                build_seatbelt_access_policy(
-                    "file-write*",
-                    "WRITABLE_ROOT",
-                    vec![SeatbeltAccessRoot {
-                        root: root_absolute_path(),
-                        excluded_subpaths: unreadable_roots.clone(),
-                    }],
-                )
-            }
+    let unreadable_roots = unreadable_roots(vfs_policy, sandbox_policy_cwd);
+    let (file_write_policy, file_write_dir_params) = if has_full_disk_write_access(vfs_policy) {
+        if unreadable_roots.is_empty() {
+            // Allegedly, this is more permissive than `(allow file-write*)`.
+            (
+                r#"(allow file-write* (regex #"^/"))"#.to_string(),
+                Vec::new(),
+            )
         } else {
             build_seatbelt_access_policy(
                 "file-write*",
                 "WRITABLE_ROOT",
-                writable_roots(file_system_sandbox_policy, sandbox_policy_cwd)
-                    .into_iter()
-                    .map(|root| SeatbeltAccessRoot {
-                        root: root.root,
-                        excluded_subpaths: root.read_only_subpaths,
-                    })
-                    .collect(),
+                vec![SeatbeltAccessRoot {
+                    root: root_absolute_path(),
+                    excluded_subpaths: unreadable_roots.clone(),
+                }],
             )
-        };
+        }
+    } else {
+        build_seatbelt_access_policy(
+            "file-write*",
+            "WRITABLE_ROOT",
+            writable_roots(vfs_policy, sandbox_policy_cwd)
+                .into_iter()
+                .map(|root| SeatbeltAccessRoot {
+                    root: root.root,
+                    excluded_subpaths: root.read_only_subpaths,
+                })
+                .collect(),
+        )
+    };
 
-    let (file_read_policy, file_read_dir_params) =
-        if has_full_disk_read_access(file_system_sandbox_policy) {
-            if unreadable_roots.is_empty() {
-                (
-                    "; allow read-only file operations\n(allow file-read*)".to_string(),
-                    Vec::new(),
-                )
-            } else {
-                let (policy, params) = build_seatbelt_access_policy(
-                    "file-read*",
-                    "READABLE_ROOT",
-                    vec![SeatbeltAccessRoot {
-                        root: root_absolute_path(),
-                        excluded_subpaths: unreadable_roots,
-                    }],
-                );
-                (
-                    format!("; allow read-only file operations\n{policy}"),
-                    params,
-                )
-            }
+    let (file_read_policy, file_read_dir_params) = if has_full_disk_read_access(vfs_policy) {
+        if unreadable_roots.is_empty() {
+            (
+                "; allow read-only file operations\n(allow file-read*)".to_string(),
+                Vec::new(),
+            )
         } else {
             let (policy, params) = build_seatbelt_access_policy(
                 "file-read*",
                 "READABLE_ROOT",
-                readable_roots(file_system_sandbox_policy, sandbox_policy_cwd)
-                    .into_iter()
-                    .map(|root| SeatbeltAccessRoot {
-                        excluded_subpaths: unreadable_roots
-                            .iter()
-                            .filter(|path| path.as_path().starts_with(root.as_path()))
-                            .cloned()
-                            .collect(),
-                        root,
-                    })
-                    .collect(),
+                vec![SeatbeltAccessRoot {
+                    root: root_absolute_path(),
+                    excluded_subpaths: unreadable_roots,
+                }],
             );
-            if policy.is_empty() {
-                (String::new(), params)
-            } else {
-                (
-                    format!("; allow read-only file operations\n{policy}"),
-                    params,
-                )
-            }
-        };
+            (
+                format!("; allow read-only file operations\n{policy}"),
+                params,
+            )
+        }
+    } else {
+        let (policy, params) = build_seatbelt_access_policy(
+            "file-read*",
+            "READABLE_ROOT",
+            readable_roots(vfs_policy, sandbox_policy_cwd)
+                .into_iter()
+                .map(|root| SeatbeltAccessRoot {
+                    excluded_subpaths: unreadable_roots
+                        .iter()
+                        .filter(|path| path.as_path().starts_with(root.as_path()))
+                        .cloned()
+                        .collect(),
+                    root,
+                })
+                .collect(),
+        );
+        if policy.is_empty() {
+            (String::new(), params)
+        } else {
+            (
+                format!("; allow read-only file operations\n{policy}"),
+                params,
+            )
+        }
+    };
 
     let proxy = proxy_policy_inputs(network);
     let network_policy =
-        dynamic_network_policy_for_network(network_sandbox_policy, enforce_managed_network, &proxy);
+        dynamic_network_policy_for_network(socket_policy, enforce_managed_network, &proxy);
     let seatbelt_extensions = extensions.map_or_else(
         || {
             // Backward-compatibility default when no extension profile is provided.
@@ -491,7 +489,7 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
         build_seatbelt_extensions,
     );
 
-    let include_platform_defaults = include_platform_defaults(file_system_sandbox_policy);
+    let include_platform_defaults = include_platform_defaults(vfs_policy);
     let mut policy_sections = vec![
         MACOS_SEATBELT_BASE_POLICY.to_string(),
         file_read_policy,

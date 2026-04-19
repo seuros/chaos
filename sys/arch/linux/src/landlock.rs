@@ -9,11 +9,11 @@ use std::path::Path;
 
 use alcatraz_base::error::AlcatrazError;
 use alcatraz_base::error::Result;
-use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_ipc::protocol::SocketPolicy;
 use chaos_parole::sandbox::has_full_disk_read_access;
 use chaos_parole::sandbox::has_full_disk_write_access;
+use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 use chaos_parole::sandbox::writable_roots;
 use chaos_realpath::AbsolutePathBuf;
 
@@ -48,7 +48,7 @@ use seccompiler::apply_filter;
 /// Filesystem restrictions are enforced via landlock when `apply_landlock_fs` is set.
 pub fn apply_sandbox_policy_to_current_thread(
     sandbox_policy: &SandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    socket_policy: SocketPolicy,
     cwd: &Path,
     apply_landlock_fs: bool,
     allow_network_for_proxy: bool,
@@ -56,13 +56,10 @@ pub fn apply_sandbox_policy_to_current_thread(
     allowed_proxy_ports: &[u16],
 ) -> Result<()> {
     check_minimum_kernel_version()?;
-    let file_system_policy = file_system_policy_from_sandbox_policy(sandbox_policy, cwd);
+    let file_system_policy = vfs_policy_from_sandbox_policy(sandbox_policy, cwd);
 
-    let network_seccomp_mode = network_seccomp_mode(
-        network_sandbox_policy,
-        allow_network_for_proxy,
-        proxy_routed_network,
-    );
+    let network_seccomp_mode =
+        network_seccomp_mode(socket_policy, allow_network_for_proxy, proxy_routed_network);
     let apply_proxy_port_landlock = proxy_routed_network && !allowed_proxy_ports.is_empty();
 
     // `PR_SET_NO_NEW_PRIVS` is required for both seccomp and landlock.
@@ -106,20 +103,20 @@ enum NetworkSeccompMode {
 }
 
 fn should_install_network_seccomp(
-    network_sandbox_policy: NetworkSandboxPolicy,
+    socket_policy: SocketPolicy,
     allow_network_for_proxy: bool,
 ) -> bool {
     // Managed-network sessions should remain fail-closed even for policies that
     // would normally grant full network access (for example, RootAccess).
-    !network_sandbox_policy.is_enabled() || allow_network_for_proxy
+    !socket_policy.is_enabled() || allow_network_for_proxy
 }
 
 fn network_seccomp_mode(
-    network_sandbox_policy: NetworkSandboxPolicy,
+    socket_policy: SocketPolicy,
     allow_network_for_proxy: bool,
     proxy_routed_network: bool,
 ) -> Option<NetworkSeccompMode> {
-    if !should_install_network_seccomp(network_sandbox_policy, allow_network_for_proxy) {
+    if !should_install_network_seccomp(socket_policy, allow_network_for_proxy) {
         None
     } else if proxy_routed_network {
         Some(NetworkSeccompMode::ProxyRouted)
@@ -338,13 +335,13 @@ mod tests {
     use super::NetworkSeccompMode;
     use super::network_seccomp_mode;
     use super::should_install_network_seccomp;
-    use chaos_ipc::protocol::NetworkSandboxPolicy;
+    use chaos_ipc::protocol::SocketPolicy;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn managed_network_enforces_seccomp_even_for_full_network_policy() {
         assert_eq!(
-            should_install_network_seccomp(NetworkSandboxPolicy::Enabled, true),
+            should_install_network_seccomp(SocketPolicy::Enabled, true),
             true
         );
     }
@@ -352,7 +349,7 @@ mod tests {
     #[test]
     fn full_network_policy_without_managed_network_skips_seccomp() {
         assert_eq!(
-            should_install_network_seccomp(NetworkSandboxPolicy::Enabled, false),
+            should_install_network_seccomp(SocketPolicy::Enabled, false),
             false
         );
     }
@@ -360,11 +357,11 @@ mod tests {
     #[test]
     fn restricted_network_policy_always_installs_seccomp() {
         assert!(should_install_network_seccomp(
-            NetworkSandboxPolicy::Restricted,
+            SocketPolicy::Restricted,
             false
         ));
         assert!(should_install_network_seccomp(
-            NetworkSandboxPolicy::Restricted,
+            SocketPolicy::Restricted,
             true
         ));
     }
@@ -372,7 +369,7 @@ mod tests {
     #[test]
     fn managed_proxy_routes_use_proxy_routed_seccomp_mode() {
         assert_eq!(
-            network_seccomp_mode(NetworkSandboxPolicy::Enabled, true, true),
+            network_seccomp_mode(SocketPolicy::Enabled, true, true),
             Some(NetworkSeccompMode::ProxyRouted)
         );
     }
@@ -380,7 +377,7 @@ mod tests {
     #[test]
     fn restricted_network_without_proxy_routing_uses_restricted_mode() {
         assert_eq!(
-            network_seccomp_mode(NetworkSandboxPolicy::Restricted, false, false),
+            network_seccomp_mode(SocketPolicy::Restricted, false, false),
             Some(NetworkSeccompMode::Restricted)
         );
     }
@@ -388,7 +385,7 @@ mod tests {
     #[test]
     fn full_network_without_managed_proxy_skips_network_seccomp_mode() {
         assert_eq!(
-            network_seccomp_mode(NetworkSandboxPolicy::Enabled, false, false),
+            network_seccomp_mode(SocketPolicy::Enabled, false, false),
             None
         );
     }

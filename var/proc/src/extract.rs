@@ -1,6 +1,6 @@
 use crate::model::ProcessMetadata;
 use chaos_ipc::models::ResponseItem;
-use chaos_ipc::permissions::FileSystemSandboxKind;
+use chaos_ipc::permissions::VfsPolicyKind;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionMetaLine;
@@ -76,21 +76,18 @@ fn apply_turn_context(metadata: &mut ProcessMetadata, turn_ctx: &TurnContextItem
 }
 
 fn sandbox_policy_label(turn_ctx: &TurnContextItem) -> String {
-    match turn_ctx.file_system_sandbox_policy.kind {
-        FileSystemSandboxKind::ExternalSandbox => "external-sandbox".to_string(),
-        FileSystemSandboxKind::Unrestricted => "root-access".to_string(),
-        FileSystemSandboxKind::Restricted => {
-            if turn_ctx
-                .file_system_sandbox_policy
-                .has_full_disk_write_access()
-            {
-                if turn_ctx.network_sandbox_policy.is_enabled() {
+    match turn_ctx.vfs_policy.kind {
+        VfsPolicyKind::ExternalSandbox => "external-sandbox".to_string(),
+        VfsPolicyKind::Unrestricted => "root-access".to_string(),
+        VfsPolicyKind::Restricted => {
+            if turn_ctx.vfs_policy.has_full_disk_write_access() {
+                if turn_ctx.socket_policy.is_enabled() {
                     "root-access".to_string()
                 } else {
                     "workspace-write".to_string()
                 }
             } else if turn_ctx
-                .file_system_sandbox_policy
+                .vfs_policy
                 .get_writable_roots_with_cwd(&turn_ctx.cwd)
                 .is_empty()
             {
@@ -167,8 +164,8 @@ mod tests {
     use chaos_ipc::config_types::ReasoningSummary;
     use chaos_ipc::models::ContentItem;
     use chaos_ipc::models::ResponseItem;
-    use chaos_ipc::permissions::FileSystemSandboxPolicy;
-    use chaos_ipc::permissions::NetworkSandboxPolicy;
+    use chaos_ipc::permissions::SocketPolicy;
+    use chaos_ipc::permissions::VfsPolicy;
     use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::RolloutItem;
@@ -296,8 +293,8 @@ mod tests {
                 current_date: None,
                 timezone: None,
                 approval_policy: ApprovalPolicy::Headless,
-                file_system_sandbox_policy: FileSystemSandboxPolicy::unrestricted(),
-                network_sandbox_policy: NetworkSandboxPolicy::Enabled,
+                vfs_policy: VfsPolicy::unrestricted(),
+                socket_policy: SocketPolicy::Enabled,
                 network: None,
                 model: "gpt-5".to_string(),
                 personality: None,
@@ -331,10 +328,8 @@ mod tests {
                 current_date: None,
                 timezone: None,
                 approval_policy: ApprovalPolicy::Interactive,
-                file_system_sandbox_policy: FileSystemSandboxPolicy::from(
-                    &SandboxPolicy::new_read_only_policy(),
-                ),
-                network_sandbox_policy: NetworkSandboxPolicy::Restricted,
+                vfs_policy: VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+                socket_policy: SocketPolicy::Restricted,
                 network: None,
                 model: "gpt-5".to_string(),
                 personality: None,

@@ -1,10 +1,10 @@
 use super::super::*;
-use crate::permissions::FileSystemAccessMode;
-use crate::permissions::FileSystemPath;
-use crate::permissions::FileSystemSandboxEntry;
-use crate::permissions::FileSystemSandboxPolicy;
-use crate::permissions::FileSystemSpecialPath;
-use crate::permissions::NetworkSandboxPolicy;
+use crate::permissions::SocketPolicy;
+use crate::permissions::VfsAccessMode;
+use crate::permissions::VfsEntry;
+use crate::permissions::VfsPath;
+use crate::permissions::VfsPolicy;
+use crate::permissions::VfsSpecialPath;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::path::Path;
@@ -238,21 +238,21 @@ fn workspace_write_restricted_read_access_includes_effective_writable_roots() {
 
 #[test]
 fn restricted_file_system_policy_reports_full_access_from_root_entries() {
-    let read_only = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Special {
-            value: FileSystemSpecialPath::Root,
+    let read_only = VfsPolicy::restricted(vec![VfsEntry {
+        path: VfsPath::Special {
+            value: VfsSpecialPath::Root,
         },
-        access: FileSystemAccessMode::Read,
+        access: VfsAccessMode::Read,
     }]);
     assert!(read_only.has_full_disk_read_access());
     assert!(!read_only.has_full_disk_write_access());
     assert!(!read_only.include_platform_defaults());
 
-    let writable = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Special {
-            value: FileSystemSpecialPath::Root,
+    let writable = VfsPolicy::restricted(vec![VfsEntry {
+        path: VfsPath::Special {
+            value: VfsSpecialPath::Root,
         },
-        access: FileSystemAccessMode::Write,
+        access: VfsAccessMode::Write,
     }]);
     assert!(writable.has_full_disk_read_access());
     assert!(writable.has_full_disk_write_access());
@@ -278,16 +278,16 @@ fn restricted_file_system_policy_treats_root_with_carveouts_as_scoped_access() {
             .join("blocked"),
     )
     .expect("canonical blocked");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: blocked },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: blocked },
+            access: VfsAccessMode::None,
         },
     ]);
 
@@ -329,22 +329,22 @@ fn restricted_file_system_policy_derives_effective_paths() {
         .expect("canonical .agents");
     let expected_chaos = AbsolutePathBuf::from_absolute_path(canonical_cwd.join(".chaos"))
         .expect("canonical .chaos");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Minimal,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Minimal,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::CurrentWorkingDirectory,
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::CurrentWorkingDirectory,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: secret },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: secret },
+            access: VfsAccessMode::None,
         },
     ]);
 
@@ -396,20 +396,20 @@ fn restricted_file_system_policy_treats_read_entries_as_read_only_subpaths() {
     let expected_docs_public =
         AbsolutePathBuf::from_absolute_path(canonical_cwd.join("docs/public"))
             .expect("canonical docs/public");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::CurrentWorkingDirectory,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::CurrentWorkingDirectory,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs },
-            access: FileSystemAccessMode::Read,
+        VfsEntry {
+            path: VfsPath::Path { path: docs },
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs_public },
-            access: FileSystemAccessMode::Write,
+        VfsEntry {
+            path: VfsPath::Path { path: docs_public },
+            access: VfsAccessMode::Write,
         },
     ]);
 
@@ -442,7 +442,7 @@ fn legacy_workspace_write_nested_readable_root_stays_writable() {
 
     assert_eq!(
         sorted_writable_roots(
-            FileSystemSandboxPolicy::from_sandbox_policy(&policy, cwd.path())
+            VfsPolicy::from_sandbox_policy(&policy, cwd.path())
                 .get_writable_roots_with_cwd(cwd.path())
         ),
         vec![(canonical_cwd, Vec::new())]
@@ -454,15 +454,15 @@ fn file_system_policy_rejects_legacy_bridge_for_non_workspace_writes() {
     let cwd = Path::new("/tmp/workspace");
     let external_write_path =
         AbsolutePathBuf::from_absolute_path("/tmp").expect("absolute tmp path");
-    let policy = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Path {
+    let policy = VfsPolicy::restricted(vec![VfsEntry {
+        path: VfsPath::Path {
             path: external_write_path,
         },
-        access: FileSystemAccessMode::Write,
+        access: VfsAccessMode::Write,
     }]);
 
     let err = policy
-        .to_sandbox_policy(NetworkSandboxPolicy::Restricted, cwd)
+        .to_sandbox_policy(SocketPolicy::Restricted, cwd)
         .expect_err("non-workspace writes should be rejected");
 
     assert!(
@@ -530,8 +530,8 @@ fn legacy_sandbox_policy_semantics_survive_split_bridge() {
     ];
 
     for expected in policies {
-        let actual = FileSystemSandboxPolicy::from_sandbox_policy(&expected, cwd.path())
-            .to_sandbox_policy(NetworkSandboxPolicy::from(&expected), cwd.path())
+        let actual = VfsPolicy::from_sandbox_policy(&expected, cwd.path())
+            .to_sandbox_policy(SocketPolicy::from(&expected), cwd.path())
             .expect("sandbox-policy projection should preserve policy semantics");
 
         assert_same_sandbox_policy_semantics(&expected, &actual, cwd.path());

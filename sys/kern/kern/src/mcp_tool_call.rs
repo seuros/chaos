@@ -562,9 +562,9 @@ fn is_full_access_mode(turn_context: &TurnContext) -> bool {
         turn_context.approval_policy.value(),
         ApprovalPolicy::Headless
     ) && matches!(
-        turn_context.file_system_sandbox_policy.kind,
-        chaos_ipc::permissions::FileSystemSandboxKind::Unrestricted
-            | chaos_ipc::permissions::FileSystemSandboxKind::ExternalSandbox
+        turn_context.vfs_policy.kind,
+        chaos_ipc::permissions::VfsPolicyKind::Unrestricted
+            | chaos_ipc::permissions::VfsPolicyKind::ExternalSandbox
     )
 }
 

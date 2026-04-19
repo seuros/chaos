@@ -17,11 +17,11 @@ use crate::seatbelt_permissions::MacOsContactsPermission;
 use crate::seatbelt_permissions::MacOsPreferencesPermission;
 use crate::seatbelt_permissions::MacOsSeatbeltProfileExtensions;
 use crate::seatbelt_permissions::build_seatbelt_extensions;
-use chaos_ipc::permissions::FileSystemAccessMode;
-use chaos_ipc::permissions::FileSystemPath;
-use chaos_ipc::permissions::FileSystemSandboxEntry;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsAccessMode;
+use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPath;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -107,23 +107,23 @@ fn create_seatbelt_args_routes_network_through_proxy_ports() {
 #[test]
 fn explicit_unreadable_paths_are_excluded_from_full_disk_read_and_write_access() {
     let unreadable = absolute_path("/tmp/chaos-unreadable");
-    let file_system_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: crate::protocol::FileSystemSpecialPath::Root,
+    let file_system_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: crate::protocol::VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: unreadable },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: unreadable },
+            access: VfsAccessMode::None,
         },
     ]);
 
     let args = create_seatbelt_command_args_for_policies_with_extensions(
         vec!["/bin/true".to_string()],
         &file_system_policy,
-        NetworkSandboxPolicy::Restricted,
+        SocketPolicy::Restricted,
         Path::new("/"),
         false,
         None,
@@ -157,21 +157,21 @@ fn explicit_unreadable_paths_are_excluded_from_full_disk_read_and_write_access()
 fn explicit_unreadable_paths_are_excluded_from_readable_roots() {
     let root = absolute_path("/tmp/chaos-readable");
     let unreadable = absolute_path("/tmp/chaos-readable/private");
-    let file_system_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: root },
-            access: FileSystemAccessMode::Read,
+    let file_system_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Path { path: root },
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: unreadable },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: unreadable },
+            access: VfsAccessMode::None,
         },
     ]);
 
     let args = create_seatbelt_command_args_for_policies_with_extensions(
         vec!["/bin/true".to_string()],
         &file_system_policy,
-        NetworkSandboxPolicy::Restricted,
+        SocketPolicy::Restricted,
         Path::new("/"),
         false,
         None,

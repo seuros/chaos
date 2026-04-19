@@ -9,7 +9,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::spawn::CHAOS_SANDBOX_ENV_VAR;
 use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
@@ -46,7 +46,7 @@ async fn spawn_command_under_seatbelt(
     let args = create_seatbelt_command_args(command, sandbox_policy, sandbox_cwd, false, None);
 
     env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-    if !NetworkSandboxPolicy::from(sandbox_policy).is_enabled() {
+    if !SocketPolicy::from(sandbox_policy).is_enabled() {
         env.insert(
             CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
             "1".to_string(),

@@ -28,13 +28,13 @@ pub use crate::approvals::NetworkApprovalContext;
 pub use crate::approvals::NetworkApprovalProtocol;
 pub use crate::approvals::NetworkPolicyAmendment;
 pub use crate::approvals::NetworkPolicyRuleAction;
-pub use crate::permissions::FileSystemAccessMode;
-pub use crate::permissions::FileSystemPath;
-pub use crate::permissions::FileSystemSandboxEntry;
-pub use crate::permissions::FileSystemSandboxKind;
-pub use crate::permissions::FileSystemSandboxPolicy;
-pub use crate::permissions::FileSystemSpecialPath;
-pub use crate::permissions::NetworkSandboxPolicy;
+pub use crate::permissions::SocketPolicy;
+pub use crate::permissions::VfsAccessMode;
+pub use crate::permissions::VfsEntry;
+pub use crate::permissions::VfsPath;
+pub use crate::permissions::VfsPolicy;
+pub use crate::permissions::VfsPolicyKind;
+pub use crate::permissions::VfsSpecialPath;
 pub use crate::request_permissions::RequestPermissionsArgs;
 pub use crate::request_user_input::RequestUserInputEvent;
 // Re-exported for tests and downstream consumers that use `protocol::*`.
@@ -83,7 +83,7 @@ macro_rules! impl_fromstr_via_serde {
     };
 }
 
-impl_fromstr_via_serde!(FileSystemSandboxPolicy, NetworkSandboxPolicy);
+impl_fromstr_via_serde!(VfsPolicy, SocketPolicy);
 
 #[cfg(test)]
 mod tests;

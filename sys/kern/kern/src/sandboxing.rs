@@ -27,12 +27,12 @@ use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 use chaos_ipc::models::NetworkPermissions;
 use chaos_ipc::models::PermissionProfile;
 pub use chaos_ipc::models::SandboxPermissions;
-use chaos_ipc::permissions::FileSystemAccessMode;
-use chaos_ipc::permissions::FileSystemPath;
-use chaos_ipc::permissions::FileSystemSandboxEntry;
-use chaos_ipc::permissions::FileSystemSandboxKind;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsAccessMode;
+use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPath;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsPolicyKind;
 use chaos_parole::sandbox::has_full_disk_write_access;
 use chaos_pf::NetworkProxy;
 use chaos_realpath::AbsolutePathBuf;
@@ -63,8 +63,8 @@ pub struct ExecRequest {
     pub expiration: ExecExpiration,
     pub sandbox: SandboxType,
     pub sandbox_permissions: SandboxPermissions,
-    pub file_system_sandbox_policy: FileSystemSandboxPolicy,
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub vfs_policy: VfsPolicy,
+    pub socket_policy: SocketPolicy,
     pub justification: Option<String>,
     pub arg0: Option<String>,
 }
@@ -74,8 +74,8 @@ pub struct ExecRequest {
 /// This keeps call sites self-documenting when several fields are optional.
 pub(crate) struct SandboxTransformRequest<'a> {
     pub spec: CommandSpec,
-    pub file_system_policy: &'a FileSystemSandboxPolicy,
-    pub network_policy: NetworkSandboxPolicy,
+    pub file_system_policy: &'a VfsPolicy,
+    pub network_policy: SocketPolicy,
     pub sandbox: SandboxType,
     pub enforce_managed_network: bool,
     // TODO(viyatb): Evaluate switching this to Option<Arc<NetworkProxy>>
@@ -322,27 +322,27 @@ fn additional_permission_roots(
     )
 }
 
-fn merge_file_system_policy_with_additional_permissions(
-    file_system_policy: &FileSystemSandboxPolicy,
+fn merge_vfs_policy_with_additional_permissions(
+    file_system_policy: &VfsPolicy,
     extra_reads: Vec<AbsolutePathBuf>,
     extra_writes: Vec<AbsolutePathBuf>,
-) -> FileSystemSandboxPolicy {
+) -> VfsPolicy {
     match file_system_policy.kind {
-        FileSystemSandboxKind::Restricted => {
+        VfsPolicyKind::Restricted => {
             let mut merged_policy = file_system_policy.clone();
             for path in extra_reads {
-                let entry = FileSystemSandboxEntry {
-                    path: FileSystemPath::Path { path },
-                    access: FileSystemAccessMode::Read,
+                let entry = VfsEntry {
+                    path: VfsPath::Path { path },
+                    access: VfsAccessMode::Read,
                 };
                 if !merged_policy.entries.contains(&entry) {
                     merged_policy.entries.push(entry);
                 }
             }
             for path in extra_writes {
-                let entry = FileSystemSandboxEntry {
-                    path: FileSystemPath::Path { path },
-                    access: FileSystemAccessMode::Write,
+                let entry = VfsEntry {
+                    path: VfsPath::Path { path },
+                    access: VfsAccessMode::Write,
                 };
                 if !merged_policy.entries.contains(&entry) {
                     merged_policy.entries.push(entry);
@@ -350,16 +350,14 @@ fn merge_file_system_policy_with_additional_permissions(
             }
             merged_policy
         }
-        FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => {
-            file_system_policy.clone()
-        }
+        VfsPolicyKind::Unrestricted | VfsPolicyKind::ExternalSandbox => file_system_policy.clone(),
     }
 }
 
-pub(crate) fn effective_file_system_sandbox_policy(
-    file_system_policy: &FileSystemSandboxPolicy,
+pub(crate) fn effective_vfs_policy(
+    file_system_policy: &VfsPolicy,
     additional_permissions: Option<&PermissionProfile>,
-) -> FileSystemSandboxPolicy {
+) -> VfsPolicy {
     let Some(additional_permissions) = additional_permissions else {
         return file_system_policy.clone();
     };
@@ -368,22 +366,18 @@ pub(crate) fn effective_file_system_sandbox_policy(
     if extra_reads.is_empty() && extra_writes.is_empty() {
         file_system_policy.clone()
     } else {
-        merge_file_system_policy_with_additional_permissions(
-            file_system_policy,
-            extra_reads,
-            extra_writes,
-        )
+        merge_vfs_policy_with_additional_permissions(file_system_policy, extra_reads, extra_writes)
     }
 }
 
-pub(crate) fn effective_network_sandbox_policy(
-    network_policy: NetworkSandboxPolicy,
+pub(crate) fn effective_socket_policy(
+    network_policy: SocketPolicy,
     additional_permissions: Option<&PermissionProfile>,
-) -> NetworkSandboxPolicy {
+) -> SocketPolicy {
     if additional_permissions
         .is_some_and(|permissions| merge_network_access(network_policy.is_enabled(), permissions))
     {
-        NetworkSandboxPolicy::Enabled
+        SocketPolicy::Enabled
     } else {
         network_policy
     }
@@ -402,8 +396,8 @@ fn merge_network_access(
 }
 
 pub(crate) fn should_require_platform_sandbox(
-    file_system_policy: &FileSystemSandboxPolicy,
-    network_policy: NetworkSandboxPolicy,
+    file_system_policy: &VfsPolicy,
+    network_policy: SocketPolicy,
     has_managed_network_requirements: bool,
 ) -> bool {
     if has_managed_network_requirements {
@@ -411,15 +405,12 @@ pub(crate) fn should_require_platform_sandbox(
     }
 
     if !network_policy.is_enabled() {
-        return !matches!(
-            file_system_policy.kind,
-            FileSystemSandboxKind::ExternalSandbox
-        );
+        return !matches!(file_system_policy.kind, VfsPolicyKind::ExternalSandbox);
     }
 
     match file_system_policy.kind {
-        FileSystemSandboxKind::Restricted => !has_full_disk_write_access(file_system_policy),
-        FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => false,
+        VfsPolicyKind::Restricted => !has_full_disk_write_access(file_system_policy),
+        VfsPolicyKind::Unrestricted | VfsPolicyKind::ExternalSandbox => false,
     }
 }
 
@@ -433,8 +424,8 @@ impl SandboxManager {
 
     pub(crate) fn select_initial(
         &self,
-        file_system_policy: &FileSystemSandboxPolicy,
-        network_policy: NetworkSandboxPolicy,
+        file_system_policy: &VfsPolicy,
+        network_policy: SocketPolicy,
         pref: SandboxablePreference,
         has_managed_network_requirements: bool,
     ) -> SandboxType {
@@ -495,11 +486,8 @@ impl SandboxManager {
         let (effective_file_system_policy, effective_network_policy) =
             if let Some(additional_permissions) = additional_permissions {
                 (
-                    effective_file_system_sandbox_policy(
-                        file_system_policy,
-                        Some(&additional_permissions),
-                    ),
-                    effective_network_sandbox_policy(network_policy, Some(&additional_permissions)),
+                    effective_vfs_policy(file_system_policy, Some(&additional_permissions)),
+                    effective_socket_policy(network_policy, Some(&additional_permissions)),
                 )
             } else {
                 (file_system_policy.clone(), network_policy)
@@ -609,8 +597,8 @@ impl SandboxManager {
             expiration: spec.expiration,
             sandbox,
             sandbox_permissions: spec.sandbox_permissions,
-            file_system_sandbox_policy: effective_file_system_policy,
-            network_sandbox_policy: effective_network_policy,
+            vfs_policy: effective_file_system_policy,
+            socket_policy: effective_network_policy,
             justification: spec.justification,
             arg0: arg0_override,
         })

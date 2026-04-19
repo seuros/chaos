@@ -4,14 +4,14 @@ use serde::Serialize;
 use strum_macros::Display;
 use ts_rs::TS;
 
-use super::FileSystemAccessMode;
-use super::FileSystemPath;
-use super::FileSystemSpecialPath;
+use super::VfsAccessMode;
+use super::VfsPath;
+use super::VfsSpecialPath;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct FileSystemSandboxEntry {
-    pub path: FileSystemPath,
-    pub access: FileSystemAccessMode,
+pub struct VfsEntry {
+    pub path: VfsPath,
+    pub access: VfsAccessMode,
 }
 
 #[derive(
@@ -19,7 +19,7 @@ pub struct FileSystemSandboxEntry {
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum FileSystemSandboxKind {
+pub enum VfsPolicyKind {
     #[default]
     Restricted,
     Unrestricted,
@@ -27,44 +27,44 @@ pub enum FileSystemSandboxKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-pub struct FileSystemSandboxPolicy {
-    pub kind: FileSystemSandboxKind,
+pub struct VfsPolicy {
+    pub kind: VfsPolicyKind,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entries: Vec<FileSystemSandboxEntry>,
+    pub entries: Vec<VfsEntry>,
 }
 
-impl Default for FileSystemSandboxPolicy {
+impl Default for VfsPolicy {
     fn default() -> Self {
         Self {
-            kind: FileSystemSandboxKind::Restricted,
-            entries: vec![FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Root,
+            kind: VfsPolicyKind::Restricted,
+            entries: vec![VfsEntry {
+                path: VfsPath::Special {
+                    value: VfsSpecialPath::Root,
                 },
-                access: FileSystemAccessMode::Read,
+                access: VfsAccessMode::Read,
             }],
         }
     }
 }
 
-impl FileSystemSandboxPolicy {
+impl VfsPolicy {
     pub fn unrestricted() -> Self {
         Self {
-            kind: FileSystemSandboxKind::Unrestricted,
+            kind: VfsPolicyKind::Unrestricted,
             entries: Vec::new(),
         }
     }
 
     pub fn external_sandbox() -> Self {
         Self {
-            kind: FileSystemSandboxKind::ExternalSandbox,
+            kind: VfsPolicyKind::ExternalSandbox,
             entries: Vec::new(),
         }
     }
 
-    pub fn restricted(entries: Vec<FileSystemSandboxEntry>) -> Self {
+    pub fn restricted(entries: Vec<VfsEntry>) -> Self {
         Self {
-            kind: FileSystemSandboxKind::Restricted,
+            kind: VfsPolicyKind::Restricted,
             entries,
         }
     }

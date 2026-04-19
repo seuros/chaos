@@ -16,11 +16,11 @@ use crate::tools::format_exec_output_str;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::FunctionCallOutputPayload;
-use chaos_ipc::permissions::FileSystemAccessMode;
-use chaos_ipc::permissions::FileSystemPath;
-use chaos_ipc::permissions::FileSystemSandboxEntry;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::FileSystemSpecialPath;
+use chaos_ipc::permissions::VfsAccessMode;
+use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPath;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsSpecialPath;
 use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::request_permissions::PermissionGrantScope;
@@ -395,8 +395,8 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         compact_prompt: config.compact_prompt.clone(),
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
-        file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
-        network_sandbox_policy: config.permissions.network_sandbox_policy,
+        vfs_policy: config.permissions.vfs_policy.clone(),
+        socket_policy: config.permissions.socket_policy,
 
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),
@@ -453,8 +453,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         compact_prompt: config.compact_prompt.clone(),
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
-        file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
-        network_sandbox_policy: config.permissions.network_sandbox_policy,
+        vfs_policy: config.permissions.vfs_policy.clone(),
+        socket_policy: config.permissions.socket_policy,
 
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),
@@ -606,8 +606,8 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         compact_prompt: config.compact_prompt.clone(),
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
-        file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
-        network_sandbox_policy: config.permissions.network_sandbox_policy,
+        vfs_policy: config.permissions.vfs_policy.clone(),
+        socket_policy: config.permissions.socket_policy,
 
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),

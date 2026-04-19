@@ -13,7 +13,7 @@ fn external_sandbox_skips_exec_approval_on_request() {
     assert_eq!(
         default_exec_approval_requirement(
             ApprovalPolicy::Interactive,
-            &FileSystemSandboxPolicy::from(&sandbox_policy),
+            &VfsPolicy::from(&sandbox_policy),
         ),
         ExecApprovalRequirement::Skip {
             bypass_sandbox: false,
@@ -28,7 +28,7 @@ fn restricted_sandbox_requires_exec_approval_on_request() {
     assert_eq!(
         default_exec_approval_requirement(
             ApprovalPolicy::Interactive,
-            &FileSystemSandboxPolicy::from(&sandbox_policy)
+            &VfsPolicy::from(&sandbox_policy)
         ),
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
@@ -47,8 +47,7 @@ fn default_exec_approval_requirement_rejects_sandbox_prompt_when_granular_disabl
     });
 
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
-    let requirement =
-        default_exec_approval_requirement(policy, &FileSystemSandboxPolicy::from(&sandbox_policy));
+    let requirement = default_exec_approval_requirement(policy, &VfsPolicy::from(&sandbox_policy));
 
     assert_eq!(
         requirement,
@@ -68,8 +67,7 @@ fn default_exec_approval_requirement_keeps_prompt_when_granular_allows_sandbox_a
     });
 
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
-    let requirement =
-        default_exec_approval_requirement(policy, &FileSystemSandboxPolicy::from(&sandbox_policy));
+    let requirement = default_exec_approval_requirement(policy, &VfsPolicy::from(&sandbox_policy));
 
     assert_eq!(
         requirement,

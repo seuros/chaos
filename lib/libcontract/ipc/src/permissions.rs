@@ -4,14 +4,14 @@ mod paths;
 mod policy;
 mod resolution;
 
-pub use access_modes::FileSystemAccessMode;
-pub use access_modes::NetworkSandboxPolicy;
-pub use paths::FileSystemPath;
-pub use paths::FileSystemSpecialPath;
-pub use policy::FileSystemSandboxEntry;
-pub use policy::FileSystemSandboxKind;
-pub use policy::FileSystemSandboxPolicy;
-pub use resolution::absolute_root_path_for_cwd;
+pub use access_modes::SocketPolicy;
+pub use access_modes::VfsAccessMode;
+pub use paths::VfsPath;
+pub use paths::VfsSpecialPath;
+pub use policy::VfsEntry;
+pub use policy::VfsPolicy;
+pub use policy::VfsPolicyKind;
+pub use resolution::absolute_vfs_root_path_for_cwd;
 
 #[cfg(test)]
 mod tests;

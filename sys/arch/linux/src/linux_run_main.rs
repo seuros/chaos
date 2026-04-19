@@ -6,9 +6,9 @@ use std::path::PathBuf;
 
 use crate::landlock::apply_sandbox_policy_to_current_thread;
 use alcatraz_base::sandbox_policy::{EffectiveSandboxPolicies, resolve_sandbox_policies};
-use chaos_ipc::protocol::FileSystemSandboxPolicy;
-use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_ipc::protocol::SocketPolicy;
+use chaos_ipc::protocol::VfsPolicy;
 use chaos_parole::sandbox::has_full_disk_write_access;
 use chaos_parole::sandbox::needs_direct_runtime_enforcement;
 use url::Url;
@@ -58,10 +58,10 @@ pub struct LandlockCommand {
     pub sandbox_policy: Option<SandboxPolicy>,
 
     #[arg(long = "file-system-sandbox-policy", hide = true)]
-    pub file_system_sandbox_policy: Option<FileSystemSandboxPolicy>,
+    pub vfs_policy: Option<VfsPolicy>,
 
     #[arg(long = "network-sandbox-policy", hide = true)]
-    pub network_sandbox_policy: Option<NetworkSandboxPolicy>,
+    pub socket_policy: Option<SocketPolicy>,
 
     /// Internal compatibility flag.
     ///
@@ -99,8 +99,8 @@ pub fn run_main() -> ! {
     let LandlockCommand {
         sandbox_policy_cwd,
         sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
         allow_network_for_proxy,
         command,
         ..
@@ -113,13 +113,13 @@ pub fn run_main() -> ! {
 
     let EffectiveSandboxPolicies {
         sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
     } = resolve_sandbox_policies(
         sandbox_policy_cwd.as_path(),
         sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
     )
     .unwrap_or_else(|err| {
         eprintln!("alcatraz-linux: {err}");
@@ -136,21 +136,16 @@ pub fn run_main() -> ! {
         std::process::exit(1);
     }
 
-    if needs_direct_runtime_enforcement(
-        &file_system_sandbox_policy,
-        network_sandbox_policy,
-        sandbox_policy_cwd.as_path(),
-    ) {
+    if needs_direct_runtime_enforcement(&vfs_policy, socket_policy, sandbox_policy_cwd.as_path()) {
         eprintln!("alcatraz-linux: {UNSUPPORTED_SPLIT_POLICY_ERROR}");
         std::process::exit(1);
     }
 
-    let apply_landlock_fs =
-        !has_full_disk_write_access(&file_system_sandbox_policy) || allow_network_for_proxy;
+    let apply_landlock_fs = !has_full_disk_write_access(&vfs_policy) || allow_network_for_proxy;
 
     if let Err(e) = apply_sandbox_policy_to_current_thread(
         &sandbox_policy,
-        network_sandbox_policy,
+        socket_policy,
         &sandbox_policy_cwd,
         apply_landlock_fs,
         allow_network_for_proxy,

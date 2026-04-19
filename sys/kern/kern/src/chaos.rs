@@ -146,7 +146,7 @@ pub(crate) use chaos_ipc::openai_models::ModelInfo;
 #[cfg(test)]
 pub(crate) use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 #[cfg(test)]
-pub(crate) use chaos_ipc::permissions::NetworkSandboxPolicy;
+pub(crate) use chaos_ipc::permissions::SocketPolicy;
 #[cfg(test)]
 pub(crate) use chaos_ipc::protocol::ChaosErrorInfo;
 #[cfg(test)]

@@ -36,8 +36,8 @@ use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -134,10 +134,10 @@ pub struct Permissions {
     pub sandbox_policy: Constrained<SandboxPolicy>,
     /// Effective filesystem sandbox policy, including entries that cannot yet
     /// be fully represented by the legacy [`SandboxPolicy`] projection.
-    pub file_system_sandbox_policy: FileSystemSandboxPolicy,
+    pub vfs_policy: VfsPolicy,
     /// Effective network sandbox policy split out from the legacy
     /// [`SandboxPolicy`] projection.
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub socket_policy: SocketPolicy,
     /// Effective network configuration applied to all spawned processes.
     pub network: Option<NetworkProxySpec>,
     /// Whether the model may request a login shell for shell-based tools.
@@ -867,13 +867,13 @@ pub fn resolve_oss_provider(
 
 pub(crate) fn resolve_web_search_mode_for_turn(
     web_search_mode: &Constrained<WebSearchMode>,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    vfs_policy: &VfsPolicy,
 ) -> WebSearchMode {
     let preferred = web_search_mode.value();
 
     if matches!(
-        file_system_sandbox_policy.kind,
-        chaos_ipc::permissions::FileSystemSandboxKind::Unrestricted
+        vfs_policy.kind,
+        chaos_ipc::permissions::VfsPolicyKind::Unrestricted
     ) && preferred != WebSearchMode::Disabled
     {
         for mode in [

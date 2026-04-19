@@ -60,8 +60,8 @@ impl Session {
         }
         developer_sections.push(
             crate::developer_instructions::from_policies(
-                &turn_context.file_system_sandbox_policy,
-                turn_context.network_sandbox_policy,
+                &turn_context.vfs_policy,
+                turn_context.socket_policy,
                 turn_context.approval_policy.value(),
                 self.services.exec_policy.current().as_ref(),
                 &turn_context.cwd,

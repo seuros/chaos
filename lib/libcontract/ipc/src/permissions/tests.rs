@@ -16,17 +16,15 @@ fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
 
 #[test]
 fn unknown_special_paths_are_ignored_by_legacy_bridge() -> std::io::Result<()> {
-    let policy = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Special {
-            value: FileSystemSpecialPath::unknown(":future_special_path", None),
+    let policy = VfsPolicy::restricted(vec![VfsEntry {
+        path: VfsPath::Special {
+            value: VfsSpecialPath::unknown(":future_special_path", None),
         },
-        access: FileSystemAccessMode::Write,
+        access: VfsAccessMode::Write,
     }]);
 
-    let sandbox_policy = policy.to_sandbox_policy(
-        NetworkSandboxPolicy::Restricted,
-        Path::new("/tmp/workspace"),
-    )?;
+    let sandbox_policy =
+        policy.to_sandbox_policy(SocketPolicy::Restricted, Path::new("/tmp/workspace"))?;
 
     assert_eq!(
         sandbox_policy,
@@ -67,14 +65,14 @@ fn effective_runtime_roots_canonicalize_symlinked_paths() {
         AbsolutePathBuf::from_absolute_path(chaos_dir.canonicalize().expect("canonicalize .chaos"))
             .expect("absolute canonical .chaos");
 
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: link_root },
-            access: FileSystemAccessMode::Write,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Path { path: link_root },
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: link_blocked },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: link_blocked },
+            access: VfsAccessMode::None,
         },
     ]);
 
@@ -119,9 +117,9 @@ fn writable_roots_preserve_symlinked_protected_subpaths() {
         AbsolutePathBuf::from_absolute_path(decoy.canonicalize().expect("canonicalize decoy"))
             .expect("absolute canonical decoy");
 
-    let policy = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Path { path: root },
-        access: FileSystemAccessMode::Write,
+    let policy = VfsPolicy::restricted(vec![VfsEntry {
+        path: VfsPath::Path { path: root },
+        access: VfsAccessMode::Write,
     }]);
 
     let writable_roots = policy.get_writable_roots_with_cwd(cwd.path());
@@ -164,14 +162,14 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_under_symlinked_roots() 
         AbsolutePathBuf::from_absolute_path(decoy.canonicalize().expect("canonicalize decoy"))
             .expect("absolute canonical decoy");
 
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: link_root },
-            access: FileSystemAccessMode::Write,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Path { path: link_root },
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: link_private },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: link_private },
+            access: VfsAccessMode::None,
         },
     ]);
 
@@ -217,14 +215,14 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_that_escape_root() {
         AbsolutePathBuf::from_absolute_path(decoy.canonicalize().expect("canonicalize decoy"))
             .expect("absolute canonical decoy");
 
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: link_root },
-            access: FileSystemAccessMode::Write,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Path { path: link_root },
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: link_private },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: link_private },
+            access: VfsAccessMode::None,
         },
     ]);
 
@@ -260,14 +258,14 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_that_alias_root() {
         .join("alias-root")
         .expect("expected alias path");
 
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: root },
-            access: FileSystemAccessMode::Write,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Path { path: root },
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: alias },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: alias },
+            access: VfsAccessMode::None,
         },
     ]);
 
@@ -325,16 +323,16 @@ fn tmpdir_special_path_canonicalizes_symlinked_tmpdir() {
         std::env::set_var("TMPDIR", &link_tmpdir);
     }
 
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Tmpdir,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Tmpdir,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: link_blocked },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: link_blocked },
+            access: VfsAccessMode::None,
         },
     ]);
 
@@ -368,46 +366,46 @@ fn resolve_access_with_cwd_uses_most_specific_entry() {
     let docs_private_public =
         AbsolutePathBuf::resolve_path_against_base("docs/private/public", cwd.path())
             .expect("resolve docs/private/public");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::CurrentWorkingDirectory,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::CurrentWorkingDirectory,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs.clone() },
-            access: FileSystemAccessMode::Read,
+        VfsEntry {
+            path: VfsPath::Path { path: docs.clone() },
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: docs_private.clone(),
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: docs_private_public.clone(),
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
     ]);
 
     assert_eq!(
         policy.resolve_access_with_cwd(cwd.path(), cwd.path()),
-        FileSystemAccessMode::Write
+        VfsAccessMode::Write
     );
     assert_eq!(
         policy.resolve_access_with_cwd(docs.as_path(), cwd.path()),
-        FileSystemAccessMode::Read
+        VfsAccessMode::Read
     );
     assert_eq!(
         policy.resolve_access_with_cwd(docs_private.as_path(), cwd.path()),
-        FileSystemAccessMode::None
+        VfsAccessMode::None
     );
     assert_eq!(
         policy.resolve_access_with_cwd(docs_private_public.as_path(), cwd.path()),
-        FileSystemAccessMode::Write
+        VfsAccessMode::Write
     );
 }
 
@@ -416,26 +414,25 @@ fn split_only_nested_carveouts_need_direct_runtime_enforcement() {
     let cwd = TempDir::new().expect("tempdir");
     let docs =
         AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::CurrentWorkingDirectory,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::CurrentWorkingDirectory,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs },
-            access: FileSystemAccessMode::Read,
+        VfsEntry {
+            path: VfsPath::Path { path: docs },
+            access: VfsAccessMode::Read,
         },
     ]);
 
-    assert!(policy.needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, cwd.path(),));
+    assert!(policy.needs_direct_runtime_enforcement(SocketPolicy::Restricted, cwd.path(),));
 
-    let legacy_workspace_write =
-        FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy());
+    let legacy_workspace_write = VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy());
     assert!(
         !legacy_workspace_write
-            .needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, cwd.path(),)
+            .needs_direct_runtime_enforcement(SocketPolicy::Restricted, cwd.path(),)
     );
 }
 
@@ -444,25 +441,25 @@ fn root_write_with_read_only_child_is_not_full_disk_write() {
     let cwd = TempDir::new().expect("tempdir");
     let docs =
         AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs.clone() },
-            access: FileSystemAccessMode::Read,
+        VfsEntry {
+            path: VfsPath::Path { path: docs.clone() },
+            access: VfsAccessMode::Read,
         },
     ]);
 
     assert!(!policy.has_full_disk_write_access());
     assert_eq!(
         policy.resolve_access_with_cwd(docs.as_path(), cwd.path()),
-        FileSystemAccessMode::Read
+        VfsAccessMode::Read
     );
-    assert!(policy.needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, cwd.path(),));
+    assert!(policy.needs_direct_runtime_enforcement(SocketPolicy::Restricted, cwd.path(),));
 }
 
 #[test]
@@ -477,22 +474,22 @@ fn root_deny_does_not_materialize_as_unreadable_root() {
             .join("docs"),
     )
     .expect("canonical docs");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs.clone() },
-            access: FileSystemAccessMode::Read,
+        VfsEntry {
+            path: VfsPath::Path { path: docs.clone() },
+            access: VfsAccessMode::Read,
         },
     ]);
 
     assert_eq!(
         policy.resolve_access_with_cwd(docs.as_path(), cwd.path()),
-        FileSystemAccessMode::Read
+        VfsAccessMode::Read
     );
     assert_eq!(
         policy.get_readable_roots_with_cwd(cwd.path()),
@@ -505,27 +502,27 @@ fn root_deny_does_not_materialize_as_unreadable_root() {
 fn duplicate_root_deny_prevents_full_disk_write_access() {
     let cwd = TempDir::new().expect("tempdir");
     let root = AbsolutePathBuf::from_absolute_path(cwd.path())
-        .map(|cwd| absolute_root_path_for_cwd(&cwd))
+        .map(|cwd| absolute_vfs_root_path_for_cwd(&cwd))
         .expect("resolve filesystem root");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
     ]);
 
     assert!(!policy.has_full_disk_write_access());
     assert_eq!(
         policy.resolve_access_with_cwd(root.as_path(), cwd.path()),
-        FileSystemAccessMode::None
+        VfsAccessMode::None
     );
 }
 
@@ -534,32 +531,32 @@ fn same_specificity_write_override_keeps_full_disk_write_access() {
     let cwd = TempDir::new().expect("tempdir");
     let docs =
         AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs.clone() },
-            access: FileSystemAccessMode::Read,
+        VfsEntry {
+            path: VfsPath::Path { path: docs.clone() },
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs.clone() },
-            access: FileSystemAccessMode::Write,
+        VfsEntry {
+            path: VfsPath::Path { path: docs.clone() },
+            access: VfsAccessMode::Write,
         },
     ]);
 
     assert!(policy.has_full_disk_write_access());
     assert_eq!(
         policy.resolve_access_with_cwd(docs.as_path(), cwd.path()),
-        FileSystemAccessMode::Write
+        VfsAccessMode::Write
     );
 }
 
 #[test]
 fn file_system_access_mode_orders_by_conflict_precedence() {
-    assert!(FileSystemAccessMode::Write > FileSystemAccessMode::Read);
-    assert!(FileSystemAccessMode::None > FileSystemAccessMode::Write);
+    assert!(VfsAccessMode::Write > VfsAccessMode::Read);
+    assert!(VfsAccessMode::None > VfsAccessMode::Write);
 }

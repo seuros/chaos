@@ -1,10 +1,10 @@
 use super::*;
-use chaos_ipc::protocol::FileSystemAccessMode;
-use chaos_ipc::protocol::FileSystemPath;
-use chaos_ipc::protocol::FileSystemSandboxEntry;
-use chaos_ipc::protocol::FileSystemSpecialPath;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_ipc::protocol::VfsAccessMode;
+use chaos_ipc::protocol::VfsEntry;
+use chaos_ipc::protocol::VfsPath;
+use chaos_ipc::protocol::VfsSpecialPath;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -35,13 +35,13 @@ fn test_writable_roots_constraint() {
 
     assert!(is_write_patch_constrained_to_writable_paths(
         &add_inside,
-        &FileSystemSandboxPolicy::from(&policy_workspace_only),
+        &VfsPolicy::from(&policy_workspace_only),
         &cwd,
     ));
 
     assert!(!is_write_patch_constrained_to_writable_paths(
         &add_outside,
-        &FileSystemSandboxPolicy::from(&policy_workspace_only),
+        &VfsPolicy::from(&policy_workspace_only),
         &cwd,
     ));
 
@@ -56,7 +56,7 @@ fn test_writable_roots_constraint() {
     };
     assert!(is_write_patch_constrained_to_writable_paths(
         &add_outside,
-        &FileSystemSandboxPolicy::from(&policy_with_parent),
+        &VfsPolicy::from(&policy_with_parent),
         &cwd,
     ));
 }
@@ -75,7 +75,7 @@ fn external_sandbox_auto_approves_in_on_request() {
         assess_patch_safety(
             &add_inside,
             ApprovalPolicy::Interactive,
-            &FileSystemSandboxPolicy::from(&policy),
+            &VfsPolicy::from(&policy),
             &cwd,
         ),
         SafetyCheck::AutoApprove {
@@ -104,7 +104,7 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
         assess_patch_safety(
             &add_outside,
             ApprovalPolicy::Interactive,
-            &FileSystemSandboxPolicy::from(&policy_workspace_only),
+            &VfsPolicy::from(&policy_workspace_only),
             &cwd,
         ),
         SafetyCheck::AskUser,
@@ -118,7 +118,7 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            &FileSystemSandboxPolicy::from(&policy_workspace_only),
+            &VfsPolicy::from(&policy_workspace_only),
             &cwd,
         ),
         SafetyCheck::AskUser,
@@ -149,7 +149,7 @@ fn granular_sandbox_approval_false_rejects_out_of_root_patch() {
                 request_permissions: true,
                 mcp_elicitations: true,
             }),
-            &FileSystemSandboxPolicy::from(&policy_workspace_only),
+            &VfsPolicy::from(&policy_workspace_only),
             &cwd,
         ),
         SafetyCheck::Reject {
@@ -168,33 +168,28 @@ fn explicit_unreadable_paths_prevent_auto_approval_for_external_sandbox() {
     let _sandbox_policy = SandboxPolicy::ExternalSandbox {
         network_access: chaos_ipc::protocol::NetworkAccess::Restricted,
     };
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let vfs_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: blocked_absolute,
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
     ]);
 
     assert!(!is_write_patch_constrained_to_writable_paths(
         &action,
-        &file_system_sandbox_policy,
+        &vfs_policy,
         &cwd,
     ));
     assert_eq!(
-        assess_patch_safety(
-            &action,
-            ApprovalPolicy::Interactive,
-            &file_system_sandbox_policy,
-            &cwd,
-        ),
+        assess_patch_safety(&action, ApprovalPolicy::Interactive, &vfs_policy, &cwd,),
         SafetyCheck::AskUser,
     );
 }
@@ -209,33 +204,28 @@ fn explicit_read_only_subpaths_prevent_auto_approval_for_external_sandbox() {
     let _sandbox_policy = SandboxPolicy::ExternalSandbox {
         network_access: chaos_ipc::protocol::NetworkAccess::Restricted,
     };
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::CurrentWorkingDirectory,
+    let vfs_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::CurrentWorkingDirectory,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: docs_absolute,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
     ]);
 
     assert!(!is_write_patch_constrained_to_writable_paths(
         &action,
-        &file_system_sandbox_policy,
+        &vfs_policy,
         &cwd,
     ));
     assert_eq!(
-        assess_patch_safety(
-            &action,
-            ApprovalPolicy::Interactive,
-            &file_system_sandbox_policy,
-            &cwd,
-        ),
+        assess_patch_safety(&action, ApprovalPolicy::Interactive, &vfs_policy, &cwd,),
         SafetyCheck::AskUser,
     );
 }

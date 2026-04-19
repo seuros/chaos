@@ -22,8 +22,8 @@ impl ChatWidget {
         event: chaos_ipc::protocol::SessionConfiguredEvent,
     ) {
         let sandbox_policy = event
-            .file_system_sandbox_policy
-            .to_sandbox_policy(event.network_sandbox_policy, &event.cwd);
+            .vfs_policy
+            .to_sandbox_policy(event.socket_policy, &event.cwd);
         self.bottom_pane
             .set_history_metadata(event.history_log_id, event.history_entry_count);
         self.session_network_proxy = event.network_proxy.clone();
@@ -42,9 +42,8 @@ impl ChatWidget {
             self.config.permissions.approval_policy =
                 Constrained::allow_only(event.approval_policy);
         }
-        self.config.permissions.file_system_sandbox_policy =
-            event.file_system_sandbox_policy.clone();
-        self.config.permissions.network_sandbox_policy = event.network_sandbox_policy;
+        self.config.permissions.vfs_policy = event.vfs_policy.clone();
+        self.config.permissions.socket_policy = event.socket_policy;
         match sandbox_policy {
             Ok(sandbox_policy) => {
                 if let Err(err) = self

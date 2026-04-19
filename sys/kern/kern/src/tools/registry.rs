@@ -190,15 +190,13 @@ impl ToolRegistry {
         let metric_tags = [
             (
                 "sandbox",
-                crate::sandbox_tags::sandbox_tag_for_file_system_policy(
-                    &invocation.turn.file_system_sandbox_policy,
-                ),
+                crate::sandbox_tags::sandbox_tag_for_vfs_policy(&invocation.turn.vfs_policy),
             ),
             (
                 "sandbox_policy",
                 crate::sandbox_tags::sandbox_policy_tag_for_policies(
-                    &invocation.turn.file_system_sandbox_policy,
-                    invocation.turn.network_sandbox_policy,
+                    &invocation.turn.vfs_policy,
+                    invocation.turn.socket_policy,
                     &invocation.turn.cwd,
                 ),
             ),
@@ -511,13 +509,11 @@ async fn dispatch_after_tool_use_hook(
                     success: dispatch.success,
                     duration_ms: u64::try_from(dispatch.duration.as_millis()).unwrap_or(u64::MAX),
                     mutating: dispatch.mutating,
-                    sandbox: crate::sandbox_tags::sandbox_tag_for_file_system_policy(
-                        &turn.file_system_sandbox_policy,
-                    )
-                    .to_string(),
+                    sandbox: crate::sandbox_tags::sandbox_tag_for_vfs_policy(&turn.vfs_policy)
+                        .to_string(),
                     sandbox_policy: crate::sandbox_tags::sandbox_policy_tag_for_policies(
-                        &turn.file_system_sandbox_policy,
-                        turn.network_sandbox_policy,
+                        &turn.vfs_policy,
+                        turn.socket_policy,
                         &turn.cwd,
                     )
                     .to_string(),

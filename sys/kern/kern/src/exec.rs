@@ -31,8 +31,8 @@ use crate::spawn::StdioPolicy;
 use crate::spawn::spawn_child_async;
 use crate::text_encoding::bytes_to_string_smart;
 use crate::tools::sandboxing::SandboxablePreference;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_pf::NetworkProxy;
 use chaos_pty::DEFAULT_OUTPUT_BYTES_CAP;
 use chaos_pty::process_group::kill_child_process_group;
@@ -82,13 +82,13 @@ pub struct ExecParams {
 }
 
 fn select_process_exec_tool_sandbox_type(
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: &VfsPolicy,
+    socket_policy: SocketPolicy,
     enforce_managed_network: bool,
 ) -> SandboxType {
     SandboxManager::new().select_initial(
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
         SandboxablePreference::Auto,
         enforce_managed_network,
     )
@@ -172,8 +172,8 @@ pub struct StdoutStream {
 }
 
 pub struct ExecSandboxContext<'a> {
-    pub file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub vfs_policy: &'a VfsPolicy,
+    pub socket_policy: SocketPolicy,
     pub sandbox_cwd: &'a Path,
     pub alcatraz_macos_exe: &'a Option<PathBuf>,
     pub alcatraz_linux_exe: &'a Option<PathBuf>,
@@ -183,8 +183,8 @@ pub struct ExecSandboxContext<'a> {
 #[allow(clippy::too_many_arguments)]
 pub async fn process_exec_tool_call(
     params: ExecParams,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: &VfsPolicy,
+    socket_policy: SocketPolicy,
     sandbox_cwd: &Path,
     alcatraz_macos_exe: &Option<PathBuf>,
     alcatraz_linux_exe: &Option<PathBuf>,
@@ -194,8 +194,8 @@ pub async fn process_exec_tool_call(
     let exec_req = build_exec_request(
         params,
         ExecSandboxContext {
-            file_system_sandbox_policy,
-            network_sandbox_policy,
+            vfs_policy,
+            socket_policy,
             sandbox_cwd,
             alcatraz_macos_exe,
             alcatraz_linux_exe,
@@ -214,8 +214,8 @@ pub fn build_exec_request(
     sandbox: ExecSandboxContext<'_>,
 ) -> Result<ExecRequest> {
     let ExecSandboxContext {
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
         sandbox_cwd,
         alcatraz_macos_exe,
         alcatraz_linux_exe,
@@ -226,11 +226,8 @@ pub fn build_exec_request(
     } = sandbox;
 
     let enforce_managed_network = params.network.is_some();
-    let sandbox_type = select_process_exec_tool_sandbox_type(
-        file_system_sandbox_policy,
-        network_sandbox_policy,
-        enforce_managed_network,
-    );
+    let sandbox_type =
+        select_process_exec_tool_sandbox_type(vfs_policy, socket_policy, enforce_managed_network);
     tracing::debug!("Sandbox type: {sandbox_type:?}");
 
     let ExecParams {
@@ -268,8 +265,8 @@ pub fn build_exec_request(
     let exec_req = manager
         .transform(crate::sandboxing::SandboxTransformRequest {
             spec,
-            file_system_policy: file_system_sandbox_policy,
-            network_policy: network_sandbox_policy,
+            file_system_policy: vfs_policy,
+            network_policy: socket_policy,
             sandbox: sandbox_type,
             enforce_managed_network,
             network: network.as_ref(),
@@ -298,8 +295,8 @@ pub(crate) async fn execute_exec_request(
         expiration,
         sandbox,
         sandbox_permissions,
-        file_system_sandbox_policy: _,
-        network_sandbox_policy,
+        vfs_policy: _,
+        socket_policy,
         justification,
         arg0,
     } = exec_request;
@@ -316,14 +313,7 @@ pub(crate) async fn execute_exec_request(
     };
 
     let start = Instant::now();
-    let raw_output_result = exec(
-        params,
-        sandbox,
-        network_sandbox_policy,
-        stdout_stream,
-        after_spawn,
-    )
-    .await;
+    let raw_output_result = exec(params, sandbox, socket_policy, stdout_stream, after_spawn).await;
     let duration = start.elapsed();
     finalize_exec_result(raw_output_result, sandbox, duration)
 }
@@ -598,7 +588,7 @@ impl Default for ExecToolCallOutput {
 async fn exec(
     params: ExecParams,
     sandbox: SandboxType,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    socket_policy: SocketPolicy,
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
 ) -> Result<RawExecToolCallOutput> {
@@ -629,7 +619,7 @@ async fn exec(
         args: args.into(),
         arg0: arg0_ref,
         cwd,
-        network_sandbox_policy,
+        socket_policy,
         // The environment already has attempt-scoped proxy settings from
         // apply_to_env_for_attempt above. Passing network here would reapply
         // non-attempt proxy vars and drop attempt correlation metadata.

@@ -11,16 +11,16 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
     let docs_dir = chaos_realpath::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
 
     session_configuration.cwd = original_cwd;
-    session_configuration.file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::CurrentWorkingDirectory,
+    session_configuration.vfs_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::CurrentWorkingDirectory,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: docs_dir },
-            access: FileSystemAccessMode::Read,
+        VfsEntry {
+            path: VfsPath::Path { path: docs_dir },
+            access: VfsAccessMode::Read,
         },
     ]);
 
@@ -31,10 +31,7 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
         })
         .expect("cwd-only update should succeed");
 
-    assert_eq!(
-        updated.file_system_sandbox_policy,
-        session_configuration.file_system_sandbox_policy
-    );
+    assert_eq!(updated.vfs_policy, session_configuration.vfs_policy);
 }
 
 #[tokio::test]
@@ -68,8 +65,8 @@ async fn session_configuration_apply_rederives_projected_file_system_policy_on_c
         .expect("sandbox update should succeed");
 
     assert_eq!(
-        updated.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::from_sandbox_policy(&sandbox_policy, &project_root,)
+        updated.vfs_policy,
+        VfsPolicy::from_sandbox_policy(&sandbox_policy, &project_root,)
     );
 }
 

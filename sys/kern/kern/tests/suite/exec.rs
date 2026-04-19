@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::string::ToString;
 
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::exec::ExecParams;
 use chaos_kern::exec::ExecToolCallOutput;
@@ -53,8 +53,8 @@ async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput
     process_exec_tool_call(
         params,
         &policy,
-        &FileSystemSandboxPolicy::from(&policy),
-        NetworkSandboxPolicy::from(&policy),
+        &VfsPolicy::from(&policy),
+        SocketPolicy::from(&policy),
         tmp.path(),
         &alcatraz_macos_exe(),
         &None,

@@ -10,8 +10,8 @@ use crate::config_loader::ConfigLayerStackOrdering;
 use crate::is_dangerous_command::command_might_be_dangerous;
 use crate::is_safe_command::is_known_safe_command;
 use chaos_ipc::approvals::ExecPolicyAmendment;
-use chaos_ipc::permissions::FileSystemSandboxKind;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsPolicyKind;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_selinux::AmendError;
 use chaos_selinux::Decision;
@@ -163,7 +163,7 @@ pub(crate) struct ExecPolicyManager {
 pub(crate) struct ExecApprovalRequest<'a> {
     pub(crate) command: &'a [String],
     pub(crate) approval_policy: ApprovalPolicy,
-    pub(crate) file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
+    pub(crate) vfs_policy: &'a VfsPolicy,
     pub(crate) sandbox_permissions: SandboxPermissions,
     pub(crate) prefix_rule: Option<Vec<String>>,
 }
@@ -195,7 +195,7 @@ impl ExecPolicyManager {
         let ExecApprovalRequest {
             command,
             approval_policy,
-            file_system_sandbox_policy,
+            vfs_policy,
             sandbox_permissions,
             prefix_rule,
         } = req;
@@ -208,7 +208,7 @@ impl ExecPolicyManager {
         let exec_policy_fallback = |cmd: &[String]| {
             render_decision_for_unmatched_command(
                 approval_policy,
-                file_system_sandbox_policy,
+                vfs_policy,
                 cmd,
                 sandbox_permissions,
                 used_complex_parsing,
@@ -482,7 +482,7 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
 /// If a command is not matched by any execpolicy rule, derive a [`Decision`].
 pub fn render_decision_for_unmatched_command(
     approval_policy: ApprovalPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    vfs_policy: &VfsPolicy,
     command: &[String],
     sandbox_permissions: SandboxPermissions,
     used_complex_parsing: bool,
@@ -520,14 +520,14 @@ pub fn render_decision_for_unmatched_command(
             Decision::Prompt
         }
         ApprovalPolicy::Interactive => {
-            match file_system_sandbox_policy.kind {
-                FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => {
+            match vfs_policy.kind {
+                VfsPolicyKind::Unrestricted | VfsPolicyKind::ExternalSandbox => {
                     // The user has indicated we should "just run" commands
                     // in their unrestricted environment, so we do so since the
                     // command has not been flagged as dangerous.
                     Decision::Allow
                 }
-                FileSystemSandboxKind::Restricted => {
+                VfsPolicyKind::Restricted => {
                     // In restricted sandboxes, do not prompt for non-escalated,
                     // non-dangerous commands; let the sandbox enforce
                     // restrictions without a user prompt.
@@ -539,13 +539,13 @@ pub fn render_decision_for_unmatched_command(
                 }
             }
         }
-        ApprovalPolicy::Granular(_) => match file_system_sandbox_policy.kind {
-            FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => {
+        ApprovalPolicy::Granular(_) => match vfs_policy.kind {
+            VfsPolicyKind::Unrestricted | VfsPolicyKind::ExternalSandbox => {
                 // Mirror on-request behavior for unmatched commands; prompt-vs-reject is handled
                 // by `prompt_is_rejected_by_policy`.
                 Decision::Allow
             }
-            FileSystemSandboxKind::Restricted => {
+            VfsPolicyKind::Restricted => {
                 if sandbox_permissions.requests_sandbox_override() {
                     Decision::Prompt
                 } else {

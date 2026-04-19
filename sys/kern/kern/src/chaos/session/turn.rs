@@ -50,11 +50,9 @@ impl Session {
             match state.session_configuration.clone().apply(&updates) {
                 Ok(next) => {
                     let previous_cwd = state.session_configuration.cwd.clone();
-                    let sandbox_policy_changed =
-                        state.session_configuration.file_system_sandbox_policy
-                            != next.file_system_sandbox_policy
-                            || state.session_configuration.network_sandbox_policy
-                                != next.network_sandbox_policy;
+                    let sandbox_policy_changed = state.session_configuration.vfs_policy
+                        != next.vfs_policy
+                        || state.session_configuration.socket_policy != next.socket_policy;
                     let chaos_home = next.chaos_home.clone();
                     let session_source = next.session_source.clone();
                     state.session_configuration = next.clone();
@@ -126,10 +124,8 @@ impl Session {
 
         if sandbox_policy_changed {
             let sandbox_state = SandboxState {
-                file_system_sandbox_policy: session_configuration
-                    .file_system_sandbox_policy
-                    .clone(),
-                network_sandbox_policy: session_configuration.network_sandbox_policy,
+                vfs_policy: session_configuration.vfs_policy.clone(),
+                socket_policy: session_configuration.socket_policy,
                 alcatraz_macos_exe: per_turn_config.alcatraz_macos_exe.clone(),
                 alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
                 alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),

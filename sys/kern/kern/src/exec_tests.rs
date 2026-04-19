@@ -187,8 +187,8 @@ fn process_exec_tool_call_uses_platform_sandbox_for_network_only_restrictions() 
 
     assert_eq!(
         select_process_exec_tool_sandbox_type(
-            &FileSystemSandboxPolicy::unrestricted(),
-            NetworkSandboxPolicy::Restricted,
+            &VfsPolicy::unrestricted(),
+            SocketPolicy::Restricted,
             false,
         ),
         expected
@@ -233,7 +233,7 @@ async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()>
     let output = exec(
         params,
         SandboxType::None,
-        NetworkSandboxPolicy::Restricted,
+        SocketPolicy::Restricted,
         None,
         None,
     )
@@ -288,8 +288,8 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
     });
     let result = process_exec_tool_call(
         params,
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::RootAccess),
-        NetworkSandboxPolicy::Enabled,
+        &VfsPolicy::from(&SandboxPolicy::RootAccess),
+        SocketPolicy::Enabled,
         cwd.as_path(),
         &None,
         &None,

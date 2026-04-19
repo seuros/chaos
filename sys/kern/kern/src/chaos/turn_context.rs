@@ -12,14 +12,14 @@ use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::TurnContextItem;
 use chaos_ipc::protocol::TurnContextNetworkItem;
-use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 
 use chaos_ready::ReadinessFlag;
 use chaos_syslog::SessionTelemetry;
@@ -80,8 +80,8 @@ pub(crate) struct TurnContext {
     pub(crate) collaboration_mode: CollaborationMode,
     pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: Constrained<ApprovalPolicy>,
-    pub(crate) file_system_sandbox_policy: FileSystemSandboxPolicy,
-    pub(crate) network_sandbox_policy: NetworkSandboxPolicy,
+    pub(crate) vfs_policy: VfsPolicy,
+    pub(crate) socket_policy: SocketPolicy,
     pub(crate) network: Option<NetworkProxy>,
     pub(crate) shell_environment_policy: ShellEnvironmentPolicy,
     pub(crate) tools_config: ToolsConfig,
@@ -151,7 +151,7 @@ impl TurnContext {
             features: &features,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
-            file_system_sandbox_policy: &self.file_system_sandbox_policy,
+            vfs_policy: &self.vfs_policy,
             collab_enabled: config.collab_enabled,
         })
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
@@ -183,8 +183,8 @@ impl TurnContext {
             collaboration_mode,
             personality: self.personality,
             approval_policy: self.approval_policy.clone(),
-            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
-            network_sandbox_policy: self.network_sandbox_policy,
+            vfs_policy: self.vfs_policy.clone(),
+            socket_policy: self.socket_policy,
             network: self.network.clone(),
             shell_environment_policy: self.shell_environment_policy.clone(),
             tools_config,
@@ -222,8 +222,8 @@ impl TurnContext {
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
             approval_policy: self.approval_policy.value(),
-            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
-            network_sandbox_policy: self.network_sandbox_policy,
+            vfs_policy: self.vfs_policy.clone(),
+            socket_policy: self.socket_policy,
             network: self.turn_context_network_item(),
             model: self.model_info.slug.clone(),
             personality: self.personality,
@@ -291,8 +291,8 @@ pub(crate) struct SessionConfiguration {
     /// When to escalate for approval for execution
     pub(super) approval_policy: Constrained<ApprovalPolicy>,
     pub(super) approvals_reviewer: ApprovalsReviewer,
-    pub(super) file_system_sandbox_policy: FileSystemSandboxPolicy,
-    pub(super) network_sandbox_policy: NetworkSandboxPolicy,
+    pub(super) vfs_policy: VfsPolicy,
+    pub(super) socket_policy: SocketPolicy,
 
     /// Working directory that should be treated as the *root* of the
     /// session. All relative paths supplied by the model as well as the
@@ -331,8 +331,8 @@ impl SessionConfiguration {
             service_tier: self.service_tier,
             approval_policy: self.approval_policy.value(),
             approvals_reviewer: self.approvals_reviewer,
-            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
-            network_sandbox_policy: self.network_sandbox_policy,
+            vfs_policy: self.vfs_policy.clone(),
+            socket_policy: self.socket_policy,
             cwd: self.cwd.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
@@ -362,9 +362,9 @@ impl SessionConfiguration {
             next_configuration.approvals_reviewer = approvals_reviewer;
         }
         if let Some(sandbox_policy) = updates.sandbox_policy.clone() {
-            next_configuration.file_system_sandbox_policy =
-                file_system_policy_from_sandbox_policy(&sandbox_policy, &self.cwd);
-            next_configuration.network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
+            next_configuration.vfs_policy =
+                vfs_policy_from_sandbox_policy(&sandbox_policy, &self.cwd);
+            next_configuration.socket_policy = SocketPolicy::from(&sandbox_policy);
         }
         if let Some(cwd) = updates.cwd.clone() {
             next_configuration.cwd = cwd;
@@ -425,7 +425,7 @@ pub(super) fn make_turn_context(
         features: &per_turn_config.features,
         web_search_mode: Some(per_turn_config.web_search_mode.value()),
         session_source: session_source.clone(),
-        file_system_sandbox_policy: &session_configuration.file_system_sandbox_policy,
+        vfs_policy: &session_configuration.vfs_policy,
         collab_enabled: per_turn_config.collab_enabled,
     })
     .with_web_search_config(per_turn_config.web_search_config.clone())
@@ -436,7 +436,7 @@ pub(super) fn make_turn_context(
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
         sub_id.clone(),
         cwd.clone(),
-        &session_configuration.file_system_sandbox_policy,
+        &session_configuration.vfs_policy,
     ));
     let (current_date, timezone) = local_time_context();
     TurnContext {
@@ -460,8 +460,8 @@ pub(super) fn make_turn_context(
         collaboration_mode: session_configuration.collaboration_mode.clone(),
         personality: session_configuration.personality,
         approval_policy: session_configuration.approval_policy.clone(),
-        file_system_sandbox_policy: session_configuration.file_system_sandbox_policy.clone(),
-        network_sandbox_policy: session_configuration.network_sandbox_policy,
+        vfs_policy: session_configuration.vfs_policy.clone(),
+        socket_policy: session_configuration.socket_policy,
         network,
         shell_environment_policy: per_turn_config.permissions.shell_environment_policy.clone(),
         tools_config,

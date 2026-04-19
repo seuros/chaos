@@ -9,15 +9,15 @@ use ts_rs::TS;
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum NetworkSandboxPolicy {
+pub enum SocketPolicy {
     #[default]
     Restricted,
     Enabled,
 }
 
-impl NetworkSandboxPolicy {
+impl SocketPolicy {
     pub fn is_enabled(self) -> bool {
-        matches!(self, NetworkSandboxPolicy::Enabled)
+        matches!(self, SocketPolicy::Enabled)
     }
 }
 
@@ -42,18 +42,18 @@ impl NetworkSandboxPolicy {
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
-pub enum FileSystemAccessMode {
+pub enum VfsAccessMode {
     Read,
     Write,
     None,
 }
 
-impl FileSystemAccessMode {
+impl VfsAccessMode {
     pub fn can_read(self) -> bool {
-        !matches!(self, FileSystemAccessMode::None)
+        !matches!(self, VfsAccessMode::None)
     }
 
     pub fn can_write(self) -> bool {
-        matches!(self, FileSystemAccessMode::Write)
+        matches!(self, VfsAccessMode::Write)
     }
 }

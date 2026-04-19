@@ -25,7 +25,7 @@ use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::CollabAgentInteractionBeginEvent;
 use chaos_ipc::protocol::CollabAgentInteractionEndEvent;
 use chaos_ipc::protocol::CollabAgentRef;
@@ -299,14 +299,10 @@ fn apply_spawn_agent_runtime_overrides(
     config.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
     config.alcatraz_freebsd_exe = turn.alcatraz_freebsd_exe.clone();
     config.cwd = turn.cwd.clone();
-    let sandbox_policy = FileSystemSandboxPolicy::to_sandbox_policy(
-        &turn.file_system_sandbox_policy,
-        turn.network_sandbox_policy,
-        &turn.cwd,
-    )
-    .map_err(|err| {
-        FunctionCallError::RespondToModel(format!("sandbox_policy is invalid: {err}"))
-    })?;
+    let sandbox_policy =
+        VfsPolicy::to_sandbox_policy(&turn.vfs_policy, turn.socket_policy, &turn.cwd).map_err(
+            |err| FunctionCallError::RespondToModel(format!("sandbox_policy is invalid: {err}")),
+        )?;
     config
         .permissions
         .sandbox_policy
@@ -314,8 +310,8 @@ fn apply_spawn_agent_runtime_overrides(
         .map_err(|err| {
             FunctionCallError::RespondToModel(format!("sandbox_policy is invalid: {err}"))
         })?;
-    config.permissions.file_system_sandbox_policy = turn.file_system_sandbox_policy.clone();
-    config.permissions.network_sandbox_policy = turn.network_sandbox_policy;
+    config.permissions.vfs_policy = turn.vfs_policy.clone();
+    config.permissions.socket_policy = turn.socket_policy;
     Ok(())
 }
 

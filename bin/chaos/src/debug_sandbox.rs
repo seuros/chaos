@@ -14,7 +14,7 @@ use std::process::Stdio;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::config_types::SandboxMode;
 #[cfg(target_os = "macos")]
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::NetworkProxyAuditMetadata;
@@ -196,7 +196,7 @@ async fn run_command_under_sandbox(
     let network_proxy = match config.permissions.network.as_ref() {
         Some(spec) => Some(
             spec.start_proxy(
-                &config.permissions.file_system_sandbox_policy,
+                &config.permissions.vfs_policy,
                 /*policy_decider*/ None,
                 /*blocked_request_observer*/ None,
                 managed_network_requirements_enabled,
@@ -325,7 +325,7 @@ async fn spawn_command_under_macos_seatbelt(
         network.apply_to_env(&mut env);
     }
     env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-    if !NetworkSandboxPolicy::from(sandbox_policy).is_enabled() {
+    if !SocketPolicy::from(sandbox_policy).is_enabled() {
         env.insert(
             CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
             "1".to_string(),

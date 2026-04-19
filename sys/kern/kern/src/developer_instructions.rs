@@ -3,8 +3,8 @@ use std::path::Path;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::models::format_allow_prefixes;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::NetworkAccess;
@@ -82,32 +82,28 @@ pub(crate) fn from(
 }
 
 pub(crate) fn from_policies(
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: &VfsPolicy,
+    socket_policy: SocketPolicy,
     approval_policy: ApprovalPolicy,
     exec_policy: &Policy,
     cwd: &Path,
     exec_permission_approvals_enabled: bool,
     request_permissions_tool_enabled: bool,
 ) -> DeveloperInstructions {
-    let network_access = if network_sandbox_policy.is_enabled() {
+    let network_access = if socket_policy.is_enabled() {
         NetworkAccess::Enabled
     } else {
         NetworkAccess::Restricted
     };
 
-    let (sandbox_mode, writable_roots) = match file_system_sandbox_policy.kind {
-        chaos_ipc::permissions::FileSystemSandboxKind::Unrestricted => {
-            (SandboxMode::RootAccess, None)
-        }
-        chaos_ipc::permissions::FileSystemSandboxKind::ExternalSandbox => {
-            (SandboxMode::RootAccess, None)
-        }
-        chaos_ipc::permissions::FileSystemSandboxKind::Restricted => {
-            if has_full_disk_write_access(file_system_sandbox_policy) {
+    let (sandbox_mode, writable_roots) = match vfs_policy.kind {
+        chaos_ipc::permissions::VfsPolicyKind::Unrestricted => (SandboxMode::RootAccess, None),
+        chaos_ipc::permissions::VfsPolicyKind::ExternalSandbox => (SandboxMode::RootAccess, None),
+        chaos_ipc::permissions::VfsPolicyKind::Restricted => {
+            if has_full_disk_write_access(vfs_policy) {
                 (SandboxMode::RootAccess, None)
             } else {
-                let roots = writable_roots(file_system_sandbox_policy, cwd);
+                let roots = writable_roots(vfs_policy, cwd);
                 if roots.is_empty() {
                     (SandboxMode::ReadOnly, None)
                 } else {
@@ -292,18 +288,16 @@ mod tests {
 
     #[test]
     fn builds_permissions_from_policy() {
-        let file_system_policy = FileSystemSandboxPolicy::restricted(vec![
-            chaos_ipc::permissions::FileSystemSandboxEntry {
-                path: chaos_ipc::permissions::FileSystemPath::Special {
-                    value: chaos_ipc::permissions::FileSystemSpecialPath::CurrentWorkingDirectory,
-                },
-                access: chaos_ipc::permissions::FileSystemAccessMode::Write,
+        let file_system_policy = VfsPolicy::restricted(vec![chaos_ipc::permissions::VfsEntry {
+            path: chaos_ipc::permissions::VfsPath::Special {
+                value: chaos_ipc::permissions::VfsSpecialPath::CurrentWorkingDirectory,
             },
-        ]);
+            access: chaos_ipc::permissions::VfsAccessMode::Write,
+        }]);
 
         let instructions = from_policies(
             &file_system_policy,
-            NetworkSandboxPolicy::Enabled,
+            SocketPolicy::Enabled,
             ApprovalPolicy::Supervised,
             &Policy::empty(),
             &PathBuf::from("/tmp"),

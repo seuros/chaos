@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::config_types::WebSearchMode;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 use chaos_realpath::AbsolutePathBuf;
 
 use crate::config::Config;
@@ -56,25 +56,23 @@ fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
     }
 }
 
-fn add_additional_file_system_writes(
-    file_system_sandbox_policy: &mut FileSystemSandboxPolicy,
+fn add_additional_vfs_writes(
+    vfs_policy: &mut VfsPolicy,
     additional_writable_roots: &[AbsolutePathBuf],
 ) {
     for path in additional_writable_roots {
-        let exists = file_system_sandbox_policy.entries.iter().any(|entry| {
+        let exists = vfs_policy.entries.iter().any(|entry| {
             matches!(
                 &entry.path,
-                chaos_ipc::permissions::FileSystemPath::Path { path: existing }
-                    if existing == path && entry.access == chaos_ipc::permissions::FileSystemAccessMode::Write
+                chaos_ipc::permissions::VfsPath::Path { path: existing }
+                    if existing == path && entry.access == chaos_ipc::permissions::VfsAccessMode::Write
             )
         });
         if !exists {
-            file_system_sandbox_policy.entries.push(
-                chaos_ipc::permissions::FileSystemSandboxEntry {
-                    path: chaos_ipc::permissions::FileSystemPath::Path { path: path.clone() },
-                    access: chaos_ipc::permissions::FileSystemAccessMode::Write,
-                },
-            );
+            vfs_policy.entries.push(chaos_ipc::permissions::VfsEntry {
+                path: chaos_ipc::permissions::VfsPath::Path { path: path.clone() },
+                access: chaos_ipc::permissions::VfsAccessMode::Write,
+            });
         }
     }
 }
@@ -264,74 +262,64 @@ impl Config {
             Some(PermissionConfigSyntax::Profiles)
         ) || (permission_config_syntax.is_none()
             && has_permission_profiles);
-        let (
-            configured_network_proxy_config,
-            sandbox_policy,
-            file_system_sandbox_policy,
-            network_sandbox_policy,
-        ) = if profiles_are_active {
-            let permissions = cfg.permissions.as_ref().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "default_permissions requires a `[permissions]` table",
-                )
-            })?;
-            let default_permissions = cfg.default_permissions.as_deref().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "default_permissions requires a named permissions profile",
-                )
-            })?;
-            let profile = resolve_permission_profile(permissions, default_permissions)?;
-            let configured_network_proxy_config =
-                network_proxy_config_from_profile_network(profile.network.as_ref());
-            let (mut file_system_sandbox_policy, network_sandbox_policy) =
-                compile_permission_profile(
+        let (configured_network_proxy_config, sandbox_policy, vfs_policy, socket_policy) =
+            if profiles_are_active {
+                let permissions = cfg.permissions.as_ref().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "default_permissions requires a `[permissions]` table",
+                    )
+                })?;
+                let default_permissions = cfg.default_permissions.as_deref().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "default_permissions requires a named permissions profile",
+                    )
+                })?;
+                let profile = resolve_permission_profile(permissions, default_permissions)?;
+                let configured_network_proxy_config =
+                    network_proxy_config_from_profile_network(profile.network.as_ref());
+                let (mut vfs_policy, socket_policy) = compile_permission_profile(
                     permissions,
                     default_permissions,
                     &mut startup_warnings,
                 )?;
-            let mut sandbox_policy = file_system_sandbox_policy
-                .to_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
-            if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
-                add_additional_file_system_writes(
-                    &mut file_system_sandbox_policy,
-                    &additional_writable_roots,
+                let mut sandbox_policy =
+                    vfs_policy.to_sandbox_policy(socket_policy, &resolved_cwd)?;
+                if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
+                    add_additional_vfs_writes(&mut vfs_policy, &additional_writable_roots);
+                    sandbox_policy = vfs_policy.to_sandbox_policy(socket_policy, &resolved_cwd)?;
+                }
+                (
+                    configured_network_proxy_config,
+                    sandbox_policy,
+                    vfs_policy,
+                    socket_policy,
+                )
+            } else {
+                let configured_network_proxy_config = NetworkProxyConfig::default();
+                let mut sandbox_policy = cfg.derive_sandbox_policy(
+                    sandbox_mode,
+                    config_profile.sandbox_mode,
+                    &resolved_cwd,
+                    Some(&constrained_sandbox_policy),
                 );
-                sandbox_policy = file_system_sandbox_policy
-                    .to_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
-            }
-            (
-                configured_network_proxy_config,
-                sandbox_policy,
-                file_system_sandbox_policy,
-                network_sandbox_policy,
-            )
-        } else {
-            let configured_network_proxy_config = NetworkProxyConfig::default();
-            let mut sandbox_policy = cfg.derive_sandbox_policy(
-                sandbox_mode,
-                config_profile.sandbox_mode,
-                &resolved_cwd,
-                Some(&constrained_sandbox_policy),
-            );
-            if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = &mut sandbox_policy {
-                for path in &additional_writable_roots {
-                    if !writable_roots.iter().any(|existing| existing == path) {
-                        writable_roots.push(path.clone());
+                if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = &mut sandbox_policy {
+                    for path in &additional_writable_roots {
+                        if !writable_roots.iter().any(|existing| existing == path) {
+                            writable_roots.push(path.clone());
+                        }
                     }
                 }
-            }
-            let file_system_sandbox_policy =
-                file_system_policy_from_sandbox_policy(&sandbox_policy, &resolved_cwd);
-            let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
-            (
-                configured_network_proxy_config,
-                sandbox_policy,
-                file_system_sandbox_policy,
-                network_sandbox_policy,
-            )
-        };
+                let vfs_policy = vfs_policy_from_sandbox_policy(&sandbox_policy, &resolved_cwd);
+                let socket_policy = SocketPolicy::from(&sandbox_policy);
+                (
+                    configured_network_proxy_config,
+                    sandbox_policy,
+                    vfs_policy,
+                    socket_policy,
+                )
+            };
         let approval_policy_was_explicit = approval_policy_override.is_some()
             || config_profile.approval_policy.is_some()
             || cfg.approval_policy.is_some();
@@ -588,7 +576,7 @@ impl Config {
         let network = NetworkProxySpec::from_config_and_constraints(
             configured_network_proxy_config,
             network_requirements,
-            &file_system_sandbox_policy,
+            &vfs_policy,
         )
         .map_err(|err| {
             if let Some(source) = network_requirements_source.as_ref() {
@@ -606,18 +594,16 @@ impl Config {
             network.enabled().then_some(network)
         };
         let effective_sandbox_policy = constrained_sandbox_policy.value.get().clone();
-        let effective_file_system_sandbox_policy =
-            if effective_sandbox_policy == original_sandbox_policy {
-                file_system_sandbox_policy
-            } else {
-                file_system_policy_from_sandbox_policy(&effective_sandbox_policy, &resolved_cwd)
-            };
-        let effective_network_sandbox_policy =
-            if effective_sandbox_policy == original_sandbox_policy {
-                network_sandbox_policy
-            } else {
-                NetworkSandboxPolicy::from(&effective_sandbox_policy)
-            };
+        let effective_vfs_policy = if effective_sandbox_policy == original_sandbox_policy {
+            vfs_policy
+        } else {
+            vfs_policy_from_sandbox_policy(&effective_sandbox_policy, &resolved_cwd)
+        };
+        let effective_socket_policy = if effective_sandbox_policy == original_sandbox_policy {
+            socket_policy
+        } else {
+            SocketPolicy::from(&effective_sandbox_policy)
+        };
 
         let config = Self {
             model,
@@ -632,8 +618,8 @@ impl Config {
             permissions: Permissions {
                 approval_policy: constrained_approval_policy.value,
                 sandbox_policy: constrained_sandbox_policy.value,
-                file_system_sandbox_policy: effective_file_system_sandbox_policy,
-                network_sandbox_policy: effective_network_sandbox_policy,
+                vfs_policy: effective_vfs_policy,
+                socket_policy: effective_socket_policy,
                 network,
                 allow_login_shell,
                 shell_environment_policy,

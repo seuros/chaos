@@ -6,7 +6,7 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FileSystemPermissions;
 use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::models::ResponseItem;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::WarningEvent;
@@ -160,21 +160,18 @@ fn clamp_write_permission(path: AbsolutePathBuf) -> PermissionProfile {
     }
 }
 
-pub(crate) fn clamp_effective_file_system_policy(
+pub(crate) fn clamp_effective_vfs_policy(
     turn: &crate::chaos::TurnContext,
     granted_permissions: Option<&PermissionProfile>,
-) -> FileSystemSandboxPolicy {
-    crate::sandboxing::effective_file_system_sandbox_policy(
-        &turn.file_system_sandbox_policy,
-        granted_permissions,
-    )
+) -> VfsPolicy {
+    crate::sandboxing::effective_vfs_policy(&turn.vfs_policy, granted_permissions)
 }
 
 pub(crate) fn clamp_tool_permission_decision(
     tool_name: &str,
     input: &Value,
     cwd: &std::path::Path,
-    file_system_policy: &FileSystemSandboxPolicy,
+    file_system_policy: &VfsPolicy,
 ) -> ClampToolPermissionDecision {
     let Some(routing) = clamp_tool_routing(tool_name) else {
         return ClampToolPermissionDecision::Deny(format!(
@@ -353,7 +350,7 @@ pub(crate) async fn handle_clamp_tool_permission(
         session.granted_turn_permissions().await.as_ref(),
     );
     let file_system_policy =
-        clamp_effective_file_system_policy(&turn_context, granted_permissions.as_ref());
+        clamp_effective_vfs_policy(&turn_context, granted_permissions.as_ref());
     let decision = clamp_tool_permission_decision(
         &tool_name,
         &input,
@@ -399,7 +396,7 @@ pub(crate) async fn handle_clamp_tool_permission(
                 .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                     command: &command,
                     approval_policy: turn_context.approval_policy.value(),
-                    file_system_sandbox_policy: &turn_context.file_system_sandbox_policy,
+                    vfs_policy: &turn_context.vfs_policy,
                     sandbox_permissions: chaos_ipc::models::SandboxPermissions::UseDefault,
                     prefix_rule: None,
                 })

@@ -11,7 +11,7 @@ pub mod seatbelt;
 pub mod seatbelt_permissions;
 
 pub mod protocol {
-    pub use chaos_ipc::permissions::FileSystemSpecialPath;
+    pub use chaos_ipc::permissions::VfsSpecialPath;
     pub use chaos_ipc::protocol::*;
 }
 

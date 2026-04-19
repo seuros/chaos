@@ -65,17 +65,15 @@ async fn build_turn_metadata_header_includes_has_changes_for_clean_repo() {
 fn turn_metadata_state_uses_platform_sandbox_tag() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().to_path_buf();
-    let file_system_sandbox_policy = chaos_ipc::permissions::FileSystemSandboxPolicy::from(
-        &SandboxPolicy::new_read_only_policy(),
-    );
+    let vfs_policy =
+        chaos_ipc::permissions::VfsPolicy::from(&SandboxPolicy::new_read_only_policy());
 
-    let state = TurnMetadataState::new("turn-a".to_string(), cwd, &file_system_sandbox_policy);
+    let state = TurnMetadataState::new("turn-a".to_string(), cwd, &vfs_policy);
 
     let header = state.current_header_value().expect("header");
     let json: Value = serde_json::from_str(&header).expect("json");
     let sandbox_name = json.get("sandbox").and_then(Value::as_str);
 
-    let expected_sandbox =
-        crate::sandbox_tags::sandbox_tag_for_file_system_policy(&file_system_sandbox_policy);
+    let expected_sandbox = crate::sandbox_tags::sandbox_tag_for_vfs_policy(&vfs_policy);
     assert_eq!(sandbox_name, Some(expected_sandbox));
 }

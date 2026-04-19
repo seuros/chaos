@@ -33,13 +33,13 @@ allowed_domains = ["openai.com"]
                         entries: BTreeMap::from([
                             (
                                 ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
+                                FilesystemPermissionToml::Access(VfsAccessMode::Read),
                             ),
                             (
                                 ":project_roots".to_string(),
                                 FilesystemPermissionToml::Scoped(BTreeMap::from([
-                                    (".".to_string(), FileSystemAccessMode::Write),
-                                    ("docs".to_string(), FileSystemAccessMode::Read),
+                                    (".".to_string(), VfsAccessMode::Write),
+                                    ("docs".to_string(), VfsAccessMode::Read),
                                 ])),
                             ),
                         ]),
@@ -81,7 +81,7 @@ fn permissions_profiles_network_populates_runtime_network_proxy_spec() -> std::i
                         filesystem: Some(FilesystemPermissionsToml {
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
+                                FilesystemPermissionToml::Access(VfsAccessMode::Read),
                             )]),
                         }),
                         network: Some(NetworkToml {
@@ -128,7 +128,7 @@ fn permissions_profiles_network_disabled_by_default_does_not_start_proxy() -> st
                         filesystem: Some(FilesystemPermissionsToml {
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
+                                FilesystemPermissionToml::Access(VfsAccessMode::Read),
                             )]),
                         }),
                         network: Some(NetworkToml {
@@ -168,13 +168,13 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
                         entries: BTreeMap::from([
                             (
                                 ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
+                                FilesystemPermissionToml::Access(VfsAccessMode::Read),
                             ),
                             (
                                 ":project_roots".to_string(),
                                 FilesystemPermissionToml::Scoped(BTreeMap::from([
-                                    (".".to_string(), FileSystemAccessMode::Write),
-                                    ("docs".to_string(), FileSystemAccessMode::Read),
+                                    (".".to_string(), VfsAccessMode::Write),
+                                    ("docs".to_string(), VfsAccessMode::Read),
                                 ])),
                             ),
                         ]),
@@ -196,25 +196,25 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
     )?;
 
     assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(vec![
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Minimal,
+        config.permissions.vfs_policy,
+        VfsPolicy::restricted(vec![
+            VfsEntry {
+                path: VfsPath::Special {
+                    value: VfsSpecialPath::Minimal,
                 },
-                access: FileSystemAccessMode::Read,
+                access: VfsAccessMode::Read,
             },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::project_roots(None),
+            VfsEntry {
+                path: VfsPath::Special {
+                    value: VfsSpecialPath::project_roots(None),
                 },
-                access: FileSystemAccessMode::Write,
+                access: VfsAccessMode::Write,
             },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::project_roots(Some("docs".into())),
+            VfsEntry {
+                path: VfsPath::Special {
+                    value: VfsSpecialPath::project_roots(Some("docs".into())),
                 },
-                access: FileSystemAccessMode::Read,
+                access: VfsAccessMode::Read,
             },
         ]),
     );
@@ -233,10 +233,7 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
             exclude_slash_tmp: true,
         }
     );
-    assert_eq!(
-        config.permissions.network_sandbox_policy,
-        NetworkSandboxPolicy::Restricted
-    );
+    assert_eq!(config.permissions.socket_policy, SocketPolicy::Restricted);
     Ok(())
 }
 
@@ -255,7 +252,7 @@ fn permissions_profiles_require_default_permissions() -> std::io::Result<()> {
                         filesystem: Some(FilesystemPermissionsToml {
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
+                                FilesystemPermissionToml::Access(VfsAccessMode::Read),
                             )]),
                         }),
                         network: None,
@@ -297,7 +294,7 @@ fn permissions_profiles_reject_writes_outside_workspace_root() -> std::io::Resul
                         filesystem: Some(FilesystemPermissionsToml {
                             entries: BTreeMap::from([(
                                 external_write_path.to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Write),
+                                FilesystemPermissionToml::Access(VfsAccessMode::Write),
                             )]),
                         }),
                         network: None,
@@ -341,7 +338,7 @@ fn permissions_profiles_reject_nested_entries_for_non_project_roots() -> std::io
                                 ":minimal".to_string(),
                                 FilesystemPermissionToml::Scoped(BTreeMap::from([(
                                     "docs".to_string(),
-                                    FileSystemAccessMode::Read,
+                                    VfsAccessMode::Read,
                                 )])),
                             )]),
                         }),
@@ -394,19 +391,19 @@ fn permissions_profiles_allow_unknown_special_paths() -> std::io::Result<()> {
         filesystem: Some(FilesystemPermissionsToml {
             entries: BTreeMap::from([(
                 ":future_special_path".to_string(),
-                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
+                FilesystemPermissionToml::Access(VfsAccessMode::Read),
             )]),
         }),
         network: None,
     })?;
 
     assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(":future_special_path", None),
+        config.permissions.vfs_policy,
+        VfsPolicy::restricted(vec![VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::unknown(":future_special_path", None),
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         }]),
     );
     assert_eq!(
@@ -437,7 +434,7 @@ fn permissions_profiles_allow_unknown_special_paths_with_nested_entries() -> std
                 ":future_special_path".to_string(),
                 FilesystemPermissionToml::Scoped(BTreeMap::from([(
                     "docs".to_string(),
-                    FileSystemAccessMode::Read,
+                    VfsAccessMode::Read,
                 )])),
             )]),
         }),
@@ -445,12 +442,12 @@ fn permissions_profiles_allow_unknown_special_paths_with_nested_entries() -> std
     })?;
 
     assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(":future_special_path", Some("docs".into())),
+        config.permissions.vfs_policy,
+        VfsPolicy::restricted(vec![VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::unknown(":future_special_path", Some("docs".into())),
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         }]),
     );
     assert!(
@@ -471,8 +468,8 @@ fn permissions_profiles_allow_missing_filesystem_with_warning() -> std::io::Resu
     })?;
 
     assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(Vec::new())
+        config.permissions.vfs_policy,
+        VfsPolicy::restricted(Vec::new())
     );
     assert_eq!(
         config.permissions.sandbox_policy.get(),
@@ -504,8 +501,8 @@ fn permissions_profiles_allow_empty_filesystem_with_warning() -> std::io::Result
     })?;
 
     assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(Vec::new())
+        config.permissions.vfs_policy,
+        VfsPolicy::restricted(Vec::new())
     );
     assert!(
         config.startup_warnings.iter().any(|warning| warning.contains(
@@ -535,7 +532,7 @@ fn permissions_profiles_reject_project_root_parent_traversal() -> std::io::Resul
                                 ":project_roots".to_string(),
                                 FilesystemPermissionToml::Scoped(BTreeMap::from([(
                                     "../sibling".to_string(),
-                                    FileSystemAccessMode::Read,
+                                    VfsAccessMode::Read,
                                 )])),
                             )]),
                         }),
@@ -577,7 +574,7 @@ fn permissions_profiles_allow_network_enablement() -> std::io::Result<()> {
                         filesystem: Some(FilesystemPermissionsToml {
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
+                                FilesystemPermissionToml::Access(VfsAccessMode::Read),
                             )]),
                         }),
                         network: Some(NetworkToml {
@@ -597,7 +594,7 @@ fn permissions_profiles_allow_network_enablement() -> std::io::Result<()> {
     )?;
 
     assert!(
-        config.permissions.network_sandbox_policy.is_enabled(),
+        config.permissions.socket_policy.is_enabled(),
         "expected network sandbox policy to be enabled",
     );
     assert!(

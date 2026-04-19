@@ -9,7 +9,7 @@ use ts_rs::TS;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(tag = "kind")]
-pub enum FileSystemSpecialPath {
+pub enum VfsSpecialPath {
     Root,
     Minimal,
     CurrentWorkingDirectory,
@@ -36,7 +36,7 @@ pub enum FileSystemSpecialPath {
     },
 }
 
-impl FileSystemSpecialPath {
+impl VfsSpecialPath {
     pub fn project_roots(subpath: Option<PathBuf>) -> Self {
         Self::ProjectRoots { subpath }
     }
@@ -52,7 +52,7 @@ impl FileSystemSpecialPath {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(tag = "type")]
-pub enum FileSystemPath {
+pub enum VfsPath {
     Path { path: AbsolutePathBuf },
-    Special { value: FileSystemSpecialPath },
+    Special { value: VfsSpecialPath },
 }

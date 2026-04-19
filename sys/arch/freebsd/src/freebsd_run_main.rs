@@ -13,9 +13,9 @@ use crate::capsicum::apply_sandbox_policy_to_current_thread;
 use alcatraz_base::sandbox_policy::{
     EffectiveSandboxPolicies, ResolveSandboxPoliciesError, resolve_sandbox_policies,
 };
-use chaos_ipc::protocol::FileSystemSandboxPolicy;
-use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_ipc::protocol::SocketPolicy;
+use chaos_ipc::protocol::VfsPolicy;
 
 #[derive(Debug, Parser)]
 /// CLI surface for the FreeBSD sandbox helper.
@@ -37,10 +37,10 @@ pub struct CapsicumCommand {
     pub sandbox_policy: Option<SandboxPolicy>,
 
     #[arg(long = "file-system-sandbox-policy", hide = true)]
-    pub file_system_sandbox_policy: Option<FileSystemSandboxPolicy>,
+    pub vfs_policy: Option<VfsPolicy>,
 
     #[arg(long = "network-sandbox-policy", hide = true)]
-    pub network_sandbox_policy: Option<NetworkSandboxPolicy>,
+    pub socket_policy: Option<SocketPolicy>,
 
     /// Internal compatibility flag.
     ///
@@ -64,8 +64,8 @@ pub fn run_main() -> ! {
     let CapsicumCommand {
         sandbox_policy_cwd,
         sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
         allow_network_for_proxy,
         command,
     } = CapsicumCommand::parse();
@@ -77,13 +77,13 @@ pub fn run_main() -> ! {
 
     let EffectiveSandboxPolicies {
         sandbox_policy: _sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
     } = resolve_sandbox_policies(
         sandbox_policy_cwd.as_path(),
         sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
+        vfs_policy,
+        socket_policy,
     )
     .unwrap_or_else(|err| {
         eprintln!("alcatraz-freebsd: {err}");
@@ -95,8 +95,8 @@ pub fn run_main() -> ! {
     // apply_sandbox_policy_to_current_thread applies procctl hardening and
     // then rejects unsupported restrictions to avoid fail-open behavior.
     if let Err(e) = apply_sandbox_policy_to_current_thread(
-        &file_system_sandbox_policy,
-        network_sandbox_policy,
+        &vfs_policy,
+        socket_policy,
         allow_network_for_proxy,
         /*proxy_routed_network*/ allow_network_for_proxy,
     ) {
@@ -259,9 +259,9 @@ fn c_string_from_bytes(value: Vec<u8>, field: &str) -> CString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_ipc::protocol::FileSystemSandboxPolicy;
-    use chaos_ipc::protocol::NetworkSandboxPolicy;
     use chaos_ipc::protocol::SandboxPolicy;
+    use chaos_ipc::protocol::SocketPolicy;
+    use chaos_ipc::protocol::VfsPolicy;
     use pretty_assertions::assert_eq;
     use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
@@ -275,36 +275,27 @@ mod tests {
                 .expect("sandbox policy should resolve");
 
         assert_eq!(resolved.sandbox_policy, sandbox_policy);
-        assert_eq!(
-            resolved.file_system_sandbox_policy,
-            FileSystemSandboxPolicy::from(&sandbox_policy)
-        );
-        assert_eq!(
-            resolved.network_sandbox_policy,
-            NetworkSandboxPolicy::from(&sandbox_policy)
-        );
+        assert_eq!(resolved.vfs_policy, VfsPolicy::from(&sandbox_policy));
+        assert_eq!(resolved.socket_policy, SocketPolicy::from(&sandbox_policy));
     }
 
     #[test]
     fn resolve_sandbox_policies_derives_sandbox_policy_from_split_policies() {
         let sandbox_policy = SandboxPolicy::new_read_only_policy();
-        let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
-        let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
+        let vfs_policy = VfsPolicy::from(&sandbox_policy);
+        let socket_policy = SocketPolicy::from(&sandbox_policy);
 
         let resolved = resolve_sandbox_policies(
             Path::new("/tmp"),
             None,
-            Some(file_system_sandbox_policy.clone()),
-            Some(network_sandbox_policy),
+            Some(vfs_policy.clone()),
+            Some(socket_policy),
         )
         .expect("split policies should resolve");
 
         assert_eq!(resolved.sandbox_policy, sandbox_policy);
-        assert_eq!(
-            resolved.file_system_sandbox_policy,
-            file_system_sandbox_policy
-        );
-        assert_eq!(resolved.network_sandbox_policy, network_sandbox_policy);
+        assert_eq!(resolved.vfs_policy, vfs_policy);
+        assert_eq!(resolved.socket_policy, socket_policy);
     }
 
     #[test]
@@ -312,7 +303,7 @@ mod tests {
         let err = resolve_sandbox_policies(
             Path::new("/tmp"),
             Some(SandboxPolicy::new_read_only_policy()),
-            Some(FileSystemSandboxPolicy::default()),
+            Some(VfsPolicy::default()),
             None,
         )
         .expect_err("partial split policies should fail");
@@ -325,8 +316,8 @@ mod tests {
         let err = resolve_sandbox_policies(
             Path::new("/tmp"),
             Some(SandboxPolicy::new_read_only_policy()),
-            Some(FileSystemSandboxPolicy::unrestricted()),
-            Some(NetworkSandboxPolicy::Enabled),
+            Some(VfsPolicy::unrestricted()),
+            Some(SocketPolicy::Enabled),
         )
         .expect_err("mismatched sandbox and split policies should fail");
         assert!(

@@ -68,7 +68,7 @@ impl Session {
     pub(crate) async fn start_managed_network_proxy(
         spec: &crate::config::NetworkProxySpec,
         exec_policy: &chaos_selinux::Policy,
-        file_system_sandbox_policy: &chaos_ipc::permissions::FileSystemSandboxPolicy,
+        vfs_policy: &chaos_ipc::permissions::VfsPolicy,
         network_policy_decider: Option<Arc<dyn chaos_pf::NetworkPolicyDecider>>,
         blocked_request_observer: Option<Arc<dyn chaos_pf::BlockedRequestObserver>>,
         managed_network_requirements_enabled: bool,
@@ -88,7 +88,7 @@ impl Session {
             .unwrap_or_else(|_| spec.clone());
         let network_proxy = spec
             .start_proxy(
-                file_system_sandbox_policy,
+                vfs_policy,
                 network_policy_decider,
                 blocked_request_observer,
                 managed_network_requirements_enabled,
@@ -120,7 +120,7 @@ impl Session {
         per_turn_config.approvals_reviewer = session_configuration.approvals_reviewer;
         let resolved_web_search_mode = resolve_web_search_mode_for_turn(
             &per_turn_config.web_search_mode,
-            &session_configuration.file_system_sandbox_policy,
+            &session_configuration.vfs_policy,
         );
         if let Err(err) = per_turn_config
             .web_search_mode
@@ -441,7 +441,7 @@ impl Session {
                 let (network_proxy, session_network_proxy) = Self::start_managed_network_proxy(
                     spec,
                     current_exec_policy.as_ref(),
-                    &config.permissions.file_system_sandbox_policy,
+                    &config.permissions.vfs_policy,
                     network_policy_decider.as_ref().map(Arc::clone),
                     blocked_request_observer.as_ref().map(Arc::clone),
                     managed_network_requirements_enabled,
@@ -557,8 +557,8 @@ impl Session {
         tracing::debug!(
             provider = %session_configuration.provider.name,
             model = %session_configuration.collaboration_mode.model(),
-            file_system_sandbox_policy = ?session_configuration.file_system_sandbox_policy,
-            network_sandbox_policy = ?session_configuration.network_sandbox_policy,
+            vfs_policy = ?session_configuration.vfs_policy,
+            socket_policy = ?session_configuration.socket_policy,
             approval_policy = ?session_configuration.approval_policy.value(),
             reasoning_effort = ?session_configuration.collaboration_mode.reasoning_effort(),
             cwd = %session_configuration.cwd.display(),
@@ -578,10 +578,8 @@ impl Session {
                 service_tier: session_configuration.service_tier,
                 approval_policy: session_configuration.approval_policy.value(),
                 approvals_reviewer: session_configuration.approvals_reviewer,
-                file_system_sandbox_policy: session_configuration
-                    .file_system_sandbox_policy
-                    .clone(),
-                network_sandbox_policy: session_configuration.network_sandbox_policy,
+                vfs_policy: session_configuration.vfs_policy.clone(),
+                socket_policy: session_configuration.socket_policy,
                 cwd: session_configuration.cwd.clone(),
                 reasoning_effort: session_configuration.collaboration_mode.reasoning_effort(),
                 history_log_id,
@@ -597,8 +595,8 @@ impl Session {
 
         sess.start_file_watcher_listener();
         let sandbox_state = SandboxState {
-            file_system_sandbox_policy: session_configuration.file_system_sandbox_policy.clone(),
-            network_sandbox_policy: session_configuration.network_sandbox_policy,
+            vfs_policy: session_configuration.vfs_policy.clone(),
+            socket_policy: session_configuration.socket_policy,
             alcatraz_macos_exe: config.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),

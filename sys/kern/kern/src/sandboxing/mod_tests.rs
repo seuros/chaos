@@ -1,10 +1,10 @@
 #[cfg(target_os = "macos")]
 use super::EffectiveSandboxPermissions;
 use super::SandboxManager;
-use super::effective_file_system_sandbox_policy;
+use super::effective_vfs_policy;
 #[cfg(target_os = "macos")]
 use super::intersect_permission_profiles;
-use super::merge_file_system_policy_with_additional_permissions;
+use super::merge_vfs_policy_with_additional_permissions;
 use super::normalize_additional_permissions;
 use super::sandbox_policy_with_additional_permissions;
 use super::should_require_platform_sandbox;
@@ -24,12 +24,12 @@ use chaos_ipc::models::MacOsPreferencesPermission;
 use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 use chaos_ipc::models::NetworkPermissions;
 use chaos_ipc::models::PermissionProfile;
-use chaos_ipc::permissions::FileSystemAccessMode;
-use chaos_ipc::permissions::FileSystemPath;
-use chaos_ipc::permissions::FileSystemSandboxEntry;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::FileSystemSpecialPath;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::VfsAccessMode;
+use chaos_ipc::permissions::VfsPath;
+use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsSpecialPath;
+use chaos_ipc::permissions::SocketPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use std::fs::canonicalize;
 use pretty_assertions::assert_eq;
@@ -40,8 +40,8 @@ use tempfile::TempDir;
 fn root_access_defaults_to_no_sandbox_without_network_requirements() {
     let manager = SandboxManager::new();
     let sandbox = manager.select_initial(
-        &FileSystemSandboxPolicy::unrestricted(),
-        NetworkSandboxPolicy::Enabled,
+        &VfsPolicy::unrestricted(),
+        SocketPolicy::Enabled,
         SandboxablePreference::Auto,
         false,
     );
@@ -53,8 +53,8 @@ fn root_access_uses_platform_sandbox_with_network_requirements() {
     let manager = SandboxManager::new();
     let expected = crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None);
     let sandbox = manager.select_initial(
-        &FileSystemSandboxPolicy::unrestricted(),
-        NetworkSandboxPolicy::Enabled,
+        &VfsPolicy::unrestricted(),
+        SocketPolicy::Enabled,
         SandboxablePreference::Auto,
         true,
     );
@@ -66,13 +66,13 @@ fn restricted_file_system_uses_platform_sandbox_without_managed_network() {
     let manager = SandboxManager::new();
     let expected = crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None);
     let sandbox = manager.select_initial(
-        &FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+        &VfsPolicy::restricted(vec![VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         }]),
-        NetworkSandboxPolicy::Enabled,
+        SocketPolicy::Enabled,
         SandboxablePreference::Auto,
         false,
     );
@@ -81,15 +81,15 @@ fn restricted_file_system_uses_platform_sandbox_without_managed_network() {
 
 #[test]
 fn full_access_restricted_policy_skips_platform_sandbox_when_network_is_enabled() {
-    let policy = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Special {
-            value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![VfsEntry {
+        path: VfsPath::Special {
+            value: VfsSpecialPath::Root,
         },
-        access: FileSystemAccessMode::Write,
+        access: VfsAccessMode::Write,
     }]);
 
     assert_eq!(
-        should_require_platform_sandbox(&policy, NetworkSandboxPolicy::Enabled, false),
+        should_require_platform_sandbox(&policy, SocketPolicy::Enabled, false),
         false
     );
 }
@@ -101,36 +101,36 @@ fn root_write_policy_with_carveouts_still_uses_platform_sandbox() {
         std::env::current_dir().expect("current dir"),
     )
     .expect("blocked path");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: blocked },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: blocked },
+            access: VfsAccessMode::None,
         },
     ]);
 
     assert_eq!(
-        should_require_platform_sandbox(&policy, NetworkSandboxPolicy::Enabled, false),
+        should_require_platform_sandbox(&policy, SocketPolicy::Enabled, false),
         true
     );
 }
 
 #[test]
 fn full_access_restricted_policy_still_uses_platform_sandbox_for_restricted_network() {
-    let policy = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Special {
-            value: FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![VfsEntry {
+        path: VfsPath::Special {
+            value: VfsSpecialPath::Root,
         },
-        access: FileSystemAccessMode::Write,
+        access: VfsAccessMode::Write,
     }]);
 
     assert_eq!(
-        should_require_platform_sandbox(&policy, NetworkSandboxPolicy::Restricted, false),
+        should_require_platform_sandbox(&policy, SocketPolicy::Restricted, false),
         true
     );
 }
@@ -154,8 +154,8 @@ fn transform_preserves_unrestricted_file_system_policy_for_restricted_network() 
             policy: &SandboxPolicy::ExternalSandbox {
                 network_access: crate::protocol::NetworkAccess::Restricted,
             },
-            file_system_policy: &FileSystemSandboxPolicy::unrestricted(),
-            network_policy: NetworkSandboxPolicy::Restricted,
+            file_system_policy: &VfsPolicy::unrestricted(),
+            network_policy: SocketPolicy::Restricted,
             sandbox: SandboxType::None,
             enforce_managed_network: false,
             network: None,
@@ -167,12 +167,12 @@ fn transform_preserves_unrestricted_file_system_policy_for_restricted_network() 
         .expect("transform");
 
     assert_eq!(
-        exec_request.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::unrestricted()
+        exec_request.vfs_policy,
+        VfsPolicy::unrestricted()
     );
     assert_eq!(
-        exec_request.network_sandbox_policy,
-        NetworkSandboxPolicy::Restricted
+        exec_request.socket_policy,
+        SocketPolicy::Restricted
     );
 }
 
@@ -485,8 +485,8 @@ fn transform_additional_permissions_enable_network_for_external_sandbox() {
             policy: &SandboxPolicy::ExternalSandbox {
                 network_access: NetworkAccess::Restricted,
             },
-            file_system_policy: &FileSystemSandboxPolicy::unrestricted(),
-            network_policy: NetworkSandboxPolicy::Restricted,
+            file_system_policy: &VfsPolicy::unrestricted(),
+            network_policy: SocketPolicy::Restricted,
             sandbox: SandboxType::None,
             enforce_managed_network: false,
             network: None,
@@ -504,8 +504,8 @@ fn transform_additional_permissions_enable_network_for_external_sandbox() {
         }
     );
     assert_eq!(
-        exec_request.network_sandbox_policy,
-        NetworkSandboxPolicy::Enabled
+        exec_request.socket_policy,
+        SocketPolicy::Enabled
     );
 }
 
@@ -542,21 +542,21 @@ fn transform_additional_permissions_preserves_denied_entries() {
                 access: ReadOnlyAccess::FullAccess,
                 network_access: false,
             },
-            file_system_policy: &FileSystemSandboxPolicy::restricted(vec![
-                FileSystemSandboxEntry {
-                    path: FileSystemPath::Special {
-                        value: FileSystemSpecialPath::Root,
+            file_system_policy: &VfsPolicy::restricted(vec![
+                VfsEntry {
+                    path: VfsPath::Special {
+                        value: VfsSpecialPath::Root,
                     },
-                    access: FileSystemAccessMode::Read,
+                    access: VfsAccessMode::Read,
                 },
-                FileSystemSandboxEntry {
-                    path: FileSystemPath::Path {
+                VfsEntry {
+                    path: VfsPath::Path {
                         path: denied_path.clone(),
                     },
-                    access: FileSystemAccessMode::None,
+                    access: VfsAccessMode::None,
                 },
             ]),
-            network_policy: NetworkSandboxPolicy::Restricted,
+            network_policy: SocketPolicy::Restricted,
             sandbox: SandboxType::None,
             enforce_managed_network: false,
             network: None,
@@ -568,32 +568,32 @@ fn transform_additional_permissions_preserves_denied_entries() {
         .expect("transform");
 
     assert_eq!(
-        exec_request.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(vec![
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Root,
+        exec_request.vfs_policy,
+        VfsPolicy::restricted(vec![
+            VfsEntry {
+                path: VfsPath::Special {
+                    value: VfsSpecialPath::Root,
                 },
-                access: FileSystemAccessMode::Read,
+                access: VfsAccessMode::Read,
             },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Path { path: denied_path },
-                access: FileSystemAccessMode::None,
+            VfsEntry {
+                path: VfsPath::Path { path: denied_path },
+                access: VfsAccessMode::None,
             },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Path { path: allowed_path },
-                access: FileSystemAccessMode::Write,
+            VfsEntry {
+                path: VfsPath::Path { path: allowed_path },
+                access: VfsAccessMode::Write,
             },
         ])
     );
     assert_eq!(
-        exec_request.network_sandbox_policy,
-        NetworkSandboxPolicy::Restricted
+        exec_request.socket_policy,
+        SocketPolicy::Restricted
     );
 }
 
 #[test]
-fn merge_file_system_policy_with_additional_permissions_preserves_unreadable_roots() {
+fn merge_vfs_policy_with_additional_permissions_preserves_unreadable_roots() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let cwd = AbsolutePathBuf::from_absolute_path(
         canonicalize(temp_dir.path()).expect("canonicalize temp dir"),
@@ -601,19 +601,19 @@ fn merge_file_system_policy_with_additional_permissions_preserves_unreadable_roo
     .expect("absolute temp dir");
     let allowed_path = cwd.join("allowed").expect("allowed path");
     let denied_path = cwd.join("denied").expect("denied path");
-    let merged_policy = merge_file_system_policy_with_additional_permissions(
-        &FileSystemSandboxPolicy::restricted(vec![
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Root,
+    let merged_policy = merge_vfs_policy_with_additional_permissions(
+        &VfsPolicy::restricted(vec![
+            VfsEntry {
+                path: VfsPath::Special {
+                    value: VfsSpecialPath::Root,
                 },
-                access: FileSystemAccessMode::Read,
+                access: VfsAccessMode::Read,
             },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Path {
+            VfsEntry {
+                path: VfsPath::Path {
                     path: denied_path.clone(),
                 },
-                access: FileSystemAccessMode::None,
+                access: VfsAccessMode::None,
             },
         ]),
         vec![allowed_path.clone()],
@@ -621,49 +621,49 @@ fn merge_file_system_policy_with_additional_permissions_preserves_unreadable_roo
     );
 
     assert_eq!(
-        merged_policy.entries.contains(&FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: denied_path },
-            access: FileSystemAccessMode::None,
+        merged_policy.entries.contains(&VfsEntry {
+            path: VfsPath::Path { path: denied_path },
+            access: VfsAccessMode::None,
         }),
         true
     );
     assert_eq!(
-        merged_policy.entries.contains(&FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: allowed_path },
-            access: FileSystemAccessMode::Read,
+        merged_policy.entries.contains(&VfsEntry {
+            path: VfsPath::Path { path: allowed_path },
+            access: VfsAccessMode::Read,
         }),
         true
     );
 }
 
 #[test]
-fn effective_file_system_sandbox_policy_returns_base_policy_without_additional_permissions() {
+fn effective_vfs_policy_returns_base_policy_without_additional_permissions() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let cwd = AbsolutePathBuf::from_absolute_path(
         canonicalize(temp_dir.path()).expect("canonicalize temp dir"),
     )
     .expect("absolute temp dir");
     let denied_path = cwd.join("denied").expect("denied path");
-    let base_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let base_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: denied_path },
-            access: FileSystemAccessMode::None,
+        VfsEntry {
+            path: VfsPath::Path { path: denied_path },
+            access: VfsAccessMode::None,
         },
     ]);
 
-    let effective_policy = effective_file_system_sandbox_policy(&base_policy, None);
+    let effective_policy = effective_vfs_policy(&base_policy, None);
 
     assert_eq!(effective_policy, base_policy);
 }
 
 #[test]
-fn effective_file_system_sandbox_policy_merges_additional_write_roots() {
+fn effective_vfs_policy_merges_additional_write_roots() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let cwd = AbsolutePathBuf::from_absolute_path(
         canonicalize(temp_dir.path()).expect("canonicalize temp dir"),
@@ -671,18 +671,18 @@ fn effective_file_system_sandbox_policy_merges_additional_write_roots() {
     .expect("absolute temp dir");
     let allowed_path = cwd.join("allowed").expect("allowed path");
     let denied_path = cwd.join("denied").expect("denied path");
-    let base_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let base_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: denied_path.clone(),
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
     ]);
     let additional_permissions = PermissionProfile {
@@ -694,19 +694,19 @@ fn effective_file_system_sandbox_policy_merges_additional_write_roots() {
     };
 
     let effective_policy =
-        effective_file_system_sandbox_policy(&base_policy, Some(&additional_permissions));
+        effective_vfs_policy(&base_policy, Some(&additional_permissions));
 
     assert_eq!(
-        effective_policy.entries.contains(&FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: denied_path },
-            access: FileSystemAccessMode::None,
+        effective_policy.entries.contains(&VfsEntry {
+            path: VfsPath::Path { path: denied_path },
+            access: VfsAccessMode::None,
         }),
         true
     );
     assert_eq!(
-        effective_policy.entries.contains(&FileSystemSandboxEntry {
-            path: FileSystemPath::Path { path: allowed_path },
-            access: FileSystemAccessMode::Write,
+        effective_policy.entries.contains(&VfsEntry {
+            path: VfsPath::Path { path: allowed_path },
+            access: VfsAccessMode::Write,
         }),
         true
     );

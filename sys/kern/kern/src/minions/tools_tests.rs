@@ -8,12 +8,12 @@ use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::function_tool::FunctionCallError;
 use crate::protocol::ApprovalPolicy;
-use crate::protocol::FileSystemSandboxPolicy;
-use crate::protocol::NetworkSandboxPolicy;
 use crate::protocol::Op;
 use crate::protocol::SandboxPolicy;
 use crate::protocol::SessionSource;
+use crate::protocol::SocketPolicy;
 use crate::protocol::SubAgentSource;
+use crate::protocol::VfsPolicy;
 use crate::tools::context::ToolOutput;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use chaos_ipc::ProcessId;
@@ -367,14 +367,13 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         &turn.config.permissions.sandbox_policy,
         turn.config.permissions.sandbox_policy.get().clone(),
     );
-    let expected_file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_sandbox_policy(&expected_sandbox, &turn.cwd);
-    let expected_network_sandbox_policy = NetworkSandboxPolicy::from(&expected_sandbox);
+    let expected_vfs_policy = VfsPolicy::from_sandbox_policy(&expected_sandbox, &turn.cwd);
+    let expected_socket_policy = SocketPolicy::from(&expected_sandbox);
     turn.approval_policy
         .set(ApprovalPolicy::Interactive)
         .expect("approval policy should be set");
-    turn.file_system_sandbox_policy = expected_file_system_sandbox_policy.clone();
-    turn.network_sandbox_policy = expected_network_sandbox_policy;
+    turn.vfs_policy = expected_vfs_policy.clone();
+    turn.socket_policy = expected_socket_policy;
     assert_ne!(
         expected_sandbox,
         turn.config.permissions.sandbox_policy.get().clone(),
@@ -411,28 +410,16 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         .expect("spawned agent thread should exist")
         .config_snapshot()
         .await;
-    assert_eq!(
-        snapshot.file_system_sandbox_policy,
-        expected_file_system_sandbox_policy
-    );
-    assert_eq!(
-        snapshot.network_sandbox_policy,
-        expected_network_sandbox_policy
-    );
+    assert_eq!(snapshot.vfs_policy, expected_vfs_policy);
+    assert_eq!(snapshot.socket_policy, expected_socket_policy);
     assert_eq!(snapshot.approval_policy, ApprovalPolicy::Interactive);
     let child_thread = manager
         .get_process(agent_id)
         .await
         .expect("spawned agent thread should exist");
     let child_turn = child_thread.chaos.session.new_default_turn().await;
-    assert_eq!(
-        child_turn.file_system_sandbox_policy,
-        expected_file_system_sandbox_policy
-    );
-    assert_eq!(
-        child_turn.network_sandbox_policy,
-        expected_network_sandbox_policy
-    );
+    assert_eq!(child_turn.vfs_policy, expected_vfs_policy);
+    assert_eq!(child_turn.socket_policy, expected_socket_policy);
 }
 
 #[tokio::test]
@@ -1032,11 +1019,10 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         &turn.config.permissions.sandbox_policy,
         turn.config.permissions.sandbox_policy.get().clone(),
     );
-    let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_sandbox_policy(&sandbox_policy, &turn.cwd);
-    let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
-    turn.file_system_sandbox_policy = file_system_sandbox_policy.clone();
-    turn.network_sandbox_policy = network_sandbox_policy;
+    let vfs_policy = VfsPolicy::from_sandbox_policy(&sandbox_policy, &turn.cwd);
+    let socket_policy = SocketPolicy::from(&sandbox_policy);
+    turn.vfs_policy = vfs_policy.clone();
+    turn.socket_policy = socket_policy;
     turn.approval_policy
         .set(ApprovalPolicy::Interactive)
         .expect("approval policy set");
@@ -1062,13 +1048,13 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .permissions
         .sandbox_policy
         .set(
-            turn.file_system_sandbox_policy
-                .to_sandbox_policy(turn.network_sandbox_policy, &turn.cwd)
+            turn.vfs_policy
+                .to_sandbox_policy(turn.socket_policy, &turn.cwd)
                 .expect("sandbox policy projection"),
         )
         .expect("sandbox policy set");
-    expected.permissions.file_system_sandbox_policy = file_system_sandbox_policy;
-    expected.permissions.network_sandbox_policy = network_sandbox_policy;
+    expected.permissions.vfs_policy = vfs_policy;
+    expected.permissions.socket_policy = socket_policy;
     assert_eq!(config, expected);
 }
 
@@ -1120,8 +1106,8 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .permissions
         .sandbox_policy
         .set(
-            turn.file_system_sandbox_policy
-                .to_sandbox_policy(turn.network_sandbox_policy, &turn.cwd)
+            turn.vfs_policy
+                .to_sandbox_policy(turn.socket_policy, &turn.cwd)
                 .expect("sandbox policy projection"),
         )
         .expect("sandbox policy set");

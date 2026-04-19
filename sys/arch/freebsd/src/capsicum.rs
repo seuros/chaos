@@ -16,12 +16,12 @@
 
 use alcatraz_base::error::AlcatrazError;
 use alcatraz_base::error::Result;
-use chaos_ipc::protocol::FileSystemSandboxPolicy;
-use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_ipc::protocol::SocketPolicy;
+use chaos_ipc::protocol::VfsPolicy;
 use chaos_parole::sandbox::has_full_disk_read_access;
 use chaos_parole::sandbox::has_full_disk_write_access;
+use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 use chaos_pf::NetworkProxy;
 use std::collections::HashMap;
 use std::path::Path;
@@ -48,8 +48,8 @@ pub fn prepare_command<P>(
     executable: P,
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: &VfsPolicy,
+    socket_policy: SocketPolicy,
     sandbox_policy_cwd: &Path,
     allow_network_for_proxy: bool,
 ) -> PreparedCommand
@@ -58,9 +58,9 @@ where
 {
     let sandbox_policy_json = serde_json::to_string(sandbox_policy)
         .unwrap_or_else(|err| panic!("failed to serialize sandbox policy: {err}"));
-    let file_system_policy_json = serde_json::to_string(file_system_sandbox_policy)
+    let file_system_policy_json = serde_json::to_string(vfs_policy)
         .unwrap_or_else(|err| panic!("failed to serialize filesystem sandbox policy: {err}"));
-    let network_policy_json = serde_json::to_string(&network_sandbox_policy)
+    let network_policy_json = serde_json::to_string(&socket_policy)
         .unwrap_or_else(|err| panic!("failed to serialize network sandbox policy: {err}"));
     let sandbox_policy_cwd = sandbox_policy_cwd
         .to_str()
@@ -103,15 +103,14 @@ pub async fn spawn_command<P>(
 where
     P: AsRef<Path>,
 {
-    let file_system_sandbox_policy =
-        file_system_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
-    let network_sandbox_policy = NetworkSandboxPolicy::from(sandbox_policy);
+    let vfs_policy = vfs_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
+    let socket_policy = SocketPolicy::from(sandbox_policy);
     let prepared = prepare_command(
         executable,
         command,
         sandbox_policy,
-        &file_system_sandbox_policy,
-        network_sandbox_policy,
+        &vfs_policy,
+        socket_policy,
         sandbox_policy_cwd,
         false,
     );
@@ -132,7 +131,7 @@ where
     cmd.current_dir(command_cwd);
     cmd.env_clear();
     cmd.envs(env);
-    if !network_sandbox_policy.is_enabled() {
+    if !socket_policy.is_enabled() {
         cmd.env(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1");
     }
     cmd.stdin(Stdio::inherit())
@@ -148,8 +147,8 @@ where
 /// warnings for enforcement dimensions that are not yet implemented and then
 /// rejects execution to avoid fail-open behavior.
 pub fn apply_sandbox_policy_to_current_thread(
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: &VfsPolicy,
+    socket_policy: SocketPolicy,
     allow_network_for_proxy: bool,
     proxy_routed_network: bool,
 ) -> Result<()> {
@@ -158,7 +157,7 @@ pub fn apply_sandbox_policy_to_current_thread(
     let mut unsupported_restrictions = Vec::new();
 
     // ── Layer 2: network isolation ───────────────────────────────────────
-    if should_restrict_network(network_sandbox_policy, allow_network_for_proxy) {
+    if should_restrict_network(socket_policy, allow_network_for_proxy) {
         unsupported_restrictions.push(
             "network isolation requested but ipfw enforcement is not yet implemented on FreeBSD",
         );
@@ -170,8 +169,8 @@ pub fn apply_sandbox_policy_to_current_thread(
     }
 
     // ── Layer 3: filesystem confinement ──────────────────────────────────
-    if !has_full_disk_write_access(file_system_sandbox_policy) {
-        if !has_full_disk_read_access(file_system_sandbox_policy) {
+    if !has_full_disk_write_access(vfs_policy) {
+        if !has_full_disk_read_access(vfs_policy) {
             unsupported_restrictions.push(
                 "restricted read-only filesystem access requested but jail-based confinement is not yet implemented on FreeBSD",
             );
@@ -235,11 +234,8 @@ fn apply_procctl_hardening() {
 }
 
 /// Check if network should be restricted based on policy and proxy settings.
-fn should_restrict_network(
-    network_sandbox_policy: NetworkSandboxPolicy,
-    allow_network_for_proxy: bool,
-) -> bool {
-    !network_sandbox_policy.is_enabled() || allow_network_for_proxy
+fn should_restrict_network(socket_policy: SocketPolicy, allow_network_for_proxy: bool) -> bool {
+    !socket_policy.is_enabled() || allow_network_for_proxy
 }
 
 // ---------------------------------------------------------------------------
@@ -249,22 +245,22 @@ fn should_restrict_network(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_ipc::protocol::NetworkSandboxPolicy;
     use chaos_ipc::protocol::SandboxPolicy;
+    use chaos_ipc::protocol::SocketPolicy;
     use std::path::PathBuf;
 
     #[test]
     fn prepare_command_serializes_policies_and_command() {
         let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
-        let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
-        let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
+        let vfs_policy = VfsPolicy::from(&sandbox_policy);
+        let socket_policy = SocketPolicy::from(&sandbox_policy);
 
         let prepared = prepare_command(
             PathBuf::from("/usr/local/bin/alcatraz-freebsd"),
             vec!["/bin/echo".to_string(), "hello".to_string()],
             &sandbox_policy,
-            &file_system_sandbox_policy,
-            network_sandbox_policy,
+            &vfs_policy,
+            socket_policy,
             Path::new("/tmp"),
             true,
         );
@@ -285,15 +281,15 @@ mod tests {
     #[test]
     fn prepare_command_omits_proxy_flag_when_disabled() {
         let sandbox_policy = SandboxPolicy::new_read_only_policy();
-        let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
-        let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
+        let vfs_policy = VfsPolicy::from(&sandbox_policy);
+        let socket_policy = SocketPolicy::from(&sandbox_policy);
 
         let prepared = prepare_command(
             PathBuf::from("/usr/local/bin/alcatraz-freebsd"),
             vec!["/bin/echo".to_string()],
             &sandbox_policy,
-            &file_system_sandbox_policy,
-            network_sandbox_policy,
+            &vfs_policy,
+            socket_policy,
             Path::new("/tmp"),
             false,
         );
@@ -307,30 +303,24 @@ mod tests {
 
     #[test]
     fn should_restrict_when_network_disabled() {
-        assert!(should_restrict_network(
-            NetworkSandboxPolicy::Restricted,
-            false,
-        ));
+        assert!(should_restrict_network(SocketPolicy::Restricted, false,));
     }
 
     #[test]
     fn should_restrict_when_proxy_mode_even_with_full_network() {
-        assert!(should_restrict_network(NetworkSandboxPolicy::Enabled, true));
+        assert!(should_restrict_network(SocketPolicy::Enabled, true));
     }
 
     #[test]
     fn should_not_restrict_when_full_network_no_proxy() {
-        assert!(!should_restrict_network(
-            NetworkSandboxPolicy::Enabled,
-            false,
-        ));
+        assert!(!should_restrict_network(SocketPolicy::Enabled, false,));
     }
 
     #[test]
     fn unrestricted_policy_succeeds() {
         let result = apply_sandbox_policy_to_current_thread(
-            &FileSystemSandboxPolicy::unrestricted(),
-            NetworkSandboxPolicy::Enabled,
+            &VfsPolicy::unrestricted(),
+            SocketPolicy::Enabled,
             false,
             false,
         );
@@ -340,8 +330,8 @@ mod tests {
     #[test]
     fn restricted_read_only_policy_is_rejected() {
         let result = apply_sandbox_policy_to_current_thread(
-            &FileSystemSandboxPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            NetworkSandboxPolicy::Restricted,
+            &VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            SocketPolicy::Restricted,
             false,
             false,
         );
@@ -351,8 +341,8 @@ mod tests {
     #[test]
     fn restricted_filesystem_policy_is_rejected() {
         let result = apply_sandbox_policy_to_current_thread(
-            &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
-            NetworkSandboxPolicy::Enabled,
+            &VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
+            SocketPolicy::Enabled,
             false,
             false,
         );
@@ -362,8 +352,8 @@ mod tests {
     #[test]
     fn network_only_restriction_is_rejected() {
         let result = apply_sandbox_policy_to_current_thread(
-            &FileSystemSandboxPolicy::unrestricted(),
-            NetworkSandboxPolicy::Restricted,
+            &VfsPolicy::unrestricted(),
+            SocketPolicy::Restricted,
             false,
             false,
         );
@@ -373,8 +363,8 @@ mod tests {
     #[test]
     fn managed_proxy_mode_is_rejected() {
         let result = apply_sandbox_policy_to_current_thread(
-            &FileSystemSandboxPolicy::unrestricted(),
-            NetworkSandboxPolicy::Enabled,
+            &VfsPolicy::unrestricted(),
+            SocketPolicy::Enabled,
             true,
             true,
         );
@@ -384,8 +374,8 @@ mod tests {
     #[test]
     fn root_access_applies_hardening() {
         let result = apply_sandbox_policy_to_current_thread(
-            &FileSystemSandboxPolicy::unrestricted(),
-            NetworkSandboxPolicy::Enabled,
+            &VfsPolicy::unrestricted(),
+            SocketPolicy::Enabled,
             false,
             false,
         );

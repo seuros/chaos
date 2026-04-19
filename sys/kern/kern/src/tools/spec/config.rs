@@ -7,7 +7,7 @@ use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::WebSearchToolType;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 
@@ -52,13 +52,11 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) features: &'a Features,
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
-    pub(crate) file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
+    pub(crate) vfs_policy: &'a VfsPolicy,
     pub(crate) collab_enabled: bool,
 }
 
-fn unified_exec_allowed_in_environment(
-    _file_system_sandbox_policy: &FileSystemSandboxPolicy,
-) -> bool {
+fn unified_exec_allowed_in_environment(_vfs_policy: &VfsPolicy) -> bool {
     true
 }
 
@@ -70,7 +68,7 @@ impl ToolsConfig {
             features,
             web_search_mode,
             session_source,
-            file_system_sandbox_policy,
+            vfs_policy,
             collab_enabled,
         } = params;
         let include_collab_tools = *collab_enabled;
@@ -81,7 +79,7 @@ impl ToolsConfig {
         let include_image_gen_tool = false;
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
-        let unified_exec_allowed = unified_exec_allowed_in_environment(file_system_sandbox_policy);
+        let unified_exec_allowed = unified_exec_allowed_in_environment(vfs_policy);
         let shell_type = if unified_exec_allowed {
             ConfigShellToolType::UnifiedExec
         } else if model_info.shell_type == ConfigShellToolType::UnifiedExec {

@@ -1,17 +1,17 @@
-use chaos_ipc::protocol::FileSystemSandboxPolicy;
-use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_ipc::protocol::SocketPolicy;
+use chaos_ipc::protocol::VfsPolicy;
 use chaos_parole::sandbox::needs_direct_runtime_enforcement;
 use chaos_parole::sandbox::sandbox_policies_match_semantics;
+use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 use std::fmt;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct EffectiveSandboxPolicies {
     pub sandbox_policy: SandboxPolicy,
-    pub file_system_sandbox_policy: FileSystemSandboxPolicy,
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub vfs_policy: VfsPolicy,
+    pub socket_policy: SocketPolicy,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -61,32 +61,26 @@ impl fmt::Display for ResolveSandboxPoliciesError {
 pub fn resolve_sandbox_policies(
     sandbox_policy_cwd: &Path,
     sandbox_policy: Option<SandboxPolicy>,
-    file_system_sandbox_policy: Option<FileSystemSandboxPolicy>,
-    network_sandbox_policy: Option<NetworkSandboxPolicy>,
+    vfs_policy: Option<VfsPolicy>,
+    socket_policy: Option<SocketPolicy>,
 ) -> Result<EffectiveSandboxPolicies, ResolveSandboxPoliciesError> {
-    let split_policies = match (file_system_sandbox_policy, network_sandbox_policy) {
-        (Some(file_system_sandbox_policy), Some(network_sandbox_policy)) => {
-            Some((file_system_sandbox_policy, network_sandbox_policy))
-        }
+    let split_policies = match (vfs_policy, socket_policy) {
+        (Some(vfs_policy), Some(socket_policy)) => Some((vfs_policy, socket_policy)),
         (None, None) => None,
         _ => return Err(ResolveSandboxPoliciesError::PartialSplitPolicies),
     };
 
     match (sandbox_policy, split_policies) {
-        (Some(sandbox_policy), Some((file_system_sandbox_policy, network_sandbox_policy))) => {
-            if needs_direct_runtime_enforcement(
-                &file_system_sandbox_policy,
-                network_sandbox_policy,
-                sandbox_policy_cwd,
-            ) {
+        (Some(sandbox_policy), Some((vfs_policy, socket_policy))) => {
+            if needs_direct_runtime_enforcement(&vfs_policy, socket_policy, sandbox_policy_cwd) {
                 return Ok(EffectiveSandboxPolicies {
                     sandbox_policy,
-                    file_system_sandbox_policy,
-                    network_sandbox_policy,
+                    vfs_policy,
+                    socket_policy,
                 });
             }
-            let derived_sandbox_policy = file_system_sandbox_policy
-                .to_sandbox_policy(network_sandbox_policy, sandbox_policy_cwd)
+            let derived_sandbox_policy = vfs_policy
+                .to_sandbox_policy(socket_policy, sandbox_policy_cwd)
                 .map_err(|err| {
                     ResolveSandboxPoliciesError::SplitPoliciesRequireDirectRuntimeEnforcement(
                         err.to_string(),
@@ -104,28 +98,25 @@ pub fn resolve_sandbox_policies(
             }
             Ok(EffectiveSandboxPolicies {
                 sandbox_policy,
-                file_system_sandbox_policy,
-                network_sandbox_policy,
+                vfs_policy,
+                socket_policy,
             })
         }
         (Some(sandbox_policy), None) => Ok(EffectiveSandboxPolicies {
-            file_system_sandbox_policy: file_system_policy_from_sandbox_policy(
-                &sandbox_policy,
-                sandbox_policy_cwd,
-            ),
-            network_sandbox_policy: NetworkSandboxPolicy::from(&sandbox_policy),
+            vfs_policy: vfs_policy_from_sandbox_policy(&sandbox_policy, sandbox_policy_cwd),
+            socket_policy: SocketPolicy::from(&sandbox_policy),
             sandbox_policy,
         }),
-        (None, Some((file_system_sandbox_policy, network_sandbox_policy))) => {
-            let sandbox_policy = file_system_sandbox_policy
-                .to_sandbox_policy(network_sandbox_policy, sandbox_policy_cwd)
+        (None, Some((vfs_policy, socket_policy))) => {
+            let sandbox_policy = vfs_policy
+                .to_sandbox_policy(socket_policy, sandbox_policy_cwd)
                 .map_err(|err| {
                     ResolveSandboxPoliciesError::FailedToDeriveSandboxPolicy(err.to_string())
                 })?;
             Ok(EffectiveSandboxPolicies {
                 sandbox_policy,
-                file_system_sandbox_policy,
-                network_sandbox_policy,
+                vfs_policy,
+                socket_policy,
             })
         }
         (None, None) => Err(ResolveSandboxPoliciesError::MissingConfiguration),

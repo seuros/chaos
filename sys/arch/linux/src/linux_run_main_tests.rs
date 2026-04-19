@@ -3,13 +3,13 @@ use super::*;
 #[cfg(test)]
 use alcatraz_base::sandbox_policy::ResolveSandboxPoliciesError;
 #[cfg(test)]
-use chaos_ipc::protocol::FileSystemSandboxPolicy;
-#[cfg(test)]
-use chaos_ipc::protocol::NetworkSandboxPolicy;
-#[cfg(test)]
 use chaos_ipc::protocol::ReadOnlyAccess;
 #[cfg(test)]
 use chaos_ipc::protocol::SandboxPolicy;
+#[cfg(test)]
+use chaos_ipc::protocol::SocketPolicy;
+#[cfg(test)]
+use chaos_ipc::protocol::VfsPolicy;
 #[cfg(test)]
 use chaos_realpath::AbsolutePathBuf;
 #[cfg(test)]
@@ -23,22 +23,20 @@ fn split_only_filesystem_policy_requires_direct_runtime_enforcement() {
     let docs = temp_dir.path().join("docs");
     std::fs::create_dir_all(&docs).expect("create docs");
     let docs = AbsolutePathBuf::from_absolute_path(&docs).expect("absolute docs");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        chaos_ipc::permissions::FileSystemSandboxEntry {
-            path: chaos_ipc::permissions::FileSystemPath::Special {
-                value: chaos_ipc::permissions::FileSystemSpecialPath::CurrentWorkingDirectory,
+    let policy = VfsPolicy::restricted(vec![
+        chaos_ipc::permissions::VfsEntry {
+            path: chaos_ipc::permissions::VfsPath::Special {
+                value: chaos_ipc::permissions::VfsSpecialPath::CurrentWorkingDirectory,
             },
-            access: chaos_ipc::permissions::FileSystemAccessMode::Write,
+            access: chaos_ipc::permissions::VfsAccessMode::Write,
         },
-        chaos_ipc::permissions::FileSystemSandboxEntry {
-            path: chaos_ipc::permissions::FileSystemPath::Path { path: docs },
-            access: chaos_ipc::permissions::FileSystemAccessMode::Read,
+        chaos_ipc::permissions::VfsEntry {
+            path: chaos_ipc::permissions::VfsPath::Path { path: docs },
+            access: chaos_ipc::permissions::VfsAccessMode::Read,
         },
     ]);
 
-    assert!(
-        policy.needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, temp_dir.path(),)
-    );
+    assert!(policy.needs_direct_runtime_enforcement(SocketPolicy::Restricted, temp_dir.path(),));
 }
 
 #[test]
@@ -47,22 +45,20 @@ fn root_write_read_only_carveout_requires_direct_runtime_enforcement() {
     let docs = temp_dir.path().join("docs");
     std::fs::create_dir_all(&docs).expect("create docs");
     let docs = AbsolutePathBuf::from_absolute_path(&docs).expect("absolute docs");
-    let policy = FileSystemSandboxPolicy::restricted(vec![
-        chaos_ipc::permissions::FileSystemSandboxEntry {
-            path: chaos_ipc::permissions::FileSystemPath::Special {
-                value: chaos_ipc::permissions::FileSystemSpecialPath::Root,
+    let policy = VfsPolicy::restricted(vec![
+        chaos_ipc::permissions::VfsEntry {
+            path: chaos_ipc::permissions::VfsPath::Special {
+                value: chaos_ipc::permissions::VfsSpecialPath::Root,
             },
-            access: chaos_ipc::permissions::FileSystemAccessMode::Write,
+            access: chaos_ipc::permissions::VfsAccessMode::Write,
         },
-        chaos_ipc::permissions::FileSystemSandboxEntry {
-            path: chaos_ipc::permissions::FileSystemPath::Path { path: docs },
-            access: chaos_ipc::permissions::FileSystemAccessMode::Read,
+        chaos_ipc::permissions::VfsEntry {
+            path: chaos_ipc::permissions::VfsPath::Path { path: docs },
+            access: chaos_ipc::permissions::VfsAccessMode::Read,
         },
     ]);
 
-    assert!(
-        policy.needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, temp_dir.path(),)
-    );
+    assert!(policy.needs_direct_runtime_enforcement(SocketPolicy::Restricted, temp_dir.path(),));
 }
 
 #[test]
@@ -74,36 +70,27 @@ fn resolve_sandbox_policies_derives_split_policies_from_sandbox_policy() {
             .expect("sandbox policy should resolve");
 
     assert_eq!(resolved.sandbox_policy, sandbox_policy);
-    assert_eq!(
-        resolved.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::from(&sandbox_policy)
-    );
-    assert_eq!(
-        resolved.network_sandbox_policy,
-        NetworkSandboxPolicy::from(&sandbox_policy)
-    );
+    assert_eq!(resolved.vfs_policy, VfsPolicy::from(&sandbox_policy));
+    assert_eq!(resolved.socket_policy, SocketPolicy::from(&sandbox_policy));
 }
 
 #[test]
 fn resolve_sandbox_policies_derives_sandbox_policy_from_split_policies() {
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
-    let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
+    let vfs_policy = VfsPolicy::from(&sandbox_policy);
+    let socket_policy = SocketPolicy::from(&sandbox_policy);
 
     let resolved = resolve_sandbox_policies(
         Path::new("/tmp"),
         None,
-        Some(file_system_sandbox_policy.clone()),
-        Some(network_sandbox_policy),
+        Some(vfs_policy.clone()),
+        Some(socket_policy),
     )
     .expect("split policies should resolve");
 
     assert_eq!(resolved.sandbox_policy, sandbox_policy);
-    assert_eq!(
-        resolved.file_system_sandbox_policy,
-        file_system_sandbox_policy
-    );
-    assert_eq!(resolved.network_sandbox_policy, network_sandbox_policy);
+    assert_eq!(resolved.vfs_policy, vfs_policy);
+    assert_eq!(resolved.socket_policy, socket_policy);
 }
 
 #[test]
@@ -111,7 +98,7 @@ fn resolve_sandbox_policies_rejects_partial_split_policies() {
     let err = resolve_sandbox_policies(
         Path::new("/tmp"),
         Some(SandboxPolicy::new_read_only_policy()),
-        Some(FileSystemSandboxPolicy::default()),
+        Some(VfsPolicy::default()),
         None,
     )
     .expect_err("partial split policies should fail");
@@ -124,8 +111,8 @@ fn resolve_sandbox_policies_rejects_mismatched_sandbox_and_split_inputs() {
     let err = resolve_sandbox_policies(
         Path::new("/tmp"),
         Some(SandboxPolicy::new_read_only_policy()),
-        Some(FileSystemSandboxPolicy::unrestricted()),
-        Some(NetworkSandboxPolicy::Enabled),
+        Some(VfsPolicy::unrestricted()),
+        Some(SocketPolicy::Enabled),
     )
     .expect_err("mismatched sandbox and split policies should fail");
     assert!(
@@ -144,36 +131,30 @@ fn resolve_sandbox_policies_accepts_split_policies_requiring_direct_runtime_enfo
     std::fs::create_dir_all(&docs).expect("create docs");
     let docs = AbsolutePathBuf::from_absolute_path(&docs).expect("absolute docs");
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        chaos_ipc::permissions::FileSystemSandboxEntry {
-            path: chaos_ipc::permissions::FileSystemPath::Special {
-                value: chaos_ipc::permissions::FileSystemSpecialPath::Root,
+    let vfs_policy = VfsPolicy::restricted(vec![
+        chaos_ipc::permissions::VfsEntry {
+            path: chaos_ipc::permissions::VfsPath::Special {
+                value: chaos_ipc::permissions::VfsSpecialPath::Root,
             },
-            access: chaos_ipc::permissions::FileSystemAccessMode::Read,
+            access: chaos_ipc::permissions::VfsAccessMode::Read,
         },
-        chaos_ipc::permissions::FileSystemSandboxEntry {
-            path: chaos_ipc::permissions::FileSystemPath::Path { path: docs },
-            access: chaos_ipc::permissions::FileSystemAccessMode::Write,
+        chaos_ipc::permissions::VfsEntry {
+            path: chaos_ipc::permissions::VfsPath::Path { path: docs },
+            access: chaos_ipc::permissions::VfsAccessMode::Write,
         },
     ]);
 
     let resolved = resolve_sandbox_policies(
         temp_dir.path(),
         Some(sandbox_policy.clone()),
-        Some(file_system_sandbox_policy.clone()),
-        Some(NetworkSandboxPolicy::Restricted),
+        Some(vfs_policy.clone()),
+        Some(SocketPolicy::Restricted),
     )
     .expect("split-only policy should preserve provided sandbox fallback");
 
     assert_eq!(resolved.sandbox_policy, sandbox_policy);
-    assert_eq!(
-        resolved.file_system_sandbox_policy,
-        file_system_sandbox_policy
-    );
-    assert_eq!(
-        resolved.network_sandbox_policy,
-        NetworkSandboxPolicy::Restricted
-    );
+    assert_eq!(resolved.vfs_policy, vfs_policy);
+    assert_eq!(resolved.socket_policy, SocketPolicy::Restricted);
 }
 
 #[test]
@@ -189,24 +170,17 @@ fn resolve_sandbox_policies_accepts_semantically_equivalent_workspace_write_inpu
         exclude_tmpdir_env_var: false,
         exclude_slash_tmp: false,
     };
-    let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy());
+    let vfs_policy = VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy());
 
     let resolved = resolve_sandbox_policies(
         temp_dir.path().join("workspace").as_path(),
         Some(sandbox_policy.clone()),
-        Some(file_system_sandbox_policy.clone()),
-        Some(NetworkSandboxPolicy::Restricted),
+        Some(vfs_policy.clone()),
+        Some(SocketPolicy::Restricted),
     )
     .expect("semantically equivalent workspace-write policy should resolve");
 
     assert_eq!(resolved.sandbox_policy, sandbox_policy);
-    assert_eq!(
-        resolved.file_system_sandbox_policy,
-        file_system_sandbox_policy
-    );
-    assert_eq!(
-        resolved.network_sandbox_policy,
-        NetworkSandboxPolicy::Restricted
-    );
+    assert_eq!(resolved.vfs_policy, vfs_policy);
+    assert_eq!(resolved.socket_policy, SocketPolicy::Restricted);
 }

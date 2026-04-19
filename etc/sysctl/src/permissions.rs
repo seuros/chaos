@@ -4,12 +4,12 @@ use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 
-use chaos_ipc::permissions::FileSystemAccessMode;
-use chaos_ipc::permissions::FileSystemPath;
-use chaos_ipc::permissions::FileSystemSandboxEntry;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::FileSystemSpecialPath;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsAccessMode;
+use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPath;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsSpecialPath;
 use chaos_pf::NetworkMode;
 use chaos_pf::NetworkProxyConfig;
 use chaos_realpath::AbsolutePathBuf;
@@ -51,8 +51,8 @@ impl FilesystemPermissionsToml {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(untagged)]
 pub enum FilesystemPermissionToml {
-    Access(FileSystemAccessMode),
-    Scoped(BTreeMap<String, FileSystemAccessMode>),
+    Access(VfsAccessMode),
+    Scoped(BTreeMap<String, VfsAccessMode>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
@@ -159,7 +159,7 @@ pub fn compile_permission_profile(
     permissions: &PermissionsToml,
     profile_name: &str,
     startup_warnings: &mut Vec<String>,
-) -> io::Result<(FileSystemSandboxPolicy, NetworkSandboxPolicy)> {
+) -> io::Result<(VfsPolicy, SocketPolicy)> {
     let profile = resolve_permission_profile(permissions, profile_name)?;
 
     let mut entries = Vec::new();
@@ -181,39 +181,36 @@ pub fn compile_permission_profile(
         );
     }
 
-    let network_sandbox_policy = compile_network_sandbox_policy(profile.network.as_ref());
+    let socket_policy = compile_socket_policy(profile.network.as_ref());
 
-    Ok((
-        FileSystemSandboxPolicy::restricted(entries),
-        network_sandbox_policy,
-    ))
+    Ok((VfsPolicy::restricted(entries), socket_policy))
 }
 
-fn compile_network_sandbox_policy(network: Option<&NetworkToml>) -> NetworkSandboxPolicy {
+fn compile_socket_policy(network: Option<&NetworkToml>) -> SocketPolicy {
     let Some(network) = network else {
-        return NetworkSandboxPolicy::Restricted;
+        return SocketPolicy::Restricted;
     };
 
     match network.enabled {
-        Some(true) => NetworkSandboxPolicy::Enabled,
-        _ => NetworkSandboxPolicy::Restricted,
+        Some(true) => SocketPolicy::Enabled,
+        _ => SocketPolicy::Restricted,
     }
 }
 
 fn compile_filesystem_permission(
     path: &str,
     permission: &FilesystemPermissionToml,
-    entries: &mut Vec<FileSystemSandboxEntry>,
+    entries: &mut Vec<VfsEntry>,
     startup_warnings: &mut Vec<String>,
 ) -> io::Result<()> {
     match permission {
-        FilesystemPermissionToml::Access(access) => entries.push(FileSystemSandboxEntry {
+        FilesystemPermissionToml::Access(access) => entries.push(VfsEntry {
             path: compile_filesystem_path(path, startup_warnings)?,
             access: *access,
         }),
         FilesystemPermissionToml::Scoped(scoped_entries) => {
             for (subpath, access) in scoped_entries {
-                entries.push(FileSystemSandboxEntry {
+                entries.push(VfsEntry {
                     path: compile_scoped_filesystem_path(path, subpath, startup_warnings)?,
                     access: *access,
                 });
@@ -223,24 +220,21 @@ fn compile_filesystem_permission(
     Ok(())
 }
 
-fn compile_filesystem_path(
-    path: &str,
-    startup_warnings: &mut Vec<String>,
-) -> io::Result<FileSystemPath> {
+fn compile_filesystem_path(path: &str, startup_warnings: &mut Vec<String>) -> io::Result<VfsPath> {
     if let Some(special) = parse_special_path(path) {
         maybe_push_unknown_special_path_warning(&special, startup_warnings);
-        return Ok(FileSystemPath::Special { value: special });
+        return Ok(VfsPath::Special { value: special });
     }
 
     let path = parse_absolute_path(path)?;
-    Ok(FileSystemPath::Path { path })
+    Ok(VfsPath::Path { path })
 }
 
 fn compile_scoped_filesystem_path(
     path: &str,
     subpath: &str,
     startup_warnings: &mut Vec<String>,
-) -> io::Result<FileSystemPath> {
+) -> io::Result<VfsPath> {
     if subpath == "." {
         return compile_filesystem_path(path, startup_warnings);
     }
@@ -248,18 +242,18 @@ fn compile_scoped_filesystem_path(
     if let Some(special) = parse_special_path(path) {
         let subpath = parse_relative_subpath(subpath)?;
         let special = match special {
-            FileSystemSpecialPath::ProjectRoots { .. } => Ok(FileSystemPath::Special {
-                value: FileSystemSpecialPath::project_roots(Some(subpath)),
+            VfsSpecialPath::ProjectRoots { .. } => Ok(VfsPath::Special {
+                value: VfsSpecialPath::project_roots(Some(subpath)),
             }),
-            FileSystemSpecialPath::Unknown { path, .. } => Ok(FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(path, Some(subpath)),
+            VfsSpecialPath::Unknown { path, .. } => Ok(VfsPath::Special {
+                value: VfsSpecialPath::unknown(path, Some(subpath)),
             }),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("filesystem path `{path}` does not support nested entries"),
             )),
         }?;
-        if let FileSystemPath::Special { value } = &special {
+        if let VfsPath::Special { value } = &special {
             maybe_push_unknown_special_path_warning(value, startup_warnings);
         }
         return Ok(special);
@@ -268,22 +262,22 @@ fn compile_scoped_filesystem_path(
     let subpath = parse_relative_subpath(subpath)?;
     let base = parse_absolute_path(path)?;
     let path = AbsolutePathBuf::resolve_path_against_base(&subpath, base.as_path())?;
-    Ok(FileSystemPath::Path { path })
+    Ok(VfsPath::Path { path })
 }
 
 // WARNING: keep this parser forward-compatible.
 // Adding a new `:special_path` must not make older Chaos versions reject the
 // config. Unknown values intentionally round-trip through
-// `FileSystemSpecialPath::Unknown` so they can be surfaced as warnings and
+// `VfsSpecialPath::Unknown` so they can be surfaced as warnings and
 // ignored, rather than aborting config load.
-fn parse_special_path(path: &str) -> Option<FileSystemSpecialPath> {
+fn parse_special_path(path: &str) -> Option<VfsSpecialPath> {
     match path {
-        ":root" => Some(FileSystemSpecialPath::Root),
-        ":minimal" => Some(FileSystemSpecialPath::Minimal),
-        ":project_roots" => Some(FileSystemSpecialPath::project_roots(/*subpath*/ None)),
-        ":tmpdir" => Some(FileSystemSpecialPath::Tmpdir),
+        ":root" => Some(VfsSpecialPath::Root),
+        ":minimal" => Some(VfsSpecialPath::Minimal),
+        ":project_roots" => Some(VfsSpecialPath::project_roots(/*subpath*/ None)),
+        ":tmpdir" => Some(VfsSpecialPath::Tmpdir),
         _ if path.starts_with(':') => {
-            Some(FileSystemSpecialPath::unknown(path, /*subpath*/ None))
+            Some(VfsSpecialPath::unknown(path, /*subpath*/ None))
         }
         _ => None,
     }
@@ -331,10 +325,10 @@ fn missing_filesystem_entries_warning(profile_name: &str) -> String {
 }
 
 fn maybe_push_unknown_special_path_warning(
-    special: &FileSystemSpecialPath,
+    special: &VfsSpecialPath,
     startup_warnings: &mut Vec<String>,
 ) {
-    let FileSystemSpecialPath::Unknown { path, subpath } = special else {
+    let VfsSpecialPath::Unknown { path, subpath } = special else {
         return;
     };
     push_warning(

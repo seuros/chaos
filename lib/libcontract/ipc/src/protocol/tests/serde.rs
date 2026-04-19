@@ -143,8 +143,8 @@ fn turn_context_item_deserializes_without_network() -> Result<()> {
     let item: TurnContextItem = serde_json::from_value(json!({
         "cwd": "/tmp",
         "approval_policy": "headless",
-        "file_system_sandbox_policy": { "kind": "unrestricted" },
-        "network_sandbox_policy": "restricted",
+        "vfs_policy": { "kind": "unrestricted" },
+        "socket_policy": "restricted",
         "model": "gpt-5",
         "summary": "auto",
     }))?;
@@ -163,8 +163,8 @@ fn turn_context_item_serializes_network_when_present() -> Result<()> {
         current_date: None,
         timezone: None,
         approval_policy: ApprovalPolicy::Headless,
-        file_system_sandbox_policy: FileSystemSandboxPolicy::unrestricted(),
-        network_sandbox_policy: NetworkSandboxPolicy::Restricted,
+        vfs_policy: VfsPolicy::unrestricted(),
+        socket_policy: SocketPolicy::Restricted,
         network: Some(TurnContextNetworkItem {
             allowed_domains: vec!["api.example.com".to_string()],
             denied_domains: vec!["blocked.example.com".to_string()],
@@ -196,8 +196,7 @@ fn turn_context_item_serializes_network_when_present() -> Result<()> {
 #[test]
 fn serialize_event() -> Result<()> {
     let conversation_id = ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
-    let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from(&SandboxPolicy::new_read_only_policy());
+    let vfs_policy = VfsPolicy::from(&SandboxPolicy::new_read_only_policy());
     let event = Event {
         id: "1234".to_string(),
         msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
@@ -209,8 +208,8 @@ fn serialize_event() -> Result<()> {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            file_system_sandbox_policy: file_system_sandbox_policy.clone(),
-            network_sandbox_policy: NetworkSandboxPolicy::Restricted,
+            vfs_policy: vfs_policy.clone(),
+            socket_policy: SocketPolicy::Restricted,
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: Some(ReasoningEffortConfig::default()),
             history_log_id: 0,
@@ -229,8 +228,8 @@ fn serialize_event() -> Result<()> {
             "model_provider_id": "openai",
             "approval_policy": "headless",
             "approvals_reviewer": "user",
-            "file_system_sandbox_policy": serde_json::to_value(file_system_sandbox_policy)?,
-            "network_sandbox_policy": "restricted",
+            "vfs_policy": serde_json::to_value(vfs_policy)?,
+            "socket_policy": "restricted",
             "cwd": "/home/user/project",
             "reasoning_effort": "medium",
             "history_log_id": 0,

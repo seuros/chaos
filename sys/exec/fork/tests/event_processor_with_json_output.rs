@@ -246,10 +246,8 @@ fn session_configured_produces_process_started_event() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
-            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
             ),
             cwd: PathBuf::from("/home/user/project"),

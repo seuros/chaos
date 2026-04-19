@@ -17,12 +17,12 @@ macro_rules! require_landlock {
         }
     };
 }
-use chaos_ipc::permissions::FileSystemAccessMode;
-use chaos_ipc::permissions::FileSystemPath;
-use chaos_ipc::permissions::FileSystemSandboxEntry;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::FileSystemSpecialPath;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsAccessMode;
+use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPath;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsSpecialPath;
 use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::config::types::ShellEnvironmentPolicy;
@@ -101,24 +101,17 @@ async fn run_cmd_result_with_writable_roots(
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: true,
     };
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
-    let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
-    run_cmd_result_with_policies(
-        cmd,
-        sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
-        timeout_ms,
-    )
-    .await
+    let vfs_policy = VfsPolicy::from(&sandbox_policy);
+    let socket_policy = SocketPolicy::from(&sandbox_policy);
+    run_cmd_result_with_policies(cmd, sandbox_policy, vfs_policy, socket_policy, timeout_ms).await
 }
 
 #[expect(clippy::expect_used)]
 async fn run_cmd_result_with_policies(
     cmd: &[&str],
     _sandbox_policy: SandboxPolicy,
-    file_system_sandbox_policy: FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
+    vfs_policy: VfsPolicy,
+    socket_policy: SocketPolicy,
     timeout_ms: u64,
 ) -> Result<chaos_kern::exec::ExecToolCallOutput> {
     let cwd = std::env::current_dir().expect("cwd should exist");
@@ -140,8 +133,8 @@ async fn run_cmd_result_with_policies(
 
     process_exec_tool_call(
         params,
-        &file_system_sandbox_policy,
-        network_sandbox_policy,
+        &vfs_policy,
+        socket_policy,
         sandbox_cwd.as_path(),
         &alcatraz_macos_exe,
         &alcatraz_linux_exe,
@@ -331,8 +324,8 @@ async fn assert_network_blocked(cmd: &[&str]) {
     let alcatraz_freebsd_exe: Option<PathBuf> = None;
     let result = process_exec_tool_call(
         params,
-        &FileSystemSandboxPolicy::from(&sandbox_policy),
-        NetworkSandboxPolicy::from(&sandbox_policy),
+        &VfsPolicy::from(&sandbox_policy),
+        SocketPolicy::from(&sandbox_policy),
         sandbox_cwd.as_path(),
         &alcatraz_macos_exe,
         &alcatraz_linux_exe,
@@ -485,31 +478,31 @@ async fn linux_landlock_rejects_explicit_split_policy_carveouts() {
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: true,
     };
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Minimal,
+    let vfs_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Minimal,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(sandbox_helper_dir.as_path())
                     .expect("absolute helper dir"),
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(tmpdir.path()).expect("absolute tempdir"),
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(blocked.as_path()).expect("absolute blocked dir"),
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
     ]);
     let output = expect_denied(
@@ -520,8 +513,8 @@ async fn linux_landlock_rejects_explicit_split_policy_carveouts() {
                 &format!("echo denied > {}", blocked_target.to_string_lossy()),
             ],
             sandbox_policy,
-            file_system_sandbox_policy,
-            NetworkSandboxPolicy::Enabled,
+            vfs_policy,
+            SocketPolicy::Enabled,
             LONG_TIMEOUT_MS,
         )
         .await,
@@ -553,37 +546,37 @@ async fn linux_landlock_rejects_nested_writable_carveouts_inside_unreadable_pare
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: true,
     };
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Minimal,
+    let vfs_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Minimal,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(sandbox_helper_dir.as_path())
                     .expect("absolute helper dir"),
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(tmpdir.path()).expect("absolute tempdir"),
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(blocked.as_path()).expect("absolute blocked dir"),
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(allowed.as_path()).expect("absolute allowed dir"),
             },
-            access: FileSystemAccessMode::Write,
+            access: VfsAccessMode::Write,
         },
     ]);
     let output = expect_denied(
@@ -598,8 +591,8 @@ async fn linux_landlock_rejects_nested_writable_carveouts_inside_unreadable_pare
                 ),
             ],
             sandbox_policy,
-            file_system_sandbox_policy,
-            NetworkSandboxPolicy::Enabled,
+            vfs_policy,
+            SocketPolicy::Enabled,
             LONG_TIMEOUT_MS,
         )
         .await,
@@ -622,18 +615,18 @@ async fn linux_landlock_rejects_root_read_carveouts() {
         access: ReadOnlyAccess::FullAccess,
         network_access: true,
     };
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
+    let vfs_policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
             },
-            access: FileSystemAccessMode::Read,
+            access: VfsAccessMode::Read,
         },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
+        VfsEntry {
+            path: VfsPath::Path {
                 path: AbsolutePathBuf::try_from(blocked.as_path()).expect("absolute blocked dir"),
             },
-            access: FileSystemAccessMode::None,
+            access: VfsAccessMode::None,
         },
     ]);
     let output = expect_denied(
@@ -644,8 +637,8 @@ async fn linux_landlock_rejects_root_read_carveouts() {
                 &format!("cat {}", blocked_target.to_string_lossy()),
             ],
             sandbox_policy,
-            file_system_sandbox_policy,
-            NetworkSandboxPolicy::Enabled,
+            vfs_policy,
+            SocketPolicy::Enabled,
             LONG_TIMEOUT_MS,
         )
         .await,

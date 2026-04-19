@@ -12,12 +12,12 @@ use crate::config::types::Notifications;
 use crate::config_loader::McpServerIdentity;
 use crate::config_loader::RequirementSource;
 
-use chaos_ipc::permissions::FileSystemAccessMode;
-use chaos_ipc::permissions::FileSystemPath;
-use chaos_ipc::permissions::FileSystemSandboxEntry;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::FileSystemSpecialPath;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsAccessMode;
+use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPath;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsSpecialPath;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use tempfile::tempdir;
 
@@ -372,20 +372,20 @@ exclude_slash_tmp = true
 
         let sandbox_policy = config.permissions.sandbox_policy.get();
         assert_eq!(
-            config.permissions.file_system_sandbox_policy,
-            FileSystemSandboxPolicy::from_sandbox_policy(sandbox_policy, cwd.path()),
+            config.permissions.vfs_policy,
+            VfsPolicy::from_sandbox_policy(sandbox_policy, cwd.path()),
             "case `{name}` should preserve filesystem semantics from sandbox config"
         );
         assert_eq!(
-            config.permissions.network_sandbox_policy,
-            NetworkSandboxPolicy::from(sandbox_policy),
+            config.permissions.socket_policy,
+            SocketPolicy::from(sandbox_policy),
             "case `{name}` should preserve network semantics from legacy config"
         );
         assert_eq!(
             config
                 .permissions
-                .file_system_sandbox_policy
-                .to_sandbox_policy(config.permissions.network_sandbox_policy, cwd.path())
+                .vfs_policy
+                .to_sandbox_policy(config.permissions.socket_policy, cwd.path())
                 .unwrap_or_else(|err| panic!("case `{name}` should round-trip: {err}")),
             sandbox_policy.clone(),
             "case `{name}` should round-trip through split policies without drift"
@@ -614,7 +614,7 @@ fn web_search_mode_for_turn_uses_preference_for_read_only() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Cached);
     let mode = resolve_web_search_mode_for_turn(
         &web_search_mode,
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        &VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
     );
 
     assert_eq!(mode, WebSearchMode::Cached);
@@ -623,10 +623,7 @@ fn web_search_mode_for_turn_uses_preference_for_read_only() {
 #[test]
 fn web_search_mode_for_turn_prefers_live_for_root_access() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Cached);
-    let mode = resolve_web_search_mode_for_turn(
-        &web_search_mode,
-        &FileSystemSandboxPolicy::unrestricted(),
-    );
+    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &VfsPolicy::unrestricted());
 
     assert_eq!(mode, WebSearchMode::Live);
 }
@@ -634,10 +631,7 @@ fn web_search_mode_for_turn_prefers_live_for_root_access() {
 #[test]
 fn web_search_mode_for_turn_respects_disabled_for_root_access() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Disabled);
-    let mode = resolve_web_search_mode_for_turn(
-        &web_search_mode,
-        &FileSystemSandboxPolicy::unrestricted(),
-    );
+    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &VfsPolicy::unrestricted());
 
     assert_eq!(mode, WebSearchMode::Disabled);
 }
@@ -657,10 +651,7 @@ fn web_search_mode_for_turn_falls_back_when_live_is_disallowed() -> anyhow::Resu
             })
         }
     })?;
-    let mode = resolve_web_search_mode_for_turn(
-        &web_search_mode,
-        &FileSystemSandboxPolicy::unrestricted(),
-    );
+    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &VfsPolicy::unrestricted());
 
     assert_eq!(mode, WebSearchMode::Cached);
     Ok(())
@@ -866,10 +857,8 @@ fn expected_precedence_fixture_permissions(approval_policy: ApprovalPolicy) -> P
     Permissions {
         approval_policy: Constrained::allow_any(approval_policy),
         sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
-        file_system_sandbox_policy: FileSystemSandboxPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        network_sandbox_policy: NetworkSandboxPolicy::Restricted,
+        vfs_policy: VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        socket_policy: SocketPolicy::Restricted,
         network: None,
         allow_login_shell: true,
         shell_environment_policy: ShellEnvironmentPolicy::default(),

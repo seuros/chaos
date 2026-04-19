@@ -15,9 +15,9 @@ use crate::state::SessionServices;
 use crate::tools::network_approval::NetworkApprovalSpec;
 use chaos_ipc::approvals::ExecPolicyAmendment;
 use chaos_ipc::approvals::NetworkApprovalContext;
-use chaos_ipc::permissions::FileSystemSandboxKind;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsPolicyKind;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_pf::NetworkProxy;
@@ -164,15 +164,12 @@ impl ExecApprovalRequirement {
 /// - Supervised: always ask
 pub(crate) fn default_exec_approval_requirement(
     policy: ApprovalPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    vfs_policy: &VfsPolicy,
 ) -> ExecApprovalRequirement {
     let needs_approval = match policy {
         ApprovalPolicy::Headless => false,
         ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {
-            matches!(
-                file_system_sandbox_policy.kind,
-                FileSystemSandboxKind::Restricted
-            )
+            matches!(vfs_policy.kind, VfsPolicyKind::Restricted)
         }
         ApprovalPolicy::Supervised => true,
     };
@@ -321,8 +318,8 @@ pub(crate) trait ToolRuntime<Req, Out>: Approvable<Req> + Sandboxable {
 
 pub(crate) struct SandboxAttempt<'a> {
     pub sandbox: crate::exec::SandboxType,
-    pub file_system_policy: &'a FileSystemSandboxPolicy,
-    pub network_policy: NetworkSandboxPolicy,
+    pub file_system_policy: &'a VfsPolicy,
+    pub network_policy: SocketPolicy,
     pub enforce_managed_network: bool,
     pub(crate) manager: &'a SandboxManager,
     pub(crate) sandbox_cwd: &'a Path,

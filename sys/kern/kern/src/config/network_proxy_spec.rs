@@ -1,6 +1,6 @@
 use crate::config_loader::NetworkConstraints;
-use chaos_ipc::permissions::FileSystemSandboxKind;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::permissions::VfsPolicyKind;
 use chaos_pf::BlockedRequestObserver;
 use chaos_pf::ConfigReloader;
 use chaos_pf::ConfigState;
@@ -91,7 +91,7 @@ impl NetworkProxySpec {
     pub(crate) fn from_config_and_constraints(
         config: NetworkProxyConfig,
         requirements: Option<NetworkConstraints>,
-        file_system_sandbox_policy: &FileSystemSandboxPolicy,
+        vfs_policy: &VfsPolicy,
     ) -> std::io::Result<Self> {
         let hard_deny_allowlist_misses = requirements
             .as_ref()
@@ -100,7 +100,7 @@ impl NetworkProxySpec {
             Self::apply_requirements(
                 config,
                 &requirements,
-                file_system_sandbox_policy,
+                vfs_policy,
                 hard_deny_allowlist_misses,
             )
         } else {
@@ -121,7 +121,7 @@ impl NetworkProxySpec {
 
     pub async fn start_proxy(
         &self,
-        file_system_sandbox_policy: &FileSystemSandboxPolicy,
+        vfs_policy: &VfsPolicy,
         policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
         blocked_request_observer: Option<Arc<dyn BlockedRequestObserver>>,
         enable_network_approval_flow: bool,
@@ -131,10 +131,7 @@ impl NetworkProxySpec {
         let mut builder = NetworkProxy::builder().state(Arc::new(state));
         if enable_network_approval_flow
             && !self.hard_deny_allowlist_misses
-            && matches!(
-                file_system_sandbox_policy.kind,
-                FileSystemSandboxKind::Restricted
-            )
+            && matches!(vfs_policy.kind, VfsPolicyKind::Restricted)
         {
             builder = match policy_decider {
                 Some(policy_decider) => builder.policy_decider_arc(policy_decider),
@@ -192,16 +189,13 @@ impl NetworkProxySpec {
     fn apply_requirements(
         mut config: NetworkProxyConfig,
         requirements: &NetworkConstraints,
-        file_system_sandbox_policy: &FileSystemSandboxPolicy,
+        vfs_policy: &VfsPolicy,
         hard_deny_allowlist_misses: bool,
     ) -> (NetworkProxyConfig, NetworkProxyConstraints) {
         let mut constraints = NetworkProxyConstraints::default();
-        let allowlist_expansion_enabled = Self::allowlist_expansion_enabled(
-            file_system_sandbox_policy,
-            hard_deny_allowlist_misses,
-        );
-        let denylist_expansion_enabled =
-            Self::denylist_expansion_enabled(file_system_sandbox_policy);
+        let allowlist_expansion_enabled =
+            Self::allowlist_expansion_enabled(vfs_policy, hard_deny_allowlist_misses);
+        let denylist_expansion_enabled = Self::denylist_expansion_enabled(vfs_policy);
 
         if let Some(enabled) = requirements.enabled {
             config.network.enabled = enabled;
@@ -271,24 +265,18 @@ impl NetworkProxySpec {
     }
 
     fn allowlist_expansion_enabled(
-        file_system_sandbox_policy: &FileSystemSandboxPolicy,
+        vfs_policy: &VfsPolicy,
         hard_deny_allowlist_misses: bool,
     ) -> bool {
-        matches!(
-            file_system_sandbox_policy.kind,
-            FileSystemSandboxKind::Restricted
-        ) && !hard_deny_allowlist_misses
+        matches!(vfs_policy.kind, VfsPolicyKind::Restricted) && !hard_deny_allowlist_misses
     }
 
     fn managed_allowed_domains_only(requirements: &NetworkConstraints) -> bool {
         requirements.managed_allowed_domains_only.unwrap_or(false)
     }
 
-    fn denylist_expansion_enabled(file_system_sandbox_policy: &FileSystemSandboxPolicy) -> bool {
-        matches!(
-            file_system_sandbox_policy.kind,
-            FileSystemSandboxKind::Restricted
-        )
+    fn denylist_expansion_enabled(vfs_policy: &VfsPolicy) -> bool {
+        matches!(vfs_policy.kind, VfsPolicyKind::Restricted)
     }
 
     fn merge_domain_lists(mut managed: Vec<String>, user_entries: &[String]) -> Vec<String> {

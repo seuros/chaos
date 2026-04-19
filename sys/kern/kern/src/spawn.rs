@@ -6,13 +6,13 @@ use tokio::process::Child;
 use tokio::process::Command;
 use tracing::trace;
 
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::permissions::SocketPolicy;
 
 /// Experimental environment variable that will be set to some non-empty value
 /// if both of the following are true:
 ///
 /// 1. The process was spawned by Chaos as part of a shell tool call.
-/// 2. NetworkSandboxPolicy is restricted for the tool call.
+/// 2. SocketPolicy is restricted for the tool call.
 ///
 /// We may try to have just one environment variable for all sandboxing
 /// attributes, so this may change in the future.
@@ -33,7 +33,7 @@ pub enum StdioPolicy {
 /// ensuring the args and environment variables used to create the `Command`
 /// (and `Child`) honor the configuration.
 ///
-/// For now, we take `NetworkSandboxPolicy` as a parameter to spawn_child()
+/// For now, we take `SocketPolicy` as a parameter to spawn_child()
 /// because we need to determine whether to set the
 /// `CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR` environment variable.
 pub(crate) struct SpawnChildRequest<'a> {
@@ -41,7 +41,7 @@ pub(crate) struct SpawnChildRequest<'a> {
     pub args: Vec<String>,
     pub arg0: Option<&'a str>,
     pub cwd: PathBuf,
-    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub socket_policy: SocketPolicy,
     pub network: Option<&'a NetworkProxy>,
     pub stdio_policy: StdioPolicy,
     pub env: HashMap<String, String>,
@@ -53,14 +53,14 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
         args,
         arg0,
         cwd,
-        network_sandbox_policy,
+        socket_policy,
         network,
         stdio_policy,
         mut env,
     } = request;
 
     trace!(
-        "spawn_child_async: {program:?} {args:?} {arg0:?} {cwd:?} {network_sandbox_policy:?} {stdio_policy:?} {env:?}"
+        "spawn_child_async: {program:?} {args:?} {arg0:?} {cwd:?} {socket_policy:?} {stdio_policy:?} {env:?}"
     );
 
     let mut cmd = Command::new(&program);
@@ -73,7 +73,7 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
     cmd.env_clear();
     cmd.envs(env);
 
-    if !network_sandbox_policy.is_enabled() {
+    if !socket_policy.is_enabled() {
         cmd.env(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1");
     }
 

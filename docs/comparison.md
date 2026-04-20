@@ -1,6 +1,6 @@
-# Chaos vs Claude Code vs OpenAI Codex CLI
+# FreeChaOS vs Claude Code vs OpenAI Codex CLI
 
-|  | **Chaos** | **Claude Code** | **OpenAI Codex CLI** |
+|  | **FreeChaOS** | **Claude Code** | **OpenAI Codex CLI** |
 |--|-----------|----------------|---------------------|
 | **License** | Apache-2.0 | Proprietary | Apache-2.0 |
 | **Provider lock-in** | None — Chaos-ABI supports any provider | Anthropic only | OpenAI only |
@@ -22,10 +22,10 @@
 | **Non-interactive** | `chaos exec` | `claude -p` | Separate `codex-exec` binary |
 | **Code review** | `chaos exec review` | Not built-in | `codex review` |
 
-## Why Chaos?
+## Why FreeChaOS?
 
-Chaos is a fork of OpenAI's Codex CLI that broke free from provider lock-in. The core speaks a neutral ABI — the Chaos-ABI — so adding a new model provider means writing one adapter, not rewiring the entire codebase.
+FreeChaOS is a fork of OpenAI's Codex CLI that broke free from provider lock-in. The core speaks a neutral ABI — the Chaos-ABI — so adding a new model provider means writing one adapter, not rewiring the entire codebase.
 
 It ships as a single native binary with no update checker, no telemetry, no phone home. It runs on Linux, macOS, and FreeBSD.
 
-Claude Code is excellent but proprietary and Anthropic-only. OpenAI Codex CLI is open source but hardcoded to OpenAI's wire format. Chaos takes the best of both: open source, native performance, any provider.
+Claude Code is excellent but proprietary and Anthropic-only. OpenAI Codex CLI is open source but hardcoded to OpenAI's wire format. FreeChaOS takes the best of both: free software, native performance, any provider.

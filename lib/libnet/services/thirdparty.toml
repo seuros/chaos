@@ -30,3 +30,24 @@ base_url             = "https://hyper.charm.land/v1"
 env_key              = "CHARM_API_KEY"
 env_key_instructions = "Get an API key at https://charm.land and export it as CHARM_API_KEY."
 wire_api             = "chat_completions"
+
+[xai]
+name                 = "xAI"
+base_url             = "https://api.x.ai/v1"
+env_key              = "XAI_API_KEY"
+env_key_instructions = "Get an API key at https://console.x.ai and export it as XAI_API_KEY."
+wire_api             = "responses"
+
+[zai]
+name                 = "Z.ai"
+base_url             = "https://api.z.ai/api/paas/v4"
+env_key              = "ZAI_API_KEY"
+env_key_instructions = "Get an API key at https://z.ai and export it as ZAI_API_KEY."
+wire_api             = "chat_completions"
+
+[zai-coding]
+name                 = "Z.ai Coding Plan"
+base_url             = "https://api.z.ai/api/coding/paas/v4"
+env_key              = "ZAI_API_KEY"
+env_key_instructions = "Subscribe to the GLM Coding Plan at https://z.ai and export your key as ZAI_API_KEY."
+wire_api             = "chat_completions"

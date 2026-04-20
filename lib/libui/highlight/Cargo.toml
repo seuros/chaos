@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Optional syntax highlighting for the Chaos TUI. Not loaded during therapy sessions."
+description = "Optional syntax highlighting for the FreeChaOS TUI. Not loaded during therapy sessions."
 
 [lib]
 name = "chaos_highlight"

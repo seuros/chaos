@@ -1,9 +1,14 @@
-# Chaos
+# FreeChaOS
 
-Chaos is an AI agent operating system. Not a coding assistant — an OS.
+**Free software to command the Agents of ChaOS.**
+
+FreeChaOS is an AI agent operating system. Not a coding assistant — an OS.
 You pick the brain (OpenAI, Anthropic, local models), snap in the capabilities you need (modules),
 and wire up external services (drivers). It was forked from OpenAI's Codex CLI after one too many
 bugs were called features. It runs on a Celeron.
+
+The project name is **FreeChaOS**; the binary is `chaos`. Same pattern as GNU/Linux —
+what it stands for vs. what you type.
 
 ---
 
@@ -39,11 +44,11 @@ graph LR
 part that cares about wire protocols and API formats. Provider adapters and
 provider-facing protocol shims live with the kernel, not in `drivers/`.
 
-**Modules** — Extend what Chaos can do. Want voice? Module.
-Want a custom tool for your workflow? Module. Everything is modular — Chaos is not
+**Modules** — Extend what ChaOS can do. Want voice? Module.
+Want a custom tool for your workflow? Module. Everything is modular — ChaOS is not
 locked into being a coding agent.
 
-**Drivers** — MCP servers that give Chaos its tools and connect it to the outside world.
+**Drivers** — MCP servers that give ChaOS its tools and connect it to the outside world.
 File reading, shell access, Telegram, Google Play — if it speaks MCP, it's a driver.
 Plug in, wire up, ship.
 
@@ -51,10 +56,10 @@ Plug in, wire up, ship.
 
 ## Hardware Philosophy
 
-Chaos runs on hardware you assemble from Temu parts. If it can't run on a Core 2 Duo
+FreeChaOS runs on hardware you assemble from Temu parts. If it can't run on a Core 2 Duo
 with 1 GB of RAM, it's out of tree.
 
-Old hardware does not mean old software. Chaos expects bleeding-edge operating systems
+Old hardware does not mean old software. FreeChaOS expects bleeding-edge operating systems
 and abuses every security primitive they offer:
 
 - **Linux**: landlock, seccomp
@@ -72,8 +77,8 @@ Windows is not supported.
 
 Anthropic requires MAX subscribers to use the official Claude Code harness.
 The Clamping module works within these terms: it launches Claude Code with `--bare`,
-strips its built-in tools, and connects through MCP. Chaos provides the tools.
-Chaos hooks into the lifecycle. Claude Code becomes the transport.
+strips its built-in tools, and connects through MCP. FreeChaOS provides the tools.
+FreeChaOS hooks into the lifecycle. Claude Code becomes the transport.
 
 API key users connect directly through the kernel — no clamping needed.
 
@@ -93,7 +98,7 @@ This architecture is correct usage of both providers' terms of service.
 
 ## Status
 
-Chaos is a working system. You can build it, run it, and use it today.
+FreeChaOS is a working system. You can build it, run it, and use it today.
 
 That said, the codebase still carries rust from the upstream fork. The dremel
 is charging. Each component needs to be tested before it gets evicted or
@@ -104,12 +109,21 @@ I'm using it to fix itself.
 
 ---
 
-## Origin
+## Origin & Naming
 
-Chaos was forked from [OpenAI Codex CLI](https://github.com/openai/codex).
+FreeChaOS was forked from [OpenAI Codex CLI](https://github.com/openai/codex).
 The fork exists because upstream refused to fix bugs and called them features.
-The codebase has since diverged significantly — Chaos is provider-agnostic,
+The codebase has since diverged significantly — FreeChaOS is provider-agnostic,
 modular, and built for hardware that most projects have forgotten.
+
+The name is a contraction of *Chat OS*, with the deliberate capitalization of `OS`
+echoing the BSD family (FreeBSD, OpenBSD, NetBSD). The `Free` prefix is GNU-style
+free-as-in-freedom — *not* "open" in the OpenAI sense. OpenAI poisoned that prefix;
+this project refuses to inherit it.
+
+**Not to be confused with [ChaosBSD](https://github.com/seuros/ChaosBSD-src)** —
+that's a separate project, a FreeBSD driver-staging fork, an OS for humans.
+FreeChaOS is an OS for LLMs. Different target, different lineage.
 
 ---
 

@@ -42,7 +42,7 @@ Logs are written to `~/.chaos/debug.log`.
 
 ### `RUST_LOG`
 
-Chaos also honors the `RUST_LOG` environment variable for fine-grained control.
+FreeChaOS also honors the `RUST_LOG` environment variable for fine-grained control.
 
 The TUI defaults to `RUST_LOG=chaos_kern=info,chaos_console=info,mcp_guest=info` and writes logs to `~/.chaos/log/chaos-console.log`. Override with `-c log_dir=...`.
 

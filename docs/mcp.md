@@ -1,10 +1,10 @@
 # MCP — Model Context Protocol
 
-Chaos uses MCP to connect to external tools and services. MCP servers are
-the drivers that give Chaos its capabilities — file access, shell commands,
+FreeChaOS uses MCP to connect to external tools and services. MCP servers are
+the drivers that give FreeChaOS its capabilities — file access, shell commands,
 APIs, databases, anything.
 
-Chaos is also an MCP server itself, so other tools can drive it.
+FreeChaOS is also an MCP server itself, so other tools can drive it.
 
 ---
 
@@ -67,21 +67,21 @@ bearer_token_env = "REMOTE_API_KEY"   # Auth from env var
 
 ---
 
-## Using Chaos as an MCP server
+## Using FreeChaOS as an MCP server
 
-Other tools can control Chaos through MCP:
+Other tools can control FreeChaOS through MCP:
 
 ```bash
 chaos mcp serve
 ```
 
-This starts Chaos as a stdio MCP server exposing:
+This starts FreeChaOS as a stdio MCP server exposing:
 
 ### Tools
 
 | Tool | Description |
 |------|-------------|
-| `chaos` | Start or resume a Chaos session |
+| `chaos` | Start or resume a FreeChaOS session |
 
 ### Resources
 
@@ -94,7 +94,7 @@ This starts Chaos as a stdio MCP server exposing:
 
 ### Integrating with other harnesses
 
-Add Chaos to another MCP client's config:
+Add FreeChaOS to another MCP client's config:
 
 ```json
 {

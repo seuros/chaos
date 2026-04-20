@@ -1,6 +1,6 @@
 [package]
 name = "chaos-ration"
-description = "Usage metering trait — providers implement, Chaos consumes"
+description = "Usage metering trait — providers implement, FreeChaOS consumes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

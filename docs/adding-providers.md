@@ -1,25 +1,67 @@
 # Adding LLM Providers
 
-Chaos ships with OpenAI built-in. Every other provider is added through
-`~/.chaos/config.toml`. No code changes, no rebuilds.
+FreeChaOS is provider-agnostic. The kernel speaks the Chaos-ABI; adapters
+translate that to whatever wire format a given provider expects. New
+providers are added through `~/.chaos/config.toml` — no code changes, no
+rebuilds.
+
+---
+
+## What's built in
+
+FreeChaOS ships with these providers preconfigured:
+
+| Provider | Wire format | Notes |
+|----------|-------------|-------|
+| `openai` | Responses API | Default, hardcoded |
+| `anthropic` | Anthropic Messages | Hardcoded; URL-detected |
+| `xai` | Responses API | Bundled; native `web_search` / `x_search` tools |
+| `zai` | Chat Completions | Bundled; Z.ai pay-per-token (GLM-5 / GLM-5.1) |
+| `zai-coding` | Chat Completions | Bundled; Z.ai GLM Coding Plan subscription |
+| `charm` | Chat Completions | Bundled via `thirdparty.toml` |
+
+Any other provider — DeepSeek, Groq, Ollama, MiniMax, Kimi, TensorZero,
+self-hosted gateways — is a config entry away.
 
 ---
 
 ## How it works
 
-Providers speak one of two wire formats and Chaos detects which automatically:
+Providers speak one of four wire formats:
 
-- **OpenAI Responses API** — the default. Most providers clone this.
-- **Anthropic Messages API** — auto-detected when the base URL contains `anthropic`.
+- **Responses API** — OpenAI's `/v1/responses`. What OpenAI ships and most imitators clone.
+- **Chat Completions** — `/v1/chat/completions`. The lingua franca of OpenAI-compatible gateways.
+- **Anthropic Messages** — Anthropic's native format. Auto-detected when the base URL contains `anthropic`.
+- **TensorZero** — TensorZero's native `/inference` endpoint. Opt in with `wire_api = "tensorzero"`.
 
-You add a `[model_providers.<id>]` block, set your API key in the environment,
-and go.
+By default, providers use `wire_api = "auto"` — FreeChaOS tries Responses
+first and falls back to Chat Completions on 404/405/501. The winning
+format is cached for the session.
+
+You add a `[model_providers.<id>]` block, set your API key in the
+environment, and go.
 
 ---
 
 ## Examples
 
+### xAI (Grok)
+
+Bundled — no config needed. Just export the key:
+
+```bash
+export XAI_API_KEY=xai-...
+chaos --provider xai --model grok-4
+```
+
+URLs containing `x.ai` automatically expose xAI's native `web_search` and
+`x_search` server-side tools — no function schema needed. Override the
+bundled config by redeclaring `[model_providers.xai]` in your
+`~/.chaos/config.toml`.
+
 ### Anthropic (Claude)
+
+Already built-in, but you can override its config:
 
 ```toml
 [model_providers.anthropic]
@@ -33,21 +75,45 @@ export ANTHROPIC_API_KEY=sk-ant-...
 chaos --provider anthropic --model haiku
 ```
 
-The URL contains `anthropic`, so Chaos uses the Messages API automatically.
+The URL contains `anthropic`, so FreeChaOS routes to the Messages API adapter.
 
-### ZhipuAI (GLM)
+### TensorZero
 
 ```toml
-[model_providers.glm]
-name = "ZhipuAI GLM"
-base_url = "https://open.bigmodel.cn/api/paas/v4"
-env_key = "GLM_API_KEY"
+[model_providers.tensorzero]
+name = "TensorZero"
+base_url = "http://localhost:3000"
+wire_api = "tensorzero"
 ```
 
 ```bash
-export GLM_API_KEY=your-key
-chaos --provider glm --model glm-4-plus
+chaos --provider tensorzero --model my-function
 ```
+
+TensorZero has its own inference protocol — explicit `wire_api` required.
+
+### Z.ai (GLM)
+
+Bundled as two separate providers — Z.ai runs distinct endpoints for
+pay-per-token API access and the GLM Coding Plan subscription. Both
+share the same `ZAI_API_KEY` env var; pick the provider that matches
+your billing.
+
+Pay-per-token (standard API):
+
+```bash
+export ZAI_API_KEY=your-key
+chaos --provider zai --model glm-5.1
+```
+
+GLM Coding Plan (subscription):
+
+```bash
+export ZAI_API_KEY=your-key
+chaos --provider zai-coding --model glm-5.1
+```
+
+Z.ai is the international brand for ZhipuAI's GLM models (GLM-5, GLM-5.1).
 
 ### DeepSeek
 
@@ -103,7 +169,7 @@ env_key = "MINIMAX_API_KEY"
 | `base_url` | yes | Provider API endpoint |
 | `env_key` | no | Environment variable holding the API key |
 | `env_key_instructions` | no | Help text shown when the key is missing |
-| `wire_api` | no | Always `"responses"` (default). Anthropic is auto-detected from URL. |
+| `wire_api` | no | `"auto"` (default), `"responses"`, `"chat_completions"`, or `"tensorzero"`. Anthropic is URL-detected and overrides this. |
 | `http_headers` | no | Static headers as `{ "Header-Name" = "value" }` |
 | `env_http_headers` | no | Headers from env vars as `{ "Header-Name" = "ENV_VAR" }` |
 | `query_params` | no | Query string parameters as `{ "key" = "value" }` |
@@ -115,12 +181,13 @@ env_key = "MINIMAX_API_KEY"
 
 ---
 
-## Wire format detection
+## Wire format selection
 
-Chaos picks the wire format automatically:
+FreeChaOS resolves the wire format in this order:
 
-1. If the `base_url` contains `anthropic` → Anthropic Messages API
-2. Otherwise → OpenAI Responses API
+1. If the `base_url` contains `anthropic` → Anthropic Messages API (overrides `wire_api`)
+2. If `wire_api` is set explicitly → use it (`responses`, `chat_completions`, `tensorzero`)
+3. Otherwise → `auto`: try Responses, fall back to Chat Completions on 404/405/501
 
 There is no `wire_api = "anthropic"` option. The URL is the signal.
 
@@ -140,5 +207,5 @@ API version endpoint. Most OpenAI-compatible providers use `/v1`.
 stream_idle_timeout_ms = 600000
 ```
 
-**Rate limiting** — Chaos retries 429s automatically. Increase
+**Rate limiting** — FreeChaOS retries 429s automatically. Increase
 `request_max_retries` if needed.

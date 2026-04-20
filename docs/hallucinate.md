@@ -1,6 +1,6 @@
 # Hallucinate — Scripting Engine
 
-Hallucinate lets you teach Chaos new tricks without recompiling. Drop a Lua
+Hallucinate lets you teach FreeChaOS new tricks without recompiling. Drop a Lua
 script into the right folder and the LLM can call it as a tool.
 
 ---
@@ -101,7 +101,7 @@ chaos.log.warn("message")
 chaos.log.debug("message")
 ```
 
-Logs go to the Chaos log file (`~/.chaos/log/`).
+Logs go to the FreeChaOS log file (`~/.chaos/log/`).
 
 ---
 
@@ -131,7 +131,7 @@ with each other.
 | Execution time per tool call | 10 seconds |
 | Batch load timeout | 30 seconds |
 
-If a script exceeds these limits, the call fails and Chaos continues
+If a script exceeds these limits, the call fails and FreeChaOS continues
 without it.
 
 ---

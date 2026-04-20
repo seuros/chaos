@@ -1,6 +1,6 @@
-# Chaos MCP Server Interface
+# FreeChaOS MCP Server Interface
 
-This document describes the Chaos MCP server interface: a JSON-RPC API that runs over the Model Context Protocol (MCP) transport to control a local Chaos engine.
+This document describes the FreeChaOS MCP server interface: a JSON-RPC API that runs over the Model Context Protocol (MCP) transport to control a local FreeChaOS engine.
 
 - Server command: `chaos mcp serve`
 - Transport: standard MCP over stdio (JSON-RPC 2.0, line-delimited)
@@ -23,7 +23,7 @@ MCP servers can be configured in two ways:
 
 ### `.mcp.json` (recommended, cross-harness)
 
-Place a `.mcp.json` in your project root. This format is understood by Chaos, Claude Code, and other MCP-compatible harnesses:
+Place a `.mcp.json` in your project root. This format is understood by FreeChaOS, Claude Code, and other MCP-compatible harnesses:
 
 ```json
 {
@@ -39,13 +39,13 @@ Place a `.mcp.json` in your project root. This format is understood by Chaos, Cl
 }
 ```
 
-### `config.toml` (Chaos-specific)
+### `config.toml` (FreeChaOS-specific)
 
 Use `chaos mcp` to manage MCP servers in `~/.chaos/config.toml`.
 
 ## Overview
 
-Chaos exposes MCP-compatible methods to manage processes, turns, config, and approvals.
+FreeChaOS exposes MCP-compatible methods to manage processes, turns, config, and approvals.
 
 Primary RPCs:
 - `chaos` tool for create-or-resume process execution
@@ -84,17 +84,16 @@ The `chaos` and `chaos-reply` tools return standard MCP `CallToolResult` payload
 
 ```json
 {
-  "content": [{ "type": "text", "text": "Hello from Chaos" }],
   "structuredContent": {
     "processId": "019bbed6-1e9e-7f31-984c-a05b65045719",
-    "content": "Hello from Chaos"
+    "content": "Hello from FreeChaOS"
   }
 }
 ```
 
 ## Approvals
 
-When Chaos needs approval to apply changes or run commands, the server sends an MCP `elicitation/create` request. The client replies with:
+When FreeChaOS needs approval to apply changes or run commands, the server sends an MCP `elicitation/create` request. The client replies with:
 
 ```json
 {

@@ -1029,33 +1029,45 @@ impl ModelClientSession {
     }
 
     pub(super) fn resolve_anthropic_auth(&self) -> Result<AnthropicAuth> {
-        if let Some(api_key) = self.client.state.provider.api_key()? {
-            return Ok(AnthropicAuth::ApiKey(api_key));
+        match self.client.state.provider.api_key() {
+            Ok(Some(api_key)) => return Ok(AnthropicAuth::ApiKey(api_key)),
+            Ok(None) => {}
+            Err(ChaosErr::EnvVar(_)) => {
+                return Err(crate::api_bridge::provider_auth_missing(
+                    &self.client.state.provider,
+                ));
+            }
+            Err(other) => return Err(other),
         }
 
         if let Some(token) = self.client.state.provider.experimental_bearer_token.clone() {
             return Ok(AnthropicAuth::BearerToken(token));
         }
 
-        Err(ChaosErr::InvalidRequest(format!(
-            "Anthropic Messages provider `{}` requires `env_key` or `experimental_bearer_token`",
-            self.client.state.provider.name
-        )))
+        Err(crate::api_bridge::provider_auth_missing(
+            &self.client.state.provider,
+        ))
     }
 
     fn resolve_chat_completions_api_key(&self) -> Result<String> {
-        if let Some(api_key) = self.client.state.provider.api_key()? {
-            return Ok(api_key);
+        match self.client.state.provider.api_key() {
+            Ok(Some(api_key)) => return Ok(api_key),
+            Ok(None) => {}
+            Err(ChaosErr::EnvVar(_)) => {
+                return Err(crate::api_bridge::provider_auth_missing(
+                    &self.client.state.provider,
+                ));
+            }
+            Err(other) => return Err(other),
         }
 
         if let Some(token) = self.client.state.provider.experimental_bearer_token.clone() {
             return Ok(token);
         }
 
-        Err(ChaosErr::InvalidRequest(format!(
-            "Chat Completions provider `{}` requires `env_key` or `experimental_bearer_token`",
-            self.client.state.provider.name
-        )))
+        Err(crate::api_bridge::provider_auth_missing(
+            &self.client.state.provider,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]

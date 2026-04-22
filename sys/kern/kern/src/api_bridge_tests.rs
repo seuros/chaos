@@ -166,3 +166,123 @@ fn core_auth_provider_reports_when_auth_header_will_attach() {
     assert!(auth.auth_header_attached());
     assert_eq!(auth.auth_header_name(), Some("authorization"));
 }
+
+// Single-input preflight matrix: the same provider table covers OpenAI (OAuth
+// fallback), an env-key provider with unset env, an env-key provider with set
+// env, a baked bearer token, and a self-hosted (no-auth) provider.
+#[test]
+fn auth_provider_from_auth_preflight_matrix() {
+    use crate::model_provider_info::OPENAI_PROVIDER_ID;
+
+    let openai_missing = ModelProviderInfo::create_openai_provider(None);
+    let Err(err) = auth_provider_from_auth(None, &openai_missing) else {
+        panic!("OpenAI without cached login must fail preflight");
+    };
+    let ChaosErr::ProviderAuthMissing(info) = err else {
+        panic!("expected ProviderAuthMissing, got {err:?}");
+    };
+    assert_eq!(info.provider_id, OPENAI_PROVIDER_ID);
+    assert_eq!(info.env_key, None);
+    assert!(info.supports_oauth, "OpenAI should offer OAuth fallback");
+
+    let xai_var = "CHAOS_TEST_XAI_KEY_UNSET";
+    // SAFETY: test-only; ensures a clean env slot for the env-key case.
+    unsafe {
+        std::env::remove_var(xai_var);
+    }
+    let xai_missing = ModelProviderInfo {
+        name: "xAI".into(),
+        base_url: Some("https://api.x.ai/v1".into()),
+        env_key: Some(xai_var.into()),
+        env_key_instructions: Some("Create a key at https://x.ai/api.".into()),
+        experimental_bearer_token: None,
+        wire_api: crate::model_provider_info::WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+        native_server_side_tools: vec![],
+    };
+    let Err(err) = auth_provider_from_auth(None, &xai_missing) else {
+        panic!("missing env key must surface preflight error");
+    };
+    let ChaosErr::ProviderAuthMissing(info) = err else {
+        panic!("expected ProviderAuthMissing, got {err:?}");
+    };
+    assert_eq!(info.provider_id, "xAI");
+    assert_eq!(info.env_key.as_deref(), Some(xai_var));
+    assert!(!info.supports_oauth);
+    assert!(info.to_string().contains(xai_var));
+
+    unsafe {
+        std::env::set_var(xai_var, "live-key");
+    }
+    let xai_set = xai_missing.clone();
+    let auth = auth_provider_from_auth(None, &xai_set).expect("env key set must succeed");
+    assert_eq!(auth.token.as_deref(), Some("live-key"));
+    unsafe {
+        std::env::remove_var(xai_var);
+    }
+
+    let bearer = ModelProviderInfo {
+        experimental_bearer_token: Some("baked-token".into()),
+        env_key: None,
+        ..xai_missing
+    };
+    let auth = auth_provider_from_auth(None, &bearer).expect("bearer must satisfy preflight");
+    assert_eq!(auth.token.as_deref(), Some("baked-token"));
+
+    let minimax_var = "CHAOS_TEST_MINIMAX_KEY_UNSET";
+    unsafe {
+        std::env::remove_var(minimax_var);
+    }
+    let minimax = ModelProviderInfo {
+        name: "MiniMax".into(),
+        base_url: Some("https://api.minimax.io/anthropic".into()),
+        env_key: Some(minimax_var.into()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: crate::model_provider_info::WireApi::Auto,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+        native_server_side_tools: vec![],
+    };
+    let Err(ChaosErr::ProviderAuthMissing(info)) = auth_provider_from_auth(None, &minimax) else {
+        panic!("anthropic-wire provider without env must preflight-fail");
+    };
+    assert_eq!(
+        info.provider_id,
+        crate::model_provider_info::ANTHROPIC_PROVIDER_ID
+    );
+
+    let ollama = ModelProviderInfo {
+        name: "Ollama".into(),
+        base_url: Some("http://localhost:11434/v1".into()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: crate::model_provider_info::WireApi::ChatCompletions,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+        native_server_side_tools: vec![],
+    };
+    let auth =
+        auth_provider_from_auth(None, &ollama).expect("self-hosted provider needs no credentials");
+    assert!(auth.token.is_none());
+}

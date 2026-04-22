@@ -5,6 +5,7 @@ use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
 use chaos_ipc::protocol::AgentReasoningRawContentEvent;
 use chaos_ipc::protocol::BackgroundEventEvent;
+use chaos_ipc::protocol::ChaosErrorInfo;
 use chaos_ipc::protocol::CollabAgentSpawnBeginEvent;
 use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::Event;
@@ -106,16 +107,21 @@ impl ChatWidget {
                 message,
                 chaos_error_info,
             }) => {
-                if let Some(info) = chaos_error_info
-                    && let Some(kind) = rate_limit_error_kind(&info)
-                {
-                    match kind {
-                        RateLimitErrorKind::ServerOverloaded => {
-                            self.on_server_overloaded_error(message)
+                if let Some(info) = chaos_error_info {
+                    if matches!(info, ChaosErrorInfo::ProviderAuthMissing { .. }) {
+                        self.on_error(message);
+                        self.app_event_tx.send(AppEvent::OpenLoginPopup);
+                    } else if let Some(kind) = rate_limit_error_kind(&info) {
+                        match kind {
+                            RateLimitErrorKind::ServerOverloaded => {
+                                self.on_server_overloaded_error(message)
+                            }
+                            RateLimitErrorKind::UsageLimit | RateLimitErrorKind::Generic => {
+                                self.on_error(message)
+                            }
                         }
-                        RateLimitErrorKind::UsageLimit | RateLimitErrorKind::Generic => {
-                            self.on_error(message)
-                        }
+                    } else {
+                        self.on_error(message);
                     }
                 } else {
                     self.on_error(message);

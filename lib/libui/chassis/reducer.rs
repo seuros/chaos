@@ -314,6 +314,7 @@ pub fn format_error(message: &str, info: Option<&ChaosErrorInfo>) -> String {
         Some(ChaosErrorInfo::UsageLimitExceeded) => "usage limit reached",
         Some(ChaosErrorInfo::ServerOverloaded) => "server overloaded",
         Some(ChaosErrorInfo::Unauthorized) => "unauthorized",
+        Some(ChaosErrorInfo::ProviderAuthMissing { .. }) => "missing provider credentials",
         Some(ChaosErrorInfo::BadRequest) => "bad request",
         Some(ChaosErrorInfo::SandboxError) => "sandbox error",
         Some(ChaosErrorInfo::InternalServerError) => "internal server error",

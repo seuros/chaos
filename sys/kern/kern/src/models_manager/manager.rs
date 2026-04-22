@@ -539,15 +539,19 @@ impl ModelsManager {
         let api_provider = self.provider.to_api_provider(auth_mode_ref)?;
 
         // Resolve auth the same way client.rs does.
-        let adapter_auth = if let Some(api_key) = self.provider.api_key()? {
-            AnthropicAuth::ApiKey(api_key)
-        } else if let Some(token) = self.provider.experimental_bearer_token.clone() {
-            AnthropicAuth::BearerToken(token)
-        } else {
-            return Err(ChaosErr::InvalidRequest(format!(
-                "Anthropic provider `{}` requires `env_key` or `experimental_bearer_token`",
-                self.provider.name
-            )));
+        let adapter_auth = match self.provider.api_key() {
+            Ok(Some(api_key)) => AnthropicAuth::ApiKey(api_key),
+            Ok(None) => {
+                if let Some(token) = self.provider.experimental_bearer_token.clone() {
+                    AnthropicAuth::BearerToken(token)
+                } else {
+                    return Err(crate::api_bridge::provider_auth_missing(&self.provider));
+                }
+            }
+            Err(ChaosErr::EnvVar(_)) => {
+                return Err(crate::api_bridge::provider_auth_missing(&self.provider));
+            }
+            Err(other) => return Err(other),
         };
 
         let sniffer =
@@ -595,10 +599,13 @@ impl ModelsManager {
         let auth_mode = auth.as_ref().map(ChaosAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
 
-        let token = if let Some(api_key) = self.provider.api_key()? {
-            Some(api_key)
-        } else {
-            self.provider.experimental_bearer_token.clone()
+        let token = match self.provider.api_key() {
+            Ok(Some(api_key)) => Some(api_key),
+            Ok(None) => self.provider.experimental_bearer_token.clone(),
+            Err(ChaosErr::EnvVar(_)) => {
+                return Err(crate::api_bridge::provider_auth_missing(&self.provider));
+            }
+            Err(other) => return Err(other),
         };
 
         let auth_provider = StaticAuthProvider::new(token, None);

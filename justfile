@@ -72,6 +72,23 @@ install:
         Darwin) protobuf_pkg=protobuf; clang_pkg=llvm ;;
         *) protobuf_pkg=protobuf; clang_pkg=clang ;;
     esac
+    # FreeBSD base ships /usr/bin/clang but none of its resource headers,
+    # so auto-pick the newest installed llvm<N> port and point the build
+    # at it before we assess whether clang headers are reachable.
+    if [ "$os" = "FreeBSD" ] && [ -z "${LIBCLANG_PATH:-}" ]; then
+        # Prefer versioned stable llvm<N> ports; only fall through to
+        # llvm-devel / llvm-lite when no numbered port is installed.
+        candidates=$(ls -d /usr/local/llvm[0-9]*/lib 2>/dev/null | sort -V -r)
+        [ -z "$candidates" ] && candidates=$(ls -d /usr/local/llvm*/lib 2>/dev/null | sort -V -r)
+        for lib_dir in $candidates; do
+            if [ -f "$lib_dir/libclang.so" ]; then
+                export LIBCLANG_PATH="$lib_dir"
+                bin_dir="$(dirname "$lib_dir")/bin"
+                [ -x "$bin_dir/clang" ] && export PATH="$bin_dir:$PATH"
+                break
+            fi
+        done
+    fi
     missing=
     need_protobuf_pkg=
     need_clang_pkg=

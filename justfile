@@ -18,6 +18,14 @@ alias b := bigbang
 bigbang *args:
     RUSTFLAGS="-C target-cpu=native" cargo run --release --bin chaos -- {{args}}
 
+# Build the chaos binary (debug profile).
+build *args:
+    cargo build --bin chaos {{args}}
+
+# Install chaos into ~/.cargo/bin (release + target-cpu=native).
+install:
+    RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
+
 # Format code
 fmt:
     cargo fmt

@@ -86,6 +86,22 @@ This architecture is correct usage of both providers' terms of service.
 
 ---
 
+## Install
+
+```bash
+git clone https://github.com/seuros/chaos.git
+cd chaos
+just install
+```
+
+`just install` builds `bin/chaos` with `-C target-cpu=native` and drops
+the binary into `~/.cargo/bin/chaos`. For a one-shot debug run without
+installing, use `just chaos`. For a local release run, use
+`just bigbang`. See [docs/install.md](./docs/install.md) for system
+requirements and logging controls.
+
+---
+
 ## Docs
 
 - [Installing & building from source](./docs/install.md)

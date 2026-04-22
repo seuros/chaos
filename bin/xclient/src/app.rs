@@ -1,11 +1,8 @@
 //! `ChaosWindow` impl: update dispatch, view rendering, and all event helpers.
 
+use chaos_chassis::reducer::NoticeLevel;
+use chaos_chassis::theme::ThemeFamily;
 use chaos_ipc::protocol::Event;
-use chaos_ipc::protocol::EventMsg;
-use chaos_ipc::protocol::ExecCommandBeginEvent;
-use chaos_ipc::protocol::ExecCommandEndEvent;
-use chaos_ipc::protocol::McpToolCallBeginEvent;
-use chaos_ipc::protocol::McpToolCallEndEvent;
 use chaos_ipc::protocol::Op;
 use iced::Border;
 use iced::Element;
@@ -15,7 +12,6 @@ use iced::Theme;
 use iced::widget::button;
 use iced::widget::column;
 use iced::widget::container;
-use iced::widget::markdown;
 use iced::widget::row;
 use iced::widget::scrollable;
 use iced::widget::text;
@@ -23,29 +19,23 @@ use iced::widget::text_input;
 
 use crate::Message;
 use crate::chat::ChatEntry;
-use crate::chat::MatchAgent;
-use crate::chat::MatchReasoning;
-use crate::chat::NoticeLevel;
-use crate::chat::StreamMatch;
-use crate::format_error;
 use crate::state::ChaosWindow;
 use crate::state::Status;
 use crate::state::TurnState;
-use crate::theme::ANTHROPIC;
 use crate::theme::ChaosPalette;
-use crate::theme::PHOSPHOR;
 use crate::theme::button_ghost;
 use crate::theme::button_primary;
 use crate::theme::container_code;
 use crate::theme::container_root;
 use crate::theme::container_transcript;
 use crate::theme::container_user;
+use crate::theme::palette_for_family;
 
 impl ChaosWindow {
     /// Active palette. [`PHOSPHOR`] unless the GUI has been clamped to
     /// Claude Code MAX, in which case [`ANTHROPIC`] takes over.
     pub fn palette(&self) -> ChaosPalette {
-        if self.clamped { ANTHROPIC } else { PHOSPHOR }
+        palette_for_family(self.theme_family())
     }
 
     /// Active iced [`Theme`] derived from the current palette. Called by
@@ -59,6 +49,14 @@ impl ChaosWindow {
             "chaos-phosphor"
         };
         self.palette().to_theme(name)
+    }
+
+    fn theme_family(&self) -> ThemeFamily {
+        if self.clamped {
+            ThemeFamily::Anthropic
+        } else {
+            ThemeFamily::Phosphor
+        }
     }
 
     /// Handle a single message.
@@ -87,10 +85,10 @@ impl ChaosWindow {
                 // `ShutdownComplete` — otherwise the transcript would
                 // double-log. Always unblock the composer: there is no
                 // kernel to wait on.
-                if self.status != Status::Shutdown {
+                if self.frontend.status != Status::Shutdown {
                     self.mark_kernel_gone();
                 } else {
-                    self.turn = TurnState::Idle;
+                    self.frontend.turn = TurnState::Idle;
                 }
             }
         }
@@ -113,293 +111,29 @@ impl ChaosWindow {
             return;
         }
         self.composer.clear();
-        self.transcript.push(ChatEntry::User { text: prompt });
-        self.turn = TurnState::InFlight;
+        self.frontend.record_user_submission(prompt);
     }
 
     pub(super) fn handle_kernel_event(&mut self, event: Event) {
-        match event.msg {
-            // ---- Session lifecycle -----------------------------------------
-            EventMsg::SessionConfigured(_) => {
-                self.status = Status::Ready;
-            }
-            EventMsg::ShutdownComplete => {
-                self.status = Status::Shutdown;
-                self.turn = TurnState::Idle;
-                self.clear_pending_bookkeeping();
-            }
-
-            // ---- Terminal turn events release the composer ----------------
-            EventMsg::TurnComplete(_) | EventMsg::TurnAborted(_) => {
-                self.turn = TurnState::Idle;
-                // A new turn starts fresh — any half-streamed deltas and
-                // unclosed exec/tool calls are orphaned by the kernel now
-                // that the turn has concluded. Dropping them here prevents
-                // a recycled `call_id` from mutating stale transcript
-                // slots on the next turn.
-                self.clear_pending_bookkeeping();
-            }
-
-            // ---- Agent message: streaming + finalized --------------------
-            EventMsg::AgentMessageContentDelta(delta) => {
-                self.push_agent_delta(delta.item_id, &delta.delta);
-            }
-            EventMsg::AgentMessage(msg) => {
-                // Finalize: reparse from scratch so the rendered markdown
-                // matches exactly what the kernel emitted, even if we
-                // already streamed a partial version.
-                self.finalize_agent_message(&msg.message);
-            }
-
-            // ---- Reasoning: streaming + finalized ------------------------
-            EventMsg::ReasoningContentDelta(delta) => {
-                self.push_reasoning_delta(delta.item_id, &delta.delta);
-            }
-            EventMsg::AgentReasoning(reasoning) => {
-                self.finalize_reasoning(&reasoning.text);
-            }
-
-            // ---- Exec commands: begin / end pairs ------------------------
-            EventMsg::ExecCommandBegin(begin) => self.push_exec_begin(begin),
-            EventMsg::ExecCommandEnd(end) => self.complete_exec(end),
-
-            // ---- MCP tool calls: begin / end pairs -----------------------
-            EventMsg::McpToolCallBegin(begin) => self.push_tool_begin(begin),
-            EventMsg::McpToolCallEnd(end) => self.complete_tool(end),
-
-            // ---- Errors with proper structure ----------------------------
-            EventMsg::Error(err) => {
-                let text = format_error(&err.message, err.chaos_error_info.as_ref());
-                self.transcript.push(ChatEntry::Notice {
-                    level: NoticeLevel::Error,
-                    text,
-                });
-                self.turn = TurnState::Idle;
-                self.clear_pending_bookkeeping();
-            }
-            EventMsg::StreamError(err) => {
-                // StreamError is non-fatal: the kernel is probably retrying.
-                // Keep InFlight held so the composer stays gated until the
-                // real terminal event lands.
-                let text = format_error(&err.message, err.chaos_error_info.as_ref());
-                self.transcript.push(ChatEntry::Notice {
-                    level: NoticeLevel::Warn,
-                    text: format!("stream hiccup: {text}"),
-                });
-            }
-            EventMsg::Warning(warn) => {
-                self.transcript.push(ChatEntry::Notice {
-                    level: NoticeLevel::Warn,
-                    text: warn.message,
-                });
-            }
-            EventMsg::BackgroundEvent(bg) => {
-                self.transcript.push(ChatEntry::Notice {
-                    level: NoticeLevel::Info,
-                    text: bg.message,
-                });
-            }
-            EventMsg::DeprecationNotice(notice) => {
-                self.transcript.push(ChatEntry::Notice {
-                    level: NoticeLevel::Warn,
-                    text: format!("deprecated: {notice:?}"),
-                });
-            }
-
-            // ---- Token usage feeds the header, not the transcript -------
-            EventMsg::TokenCount(tc) => {
-                if let Some(info) = tc.info {
-                    self.token_usage = Some(info.total_token_usage);
-                }
-            }
-
-            // ---- Long tail: intentionally unrendered for now -------------
-            //
-            // #15 covers the variants that carry real user-visible content;
-            // the rest (raw response items, list-tools responses, collab
-            // interactions, plan deltas, approval requests, …) either need
-            // dedicated UI in #16/#17-follow-ups or are not meaningful
-            // standalone. They are not terminal, so `InFlight` stays held.
-            _ => {}
-        }
-    }
-
-    /// Push or extend a streaming agent message keyed by `item_id`.
-    fn push_agent_delta(&mut self, item_id: String, delta: &str) {
-        if let Some(idx) = self.pending_streams.get(&item_id).copied() {
-            if let Some(ChatEntry::Agent { content }) = self.transcript.get_mut(idx) {
-                content.push_str(delta);
-                return;
-            }
-            // Stale index (shouldn't happen, but don't corrupt the stream).
-            self.pending_streams.remove(&item_id);
-        }
-        let idx = self.transcript.len();
-        self.transcript.push(ChatEntry::Agent {
-            content: markdown::Content::parse(delta),
-        });
-        self.pending_streams.insert(item_id, idx);
-    }
-
-    /// Finalize an agent message — reparses the full text so the rendered
-    /// markdown can never desync from the kernel's authoritative output.
-    ///
-    /// `AgentMessageEvent` does not carry an `item_id`, so we can't
-    /// match it back to a specific streaming entry. Walk the transcript
-    /// backwards from the tail, bounded by the most recent `User` entry
-    /// (the natural boundary between the current turn and the previous
-    /// one), and finalize the last `Agent` entry we find. This is robust
-    /// against `TurnComplete` already having cleared `pending_streams`,
-    /// which would otherwise cause a late finalize to append a duplicate.
-    ///
-    /// Known limitation: if the kernel interleaves two agent streams in
-    /// the same turn, this finalizes only the most recent one — the
-    /// other remains as a streamed partial. The scaffold assumes one
-    /// agent stream per turn, which matches the current protocol.
-    fn finalize_agent_message(&mut self, full: &str) {
-        if self.finalize_in_place::<MatchAgent>(full) {
-            return;
-        }
-        self.transcript.push(ChatEntry::Agent {
-            content: markdown::Content::parse(full),
-        });
-    }
-
-    fn push_reasoning_delta(&mut self, item_id: String, delta: &str) {
-        if let Some(idx) = self.pending_streams.get(&item_id).copied() {
-            if let Some(ChatEntry::Reasoning { content }) = self.transcript.get_mut(idx) {
-                content.push_str(delta);
-                return;
-            }
-            self.pending_streams.remove(&item_id);
-        }
-        let idx = self.transcript.len();
-        self.transcript.push(ChatEntry::Reasoning {
-            content: markdown::Content::parse(delta),
-        });
-        self.pending_streams.insert(item_id, idx);
-    }
-
-    fn finalize_reasoning(&mut self, full: &str) {
-        if self.finalize_in_place::<MatchReasoning>(full) {
-            return;
-        }
-        self.transcript.push(ChatEntry::Reasoning {
-            content: markdown::Content::parse(full),
-        });
-    }
-
-    /// Tail-scan the transcript for the most recent entry matching `M`,
-    /// stopping at the turn boundary (last `User` entry). On hit, replace
-    /// the entry in place with a fresh finalized copy of `full`, drop any
-    /// stale `pending_streams` index pointing at the overwritten slot, and
-    /// return `true`. On miss, return `false` so the caller can push a
-    /// fresh entry.
-    fn finalize_in_place<M: StreamMatch>(&mut self, full: &str) -> bool {
-        for idx in (0..self.transcript.len()).rev() {
-            match &self.transcript[idx] {
-                ChatEntry::User { .. } => return false,
-                entry if M::matches(entry) => {
-                    self.transcript[idx] = M::rebuild(full);
-                    self.pending_streams.retain(|_, v| *v != idx);
-                    return true;
-                }
-                _ => continue,
-            }
-        }
-        false
-    }
-
-    fn push_exec_begin(&mut self, begin: ExecCommandBeginEvent) {
-        let idx = self.transcript.len();
-        self.transcript.push(ChatEntry::Exec {
-            command: begin.command,
-            cwd: begin.cwd,
-            exit_code: None,
-            output: String::new(),
-        });
-        self.pending_calls.insert(begin.call_id, idx);
-    }
-
-    fn complete_exec(&mut self, end: ExecCommandEndEvent) {
-        // Prefer the aggregated output (matches what the agent saw); fall
-        // back to stdout then stderr so the GUI never renders a blank
-        // shell block.
-        let preview = if !end.aggregated_output.is_empty() {
-            end.aggregated_output
-        } else if !end.stdout.is_empty() {
-            end.stdout
-        } else {
-            end.stderr
-        };
-        if let Some(idx) = self.pending_calls.remove(&end.call_id)
-            && let Some(ChatEntry::Exec {
-                exit_code, output, ..
-            }) = self.transcript.get_mut(idx)
-        {
-            *exit_code = Some(end.exit_code);
-            *output = preview;
-            return;
-        }
-        // Orphan end with no matching begin — render it as a standalone
-        // finished exec entry so nothing gets silently dropped.
-        self.transcript.push(ChatEntry::Exec {
-            command: end.command,
-            cwd: end.cwd,
-            exit_code: Some(end.exit_code),
-            output: preview,
-        });
-    }
-
-    fn push_tool_begin(&mut self, begin: McpToolCallBeginEvent) {
-        let idx = self.transcript.len();
-        self.transcript.push(ChatEntry::Tool {
-            server: begin.invocation.server,
-            tool: begin.invocation.tool,
-            result: None,
-        });
-        self.pending_calls.insert(begin.call_id, idx);
-    }
-
-    fn complete_tool(&mut self, end: McpToolCallEndEvent) {
-        let outcome: Result<String, String> = match &end.result {
-            Ok(_) => Ok(format!("ok in {:?}", end.duration)),
-            Err(err) => Err(err.clone()),
-        };
-        if let Some(idx) = self.pending_calls.remove(&end.call_id)
-            && let Some(ChatEntry::Tool { result, .. }) = self.transcript.get_mut(idx)
-        {
-            *result = Some(outcome);
-            return;
-        }
-        self.transcript.push(ChatEntry::Tool {
-            server: end.invocation.server,
-            tool: end.invocation.tool,
-            result: Some(outcome),
-        });
+        self.frontend.apply_event(event);
     }
 
     pub(super) fn mark_kernel_gone(&mut self) {
-        self.status = Status::Shutdown;
-        self.turn = TurnState::Idle;
-        self.clear_pending_bookkeeping();
-        self.transcript.push(ChatEntry::Notice {
-            level: NoticeLevel::Error,
-            text: "op_tx closed — kernel is gone".to_string(),
-        });
-    }
-
-    /// Drop any streaming / call-pairing bookkeeping. Called on every
-    /// terminal turn event and on session death so stale indices can't
-    /// leak across turns (a recycled `call_id` or `item_id` could
-    /// otherwise mutate a slot that now belongs to a different entry).
-    pub(super) fn clear_pending_bookkeeping(&mut self) {
-        self.pending_streams.clear();
-        self.pending_calls.clear();
+        self.frontend.mark_kernel_gone();
     }
 
     pub(super) fn can_submit(&self) -> bool {
-        self.status == Status::Ready && self.turn == TurnState::Idle
+        self.frontend.can_submit()
+    }
+
+    #[cfg(test)]
+    pub(super) fn pending_stream_count(&self) -> usize {
+        self.frontend.pending_stream_count()
+    }
+
+    #[cfg(test)]
+    pub(super) fn pending_call_count(&self) -> usize {
+        self.frontend.pending_call_count()
     }
 
     /// Render the current state as an iced widget tree.
@@ -417,7 +151,8 @@ impl ChaosWindow {
         let header = text(self.header_text()).size(18).color(palette.highlight);
 
         let transcript = column(
-            self.transcript
+            self.frontend
+                .transcript
                 .iter()
                 .map(|e| self.render_entry(e, &md_theme)),
         )
@@ -435,7 +170,9 @@ impl ChaosWindow {
                 .on_press_maybe(self.can_submit().then_some(Message::ComposerSubmit))
                 .style(button_primary(palette)),
             button("Interrupt")
-                .on_press_maybe((self.turn == TurnState::InFlight).then_some(Message::Interrupt),)
+                .on_press_maybe(
+                    (self.frontend.turn == TurnState::InFlight).then_some(Message::Interrupt),
+                )
                 .style(button_ghost(palette)),
             button(text(theme_label))
                 .on_press(Message::ToggleClamped)
@@ -472,7 +209,7 @@ impl ChaosWindow {
     /// [`Element`] borrows only from `entry` — palette colors are
     /// [`Color`] (Copy) and `markdown::view` borrows the theme, so
     /// nothing borrows from `self`.
-    fn render_entry<'a>(&self, entry: &'a ChatEntry, md_theme: &Theme) -> Element<'a, Message> {
+    fn render_entry<'a>(&self, entry: &'a ChatEntry, _md_theme: &Theme) -> Element<'a, Message> {
         let palette = self.palette();
         match entry {
             ChatEntry::User { text: body } => {
@@ -489,24 +226,18 @@ impl ChaosWindow {
                 .style(move |_theme: &Theme| container_user(palette));
                 bubble.into()
             }
-            ChatEntry::Agent { content } => {
-                let md = markdown::view(content.items(), md_theme);
-                column![
-                    text("chaos").size(12).color(palette.highlight),
-                    md.map(|_uri| Message::Nop),
-                ]
-                .spacing(4)
-                .into()
-            }
-            ChatEntry::Reasoning { content } => {
-                let md = markdown::view(content.items(), md_theme);
-                column![
-                    text("reasoning").size(12).color(palette.dim),
-                    md.map(|_uri| Message::Nop),
-                ]
-                .spacing(4)
-                .into()
-            }
+            ChatEntry::Agent { content } => column![
+                text("chaos").size(12).color(palette.highlight),
+                text(content.as_str()).size(14).color(palette.fg),
+            ]
+            .spacing(4)
+            .into(),
+            ChatEntry::Reasoning { content } => column![
+                text("reasoning").size(12).color(palette.dim),
+                text(content.as_str()).size(14).color(palette.dim),
+            ]
+            .spacing(4)
+            .into(),
             ChatEntry::Exec {
                 command,
                 cwd,
@@ -610,10 +341,10 @@ impl ChaosWindow {
     pub(super) fn header_text(&self) -> String {
         let base = format!(
             "chaos-xclient — {status:?} — {turn:?}",
-            status = self.status,
-            turn = self.turn,
+            status = self.frontend.status,
+            turn = self.frontend.turn,
         );
-        if let Some(usage) = &self.token_usage {
+        if let Some(usage) = &self.frontend.token_usage {
             format!(
                 "{base} — tokens in:{} out:{} total:{}",
                 usage.input_tokens, usage.output_tokens, usage.total_tokens,

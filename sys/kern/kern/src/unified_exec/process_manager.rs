@@ -91,6 +91,7 @@ fn apply_unified_exec_env(mut env: HashMap<String, String>) -> HashMap<String, S
 }
 
 struct PreparedProcessHandles {
+    process: Arc<UnifiedExecProcess>,
     writer_tx: mpsc::Sender<Vec<u8>>,
     output_buffer: OutputBuffer,
     output_notify: Arc<Notify>,
@@ -98,6 +99,7 @@ struct PreparedProcessHandles {
     output_closed_notify: Arc<Notify>,
     cancellation_token: CancellationToken,
     pause_state: Option<watch::Receiver<bool>>,
+    call_id: String,
     command: Vec<String>,
     process_id: i32,
     tty: bool,
@@ -315,6 +317,7 @@ impl UnifiedExecProcessManager {
         let process_id = request.process_id;
 
         let PreparedProcessHandles {
+            process,
             writer_tx,
             output_buffer,
             output_notify,
@@ -322,6 +325,7 @@ impl UnifiedExecProcessManager {
             output_closed_notify,
             cancellation_token,
             pause_state,
+            call_id,
             command: session_command,
             process_id,
             tty,
@@ -382,9 +386,13 @@ impl UnifiedExecProcessManager {
                 (None, exit_code, call_id)
             }
             ProcessStatus::Unknown => {
-                return Err(UnifiedExecError::UnknownProcessId {
-                    process_id: request.process_id,
-                });
+                if process.has_exited() {
+                    (None, process.exit_code(), call_id)
+                } else {
+                    return Err(UnifiedExecError::UnknownProcessId {
+                        process_id: request.process_id,
+                    });
+                }
             }
         };
 
@@ -493,6 +501,7 @@ impl UnifiedExecProcessManager {
             .map(|session| session.subscribe_out_of_band_elicitation_pause_state());
 
         Ok(PreparedProcessHandles {
+            process: Arc::clone(&entry.process),
             writer_tx: entry.process.writer_sender(),
             output_buffer,
             output_notify,
@@ -500,6 +509,7 @@ impl UnifiedExecProcessManager {
             output_closed_notify,
             cancellation_token,
             pause_state,
+            call_id: entry.call_id.clone(),
             command: entry.command.clone(),
             process_id: entry.process_id,
             tty: entry.tty,

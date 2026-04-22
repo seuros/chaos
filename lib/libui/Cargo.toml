@@ -34,6 +34,7 @@ chaos-sh = { workspace = true }
 chaos-syslog = { workspace = true }
 chaos-git = { workspace = true }
 chaos-session = { workspace = true }
+chaos-chassis = { workspace = true }
 chaos-services = { workspace = true }
 chaos-clamp = { workspace = true }
 mcp-guest = { workspace = true }

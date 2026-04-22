@@ -147,13 +147,14 @@ async fn run_cmd_result_with_policies(
 fn expect_denied(
     result: Result<chaos_kern::exec::ExecToolCallOutput>,
     context: &str,
-) -> chaos_kern::exec::ExecToolCallOutput {
+) -> Option<chaos_kern::exec::ExecToolCallOutput> {
     match result {
         Ok(output) => {
             assert_ne!(output.exit_code, 0, "{context}: expected nonzero exit code");
-            output
+            Some(output)
         }
-        Err(ChaosErr::Sandbox(SandboxErr::Denied { output, .. })) => *output,
+        Err(ChaosErr::Sandbox(SandboxErr::Denied { output, .. })) => Some(*output),
+        Err(ChaosErr::Io(err)) if err.kind() == std::io::ErrorKind::InvalidInput => None,
         Err(err) => panic!("{context}: {err:?}"),
     }
 }
@@ -521,7 +522,9 @@ async fn linux_landlock_rejects_explicit_split_policy_carveouts() {
         "explicit split-policy carveout should be rejected by the Linux landlock backend",
     );
 
-    assert_ne!(output.exit_code, 0);
+    if let Some(output) = output {
+        assert_ne!(output.exit_code, 0);
+    }
 }
 
 #[tokio::test]
@@ -599,7 +602,9 @@ async fn linux_landlock_rejects_nested_writable_carveouts_inside_unreadable_pare
         "nested writable carveout should be rejected by the Linux landlock backend",
     );
 
-    assert_ne!(output.exit_code, 0);
+    if let Some(output) = output {
+        assert_ne!(output.exit_code, 0);
+    }
 }
 
 #[tokio::test]
@@ -645,7 +650,9 @@ async fn linux_landlock_rejects_root_read_carveouts() {
         "root-read carveout should be rejected by the Linux landlock backend",
     );
 
-    assert_ne!(output.exit_code, 0);
+    if let Some(output) = output {
+        assert_ne!(output.exit_code, 0);
+    }
 }
 
 #[tokio::test]

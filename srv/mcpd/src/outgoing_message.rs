@@ -431,9 +431,8 @@ mod tests {
                 "model_provider_id": "test-provider",
                 "approval_policy": "headless",
                 "approvals_reviewer": "user",
-                "sandbox_policy": {
-                    "type": "read-only"
-                },
+                "vfs_policy": session_configured_event.vfs_policy,
+                "socket_policy": session_configured_event.socket_policy,
                 "cwd": "/home/user/project",
                 "reasoning_effort": session_configured_event.reasoning_effort,
                 "history_log_id": session_configured_event.history_log_id,

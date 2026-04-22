@@ -1,0 +1,19 @@
+[package]
+name = "chaos-chassis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "chaos_chassis"
+path = "lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+chaos-ipc = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

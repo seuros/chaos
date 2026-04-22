@@ -6073,6 +6073,37 @@ async fn server_overloaded_error_does_not_switch_models() {
 }
 
 #[tokio::test]
+async fn provider_auth_missing_error_opens_login_popup() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    while rx.try_recv().is_ok() {}
+
+    chat.handle_codex_event(Event {
+        id: "err-auth".to_string(),
+        msg: EventMsg::Error(ErrorEvent {
+            message: "missing credentials for provider".to_string(),
+            chaos_error_info: Some(ChaosErrorInfo::ProviderAuthMissing {
+                provider_id: "openai".to_string(),
+                provider_name: "OpenAI".to_string(),
+                env_key: Some("OPENAI_API_KEY".to_string()),
+                env_key_instructions: None,
+                supports_oauth: true,
+            }),
+        }),
+    });
+
+    let mut opened = false;
+    while let Ok(event) = rx.try_recv() {
+        if matches!(event, AppEvent::OpenLoginPopup) {
+            opened = true;
+        }
+    }
+    assert!(
+        opened,
+        "ProviderAuthMissing error should dispatch OpenLoginPopup"
+    );
+}
+
+#[tokio::test]
 async fn approvals_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 

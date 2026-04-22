@@ -20,6 +20,17 @@ pub enum ChaosErrorInfo {
     },
     InternalServerError,
     Unauthorized,
+    /// The selected provider requires credentials and none were found in any
+    /// expected location (env var, cached login, bearer token). Surfaced before
+    /// any network request so the client can show a login prompt instead of
+    /// retrying a doomed 401.
+    ProviderAuthMissing {
+        provider_id: String,
+        provider_name: String,
+        env_key: Option<String>,
+        env_key_instructions: Option<String>,
+        supports_oauth: bool,
+    },
     BadRequest,
     SandboxError,
     /// The response SSE stream disconnected in the middle of a turnbefore completion.
@@ -48,6 +59,7 @@ impl ChaosErrorInfo {
             | Self::ResponseStreamConnectionFailed { .. }
             | Self::InternalServerError
             | Self::Unauthorized
+            | Self::ProviderAuthMissing { .. }
             | Self::BadRequest
             | Self::SandboxError
             | Self::ResponseStreamDisconnected { .. }

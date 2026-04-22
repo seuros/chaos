@@ -173,6 +173,13 @@ pub enum ChaosErr {
 
     #[error("{0}")]
     EnvVar(EnvVarError),
+
+    /// Raised by the auth preflight when the active provider requires
+    /// credentials (cached login, env key, or bearer) and none were found.
+    /// Non-retryable: the outer loop must stop and the client is expected to
+    /// surface a login prompt rather than firing a doomed request.
+    #[error("{0}")]
+    ProviderAuthMissing(ProviderAuthMissingError),
 }
 
 impl From<CancelErr> for ChaosErr {
@@ -187,6 +194,7 @@ impl ChaosErr {
             ChaosErr::TurnAborted
             | ChaosErr::Interrupted
             | ChaosErr::EnvVar(_)
+            | ChaosErr::ProviderAuthMissing(_)
             | ChaosErr::Fatal(_)
             | ChaosErr::QuotaExceeded
             | ChaosErr::InvalidImageRequest()
@@ -480,6 +488,47 @@ fn now_for_retry() -> Timestamp {
     Timestamp::now()
 }
 
+#[derive(Debug, Clone)]
+pub struct ProviderAuthMissingError {
+    /// Stable id of the provider (e.g. `openai`, `anthropic`, `xai`).
+    pub provider_id: String,
+    /// User-facing provider name.
+    pub provider_name: String,
+    /// Environment variable the provider expects, if any.
+    pub env_key: Option<String>,
+    /// Provider-supplied instructions for obtaining/setting the env key.
+    pub env_key_instructions: Option<String>,
+    /// Whether the provider also accepts an OAuth login flow (OpenAI ChatGPT).
+    pub supports_oauth: bool,
+}
+
+impl std::fmt::Display for ProviderAuthMissingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "No credentials found for provider `{}`.",
+            self.provider_name
+        )?;
+        match (&self.env_key, self.supports_oauth) {
+            (Some(env_key), true) => write!(
+                f,
+                " Run `chaos login` or set `{env_key}` in your environment."
+            )?,
+            (Some(env_key), false) => {
+                write!(f, " Set `{env_key}` in your environment.")?;
+            }
+            (None, true) => write!(f, " Run `chaos login` to sign in.")?,
+            (None, false) => {
+                write!(f, " Configure credentials for this provider.")?;
+            }
+        }
+        if let Some(instructions) = &self.env_key_instructions {
+            write!(f, " {instructions}")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct EnvVarError {
     /// Name of the environment variable that is missing.
@@ -526,6 +575,13 @@ impl ChaosErr {
                 http_status_code: self.http_status_code_value(),
             },
             ChaosErr::RefreshTokenFailed(_) => ChaosErrorInfo::Unauthorized,
+            ChaosErr::ProviderAuthMissing(err) => ChaosErrorInfo::ProviderAuthMissing {
+                provider_id: err.provider_id.clone(),
+                provider_name: err.provider_name.clone(),
+                env_key: err.env_key.clone(),
+                env_key_instructions: err.env_key_instructions.clone(),
+                supports_oauth: err.supports_oauth,
+            },
             ChaosErr::SessionConfiguredNotFirstEvent
             | ChaosErr::InternalServerError
             | ChaosErr::InternalAgentDied => ChaosErrorInfo::InternalServerError,

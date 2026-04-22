@@ -11,10 +11,14 @@ use serde_json::Value;
 
 use crate::auth::ChaosAuth;
 use crate::error::ChaosErr;
+use crate::error::ProviderAuthMissingError;
 use crate::error::RetryLimitReachedError;
 use crate::error::UnexpectedResponseError;
 use crate::error::UsageLimitReachedError;
+use crate::model_provider_info::ANTHROPIC_PROVIDER_ID;
 use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::OPENAI_PROVIDER_ID;
+use crate::model_provider_info::is_anthropic_wire;
 
 pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
     match err {
@@ -187,11 +191,16 @@ pub(crate) fn auth_provider_from_auth(
     auth: Option<ChaosAuth>,
     provider: &ModelProviderInfo,
 ) -> crate::error::Result<CoreAuthProvider> {
-    if let Some(api_key) = provider.api_key()? {
-        return Ok(CoreAuthProvider {
-            token: Some(api_key),
-            account_id: None,
-        });
+    match provider.api_key() {
+        Ok(Some(api_key)) => {
+            return Ok(CoreAuthProvider {
+                token: Some(api_key),
+                account_id: None,
+            });
+        }
+        Ok(None) => {}
+        Err(ChaosErr::EnvVar(_)) => return Err(provider_auth_missing(provider)),
+        Err(other) => return Err(other),
     }
 
     if let Some(token) = provider.experimental_bearer_token.clone() {
@@ -203,16 +212,48 @@ pub(crate) fn auth_provider_from_auth(
 
     if let Some(auth) = auth {
         let token = auth.get_token()?;
-        Ok(CoreAuthProvider {
+        return Ok(CoreAuthProvider {
             token: Some(token),
             account_id: auth.get_account_id(),
-        })
-    } else {
-        Ok(CoreAuthProvider {
-            token: None,
-            account_id: None,
-        })
+        });
     }
+
+    // No cached login, no bearer, and no env key fallback. A provider that
+    // requires OpenAI-style auth must not send an unauthenticated request —
+    // stop the turn here with a vendor-agnostic error so the client can
+    // prompt for credentials instead of looping on silent 401s.
+    if provider.requires_openai_auth || provider.env_key.is_some() {
+        return Err(provider_auth_missing(provider));
+    }
+
+    // Self-hosted providers (Ollama, TensorZero) don't need credentials.
+    Ok(CoreAuthProvider {
+        token: None,
+        account_id: None,
+    })
+}
+
+pub(crate) fn provider_auth_missing(provider: &ModelProviderInfo) -> ChaosErr {
+    ChaosErr::ProviderAuthMissing(ProviderAuthMissingError {
+        provider_id: stable_provider_id(provider),
+        provider_name: provider.name.clone(),
+        env_key: provider.env_key.clone(),
+        env_key_instructions: provider.env_key_instructions.clone(),
+        supports_oauth: provider.requires_openai_auth,
+    })
+}
+
+/// Best-effort stable id for the provider. Built-ins are pinned to their
+/// registry constants; everyone else gets the raw display `name` so the
+/// client can match without guessing at an invisible kebab-case transform.
+fn stable_provider_id(provider: &ModelProviderInfo) -> String {
+    if provider.is_openai() {
+        return OPENAI_PROVIDER_ID.to_string();
+    }
+    if is_anthropic_wire(provider.base_url.as_deref()) {
+        return ANTHROPIC_PROVIDER_ID.to_string();
+    }
+    provider.name.clone()
 }
 
 #[derive(Debug, Deserialize)]

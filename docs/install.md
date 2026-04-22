@@ -8,21 +8,30 @@
 | Git (optional, recommended) | 2.53+                                                           |
 | RAM                         | ~80 MB (MCP mode), ~128 MB (TUI mode) — MCP servers not included |
 
-### Build from source
+### Install from source
 
 Ask `chaos` to set up your environment. Then:
 
 ```bash
-just build
+just install
 ```
 
-That's it. If something is missing, ask again.
+That drops the `chaos` binary into `~/.cargo/bin` (release profile,
+`-C target-cpu=native`). Add `~/.cargo/bin` to your `PATH` if it
+isn't already.
+
+If something is missing during the build, ask again.
+
+### Run without installing
 
 ```bash
-# Run chaos.
+# Run chaos from source (debug profile).
 just chaos
 
-# Build only.
+# Run chaos from source (release profile + target-cpu=native).
+just bigbang
+
+# Build the debug binary without running it.
 just build
 ```
 

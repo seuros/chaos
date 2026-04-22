@@ -47,30 +47,49 @@ install:
             *) echo "Install ($*) with your OS package manager." >&2 ;;
         esac
     }
-    # Debian-family splits clang headers into libclang-dev and protoc
-    # into protobuf-compiler; FreeBSD ships clang as versioned llvm<N>
-    # ports with no unversioned alias; macOS homebrew ships llvm; the
-    # remaining distros publish single 'clang' and 'protobuf' packages.
+    # Package name mapping by OS / package manager.
+    #   protobuf -> protoc binary (rama-grpc build script).
+    #   clang    -> libclang + resource headers (rama-dns via bindgen).
+    #   pkgconf  -> pkg-config binary (libdbus-sys build script).
+    #   dbus     -> libdbus-1 headers + shared library (libdbus-sys link).
     case "$os" in
         Linux)
             if command -v apt >/dev/null 2>&1; then
                 protobuf_pkg=protobuf-compiler
                 clang_pkg=libclang-dev
+                pkgconf_pkg=pkg-config
+                dbus_pkg=libdbus-1-dev
             elif command -v dnf >/dev/null 2>&1; then
                 protobuf_pkg=protobuf-compiler
                 clang_pkg=clang-devel
+                pkgconf_pkg=pkgconf-pkg-config
+                dbus_pkg=dbus-devel
             else
                 protobuf_pkg=protobuf
                 clang_pkg=clang
+                pkgconf_pkg=pkgconf
+                dbus_pkg=dbus
             fi
             ;;
         FreeBSD)
             protobuf_pkg=protobuf
             clang_pkg=$(pkg rquery -x '%n' '^llvm[0-9]+$' 2>/dev/null | sort -V | tail -1)
             [ -z "$clang_pkg" ] && clang_pkg=llvm
+            pkgconf_pkg=pkgconf
+            dbus_pkg=dbus
             ;;
-        Darwin) protobuf_pkg=protobuf; clang_pkg=llvm ;;
-        *) protobuf_pkg=protobuf; clang_pkg=clang ;;
+        Darwin)
+            protobuf_pkg=protobuf
+            clang_pkg=llvm
+            pkgconf_pkg=pkgconf
+            dbus_pkg=dbus
+            ;;
+        *)
+            protobuf_pkg=protobuf
+            clang_pkg=clang
+            pkgconf_pkg=pkgconf
+            dbus_pkg=dbus
+            ;;
     esac
     # FreeBSD base ships /usr/bin/clang but none of its resource headers,
     # so auto-pick the newest installed llvm<N> port and point the build
@@ -92,6 +111,8 @@ install:
     missing=
     need_protobuf_pkg=
     need_clang_pkg=
+    need_pkgconf_pkg=
+    need_dbus_pkg=
     if ! command -v protoc >/dev/null 2>&1 && [ -z "${PROTOC:-}" ]; then
         missing="${missing}protoc "
         need_protobuf_pkg=$protobuf_pkg
@@ -109,20 +130,41 @@ install:
         missing="${missing}libclang "
         need_clang_pkg=$clang_pkg
     fi
+    if ! command -v pkg-config >/dev/null 2>&1 && ! command -v pkgconf >/dev/null 2>&1; then
+        missing="${missing}pkg-config "
+        need_pkgconf_pkg=$pkgconf_pkg
+    fi
+    # Probe for dbus-1 via pkg-config if it's available; otherwise assume
+    # missing on Unix hosts (macOS arboard uses NSPasteboard, so skip).
+    if [ "$os" != "Darwin" ]; then
+        if command -v pkg-config >/dev/null 2>&1; then
+            pkg-config --exists dbus-1 2>/dev/null || { missing="${missing}dbus-1 "; need_dbus_pkg=$dbus_pkg; }
+        elif command -v pkgconf >/dev/null 2>&1; then
+            pkgconf --exists dbus-1 2>/dev/null || { missing="${missing}dbus-1 "; need_dbus_pkg=$dbus_pkg; }
+        else
+            missing="${missing}dbus-1 "
+            need_dbus_pkg=$dbus_pkg
+        fi
+    fi
     if [ -n "$missing" ]; then
         echo "error: missing build prerequisites: $missing" >&2
         echo "" >&2
-        echo "chaos pulls in rama-grpc (needs protoc) and rama-dns" >&2
-        echo "(uses bindgen, needs libclang + its resource headers)." >&2
+        echo "chaos pulls in rama-grpc (protoc), rama-dns (libclang," >&2
+        echo "via bindgen), and arboard (pkg-config + libdbus-1 for" >&2
+        echo "the clipboard backend on Linux and FreeBSD)." >&2
         echo "" >&2
         set --
         [ -n "$need_protobuf_pkg" ] && set -- "$@" "$need_protobuf_pkg"
         [ -n "$need_clang_pkg" ]    && set -- "$@" "$need_clang_pkg"
+        [ -n "$need_pkgconf_pkg" ]  && set -- "$@" "$need_pkgconf_pkg"
+        [ -n "$need_dbus_pkg" ]     && set -- "$@" "$need_dbus_pkg"
         hint_pkg "$@"
         echo "" >&2
         echo "Or point the build at existing binaries:" >&2
         [ -n "$need_protobuf_pkg" ] && echo "  export PROTOC=/path/to/protoc" >&2
         [ -n "$need_clang_pkg" ]    && echo "  export LIBCLANG_PATH=/path/to/libclang/lib" >&2
+        [ -n "$need_pkgconf_pkg" ]  && echo "  ensure pkg-config is on PATH" >&2
+        [ -n "$need_dbus_pkg" ]     && echo "  ensure PKG_CONFIG_PATH points at a directory with dbus-1.pc" >&2
         exit 1
     fi
     RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force

@@ -1,12 +1,14 @@
 //! Chaos terminal theme — green phosphor CRT aesthetic.
 //!
-//! All UI colors flow through this module. Swap the palette here to reskin
-//! the entire terminal.
+//! Theme selection and semantic slot layout now live in `chaos-chassis`; this
+//! module remains the ratatui adapter used by the TUI.
 #![allow(dead_code)]
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
+use chaos_chassis::theme::ThemeFamily;
+use chaos_chassis::theme::ToneToken;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
@@ -26,75 +28,65 @@ pub fn is_clamped() -> bool {
 
 /// The Chaos terminal palette. Every color used in the TUI should come from
 /// here so the theme can be swapped in one place.
+#[derive(Debug, Clone, Copy)]
 pub struct Palette {
-    /// Terminal background — near-black with a green tint.
     pub bg: Color,
-    /// Primary text — bright phosphor green.
     pub fg: Color,
-    /// Dimmed/secondary text — dark green.
     pub dim: Color,
-    /// Highlighted/selected elements — bright green.
     pub highlight: Color,
-    /// User message background — subtle green tint.
     pub user_msg_bg: Color,
-    /// Borders and chrome — muted green.
     pub border: Color,
-    /// Warning/caution — amber phosphor.
     pub warning: Color,
-    /// Error/danger — red phosphor.
     pub error: Color,
-    /// Success/approved — brighter green.
     pub success: Color,
-    /// Input prompt accent.
     pub accent: Color,
 }
 
-/// Default Chaos green phosphor palette.
-///
-/// Colour roles:
-/// - `fg` / `highlight` — bright phosphor green for primary content
-/// - `dim` / `border`   — base green for chrome and secondary text
-/// - `success`          — base green (distinct from bright fg, same family)
-/// - `accent`           — cyan for links, inline code, interactive elements (contrasts against green)
-/// - `error`            — light red for failures and deletions
-/// - `warning`          — amber for caution states
-pub const PHOSPHOR: Palette = Palette {
-    bg: Color::Black,
-    fg: Color::LightGreen,
-    dim: Color::Green,
-    highlight: Color::LightGreen,
-    user_msg_bg: Color::DarkGray,
-    border: Color::Green,
-    warning: Color::Yellow,
-    error: Color::LightRed,
-    success: Color::Green,
-    accent: Color::Cyan,
-};
-
-/// Anthropic orange palette — used when clamped to Claude Code MAX.
-pub const ANTHROPIC: Palette = Palette {
-    bg: Color::Black,
-    fg: Color::LightYellow, // warm ANSI approximation
-    dim: Color::Yellow,     // muted ANSI approximation
-    highlight: Color::Yellow,
-    user_msg_bg: Color::DarkGray,
-    border: Color::Yellow,
-    warning: Color::Yellow,
-    error: Color::LightRed,
-    success: Color::LightYellow,
-    accent: Color::Yellow,
-};
-
-/// Active palette. Switches to Anthropic orange when clamped.
-pub fn palette() -> &'static Palette {
-    if is_clamped() { &ANTHROPIC } else { &PHOSPHOR }
+fn map_tone(token: ToneToken) -> Color {
+    match token {
+        ToneToken::Black => Color::Black,
+        ToneToken::LightGreen => Color::LightGreen,
+        ToneToken::Green => Color::Green,
+        ToneToken::DarkGray => Color::DarkGray,
+        ToneToken::Yellow => Color::Yellow,
+        ToneToken::LightRed => Color::LightRed,
+        ToneToken::Cyan => Color::Cyan,
+        ToneToken::WarmOrange => Color::LightYellow,
+        ToneToken::Amber => Color::Yellow,
+        ToneToken::DarkGreenBg => Color::DarkGray,
+        ToneToken::DarkAmberBg => Color::DarkGray,
+    }
 }
 
-// --- Semantic styles built from the palette ---
+fn theme_family() -> ThemeFamily {
+    if is_clamped() {
+        ThemeFamily::Anthropic
+    } else {
+        ThemeFamily::Phosphor
+    }
+}
+
+/// Active palette. Switches to Anthropic orange when clamped.
+pub fn palette() -> Palette {
+    let palette = theme_family().tokens().map(map_tone);
+    Palette {
+        bg: palette.bg,
+        fg: palette.fg,
+        dim: palette.dim,
+        highlight: palette.highlight,
+        user_msg_bg: palette.user_msg_bg,
+        border: palette.border,
+        warning: palette.warning,
+        error: palette.error,
+        success: palette.success,
+        accent: palette.accent,
+    }
+}
 
 /// Default base style — green-on-black.
 pub fn base() -> Style {
-    Style::default().fg(palette().fg).bg(palette().bg)
+    let palette = palette();
+    Style::default().fg(palette.fg).bg(palette.bg)
 }
 
 /// Dimmed text (secondary info, timestamps, metadata).
@@ -116,7 +108,8 @@ pub fn border() -> Style {
 
 /// User-authored message background.
 pub fn user_message() -> Style {
-    Style::default().fg(palette().fg).bg(palette().user_msg_bg)
+    let palette = palette();
+    Style::default().fg(palette.fg).bg(palette.user_msg_bg)
 }
 
 /// Warning text (amber phosphor).
@@ -142,10 +135,6 @@ pub fn prompt() -> Style {
         .fg(palette().accent)
         .add_modifier(Modifier::BOLD)
 }
-
-// --- Color aliases for gradual migration from hardcoded Color::* ---
-// Use these instead of Color::Cyan, Color::Green, etc. throughout the TUI.
-// Each maps a semantic role to the palette.
 
 /// Replaces `Color::Cyan` — used for links, interactive elements.
 pub fn cyan() -> Color {
@@ -196,11 +185,11 @@ pub fn key_hint() -> Style {
 
 /// Status bar / footer style.
 pub fn status_bar() -> Style {
-    Style::default().fg(palette().fg).bg(palette().border)
+    let palette = palette();
+    Style::default().fg(palette.fg).bg(palette.border)
 }
 
 /// Scanline effect — alternating row dimming for CRT feel.
-/// Apply to even-numbered rows for the phosphor scanline look.
 pub fn scanline(row: u16) -> Style {
     if row.is_multiple_of(2) {
         Style::default()

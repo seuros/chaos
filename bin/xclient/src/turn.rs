@@ -2,10 +2,11 @@
 
 use std::path::PathBuf;
 
+use chaos_chassis::turn::TurnContext;
+use chaos_chassis::turn::TurnSubmission;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::Config;
 
 /// Precomputed defaults for [`Op::UserTurn`] submissions.
@@ -50,21 +51,22 @@ impl TurnTemplate {
     /// Build a fresh [`Op::UserTurn`] from the template and a user-typed
     /// prompt. Clones per call — the template is meant to be reused.
     pub(super) fn build_turn(&self, prompt: String) -> Op {
-        Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: prompt,
-                text_elements: Vec::new(),
-            }],
-            cwd: self.cwd.clone(),
-            approval_policy: self.approval_policy,
-            sandbox_policy: self.sandbox_policy.clone(),
-            model: self.model.clone(),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            final_output_json_schema: None,
-            collaboration_mode: None,
-            personality: None,
-        }
+        TurnSubmission::text(
+            prompt,
+            Vec::new(),
+            TurnContext {
+                cwd: self.cwd.clone(),
+                approval_policy: self.approval_policy,
+                sandbox_policy: self.sandbox_policy.clone(),
+                model: self.model.clone(),
+                effort: None,
+                summary: None,
+                service_tier: None,
+                final_output_json_schema: None,
+                collaboration_mode: None,
+                personality: None,
+            },
+        )
+        .into_op()
     }
 }

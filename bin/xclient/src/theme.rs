@@ -1,12 +1,10 @@
 //! Chaos palette definitions, color constants, and widget styling helpers.
 //!
-//! Mirrors `bin/console/src/theme.rs`. The TUI uses ratatui's 16-color ANSI
-//! palette; here we pick sRGB triples that reproduce the same "green phosphor
-//! CRT" feel in a real GPU window, plus an Anthropic-orange variant for the
-//! clamped mode toggle. The palette carries *ten* semantic slots so any widget
-//! that cares about more than iced's six-slot [`IcedPalette`] (dim, border,
-//! accent, highlight) can still pull a color from one place.
+//! `chaos-chassis` owns the semantic palette layout. This module maps the
+//! shared tone tokens onto iced colors and builds widget styles from them.
 
+use chaos_chassis::theme::ThemeFamily;
+use chaos_chassis::theme::ToneToken;
 use iced::Background;
 use iced::Border;
 use iced::Color;
@@ -45,11 +43,6 @@ pub struct ChaosPalette {
     pub accent: Color,
 }
 
-// Named shades mirroring console's ratatui ANSI anchors. We refer to these
-// by symbol in both palettes so the equality relations enforced by console's
-// theme (dim == border == success in PHOSPHOR, dim == highlight == border ==
-// warning == accent in ANTHROPIC) are literally the same `Color` constant —
-// not three slightly-different shades that happen to live near each other.
 const CHAOS_BLACK: Color = Color::from_rgb(0.0, 0.0, 0.0);
 const CHAOS_LIGHT_GREEN: Color = Color::from_rgb(0x55 as f32 / 255.0, 1.0, 0x55 as f32 / 255.0);
 const CHAOS_GREEN: Color = Color::from_rgb(0.0, 0xaa as f32 / 255.0, 0.0);
@@ -73,48 +66,37 @@ const CHAOS_DARK_AMBER_BG: Color = Color::from_rgb(
     0x0c as f32 / 255.0,
 );
 
-/// Phosphor-green CRT palette — the default.
-///
-/// Roles track `bin/console`'s `PHOSPHOR` exactly, including the slot
-/// equalities that console enforces via a single ratatui `Color` constant:
-/// - `fg == highlight` → bright phosphor [`CHAOS_LIGHT_GREEN`]
-/// - `dim == border == success` → base green [`CHAOS_GREEN`]
-/// - `warning` → amber [`CHAOS_LIGHT_YELLOW`]
-/// - `error` → light red [`CHAOS_LIGHT_RED`]
-/// - `accent` → cyan [`CHAOS_LIGHT_CYAN`]
-pub const PHOSPHOR: ChaosPalette = ChaosPalette {
-    bg: CHAOS_BLACK,
-    fg: CHAOS_LIGHT_GREEN,
-    dim: CHAOS_GREEN,
-    highlight: CHAOS_LIGHT_GREEN,
-    user_msg_bg: CHAOS_DARK_GREEN_BG,
-    border: CHAOS_GREEN,
-    warning: CHAOS_LIGHT_YELLOW,
-    error: CHAOS_LIGHT_RED,
-    success: CHAOS_GREEN,
-    accent: CHAOS_LIGHT_CYAN,
-};
+fn map_tone(token: ToneToken) -> Color {
+    match token {
+        ToneToken::Black => CHAOS_BLACK,
+        ToneToken::LightGreen => CHAOS_LIGHT_GREEN,
+        ToneToken::Green => CHAOS_GREEN,
+        ToneToken::DarkGray => Color::from_rgb(0.12, 0.12, 0.12),
+        ToneToken::Yellow => CHAOS_LIGHT_YELLOW,
+        ToneToken::LightRed => CHAOS_LIGHT_RED,
+        ToneToken::Cyan => CHAOS_LIGHT_CYAN,
+        ToneToken::WarmOrange => CHAOS_WARM_ORANGE,
+        ToneToken::Amber => CHAOS_AMBER,
+        ToneToken::DarkGreenBg => CHAOS_DARK_GREEN_BG,
+        ToneToken::DarkAmberBg => CHAOS_DARK_AMBER_BG,
+    }
+}
 
-/// Anthropic-orange palette — used when the GUI is clamped to the
-/// Claude Code MAX subscription. Mirrors `bin/console`'s `ANTHROPIC`,
-/// where ratatui's single `Color::Yellow` is reused for five slots. We use
-/// [`CHAOS_AMBER`] for that collapsed role and [`CHAOS_WARM_ORANGE`] for
-/// the brighter `fg == success` pair:
-/// - `fg == success` → [`CHAOS_WARM_ORANGE`]
-/// - `dim == highlight == border == warning == accent` → [`CHAOS_AMBER`]
-/// - `error` → [`CHAOS_LIGHT_RED`] (unchanged from phosphor)
-pub const ANTHROPIC: ChaosPalette = ChaosPalette {
-    bg: CHAOS_BLACK,
-    fg: CHAOS_WARM_ORANGE,
-    dim: CHAOS_AMBER,
-    highlight: CHAOS_AMBER,
-    user_msg_bg: CHAOS_DARK_AMBER_BG,
-    border: CHAOS_AMBER,
-    warning: CHAOS_AMBER,
-    error: CHAOS_LIGHT_RED,
-    success: CHAOS_WARM_ORANGE,
-    accent: CHAOS_AMBER,
-};
+pub fn palette_for_family(family: ThemeFamily) -> ChaosPalette {
+    let palette = family.tokens().map(map_tone);
+    ChaosPalette {
+        bg: palette.bg,
+        fg: palette.fg,
+        dim: palette.dim,
+        highlight: palette.highlight,
+        user_msg_bg: palette.user_msg_bg,
+        border: palette.border,
+        warning: palette.warning,
+        error: palette.error,
+        success: palette.success,
+        accent: palette.accent,
+    }
+}
 
 impl ChaosPalette {
     /// Project the ten-slot chaos palette onto iced's six-slot palette.

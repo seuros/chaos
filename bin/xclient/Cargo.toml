@@ -20,6 +20,7 @@ workspace = true
 anyhow = { workspace = true }
 chaos-init = { workspace = true }
 chaos-ipc = { workspace = true }
+chaos-chassis = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-session = { workspace = true }
 futures = { workspace = true }

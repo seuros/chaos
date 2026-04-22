@@ -1153,6 +1153,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-chassis"
+version = "47.0.0"
+dependencies = [
+ "chaos-ipc",
+ "pretty_assertions",
+ "serde_json",
+]
+
+[[package]]
 name = "chaos-check"
 version = "47.0.0"
 dependencies = [
@@ -2271,6 +2280,7 @@ name = "chaos-xclient"
 version = "47.0.0"
 dependencies = [
  "anyhow",
+ "chaos-chassis",
  "chaos-init",
  "chaos-ipc",
  "chaos-kern",
@@ -6583,6 +6593,7 @@ dependencies = [
  "assert_matches",
  "base64 0.22.1",
  "chaos-amphetamine",
+ "chaos-chassis",
  "chaos-clamp",
  "chaos-getopt",
  "chaos-git",

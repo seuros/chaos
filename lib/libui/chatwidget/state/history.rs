@@ -1,6 +1,8 @@
 //! History management: message submission, queueing, cell insertion, notifications,
 //! connectors popup, and related helpers.
 use super::super::*;
+use chaos_chassis::turn::TurnContext;
+use chaos_chassis::turn::TurnSubmission;
 
 impl ChatWidget {
     pub(crate) fn flush_active_cell(&mut self) {
@@ -156,19 +158,22 @@ impl ChatWidget {
             .personality
             .filter(|_| self.current_model_supports_personality());
         let service_tier = self.config.service_tier.map(Some);
-        let op = Op::UserTurn {
+        let op = TurnSubmission::new(
             items,
-            cwd: self.config.cwd.clone(),
-            approval_policy: self.config.permissions.approval_policy.value(),
-            sandbox_policy: self.config.permissions.sandbox_policy.get().clone(),
-            model: effective_mode.model().to_string(),
-            effort: effective_mode.reasoning_effort(),
-            summary: None,
-            service_tier,
-            final_output_json_schema: None,
-            collaboration_mode,
-            personality,
-        };
+            TurnContext {
+                cwd: self.config.cwd.clone(),
+                approval_policy: self.config.permissions.approval_policy.value(),
+                sandbox_policy: self.config.permissions.sandbox_policy.get().clone(),
+                model: effective_mode.model().to_string(),
+                effort: effective_mode.reasoning_effort(),
+                summary: None,
+                service_tier,
+                final_output_json_schema: None,
+                collaboration_mode,
+                personality,
+            },
+        )
+        .into_op();
 
         if !self.submit_op(op) {
             return;

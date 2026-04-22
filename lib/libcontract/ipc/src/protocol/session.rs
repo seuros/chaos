@@ -20,6 +20,7 @@ use ts_rs::TS;
 use super::ApprovalPolicy;
 use super::EventMsg;
 use super::ReasoningEffortConfig;
+use super::SandboxPolicy;
 use super::SocketPolicy;
 use super::VfsPolicy;
 
@@ -338,7 +339,7 @@ pub struct TurnContextNetworkItem {
 /// context updates, and again after mid-turn compaction when replacement
 /// history re-establishes full context, so resume/fork replay can recover the
 /// latest durable baseline.
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
+#[derive(Serialize, Clone, Debug, JsonSchema, TS)]
 pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
@@ -370,6 +371,97 @@ pub struct TurnContextItem {
     pub final_output_json_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncation_policy: Option<TruncationPolicy>,
+}
+
+impl<'de> Deserialize<'de> for TurnContextItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct De {
+            #[serde(default)]
+            turn_id: Option<String>,
+            #[serde(default)]
+            trace_id: Option<String>,
+            cwd: PathBuf,
+            #[serde(default)]
+            current_date: Option<String>,
+            #[serde(default)]
+            timezone: Option<String>,
+            approval_policy: ApprovalPolicy,
+            #[serde(default, alias = "file_system_sandbox_policy")]
+            vfs_policy: Option<VfsPolicy>,
+            #[serde(default, alias = "network_sandbox_policy")]
+            socket_policy: Option<SocketPolicy>,
+            #[serde(default)]
+            sandbox_policy: Option<SandboxPolicy>,
+            #[serde(default)]
+            network: Option<TurnContextNetworkItem>,
+            model: String,
+            #[serde(default)]
+            personality: Option<Personality>,
+            #[serde(default)]
+            collaboration_mode: Option<CollaborationMode>,
+            #[serde(default)]
+            effort: Option<ReasoningEffortConfig>,
+            summary: ReasoningSummaryConfig,
+            #[serde(default)]
+            user_instructions: Option<String>,
+            #[serde(default)]
+            minion_instructions: Option<String>,
+            #[serde(default)]
+            final_output_json_schema: Option<Value>,
+            #[serde(default)]
+            truncation_policy: Option<TruncationPolicy>,
+        }
+
+        let de = De::deserialize(deserializer)?;
+        let (vfs_policy, socket_policy) =
+            resolve_sandbox_compat(de.vfs_policy, de.socket_policy, de.sandbox_policy.as_ref())
+                .map_err(serde::de::Error::custom)?;
+
+        Ok(TurnContextItem {
+            turn_id: de.turn_id,
+            trace_id: de.trace_id,
+            cwd: de.cwd,
+            current_date: de.current_date,
+            timezone: de.timezone,
+            approval_policy: de.approval_policy,
+            vfs_policy,
+            socket_policy,
+            network: de.network,
+            model: de.model,
+            personality: de.personality,
+            collaboration_mode: de.collaboration_mode,
+            effort: de.effort,
+            summary: de.summary,
+            user_instructions: de.user_instructions,
+            minion_instructions: de.minion_instructions,
+            final_output_json_schema: de.final_output_json_schema,
+            truncation_policy: de.truncation_policy,
+        })
+    }
+}
+
+/// Resolve the sandbox pair from either the modern (`vfs_policy` +
+/// `socket_policy`) shape, the intermediate (`file_system_sandbox_policy` +
+/// `network_sandbox_policy`) aliases, or the legacy single `sandbox_policy`
+/// enum that predates the split.
+fn resolve_sandbox_compat(
+    vfs_policy: Option<VfsPolicy>,
+    socket_policy: Option<SocketPolicy>,
+    legacy: Option<&SandboxPolicy>,
+) -> Result<(VfsPolicy, SocketPolicy), &'static str> {
+    match (vfs_policy, socket_policy, legacy) {
+        (Some(v), Some(s), _) => Ok((v, s)),
+        (Some(v), None, Some(legacy)) => Ok((v, SocketPolicy::from(legacy))),
+        (None, Some(s), Some(legacy)) => Ok((VfsPolicy::from(legacy), s)),
+        (None, None, Some(legacy)) => Ok((VfsPolicy::from(legacy), SocketPolicy::from(legacy))),
+        _ => Err(
+            "missing sandbox policy: expected vfs_policy+socket_policy or legacy sandbox_policy",
+        ),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -405,7 +497,7 @@ pub struct SessionNetworkProxyRuntime {
     pub socks_addr: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, JsonSchema, TS)]
 pub struct SessionConfiguredEvent {
     pub session_id: ProcessId,
     #[serde(
@@ -469,6 +561,68 @@ pub struct SessionConfiguredEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub network_proxy: Option<SessionNetworkProxyRuntime>,
+}
+
+impl<'de> Deserialize<'de> for SessionConfiguredEvent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct De {
+            session_id: ProcessId,
+            #[serde(default, rename = "forked_from_process_id")]
+            forked_from_id: Option<ProcessId>,
+            #[serde(default, rename = "process_name")]
+            process_name: Option<String>,
+            model: String,
+            model_provider_id: String,
+            #[serde(default)]
+            service_tier: Option<ServiceTier>,
+            approval_policy: ApprovalPolicy,
+            #[serde(default)]
+            approvals_reviewer: ApprovalsReviewer,
+            #[serde(default, alias = "file_system_sandbox_policy")]
+            vfs_policy: Option<VfsPolicy>,
+            #[serde(default, alias = "network_sandbox_policy")]
+            socket_policy: Option<SocketPolicy>,
+            #[serde(default)]
+            sandbox_policy: Option<SandboxPolicy>,
+            cwd: PathBuf,
+            #[serde(default)]
+            reasoning_effort: Option<ReasoningEffortConfig>,
+            history_log_id: u64,
+            history_entry_count: usize,
+            #[serde(default)]
+            initial_messages: Option<Vec<EventMsg>>,
+            #[serde(default)]
+            network_proxy: Option<SessionNetworkProxyRuntime>,
+        }
+
+        let de = De::deserialize(deserializer)?;
+        let (vfs_policy, socket_policy) =
+            resolve_sandbox_compat(de.vfs_policy, de.socket_policy, de.sandbox_policy.as_ref())
+                .map_err(serde::de::Error::custom)?;
+
+        Ok(SessionConfiguredEvent {
+            session_id: de.session_id,
+            forked_from_id: de.forked_from_id,
+            process_name: de.process_name,
+            model: de.model,
+            model_provider_id: de.model_provider_id,
+            service_tier: de.service_tier,
+            approval_policy: de.approval_policy,
+            approvals_reviewer: de.approvals_reviewer,
+            vfs_policy,
+            socket_policy,
+            cwd: de.cwd,
+            reasoning_effort: de.reasoning_effort,
+            history_log_id: de.history_log_id,
+            history_entry_count: de.history_entry_count,
+            initial_messages: de.initial_messages,
+            network_proxy: de.network_proxy,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

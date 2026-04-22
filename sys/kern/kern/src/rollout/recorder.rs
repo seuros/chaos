@@ -899,7 +899,8 @@ fn journal_process_item_from_loaded(
     loaded: LoadedJournal,
     search_term: Option<&str>,
 ) -> Option<ProcessItem> {
-    let mut first_user_message = None;
+    let mut first_user_message_from_response: Option<String> = None;
+    let mut first_user_message_from_event: Option<String> = None;
     let mut saw_user_event = false;
     let mut git_branch = None;
     let mut git_sha = None;
@@ -924,12 +925,21 @@ fn journal_process_item_from_loaded(
                 if role == "user" =>
             {
                 saw_user_event = true;
-                if first_user_message.is_none() {
+                if first_user_message_from_response.is_none() {
                     let text = content.iter().find_map(|c| match c {
                         ContentItem::InputText { text } => Some(text.clone()),
                         _ => None,
                     });
-                    first_user_message = text;
+                    first_user_message_from_response = text.and_then(cleanup_user_message_preview);
+                }
+            }
+            RolloutItem::EventMsg(EventMsg::UserMessage(user)) => {
+                saw_user_event = true;
+                // EventMsg::UserMessage carries the clean user turn without the
+                // `<environment_context>` wrapper the kernel prepends to the first
+                // role=user response item, so it makes a better picker preview.
+                if first_user_message_from_event.is_none() {
+                    first_user_message_from_event = cleanup_user_message_preview(user.message);
                 }
             }
             RolloutItem::ResponseItem(_)
@@ -938,6 +948,8 @@ fn journal_process_item_from_loaded(
             | RolloutItem::EventMsg(_) => {}
         }
     }
+
+    let first_user_message = first_user_message_from_event.or(first_user_message_from_response);
 
     if !saw_user_event {
         return None;
@@ -975,6 +987,30 @@ fn journal_process_item_from_loaded(
         created_at: Some(record.created_at.to_string()),
         updated_at: Some(record.updated_at.to_string()),
     })
+}
+
+/// Strip the kernel-injected `<environment_context>...</environment_context>`
+/// wrapper (and any `## My request for Chaos:` marker) from a candidate
+/// preview. Returns `None` when nothing meaningful remains.
+fn cleanup_user_message_preview(mut text: String) -> Option<String> {
+    loop {
+        let trimmed = text.trim_start();
+        let Some(rest) = trimmed.strip_prefix("<environment_context>") else {
+            break;
+        };
+        let close_idx = rest.find("</environment_context>")?;
+        text = rest[close_idx + "</environment_context>".len()..].to_string();
+    }
+    let cleaned = text
+        .trim()
+        .trim_start_matches("## My request for Chaos:")
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1167,4 +1203,36 @@ fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
         return ca == cb;
     }
     session_cwd == cwd
+}
+
+#[cfg(test)]
+mod picker_preview_tests {
+    use super::cleanup_user_message_preview;
+
+    #[test]
+    fn strips_environment_context_and_request_marker() {
+        let xml = "<environment_context>\n  <cwd>/tmp</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-04-05</current_date>\n</environment_context>";
+        // Standalone env_context yields no preview.
+        assert_eq!(cleanup_user_message_preview(xml.to_string()), None);
+
+        // Env context followed by a real request yields the request.
+        let combined = format!("{xml}\n\n## My request for Chaos: Explain this codebase");
+        assert_eq!(
+            cleanup_user_message_preview(combined),
+            Some("Explain this codebase".to_string())
+        );
+
+        // Plain user message passes through unchanged (modulo trim).
+        assert_eq!(
+            cleanup_user_message_preview("Explain this codebase".to_string()),
+            Some("Explain this codebase".to_string())
+        );
+
+        // Multiple stacked env_context blocks also strip cleanly.
+        let stacked = format!("{xml}\n{xml}\nhello");
+        assert_eq!(
+            cleanup_user_message_preview(stacked),
+            Some("hello".to_string())
+        );
+    }
 }

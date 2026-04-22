@@ -48,7 +48,9 @@ install:
         esac
     }
     # Debian-family splits clang headers into libclang-dev and protoc
-    # into protobuf-compiler; the other managers ship a single package.
+    # into protobuf-compiler; FreeBSD ships clang as versioned llvm<N>
+    # ports with no unversioned alias; macOS homebrew ships llvm; the
+    # remaining distros publish single 'clang' and 'protobuf' packages.
     case "$os" in
         Linux)
             if command -v apt >/dev/null 2>&1; then
@@ -62,6 +64,12 @@ install:
                 clang_pkg=clang
             fi
             ;;
+        FreeBSD)
+            protobuf_pkg=protobuf
+            clang_pkg=$(pkg rquery -x '%n' '^llvm[0-9]+$' 2>/dev/null | sort -V | tail -1)
+            [ -z "$clang_pkg" ] && clang_pkg=llvm
+            ;;
+        Darwin) protobuf_pkg=protobuf; clang_pkg=llvm ;;
         *) protobuf_pkg=protobuf; clang_pkg=clang ;;
     esac
     missing=

@@ -342,3 +342,69 @@ fn token_usage_info_new_or_append_preserves_context_window_when_not_provided() {
 
     assert_eq!(info.model_context_window, Some(258_400));
 }
+
+#[test]
+fn rollout_item_accepts_legacy_turn_context() -> Result<()> {
+    // Exact wire shape found in journal_1.sqlite rows persisted before the
+    // sandbox split. RolloutItem must still load them.
+    let legacy = json!({
+        "type": "turn_context",
+        "payload": {
+            "turn_id": "019d7240",
+            "cwd": "/home/seuros/Projects/reference/codex",
+            "current_date": "2026-04-09",
+            "timezone": "Africa/Casablanca",
+            "approval_policy": "interactive",
+            "sandbox_policy": {
+                "type": "workspace-write",
+                "network_access": false,
+                "exclude_tmpdir_env_var": false,
+                "exclude_slash_tmp": false
+            },
+            "model": "gpt-5.4",
+            "summary": "concise"
+        }
+    });
+    match serde_json::from_value::<RolloutItem>(legacy)? {
+        RolloutItem::TurnContext(tc) => {
+            assert_eq!(tc.socket_policy, SocketPolicy::Restricted);
+            assert_eq!(tc.vfs_policy.kind, VfsPolicyKind::Restricted);
+        }
+        other => panic!("expected TurnContext, got {other:?}"),
+    }
+    Ok(())
+}
+
+#[test]
+fn turn_context_item_accepts_legacy_sandbox_policy() -> Result<()> {
+    // Rollouts persisted before commit fa67d57526 stored a single
+    // `sandbox_policy` enum; resume must continue to load them after the
+    // split into `vfs_policy` + `socket_policy` (renamed in 71cad4dad6).
+    let legacy = json!({
+        "turn_id": "3",
+        "cwd": "/tmp/work",
+        "approval_policy": "supervised",
+        "sandbox_policy": { "type": "read-only" },
+        "model": "gpt-5.4",
+        "summary": "concise"
+    });
+
+    let item: TurnContextItem = serde_json::from_value(legacy)?;
+    assert_eq!(item.socket_policy, SocketPolicy::Restricted);
+    // Intermediate alias (file_system_sandbox_policy / network_sandbox_policy)
+    // and the modern fields must also continue to work.
+    let intermediate = json!({
+        "turn_id": "4",
+        "cwd": "/tmp/work",
+        "approval_policy": "headless",
+        "file_system_sandbox_policy": { "kind": "unrestricted", "entries": [] },
+        "network_sandbox_policy": "enabled",
+        "model": "gpt-5.4",
+        "summary": "concise"
+    });
+    let item: TurnContextItem = serde_json::from_value(intermediate)?;
+    assert_eq!(item.socket_policy, SocketPolicy::Enabled);
+    assert_eq!(item.vfs_policy.kind, VfsPolicyKind::Unrestricted);
+
+    Ok(())
+}

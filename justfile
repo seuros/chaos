@@ -24,6 +24,34 @@ build *args:
 
 # Install chaos into ~/.cargo/bin (release + target-cpu=native).
 install:
+    #!/usr/bin/env sh
+    set -e
+    if ! command -v protoc >/dev/null 2>&1 && [ -z "${PROTOC:-}" ]; then
+        echo "error: protoc not found on PATH and PROTOC is unset." >&2
+        echo "" >&2
+        echo "chaos pulls in rama-grpc whose build script needs protoc." >&2
+        echo "" >&2
+        case "$(uname -s)" in
+            FreeBSD) echo "Install with: pkg install protobuf" >&2 ;;
+            Darwin)  echo "Install with: brew install protobuf" >&2 ;;
+            Linux)
+                if command -v pacman >/dev/null 2>&1; then
+                    echo "Install with: sudo pacman -S protobuf" >&2
+                elif command -v apt >/dev/null 2>&1; then
+                    echo "Install with: sudo apt install protobuf-compiler" >&2
+                elif command -v dnf >/dev/null 2>&1; then
+                    echo "Install with: sudo dnf install protobuf-compiler" >&2
+                else
+                    echo "Install the 'protobuf' package for your distro." >&2
+                fi
+                ;;
+            *) echo "Install the 'protobuf' package for your OS." >&2 ;;
+        esac
+        echo "" >&2
+        echo "Or point PROTOC at an existing binary:" >&2
+        echo "  export PROTOC=/path/to/protoc" >&2
+        exit 1
+    fi
     RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
 
 # Format code

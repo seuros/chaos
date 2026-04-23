@@ -99,9 +99,9 @@ pub(crate) enum SignInState {
     ApiKeyConfigured(AccountProvider),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AccountsCompletion {
-    ConnectedProvider,
+    ConnectedProvider { provider_id: String },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -297,8 +297,16 @@ impl AccountsWidget {
 
     pub(crate) fn completion(&self) -> Option<AccountsCompletion> {
         match self.sign_in_state() {
-            SignInState::ChatGptSuccess | SignInState::ApiKeyConfigured(_) => {
-                Some(AccountsCompletion::ConnectedProvider)
+            SignInState::ChatGptSuccess => {
+                self.selected_provider()
+                    .map(|provider| AccountsCompletion::ConnectedProvider {
+                        provider_id: provider.id,
+                    })
+            }
+            SignInState::ApiKeyConfigured(provider) => {
+                Some(AccountsCompletion::ConnectedProvider {
+                    provider_id: provider.id,
+                })
             }
             _ => None,
         }

@@ -10,6 +10,7 @@ use super::{
 };
 use chaos_ipc::protocol::Op;
 use chaos_kern::ChaosAuth;
+use chaos_kern::models_manager::CollaborationModesConfig;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
 
@@ -58,12 +59,31 @@ impl App {
         self.sync_active_agent_label();
     }
 
-    pub(super) async fn start_fresh_session_with_summary_hint(&mut self, tui: &mut tui::Tui) {
+    pub(crate) async fn start_fresh_session_with_summary_hint(&mut self, tui: &mut tui::Tui) {
         // Start a fresh in-memory session while preserving resumability via persisted rollout
         // history.
+        let previous_provider_id = self.config.model_provider_id.clone();
         self.refresh_in_memory_config_from_disk_best_effort("starting a new process")
             .await;
-        let model = self.chat_widget.current_model().to_string();
+        let provider_changed = self.config.model_provider_id != previous_provider_id;
+        if provider_changed {
+            self.server = Arc::new(ProcessTable::new(
+                &self.config,
+                self.auth_manager.clone(),
+                self.server.session_source(),
+                CollaborationModesConfig {
+                    default_mode_request_user_input: true,
+                },
+            ));
+        }
+        let model = if provider_changed {
+            self.server
+                .get_models_manager()
+                .get_default_model(&None, RefreshStrategy::Offline)
+                .await
+        } else {
+            self.chat_widget.current_model().to_string()
+        };
         let config = self.fresh_session_config();
         let summary = session_summary(
             self.chat_widget.token_usage(),

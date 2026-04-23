@@ -157,6 +157,6 @@ impl AccountsOverlay {
     }
 
     pub(super) fn completion(&self) -> Option<AccountsCompletion> {
-        self.completion
+        self.completion.clone()
     }
 }

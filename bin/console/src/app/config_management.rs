@@ -17,7 +17,7 @@ impl App {
             .wrap_err_with(|| format!("Failed to rebuild config for cwd {cwd_display}"))
     }
 
-    pub(super) async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
+    pub(crate) async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
         let mut config = self
             .rebuild_config_for_cwd(self.chat_widget.config_ref().cwd.clone())
             .await?;

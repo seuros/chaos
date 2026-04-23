@@ -40,6 +40,8 @@ use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::TextElement;
+use chaos_kern::config::edit::ConfigEdit;
+use chaos_kern::config::edit::ConfigEditsBuilder;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -111,7 +113,7 @@ impl App {
         event: TuiEvent,
     ) -> Result<bool> {
         if !self.overlay.as_ref().is_some_and(Overlay::is_transcript) {
-            self.overlay_forward_event(tui, event)?;
+            self.overlay_forward_event(tui, event).await?;
             return Ok(true);
         }
 
@@ -122,7 +124,7 @@ impl App {
                     kind: KeyEventKind::Press | KeyEventKind::Repeat,
                     ..
                 }) => {
-                    self.overlay_step_backtrack(tui, event)?;
+                    self.overlay_step_backtrack(tui, event).await?;
                     Ok(true)
                 }
                 TuiEvent::Key(KeyEvent {
@@ -130,7 +132,7 @@ impl App {
                     kind: KeyEventKind::Press | KeyEventKind::Repeat,
                     ..
                 }) => {
-                    self.overlay_step_backtrack(tui, event)?;
+                    self.overlay_step_backtrack(tui, event).await?;
                     Ok(true)
                 }
                 TuiEvent::Key(KeyEvent {
@@ -138,7 +140,7 @@ impl App {
                     kind: KeyEventKind::Press | KeyEventKind::Repeat,
                     ..
                 }) => {
-                    self.overlay_step_backtrack_forward(tui, event)?;
+                    self.overlay_step_backtrack_forward(tui, event).await?;
                     Ok(true)
                 }
                 TuiEvent::Key(KeyEvent {
@@ -151,7 +153,7 @@ impl App {
                 }
                 // Catchall: forward any other events to the overlay widget.
                 _ => {
-                    self.overlay_forward_event(tui, event)?;
+                    self.overlay_forward_event(tui, event).await?;
                     Ok(true)
                 }
             }
@@ -166,7 +168,7 @@ impl App {
             Ok(true)
         } else {
             // Not in backtrack mode: forward events to the overlay widget.
-            self.overlay_forward_event(tui, event)?;
+            self.overlay_forward_event(tui, event).await?;
             Ok(true)
         }
     }
@@ -377,7 +379,7 @@ impl App {
     /// This logic lives here (instead of inside the overlay widget) because `ChatWidget` is the
     /// source of truth for the active cell and its cache invalidation key, and because `App` owns
     /// overlay lifecycle and frame scheduling for animations.
-    fn overlay_forward_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
+    async fn overlay_forward_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         if let TuiEvent::Draw = &event
             && let Some(Overlay::Transcript(t)) = &mut self.overlay
         {
@@ -410,30 +412,68 @@ impl App {
             let auth_completion = overlay.auth_completion();
             if overlay.is_done() {
                 self.close_transcript_overlay(tui);
-                self.handle_overlay_completion(auth_completion);
+                self.handle_overlay_completion(tui, auth_completion).await;
                 tui.frame_requester().schedule_frame();
             }
         }
         Ok(())
     }
 
-    fn handle_overlay_completion(
+    async fn handle_overlay_completion(
         &mut self,
+        tui: &mut tui::Tui,
         auth_completion: Option<crate::onboarding::auth::AccountsCompletion>,
     ) {
         let Some(auth_completion) = auth_completion else {
             return;
         };
 
+        let crate::onboarding::auth::AccountsCompletion::ConnectedProvider { provider_id } =
+            auth_completion;
+        let provider_changed = provider_id != self.config.model_provider_id;
+
+        if provider_changed {
+            let persist_result = ConfigEditsBuilder::new(&self.config.chaos_home)
+                .with_profile(self.active_profile.as_deref())
+                .with_edits([ConfigEdit::SetPath {
+                    segments: vec!["model_provider".to_string()],
+                    value: toml_edit::value(provider_id.clone()),
+                }])
+                .apply()
+                .await;
+            if let Err(err) = persist_result {
+                self.chat_widget.add_error_message(format!(
+                    "Connected provider account, but failed to activate {provider_id}: {err}"
+                ));
+                return;
+            }
+            if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+                self.chat_widget.add_error_message(format!(
+                    "Connected provider account, but failed to reload config for {provider_id}: {err}"
+                ));
+                return;
+            }
+        }
+
         self.chat_widget.refresh_status_line();
         self.chat_widget.refresh_connectors(/*force_refetch*/ true);
         self.chat_widget.submit_op(Op::ReloadUserConfig);
-
-        let _ = auth_completion;
-        self.chat_widget.add_info_message(
-            "Provider account updated.".to_string(),
-            Some("Refreshed auth-dependent state for this session.".to_string()),
-        );
+        if provider_changed || self.chat_widget.process_id().is_none() {
+            self.start_fresh_session_with_summary_hint(tui).await;
+        }
+        let provider_name = self
+            .config
+            .model_providers
+            .get(&provider_id)
+            .map(|provider| provider.name.clone())
+            .unwrap_or_else(|| provider_id.to_string());
+        let hint = if provider_changed {
+            Some("Switched this session to the connected provider.".to_string())
+        } else {
+            Some("Refreshed auth-dependent state for this session.".to_string())
+        };
+        self.chat_widget
+            .add_info_message(format!("Connected {provider_name}."), hint);
     }
 
     /// Handle Enter in overlay backtrack preview: confirm selection and reset state.
@@ -448,17 +488,17 @@ impl App {
     }
 
     /// Handle Esc in overlay backtrack preview: step selection if armed, else forward.
-    fn overlay_step_backtrack(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
+    async fn overlay_step_backtrack(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         if self.backtrack.base_id.is_some() {
             self.step_backtrack_and_highlight(tui);
         } else {
-            self.overlay_forward_event(tui, event)?;
+            self.overlay_forward_event(tui, event).await?;
         }
         Ok(())
     }
 
     /// Handle Right in overlay backtrack preview: step selection forward if armed, else forward.
-    fn overlay_step_backtrack_forward(
+    async fn overlay_step_backtrack_forward(
         &mut self,
         tui: &mut tui::Tui,
         event: TuiEvent,
@@ -466,7 +506,7 @@ impl App {
         if self.backtrack.base_id.is_some() {
             self.step_forward_backtrack_and_highlight(tui);
         } else {
-            self.overlay_forward_event(tui, event)?;
+            self.overlay_forward_event(tui, event).await?;
         }
         Ok(())
     }

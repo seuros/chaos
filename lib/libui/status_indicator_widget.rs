@@ -292,8 +292,8 @@ impl Renderable for StatusIndicatorWidget {
 mod tests {
     use super::*;
     use crate::test_support::make_app_event_sender;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
+    use crate::test_support::render_test_backend_debug;
+    use insta::assert_snapshot;
     use std::time::Duration;
     use std::time::Instant;
 
@@ -318,12 +318,12 @@ mod tests {
         let tx = make_app_event_sender();
         let w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), true);
 
-        // Render into a fixed-size test terminal and snapshot the backend.
-        let mut terminal = Terminal::new(TestBackend::new(80, 2)).expect("terminal");
-        terminal
-            .draw(|f| w.render(f.area(), f.buffer_mut()))
-            .expect("draw");
-        insta::assert_snapshot!(terminal.backend());
+        assert_snapshot!(
+            "renders_with_working_header",
+            render_test_backend_debug(80, 2, |f| {
+                w.render(f.area(), f.buffer_mut());
+            })
+        );
     }
 
     #[test]
@@ -331,12 +331,12 @@ mod tests {
         let tx = make_app_event_sender();
         let w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), true);
 
-        // Render into a fixed-size test terminal and snapshot the backend.
-        let mut terminal = Terminal::new(TestBackend::new(20, 2)).expect("terminal");
-        terminal
-            .draw(|f| w.render(f.area(), f.buffer_mut()))
-            .expect("draw");
-        insta::assert_snapshot!(terminal.backend());
+        assert_snapshot!(
+            "renders_truncated",
+            render_test_backend_debug(20, 2, |f| {
+                w.render(f.area(), f.buffer_mut());
+            })
+        );
     }
 
     #[test]
@@ -356,11 +356,12 @@ mod tests {
 
         // Prefix is 4 columns, so a width of 30 yields a content width of 26: one column
         // short of fitting the whole phrase (27 cols), forcing exactly one wrap without ellipsis.
-        let mut terminal = Terminal::new(TestBackend::new(30, 3)).expect("terminal");
-        terminal
-            .draw(|f| w.render(f.area(), f.buffer_mut()))
-            .expect("draw");
-        insta::assert_snapshot!(terminal.backend());
+        assert_snapshot!(
+            "renders_wrapped_details_panama_two_lines",
+            render_test_backend_debug(30, 3, |f| {
+                w.render(f.area(), f.buffer_mut());
+            })
+        );
     }
 
     #[test]

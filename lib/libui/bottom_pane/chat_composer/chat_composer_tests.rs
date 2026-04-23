@@ -1,15 +1,16 @@
 use super::*;
 use crate::app_event::AppEvent;
 use crate::bottom_pane::footer::footer_height;
+use crate::test_support::buffer_row_string;
 use crate::test_support::make_app_event_sender;
 use crate::test_support::make_app_event_sender_with_rx;
+use crate::test_support::renderable_buffer;
 use chaos_ipc::api::AppInfo;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use image::ImageBuffer;
 use image::Rgba;
 use pretty_assertions::assert_eq;
-use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -22,6 +23,7 @@ use crate::bottom_pane::prompt_args::PromptArg;
 use crate::bottom_pane::prompt_args::extract_positional_args_for_prompt_line;
 use crate::bottom_pane::textarea::TextArea;
 use crate::render::renderable::Renderable;
+use crate::test_support::render_test_backend_debug;
 
 #[test]
 fn footer_hint_row_is_separated_from_composer() {
@@ -35,20 +37,11 @@ fn footer_hint_row_is_separated_from_composer() {
     );
 
     let area = Rect::new(0, 0, 40, 6);
-    let mut buf = Buffer::empty(area);
-    composer.render(area, &mut buf);
-
-    let row_to_string = |y: u16| {
-        let mut row = String::new();
-        for x in 0..area.width {
-            row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
-        }
-        row
-    };
+    let buf = renderable_buffer(&composer, area);
 
     let mut hint_row: Option<(u16, String)> = None;
     for y in 0..area.height {
-        let row = row_to_string(y);
+        let row = buffer_row_string(&buf, y);
         if row.contains("? for shortcuts") {
             hint_row = Some((y, row));
             break;
@@ -68,7 +61,7 @@ fn footer_hint_row_is_separated_from_composer() {
         "expected a spacing row above the footer hints",
     );
 
-    let spacing_row = row_to_string(hint_row_idx - 1);
+    let spacing_row = buffer_row_string(&buf, hint_row_idx - 1);
     assert_eq!(
         spacing_row.trim(),
         "",
@@ -90,19 +83,8 @@ fn footer_flash_overrides_footer_hint_override() {
     composer.show_footer_flash(Line::from("FLASH"), Duration::from_secs(10));
 
     let area = Rect::new(0, 0, 60, 6);
-    let mut buf = Buffer::empty(area);
-    composer.render(area, &mut buf);
-
-    let mut bottom_row = String::new();
-    for x in 0..area.width {
-        bottom_row.push(
-            buf[(x, area.height - 1)]
-                .symbol()
-                .chars()
-                .next()
-                .unwrap_or(' '),
-        );
-    }
+    let buf = renderable_buffer(&composer, area);
+    let bottom_row = buffer_row_string(&buf, area.height - 1);
     assert!(
         bottom_row.contains("FLASH"),
         "expected flash content to render in footer row, saw: {bottom_row:?}",
@@ -128,19 +110,8 @@ fn footer_flash_expires_and_falls_back_to_hint_override() {
     composer.footer_flash.as_mut().unwrap().expires_at = Instant::now() - Duration::from_secs(1);
 
     let area = Rect::new(0, 0, 60, 6);
-    let mut buf = Buffer::empty(area);
-    composer.render(area, &mut buf);
-
-    let mut bottom_row = String::new();
-    for x in 0..area.width {
-        bottom_row.push(
-            buf[(x, area.height - 1)]
-                .symbol()
-                .chars()
-                .next()
-                .unwrap_or(' '),
-        );
-    }
+    let buf = renderable_buffer(&composer, area);
+    let bottom_row = buffer_row_string(&buf, area.height - 1);
     assert!(
         bottom_row.contains("K label"),
         "expected hint override to render after flash expired, saw: {bottom_row:?}",
@@ -159,9 +130,6 @@ fn snapshot_composer_state_with_width<F>(
 ) where
     F: FnOnce(&mut ChatComposer),
 {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
@@ -175,11 +143,12 @@ fn snapshot_composer_state_with_width<F>(
     let footer_lines = footer_height(&footer_props);
     let footer_spacing = ChatComposer::footer_spacing(footer_lines);
     let height = footer_lines + footer_spacing + 8;
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal
-        .draw(|f| composer.render(f.area(), f.buffer_mut()))
-        .unwrap();
-    insta::assert_snapshot!(name, terminal.backend());
+    insta::assert_snapshot!(
+        name,
+        render_test_backend_debug(width, height, |f| {
+            composer.render(f.area(), f.buffer_mut());
+        })
+    );
 }
 
 fn snapshot_composer_state<F>(name: &str, enhanced_keys_supported: bool, setup: F)

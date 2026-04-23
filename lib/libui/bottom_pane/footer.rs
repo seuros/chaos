@@ -77,13 +77,12 @@ mod tests {
     use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
     #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
+    use crate::test_support::render_test_backend_debug;
     use crate::ui_consts::FOOTER_INDENT_COLS;
     use crossterm::event::KeyCode;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use ratatui::Terminal;
-    use ratatui::backend::Backend;
-    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use ratatui::style::Stylize;
     use ratatui::text::Line;
@@ -95,166 +94,158 @@ mod tests {
         snapshot_footer_with_mode_indicator(name, 80, &props, None);
     }
 
-    fn draw_footer_frame<B: Backend>(
-        terminal: &mut Terminal<B>,
-        height: u16,
+    fn draw_footer(
+        area: Rect,
+        buf: &mut Buffer,
         props: &FooterProps,
         collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     ) {
-        terminal
-            .draw(|f| {
-                let area = Rect::new(0, 0, f.area().width, height);
-                let show_cycle_hint = !props.is_task_running;
-                let show_shortcuts_hint = match props.mode {
-                    FooterMode::ComposerEmpty => true,
-                    FooterMode::ComposerHasDraft => false,
-                    FooterMode::QuitShortcutReminder
-                    | FooterMode::ShortcutOverlay
-                    | FooterMode::EscHint => false,
-                };
-                let show_queue_hint = match props.mode {
-                    FooterMode::ComposerHasDraft => props.is_task_running,
-                    FooterMode::QuitShortcutReminder
-                    | FooterMode::ComposerEmpty
-                    | FooterMode::ShortcutOverlay
-                    | FooterMode::EscHint => false,
-                };
-                let status_line_active = uses_passive_footer_status_layout(props);
-                let passive_status_line = if status_line_active {
-                    passive_footer_status_line(props)
-                } else {
-                    None
-                };
-                let left_mode_indicator = if status_line_active {
-                    None
-                } else {
-                    collaboration_mode_indicator
-                };
-                let available_width = area.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
-                let mut truncated_status_line = if status_line_active
-                    && matches!(
-                        props.mode,
-                        FooterMode::ComposerEmpty | FooterMode::ComposerHasDraft
-                    ) {
-                    passive_status_line
-                        .as_ref()
-                        .map(|line| line.clone().dim())
-                        .map(|line| truncate_line_with_ellipsis_if_overflow(line, available_width))
-                } else {
-                    None
-                };
-                let mut left_width = if status_line_active {
-                    truncated_status_line
-                        .as_ref()
-                        .map(|line| line.width() as u16)
-                        .unwrap_or(0)
-                } else {
-                    footer_line_width(
-                        props,
-                        left_mode_indicator,
-                        show_cycle_hint,
-                        show_shortcuts_hint,
-                        show_queue_hint,
-                    )
-                };
-                let right_line = if status_line_active {
-                    let full = mode_indicator_line(collaboration_mode_indicator, show_cycle_hint);
-                    let compact = mode_indicator_line(collaboration_mode_indicator, false);
-                    let full_width = full.as_ref().map(|line| line.width() as u16).unwrap_or(0);
-                    if can_show_left_with_context(area, left_width, full_width) {
-                        full
-                    } else {
-                        compact
-                    }
-                } else {
-                    Some(context_window_line(
-                        props.context_window_percent,
-                        props.context_window_used_tokens,
-                    ))
-                };
-                let right_width = right_line
-                    .as_ref()
-                    .map(|line| line.width() as u16)
-                    .unwrap_or(0);
-                if status_line_active
-                    && let Some(max_left) = max_left_width_for_right(area, right_width)
-                    && left_width > max_left
-                    && let Some(line) = passive_status_line
-                        .as_ref()
-                        .map(|line| line.clone().dim())
-                        .map(|line| {
-                            truncate_line_with_ellipsis_if_overflow(line, max_left as usize)
-                        })
-                {
-                    left_width = line.width() as u16;
-                    truncated_status_line = Some(line);
+        let show_cycle_hint = !props.is_task_running;
+        let show_shortcuts_hint = match props.mode {
+            FooterMode::ComposerEmpty => true,
+            FooterMode::ComposerHasDraft => false,
+            FooterMode::QuitShortcutReminder
+            | FooterMode::ShortcutOverlay
+            | FooterMode::EscHint => false,
+        };
+        let show_queue_hint = match props.mode {
+            FooterMode::ComposerHasDraft => props.is_task_running,
+            FooterMode::QuitShortcutReminder
+            | FooterMode::ComposerEmpty
+            | FooterMode::ShortcutOverlay
+            | FooterMode::EscHint => false,
+        };
+        let status_line_active = uses_passive_footer_status_layout(props);
+        let passive_status_line = if status_line_active {
+            passive_footer_status_line(props)
+        } else {
+            None
+        };
+        let left_mode_indicator = if status_line_active {
+            None
+        } else {
+            collaboration_mode_indicator
+        };
+        let available_width = area.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
+        let mut truncated_status_line = if status_line_active
+            && matches!(
+                props.mode,
+                FooterMode::ComposerEmpty | FooterMode::ComposerHasDraft
+            ) {
+            passive_status_line
+                .as_ref()
+                .map(|line| line.clone().dim())
+                .map(|line| truncate_line_with_ellipsis_if_overflow(line, available_width))
+        } else {
+            None
+        };
+        let mut left_width = if status_line_active {
+            truncated_status_line
+                .as_ref()
+                .map(|line| line.width() as u16)
+                .unwrap_or(0)
+        } else {
+            footer_line_width(
+                props,
+                left_mode_indicator,
+                show_cycle_hint,
+                show_shortcuts_hint,
+                show_queue_hint,
+            )
+        };
+        let right_line = if status_line_active {
+            let full = mode_indicator_line(collaboration_mode_indicator, show_cycle_hint);
+            let compact = mode_indicator_line(collaboration_mode_indicator, false);
+            let full_width = full.as_ref().map(|line| line.width() as u16).unwrap_or(0);
+            if can_show_left_with_context(area, left_width, full_width) {
+                full
+            } else {
+                compact
+            }
+        } else {
+            Some(context_window_line(
+                props.context_window_percent,
+                props.context_window_used_tokens,
+            ))
+        };
+        let right_width = right_line
+            .as_ref()
+            .map(|line| line.width() as u16)
+            .unwrap_or(0);
+        if status_line_active
+            && let Some(max_left) = max_left_width_for_right(area, right_width)
+            && left_width > max_left
+            && let Some(line) = passive_status_line
+                .as_ref()
+                .map(|line| line.clone().dim())
+                .map(|line| truncate_line_with_ellipsis_if_overflow(line, max_left as usize))
+        {
+            left_width = line.width() as u16;
+            truncated_status_line = Some(line);
+        }
+        let can_show_left_and_context = can_show_left_with_context(area, left_width, right_width);
+        if matches!(
+            props.mode,
+            FooterMode::ComposerEmpty | FooterMode::ComposerHasDraft
+        ) {
+            if status_line_active {
+                if let Some(line) = truncated_status_line.clone() {
+                    render_footer_line(area, buf, line);
                 }
-                let can_show_left_and_context =
-                    can_show_left_with_context(area, left_width, right_width);
-                if matches!(
-                    props.mode,
-                    FooterMode::ComposerEmpty | FooterMode::ComposerHasDraft
-                ) {
-                    if status_line_active {
-                        if let Some(line) = truncated_status_line.clone() {
-                            render_footer_line(area, f.buffer_mut(), line);
-                        }
-                        if can_show_left_and_context && let Some(line) = &right_line {
-                            render_context_right(area, f.buffer_mut(), line);
-                        }
-                    } else {
-                        let (summary_left, show_context) = single_line_footer_layout(
+                if can_show_left_and_context && let Some(line) = &right_line {
+                    render_context_right(area, buf, line);
+                }
+            } else {
+                let (summary_left, show_context) = single_line_footer_layout(
+                    area,
+                    right_width,
+                    left_mode_indicator,
+                    show_cycle_hint,
+                    show_shortcuts_hint,
+                    show_queue_hint,
+                );
+                match summary_left {
+                    SummaryLeft::Default => {
+                        render_footer_from_props(
                             area,
-                            right_width,
+                            buf,
+                            props,
                             left_mode_indicator,
                             show_cycle_hint,
                             show_shortcuts_hint,
                             show_queue_hint,
                         );
-                        match summary_left {
-                            SummaryLeft::Default => {
-                                render_footer_from_props(
-                                    area,
-                                    f.buffer_mut(),
-                                    props,
-                                    left_mode_indicator,
-                                    show_cycle_hint,
-                                    show_shortcuts_hint,
-                                    show_queue_hint,
-                                );
-                            }
-                            SummaryLeft::Custom(line) => {
-                                render_footer_line(area, f.buffer_mut(), line);
-                            }
-                            SummaryLeft::None => {}
-                        }
-                        if show_context && let Some(line) = &right_line {
-                            render_context_right(area, f.buffer_mut(), line);
-                        }
                     }
-                } else {
-                    render_footer_from_props(
-                        area,
-                        f.buffer_mut(),
-                        props,
-                        left_mode_indicator,
-                        show_cycle_hint,
-                        show_shortcuts_hint,
-                        show_queue_hint,
-                    );
-                    let show_context = can_show_left_and_context
-                        && !matches!(
-                            props.mode,
-                            FooterMode::EscHint
-                                | FooterMode::QuitShortcutReminder
-                                | FooterMode::ShortcutOverlay
-                        );
-                    if show_context && let Some(line) = &right_line {
-                        render_context_right(area, f.buffer_mut(), line);
+                    SummaryLeft::Custom(line) => {
+                        render_footer_line(area, buf, line);
                     }
+                    SummaryLeft::None => {}
                 }
-            })
-            .unwrap();
+                if show_context && let Some(line) = &right_line {
+                    render_context_right(area, buf, line);
+                }
+            }
+        } else {
+            render_footer_from_props(
+                area,
+                buf,
+                props,
+                left_mode_indicator,
+                show_cycle_hint,
+                show_shortcuts_hint,
+                show_queue_hint,
+            );
+            let show_context = can_show_left_and_context
+                && !matches!(
+                    props.mode,
+                    FooterMode::EscHint
+                        | FooterMode::QuitShortcutReminder
+                        | FooterMode::ShortcutOverlay
+                );
+            if show_context && let Some(line) = &right_line {
+                render_context_right(area, buf, line);
+            }
+        }
     }
 
     fn snapshot_footer_with_mode_indicator(
@@ -264,9 +255,17 @@ mod tests {
         collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     ) {
         let height = footer_height(props).max(1);
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-        draw_footer_frame(&mut terminal, height, props, collaboration_mode_indicator);
-        assert_snapshot!(name, terminal.backend());
+        assert_snapshot!(
+            name,
+            render_test_backend_debug(width, height, |f| {
+                draw_footer(
+                    Rect::new(0, 0, f.area().width, height),
+                    f.buffer_mut(),
+                    props,
+                    collaboration_mode_indicator,
+                );
+            })
+        );
     }
 
     #[cfg(feature = "vt100-tests")]
@@ -276,8 +275,18 @@ mod tests {
         collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     ) -> String {
         let height = footer_height(props).max(1);
-        let mut terminal = Terminal::new(VT100Backend::new(width, height)).expect("terminal");
-        draw_footer_frame(&mut terminal, height, props, collaboration_mode_indicator);
+        let mut terminal =
+            ratatui::Terminal::new(VT100Backend::new(width, height)).expect("terminal");
+        terminal
+            .draw(|f| {
+                draw_footer(
+                    Rect::new(0, 0, f.area().width, height),
+                    f.buffer_mut(),
+                    props,
+                    collaboration_mode_indicator,
+                );
+            })
+            .expect("draw footer");
         terminal.backend().vt100().screen().contents()
     }
 

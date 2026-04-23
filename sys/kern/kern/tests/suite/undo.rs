@@ -10,21 +10,16 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::UndoCompletedEvent;
 use chaos_kern::Process;
-use core_test_support::responses::ev_apply_patch_function_call;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_sse_sequence;
-use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_chaos::TestChaosHarness;
-use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 
+use super::apply_patch_cli::apply_patch_harness;
+use super::apply_patch_cli::mount_apply_patch;
+
 async fn undo_harness() -> Result<TestChaosHarness> {
-    let builder = test_chaos().with_model("gpt-5.1");
-    TestChaosHarness::with_builder(builder).await
+    apply_patch_harness().await
 }
 
 fn git(path: &Path, args: &[&str]) -> Result<()> {
@@ -72,20 +67,6 @@ fn init_git_repo(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn apply_patch_responses(call_id: &str, patch: &str, assistant_msg: &str) -> Vec<String> {
-    vec![
-        sse(vec![
-            ev_response_created("resp-1"),
-            ev_apply_patch_function_call(call_id, patch),
-            ev_completed("resp-1"),
-        ]),
-        sse(vec![
-            ev_assistant_message("msg-1", assistant_msg),
-            ev_completed("resp-2"),
-        ]),
-    ]
-}
-
 async fn run_apply_patch_turn(
     harness: &TestChaosHarness,
     prompt: &str,
@@ -93,9 +74,12 @@ async fn run_apply_patch_turn(
     patch: &str,
     assistant_msg: &str,
 ) -> Result<()> {
-    mount_sse_sequence(
-        harness.server(),
-        apply_patch_responses(call_id, patch, assistant_msg),
+    mount_apply_patch(
+        harness,
+        call_id,
+        patch,
+        assistant_msg,
+        core_test_support::test_chaos::ApplyPatchModelOutput::Function,
     )
     .await;
     harness.submit(prompt).await

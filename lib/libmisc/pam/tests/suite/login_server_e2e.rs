@@ -6,9 +6,15 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
+use super::auth_test_support::build_tokens;
+use super::auth_test_support::make_jwt;
+use super::auth_test_support::openai_auth;
+use super::auth_test_support::openai_record;
 use anyhow::Result;
-use base64::Engine;
+use chaos_ipc::api::AuthMode;
 use chaos_kern::auth::AuthCredentialsStoreMode;
+use chaos_kern::auth::load_auth_dot_json;
+use chaos_kern::auth::save_auth;
 use chaos_pam::ServerOptions;
 use chaos_pam::run_login_server;
 use codex_client::ChaosHttpClient;
@@ -40,22 +46,6 @@ async fn get_following_redirect(client: &ChaosHttpClient, url: &str) -> Result<C
     } else {
         Ok(resp)
     }
-}
-
-// See spawn.rs for details
-
-fn make_jwt(payload: serde_json::Value) -> String {
-    let header = serde_json::json!({
-        "alg": "none",
-        "typ": "JWT",
-    });
-    let b64 = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
-    format!(
-        "{}.{}.{}",
-        b64(&serde_json::to_vec(&header).unwrap()),
-        b64(&serde_json::to_vec(&payload).unwrap()),
-        b64(b"sig")
-    )
 }
 
 fn issuer_url(addr: SocketAddr) -> String {
@@ -192,8 +182,8 @@ impl LoginHomeFixture {
         self.chaos_home.join("auth.json")
     }
 
-    fn seed_auth_json(&self, auth: &serde_json::Value) -> Result<()> {
-        std::fs::write(self.auth_path(), serde_json::to_string_pretty(auth)?)?;
+    fn seed_auth_json(&self, auth: &chaos_kern::auth::AuthDotJson) -> Result<()> {
+        save_auth(&self.chaos_home, auth, AuthCredentialsStoreMode::File)?;
         Ok(())
     }
 }
@@ -206,16 +196,13 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     let issuer = MockIssuer::start(chatgpt_account_id);
     let home = LoginHomeFixture::new()?;
 
-    // Seed auth.json with stale API key + tokens that should be overwritten.
-    let stale_auth = serde_json::json!({
-        "OPENAI_API_KEY": "sk-stale",
-        "tokens": {
-            "id_token": "stale.header.payload",
-            "access_token": "stale-access",
-            "refresh_token": "stale-refresh",
-            "account_id": "stale-acc"
-        }
-    });
+    // Seed persisted auth with stale credentials that should be overwritten.
+    let stale_auth = openai_auth(
+        AuthMode::ApiKey,
+        Some("sk-stale"),
+        Some(build_tokens("stale-access", "stale-refresh")),
+        None,
+    );
     home.seed_auth_json(&stale_auth)?;
 
     let state = "test_state_123".to_string();
@@ -242,23 +229,17 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     // Wait for server shutdown
     server.block_until_done().await?;
 
-    // Validate auth.json
-    let auth_path = home.auth_path();
-    let data = std::fs::read_to_string(&auth_path)?;
-    let json: serde_json::Value = serde_json::from_str(&data)?;
-    assert_eq!(json["providers"]["openai"]["api_key"], "access-123");
-    assert_eq!(
-        json["providers"]["openai"]["tokens"]["access_token"],
-        "access-123"
-    );
-    assert_eq!(
-        json["providers"]["openai"]["tokens"]["refresh_token"],
-        "refresh-123"
-    );
-    assert_eq!(
-        json["providers"]["openai"]["tokens"]["account_id"],
-        chatgpt_account_id
-    );
+    let auth = load_auth_dot_json(&home.chaos_home, AuthCredentialsStoreMode::File)?
+        .expect("auth should be persisted");
+    let provider_record = openai_record(&auth);
+    assert_eq!(provider_record.api_key.as_deref(), Some("access-123"));
+    let tokens = provider_record
+        .tokens
+        .as_ref()
+        .expect("tokens should be persisted");
+    assert_eq!(tokens.access_token, "access-123");
+    assert_eq!(tokens.refresh_token, "refresh-123");
+    assert_eq!(tokens.account_id.as_deref(), Some(chatgpt_account_id));
 
     Ok(())
 }

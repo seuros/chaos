@@ -1,10 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
 use anyhow::Context;
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chaos_kern::auth::AuthCredentialsStoreMode;
-use chaos_kern::auth::DEFAULT_AUTH_PROVIDER_ID;
 use chaos_kern::auth::load_auth_dot_json;
 use chaos_pam::ServerOptions;
 use chaos_pam::run_device_code_login;
@@ -20,25 +17,9 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
+use super::auth_test_support::make_jwt;
+use super::auth_test_support::openai_record;
 use core_test_support::skip_if_no_network;
-
-// ---------- Small helpers  ----------
-
-fn make_jwt(payload: serde_json::Value) -> String {
-    let header = json!({ "alg": "none", "typ": "JWT" });
-    let header_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
-    let payload_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap());
-    let signature_b64 = URL_SAFE_NO_PAD.encode(b"sig");
-    format!("{header_b64}.{payload_b64}.{signature_b64}")
-}
-
-fn openai_record(auth: &chaos_kern::auth::AuthDotJson) -> &chaos_kern::auth::ProviderAuthRecord {
-    assert!(
-        auth.providers.contains_key(DEFAULT_AUTH_PROVIDER_ID),
-        "openai provider record should exist"
-    );
-    &auth.providers[DEFAULT_AUTH_PROVIDER_ID]
-}
 
 struct DeviceCodeHarness {
     chaos_home: TempDir,

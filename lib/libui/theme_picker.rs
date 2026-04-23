@@ -407,32 +407,14 @@ pub fn build_theme_picker_params(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::buffer_lines;
+    use crate::test_support::renderable_buffer_with_size;
     use pretty_assertions::assert_eq;
     use ratatui::style::Modifier;
 
-    fn render_buffer(renderable: &dyn Renderable, width: u16, height: u16) -> Buffer {
-        let area = Rect::new(0, 0, width, height);
-        let mut buf = Buffer::empty(area);
-        renderable.render(area, &mut buf);
-        buf
-    }
-
     fn render_lines(renderable: &dyn Renderable, width: u16, height: u16) -> Vec<String> {
-        let buf = render_buffer(renderable, width, height);
-        (0..height)
-            .map(|row| {
-                let mut line = String::new();
-                for col in 0..width {
-                    let symbol = buf[(col, row)].symbol();
-                    if symbol.is_empty() {
-                        line.push(' ');
-                    } else {
-                        line.push_str(symbol);
-                    }
-                }
-                line
-            })
-            .collect()
+        let buf = renderable_buffer_with_size(renderable, width, height);
+        buffer_lines(&buf)
     }
 
     fn first_non_space_style_after_marker(buf: &Buffer, row: u16, width: u16) -> Option<Modifier> {
@@ -565,7 +547,7 @@ mod tests {
     fn deleted_preview_code_uses_dim_overlay_like_real_diff_renderer() {
         let width = 80;
         let height = 6;
-        let buf = render_buffer(&ThemePreviewNarrowRenderable, width, height);
+        let buf = renderable_buffer_with_size(&ThemePreviewNarrowRenderable, width, height);
         let lines = render_lines(&ThemePreviewNarrowRenderable, width, height);
         let deleted_row = lines
             .iter()

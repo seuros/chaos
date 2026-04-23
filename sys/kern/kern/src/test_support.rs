@@ -21,6 +21,9 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use std::sync::LazyLock;
+use tokio::time::Duration;
+use tokio::time::Instant;
+use tokio::time::sleep;
 
 use crate::AuthManager;
 use crate::ChaosAuth;
@@ -29,6 +32,7 @@ use crate::ProcessTable;
 use crate::collaboration_modes as collaboration_mode_presets;
 use crate::config::Config;
 use crate::models_manager::manager::ModelsManager;
+use crate::models_manager::manager::RefreshStrategy;
 use crate::process_table;
 use crate::unified_exec;
 
@@ -95,6 +99,72 @@ pub fn test_models_response(slugs: &[&str]) -> ModelsResponse {
     }
 }
 
+/// Build a test [`ModelInfo`] with custom display metadata and input modalities.
+pub fn test_model_info_with_input_modalities(
+    slug: &str,
+    display_name: &str,
+    description: &str,
+    input_modalities: Vec<InputModality>,
+) -> ModelInfo {
+    let mut model = test_model_info(slug);
+    model.display_name = display_name.to_string();
+    model.description = Some(description.to_string());
+    model.default_reasoning_level = Some(ReasoningEffort::Medium);
+    model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Medium,
+        description: ReasoningEffort::Medium.to_string(),
+    }];
+    model.input_modalities = input_modalities;
+    model.priority = 1;
+    model.base_instructions = "base instructions".to_string();
+    model.supports_reasoning_summaries = false;
+    model.default_reasoning_summary = ReasoningSummary::Auto;
+    model.support_verbosity = false;
+    model.default_verbosity = None;
+    model.apply_patch_tool_type = None;
+    model.truncation_policy = TruncationPolicyConfig::bytes(10_000);
+    model.supports_parallel_tool_calls = false;
+    model
+}
+
+/// Build a remote-catalog-style [`ModelInfo`] fixture with default truncation.
+pub fn test_remote_model(slug: &str, visibility: ModelVisibility, priority: i32) -> ModelInfo {
+    test_remote_model_with_policy(
+        slug,
+        visibility,
+        priority,
+        TruncationPolicyConfig::bytes(10_000),
+    )
+}
+
+/// Build a remote-catalog-style [`ModelInfo`] fixture with custom truncation.
+pub fn test_remote_model_with_policy(
+    slug: &str,
+    visibility: ModelVisibility,
+    priority: i32,
+    truncation_policy: TruncationPolicyConfig,
+) -> ModelInfo {
+    let mut model = test_model_info(slug);
+    model.display_name = format!("{slug} display");
+    model.description = Some(format!("{slug} description"));
+    model.default_reasoning_level = Some(ReasoningEffort::Medium);
+    model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Medium,
+        description: ReasoningEffort::Medium.to_string(),
+    }];
+    model.visibility = visibility;
+    model.priority = priority;
+    model.base_instructions = "base instructions".to_string();
+    model.supports_reasoning_summaries = false;
+    model.default_reasoning_summary = ReasoningSummary::Auto;
+    model.support_verbosity = false;
+    model.default_verbosity = None;
+    model.apply_patch_tool_type = None;
+    model.truncation_policy = truncation_policy;
+    model.supports_parallel_tool_calls = false;
+    model
+}
+
 static TEST_MODEL_PRESETS: LazyLock<Vec<ModelPreset>> = LazyLock::new(|| {
     let response = test_models_response(&["shodan", "cortana"]);
     let mut presets: Vec<ModelPreset> = response.models.into_iter().map(Into::into).collect();
@@ -157,6 +227,33 @@ pub fn builtin_collaboration_mode_presets() -> Vec<CollaborationModeMask> {
     collaboration_mode_presets::builtin_collaboration_mode_presets(
         collaboration_mode_presets::CollaborationModesConfig::default(),
     )
+}
+
+/// Wait for a remote model to appear in the online catalog and return its preset.
+pub async fn wait_for_model_available(manager: &Arc<ModelsManager>, slug: &str) -> ModelPreset {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut forced_online_refresh = false;
+    loop {
+        if let Some(model) = {
+            let models = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+            models.iter().find(|model| model.model == slug).cloned()
+        } {
+            return model;
+        }
+        if !forced_online_refresh {
+            if let Some(model) = {
+                let models = manager.list_models(RefreshStrategy::Online).await;
+                models.iter().find(|model| model.model == slug).cloned()
+            } {
+                return model;
+            }
+            forced_online_refresh = true;
+        }
+        if Instant::now() >= deadline {
+            panic!("timed out waiting for the remote model {slug} to appear");
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
 }
 
 /// RAII guard that sets an environment variable and restores it on drop.

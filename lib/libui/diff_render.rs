@@ -48,10 +48,9 @@ pub use utils::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::render_test_backend_debug;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
     use ratatui::prelude::Widget;
     use ratatui::style::Color;
     use ratatui::style::Style;
@@ -94,15 +93,14 @@ mod tests {
         width: u16,
         height: u16,
     ) {
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
-        terminal
-            .draw(|f| {
+        assert_snapshot!(
+            name,
+            render_test_backend_debug(width, height, |f| {
                 Paragraph::new(Text::from(lines))
                     .wrap(Wrap { trim: false })
-                    .render(f.area(), f.buffer_mut())
+                    .render(f.area(), f.buffer_mut());
             })
-            .expect("draw");
-        assert_snapshot!(name, terminal.backend());
+        );
     }
 
     fn display_width(text: &str) -> usize {

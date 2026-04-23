@@ -550,6 +550,8 @@ mod tests {
     use crate::app_event::AppEvent;
     use crate::render::renderable::Renderable;
     use crate::test_support::make_app_event_sender_with_rx;
+    use crate::test_support::renderable_first_char_string;
+    use crate::test_support::renderable_trim_end_string_at_desired_height;
     use insta::assert_snapshot;
 
     fn suggestion_target() -> AppLinkElicitationTarget {
@@ -559,28 +561,6 @@ mod tests {
             server_name: "codex_apps".to_string(),
             request_id: McpRequestId::String("request-1".to_string()),
         }
-    }
-
-    fn render_snapshot(view: &AppLinkView, area: Rect) -> String {
-        let mut buf = Buffer::empty(area);
-        view.render(area, &mut buf);
-        (0..area.height)
-            .map(|y| {
-                (0..area.width)
-                    .map(|x| {
-                        let symbol = buf[(x, y)].symbol();
-                        if symbol.is_empty() {
-                            ' '
-                        } else {
-                            symbol.chars().next().unwrap_or(' ')
-                        }
-                    })
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 
     #[test]
@@ -709,26 +689,8 @@ mod tests {
         view.screen = AppLinkScreen::InstallConfirmation;
 
         let width: u16 = 36;
-        let height = view.desired_height(width);
-        let area = Rect::new(0, 0, width, height);
-        let mut buf = Buffer::empty(area);
-        view.render(area, &mut buf);
-
-        let rendered_blob = (0..area.height)
-            .map(|y| {
-                (0..area.width)
-                    .map(|x| {
-                        let symbol = buf[(x, y)].symbol();
-                        if symbol.is_empty() {
-                            ' '
-                        } else {
-                            symbol.chars().next().unwrap_or(' ')
-                        }
-                    })
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let area = Rect::new(0, 0, width, view.desired_height(width));
+        let rendered_blob = renderable_first_char_string(&view, area);
 
         assert!(
             rendered_blob.contains("tail42"),
@@ -904,7 +866,7 @@ mod tests {
 
         assert_snapshot!(
             "app_link_view_install_suggestion_with_reason",
-            render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72)))
+            renderable_trim_end_string_at_desired_height(&view, 72)
         );
     }
 
@@ -929,7 +891,7 @@ mod tests {
 
         assert_snapshot!(
             "app_link_view_enable_suggestion_with_reason",
-            render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72)))
+            renderable_trim_end_string_at_desired_height(&view, 72)
         );
     }
 }

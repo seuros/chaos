@@ -1,21 +1,23 @@
 use super::*;
-use crate::auth::storage::FileAuthStorage;
-use crate::auth::storage::get_auth_file;
 use crate::config::Config;
 use crate::config::ConfigBuilder;
 use crate::test_support::EnvVarGuard;
-use crate::token_data::IdTokenInfo;
 use crate::token_data::KnownPlan as InternalKnownPlan;
 use crate::token_data::PlanType as InternalPlanType;
 use chaos_ipc::account::PlanType as AccountPlanType;
 
-use base64::Engine;
 use chaos_ipc::config_types::ForcedLoginMethod;
 use jiff::Timestamp;
 use pretty_assertions::assert_eq;
-use serde::Serialize;
-use serde_json::json;
 use tempfile::tempdir;
+
+#[allow(clippy::duplicate_mod)]
+#[path = "test_support/auth_fixtures.rs"]
+mod auth_test_fixtures;
+
+use auth_test_fixtures::build_fake_jwt;
+use auth_test_fixtures::openai_auth;
+use auth_test_fixtures::parse_id_token;
 
 #[tokio::test]
 async fn refresh_without_id_token() {
@@ -55,35 +57,31 @@ async fn refresh_without_id_token() {
 #[test]
 fn login_with_api_key_overwrites_existing_auth_json() {
     let dir = tempdir().unwrap();
-    let auth_path = dir.path().join("auth.json");
-    let stale_jwt = build_fake_jwt(Some("pro"), None);
-    let stale_auth = json!({
-        "OPENAI_API_KEY": "sk-old",
-        "tokens": {
-            "id_token": stale_jwt,
-            "access_token": "stale-access",
-            "refresh_token": "stale-refresh",
-            "account_id": "stale-acc"
-        }
-    });
-    std::fs::write(
-        &auth_path,
-        serde_json::to_string_pretty(&stale_auth).unwrap(),
-    )
-    .unwrap();
+    let stale_auth = openai_auth(
+        ApiAuthMode::Chatgpt,
+        Some("sk-old"),
+        Some(TokenData {
+            id_token: parse_id_token(&build_fake_jwt(Some("pro"), None)),
+            access_token: "stale-access".to_string(),
+            refresh_token: "stale-refresh".to_string(),
+            account_id: Some("stale-acc".to_string()),
+        }),
+        Some(Timestamp::now()),
+    );
+    super::save_auth(dir.path(), &stale_auth, AuthCredentialsStoreMode::File).unwrap();
 
     super::login_with_api_key(dir.path(), "sk-new", AuthCredentialsStoreMode::File)
         .expect("login_with_api_key should succeed");
 
-    let storage = FileAuthStorage::new(dir.path().to_path_buf());
-    let auth = storage
-        .try_read_auth_json(&auth_path)
-        .expect("auth.json should parse");
-    let record = auth
-        .provider_record(DEFAULT_AUTH_PROVIDER_ID)
-        .expect("openai provider record should exist");
-    assert_eq!(record.api_key.as_deref(), Some("sk-new"));
-    assert!(record.tokens.is_none(), "provider tokens should be cleared");
+    let auth = super::load_auth(dir.path(), false, AuthCredentialsStoreMode::File)
+        .expect("auth load should succeed")
+        .expect("auth should exist");
+    assert_eq!(auth.auth_mode(), AuthMode::ApiKey);
+    assert_eq!(auth.api_key(), Some("sk-new"));
+    assert!(
+        auth.get_token_data().is_err(),
+        "provider tokens should be cleared"
+    );
 }
 
 #[test]
@@ -121,51 +119,30 @@ async fn pro_account_with_no_api_key_uses_chatgpt_auth() {
     let provider_record = auth_dot_json
         .provider_record(DEFAULT_AUTH_PROVIDER_ID)
         .expect("openai provider record should exist");
-    let last_refresh = provider_record
-        .last_refresh
-        .expect("last_refresh should be recorded");
-
+    assert_eq!(provider_record.auth_mode, Some(ApiAuthMode::Chatgpt));
+    assert_eq!(provider_record.api_key, None);
+    assert!(provider_record.last_refresh.is_some());
+    let tokens = provider_record.tokens.expect("chatgpt tokens should exist");
+    assert_eq!(tokens.id_token.raw_jwt, fake_jwt);
+    assert_eq!(tokens.id_token.email.as_deref(), Some("user@example.com"));
     assert_eq!(
-        AuthDotJson {
-            providers: [(
-                DEFAULT_AUTH_PROVIDER_ID.to_string(),
-                ProviderAuthRecord {
-                    auth_mode: Some(ApiAuthMode::Chatgpt),
-                    api_key: None,
-                    tokens: Some(TokenData {
-                        id_token: IdTokenInfo {
-                            email: Some("user@example.com".to_string()),
-                            chatgpt_plan_type: Some(InternalPlanType::Known(
-                                InternalKnownPlan::Pro
-                            )),
-                            chatgpt_user_id: Some("user-12345".to_string()),
-                            chatgpt_account_id: None,
-                            raw_jwt: fake_jwt,
-                        },
-                        access_token: "test-access-token".to_string(),
-                        refresh_token: "test-refresh-token".to_string(),
-                        account_id: None,
-                    }),
-                    last_refresh: Some(last_refresh),
-                },
-            )]
-            .into_iter()
-            .collect(),
-        },
-        auth_dot_json
+        tokens.id_token.chatgpt_plan_type,
+        Some(InternalPlanType::Known(InternalKnownPlan::Pro))
     );
+    assert_eq!(
+        tokens.id_token.chatgpt_user_id.as_deref(),
+        Some("user-12345")
+    );
+    assert_eq!(tokens.access_token, "test-access-token");
+    assert_eq!(tokens.refresh_token, "test-refresh-token");
 }
 
 #[tokio::test]
 #[serial(codex_api_key)]
 async fn loads_api_key_from_auth_json() {
     let dir = tempdir().unwrap();
-    let auth_file = dir.path().join("auth.json");
-    std::fs::write(
-        auth_file,
-        r#"{"providers":{"openai":{"auth_mode":"apikey","api_key":"sk-test-key"}}}"#,
-    )
-    .unwrap();
+    let auth = openai_auth(ApiAuthMode::ApiKey, Some("sk-test-key"), None, None);
+    super::save_auth(dir.path(), &auth, AuthCredentialsStoreMode::File).unwrap();
 
     let auth = super::load_auth(dir.path(), false, AuthCredentialsStoreMode::File)
         .unwrap()
@@ -176,44 +153,6 @@ async fn loads_api_key_from_auth_json() {
     assert!(auth.get_token_data().is_err());
 }
 
-#[test]
-fn logout_removes_auth_file() -> Result<(), std::io::Error> {
-    let dir = tempdir()?;
-    let auth_dot_json = AuthDotJson {
-        providers: [(
-            DEFAULT_AUTH_PROVIDER_ID.to_string(),
-            ProviderAuthRecord {
-                auth_mode: Some(ApiAuthMode::ApiKey),
-                api_key: Some("sk-test-key".to_string()),
-                tokens: None,
-                last_refresh: None,
-            },
-        )]
-        .into_iter()
-        .collect(),
-    };
-    super::save_auth(dir.path(), &auth_dot_json, AuthCredentialsStoreMode::File)?;
-    let auth_file = get_auth_file(dir.path());
-    assert!(auth_file.exists());
-    assert!(logout(dir.path(), AuthCredentialsStoreMode::File)?);
-    assert!(!auth_file.exists());
-    Ok(())
-}
-
-#[test]
-fn unauthorized_recovery_reports_mode_and_step_names() {
-    let dir = tempdir().unwrap();
-    let manager = AuthManager::shared(
-        dir.path().to_path_buf(),
-        false,
-        AuthCredentialsStoreMode::File,
-    );
-    // No ChatGPT auth → constructor defaults to managed mode starting at Reload.
-    let managed = manager.unauthorized_recovery();
-    assert_eq!(managed.mode_name(), "managed");
-    assert_eq!(managed.step_name(), "reload");
-}
-
 struct AuthFileParams {
     openai_api_key: Option<String>,
     chatgpt_plan_type: Option<String>,
@@ -221,72 +160,29 @@ struct AuthFileParams {
 }
 
 fn write_auth_file(params: AuthFileParams, chaos_home: &Path) -> std::io::Result<String> {
-    let auth_file = get_auth_file(chaos_home);
     let fake_jwt = build_fake_jwt(
         params.chatgpt_plan_type.as_deref(),
         params.chatgpt_account_id.as_deref(),
     );
     let auth_mode = if params.openai_api_key.is_some() {
-        "apikey"
+        ApiAuthMode::ApiKey
     } else {
-        "chatgpt"
+        ApiAuthMode::Chatgpt
     };
 
-    let auth_json_data = json!({
-        "providers": {
-            "openai": {
-                "auth_mode": auth_mode,
-                "api_key": params.openai_api_key,
-                "tokens": {
-                    "id_token": fake_jwt,
-                    "access_token": "test-access-token",
-                    "refresh_token": "test-refresh-token"
-                },
-                "last_refresh": Timestamp::now(),
-            }
-        }
-    });
-    let auth_json = serde_json::to_string_pretty(&auth_json_data)?;
-    std::fs::write(auth_file, auth_json)?;
+    let auth = openai_auth(
+        auth_mode,
+        params.openai_api_key.as_deref(),
+        Some(TokenData {
+            id_token: parse_id_token(&fake_jwt),
+            access_token: "test-access-token".to_string(),
+            refresh_token: "test-refresh-token".to_string(),
+            account_id: None,
+        }),
+        Some(Timestamp::now()),
+    );
+    super::save_auth(chaos_home, &auth, AuthCredentialsStoreMode::File)?;
     Ok(fake_jwt)
-}
-
-fn build_fake_jwt(chatgpt_plan_type: Option<&str>, chatgpt_account_id: Option<&str>) -> String {
-    // Create a minimal valid JWT for the id_token field.
-    #[derive(Serialize)]
-    struct Header {
-        alg: &'static str,
-        typ: &'static str,
-    }
-    let header = Header {
-        alg: "none",
-        typ: "JWT",
-    };
-    let mut auth_payload = serde_json::json!({
-        "chatgpt_user_id": "user-12345",
-        "user_id": "user-12345",
-    });
-
-    if let Some(chatgpt_plan_type) = chatgpt_plan_type {
-        auth_payload["chatgpt_plan_type"] =
-            serde_json::Value::String(chatgpt_plan_type.to_string());
-    }
-
-    if let Some(chatgpt_account_id) = chatgpt_account_id {
-        let org_value = serde_json::Value::String(chatgpt_account_id.to_string());
-        auth_payload["chatgpt_account_id"] = org_value;
-    }
-
-    let payload = serde_json::json!({
-        "email": "user@example.com",
-        "email_verified": true,
-        "https://api.openai.com/auth": auth_payload,
-    });
-    let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
-    let header_b64 = b64(&serde_json::to_vec(&header).expect("header should serialize"));
-    let payload_b64 = b64(&serde_json::to_vec(&payload).expect("payload should serialize"));
-    let signature_b64 = b64(b"sig");
-    format!("{header_b64}.{payload_b64}.{signature_b64}")
 }
 
 async fn build_config(

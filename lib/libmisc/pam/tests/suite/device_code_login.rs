@@ -4,6 +4,7 @@ use anyhow::Context;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chaos_kern::auth::AuthCredentialsStoreMode;
+use chaos_kern::auth::DEFAULT_AUTH_PROVIDER_ID;
 use chaos_kern::auth::load_auth_dot_json;
 use chaos_pam::ServerOptions;
 use chaos_pam::run_device_code_login;
@@ -29,6 +30,14 @@ fn make_jwt(payload: serde_json::Value) -> String {
     let payload_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap());
     let signature_b64 = URL_SAFE_NO_PAD.encode(b"sig");
     format!("{header_b64}.{payload_b64}.{signature_b64}")
+}
+
+fn openai_record(auth: &chaos_kern::auth::AuthDotJson) -> &chaos_kern::auth::ProviderAuthRecord {
+    assert!(
+        auth.providers.contains_key(DEFAULT_AUTH_PROVIDER_ID),
+        "openai provider record should exist"
+    );
+    &auth.providers[DEFAULT_AUTH_PROVIDER_ID]
 }
 
 struct DeviceCodeHarness {
@@ -153,8 +162,10 @@ async fn device_code_login_integration_succeeds() -> anyhow::Result<()> {
     let auth = load_auth_dot_json(fixture.chaos_home.path(), AuthCredentialsStoreMode::File)
         .context("auth.json should load after login succeeds")?
         .context("auth.json written")?;
-    // assert_eq!(auth.openai_api_key.as_deref(), Some("api-key-321"));
-    let tokens = auth.tokens.expect("tokens persisted");
+    let tokens = openai_record(&auth)
+        .tokens
+        .clone()
+        .expect("tokens persisted");
     assert_eq!(tokens.access_token, "access-token-123");
     assert_eq!(tokens.refresh_token, "refresh-token-123");
     assert_eq!(tokens.id_token.raw_jwt, jwt);
@@ -237,8 +248,11 @@ async fn device_code_login_integration_persists_without_api_key_on_exchange_fail
     let auth = load_auth_dot_json(fixture.chaos_home.path(), AuthCredentialsStoreMode::File)
         .context("auth.json should load after login succeeds")?
         .context("auth.json written")?;
-    assert!(auth.openai_api_key.is_none());
-    let tokens = auth.tokens.expect("tokens persisted");
+    assert!(openai_record(&auth).api_key.is_none());
+    let tokens = openai_record(&auth)
+        .tokens
+        .clone()
+        .expect("tokens persisted");
     assert_eq!(tokens.access_token, "access-token-123");
     assert_eq!(tokens.refresh_token, "refresh-token-123");
     assert_eq!(tokens.id_token.raw_jwt, jwt);

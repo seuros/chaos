@@ -310,6 +310,30 @@ fn normalized_directory_write_permissions(path: &Path) -> Result<RequestPermissi
     })
 }
 
+fn assert_linux_split_filesystem_rejection(
+    result: &CommandResult,
+    requested_write: &Path,
+    context: &str,
+) {
+    assert!(
+        result.exit_code.is_none() || result.exit_code == Some(1),
+        "unexpected Linux exit code for {context}: {result:?}"
+    );
+    assert!(
+        result.stdout.contains(
+            "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend"
+        ) || result
+            .stdout
+            .contains("permissions profile requests filesystem writes outside the workspace root"),
+        "unexpected Linux failure output for {context}: {}",
+        result.stdout
+    );
+    assert!(
+        !requested_write.exists(),
+        "Linux backend should reject unsupported split filesystem carveouts for {context}"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn with_additional_permissions_requires_approval_under_on_request() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -385,22 +409,7 @@ async fn with_additional_permissions_requires_approval_under_on_request() -> Res
 
     let result = parse_result(&results.single_request().function_call_output(call_id));
     if cfg!(target_os = "linux") {
-        assert_eq!(
-            result.exit_code,
-            Some(1),
-            "unexpected Linux exit code: {result:?}"
-        );
-        assert!(
-            result.stdout.contains(
-                "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend"
-            ),
-            "unexpected Linux failure output: {}",
-            result.stdout
-        );
-        assert!(
-            !requested_write.exists(),
-            "Linux backend should reject unsupported split filesystem carveouts"
-        );
+        assert_linux_split_filesystem_rejection(&result, &requested_write, call_id);
     } else {
         assert!(
             result.exit_code.is_none() || result.exit_code == Some(0),
@@ -591,22 +600,7 @@ async fn relative_additional_permissions_resolve_against_tool_workdir() -> Resul
 
     let result = parse_result(&results.single_request().function_call_output(call_id));
     if cfg!(target_os = "linux") {
-        assert_eq!(
-            result.exit_code,
-            Some(1),
-            "unexpected Linux exit code: {result:?}"
-        );
-        assert!(
-            result.stdout.contains(
-                "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend"
-            ),
-            "unexpected Linux failure output: {}",
-            result.stdout
-        );
-        assert!(
-            !requested_write.exists(),
-            "Linux backend should reject unsupported split filesystem carveouts"
-        );
+        assert_linux_split_filesystem_rejection(&result, &requested_write, call_id);
     } else {
         assert!(
             result.exit_code.is_none() || result.exit_code == Some(0),

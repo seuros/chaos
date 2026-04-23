@@ -328,10 +328,6 @@ impl ChaosAuth {
     /// Consider this private to integration tests.
     pub fn create_dummy_chatgpt_auth_for_testing() -> Self {
         let mut auth_dot_json = AuthDotJson {
-            auth_mode: None,
-            openai_api_key: None,
-            tokens: None,
-            last_refresh: None,
             providers: Default::default(),
         };
         auth_dot_json.set_provider_record(
@@ -478,10 +474,6 @@ impl AuthDotJson {
             account_id: Some(external.chatgpt_account_id.clone()),
         };
         let mut auth = Self {
-            auth_mode: None,
-            openai_api_key: None,
-            tokens: None,
-            last_refresh: None,
             providers: Default::default(),
         };
         auth.set_provider_record(

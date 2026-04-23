@@ -14,16 +14,57 @@ fn normalized(auth: &AuthDotJson) -> AuthDotJson {
     auth.normalized()
 }
 
+#[test]
+fn normalized_auth_serialization_omits_legacy_openai_api_key_when_none() {
+    let auth = AuthDotJson {
+        providers: [(
+            "zai-coding".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some("test-key".to_string()),
+                tokens: None,
+                last_refresh: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
+    };
+
+    let serialized = serde_json::to_value(auth.normalized()).expect("serialize normalized auth");
+    let object = serialized
+        .as_object()
+        .expect("normalized auth should serialize to a json object");
+
+    assert!(
+        !object.contains_key("OPENAI_API_KEY"),
+        "legacy OPENAI_API_KEY field should be omitted when empty"
+    );
+    assert_eq!(
+        object
+            .get("providers")
+            .and_then(|providers| providers.get("zai-coding"))
+            .and_then(|provider| provider.get("api_key"))
+            .and_then(serde_json::Value::as_str),
+        Some("test-key")
+    );
+}
+
 #[tokio::test]
 async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
     let storage = FileAuthStorage::new(chaos_home.path().to_path_buf());
     let auth_dot_json = AuthDotJson {
-        auth_mode: Some(AuthMode::ApiKey),
-        openai_api_key: Some("test-key".to_string()),
-        tokens: None,
-        last_refresh: Some(Timestamp::now()),
-        providers: Default::default(),
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some("test-key".to_string()),
+                tokens: None,
+                last_refresh: Some(Timestamp::now()),
+            },
+        )]
+        .into_iter()
+        .collect(),
     };
 
     storage
@@ -40,11 +81,17 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
     let storage = FileAuthStorage::new(chaos_home.path().to_path_buf());
     let auth_dot_json = AuthDotJson {
-        auth_mode: Some(AuthMode::ApiKey),
-        openai_api_key: Some("test-key".to_string()),
-        tokens: None,
-        last_refresh: Some(Timestamp::now()),
-        providers: Default::default(),
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some("test-key".to_string()),
+                tokens: None,
+                last_refresh: Some(Timestamp::now()),
+            },
+        )]
+        .into_iter()
+        .collect(),
     };
 
     let file = get_auth_file(chaos_home.path());
@@ -63,11 +110,17 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
 fn file_storage_delete_removes_auth_file() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let auth_dot_json = AuthDotJson {
-        auth_mode: Some(AuthMode::ApiKey),
-        openai_api_key: Some("sk-test-key".to_string()),
-        tokens: None,
-        last_refresh: None,
-        providers: Default::default(),
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some("sk-test-key".to_string()),
+                tokens: None,
+                last_refresh: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
     };
     let storage = create_auth_storage(dir.path().to_path_buf(), AuthCredentialsStoreMode::File);
     storage.save(&auth_dot_json)?;
@@ -87,11 +140,17 @@ fn ephemeral_storage_save_load_delete_is_in_memory_only() -> anyhow::Result<()> 
         AuthCredentialsStoreMode::Ephemeral,
     );
     let auth_dot_json = AuthDotJson {
-        auth_mode: Some(AuthMode::ApiKey),
-        openai_api_key: Some("sk-ephemeral".to_string()),
-        tokens: None,
-        last_refresh: Some(Timestamp::now()),
-        providers: Default::default(),
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some("sk-ephemeral".to_string()),
+                tokens: None,
+                last_refresh: Some(Timestamp::now()),
+            },
+        )]
+        .into_iter()
+        .collect(),
     };
 
     storage.save(&auth_dot_json)?;
@@ -182,16 +241,22 @@ fn id_token_with_prefix(prefix: &str) -> IdTokenInfo {
 
 fn auth_with_prefix(prefix: &str) -> AuthDotJson {
     AuthDotJson {
-        auth_mode: Some(AuthMode::ApiKey),
-        openai_api_key: Some(format!("{prefix}-api-key")),
-        tokens: Some(TokenData {
-            id_token: id_token_with_prefix(prefix),
-            access_token: format!("{prefix}-access"),
-            refresh_token: format!("{prefix}-refresh"),
-            account_id: Some(format!("{prefix}-account-id")),
-        }),
-        last_refresh: None,
-        providers: Default::default(),
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some(format!("{prefix}-api-key")),
+                tokens: Some(TokenData {
+                    id_token: id_token_with_prefix(prefix),
+                    access_token: format!("{prefix}-access"),
+                    refresh_token: format!("{prefix}-refresh"),
+                    account_id: Some(format!("{prefix}-account-id")),
+                }),
+                last_refresh: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
     }
 }
 
@@ -204,11 +269,17 @@ fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
         Arc::new(mock_keyring.clone()),
     );
     let expected = AuthDotJson {
-        auth_mode: Some(AuthMode::ApiKey),
-        openai_api_key: Some("sk-test".to_string()),
-        tokens: None,
-        last_refresh: None,
-        providers: Default::default(),
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some("sk-test".to_string()),
+                tokens: None,
+                last_refresh: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
     };
     seed_keyring_with_auth(
         &mock_keyring,
@@ -242,16 +313,22 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
     let auth_file = get_auth_file(chaos_home.path());
     std::fs::write(&auth_file, "stale")?;
     let auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(TokenData {
-            id_token: Default::default(),
-            access_token: "access".to_string(),
-            refresh_token: "refresh".to_string(),
-            account_id: Some("account".to_string()),
-        }),
-        last_refresh: Some(Timestamp::now()),
-        providers: Default::default(),
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::Chatgpt),
+                api_key: None,
+                tokens: Some(TokenData {
+                    id_token: Default::default(),
+                    access_token: "access".to_string(),
+                    refresh_token: "refresh".to_string(),
+                    account_id: Some("account".to_string()),
+                }),
+                last_refresh: Some(Timestamp::now()),
+            },
+        )]
+        .into_iter()
+        .collect(),
     };
 
     storage.save(&auth)?;

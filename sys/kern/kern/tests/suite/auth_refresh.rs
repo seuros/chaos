@@ -29,6 +29,35 @@ use wiremock::matchers::path;
 const INITIAL_ACCESS_TOKEN: &str = "initial-access-token";
 const INITIAL_REFRESH_TOKEN: &str = "initial-refresh-token";
 
+fn openai_auth(
+    auth_mode: AuthMode,
+    api_key: Option<&str>,
+    tokens: Option<TokenData>,
+    last_refresh: Option<Timestamp>,
+) -> AuthDotJson {
+    AuthDotJson {
+        providers: [(
+            "openai".to_string(),
+            chaos_kern::auth::ProviderAuthRecord {
+                auth_mode: Some(auth_mode),
+                api_key: api_key.map(str::to_string),
+                tokens,
+                last_refresh,
+            },
+        )]
+        .into_iter()
+        .collect(),
+    }
+}
+
+fn openai_record(auth: &AuthDotJson) -> &chaos_kern::auth::ProviderAuthRecord {
+    assert!(
+        auth.providers.contains_key("openai"),
+        "openai provider record should exist"
+    );
+    &auth.providers["openai"]
+}
+
 #[serial_test::serial(auth_refresh)]
 #[tokio::test]
 async fn refresh_token_succeeds_updates_storage() -> Result<()> {
@@ -48,13 +77,12 @@ async fn refresh_token_succeeds_updates_storage() -> Result<()> {
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     ctx.auth_manager
@@ -68,9 +96,12 @@ async fn refresh_token_succeeds_updates_storage() -> Result<()> {
         ..initial_tokens.clone()
     };
     let stored = ctx.load_auth()?;
-    let tokens = stored.tokens.as_ref().context("tokens should exist")?;
+    let tokens = openai_record(&stored)
+        .tokens
+        .as_ref()
+        .context("tokens should exist")?;
     assert_eq!(tokens, &refreshed_tokens);
-    let refreshed_at = stored
+    let refreshed_at = openai_record(&stored)
         .last_refresh
         .as_ref()
         .context("last_refresh should be recorded")?;
@@ -112,13 +143,12 @@ async fn refresh_token_refreshes_when_auth_is_unchanged() -> Result<()> {
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     ctx.auth_manager
@@ -132,9 +162,12 @@ async fn refresh_token_refreshes_when_auth_is_unchanged() -> Result<()> {
         ..initial_tokens.clone()
     };
     let stored = ctx.load_auth()?;
-    let tokens = stored.tokens.as_ref().context("tokens should exist")?;
+    let tokens = openai_record(&stored)
+        .tokens
+        .as_ref()
+        .context("tokens should exist")?;
     assert_eq!(tokens, &refreshed_tokens);
-    let refreshed_at = stored
+    let refreshed_at = openai_record(&stored)
         .last_refresh
         .as_ref()
         .context("last_refresh should be recorded")?;
@@ -167,23 +200,21 @@ async fn refresh_token_skips_refresh_when_auth_changed() -> Result<()> {
 
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let disk_tokens = build_tokens("disk-access-token", "disk-refresh-token");
-    let disk_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(disk_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let disk_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(disk_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     save_auth(
         ctx.chaos_home.path(),
         &disk_auth,
@@ -232,24 +263,22 @@ async fn refresh_token_errors_on_account_mismatch() -> Result<()> {
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let mut disk_tokens = build_tokens("disk-access-token", "disk-refresh-token");
     disk_tokens.account_id = Some("other-account".to_string());
-    let disk_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(disk_tokens),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let disk_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(disk_tokens),
+        Some(initial_last_refresh),
+    );
     save_auth(
         ctx.chaos_home.path(),
         &disk_auth,
@@ -301,13 +330,12 @@ async fn returns_fresh_tokens_as_is() -> Result<()> {
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let cached_auth = ctx
@@ -348,13 +376,12 @@ async fn refreshes_token_when_last_refresh_is_stale() -> Result<()> {
     let ctx = RefreshTokenTestContext::new(&server)?;
     let stale_refresh = timestamp_hours_ago(216)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(stale_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(stale_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let cached_auth = ctx
@@ -373,9 +400,12 @@ async fn refreshes_token_when_last_refresh_is_stale() -> Result<()> {
     assert_eq!(cached, refreshed_tokens);
 
     let stored = ctx.load_auth()?;
-    let tokens = stored.tokens.as_ref().context("tokens should exist")?;
+    let tokens = openai_record(&stored)
+        .tokens
+        .as_ref()
+        .context("tokens should exist")?;
     assert_eq!(tokens, &refreshed_tokens);
-    let refreshed_at = stored
+    let refreshed_at = openai_record(&stored)
         .last_refresh
         .as_ref()
         .context("last_refresh should be recorded")?;
@@ -408,13 +438,12 @@ async fn refresh_token_returns_permanent_error_for_expired_refresh_token() -> Re
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let err = ctx
@@ -459,13 +488,12 @@ async fn refresh_token_returns_transient_error_on_server_failure() -> Result<()>
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let err = ctx
@@ -512,23 +540,21 @@ async fn unauthorized_recovery_reloads_then_refreshes_tokens() -> Result<()> {
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let disk_tokens = build_tokens("disk-access-token", "disk-refresh-token");
-    let disk_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(disk_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let disk_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(disk_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     save_auth(
         ctx.chaos_home.path(),
         &disk_auth,
@@ -569,7 +595,10 @@ async fn unauthorized_recovery_reloads_then_refreshes_tokens() -> Result<()> {
         ..disk_tokens.clone()
     };
     let stored = ctx.load_auth()?;
-    let tokens = stored.tokens.as_ref().context("tokens should exist")?;
+    let tokens = openai_record(&stored)
+        .tokens
+        .as_ref()
+        .context("tokens should exist")?;
     assert_eq!(tokens, &refreshed_tokens);
 
     let cached_auth = ctx
@@ -606,24 +635,22 @@ async fn unauthorized_recovery_errors_on_account_mismatch() -> Result<()> {
     let ctx = RefreshTokenTestContext::new(&server)?;
     let initial_last_refresh = timestamp_hours_ago(24)?;
     let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
-    let initial_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(initial_tokens.clone()),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
     ctx.write_auth(&initial_auth)?;
 
     let mut disk_tokens = build_tokens("disk-access-token", "disk-refresh-token");
     disk_tokens.account_id = Some("other-account".to_string());
-    let disk_auth = AuthDotJson {
-        auth_mode: Some(AuthMode::Chatgpt),
-        openai_api_key: None,
-        tokens: Some(disk_tokens),
-        last_refresh: Some(initial_last_refresh),
-        providers: Default::default(),
-    };
+    let disk_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(disk_tokens),
+        Some(initial_last_refresh),
+    );
     save_auth(
         ctx.chaos_home.path(),
         &disk_auth,
@@ -675,13 +702,7 @@ async fn unauthorized_recovery_requires_chatgpt_auth() -> Result<()> {
 
     let server = MockServer::start().await;
     let ctx = RefreshTokenTestContext::new(&server)?;
-    let auth = AuthDotJson {
-        auth_mode: Some(AuthMode::ApiKey),
-        openai_api_key: Some("sk-test".to_string()),
-        tokens: None,
-        last_refresh: None,
-        providers: Default::default(),
-    };
+    let auth = openai_auth(AuthMode::ApiKey, Some("sk-test"), None, None);
     ctx.write_auth(&auth)?;
 
     let mut recovery = ctx.auth_manager.unauthorized_recovery();

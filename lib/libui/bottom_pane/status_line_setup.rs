@@ -281,11 +281,10 @@ impl Renderable for StatusLineSetupView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_render::render_to_string;
     use crate::test_support::make_app_event_sender;
+    use crate::test_support::renderable_string_with_size;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use ratatui::layout::Rect;
 
     #[test]
     fn preview_uses_runtime_values() {
@@ -364,8 +363,6 @@ mod tests {
     }
 
     fn render_lines(view: &StatusLineSetupView, width: u16) -> String {
-        let height = view.desired_height(width);
-        let area = Rect::new(0, 0, width, height);
-        render_to_string(view, area)
+        renderable_string_with_size(view, width, view.desired_height(width))
     }
 }

@@ -16,9 +16,9 @@ mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::bottom_pane::popup_consts::standard_popup_hint_line;
-    use crate::test_render::render_to_string;
     use crate::test_support::make_app_event_sender;
     use crate::test_support::make_app_event_sender_with_rx;
+    use crate::test_support::renderable_string_with_size;
     use crossterm::event::KeyCode;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
@@ -111,8 +111,7 @@ mod tests {
     }
 
     fn render_lines_in_area(view: &ListSelectionView, width: u16, height: u16) -> String {
-        let area = Rect::new(0, 0, width, height);
-        render_to_string(view, area)
+        renderable_string_with_size(view, width, height)
     }
 
     fn description_col(rendered: &str, item_marker: &str, description: &str) -> usize {

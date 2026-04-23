@@ -112,6 +112,8 @@ mod remote_models;
 mod request_compression;
 #[path = "suite/request_permissions.rs"]
 mod request_permissions;
+#[path = "suite/request_permissions_test_support.rs"]
+mod request_permissions_test_support;
 #[path = "suite/request_permissions_tool.rs"]
 mod request_permissions_tool;
 #[path = "suite/request_user_input.rs"]

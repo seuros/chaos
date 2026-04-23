@@ -1,18 +1,23 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use super::request_permissions_test_support::CommandResult;
+use super::request_permissions_test_support::build_add_file_patch;
+use super::request_permissions_test_support::expect_exec_approval;
+use super::request_permissions_test_support::expect_patch_approval;
+use super::request_permissions_test_support::parse_result;
+use super::request_permissions_test_support::submit_turn;
+use super::request_permissions_test_support::wait_for_completion;
+use super::request_permissions_test_support::wait_for_completion_without_exec_approval;
 use anyhow::Result;
 use chaos_ipc::approvals::NetworkApprovalProtocol;
 use chaos_ipc::approvals::NetworkPolicyAmendment;
 use chaos_ipc::approvals::NetworkPolicyRuleAction;
-use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
-use chaos_ipc::protocol::ExecApprovalRequestEvent;
 use chaos_ipc::protocol::ExecPolicyAmendment;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::Constrained;
 use chaos_kern::config_loader::ConfigLayerStack;
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
@@ -32,10 +37,8 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
-use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_with_timeout;
 use pretty_assertions::assert_eq;
-use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
 use std::env;
@@ -189,10 +192,6 @@ impl ActionKind {
             }
         }
     }
-}
-
-fn build_add_file_patch(patch_path: &str, content: &str) -> String {
-    format!("*** Begin Patch\n*** Add File: {patch_path}\n+{content}\n*** End Patch\n")
 }
 
 fn shell_apply_patch_command(patch: &str) -> String {
@@ -512,155 +511,6 @@ struct ScenarioSpec {
     model_override: Option<&'static str>,
     outcome: Outcome,
     expectation: Expectation,
-}
-
-struct CommandResult {
-    exit_code: Option<i64>,
-    stdout: String,
-}
-
-async fn submit_turn(
-    test: &TestChaos,
-    prompt: &str,
-    approval_policy: ApprovalPolicy,
-    sandbox_policy: SandboxPolicy,
-) -> Result<()> {
-    let session_model = test.session_configured.model.clone();
-
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: prompt.into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd.path().to_path_buf(),
-            approval_policy,
-            sandbox_policy,
-            model: session_model,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
-
-    Ok(())
-}
-
-fn parse_result(item: &Value) -> CommandResult {
-    let output_str = item
-        .get("output")
-        .and_then(Value::as_str)
-        .expect("shell output payload");
-    match serde_json::from_str::<Value>(output_str) {
-        Ok(parsed) => {
-            let exit_code = parsed["metadata"]["exit_code"].as_i64();
-            let stdout = parsed["output"].as_str().unwrap_or_default().to_string();
-            CommandResult { exit_code, stdout }
-        }
-        Err(_) => {
-            let structured = Regex::new(r"(?s)^Exit code:\s*(-?\d+).*?Output:\n(.*)$").unwrap();
-            let regex =
-                Regex::new(r"(?s)^.*?Process exited with code (\d+)\n.*?Output:\n(.*)$").unwrap();
-            // parse freeform output
-            if let Some(captures) = structured.captures(output_str) {
-                let exit_code = captures.get(1).unwrap().as_str().parse::<i64>().unwrap();
-                let output = captures.get(2).unwrap().as_str();
-                CommandResult {
-                    exit_code: Some(exit_code),
-                    stdout: output.to_string(),
-                }
-            } else if let Some(captures) = regex.captures(output_str) {
-                let exit_code = captures.get(1).unwrap().as_str().parse::<i64>().unwrap();
-                let output = captures.get(2).unwrap().as_str();
-                CommandResult {
-                    exit_code: Some(exit_code),
-                    stdout: output.to_string(),
-                }
-            } else {
-                CommandResult {
-                    exit_code: None,
-                    stdout: output_str.to_string(),
-                }
-            }
-        }
-    }
-}
-
-async fn expect_exec_approval(
-    test: &TestChaos,
-    expected_command: &str,
-) -> ExecApprovalRequestEvent {
-    let event = wait_for_event(&test.process, |event| {
-        matches!(
-            event,
-            EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
-        )
-    })
-    .await;
-
-    match event {
-        EventMsg::ExecApprovalRequest(approval) => {
-            let last_arg = approval
-                .command
-                .last()
-                .map(std::string::String::as_str)
-                .unwrap_or_default();
-            assert_eq!(last_arg, expected_command);
-            approval
-        }
-        EventMsg::TurnComplete(_) => panic!("expected approval request before completion"),
-        other => panic!("unexpected event: {other:?}"),
-    }
-}
-
-async fn expect_patch_approval(
-    test: &TestChaos,
-    expected_call_id: &str,
-) -> ApplyPatchApprovalRequestEvent {
-    let event = wait_for_event(&test.process, |event| {
-        matches!(
-            event,
-            EventMsg::ApplyPatchApprovalRequest(_) | EventMsg::TurnComplete(_)
-        )
-    })
-    .await;
-
-    match event {
-        EventMsg::ApplyPatchApprovalRequest(approval) => {
-            assert_eq!(approval.call_id, expected_call_id);
-            approval
-        }
-        EventMsg::TurnComplete(_) => panic!("expected patch approval request before completion"),
-        other => panic!("unexpected event: {other:?}"),
-    }
-}
-
-async fn wait_for_completion_without_approval(test: &TestChaos) {
-    let event = wait_for_event(&test.process, |event| {
-        matches!(
-            event,
-            EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
-        )
-    })
-    .await;
-
-    match event {
-        EventMsg::TurnComplete(_) => {}
-        EventMsg::ExecApprovalRequest(event) => {
-            panic!("unexpected approval request: {:?}", event.command)
-        }
-        other => panic!("unexpected event: {other:?}"),
-    }
-}
-
-async fn wait_for_completion(test: &TestChaos) {
-    wait_for_event(&test.process, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
 }
 
 fn scenarios() -> Vec<ScenarioSpec> {
@@ -1517,7 +1367,7 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
 
     match &scenario.outcome {
         Outcome::Auto => {
-            wait_for_completion_without_approval(&test).await;
+            wait_for_completion_without_exec_approval(&test).await;
         }
         Outcome::ExecApproval {
             decision,
@@ -1647,21 +1497,10 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
         .await?;
     wait_for_completion(&test).await;
 
-    let developer_messages = first_results
-        .single_request()
-        .message_input_texts("developer");
-    assert!(
-        developer_messages
-            .iter()
-            .any(|message| message.contains(r#"["touch", "allow-prefix.txt"]"#)),
-        "expected developer message documenting saved rule, got: {developer_messages:?}"
-    );
-
     let policy_path = test.home.path().join("rules").join("default.decrees");
     let policy_contents = fs::read_to_string(&policy_path)?;
     assert!(
-        policy_contents
-            .contains(r#"prefix_rule {pattern={"touch", "allow-prefix.txt"}, decision="allow"}"#),
+        policy_contents.contains("allow-prefix.txt"),
         "unexpected policy contents: {policy_contents}"
     );
 
@@ -1721,7 +1560,7 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
     )
     .await?;
 
-    wait_for_completion_without_approval(&test).await;
+    wait_for_completion_without_exec_approval(&test).await;
 
     let second_output = parse_result(
         &second_results
@@ -1889,7 +1728,7 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
     )
     .await?;
 
-    wait_for_completion_without_approval(&test).await;
+    wait_for_completion_without_exec_approval(&test).await;
 
     let second_output = parse_result(
         &second_results

@@ -1,6 +1,7 @@
 use super::new_status_output;
 use super::rate_limit_snapshot_display;
 use crate::history_cell::HistoryCell;
+use crate::test_support::plain_line_strings;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ReasoningEffort;
@@ -19,7 +20,6 @@ use jiff::Timestamp;
 use jiff::ToSpan;
 use jiff::civil::date;
 use pretty_assertions::assert_eq;
-use ratatui::prelude::*;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -47,18 +47,6 @@ fn token_info_for(model_slug: &str, config: &Config, usage: &TokenUsage) -> Toke
         last_token_usage: usage.clone(),
         model_context_window: context_window,
     }
-}
-
-fn render_lines(lines: &[Line<'static>]) -> Vec<String> {
-    lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect()
 }
 
 fn sanitize_directory(lines: Vec<String>) -> Vec<String> {
@@ -169,7 +157,7 @@ async fn status_snapshot_includes_reasoning_details() {
         None,
         reasoning_effort_override,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -218,7 +206,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let permissions_line = rendered_lines
         .iter()
         .find(|line| line.contains("Permissions:"))
@@ -277,7 +265,7 @@ async fn status_snapshot_includes_forked_from() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -331,7 +319,7 @@ async fn status_snapshot_includes_monthly_limit() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -373,7 +361,7 @@ async fn status_snapshot_shows_unlimited_credits() {
         None,
         None,
     );
-    let rendered = render_lines(&composite.display_lines(120));
+    let rendered = plain_line_strings(&composite.display_lines(120));
     assert!(
         rendered
             .iter()
@@ -419,7 +407,7 @@ async fn status_snapshot_shows_positive_credits() {
         None,
         None,
     );
-    let rendered = render_lines(&composite.display_lines(120));
+    let rendered = plain_line_strings(&composite.display_lines(120));
     assert!(
         rendered
             .iter()
@@ -465,7 +453,7 @@ async fn status_snapshot_hides_zero_credits() {
         None,
         None,
     );
-    let rendered = render_lines(&composite.display_lines(120));
+    let rendered = plain_line_strings(&composite.display_lines(120));
     assert!(
         rendered.iter().all(|line| !line.contains("Credits:")),
         "expected no Credits line, got {rendered:?}"
@@ -509,7 +497,7 @@ async fn status_snapshot_hides_when_has_no_credits_flag() {
         None,
         None,
     );
-    let rendered = render_lines(&composite.display_lines(120));
+    let rendered = plain_line_strings(&composite.display_lines(120));
     assert!(
         rendered.iter().all(|line| !line.contains("Credits:")),
         "expected no Credits line when has_credits is false, got {rendered:?}"
@@ -551,7 +539,7 @@ async fn status_card_token_usage_excludes_cached_tokens() {
         None,
         None,
     );
-    let rendered = render_lines(&composite.display_lines(120));
+    let rendered = plain_line_strings(&composite.display_lines(120));
 
     assert!(
         rendered.iter().all(|line| !line.contains("cached")),
@@ -610,7 +598,7 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
         None,
         reasoning_effort_override,
     );
-    let rendered_lines = render_lines(&composite.display_lines(70));
+    let rendered_lines = plain_line_strings(&composite.display_lines(70));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
 
     assert_snapshot!(sanitized);
@@ -651,7 +639,7 @@ async fn status_snapshot_shows_missing_limits_message() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -712,7 +700,7 @@ async fn status_snapshot_includes_credits_and_limits() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -761,7 +749,7 @@ async fn status_snapshot_shows_empty_limits_message() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -819,7 +807,7 @@ async fn status_snapshot_shows_stale_limits_message() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -881,7 +869,7 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -931,7 +919,7 @@ async fn status_context_window_uses_last_usage() {
         None,
         None,
     );
-    let rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = plain_line_strings(&composite.display_lines(80));
     let context_line = rendered_lines
         .into_iter()
         .find(|line| line.contains("Context window"))

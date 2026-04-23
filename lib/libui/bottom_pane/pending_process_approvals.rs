@@ -87,23 +87,9 @@ impl Renderable for PendingProcessApprovals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::renderable_first_char_string_with_size;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-
-    fn snapshot_rows(widget: &PendingProcessApprovals, width: u16) -> String {
-        let height = widget.desired_height(width);
-        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
-        widget.render(Rect::new(0, 0, width, height), &mut buf);
-
-        (0..height)
-            .map(|y| {
-                (0..width)
-                    .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
 
     #[test]
     fn desired_height_empty() {
@@ -115,9 +101,11 @@ mod tests {
     fn render_single_process_snapshot() {
         let mut widget = PendingProcessApprovals::new();
         widget.set_processes(vec!["Robie [scout]".to_string()]);
+        let width = 40;
 
         assert_snapshot!(
-            snapshot_rows(&widget, 40).replace(' ', "."),
+            renderable_first_char_string_with_size(&widget, width, widget.desired_height(width))
+                .replace(' ', "."),
             @r"
 ..!.Approval.needed.in.Robie.[scout]....
 ..../agent.to.switch.processes.........."
@@ -133,9 +121,11 @@ mod tests {
             "Inspector".to_string(),
             "Extra agent".to_string(),
         ]);
+        let width = 44;
 
         assert_snapshot!(
-            snapshot_rows(&widget, 44).replace(' ', "."),
+            renderable_first_char_string_with_size(&widget, width, widget.desired_height(width))
+                .replace(' ', "."),
             @r"
 ..!.Approval.needed.in.Main.[default].......
 ..!.Approval.needed.in.Robie.[scout]........

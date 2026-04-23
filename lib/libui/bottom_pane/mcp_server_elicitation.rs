@@ -12,8 +12,8 @@ pub use ui::McpServerElicitationOverlay;
 mod tests {
     use super::*;
     use crate::app_event::AppEvent;
-    use crate::test_render::render_to_first_char_string;
     use crate::test_support::make_app_event_sender_with_rx;
+    use crate::test_support::renderable_first_char_string;
     use chaos_ipc::ProcessId;
     use chaos_ipc::approvals::ElicitationAction;
     use chaos_ipc::approvals::ElicitationRequest;
@@ -29,6 +29,7 @@ mod tests {
         McpServerElicitationResponseMode, McpToolApprovalDisplayParam, ToolSuggestionRequest,
         ToolSuggestionToolType,
     };
+    use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use ratatui::layout::Rect;
     use serde_json::Value;
@@ -675,9 +676,9 @@ mod tests {
         .expect("expected supported form");
         let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
 
-        insta::assert_snapshot!(
+        assert_snapshot!(
             "mcp_server_elicitation_boolean_form",
-            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
+            renderable_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 
@@ -695,9 +696,9 @@ mod tests {
         .expect("expected approval fallback");
         let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
 
-        insta::assert_snapshot!(
+        assert_snapshot!(
             "mcp_server_elicitation_approval_form_without_schema",
-            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
+            renderable_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 
@@ -722,9 +723,9 @@ mod tests {
         .expect("expected approval fallback");
         let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
 
-        insta::assert_snapshot!(
+        assert_snapshot!(
             "mcp_server_elicitation_approval_form_with_session_persist",
-            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
+            renderable_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 
@@ -772,9 +773,9 @@ mod tests {
         .expect("expected approval fallback");
         let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
 
-        insta::assert_snapshot!(
+        assert_snapshot!(
             "mcp_server_elicitation_approval_form_with_param_summary",
-            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
+            renderable_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 }

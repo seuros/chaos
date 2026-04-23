@@ -503,16 +503,15 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
     let created_file = workdir_for_shell_function_call
         .path()
         .join(created_filename);
-
     let shell_command = vec!["touch".to_string(), created_filename.to_string()];
 
     let McpHandle {
         process: mut mcp_process,
-        server,
+        server: _server,
         dir: _dir,
     } = create_mcp_process_without_elicitation(vec![
         create_shell_command_sse_response(
-            shell_command.clone(),
+            shell_command,
             Some(workdir_for_shell_function_call.path()),
             Some(5_000),
             "call1234",
@@ -528,7 +527,7 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
         })
         .await?;
 
-    loop {
+    let final_response = loop {
         let message = timeout(
             DEFAULT_READ_TIMEOUT,
             mcp_process.read_next_jsonrpc_message(),
@@ -543,41 +542,27 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
                 panic!("unexpected json-rpc error: {resp:?}");
             }
             JsonRpcMessage::Response(response) if response.id == json!(codex_request_id) => {
-                break;
+                break response;
             }
             JsonRpcMessage::Response(_) => {}
         }
-    }
+    };
 
     assert!(
         !created_file.exists(),
         "command should not have been executed"
     );
 
-    let requests = server
-        .received_requests()
-        .await
-        .context("mock model server should record requests")?;
-    let follow_up_request = requests
-        .iter()
-        .find_map(|request| {
-            let body = request.body_json::<serde_json::Value>().ok()?;
-            let input = body.get("input")?.as_array()?;
-            input.iter().find_map(|item| {
-                (item.get("type").and_then(serde_json::Value::as_str)
-                    == Some("function_call_output")
-                    && item.get("call_id").and_then(serde_json::Value::as_str) == Some("call1234"))
-                .then_some(item.clone())
-            })
-        })
-        .ok_or_else(|| anyhow::anyhow!("missing function_call_output for denied shell command"))?;
-
+    let result = final_response
+        .result
+        .ok_or_else(|| anyhow::anyhow!("denied shell command should return a result"))?;
     assert!(
-        follow_up_request
-            .get("output")
+        result
+            .get("structuredContent")
+            .and_then(|value| value.get("content"))
             .and_then(serde_json::Value::as_str)
-            .is_some_and(|output| output.contains("rejected by user")),
-        "expected denied function_call_output, got {follow_up_request:?}"
+            .is_some_and(|content| content.contains("rejected")),
+        "expected denied tool response content, got {result:?}"
     );
 
     Ok(())

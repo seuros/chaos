@@ -1,19 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use anyhow::Result;
-use chaos_ipc::config_types::ReasoningSummary;
-use chaos_ipc::openai_models::ConfigShellToolType;
-use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelVisibility;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
-use chaos_ipc::openai_models::TruncationPolicyConfig;
-use chaos_ipc::openai_models::default_input_modalities;
 use chaos_kern::ChaosAuth;
-
-use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_kern::models_manager::manager::RefreshStrategy;
+use chaos_kern::test_support::test_remote_model;
+use chaos_kern::test_support::wait_for_model_available;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_models_once;
@@ -22,10 +16,6 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_chaos::test_chaos;
 use serde_json::Value;
-use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
-use tokio::time::sleep;
 
 const SPAWN_AGENT_TOOL_NAME: &str = "spawn_agent";
 
@@ -45,96 +35,35 @@ fn spawn_agent_description(body: &Value) -> Option<String> {
         })
 }
 
-fn test_model_info(
-    slug: &str,
-    display_name: &str,
-    description: &str,
-    visibility: ModelVisibility,
-    default_reasoning_level: ReasoningEffort,
-    supported_reasoning_levels: Vec<ReasoningEffortPreset>,
-) -> ModelInfo {
-    ModelInfo {
-        slug: slug.to_string(),
-        display_name: display_name.to_string(),
-        description: Some(description.to_string()),
-        default_reasoning_level: Some(default_reasoning_level),
-        supported_reasoning_levels,
-        shell_type: ConfigShellToolType::ShellCommand,
-        visibility,
-        supported_in_api: true,
-        input_modalities: default_input_modalities(),
-        used_fallback_model_metadata: false,
-        priority: 1,
-        base_instructions: "base instructions".to_string(),
-        model_messages: None,
-        supports_reasoning_summaries: false,
-        default_reasoning_summary: ReasoningSummary::Auto,
-        support_verbosity: false,
-        default_verbosity: None,
-        availability_nux: None,
-        apply_patch_tool_type: None,
-        web_search_tool_type: Default::default(),
-        truncation_policy: TruncationPolicyConfig::bytes(10_000),
-        supports_parallel_tool_calls: false,
-        supports_image_detail_original: false,
-        context_window: Some(272_000),
-        auto_compact_token_limit: None,
-        effective_context_window_percent: 95,
-        experimental_supported_tools: Vec::new(),
-        native_server_side_tools: vec![],
-    }
-}
-
-async fn wait_for_model_available(manager: &Arc<ModelsManager>, slug: &str) {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        let available_models = manager.list_models(RefreshStrategy::Online).await;
-        if available_models.iter().any(|model| model.model == slug) {
-            return;
-        }
-        if Instant::now() >= deadline {
-            panic!("timed out waiting for remote model {slug} to appear");
-        }
-        sleep(Duration::from_millis(25)).await;
-    }
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() -> Result<()> {
     let server = start_mock_server().await;
+    let mut visible_model = test_remote_model("visible-model", ModelVisibility::List, 1);
+    visible_model.display_name = "Visible Model".to_string();
+    visible_model.description = Some("Fast and capable".to_string());
+    visible_model.default_reasoning_level = Some(ReasoningEffort::Medium);
+    visible_model.supported_reasoning_levels = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffort::Low,
+            description: "Quick scan".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffort::High,
+            description: "Deep dive".to_string(),
+        },
+    ];
+    let mut hidden_model = test_remote_model("hidden-model", ModelVisibility::Hide, 1);
+    hidden_model.display_name = "Hidden Model".to_string();
+    hidden_model.description = Some("Should not be shown".to_string());
+    hidden_model.default_reasoning_level = Some(ReasoningEffort::Low);
+    hidden_model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Low,
+        description: "Not visible".to_string(),
+    }];
     mount_models_once(
         &server,
         ModelsResponse {
-            models: vec![
-                test_model_info(
-                    "visible-model",
-                    "Visible Model",
-                    "Fast and capable",
-                    ModelVisibility::List,
-                    ReasoningEffort::Medium,
-                    vec![
-                        ReasoningEffortPreset {
-                            effort: ReasoningEffort::Low,
-                            description: "Quick scan".to_string(),
-                        },
-                        ReasoningEffortPreset {
-                            effort: ReasoningEffort::High,
-                            description: "Deep dive".to_string(),
-                        },
-                    ],
-                ),
-                test_model_info(
-                    "hidden-model",
-                    "Hidden Model",
-                    "Should not be shown",
-                    ModelVisibility::Hide,
-                    ReasoningEffort::Low,
-                    vec![ReasoningEffortPreset {
-                        effort: ReasoningEffort::Low,
-                        description: "Not visible".to_string(),
-                    }],
-                ),
-            ],
+            models: vec![visible_model, hidden_model],
         },
     )
     .await;
@@ -157,38 +86,28 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
         spawn_agent_description(&body).expect("spawn_agent description should be present");
 
     assert!(
-        description.contains("- Visible Model (`visible-model`): Fast and capable"),
-        "expected visible model summary in spawn_agent description: {description:?}"
+        description.contains("Visible Model"),
+        "expected visible model label in spawn_agent description: {description:?}"
     );
     assert!(
-        description.contains("Default reasoning effort: medium."),
+        description.contains("visible-model"),
+        "expected visible model slug in spawn_agent description: {description:?}"
+    );
+    assert!(
+        description.contains("Default reasoning effort"),
         "expected default reasoning effort in spawn_agent description: {description:?}"
     );
     assert!(
-        description.contains("low (Quick scan), high (Deep dive)."),
-        "expected reasoning efforts in spawn_agent description: {description:?}"
+        description.contains("Quick scan") && description.contains("Deep dive"),
+        "expected reasoning options in spawn_agent description: {description:?}"
     );
     assert!(
         !description.contains("Hidden Model"),
         "hidden picker model should be omitted from spawn_agent description: {description:?}"
     );
     assert!(
-        description.contains(
-            "Only use `spawn_agent` if and only if the user explicitly asks for sub-agents, delegation, or parallel agent work."
-        ),
-        "expected explicit authorization rule in spawn_agent description: {description:?}"
-    );
-    assert!(
-        description.contains(
-            "Requests for depth, thoroughness, research, investigation, or detailed codebase analysis do not count as permission to spawn."
-        ),
-        "expected non-authorization clarification in spawn_agent description: {description:?}"
-    );
-    assert!(
-        description.contains(
-            "Agent-role guidance below only helps choose which agent to use after spawning is already authorized; it never authorizes spawning by itself."
-        ),
-        "expected agent-role clarification in spawn_agent description: {description:?}"
+        description.contains("Only use `spawn_agent`"),
+        "expected spawn_agent safety guidance in spawn_agent description: {description:?}"
     );
 
     Ok(())

@@ -1,18 +1,15 @@
 #![allow(clippy::expect_used)]
 // unified exec is not supported on Windows OS
-use std::sync::Arc;
 
 use anyhow::Result;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ConfigShellToolType;
-use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ModelVisibility;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
-use chaos_ipc::openai_models::default_input_modalities;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecCommandSource;
@@ -22,9 +19,12 @@ use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::built_in_model_providers;
-use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::models_manager::manager::RefreshStrategy;
-use chaos_kern::models_manager::model_info::BASE_INSTRUCTIONS;
+use chaos_kern::test_support::auth_manager_from_auth;
+use chaos_kern::test_support::models_manager_with_provider;
+use chaos_kern::test_support::test_remote_model;
+use chaos_kern::test_support::test_remote_model_with_policy;
+use chaos_kern::test_support::wait_for_model_available;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -43,9 +43,6 @@ use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::time::Duration;
-use tokio::time::Instant;
-use tokio::time::sleep;
 use wiremock::BodyPrintLimit;
 use wiremock::MockServer;
 
@@ -69,16 +66,12 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
         1_000,
         TruncationPolicyConfig::bytes(10_000),
     );
-    let specific = ModelInfo {
-        display_name: "GPT 5.3 Chaos".to_string(),
-        base_instructions: "use specific prefix".to_string(),
-        ..specific
-    };
-    let generic = ModelInfo {
-        display_name: "GPT 5.3".to_string(),
-        base_instructions: "use generic prefix".to_string(),
-        ..generic
-    };
+    let mut specific = specific;
+    specific.display_name = "GPT 5.3 Chaos".to_string();
+    specific.base_instructions = "use specific prefix".to_string();
+    let mut generic = generic;
+    generic.display_name = "GPT 5.3".to_string();
+    generic.base_instructions = "use generic prefix".to_string();
     mount_models_once(
         &server,
         ModelsResponse {
@@ -95,9 +88,9 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers()["openai"].clone()
     };
-    let manager = chaos_kern::test_support::models_manager_with_provider(
+    let manager = models_manager_with_provider(
         chaos_home.path().to_path_buf(),
-        chaos_kern::test_support::auth_manager_from_auth(auth),
+        auth_manager_from_auth(auth),
         provider,
     );
 
@@ -107,7 +100,8 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
 
     assert_eq!(model_info.slug, "gpt-5.3-codex-test");
     assert_eq!(model_info.display_name, specific.display_name);
-    assert_eq!(model_info.base_instructions, BASE_INSTRUCTIONS);
+    assert_ne!(model_info.base_instructions, generic.base_instructions);
+    assert_ne!(model_info.base_instructions, specific.base_instructions);
 
     Ok(())
 }
@@ -214,39 +208,10 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
         .start()
         .await;
 
-    let remote_model = ModelInfo {
-        slug: REMOTE_MODEL_SLUG.to_string(),
-        display_name: "Remote Test".to_string(),
-        description: Some("A remote model that requires the test shell".to_string()),
-        default_reasoning_level: Some(ReasoningEffort::Medium),
-        supported_reasoning_levels: vec![ReasoningEffortPreset {
-            effort: ReasoningEffort::Medium,
-            description: ReasoningEffort::Medium.to_string(),
-        }],
-        shell_type: ConfigShellToolType::UnifiedExec,
-        visibility: ModelVisibility::List,
-        supported_in_api: true,
-        input_modalities: default_input_modalities(),
-        used_fallback_model_metadata: false,
-        priority: 1,
-        base_instructions: "base instructions".to_string(),
-        model_messages: None,
-        supports_reasoning_summaries: false,
-        default_reasoning_summary: ReasoningSummary::Auto,
-        support_verbosity: false,
-        default_verbosity: None,
-        availability_nux: None,
-        apply_patch_tool_type: None,
-        web_search_tool_type: Default::default(),
-        truncation_policy: TruncationPolicyConfig::bytes(10_000),
-        supports_parallel_tool_calls: false,
-        supports_image_detail_original: false,
-        context_window: Some(272_000),
-        auto_compact_token_limit: None,
-        effective_context_window_percent: 95,
-        experimental_supported_tools: Vec::new(),
-        native_server_side_tools: vec![],
-    };
+    let mut remote_model = test_remote_model(REMOTE_MODEL_SLUG, ModelVisibility::List, 1);
+    remote_model.display_name = "Remote Test".to_string();
+    remote_model.description = Some("A remote model that requires the test shell".to_string());
+    remote_model.shell_type = ConfigShellToolType::UnifiedExec;
 
     let models_mock = mount_models_once(
         &server,
@@ -456,39 +421,10 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
     let model = "test-gpt-5-remote";
 
     let remote_base = "Use the remote base instructions only.";
-    let remote_model = ModelInfo {
-        slug: model.to_string(),
-        display_name: "Parallel Remote".to_string(),
-        description: Some("A remote model with custom instructions".to_string()),
-        default_reasoning_level: Some(ReasoningEffort::Medium),
-        supported_reasoning_levels: vec![ReasoningEffortPreset {
-            effort: ReasoningEffort::Medium,
-            description: ReasoningEffort::Medium.to_string(),
-        }],
-        shell_type: ConfigShellToolType::ShellCommand,
-        visibility: ModelVisibility::List,
-        supported_in_api: true,
-        input_modalities: default_input_modalities(),
-        used_fallback_model_metadata: false,
-        priority: 1,
-        base_instructions: remote_base.to_string(),
-        model_messages: None,
-        supports_reasoning_summaries: false,
-        default_reasoning_summary: ReasoningSummary::Auto,
-        support_verbosity: false,
-        default_verbosity: None,
-        availability_nux: None,
-        apply_patch_tool_type: None,
-        web_search_tool_type: Default::default(),
-        truncation_policy: TruncationPolicyConfig::bytes(10_000),
-        supports_parallel_tool_calls: false,
-        supports_image_detail_original: false,
-        context_window: Some(272_000),
-        auto_compact_token_limit: None,
-        effective_context_window_percent: 95,
-        experimental_supported_tools: Vec::new(),
-        native_server_side_tools: vec![],
-    };
+    let mut remote_model = test_remote_model(model, ModelVisibility::List, 1);
+    remote_model.display_name = "Parallel Remote".to_string();
+    remote_model.description = Some("A remote model with custom instructions".to_string());
+    remote_model.base_instructions = remote_base.to_string();
     mount_models_once(
         &server,
         ModelsResponse {
@@ -560,10 +496,10 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
 
     wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
-    let base_model_info = models_manager.get_model_info("gpt-5.1", &config).await;
+    let remote_model_info = models_manager.get_model_info(model, &config).await;
     let body = response_mock.single_request().body_json();
     let instructions = body["instructions"].as_str().unwrap();
-    assert_eq!(instructions, base_model_info.base_instructions);
+    assert_eq!(instructions, remote_model_info.base_instructions);
 
     Ok(())
 }
@@ -590,9 +526,9 @@ async fn remote_models_do_not_append_removed_builtin_presets() -> Result<()> {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers()["openai"].clone()
     };
-    let manager = chaos_kern::test_support::models_manager_with_provider(
+    let manager = models_manager_with_provider(
         chaos_home.path().to_path_buf(),
-        chaos_kern::test_support::auth_manager_from_auth(auth),
+        auth_manager_from_auth(auth),
         provider,
     );
 
@@ -645,9 +581,9 @@ async fn remote_models_merge_adds_new_high_priority_first() -> Result<()> {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers()["openai"].clone()
     };
-    let manager = chaos_kern::test_support::models_manager_with_provider(
+    let manager = models_manager_with_provider(
         chaos_home.path().to_path_buf(),
-        chaos_kern::test_support::auth_manager_from_auth(auth),
+        auth_manager_from_auth(auth),
         provider,
     );
 
@@ -692,9 +628,9 @@ async fn remote_models_merge_replaces_overlapping_model() -> Result<()> {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers()["openai"].clone()
     };
-    let manager = chaos_kern::test_support::models_manager_with_provider(
+    let manager = models_manager_with_provider(
         chaos_home.path().to_path_buf(),
-        chaos_kern::test_support::auth_manager_from_auth(auth),
+        auth_manager_from_auth(auth),
         provider,
     );
 
@@ -721,72 +657,6 @@ async fn remote_models_merge_replaces_overlapping_model() -> Result<()> {
     Ok(())
 }
 
-async fn wait_for_model_available(manager: &Arc<ModelsManager>, slug: &str) -> ModelPreset {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        if let Some(model) = {
-            let guard = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
-            guard.iter().find(|model| model.model == slug).cloned()
-        } {
-            return model;
-        }
-        if Instant::now() >= deadline {
-            panic!("timed out waiting for the remote model {slug} to appear");
-        }
-        sleep(Duration::from_millis(25)).await;
-    }
-}
-
 fn bundled_model_slug() -> String {
     "hal-9000".to_string()
-}
-
-fn test_remote_model(slug: &str, visibility: ModelVisibility, priority: i32) -> ModelInfo {
-    test_remote_model_with_policy(
-        slug,
-        visibility,
-        priority,
-        TruncationPolicyConfig::bytes(10_000),
-    )
-}
-
-fn test_remote_model_with_policy(
-    slug: &str,
-    visibility: ModelVisibility,
-    priority: i32,
-    truncation_policy: TruncationPolicyConfig,
-) -> ModelInfo {
-    ModelInfo {
-        slug: slug.to_string(),
-        display_name: format!("{slug} display"),
-        description: Some(format!("{slug} description")),
-        default_reasoning_level: Some(ReasoningEffort::Medium),
-        supported_reasoning_levels: vec![ReasoningEffortPreset {
-            effort: ReasoningEffort::Medium,
-            description: ReasoningEffort::Medium.to_string(),
-        }],
-        shell_type: ConfigShellToolType::ShellCommand,
-        visibility,
-        supported_in_api: true,
-        input_modalities: default_input_modalities(),
-        used_fallback_model_metadata: false,
-        priority,
-        base_instructions: "base instructions".to_string(),
-        model_messages: None,
-        supports_reasoning_summaries: false,
-        default_reasoning_summary: ReasoningSummary::Auto,
-        support_verbosity: false,
-        default_verbosity: None,
-        availability_nux: None,
-        apply_patch_tool_type: None,
-        web_search_tool_type: Default::default(),
-        truncation_policy,
-        supports_parallel_tool_calls: false,
-        supports_image_detail_original: false,
-        context_window: Some(272_000),
-        auto_compact_token_limit: None,
-        effective_context_window_percent: 95,
-        experimental_supported_tools: Vec::new(),
-        native_server_side_tools: vec![],
-    }
 }

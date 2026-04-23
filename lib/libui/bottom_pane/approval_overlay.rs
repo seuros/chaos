@@ -8,11 +8,13 @@ pub use state::ApprovalOverlay;
 
 #[cfg(test)]
 mod tests {
+    use super::super::CancellationEvent;
     use super::*;
     use crate::app_event::AppEvent;
     use crate::bottom_pane::BottomPaneView;
     use crate::render::renderable::Renderable;
     use crate::test_support::make_app_event_sender_with_rx;
+    use crate::test_support::renderable_trim_end_string_at_desired_height;
     use chaos_ipc::ProcessId;
     use chaos_ipc::mcp::RequestId;
     use chaos_ipc::models::FileSystemPermissions;
@@ -40,8 +42,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-
-    use super::super::CancellationEvent;
     use request::exec_options;
     use request::permissions_options;
 
@@ -50,19 +50,7 @@ mod tests {
     }
 
     fn render_overlay_lines(view: &ApprovalOverlay, width: u16) -> String {
-        let height = view.desired_height(width);
-        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
-        view.render(Rect::new(0, 0, width, height), &mut buf);
-        (0..buf.area.height)
-            .map(|row| {
-                (0..buf.area.width)
-                    .map(|col| buf[(col, row)].symbol().to_string())
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        renderable_trim_end_string_at_desired_height(view, width)
     }
 
     fn normalize_snapshot_paths(rendered: String) -> String {
@@ -193,7 +181,7 @@ mod tests {
 
         assert_snapshot!(
             "approval_overlay_cross_process_prompt",
-            render_overlay_lines(&view, 80)
+            renderable_trim_end_string_at_desired_height(&view, 80)
         );
     }
 
@@ -208,7 +196,7 @@ mod tests {
 
         assert_snapshot!(
             "approval_overlay_mcp_url_elicitation",
-            render_overlay_lines(&view, 80)
+            renderable_trim_end_string_at_desired_height(&view, 80)
         );
     }
 
@@ -349,15 +337,9 @@ mod tests {
         };
 
         let view = ApprovalOverlay::new(exec_request, tx, Features::with_defaults());
-        let mut buf = Buffer::empty(Rect::new(0, 0, 80, view.desired_height(80)));
-        view.render(Rect::new(0, 0, 80, view.desired_height(80)), &mut buf);
-
-        let rendered: Vec<String> = (0..buf.area.height)
-            .map(|row| {
-                (0..buf.area.width)
-                    .map(|col| buf[(col, row)].symbol().to_string())
-                    .collect()
-            })
+        let rendered: Vec<String> = render_overlay_lines(&view, 80)
+            .lines()
+            .map(str::to_string)
             .collect();
         assert!(
             rendered

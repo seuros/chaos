@@ -1,15 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use chaos_ipc::config_types::ReasoningSummary;
-use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelVisibility;
 use chaos_ipc::openai_models::ModelsResponse;
-use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::openai_models::ReasoningEffortPreset;
-use chaos_ipc::openai_models::TruncationPolicyConfig;
-use chaos_ipc::openai_models::default_input_modalities;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -17,6 +11,7 @@ use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::models_manager::manager::RefreshStrategy;
+use chaos_kern::test_support::test_remote_model;
 use chaos_proc::open_runtime_db;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
@@ -43,7 +38,7 @@ const DIFFERENT_VERSION_MODEL: &str = "chaos-test-different-version";
 async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
     let server = MockServer::start().await;
 
-    let remote_model = test_remote_model(REMOTE_MODEL, 1);
+    let remote_model = test_remote_model(REMOTE_MODEL, ModelVisibility::List, 1);
     let models_mock = responses::mount_models_once_with_etag(
         &server,
         ModelsResponse {
@@ -136,11 +131,11 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn uses_cache_when_version_matches() -> Result<()> {
     let server = MockServer::start().await;
-    let cached_model = test_remote_model(VERSIONED_MODEL, 1);
+    let cached_model = test_remote_model(VERSIONED_MODEL, ModelVisibility::List, 1);
     let models_mock = responses::mount_models_once(
         &server,
         ModelsResponse {
-            models: vec![test_remote_model("remote", 2)],
+            models: vec![test_remote_model("remote", ModelVisibility::List, 2)],
         },
     )
     .await;
@@ -184,11 +179,15 @@ async fn uses_cache_when_version_matches() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refreshes_when_cache_version_missing() -> Result<()> {
     let server = MockServer::start().await;
-    let cached_model = test_remote_model(MISSING_VERSION_MODEL, 1);
+    let cached_model = test_remote_model(MISSING_VERSION_MODEL, ModelVisibility::List, 1);
     let models_mock = responses::mount_models_once(
         &server,
         ModelsResponse {
-            models: vec![test_remote_model("remote-missing", 2)],
+            models: vec![test_remote_model(
+                "remote-missing",
+                ModelVisibility::List,
+                2,
+            )],
         },
     )
     .await;
@@ -232,9 +231,13 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refreshes_when_cache_version_differs() -> Result<()> {
     let server = MockServer::start().await;
-    let cached_model = test_remote_model(DIFFERENT_VERSION_MODEL, 1);
+    let cached_model = test_remote_model(DIFFERENT_VERSION_MODEL, ModelVisibility::List, 1);
     let models_response = ModelsResponse {
-        models: vec![test_remote_model("remote-different", 2)],
+        models: vec![test_remote_model(
+            "remote-different",
+            ModelVisibility::List,
+            2,
+        )],
     };
     let mut models_mocks = Vec::new();
     for _ in 0..3 {
@@ -387,47 +390,5 @@ fn cache_scope_for_base_url(base_url: String) -> ModelsCacheScope {
         provider_name: "OpenAI".to_string(),
         wire_api: "responses".to_string(),
         base_url,
-    }
-}
-
-fn test_remote_model(slug: &str, priority: i32) -> ModelInfo {
-    ModelInfo {
-        slug: slug.to_string(),
-        display_name: "Remote Test".to_string(),
-        description: Some("remote model".to_string()),
-        default_reasoning_level: Some(ReasoningEffort::Medium),
-        supported_reasoning_levels: vec![
-            ReasoningEffortPreset {
-                effort: ReasoningEffort::Low,
-                description: "low".to_string(),
-            },
-            ReasoningEffortPreset {
-                effort: ReasoningEffort::Medium,
-                description: "medium".to_string(),
-            },
-        ],
-        shell_type: ConfigShellToolType::ShellCommand,
-        visibility: ModelVisibility::List,
-        supported_in_api: true,
-        priority,
-        base_instructions: "base instructions".to_string(),
-        model_messages: None,
-        supports_reasoning_summaries: false,
-        default_reasoning_summary: ReasoningSummary::Auto,
-        support_verbosity: false,
-        default_verbosity: None,
-        availability_nux: None,
-        apply_patch_tool_type: None,
-        web_search_tool_type: Default::default(),
-        truncation_policy: TruncationPolicyConfig::bytes(10_000),
-        supports_parallel_tool_calls: false,
-        supports_image_detail_original: false,
-        context_window: Some(272_000),
-        auto_compact_token_limit: None,
-        effective_context_window_percent: 95,
-        experimental_supported_tools: Vec::new(),
-        native_server_side_tools: vec![],
-        input_modalities: default_input_modalities(),
-        used_fallback_model_metadata: false,
     }
 }

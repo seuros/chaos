@@ -1,7 +1,6 @@
 use super::*;
 use crate::token_data::IdTokenInfo;
 use anyhow::Context;
-use base64::Engine;
 use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -9,6 +8,10 @@ use tempfile::tempdir;
 
 use chaos_keyring::tests::MockKeyringStore;
 use keyring_core::Error as KeyringError;
+
+#[allow(clippy::duplicate_mod)]
+#[path = "../test_support/auth_fixtures.rs"]
+mod auth_test_fixtures;
 
 fn normalized(auth: &AuthDotJson) -> AuthDotJson {
     auth.normalized()
@@ -214,50 +217,26 @@ fn assert_keyring_saved_auth_and_removed_fallback(
 }
 
 fn id_token_with_prefix(prefix: &str) -> IdTokenInfo {
-    #[derive(Serialize)]
-    struct Header {
-        alg: &'static str,
-        typ: &'static str,
-    }
-
-    let header = Header {
-        alg: "none",
-        typ: "JWT",
-    };
-    let payload = json!({
+    auth_test_fixtures::id_token_from_payload(json!({
         "email": format!("{prefix}@example.com"),
         "https://api.openai.com/auth": {
             "chatgpt_account_id": format!("{prefix}-account"),
         },
-    });
-    let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
-    let header_b64 = encode(&serde_json::to_vec(&header).expect("serialize header"));
-    let payload_b64 = encode(&serde_json::to_vec(&payload).expect("serialize payload"));
-    let signature_b64 = encode(b"sig");
-    let fake_jwt = format!("{header_b64}.{payload_b64}.{signature_b64}");
-
-    crate::token_data::parse_chatgpt_jwt_claims(&fake_jwt).expect("fake JWT should parse")
+    }))
 }
 
 fn auth_with_prefix(prefix: &str) -> AuthDotJson {
-    AuthDotJson {
-        providers: [(
-            "openai".to_string(),
-            ProviderAuthRecord {
-                auth_mode: Some(AuthMode::ApiKey),
-                api_key: Some(format!("{prefix}-api-key")),
-                tokens: Some(TokenData {
-                    id_token: id_token_with_prefix(prefix),
-                    access_token: format!("{prefix}-access"),
-                    refresh_token: format!("{prefix}-refresh"),
-                    account_id: Some(format!("{prefix}-account-id")),
-                }),
-                last_refresh: None,
-            },
-        )]
-        .into_iter()
-        .collect(),
-    }
+    auth_test_fixtures::openai_auth(
+        AuthMode::ApiKey,
+        Some(&format!("{prefix}-api-key")),
+        Some(TokenData {
+            id_token: id_token_with_prefix(prefix),
+            access_token: format!("{prefix}-access"),
+            refresh_token: format!("{prefix}-refresh"),
+            account_id: Some(format!("{prefix}-account-id")),
+        }),
+        None,
+    )
 }
 
 #[test]

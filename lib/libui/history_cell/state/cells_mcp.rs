@@ -389,7 +389,7 @@ pub fn new_mcp_tools_output(
     let mcp_manager = McpManager::new();
     let effective_servers = mcp_manager.effective_servers(config);
     let mut servers: Vec<_> = effective_servers.iter().collect();
-    servers.sort_by(|(a, _), (b, _)| a.cmp(b));
+    servers.sort_by_key(|(a, _)| *a);
 
     for (server, cfg) in servers {
         let prefix = format!("mcp__{server}__");
@@ -403,7 +403,7 @@ pub fn new_mcp_tools_output(
                     .map(|tool| (k[prefix.len()..].to_string(), tool))
             })
             .collect();
-        tool_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+        tool_entries.sort_by_key(|(a, _)| a.clone());
 
         let auth_status = auth_statuses
             .get(server.as_str())
@@ -466,7 +466,7 @@ pub fn new_mcp_tools_output(
                     && !headers.is_empty()
                 {
                     let mut pairs: Vec<_> = headers.iter().collect();
-                    pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    pairs.sort_by_key(|(a, _)| *a);
                     let display = pairs
                         .into_iter()
                         .map(|(name, _)| format!("{name}=*****"))
@@ -478,7 +478,7 @@ pub fn new_mcp_tools_output(
                     && !headers.is_empty()
                 {
                     let mut pairs: Vec<_> = headers.iter().collect();
-                    pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    pairs.sort_by_key(|(a, _)| *a);
                     let display = pairs
                         .into_iter()
                         .map(|(name, var)| format!("{name}={var}"))

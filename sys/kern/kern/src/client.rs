@@ -78,6 +78,7 @@ pub(super) const RESPONSES_COMPACT_ENDPOINT: &str = "/responses/compact";
 pub(super) struct ModelClientState {
     pub(super) auth_manager: Option<Arc<crate::AuthManager>>,
     pub(super) conversation_id: ProcessId,
+    pub(super) provider_id: String,
     pub(super) provider: ModelProviderInfo,
     pub(super) session_source: SessionSource,
     pub(super) approval_policy: ApprovalPolicy,

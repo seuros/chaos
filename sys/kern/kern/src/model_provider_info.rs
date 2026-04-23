@@ -87,6 +87,20 @@ impl<'de> Deserialize<'de> for WireApi {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderAuthMethod {
+    ApiKey,
+    ChatgptAccount,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ProviderAuthCapabilities {
+    #[serde(default)]
+    pub methods: Vec<ProviderAuthMethod>,
+}
+
 /// Returns true if the provider's base URL indicates it speaks the Anthropic
 /// Messages wire format.
 ///
@@ -167,6 +181,14 @@ pub struct ModelProviderInfo {
     #[serde(default)]
     pub requires_openai_auth: bool,
 
+    /// Structured auth capabilities for this provider.
+    ///
+    /// When unset, Chaos derives capabilities from legacy fields:
+    /// - `requires_openai_auth = true` => ChatGPT account + API key
+    /// - `env_key.is_some()` => API key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<ProviderAuthCapabilities>,
+
     /// Whether this provider supports the Responses API WebSocket transport.
     #[serde(default)]
     pub supports_websockets: bool,
@@ -185,12 +207,13 @@ impl ModelProviderInfo {
         // Only route to the ChatGPT backend when the provider actually uses
         // OpenAI auth.  Self-authenticated providers (env_key, bearer token)
         // must never be redirected to chatgpt.com.
-        let default_base_url =
-            if self.requires_openai_auth && matches!(auth_mode, Some(AuthMode::Chatgpt)) {
-                CHATGPT_DEFAULT_BASE_URL
-            } else {
-                OPENAI_DEFAULT_BASE_URL
-            };
+        let default_base_url = if self.supports_chatgpt_account_auth()
+            && matches!(auth_mode, Some(AuthMode::Chatgpt))
+        {
+            CHATGPT_DEFAULT_BASE_URL
+        } else {
+            OPENAI_DEFAULT_BASE_URL
+        };
         self.base_url
             .clone()
             .unwrap_or_else(|| default_base_url.to_string())
@@ -291,6 +314,38 @@ impl ModelProviderInfo {
             .unwrap_or(Duration::from_millis(DEFAULT_STREAM_IDLE_TIMEOUT_MS))
     }
 
+    pub fn auth_capabilities(&self) -> ProviderAuthCapabilities {
+        if let Some(auth) = &self.auth {
+            return auth.clone();
+        }
+
+        let mut methods = Vec::new();
+        if self.requires_openai_auth {
+            methods.push(ProviderAuthMethod::ChatgptAccount);
+            methods.push(ProviderAuthMethod::ApiKey);
+        } else if self.env_key.is_some() {
+            methods.push(ProviderAuthMethod::ApiKey);
+        }
+
+        ProviderAuthCapabilities { methods }
+    }
+
+    pub fn supports_auth_method(&self, method: ProviderAuthMethod) -> bool {
+        self.auth_capabilities().methods.contains(&method)
+    }
+
+    pub fn supports_chatgpt_account_auth(&self) -> bool {
+        self.supports_auth_method(ProviderAuthMethod::ChatgptAccount)
+    }
+
+    pub fn supports_api_key_auth(&self) -> bool {
+        self.supports_auth_method(ProviderAuthMethod::ApiKey)
+    }
+
+    pub fn requires_managed_auth(&self) -> bool {
+        self.supports_chatgpt_account_auth() || self.supports_api_key_auth()
+    }
+
     pub fn create_anthropic_provider() -> ModelProviderInfo {
         ModelProviderInfo {
             name: ANTHROPIC_PROVIDER_NAME.into(),
@@ -314,6 +369,9 @@ impl ModelProviderInfo {
             stream_max_retries: None,
             stream_idle_timeout_ms: None,
             requires_openai_auth: false,
+            auth: Some(ProviderAuthCapabilities {
+                methods: vec![ProviderAuthMethod::ApiKey],
+            }),
             supports_websockets: false,
             native_server_side_tools: vec![],
         }
@@ -349,6 +407,12 @@ impl ModelProviderInfo {
             stream_max_retries: None,
             stream_idle_timeout_ms: None,
             requires_openai_auth: true,
+            auth: Some(ProviderAuthCapabilities {
+                methods: vec![
+                    ProviderAuthMethod::ChatgptAccount,
+                    ProviderAuthMethod::ApiKey,
+                ],
+            }),
             supports_websockets: true,
             native_server_side_tools: vec![],
         }
@@ -362,7 +426,8 @@ impl ModelProviderInfo {
     /// an `env_key` or a hard-coded `experimental_bearer_token`.  In that
     /// case the session-level ChatGPT auth should not be inherited.
     pub fn is_self_authenticated(&self) -> bool {
-        self.env_key.is_some() || self.experimental_bearer_token.is_some()
+        (self.env_key.is_some() && !self.supports_api_key_auth())
+            || self.experimental_bearer_token.is_some()
     }
 }
 
@@ -402,6 +467,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     }

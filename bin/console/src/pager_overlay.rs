@@ -19,15 +19,15 @@ mod pager_view;
 mod static_overlay;
 mod transcript_overlay;
 
-pub(crate) use static_overlay::{AuthOverlay, StaticOverlay};
+pub(crate) use static_overlay::{AccountsOverlay, StaticOverlay};
 pub(crate) use transcript_overlay::TranscriptOverlay;
 
 use std::io::Result;
 
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
-use crate::onboarding::auth::AuthCompletion;
-use crate::onboarding::auth::AuthModeWidget;
+use crate::onboarding::auth::AccountsCompletion;
+use crate::onboarding::auth::AccountsWidget;
 use crate::render::renderable::Renderable;
 use crate::tui;
 use crate::tui::TuiEvent;
@@ -41,7 +41,7 @@ use ratatui::widgets::{Paragraph, Widget};
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
-    Auth(AuthOverlay),
+    Accounts(AccountsOverlay),
 }
 
 impl Overlay {
@@ -62,15 +62,15 @@ impl Overlay {
         Self::Static(StaticOverlay::with_renderables(renderables, title))
     }
 
-    pub(crate) fn new_login(widget: AuthModeWidget) -> Self {
-        Self::Auth(AuthOverlay::new(widget))
+    pub(crate) fn new_accounts(widget: AccountsWidget) -> Self {
+        Self::Accounts(AccountsOverlay::new(widget))
     }
 
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         match self {
             Overlay::Transcript(o) => o.handle_event(tui, event),
             Overlay::Static(o) => o.handle_event(tui, event),
-            Overlay::Auth(o) => o.handle_event(tui, event),
+            Overlay::Accounts(o) => o.handle_event(tui, event),
         }
     }
 
@@ -78,13 +78,13 @@ impl Overlay {
         match self {
             Overlay::Transcript(o) => o.is_done(),
             Overlay::Static(o) => o.is_done(),
-            Overlay::Auth(o) => o.is_done(),
+            Overlay::Accounts(o) => o.is_done(),
         }
     }
 
-    pub(crate) fn auth_completion(&self) -> Option<AuthCompletion> {
+    pub(crate) fn auth_completion(&self) -> Option<AccountsCompletion> {
         match self {
-            Overlay::Auth(o) => o.completion(),
+            Overlay::Accounts(o) => o.completion(),
             _ => None,
         }
     }

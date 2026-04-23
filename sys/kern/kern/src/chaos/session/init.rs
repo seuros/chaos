@@ -316,7 +316,7 @@ impl Session {
         }
 
         let auth = auth.as_ref();
-        let provider_owns_auth = session_configuration.provider.requires_openai_auth;
+        let provider_owns_auth = session_configuration.provider.requires_managed_auth();
         let auth_mode = if provider_owns_auth {
             auth.map(ChaosAuth::auth_mode).map(TelemetryAuthMode::from)
         } else {
@@ -526,6 +526,10 @@ impl Session {
             model_client: crate::client::ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
                 conversation_id,
+                session_configuration
+                    .original_config_do_not_use
+                    .model_provider_id
+                    .clone(),
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
                 session_configuration.approval_policy.value(),

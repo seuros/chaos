@@ -699,16 +699,14 @@ async fn run_event_loop(
 
         // Filter events not relevant to our turn.
         match &event.msg {
-            EventMsg::TurnComplete(payload) => {
-                if payload.turn_id != task_id {
-                    continue;
-                }
+            EventMsg::TurnComplete(payload) if payload.turn_id != task_id => {
+                continue;
             }
-            EventMsg::TurnAborted(payload) => {
-                if payload.turn_id.as_deref() != Some(task_id) {
-                    continue;
-                }
+            EventMsg::TurnComplete(_) => {}
+            EventMsg::TurnAborted(payload) if payload.turn_id.as_deref() != Some(task_id) => {
+                continue;
             }
+            EventMsg::TurnAborted(_) => {}
             EventMsg::McpStartupUpdate(update) => {
                 if required_mcp_servers.contains(&update.server)
                     && let chaos_ipc::protocol::McpStartupStatus::Failed { error } = &update.status

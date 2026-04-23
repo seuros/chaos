@@ -110,7 +110,7 @@ impl ChatWidget {
                 if let Some(info) = chaos_error_info {
                     if matches!(info, ChaosErrorInfo::ProviderAuthMissing { .. }) {
                         self.on_error(message);
-                        self.app_event_tx.send(AppEvent::OpenLoginPopup);
+                        self.app_event_tx.send(AppEvent::OpenAccountsPopup);
                     } else if let Some(kind) = rate_limit_error_kind(&info) {
                         match kind {
                             RateLimitErrorKind::ServerOverloaded => {

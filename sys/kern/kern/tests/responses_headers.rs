@@ -55,6 +55,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     };
@@ -88,6 +89,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
     let client = ModelClient::new(
         None,
         conversation_id,
+        provider.name.clone(),
         provider.clone(),
         session_source,
         chaos_ipc::protocol::ApprovalPolicy::Interactive,
@@ -165,6 +167,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     };
@@ -199,6 +202,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
     let client = ModelClient::new(
         None,
         conversation_id,
+        provider.name.clone(),
         provider.clone(),
         session_source,
         chaos_ipc::protocol::ApprovalPolicy::Interactive,
@@ -270,6 +274,7 @@ async fn responses_respects_model_info_overrides_from_config() {
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     };
@@ -309,6 +314,7 @@ async fn responses_respects_model_info_overrides_from_config() {
     let client = ModelClient::new(
         None,
         conversation_id,
+        provider.name.clone(),
         provider.clone(),
         session_source,
         chaos_ipc::protocol::ApprovalPolicy::Interactive,

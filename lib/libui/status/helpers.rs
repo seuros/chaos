@@ -3,6 +3,7 @@ use crate::text_formatting;
 use chaos_ipc::account::PlanType;
 use chaos_kern::AuthManager;
 use chaos_kern::auth::AuthMode as CoreAuthMode;
+use chaos_kern::config::Config;
 use jiff::Timestamp;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
@@ -30,19 +31,29 @@ pub fn compose_model_display(
 }
 
 pub fn compose_account_display(
+    config: &Config,
     auth_manager: &AuthManager,
     plan: Option<PlanType>,
 ) -> Option<StatusAccountDisplay> {
-    let auth = auth_manager.auth_cached()?;
+    let auth = auth_manager.auth_for_provider(&config.model_provider_id)?;
+    let provider_label = config
+        .model_providers
+        .get(auth.provider_id())
+        .map(|provider| provider.name.clone())
+        .unwrap_or_else(|| auth.provider_id().to_string());
 
     match auth.auth_mode() {
-        CoreAuthMode::ApiKey => Some(StatusAccountDisplay::ApiKey),
+        CoreAuthMode::ApiKey => Some(StatusAccountDisplay::ApiKey { provider_label }),
         CoreAuthMode::Chatgpt => {
             let email = auth.get_account_email();
             let plan = plan
                 .map(|plan_type| title_case(format!("{plan_type:?}").as_str()))
                 .or_else(|| Some("Unknown".to_string()));
-            Some(StatusAccountDisplay::ChatGpt { email, plan })
+            Some(StatusAccountDisplay::ChatGpt {
+                provider_label,
+                email,
+                plan,
+            })
         }
     }
 }

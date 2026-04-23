@@ -191,6 +191,15 @@ pub(crate) fn auth_provider_from_auth(
     auth: Option<ChaosAuth>,
     provider: &ModelProviderInfo,
 ) -> crate::error::Result<CoreAuthProvider> {
+    if let Some(auth) = auth.as_ref()
+        && auth.is_api_key_auth()
+    {
+        return Ok(CoreAuthProvider {
+            token: Some(auth.get_token()?),
+            account_id: None,
+        });
+    }
+
     match provider.api_key() {
         Ok(Some(api_key)) => {
             return Ok(CoreAuthProvider {
@@ -199,7 +208,11 @@ pub(crate) fn auth_provider_from_auth(
             });
         }
         Ok(None) => {}
-        Err(ChaosErr::EnvVar(_)) => return Err(provider_auth_missing(provider)),
+        Err(ChaosErr::EnvVar(_)) => {
+            if auth.is_none() {
+                return Err(provider_auth_missing(provider));
+            }
+        }
         Err(other) => return Err(other),
     }
 
@@ -222,7 +235,7 @@ pub(crate) fn auth_provider_from_auth(
     // requires OpenAI-style auth must not send an unauthenticated request —
     // stop the turn here with a vendor-agnostic error so the client can
     // prompt for credentials instead of looping on silent 401s.
-    if provider.requires_openai_auth || provider.env_key.is_some() {
+    if provider.requires_managed_auth() || provider.env_key.is_some() {
         return Err(provider_auth_missing(provider));
     }
 
@@ -239,7 +252,7 @@ pub(crate) fn provider_auth_missing(provider: &ModelProviderInfo) -> ChaosErr {
         provider_name: provider.name.clone(),
         env_key: provider.env_key.clone(),
         env_key_instructions: provider.env_key_instructions.clone(),
-        supports_oauth: provider.requires_openai_auth,
+        supports_oauth: provider.supports_chatgpt_account_auth(),
     })
 }
 

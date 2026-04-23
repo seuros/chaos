@@ -10,11 +10,13 @@ use std::sync::RwLock;
 use crate::auth::AuthCredentialsStoreMode;
 use crate::auth::ChaosAuth;
 use crate::auth::ChatgptAuth;
+use crate::auth::DEFAULT_AUTH_PROVIDER_ID;
 use crate::auth::ExternalAuthRefreshContext;
 use crate::auth::ExternalAuthRefreshReason;
 use crate::auth::ExternalAuthRefresher;
 use crate::auth::RefreshTokenError;
 use crate::auth::load_auth;
+use crate::auth::load_auth_for_provider;
 use crate::auth::save_auth;
 use crate::auth::storage::AuthDotJson;
 use crate::auth::storage::AuthStorageBackend;
@@ -65,6 +67,7 @@ pub(super) fn refresh_token_endpoint() -> String {
 /// Persist refreshed tokens into auth storage and update last_refresh.
 pub(crate) fn persist_tokens(
     storage: &Arc<dyn AuthStorageBackend>,
+    provider_id: &str,
     id_token: Option<String>,
     access_token: Option<String>,
     refresh_token: Option<String>,
@@ -73,7 +76,10 @@ pub(crate) fn persist_tokens(
         .load()?
         .ok_or(std::io::Error::other("Token data is not available."))?;
 
-    let tokens = auth_dot_json.tokens.get_or_insert_with(TokenData::default);
+    let mut record = auth_dot_json
+        .provider_record(provider_id)
+        .ok_or(std::io::Error::other("Token data is not available."))?;
+    let tokens = record.tokens.get_or_insert_with(TokenData::default);
     if let Some(id_token) = id_token {
         tokens.id_token = parse_chatgpt_jwt_claims(&id_token).map_err(std::io::Error::other)?;
     }
@@ -83,7 +89,8 @@ pub(crate) fn persist_tokens(
     if let Some(refresh_token) = refresh_token {
         tokens.refresh_token = refresh_token;
     }
-    auth_dot_json.last_refresh = Some(Timestamp::now());
+    record.last_refresh = Some(Timestamp::now());
+    auth_dot_json.set_provider_record(provider_id, record);
     storage.save(&auth_dot_json)?;
     Ok(auth_dot_json)
 }
@@ -394,6 +401,21 @@ impl AuthManager {
         .flatten()
     }
 
+    pub fn auth_for_provider(&self, provider_id: &str) -> Option<ChaosAuth> {
+        if provider_id == DEFAULT_AUTH_PROVIDER_ID {
+            return self.auth_cached();
+        }
+
+        load_auth_for_provider(
+            &self.chaos_home,
+            provider_id,
+            /*enable_codex_api_key_env*/ false,
+            self.auth_credentials_store_mode,
+        )
+        .ok()
+        .flatten()
+    }
+
     fn set_cached_auth(&self, new_auth: Option<ChaosAuth>) -> bool {
         if let Ok(mut guard) = self.inner.write() {
             let previous = guard.auth.as_ref();
@@ -543,11 +565,14 @@ impl AuthManager {
             Some(auth_dot_json) => auth_dot_json,
             None => return Ok(false),
         };
-        let tokens = match auth_dot_json.tokens {
+        let Some(record) = auth_dot_json.provider_record(chatgpt_auth.provider_id()) else {
+            return Ok(false);
+        };
+        let tokens = match record.tokens {
             Some(tokens) => tokens,
             None => return Ok(false),
         };
-        let last_refresh = match auth_dot_json.last_refresh {
+        let last_refresh = match record.last_refresh {
             Some(last_refresh) => last_refresh,
             None => return Ok(false),
         };
@@ -626,6 +651,7 @@ impl AuthManager {
 
         persist_tokens(
             auth.storage(),
+            auth.provider_id(),
             refresh_response.id_token,
             refresh_response.access_token,
             refresh_response.refresh_token,

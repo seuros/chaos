@@ -209,7 +209,11 @@ impl App {
             .get_models_manager()
             .get_default_model(&config.model, RefreshStrategy::Offline)
             .await;
-        let auth = auth_manager.auth().await;
+        let auth = if config.model_provider_id == chaos_kern::auth::DEFAULT_AUTH_PROVIDER_ID {
+            auth_manager.auth().await
+        } else {
+            auth_manager.auth_for_provider(&config.model_provider_id)
+        };
         let auth_ref = auth.as_ref();
         let auth_mode = auth_ref
             .map(ChaosAuth::auth_mode)

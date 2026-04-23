@@ -24,6 +24,23 @@ use std::sync::LazyLock;
 
 pub use chaos_sysctl::types::AuthCredentialsStoreMode;
 
+const LEGACY_OPENAI_PROVIDER_ID: &str = "openai";
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct ProviderAuthRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_mode: Option<AuthMode>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<TokenData>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_refresh: Option<Timestamp>,
+}
+
 /// Expected structure for $CHAOS_HOME/auth.json.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct AuthDotJson {
@@ -38,6 +55,9 @@ pub struct AuthDotJson {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_refresh: Option<Timestamp>,
+
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub providers: HashMap<String, ProviderAuthRecord>,
 }
 
 pub(super) fn get_auth_file(chaos_home: &Path) -> PathBuf {
@@ -98,7 +118,8 @@ impl AuthStorageBackend for FileAuthStorage {
         if let Some(parent) = auth_file.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let json_data = serde_json::to_string_pretty(auth_dot_json)?;
+        let normalized = auth_dot_json.normalized();
+        let json_data = serde_json::to_string_pretty(&normalized)?;
         let mut options = OpenOptions::new();
         options.truncate(true).write(true).create(true);
         {
@@ -184,7 +205,8 @@ impl AuthStorageBackend for KeyringAuthStorage {
     fn save(&self, auth: &AuthDotJson) -> std::io::Result<()> {
         let key = compute_store_key(&self.chaos_home)?;
         // Simpler error mapping per style: prefer method reference over closure
-        let serialized = serde_json::to_string(auth).map_err(std::io::Error::other)?;
+        let normalized = auth.normalized();
+        let serialized = serde_json::to_string(&normalized).map_err(std::io::Error::other)?;
         self.save_to_keyring(&key, &serialized)?;
         if let Err(err) = delete_file_if_exists(&self.chaos_home) {
             warn!("failed to remove CLI auth fallback file: {err}");
@@ -281,7 +303,7 @@ impl AuthStorageBackend for EphemeralAuthStorage {
 
     fn save(&self, auth: &AuthDotJson) -> std::io::Result<()> {
         self.with_store(|store, key| {
-            store.insert(key, auth.clone());
+            store.insert(key, auth.normalized());
             Ok(())
         })
     }
@@ -317,3 +339,91 @@ fn create_auth_storage_with_keyring_store(
 #[cfg(test)]
 #[path = "storage_tests.rs"]
 mod tests;
+
+impl ProviderAuthRecord {
+    pub fn resolved_mode(&self) -> AuthMode {
+        if let Some(mode) = self.auth_mode {
+            return mode;
+        }
+        if self.api_key.is_some() {
+            return AuthMode::ApiKey;
+        }
+        AuthMode::Chatgpt
+    }
+
+    pub fn storage_mode(
+        &self,
+        auth_credentials_store_mode: AuthCredentialsStoreMode,
+    ) -> AuthCredentialsStoreMode {
+        if self.resolved_mode() == AuthMode::ChatgptAuthTokens {
+            AuthCredentialsStoreMode::Ephemeral
+        } else {
+            auth_credentials_store_mode
+        }
+    }
+}
+
+impl AuthDotJson {
+    pub fn provider_record(&self, provider_id: &str) -> Option<ProviderAuthRecord> {
+        self.providers
+            .get(provider_id)
+            .cloned()
+            .or_else(|| self.legacy_provider_record(provider_id))
+    }
+
+    pub fn set_provider_record(
+        &mut self,
+        provider_id: impl Into<String>,
+        record: ProviderAuthRecord,
+    ) {
+        self.providers.insert(provider_id.into(), record);
+    }
+
+    pub fn clear_provider_record(&mut self, provider_id: &str) {
+        self.providers.remove(provider_id);
+        if provider_id == LEGACY_OPENAI_PROVIDER_ID {
+            self.auth_mode = None;
+            self.openai_api_key = None;
+            self.tokens = None;
+            self.last_refresh = None;
+        }
+    }
+
+    pub fn normalized_provider_records(&self) -> HashMap<String, ProviderAuthRecord> {
+        let mut providers = self.providers.clone();
+        if let Some(record) = self.legacy_provider_record(LEGACY_OPENAI_PROVIDER_ID) {
+            providers
+                .entry(LEGACY_OPENAI_PROVIDER_ID.to_string())
+                .or_insert(record);
+        }
+        providers
+    }
+
+    pub fn normalized(&self) -> Self {
+        Self {
+            auth_mode: None,
+            openai_api_key: None,
+            tokens: None,
+            last_refresh: None,
+            providers: self.normalized_provider_records(),
+        }
+    }
+
+    fn legacy_provider_record(&self, provider_id: &str) -> Option<ProviderAuthRecord> {
+        if provider_id != LEGACY_OPENAI_PROVIDER_ID
+            || (self.auth_mode.is_none()
+                && self.openai_api_key.is_none()
+                && self.tokens.is_none()
+                && self.last_refresh.is_none())
+        {
+            return None;
+        }
+
+        Some(ProviderAuthRecord {
+            auth_mode: self.auth_mode,
+            api_key: self.openai_api_key.clone(),
+            tokens: self.tokens.clone(),
+            last_refresh: self.last_refresh,
+        })
+    }
+}

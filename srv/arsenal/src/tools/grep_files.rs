@@ -219,7 +219,7 @@ pub fn run_grep_search(
         .map_err(|e| format!("lock error: {e}"))?;
 
     // Sort by modification time, newest first (matching rg --sortr=modified).
-    results.sort_by(|a, b| b.1.cmp(&a.1));
+    results.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
     Ok(results
         .into_iter()

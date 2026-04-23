@@ -6,7 +6,7 @@ use super::{
     ansi_escape_line, highlight_bash_to_lines, session_summary, strip_bash_lc_and_escape, thread,
     tui,
 };
-use crate::onboarding::auth::AuthModeWidget;
+use crate::onboarding::auth::AccountsWidget;
 use std::sync::Arc;
 
 impl App {
@@ -712,13 +712,14 @@ impl App {
             AppEvent::OpenApprovalsPopup => {
                 self.chat_widget.open_approvals_popup();
             }
-            AppEvent::OpenLoginPopup => {
+            AppEvent::OpenAccountsPopup => {
                 let _ = tui.enter_alt_screen();
-                self.overlay = Some(Overlay::new_login(AuthModeWidget::new(
+                self.overlay = Some(Overlay::new_accounts(AccountsWidget::new(
                     tui.frame_requester(),
                     self.config.chaos_home.clone(),
                     self.config.cli_auth_credentials_store_mode,
                     self.auth_manager.clone(),
+                    &self.config.model_providers,
                     self.config.forced_chatgpt_workspace_id.clone(),
                     self.config.forced_login_method,
                     self.config.animations,

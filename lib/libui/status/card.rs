@@ -226,7 +226,7 @@ impl StatusHistoryCell {
             format!("Custom ({sandbox}, {approval})")
         };
         let model_provider = format_model_provider(config);
-        let account = compose_account_display(auth_manager, plan_type);
+        let account = compose_account_display(config, auth_manager, plan_type);
         let session_id = session_id.as_ref().map(std::string::ToString::to_string);
         let forked_from = forked_from.map(|id| id.to_string());
         let default_usage = TokenUsage::default();
@@ -424,14 +424,18 @@ impl HistoryCell for StatusHistoryCell {
         }
 
         let account_value = self.account.as_ref().map(|account| match account {
-            StatusAccountDisplay::ChatGpt { email, plan } => match (email, plan) {
-                (Some(email), Some(plan)) => format!("{email} ({plan})"),
-                (Some(email), None) => email.clone(),
-                (None, Some(plan)) => plan.clone(),
-                (None, None) => "ChatGPT".to_string(),
+            StatusAccountDisplay::ChatGpt {
+                provider_label,
+                email,
+                plan,
+            } => match (email, plan) {
+                (Some(email), Some(plan)) => format!("{provider_label}: {email} ({plan})"),
+                (Some(email), None) => format!("{provider_label}: {email}"),
+                (None, Some(plan)) => format!("{provider_label}: {plan}"),
+                (None, None) => format!("{provider_label} account"),
             },
-            StatusAccountDisplay::ApiKey => {
-                "API key configured (run chaos login to use ChatGPT)".to_string()
+            StatusAccountDisplay::ApiKey { provider_label } => {
+                format!("{provider_label} API key connected")
             }
         });
 

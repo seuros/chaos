@@ -6093,13 +6093,13 @@ async fn provider_auth_missing_error_opens_login_popup() {
 
     let mut opened = false;
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, AppEvent::OpenLoginPopup) {
+        if matches!(event, AppEvent::OpenAccountsPopup) {
             opened = true;
         }
     }
     assert!(
         opened,
-        "ProviderAuthMissing error should dispatch OpenLoginPopup"
+        "ProviderAuthMissing error should dispatch OpenAccountsPopup"
     );
 }
 

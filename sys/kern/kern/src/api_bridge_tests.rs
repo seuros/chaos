@@ -204,6 +204,7 @@ fn auth_provider_from_auth_preflight_matrix() {
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     };
@@ -254,6 +255,7 @@ fn auth_provider_from_auth_preflight_matrix() {
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     };
@@ -279,6 +281,7 @@ fn auth_provider_from_auth_preflight_matrix() {
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     };

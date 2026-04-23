@@ -239,8 +239,8 @@ pub enum AppEvent {
     /// Re-open the approval presets popup.
     OpenApprovalsPopup,
 
-    /// Open the interactive login popup.
-    OpenLoginPopup,
+    /// Open the interactive accounts popup.
+    OpenAccountsPopup,
 
     /// Enable or disable an app by connector ID.
     SetAppEnabled {

@@ -41,6 +41,7 @@ impl ModelClient {
     pub fn new(
         auth_manager: Option<Arc<crate::AuthManager>>,
         conversation_id: chaos_ipc::ProcessId,
+        provider_id: String,
         provider: ModelProviderInfo,
         session_source: SessionSource,
         approval_policy: chaos_ipc::protocol::ApprovalPolicy,
@@ -57,6 +58,7 @@ impl ModelClient {
             state: Arc::new(ModelClientState {
                 auth_manager,
                 conversation_id,
+                provider_id,
                 provider,
                 session_source,
                 approval_policy,
@@ -305,7 +307,12 @@ impl ModelClient {
             None
         } else {
             match self.state.auth_manager.as_ref() {
-                Some(manager) => manager.auth().await,
+                Some(manager)
+                    if self.state.provider_id == crate::auth::DEFAULT_AUTH_PROVIDER_ID =>
+                {
+                    manager.auth().await
+                }
+                Some(manager) => manager.auth_for_provider(&self.state.provider_id),
                 None => None,
             }
         };

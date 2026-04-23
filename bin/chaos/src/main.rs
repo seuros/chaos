@@ -6,12 +6,12 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use chaos_argv::Arg0DispatchPaths;
 use chaos_argv::arg0_dispatch_or_else;
-use chaos_boot::login::read_api_key_from_stdin;
-use chaos_boot::login::run_login_status;
-use chaos_boot::login::run_login_with_api_key;
-use chaos_boot::login::run_login_with_chatgpt;
-use chaos_boot::login::run_login_with_device_code;
-use chaos_boot::login::run_logout;
+use chaos_boot::accounts::read_api_key_from_stdin;
+use chaos_boot::accounts::run_accounts_status;
+use chaos_boot::accounts::run_connect_with_api_key;
+use chaos_boot::accounts::run_connect_with_chatgpt_account;
+use chaos_boot::accounts::run_connect_with_device_code;
+use chaos_boot::accounts::run_disconnect;
 use chaos_console::AppExitInfo;
 use chaos_console::Cli as TuiCli;
 use chaos_console::ExitReason;
@@ -89,10 +89,11 @@ enum Subcommand {
     /// Run a code review non-interactively.
     Review(ReviewArgs),
 
-    /// Manage login.
-    Login(LoginCommand),
+    /// Manage provider accounts and connections.
+    #[clap(visible_alias = "login")]
+    Accounts(AccountsCommand),
 
-    /// Remove stored authentication credentials.
+    /// Disconnect stored provider accounts.
     Logout(LogoutCommand),
 
     /// Manage external MCP servers for Chaos.
@@ -187,13 +188,13 @@ enum ExecpolicySubcommand {
 }
 
 #[derive(Debug, Parser)]
-struct LoginCommand {
+struct AccountsCommand {
     #[clap(skip)]
     config_overrides: CliConfigOverrides,
 
     #[arg(
         long = "with-api-key",
-        help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | chaos login --with-api-key`)"
+        help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | chaos accounts --with-api-key`)"
     )]
     with_api_key: bool,
 
@@ -210,13 +211,20 @@ struct LoginCommand {
     client_id: Option<String>,
 
     #[command(subcommand)]
-    action: Option<LoginSubcommand>,
+    action: Option<AccountsSubcommand>,
 }
 
 #[derive(Debug, clap::Subcommand)]
-enum LoginSubcommand {
-    /// Show login status.
+enum AccountsSubcommand {
+    /// Show provider account status.
     Status,
+
+    /// Disconnect stored provider accounts.
+    Disconnect {
+        /// Disconnect every stored provider account instead of only the active provider.
+        #[arg(long = "all", default_value_t = false)]
+        all: bool,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -444,32 +452,35 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
             handle_app_exit(exit_info)?;
         }
-        Some(Subcommand::Login(mut login_cli)) => {
-            prepend_root_flags!(login_cli, root_config_overrides);
-            match login_cli.action {
-                Some(LoginSubcommand::Status) => {
-                    run_login_status(login_cli.config_overrides).await;
+        Some(Subcommand::Accounts(mut accounts_cli)) => {
+            prepend_root_flags!(accounts_cli, root_config_overrides);
+            match accounts_cli.action {
+                Some(AccountsSubcommand::Status) => {
+                    run_accounts_status(accounts_cli.config_overrides).await;
+                }
+                Some(AccountsSubcommand::Disconnect { all }) => {
+                    run_disconnect(accounts_cli.config_overrides, all).await;
                 }
                 None => {
-                    if login_cli.use_device_code {
-                        run_login_with_device_code(
-                            login_cli.config_overrides,
-                            login_cli.issuer_base_url,
-                            login_cli.client_id,
+                    if accounts_cli.use_device_code {
+                        run_connect_with_device_code(
+                            accounts_cli.config_overrides,
+                            accounts_cli.issuer_base_url,
+                            accounts_cli.client_id,
                         )
                         .await;
-                    } else if login_cli.with_api_key {
+                    } else if accounts_cli.with_api_key {
                         let api_key = read_api_key_from_stdin();
-                        run_login_with_api_key(login_cli.config_overrides, api_key).await;
+                        run_connect_with_api_key(accounts_cli.config_overrides, api_key).await;
                     } else {
-                        run_login_with_chatgpt(login_cli.config_overrides).await;
+                        run_connect_with_chatgpt_account(accounts_cli.config_overrides).await;
                     }
                 }
             }
         }
         Some(Subcommand::Logout(mut logout_cli)) => {
             prepend_root_flags!(logout_cli, root_config_overrides);
-            run_logout(logout_cli.config_overrides).await;
+            run_disconnect(logout_cli.config_overrides, /*all*/ true).await;
         }
         Some(Subcommand::Completion(completion_cli)) => {
             print_completion(completion_cli);

@@ -21,6 +21,7 @@ use chaos_syslog::TelemetryAuthMode;
 pub use crate::auth::storage::AuthCredentialsStoreMode;
 pub use crate::auth::storage::AuthDotJson;
 use crate::auth::storage::AuthStorageBackend;
+pub use crate::auth::storage::ProviderAuthRecord;
 use crate::auth::storage::create_auth_storage;
 use crate::error::RefreshTokenFailedError;
 use crate::error::RefreshTokenFailedReason;
@@ -33,13 +34,18 @@ use codex_client::ChaosHttpClient;
 use thiserror::Error;
 
 // Re-export the public surface from submodules.
+pub use permissions::disconnect_all_provider_accounts;
+pub use permissions::disconnect_provider_account;
 pub use permissions::enforce_login_restrictions;
 pub use permissions::login_with_api_key;
 pub use permissions::login_with_chatgpt_auth_tokens;
+pub use permissions::login_with_provider_api_key;
 pub use policies::UnauthorizedRecovery;
 pub use policies::UnauthorizedRecoveryStepResult;
 pub use tokens::AuthManager;
 pub use tokens::CLIENT_ID;
+
+pub const DEFAULT_AUTH_PROVIDER_ID: &str = "openai";
 
 /// Account type for the current user.
 ///
@@ -71,6 +77,7 @@ pub enum ChaosAuth {
 
 #[derive(Debug, Clone)]
 pub struct ApiKeyAuth {
+    provider_id: String,
     api_key: String,
 }
 
@@ -87,6 +94,7 @@ pub struct ChatgptAuthTokens {
 
 #[derive(Debug, Clone)]
 struct ChatgptAuthState {
+    provider_id: String,
     auth_dot_json: Arc<Mutex<Option<AuthDotJson>>>,
     client: ChaosHttpClient,
 }
@@ -151,22 +159,29 @@ impl From<RefreshTokenError> for std::io::Error {
 }
 
 impl ChaosAuth {
-    fn from_auth_dot_json(
+    fn from_provider_record(
+        provider_id: &str,
         chaos_home: &Path,
         auth_dot_json: AuthDotJson,
+        record: ProviderAuthRecord,
         auth_credentials_store_mode: AuthCredentialsStoreMode,
         client: ChaosHttpClient,
     ) -> std::io::Result<Self> {
-        let auth_mode = auth_dot_json.resolved_mode();
+        let auth_mode = record.resolved_mode();
         if auth_mode == ApiAuthMode::ApiKey {
-            let Some(api_key) = auth_dot_json.openai_api_key.as_deref() else {
+            let Some(api_key) = record.api_key.as_deref() else {
                 return Err(std::io::Error::other("API key auth is missing a key."));
             };
-            return Ok(ChaosAuth::from_api_key_with_client(api_key, client));
+            return Ok(ChaosAuth::from_api_key_with_provider_and_client(
+                provider_id,
+                api_key,
+                client,
+            ));
         }
 
-        let storage_mode = auth_dot_json.storage_mode(auth_credentials_store_mode);
+        let storage_mode = record.storage_mode(auth_credentials_store_mode);
         let state = ChatgptAuthState {
+            provider_id: provider_id.to_string(),
             auth_dot_json: Arc::new(Mutex::new(Some(auth_dot_json))),
             client,
         };
@@ -232,15 +247,8 @@ impl ChaosAuth {
 
     /// Returns `Err` if `is_chatgpt_auth()` is false.
     pub fn get_token_data(&self) -> Result<TokenData, std::io::Error> {
-        let auth_dot_json: Option<AuthDotJson> = self.get_current_auth_json();
-        match auth_dot_json {
-            Some(AuthDotJson {
-                tokens: Some(tokens),
-                last_refresh: Some(_),
-                ..
-            }) => Ok(tokens),
-            _ => Err(std::io::Error::other("Token data is not available.")),
-        }
+        self.get_current_token_data()
+            .ok_or(std::io::Error::other("Token data is not available."))
     }
 
     /// Returns the token string used for bearer authentication.
@@ -307,25 +315,43 @@ impl ChaosAuth {
 
     /// Returns `None` if `is_chatgpt_auth()` is false.
     fn get_current_token_data(&self) -> Option<TokenData> {
-        self.get_current_auth_json().and_then(|t| t.tokens)
+        let provider_id = match self {
+            Self::Chatgpt(auth) => auth.state.provider_id.as_str(),
+            Self::ChatgptAuthTokens(auth) => auth.state.provider_id.as_str(),
+            Self::ApiKey(_) => return None,
+        };
+        self.get_current_auth_json()
+            .and_then(|t| t.provider_record(provider_id))
+            .and_then(|record| record.tokens)
     }
 
     /// Consider this private to integration tests.
     pub fn create_dummy_chatgpt_auth_for_testing() -> Self {
-        let auth_dot_json = AuthDotJson {
-            auth_mode: Some(ApiAuthMode::Chatgpt),
+        let mut auth_dot_json = AuthDotJson {
+            auth_mode: None,
             openai_api_key: None,
-            tokens: Some(TokenData {
-                id_token: Default::default(),
-                access_token: "Access Token".to_string(),
-                refresh_token: "test".to_string(),
-                account_id: Some("account_id".to_string()),
-            }),
-            last_refresh: Some(Timestamp::now()),
+            tokens: None,
+            last_refresh: None,
+            providers: Default::default(),
         };
+        auth_dot_json.set_provider_record(
+            DEFAULT_AUTH_PROVIDER_ID,
+            ProviderAuthRecord {
+                auth_mode: Some(ApiAuthMode::Chatgpt),
+                api_key: None,
+                tokens: Some(TokenData {
+                    id_token: Default::default(),
+                    access_token: "Access Token".to_string(),
+                    refresh_token: "test".to_string(),
+                    account_id: Some("account_id".to_string()),
+                }),
+                last_refresh: Some(Timestamp::now()),
+            },
+        );
 
         let client = crate::default_client::create_client();
         let state = ChatgptAuthState {
+            provider_id: DEFAULT_AUTH_PROVIDER_ID.to_string(),
             auth_dot_json: Arc::new(Mutex::new(Some(auth_dot_json))),
             client,
         };
@@ -333,14 +359,31 @@ impl ChaosAuth {
         Self::Chatgpt(ChatgptAuth { state, storage })
     }
 
-    fn from_api_key_with_client(api_key: &str, _client: ChaosHttpClient) -> Self {
+    fn from_api_key_with_provider_and_client(
+        provider_id: &str,
+        api_key: &str,
+        _client: ChaosHttpClient,
+    ) -> Self {
         Self::ApiKey(ApiKeyAuth {
+            provider_id: provider_id.to_string(),
             api_key: api_key.to_owned(),
         })
     }
 
+    fn from_api_key_with_client(api_key: &str, client: ChaosHttpClient) -> Self {
+        Self::from_api_key_with_provider_and_client(DEFAULT_AUTH_PROVIDER_ID, api_key, client)
+    }
+
     pub fn from_api_key(api_key: &str) -> Self {
         Self::from_api_key_with_client(api_key, crate::default_client::create_client())
+    }
+
+    pub fn provider_id(&self) -> &str {
+        match self {
+            Self::ApiKey(auth) => auth.provider_id.as_str(),
+            Self::Chatgpt(auth) => auth.state.provider_id.as_str(),
+            Self::ChatgptAuthTokens(auth) => auth.state.provider_id.as_str(),
+        }
     }
 }
 
@@ -351,7 +394,9 @@ impl ChatgptAuth {
     }
 
     pub(crate) fn current_token_data(&self) -> Option<TokenData> {
-        self.current_auth_json().and_then(|auth| auth.tokens)
+        self.current_auth_json()
+            .and_then(|auth| auth.provider_record(&self.state.provider_id))
+            .and_then(|record| record.tokens)
     }
 
     pub(crate) fn storage(&self) -> &Arc<dyn AuthStorageBackend> {
@@ -360,6 +405,10 @@ impl ChatgptAuth {
 
     pub(crate) fn client(&self) -> &ChaosHttpClient {
         &self.state.client
+    }
+
+    pub(crate) fn provider_id(&self) -> &str {
+        &self.state.provider_id
     }
 }
 
@@ -428,13 +477,24 @@ impl AuthDotJson {
             refresh_token: String::new(),
             account_id: Some(external.chatgpt_account_id.clone()),
         };
-
-        Ok(Self {
-            auth_mode: Some(ApiAuthMode::ChatgptAuthTokens),
+        let mut auth = Self {
+            auth_mode: None,
             openai_api_key: None,
-            tokens: Some(tokens),
-            last_refresh: Some(Timestamp::now()),
-        })
+            tokens: None,
+            last_refresh: None,
+            providers: Default::default(),
+        };
+        auth.set_provider_record(
+            DEFAULT_AUTH_PROVIDER_ID,
+            ProviderAuthRecord {
+                auth_mode: Some(ApiAuthMode::ChatgptAuthTokens),
+                api_key: None,
+                tokens: Some(tokens),
+                last_refresh: Some(Timestamp::now()),
+            },
+        );
+
+        Ok(auth)
     }
 
     pub(crate) fn from_external_access_token(
@@ -449,27 +509,6 @@ impl AuthDotJson {
         };
         Self::from_external_tokens(&external)
     }
-
-    pub(crate) fn resolved_mode(&self) -> ApiAuthMode {
-        if let Some(mode) = self.auth_mode {
-            return mode;
-        }
-        if self.openai_api_key.is_some() {
-            return ApiAuthMode::ApiKey;
-        }
-        ApiAuthMode::Chatgpt
-    }
-
-    pub(crate) fn storage_mode(
-        &self,
-        auth_credentials_store_mode: AuthCredentialsStoreMode,
-    ) -> AuthCredentialsStoreMode {
-        if self.resolved_mode() == ApiAuthMode::ChatgptAuthTokens {
-            AuthCredentialsStoreMode::Ephemeral
-        } else {
-            auth_credentials_store_mode
-        }
-    }
 }
 
 pub(crate) fn load_auth(
@@ -477,13 +516,39 @@ pub(crate) fn load_auth(
     enable_codex_api_key_env: bool,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<Option<ChaosAuth>> {
+    load_auth_for_provider(
+        chaos_home,
+        DEFAULT_AUTH_PROVIDER_ID,
+        enable_codex_api_key_env,
+        auth_credentials_store_mode,
+    )
+}
+
+pub(crate) fn load_auth_for_provider(
+    chaos_home: &Path,
+    provider_id: &str,
+    enable_codex_api_key_env: bool,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<Option<ChaosAuth>> {
     let build_auth = |auth_dot_json: AuthDotJson, storage_mode| {
+        let record = auth_dot_json.provider_record(provider_id)?;
         let client = crate::default_client::create_client();
-        ChaosAuth::from_auth_dot_json(chaos_home, auth_dot_json, storage_mode, client)
+        ChaosAuth::from_provider_record(
+            provider_id,
+            chaos_home,
+            auth_dot_json,
+            record,
+            storage_mode,
+            client,
+        )
+        .ok()
     };
 
     // API key via env var takes precedence over any other auth method.
-    if enable_codex_api_key_env && let Some(api_key) = read_chaos_api_key_from_env() {
+    if provider_id == DEFAULT_AUTH_PROVIDER_ID
+        && enable_codex_api_key_env
+        && let Some(api_key) = read_chaos_api_key_from_env()
+    {
         let client = crate::default_client::create_client();
         return Ok(Some(ChaosAuth::from_api_key_with_client(
             api_key.as_str(),
@@ -496,8 +561,9 @@ pub(crate) fn load_auth(
         chaos_home.to_path_buf(),
         AuthCredentialsStoreMode::Ephemeral,
     );
-    if let Some(auth_dot_json) = ephemeral_storage.load()? {
-        let auth = build_auth(auth_dot_json, AuthCredentialsStoreMode::Ephemeral)?;
+    if let Some(auth_dot_json) = ephemeral_storage.load()?
+        && let Some(auth) = build_auth(auth_dot_json, AuthCredentialsStoreMode::Ephemeral)
+    {
         return Ok(Some(auth));
     }
 
@@ -513,8 +579,7 @@ pub(crate) fn load_auth(
         None => return Ok(None),
     };
 
-    let auth = build_auth(auth_dot_json, auth_credentials_store_mode)?;
-    Ok(Some(auth))
+    Ok(build_auth(auth_dot_json, auth_credentials_store_mode))
 }
 
 #[cfg(test)]

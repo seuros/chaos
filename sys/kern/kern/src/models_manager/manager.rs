@@ -725,7 +725,7 @@ impl ModelsManager {
 
     /// Build picker-ready presets from the active catalog snapshot.
     fn build_available_models(&self, mut remote_models: Vec<ModelInfo>) -> Vec<ModelPreset> {
-        remote_models.sort_by(|a, b| a.priority.cmp(&b.priority));
+        remote_models.sort_by_key(|a| a.priority);
 
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
         let chatgpt_mode = matches!(self.auth_manager.auth_mode(), Some(AuthMode::Chatgpt));

@@ -30,6 +30,8 @@ use base64::Engine;
 use chaos_ipc::api::AuthMode;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::AuthDotJson;
+use chaos_kern::auth::DEFAULT_AUTH_PROVIDER_ID;
+use chaos_kern::auth::ProviderAuthRecord;
 use chaos_kern::auth::save_auth;
 use chaos_kern::default_client::originator;
 use chaos_kern::token_data::TokenData;
@@ -762,12 +764,22 @@ pub(crate) async fn persist_tokens_async(
         {
             tokens.account_id = Some(acc.to_string());
         }
-        let auth = AuthDotJson {
-            auth_mode: Some(AuthMode::Chatgpt),
-            openai_api_key: api_key,
-            tokens: Some(tokens),
-            last_refresh: Some(jiff::Timestamp::now()),
+        let mut auth = AuthDotJson {
+            auth_mode: None,
+            openai_api_key: None,
+            tokens: None,
+            last_refresh: None,
+            providers: Default::default(),
         };
+        auth.set_provider_record(
+            DEFAULT_AUTH_PROVIDER_ID,
+            ProviderAuthRecord {
+                auth_mode: Some(AuthMode::Chatgpt),
+                api_key,
+                tokens: Some(tokens),
+                last_refresh: Some(jiff::Timestamp::now()),
+            },
+        );
         save_auth(&chaos_home, &auth, auth_credentials_store_mode)
     })
     .await

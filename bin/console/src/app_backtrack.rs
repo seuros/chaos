@@ -419,7 +419,7 @@ impl App {
 
     fn handle_overlay_completion(
         &mut self,
-        auth_completion: Option<crate::onboarding::auth::AuthCompletion>,
+        auth_completion: Option<crate::onboarding::auth::AccountsCompletion>,
     ) {
         let Some(auth_completion) = auth_completion else {
             return;
@@ -429,20 +429,11 @@ impl App {
         self.chat_widget.refresh_connectors(/*force_refetch*/ true);
         self.chat_widget.submit_op(Op::ReloadUserConfig);
 
-        match auth_completion {
-            crate::onboarding::auth::AuthCompletion::ChatGpt => {
-                self.chat_widget.add_info_message(
-                    "Signed in with your ChatGPT account.".to_string(),
-                    Some("Refreshed auth-dependent state for this session.".to_string()),
-                );
-            }
-            crate::onboarding::auth::AuthCompletion::ApiKey => {
-                self.chat_widget.add_info_message(
-                    "API key configured.".to_string(),
-                    Some("Refreshed auth-dependent state for this session.".to_string()),
-                );
-            }
-        }
+        let _ = auth_completion;
+        self.chat_widget.add_info_message(
+            "Provider account updated.".to_string(),
+            Some("Refreshed auth-dependent state for this session.".to_string()),
+        );
     }
 
     /// Handle Enter in overlay backtrack preview: confirm selection and reset state.

@@ -174,7 +174,7 @@ pub(super) fn with_border_internal(
         let span_count = line.spans.len();
         let mut spans: Vec<Span<'static>> = Vec::with_capacity(span_count + 4);
         spans.push(Span::styled("│ ", border_style));
-        spans.extend(line.into_iter());
+        spans.extend(line);
         if used_width < content_width {
             spans.push(Span::from(" ".repeat(content_width - used_width)));
         }

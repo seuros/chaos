@@ -40,8 +40,8 @@ pub enum SlashCommand {
     McpAdd,
     Tools,
     Clamp,
+    Accounts,
     Login,
-    Logout,
     Quit,
     Exit,
     Ps,
@@ -97,8 +97,10 @@ impl SlashCommand {
             SlashCommand::McpAdd => "add a new MCP server",
             SlashCommand::Tools => "show all tools visible to the model",
             SlashCommand::Clamp => "use Claude Code MAX subscription as transport",
-            SlashCommand::Login => "authenticate with your provider",
-            SlashCommand::Logout => "log out of Chaos",
+            SlashCommand::Accounts => {
+                "manage provider accounts and connections (disconnect via CLI)"
+            }
+            SlashCommand::Login => "manage provider accounts and connections",
             SlashCommand::TestApproval => "test approval request",
         }
     }
@@ -106,7 +108,11 @@ impl SlashCommand {
     /// Command string without the leading '/'. Provided for compatibility with
     /// existing code that expects a method named `command()`.
     pub fn command(self) -> &'static str {
-        self.into()
+        match self {
+            SlashCommand::Accounts => "accounts",
+            SlashCommand::Login => "login",
+            _ => self.into(),
+        }
     }
 
     /// Whether this command supports inline args (for example `/review ...`).
@@ -136,8 +142,8 @@ impl SlashCommand {
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear
+            | SlashCommand::Accounts
             | SlashCommand::Login
-            | SlashCommand::Logout
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,
             SlashCommand::Diff
@@ -165,6 +171,7 @@ impl SlashCommand {
     fn is_visible(self) -> bool {
         match self {
             SlashCommand::SandboxReadRoot => false,
+            SlashCommand::Login => false,
             SlashCommand::Copy => true,
             SlashCommand::TestApproval => cfg!(debug_assertions),
             SlashCommand::Clamp => std::process::Command::new("claude")

@@ -8,7 +8,7 @@ use ratatui::text::Text;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, WidgetRef, Wrap};
 
 use crate::key_hint::KeyBinding;
-use crate::onboarding::auth::{AuthCompletion, AuthModeWidget};
+use crate::onboarding::auth::{AccountsCompletion, AccountsWidget};
 use crate::onboarding::onboarding_screen::KeyboardHandler;
 use crate::render::renderable::Renderable;
 use crate::tui::{self, TuiEvent};
@@ -76,14 +76,14 @@ impl StaticOverlay {
     }
 }
 
-pub(crate) struct AuthOverlay {
-    widget: AuthModeWidget,
+pub(crate) struct AccountsOverlay {
+    widget: AccountsWidget,
     done: bool,
-    completion: Option<AuthCompletion>,
+    completion: Option<AccountsCompletion>,
 }
 
-impl AuthOverlay {
-    pub(super) fn new(widget: AuthModeWidget) -> Self {
+impl AccountsOverlay {
+    pub(super) fn new(widget: AccountsWidget) -> Self {
         Self {
             widget,
             done: false,
@@ -99,15 +99,16 @@ impl AuthOverlay {
                     crossterm::event::KeyEventKind::Press | crossterm::event::KeyEventKind::Repeat
                 ) =>
             {
-                if key_event.code == crossterm::event::KeyCode::Esc && self.widget.can_exit_popup()
-                {
+                let was_escape = key_event.code == crossterm::event::KeyCode::Esc;
+                let should_close_before_event = was_escape && self.widget.should_close_on_escape();
+                self.widget.handle_key_event(key_event);
+                if should_close_before_event && self.widget.should_close_on_escape() {
                     self.done = true;
-                } else {
-                    self.widget.handle_key_event(key_event);
-                    if let Some(completion) = self.widget.completion() {
-                        self.completion = Some(completion);
-                        self.done = true;
-                    }
+                    return Ok(());
+                }
+                if let Some(completion) = self.widget.completion() {
+                    self.completion = Some(completion);
+                    self.done = true;
                 }
             }
             TuiEvent::Paste(pasted) => {
@@ -135,7 +136,7 @@ impl AuthOverlay {
                     let block = Block::default()
                         .title(Line::from(vec![
                             "/".dim(),
-                            " login".fg(crate::theme::cyan()),
+                            " accounts".fg(crate::theme::cyan()),
                         ]))
                         .title_alignment(Alignment::Left)
                         .borders(Borders::ALL)
@@ -155,7 +156,7 @@ impl AuthOverlay {
         self.done
     }
 
-    pub(super) fn completion(&self) -> Option<AuthCompletion> {
+    pub(super) fn completion(&self) -> Option<AccountsCompletion> {
         self.completion
     }
 }

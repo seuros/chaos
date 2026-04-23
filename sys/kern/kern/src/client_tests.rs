@@ -26,6 +26,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
     ModelClient::new(
         None,
         ProcessId::new(),
+        "gpt-oss".to_string(),
         provider,
         session_source,
         ApprovalPolicy::Interactive,
@@ -50,6 +51,7 @@ fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
+        auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
     }
@@ -93,6 +95,7 @@ fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
     let client = ModelClient::new(
         None,
         ProcessId::new(),
+        "anthropic".to_string(),
         provider,
         SessionSource::Cli,
         ApprovalPolicy::Interactive,
@@ -117,6 +120,7 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
     let client = ModelClient::new(
         None,
         ProcessId::new(),
+        "anthropic".to_string(),
         test_anthropic_provider(),
         SessionSource::Cli,
         ApprovalPolicy::Interactive,

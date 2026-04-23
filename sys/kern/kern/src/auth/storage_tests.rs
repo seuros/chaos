@@ -10,6 +10,10 @@ use tempfile::tempdir;
 use chaos_keyring::tests::MockKeyringStore;
 use keyring_core::Error as KeyringError;
 
+fn normalized(auth: &AuthDotJson) -> AuthDotJson {
+    auth.normalized()
+}
+
 #[tokio::test]
 async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
@@ -19,6 +23,7 @@ async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
         openai_api_key: Some("test-key".to_string()),
         tokens: None,
         last_refresh: Some(Timestamp::now()),
+        providers: Default::default(),
     };
 
     storage
@@ -26,7 +31,7 @@ async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
         .context("failed to save auth file")?;
 
     let loaded = storage.load().context("failed to load auth file")?;
-    assert_eq!(Some(auth_dot_json), loaded);
+    assert_eq!(Some(normalized(&auth_dot_json)), loaded);
     Ok(())
 }
 
@@ -39,6 +44,7 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
         openai_api_key: Some("test-key".to_string()),
         tokens: None,
         last_refresh: Some(Timestamp::now()),
+        providers: Default::default(),
     };
 
     let file = get_auth_file(chaos_home.path());
@@ -49,7 +55,7 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
     let same_auth_dot_json = storage
         .try_read_auth_json(&file)
         .context("failed to read auth file after save")?;
-    assert_eq!(auth_dot_json, same_auth_dot_json);
+    assert_eq!(normalized(&auth_dot_json), same_auth_dot_json);
     Ok(())
 }
 
@@ -61,6 +67,7 @@ fn file_storage_delete_removes_auth_file() -> anyhow::Result<()> {
         openai_api_key: Some("sk-test-key".to_string()),
         tokens: None,
         last_refresh: None,
+        providers: Default::default(),
     };
     let storage = create_auth_storage(dir.path().to_path_buf(), AuthCredentialsStoreMode::File);
     storage.save(&auth_dot_json)?;
@@ -84,11 +91,12 @@ fn ephemeral_storage_save_load_delete_is_in_memory_only() -> anyhow::Result<()> 
         openai_api_key: Some("sk-ephemeral".to_string()),
         tokens: None,
         last_refresh: Some(Timestamp::now()),
+        providers: Default::default(),
     };
 
     storage.save(&auth_dot_json)?;
     let loaded = storage.load()?;
-    assert_eq!(Some(auth_dot_json), loaded);
+    assert_eq!(Some(normalized(&auth_dot_json)), loaded);
 
     let removed = storage.delete()?;
     assert!(removed);
@@ -122,7 +130,7 @@ where
     F: FnOnce() -> std::io::Result<String>,
 {
     let key = compute_key()?;
-    let serialized = serde_json::to_string(auth)?;
+    let serialized = serde_json::to_string(&normalized(auth))?;
     mock_keyring.save(KEYRING_SERVICE, &key, &serialized)?;
     Ok(())
 }
@@ -136,7 +144,8 @@ fn assert_keyring_saved_auth_and_removed_fallback(
     let saved_value = mock_keyring
         .saved_value(key)
         .expect("keyring entry should exist");
-    let expected_serialized = serde_json::to_string(expected).expect("serialize expected auth");
+    let expected_serialized =
+        serde_json::to_string(&normalized(expected)).expect("serialize expected auth");
     assert_eq!(saved_value, expected_serialized);
     let auth_file = get_auth_file(chaos_home);
     assert!(
@@ -182,6 +191,7 @@ fn auth_with_prefix(prefix: &str) -> AuthDotJson {
             account_id: Some(format!("{prefix}-account-id")),
         }),
         last_refresh: None,
+        providers: Default::default(),
     }
 }
 
@@ -198,6 +208,7 @@ fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
         openai_api_key: Some("sk-test".to_string()),
         tokens: None,
         last_refresh: None,
+        providers: Default::default(),
     };
     seed_keyring_with_auth(
         &mock_keyring,
@@ -206,7 +217,7 @@ fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
     )?;
 
     let loaded = storage.load()?;
-    assert_eq!(Some(expected), loaded);
+    assert_eq!(Some(normalized(&expected)), loaded);
     Ok(())
 }
 
@@ -240,6 +251,7 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
             account_id: Some("account".to_string()),
         }),
         last_refresh: Some(Timestamp::now()),
+        providers: Default::default(),
     };
 
     storage.save(&auth)?;
@@ -295,7 +307,7 @@ fn auto_auth_storage_load_prefers_keyring_value() -> anyhow::Result<()> {
     storage.file_storage.save(&file_auth)?;
 
     let loaded = storage.load()?;
-    assert_eq!(loaded, Some(keyring_auth));
+    assert_eq!(loaded, Some(normalized(&keyring_auth)));
     Ok(())
 }
 
@@ -309,7 +321,7 @@ fn auto_auth_storage_load_uses_file_when_keyring_empty() -> anyhow::Result<()> {
     storage.file_storage.save(&expected)?;
 
     let loaded = storage.load()?;
-    assert_eq!(loaded, Some(expected));
+    assert_eq!(loaded, Some(normalized(&expected)));
     Ok(())
 }
 
@@ -328,7 +340,7 @@ fn auto_auth_storage_load_falls_back_when_keyring_errors() -> anyhow::Result<()>
     storage.file_storage.save(&expected)?;
 
     let loaded = storage.load()?;
-    assert_eq!(loaded, Some(expected));
+    assert_eq!(loaded, Some(normalized(&expected)));
     Ok(())
 }
 
@@ -380,7 +392,7 @@ fn auto_auth_storage_save_falls_back_when_keyring_errors() -> anyhow::Result<()>
         .file_storage
         .load()?
         .context("fallback auth should exist")?;
-    assert_eq!(saved, auth);
+    assert_eq!(saved, normalized(&auth));
     assert!(
         mock_keyring.saved_value(&key).is_none(),
         "keyring should not contain value when save fails"

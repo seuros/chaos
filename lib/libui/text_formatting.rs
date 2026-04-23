@@ -280,7 +280,7 @@ pub fn center_truncate_path(path: &str, max_width: usize) -> String {
             }
         };
 
-    for (left_count, right_count) in prioritized.into_iter().chain(fallback.into_iter()) {
+    for (left_count, right_count) in prioritized.into_iter().chain(fallback) {
         let mut segments: Vec<Segment<'_>> = raw_segments[..left_count]
             .iter()
             .map(|seg| Segment {

@@ -1,12 +1,14 @@
-//! Permission checking, login restriction enforcement, and logout helpers.
+//! Permission checking, account restriction enforcement, and disconnect helpers.
 
 use std::path::Path;
 
 use crate::auth::AuthCredentialsStoreMode;
 use crate::auth::AuthMode;
+use crate::auth::DEFAULT_AUTH_PROVIDER_ID;
 use crate::auth::load_auth;
 use crate::auth::logout;
 use crate::auth::storage::AuthDotJson;
+use crate::auth::storage::ProviderAuthRecord;
 use crate::config::Config;
 use chaos_ipc::config_types::ForcedLoginMethod;
 
@@ -114,19 +116,99 @@ pub(super) fn logout_all_stores(
     Ok(removed_ephemeral || removed_managed)
 }
 
+fn disconnect_provider_in_store(
+    chaos_home: &Path,
+    provider_id: &str,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<bool> {
+    let Some(mut auth_dot_json) =
+        super::load_auth_dot_json(chaos_home, auth_credentials_store_mode)?
+    else {
+        return Ok(false);
+    };
+
+    if auth_dot_json.provider_record(provider_id).is_none() {
+        return Ok(false);
+    }
+
+    auth_dot_json.clear_provider_record(provider_id);
+    if auth_dot_json.normalized_provider_records().is_empty() {
+        return logout(chaos_home, auth_credentials_store_mode);
+    }
+
+    super::save_auth(chaos_home, &auth_dot_json, auth_credentials_store_mode)?;
+    Ok(true)
+}
+
+/// Remove stored credentials for a single provider from every relevant store.
+pub fn disconnect_provider_account(
+    chaos_home: &Path,
+    provider_id: &str,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<bool> {
+    if auth_credentials_store_mode == AuthCredentialsStoreMode::Ephemeral {
+        return disconnect_provider_in_store(
+            chaos_home,
+            provider_id,
+            AuthCredentialsStoreMode::Ephemeral,
+        );
+    }
+
+    let removed_ephemeral =
+        disconnect_provider_in_store(chaos_home, provider_id, AuthCredentialsStoreMode::Ephemeral)?;
+    let removed_managed =
+        disconnect_provider_in_store(chaos_home, provider_id, auth_credentials_store_mode)?;
+    Ok(removed_ephemeral || removed_managed)
+}
+
+/// Remove all stored provider credentials from every relevant store.
+pub fn disconnect_all_provider_accounts(
+    chaos_home: &Path,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<bool> {
+    logout_all_stores(chaos_home, auth_credentials_store_mode)
+}
+
 /// Writes an `auth.json` that contains only the API key.
 pub fn login_with_api_key(
     chaos_home: &Path,
     api_key: &str,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<()> {
+    login_with_provider_api_key(
+        chaos_home,
+        DEFAULT_AUTH_PROVIDER_ID,
+        api_key,
+        auth_credentials_store_mode,
+    )
+}
+
+/// Writes or updates a provider-scoped API key record inside `auth.json`.
+pub fn login_with_provider_api_key(
+    chaos_home: &Path,
+    provider_id: &str,
+    api_key: &str,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<()> {
     use chaos_ipc::api::AuthMode as ApiAuthMode;
-    let auth_dot_json = AuthDotJson {
-        auth_mode: Some(ApiAuthMode::ApiKey),
-        openai_api_key: Some(api_key.to_string()),
-        tokens: None,
-        last_refresh: None,
-    };
+
+    let mut auth_dot_json = super::load_auth_dot_json(chaos_home, auth_credentials_store_mode)?
+        .unwrap_or(AuthDotJson {
+            auth_mode: None,
+            openai_api_key: None,
+            tokens: None,
+            last_refresh: None,
+            providers: Default::default(),
+        });
+    auth_dot_json.set_provider_record(
+        provider_id,
+        ProviderAuthRecord {
+            auth_mode: Some(ApiAuthMode::ApiKey),
+            api_key: Some(api_key.to_string()),
+            tokens: None,
+            last_refresh: None,
+        },
+    );
     super::save_auth(chaos_home, &auth_dot_json, auth_credentials_store_mode)
 }
 

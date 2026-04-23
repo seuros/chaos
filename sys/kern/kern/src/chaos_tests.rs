@@ -518,6 +518,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         model_client: ModelClient::new(
             Some(auth_manager.clone()),
             conversation_id,
+            "openai".to_string(),
             session_configuration.provider.clone(),
             session_configuration.session_source.clone(),
             session_configuration.approval_policy.value(),
@@ -671,6 +672,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         model_client: ModelClient::new(
             Some(Arc::clone(&auth_manager)),
             conversation_id,
+            "openai".to_string(),
             session_configuration.provider.clone(),
             session_configuration.session_source.clone(),
             session_configuration.approval_policy.value(),

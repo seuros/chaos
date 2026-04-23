@@ -94,17 +94,8 @@ impl ChatWidget {
             SlashCommand::Quit | SlashCommand::Exit => {
                 self.request_quit_without_confirmation();
             }
-            SlashCommand::Login => {
-                self.app_event_tx.send(AppEvent::OpenLoginPopup);
-            }
-            SlashCommand::Logout => {
-                if let Err(e) = chaos_kern::auth::logout(
-                    &self.config.chaos_home,
-                    self.config.cli_auth_credentials_store_mode,
-                ) {
-                    tracing::error!("failed to logout: {e}");
-                }
-                self.request_quit_without_confirmation();
+            SlashCommand::Accounts | SlashCommand::Login => {
+                self.app_event_tx.send(AppEvent::OpenAccountsPopup);
             }
             SlashCommand::Diff => {
                 self.add_diff_in_progress();

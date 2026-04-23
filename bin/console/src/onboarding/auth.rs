@@ -1,10 +1,11 @@
 #![allow(clippy::unwrap_used)]
 
 use chaos_kern::AuthManager;
-use chaos_kern::ChaosAuth;
+use chaos_kern::ModelProviderInfo;
+use chaos_kern::ProviderAuthMethod;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::CLIENT_ID;
-use chaos_kern::auth::login_with_api_key;
+use chaos_kern::auth::login_with_provider_api_key;
 use chaos_kern::auth::read_openai_api_key_from_env;
 use chaos_pam::DeviceCode;
 use chaos_pam::LoginFlowCancel;
@@ -88,19 +89,19 @@ mod headless_chatgpt_login;
 
 #[derive(Clone)]
 pub(crate) enum SignInState {
+    PickProvider,
     PickMode,
     ChatGptContinueInBrowser(ContinueInBrowserState),
     ChatGptDeviceCode(ContinueWithDeviceCodeState),
     ChatGptSuccessMessage,
     ChatGptSuccess,
     ApiKeyEntry(ApiKeyInputState),
-    ApiKeyConfigured,
+    ApiKeyConfigured(AccountProvider),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AuthCompletion {
-    ChatGpt,
-    ApiKey,
+pub(crate) enum AccountsCompletion {
+    ConnectedProvider,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,16 +111,26 @@ pub(crate) enum SignInOption {
     ApiKey,
 }
 
-const API_KEY_DISABLED_MESSAGE: &str = "API key login is disabled.";
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AccountProvider {
+    id: String,
+    display_name: String,
+    env_key: Option<String>,
+    supports_chatgpt_account: bool,
+    supports_api_key: bool,
+}
+
+const API_KEY_DISABLED_MESSAGE: &str = "API key connection is disabled.";
 
 #[derive(Clone, Default)]
 pub(crate) struct ApiKeyInputState {
+    provider: Option<AccountProvider>,
     value: String,
     prepopulated_from_env: bool,
 }
 
 #[derive(Clone)]
-/// Used to manage the lifecycle of SpawnedLogin and ensure it gets cleaned up.
+/// Used to manage the lifecycle of the spawned browser sign-in flow and ensure it gets cleaned up.
 pub(crate) struct ContinueInBrowserState {
     auth_url: String,
     cancel: Option<LoginFlowCancel>,
@@ -131,7 +142,7 @@ pub(crate) struct ContinueWithDeviceCodeState {
     cancel: Option<LoginFlowCancel>,
 }
 
-impl KeyboardHandler for AuthModeWidget {
+impl KeyboardHandler for AccountsWidget {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         if self.handle_api_key_entry_key_event(&key_event) {
             return;
@@ -139,23 +150,51 @@ impl KeyboardHandler for AuthModeWidget {
 
         match key_event.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.move_highlight(/*delta*/ -1);
+                let sign_in_state = self.sign_in_state();
+                if matches!(sign_in_state, SignInState::PickProvider) {
+                    self.move_provider_highlight(-1);
+                } else {
+                    self.move_highlight(/*delta*/ -1);
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.move_highlight(/*delta*/ 1);
+                let sign_in_state = self.sign_in_state();
+                if matches!(sign_in_state, SignInState::PickProvider) {
+                    self.move_provider_highlight(1);
+                } else {
+                    self.move_highlight(/*delta*/ 1);
+                }
             }
             KeyCode::Char('1') => {
-                self.select_option_by_index(/*index*/ 0);
+                let sign_in_state = self.sign_in_state();
+                if matches!(sign_in_state, SignInState::PickProvider) {
+                    self.select_provider_by_index(0);
+                } else {
+                    self.select_option_by_index(/*index*/ 0);
+                }
             }
             KeyCode::Char('2') => {
-                self.select_option_by_index(/*index*/ 1);
+                let sign_in_state = self.sign_in_state();
+                if matches!(sign_in_state, SignInState::PickProvider) {
+                    self.select_provider_by_index(1);
+                } else {
+                    self.select_option_by_index(/*index*/ 1);
+                }
             }
             KeyCode::Char('3') => {
-                self.select_option_by_index(/*index*/ 2);
+                let sign_in_state = self.sign_in_state();
+                if matches!(sign_in_state, SignInState::PickProvider) {
+                    self.select_provider_by_index(2);
+                } else {
+                    self.select_option_by_index(/*index*/ 2);
+                }
             }
             KeyCode::Enter => {
                 let sign_in_state = { (*self.sign_in_state.read().unwrap()).clone() };
                 match sign_in_state {
+                    SignInState::PickProvider => {
+                        self.open_selected_provider();
+                    }
                     SignInState::PickMode => {
                         self.handle_sign_in_option(self.highlighted_mode);
                     }
@@ -173,7 +212,7 @@ impl KeyboardHandler for AuthModeWidget {
                         if let Some(cancel) = &state.cancel {
                             cancel.cancel();
                         }
-                        *sign_in_state = SignInState::PickMode;
+                        *sign_in_state = self.back_destination_for_selected_provider();
                         drop(sign_in_state);
                         self.request_frame.schedule_frame();
                     }
@@ -181,7 +220,17 @@ impl KeyboardHandler for AuthModeWidget {
                         if let Some(cancel) = &state.cancel {
                             cancel.cancel();
                         }
-                        *sign_in_state = SignInState::PickMode;
+                        *sign_in_state = self.back_destination_for_selected_provider();
+                        drop(sign_in_state);
+                        self.request_frame.schedule_frame();
+                    }
+                    SignInState::PickMode => {
+                        *sign_in_state = SignInState::PickProvider;
+                        drop(sign_in_state);
+                        self.request_frame.schedule_frame();
+                    }
+                    SignInState::ApiKeyEntry(_) => {
+                        *sign_in_state = self.back_destination_for_selected_provider();
                         drop(sign_in_state);
                         self.request_frame.schedule_frame();
                     }
@@ -198,8 +247,9 @@ impl KeyboardHandler for AuthModeWidget {
 }
 
 #[derive(Clone)]
-pub(crate) struct AuthModeWidget {
+pub(crate) struct AccountsWidget {
     pub request_frame: FrameRequester,
+    pub highlighted_provider: usize,
     pub highlighted_mode: SignInOption,
     pub error: Arc<RwLock<Option<String>>>,
     pub sign_in_state: Arc<RwLock<SignInState>>,
@@ -207,32 +257,37 @@ pub(crate) struct AuthModeWidget {
     pub cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
     pub auth_manager: Arc<AuthManager>,
     pub forced_chatgpt_workspace_id: Option<String>,
-    pub forced_login_method: Option<ForcedLoginMethod>,
     pub animations_enabled: bool,
+    pub providers: Vec<AccountProvider>,
+    pub selected_provider_id: Arc<RwLock<Option<String>>>,
 }
 
-impl AuthModeWidget {
+impl AccountsWidget {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         request_frame: FrameRequester,
         chaos_home: PathBuf,
         cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
         auth_manager: Arc<AuthManager>,
+        model_providers: &std::collections::HashMap<String, ModelProviderInfo>,
         forced_chatgpt_workspace_id: Option<String>,
         forced_login_method: Option<ForcedLoginMethod>,
         animations_enabled: bool,
     ) -> Self {
+        let providers = Self::build_connectable_providers(model_providers, forced_login_method);
         Self {
             request_frame,
+            highlighted_provider: 0,
             highlighted_mode: SignInOption::ChatGpt,
             error: Arc::new(RwLock::new(None)),
-            sign_in_state: Arc::new(RwLock::new(SignInState::PickMode)),
+            sign_in_state: Arc::new(RwLock::new(SignInState::PickProvider)),
             chaos_home,
             cli_auth_credentials_store_mode,
             auth_manager,
             forced_chatgpt_workspace_id,
-            forced_login_method,
             animations_enabled,
+            providers,
+            selected_provider_id: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -240,19 +295,34 @@ impl AuthModeWidget {
         self.sign_in_state.read().unwrap().clone()
     }
 
-    pub(crate) fn completion(&self) -> Option<AuthCompletion> {
+    pub(crate) fn completion(&self) -> Option<AccountsCompletion> {
         match self.sign_in_state() {
-            SignInState::ChatGptSuccess => Some(AuthCompletion::ChatGpt),
-            SignInState::ApiKeyConfigured => Some(AuthCompletion::ApiKey),
+            SignInState::ChatGptSuccess | SignInState::ApiKeyConfigured(_) => {
+                Some(AccountsCompletion::ConnectedProvider)
+            }
             _ => None,
         }
     }
 
-    pub(crate) fn can_exit_popup(&self) -> bool {
+    pub(crate) fn should_close_on_escape(&self) -> bool {
         matches!(
             self.sign_in_state(),
-            SignInState::PickMode | SignInState::ChatGptSuccess | SignInState::ApiKeyConfigured
+            SignInState::PickProvider
+                | SignInState::ChatGptSuccess
+                | SignInState::ApiKeyConfigured(_)
         )
+    }
+
+    fn back_destination_for_selected_provider(&self) -> SignInState {
+        let option_count = self
+            .selected_provider()
+            .map(|provider| self.provider_sign_in_options(&provider).len())
+            .unwrap_or_default();
+        if option_count <= 1 {
+            SignInState::PickProvider
+        } else {
+            SignInState::PickMode
+        }
     }
 
     fn set_error(&self, error: Option<String>) {
@@ -263,35 +333,78 @@ impl AuthModeWidget {
         self.error.read().unwrap().clone()
     }
 
+    fn build_connectable_providers(
+        model_providers: &std::collections::HashMap<String, ModelProviderInfo>,
+        forced_login_method: Option<ForcedLoginMethod>,
+    ) -> Vec<AccountProvider> {
+        let mut providers = model_providers
+            .iter()
+            .filter_map(|(id, provider)| {
+                let supports_chatgpt_account = provider
+                    .supports_auth_method(ProviderAuthMethod::ChatgptAccount)
+                    && !matches!(forced_login_method, Some(ForcedLoginMethod::Api));
+                let supports_api_key = provider.supports_auth_method(ProviderAuthMethod::ApiKey)
+                    && !matches!(forced_login_method, Some(ForcedLoginMethod::Chatgpt));
+                if !supports_chatgpt_account && !supports_api_key {
+                    return None;
+                }
+                Some(AccountProvider {
+                    id: id.clone(),
+                    display_name: provider.name.clone(),
+                    env_key: provider.env_key.clone(),
+                    supports_chatgpt_account,
+                    supports_api_key,
+                })
+            })
+            .collect::<Vec<_>>();
+        providers.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+        providers
+    }
+
+    fn selected_provider(&self) -> Option<AccountProvider> {
+        let selected = self.selected_provider_id.read().unwrap().clone();
+        if let Some(selected) = selected {
+            return self.providers.iter().find(|p| p.id == selected).cloned();
+        }
+        self.providers.get(self.highlighted_provider).cloned()
+    }
+
+    fn set_selected_provider(&self, provider: &AccountProvider) {
+        *self.selected_provider_id.write().unwrap() = Some(provider.id.clone());
+    }
+
     fn is_api_login_allowed(&self) -> bool {
-        !matches!(self.forced_login_method, Some(ForcedLoginMethod::Chatgpt))
+        self.selected_provider()
+            .map(|provider| provider.supports_api_key)
+            .unwrap_or(false)
     }
 
     fn is_chatgpt_login_allowed(&self) -> bool {
-        !matches!(self.forced_login_method, Some(ForcedLoginMethod::Api))
+        self.selected_provider()
+            .map(|provider| provider.supports_chatgpt_account)
+            .unwrap_or(false)
     }
 
-    fn displayed_sign_in_options(&self) -> Vec<SignInOption> {
-        let mut options = vec![SignInOption::ChatGpt];
-        if self.is_chatgpt_login_allowed() {
-            options.push(SignInOption::DeviceCode);
-        }
-        if self.is_api_login_allowed() {
-            options.push(SignInOption::ApiKey);
-        }
-        options
-    }
-
-    fn selectable_sign_in_options(&self) -> Vec<SignInOption> {
+    fn provider_sign_in_options(&self, provider: &AccountProvider) -> Vec<SignInOption> {
         let mut options = Vec::new();
-        if self.is_chatgpt_login_allowed() {
+        if provider.supports_chatgpt_account {
             options.push(SignInOption::ChatGpt);
             options.push(SignInOption::DeviceCode);
         }
-        if self.is_api_login_allowed() {
+        if provider.supports_api_key {
             options.push(SignInOption::ApiKey);
         }
         options
+    }
+
+    fn displayed_sign_in_options(&self) -> Vec<SignInOption> {
+        self.selected_provider()
+            .map(|provider| self.provider_sign_in_options(&provider))
+            .unwrap_or_default()
+    }
+
+    fn selectable_sign_in_options(&self) -> Vec<SignInOption> {
+        self.displayed_sign_in_options()
     }
 
     fn move_highlight(&mut self, delta: isize) {
@@ -313,6 +426,47 @@ impl AuthModeWidget {
         }
     }
 
+    fn move_provider_highlight(&mut self, delta: isize) {
+        if self.providers.is_empty() {
+            return;
+        }
+        let len = self.providers.len() as isize;
+        self.highlighted_provider =
+            (self.highlighted_provider as isize + delta).rem_euclid(len) as usize;
+        self.request_frame.schedule_frame();
+    }
+
+    fn select_provider_by_index(&mut self, index: usize) {
+        if let Some(provider) = self.providers.get(index).cloned() {
+            self.highlighted_provider = index;
+            self.set_selected_provider(&provider);
+            self.open_provider(provider);
+        }
+    }
+
+    fn open_selected_provider(&mut self) {
+        if let Some(provider) = self
+            .selected_provider()
+            .or_else(|| self.providers.get(self.highlighted_provider).cloned())
+        {
+            self.open_provider(provider);
+        }
+    }
+
+    fn open_provider(&mut self, provider: AccountProvider) {
+        self.set_selected_provider(&provider);
+        let options = self.provider_sign_in_options(&provider);
+        if options.len() == 1 {
+            self.highlighted_mode = options[0];
+            self.handle_sign_in_option(options[0]);
+            return;
+        }
+        self.highlighted_mode = options.first().copied().unwrap_or(SignInOption::ApiKey);
+        *self.sign_in_state.write().unwrap() = SignInState::PickMode;
+        self.set_error(None);
+        self.request_frame.schedule_frame();
+    }
+
     fn select_option_by_index(&mut self, index: usize) {
         let options = self.displayed_sign_in_options();
         if let Some(option) = options.get(index).copied() {
@@ -325,12 +479,12 @@ impl AuthModeWidget {
         match option {
             SignInOption::ChatGpt => {
                 if self.is_chatgpt_login_allowed() {
-                    self.start_chatgpt_login();
+                    self.start_chatgpt_account_connection();
                 }
             }
             SignInOption::DeviceCode => {
                 if self.is_chatgpt_login_allowed() {
-                    self.start_device_code_login();
+                    self.start_device_code_connection();
                 }
             }
             SignInOption::ApiKey => {
@@ -350,15 +504,117 @@ impl AuthModeWidget {
         self.request_frame.schedule_frame();
     }
 
-    fn render_pick_mode(&self, area: Rect, buf: &mut Buffer) {
+    fn render_pick_provider(&self, area: Rect, buf: &mut Buffer) {
+        let error = self.error_message();
+        let error_lines = usize::from(error.is_some()) * 2;
+        let base_reserved_lines = 4 + error_lines;
+        let mut max_visible_providers =
+            (area.height.saturating_sub(base_reserved_lines as u16) as usize / 3).max(1);
+        let show_window_hint = self.providers.len() > max_visible_providers;
+        if show_window_hint {
+            max_visible_providers =
+                (area.height.saturating_sub((base_reserved_lines + 1) as u16) as usize / 3).max(1);
+        }
+
+        let max_start = self.providers.len().saturating_sub(max_visible_providers);
+        let mut start = self
+            .highlighted_provider
+            .saturating_sub(max_visible_providers.saturating_sub(1) / 2);
+        start = start.min(max_start);
+        let end = (start + max_visible_providers).min(self.providers.len());
+
         let mut lines: Vec<Line> = vec![
             Line::from(vec![
                 "  ".into(),
-                "Sign in with ChatGPT to use Chaos as part of your paid plan".into(),
+                "Choose a provider account to connect".into(),
+            ]),
+            "".into(),
+        ];
+        for (idx, provider) in self
+            .providers
+            .iter()
+            .enumerate()
+            .skip(start)
+            .take(end.saturating_sub(start))
+        {
+            let selected = self.highlighted_provider == idx;
+            let caret = if selected { ">" } else { " " };
+            let title = format!(
+                "{} {}",
+                provider.display_name,
+                if provider.id == "openai" {
+                    "(ChatGPT or API key)"
+                } else {
+                    ""
+                }
+            )
+            .trim()
+            .to_string();
+            let description = if provider.supports_chatgpt_account && provider.supports_api_key {
+                "ChatGPT account or API key"
+            } else if provider.supports_chatgpt_account {
+                "ChatGPT account"
+            } else {
+                "API key"
+            };
+            let line1 = if selected {
+                Line::from(vec![
+                    format!("{caret} {}. ", idx + 1).cyan().dim(),
+                    title.clone().cyan(),
+                ])
+            } else {
+                format!("  {}. {title}", idx + 1).into()
+            };
+            let line2 = if selected {
+                Line::from(format!("     {description}"))
+                    .fg(crate::theme::cyan())
+                    .add_modifier(Modifier::DIM)
+            } else {
+                Line::from(format!("     {description}"))
+                    .style(Style::default().add_modifier(Modifier::DIM))
+            };
+            lines.push(line1);
+            lines.push(line2);
+            lines.push("".into());
+        }
+        if show_window_hint {
+            lines.push(
+                format!(
+                    "  Showing {}-{} of {} providers",
+                    start + 1,
+                    end,
+                    self.providers.len()
+                )
+                .dim()
+                .into(),
+            );
+        }
+        lines.push("  Use ↑/↓ (or j/k) to choose".dim().into());
+        lines.push("  Press Enter to continue".dim().into());
+        if let Some(err) = error {
+            lines.push("".into());
+            lines.push(err.red().into());
+        }
+
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .render(area, buf);
+    }
+
+    fn render_pick_mode(&self, area: Rect, buf: &mut Buffer) {
+        let provider = self.selected_provider();
+        let provider_label = provider
+            .as_ref()
+            .map(|provider| provider.display_name.as_str())
+            .unwrap_or("provider");
+        let mut lines: Vec<Line> = vec![
+            Line::from(vec![
+                "  ".into(),
+                format!("Choose how to connect {provider_label}").into(),
             ]),
             Line::from(vec![
                 "  ".into(),
-                "or connect an API key for usage-based billing".into(),
+                "Account connections are provider-specific.".into(),
             ]),
             "".into(),
         ];
@@ -393,7 +649,7 @@ impl AuthModeWidget {
         };
 
         let chatgpt_description = if !self.is_chatgpt_login_allowed() {
-            "ChatGPT login is disabled"
+            "ChatGPT account connection is unavailable"
         } else {
             "Usage included with Plus, Pro, Business, and Enterprise plans"
         };
@@ -405,7 +661,7 @@ impl AuthModeWidget {
                     lines.extend(create_mode_item(
                         idx,
                         option,
-                        "Sign in with ChatGPT",
+                        "Connect ChatGPT account",
                         chatgpt_description,
                     ));
                 }
@@ -413,15 +669,19 @@ impl AuthModeWidget {
                     lines.extend(create_mode_item(
                         idx,
                         option,
-                        "Sign in with Device Code",
+                        "Connect with Device Code",
                         device_code_description,
                     ));
                 }
                 SignInOption::ApiKey => {
+                    let provider_api_key_label = provider
+                        .as_ref()
+                        .map(|provider| format!("Provide {} API key", provider.display_name))
+                        .unwrap_or_else(|| "Provide API key".to_string());
                     lines.extend(create_mode_item(
                         idx,
                         option,
-                        "Provide your own API key",
+                        &provider_api_key_label,
                         "Pay for what you use",
                     ));
                 }
@@ -429,16 +689,9 @@ impl AuthModeWidget {
             lines.push("".into());
         }
 
-        if !self.is_api_login_allowed() {
-            lines.push(
-                "  API key login is disabled by this workspace. Sign in with ChatGPT to continue."
-                    .dim()
-                    .into(),
-            );
-            lines.push("".into());
-        }
         lines.push("  Use ↑/↓ (or j/k) to choose".dim().into());
         lines.push("  Press Enter to continue".dim().into());
+        lines.push("  Press Esc to go back".dim().into());
         if let Some(err) = self.error_message() {
             lines.push("".into());
             lines.push(err.red().into());
@@ -529,11 +782,17 @@ impl AuthModeWidget {
             .render(area, buf);
     }
 
-    fn render_api_key_configured(&self, area: Rect, buf: &mut Buffer) {
+    fn render_api_key_configured(&self, area: Rect, buf: &mut Buffer, provider: &AccountProvider) {
         let lines = vec![
-            "✓ API key configured".fg(crate::theme::green()).into(),
+            format!("✓ {} API key configured", provider.display_name)
+                .fg(crate::theme::green())
+                .into(),
             "".into(),
-            "  Chaos will use usage-based billing with your API key.".into(),
+            format!(
+                "  Chaos will use your stored {} credentials for this provider.",
+                provider.display_name
+            )
+            .into(),
         ];
 
         Paragraph::new(lines)
@@ -542,6 +801,11 @@ impl AuthModeWidget {
     }
 
     fn render_api_key_entry(&self, area: Rect, buf: &mut Buffer, state: &ApiKeyInputState) {
+        let provider_name = state
+            .provider
+            .as_ref()
+            .map(|provider| provider.display_name.as_str())
+            .unwrap_or("provider");
         let [intro_area, input_area, footer_area] = Layout::vertical([
             Constraint::Min(4),
             Constraint::Length(3),
@@ -552,14 +816,18 @@ impl AuthModeWidget {
         let mut intro_lines: Vec<Line> = vec![
             Line::from(vec![
                 "> ".into(),
-                "Use your own OpenAI API key for usage-based billing".bold(),
+                format!("Use your own {provider_name} API key").bold(),
             ]),
             "".into(),
             "  Paste or type your API key below. It will be stored locally in auth.json.".into(),
             "".into(),
         ];
         if state.prepopulated_from_env {
-            intro_lines.push("  Detected OPENAI_API_KEY environment variable.".into());
+            if let Some(provider) = state.provider.as_ref()
+                && let Some(env_key) = provider.env_key.as_deref()
+            {
+                intro_lines.push(format!("  Detected {env_key} environment variable.").into());
+            }
             intro_lines.push(
                 "  Paste a different key if you prefer to use another account."
                     .dim()
@@ -580,7 +848,7 @@ impl AuthModeWidget {
             .wrap(Wrap { trim: false })
             .block(
                 Block::default()
-                    .title("API key")
+                    .title(format!("{provider_name} API key"))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(crate::theme::cyan())),
@@ -603,13 +871,14 @@ impl AuthModeWidget {
     fn handle_api_key_entry_key_event(&mut self, key_event: &KeyEvent) -> bool {
         let mut should_save: Option<String> = None;
         let mut should_request_frame = false;
+        let api_key_escape_destination = self.back_destination_for_selected_provider();
 
         {
             let mut guard = self.sign_in_state.write().unwrap();
             if let SignInState::ApiKeyEntry(state) = &mut *guard {
                 match key_event.code {
                     KeyCode::Esc => {
-                        *guard = SignInState::PickMode;
+                        *guard = api_key_escape_destination;
                         self.set_error(None);
                         should_request_frame = true;
                     }
@@ -691,11 +960,28 @@ impl AuthModeWidget {
             self.disallow_api_login();
             return;
         }
+        let Some(provider) = self.selected_provider() else {
+            self.set_error(Some("Choose a provider first.".to_string()));
+            *self.sign_in_state.write().unwrap() = SignInState::PickProvider;
+            self.request_frame.schedule_frame();
+            return;
+        };
         self.set_error(None);
-        let prefill_from_env = read_openai_api_key_from_env();
+        let prefill_from_env = provider
+            .env_key
+            .as_deref()
+            .and_then(|env_key| std::env::var(env_key).ok())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                (provider.id == "openai")
+                    .then(read_openai_api_key_from_env)
+                    .flatten()
+            });
         let mut guard = self.sign_in_state.write().unwrap();
         match &mut *guard {
             SignInState::ApiKeyEntry(state) => {
+                state.provider = Some(provider);
                 if state.value.is_empty() {
                     if let Some(prefill) = prefill_from_env {
                         state.value = prefill;
@@ -707,6 +993,7 @@ impl AuthModeWidget {
             }
             _ => {
                 *guard = SignInState::ApiKeyEntry(ApiKeyInputState {
+                    provider: Some(provider),
                     value: prefill_from_env.clone().unwrap_or_default(),
                     prepopulated_from_env: prefill_from_env.is_some(),
                 });
@@ -721,26 +1008,38 @@ impl AuthModeWidget {
             self.disallow_api_login();
             return;
         }
-        match login_with_api_key(
+        let provider = match self.selected_provider() {
+            Some(provider) => provider,
+            None => {
+                self.set_error(Some("Choose a provider first.".to_string()));
+                *self.sign_in_state.write().unwrap() = SignInState::PickProvider;
+                self.request_frame.schedule_frame();
+                return;
+            }
+        };
+        match login_with_provider_api_key(
             &self.chaos_home,
+            &provider.id,
             &api_key,
             self.cli_auth_credentials_store_mode,
         ) {
             Ok(()) => {
                 self.set_error(None);
                 self.auth_manager.reload();
-                *self.sign_in_state.write().unwrap() = SignInState::ApiKeyConfigured;
+                *self.sign_in_state.write().unwrap() = SignInState::ApiKeyConfigured(provider);
             }
             Err(err) => {
                 self.set_error(Some(format!("Failed to save API key: {err}")));
                 let mut guard = self.sign_in_state.write().unwrap();
                 if let SignInState::ApiKeyEntry(existing) = &mut *guard {
+                    existing.provider = Some(provider.clone());
                     if existing.value.is_empty() {
                         existing.value.push_str(&api_key);
                     }
                     existing.prepopulated_from_env = false;
                 } else {
                     *guard = SignInState::ApiKeyEntry(ApiKeyInputState {
+                        provider: Some(provider),
                         value: api_key,
                         prepopulated_from_env: false,
                     });
@@ -751,13 +1050,16 @@ impl AuthModeWidget {
         self.request_frame.schedule_frame();
     }
 
-    fn handle_existing_chatgpt_login(&mut self) -> bool {
+    fn handle_existing_chatgpt_connection(&mut self) -> bool {
+        let Some(selected_provider_id) = self.selected_provider().map(|provider| provider.id)
+        else {
+            return false;
+        };
         if self
             .auth_manager
-            .auth_cached()
+            .auth_for_provider(&selected_provider_id)
             .as_ref()
-            .map(ChaosAuth::auth_mode)
-            == Some(AuthMode::Chatgpt)
+            .is_some_and(|auth| auth.auth_mode() == AuthMode::Chatgpt)
         {
             *self.sign_in_state.write().unwrap() = SignInState::ChatGptSuccess;
             self.request_frame.schedule_frame();
@@ -767,11 +1069,11 @@ impl AuthModeWidget {
         }
     }
 
-    /// Kicks off the ChatGPT auth flow and keeps the UI state consistent with the attempt.
-    fn start_chatgpt_login(&mut self) {
-        // If we're already authenticated with ChatGPT, don't start a new login –
+    /// Kicks off the ChatGPT account flow and keeps the UI state consistent with the attempt.
+    fn start_chatgpt_account_connection(&mut self) {
+        // If we're already connected with ChatGPT, don't start a new flow –
         // just proceed to the success message flow.
-        if self.handle_existing_chatgpt_login() {
+        if self.handle_existing_chatgpt_connection() {
             return;
         }
 
@@ -790,11 +1092,11 @@ impl AuthModeWidget {
                 cancel: Some(cancel),
             });
         self.request_frame.schedule_frame();
-        self.consume_chatgpt_login_flow(handle);
+        self.consume_chatgpt_account_flow(handle);
     }
 
-    fn start_device_code_login(&mut self) {
-        if self.handle_existing_chatgpt_login() {
+    fn start_device_code_connection(&mut self) {
+        if self.handle_existing_chatgpt_connection() {
             return;
         }
 
@@ -819,14 +1121,15 @@ impl AuthModeWidget {
                 cancel: Some(cancel),
             });
         self.request_frame.schedule_frame();
-        self.consume_chatgpt_login_flow(handle);
+        self.consume_chatgpt_account_flow(handle);
     }
 
-    fn consume_chatgpt_login_flow(&mut self, mut handle: LoginFlowHandle) {
+    fn consume_chatgpt_account_flow(&mut self, mut handle: LoginFlowHandle) {
         let sign_in_state = self.sign_in_state.clone();
         let error = self.error.clone();
         let request_frame = self.request_frame.clone();
         let auth_manager = self.auth_manager.clone();
+        let fallback_state = self.back_destination_for_selected_provider();
 
         tokio::spawn(async move {
             let cancel = handle.cancel_handle();
@@ -864,11 +1167,11 @@ impl AuthModeWidget {
                     }
                     LoginFlowUpdate::Failed { message } => {
                         *error.write().unwrap() = Some(message);
-                        *sign_in_state.write().unwrap() = SignInState::PickMode;
+                        *sign_in_state.write().unwrap() = fallback_state.clone();
                     }
                     LoginFlowUpdate::Cancelled => {
                         *error.write().unwrap() = None;
-                        *sign_in_state.write().unwrap() = SignInState::PickMode;
+                        *sign_in_state.write().unwrap() = fallback_state.clone();
                     }
                 }
                 request_frame.schedule_frame();
@@ -877,24 +1180,28 @@ impl AuthModeWidget {
     }
 }
 
-impl StepStateProvider for AuthModeWidget {
+impl StepStateProvider for AccountsWidget {
     fn get_step_state(&self) -> StepState {
         let sign_in_state = self.sign_in_state.read().unwrap();
         match &*sign_in_state {
-            SignInState::PickMode
+            SignInState::PickProvider
+            | SignInState::PickMode
             | SignInState::ApiKeyEntry(_)
             | SignInState::ChatGptContinueInBrowser(_)
             | SignInState::ChatGptDeviceCode(_)
             | SignInState::ChatGptSuccessMessage => StepState::InProgress,
-            SignInState::ChatGptSuccess | SignInState::ApiKeyConfigured => StepState::Complete,
+            SignInState::ChatGptSuccess | SignInState::ApiKeyConfigured(_) => StepState::Complete,
         }
     }
 }
 
-impl WidgetRef for AuthModeWidget {
+impl WidgetRef for AccountsWidget {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         let sign_in_state = self.sign_in_state.read().unwrap();
         match &*sign_in_state {
+            SignInState::PickProvider => {
+                self.render_pick_provider(area, buf);
+            }
             SignInState::PickMode => {
                 self.render_pick_mode(area, buf);
             }
@@ -913,8 +1220,8 @@ impl WidgetRef for AuthModeWidget {
             SignInState::ApiKeyEntry(state) => {
                 self.render_api_key_entry(area, buf, state);
             }
-            SignInState::ApiKeyConfigured => {
-                self.render_api_key_configured(area, buf);
+            SignInState::ApiKeyConfigured(provider) => {
+                self.render_api_key_configured(area, buf, provider);
             }
         }
     }
@@ -923,30 +1230,62 @@ impl WidgetRef for AuthModeWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use chaos_kern::ModelProviderInfo;
+    use chaos_kern::WireApi;
+    use chaos_kern::built_in_model_providers;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
     use chaos_kern::auth::AuthCredentialsStoreMode;
 
-    fn widget_forced_chatgpt() -> (AuthModeWidget, TempDir) {
+    fn widget_forced_chatgpt() -> (AccountsWidget, TempDir) {
         let chaos_home = TempDir::new().unwrap();
-        let codex_home_path = chaos_home.path().to_path_buf();
-        let widget = AuthModeWidget {
-            request_frame: FrameRequester::test_dummy(),
-            highlighted_mode: SignInOption::ChatGpt,
-            error: Arc::new(RwLock::new(None)),
-            sign_in_state: Arc::new(RwLock::new(SignInState::PickMode)),
-            chaos_home: codex_home_path.clone(),
-            cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-            auth_manager: AuthManager::shared(
-                codex_home_path,
+        let chaos_home_path = chaos_home.path().to_path_buf();
+        let mut model_providers = HashMap::new();
+        model_providers.insert(
+            "openai".to_string(),
+            ModelProviderInfo::create_openai_provider(None),
+        );
+        let widget = AccountsWidget::new(
+            FrameRequester::test_dummy(),
+            chaos_home_path.clone(),
+            AuthCredentialsStoreMode::File,
+            Arc::new(AuthManager::new(
+                chaos_home_path,
                 false,
                 AuthCredentialsStoreMode::File,
-            ),
-            forced_chatgpt_workspace_id: None,
-            forced_login_method: Some(ForcedLoginMethod::Chatgpt),
-            animations_enabled: true,
-        };
+            )),
+            &model_providers,
+            None,
+            Some(ForcedLoginMethod::Chatgpt),
+            true,
+        );
+        (widget, chaos_home)
+    }
+
+    fn widget_with_model_providers(
+        model_providers: HashMap<String, ModelProviderInfo>,
+    ) -> (AccountsWidget, TempDir) {
+        let chaos_home = TempDir::new().unwrap();
+        let chaos_home_path = chaos_home.path().to_path_buf();
+        let widget = AccountsWidget::new(
+            FrameRequester::test_dummy(),
+            chaos_home_path.clone(),
+            AuthCredentialsStoreMode::File,
+            Arc::new(AuthManager::new(
+                chaos_home_path,
+                false,
+                AuthCredentialsStoreMode::File,
+            )),
+            &model_providers,
+            None,
+            None,
+            true,
+        );
         (widget, chaos_home)
     }
 
@@ -982,6 +1321,44 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn escape_from_provider_mode_returns_to_provider_picker() {
+        let (mut widget, _tmp) = widget_forced_chatgpt();
+
+        widget.open_selected_provider();
+        assert!(matches!(widget.sign_in_state(), SignInState::PickMode));
+        assert!(!widget.should_close_on_escape());
+
+        widget.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(matches!(widget.sign_in_state(), SignInState::PickProvider));
+    }
+
+    #[test]
+    fn escape_from_single_option_provider_returns_to_provider_picker() {
+        let mut minimax = chaos_kern::create_oss_provider_with_base_url(
+            "https://api.minimax.chat/v1",
+            WireApi::ChatCompletions,
+        );
+        minimax.name = "MiniMax".to_string();
+        minimax.env_key = Some("MINIMAX_API_KEY".to_string());
+
+        let mut model_providers = HashMap::new();
+        model_providers.insert("minimax".to_string(), minimax);
+
+        let (mut widget, _tmp) = widget_with_model_providers(model_providers);
+
+        widget.open_selected_provider();
+        assert!(matches!(
+            widget.sign_in_state(),
+            SignInState::ApiKeyEntry(_)
+        ));
+
+        widget.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(matches!(widget.sign_in_state(), SignInState::PickProvider));
+    }
+
     /// Collects all buffer cell symbols that contain the OSC 8 open sequence
     /// for the given URL.  Returns the concatenated "inner" characters.
     fn collect_osc8_chars(buf: &Buffer, area: Rect, url: &str) -> String {
@@ -999,6 +1376,42 @@ mod tests {
             }
         }
         chars
+    }
+
+    fn buffer_to_text(buf: &Buffer, area: Rect) -> String {
+        let mut out = String::new();
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn provider_picker_renders_highlighted_zai_provider_when_scrolled() {
+        let (mut widget, _tmp) = widget_with_model_providers(built_in_model_providers());
+        let zai_index = widget
+            .providers
+            .iter()
+            .position(|provider| provider.display_name == "Z.ai")
+            .expect("Z.ai provider should be connectable");
+        widget.highlighted_provider = zai_index;
+
+        let area = Rect::new(0, 0, 70, 16);
+        let mut buf = Buffer::empty(area);
+        widget.render_pick_provider(area, &mut buf);
+
+        let text = buffer_to_text(&buf, area);
+        assert!(
+            text.contains("Z.ai"),
+            "expected highlighted Z.ai provider to be visible, got: {text:?}"
+        );
+        assert!(
+            text.contains("Showing"),
+            "expected provider paging hint when list is truncated, got: {text:?}"
+        );
     }
 
     #[test]

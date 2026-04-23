@@ -36,13 +36,17 @@ async fn refresh_without_id_token() {
     );
     let updated = crate::auth::tokens::persist_tokens(
         &storage,
+        DEFAULT_AUTH_PROVIDER_ID,
         None,
         Some("new-access-token".to_string()),
         Some("new-refresh-token".to_string()),
     )
     .expect("update_tokens should succeed");
 
-    let tokens = updated.tokens.expect("tokens should exist");
+    let tokens = updated
+        .provider_record(DEFAULT_AUTH_PROVIDER_ID)
+        .and_then(|record| record.tokens)
+        .expect("tokens should exist");
     assert_eq!(tokens.id_token.raw_jwt, fake_jwt);
     assert_eq!(tokens.access_token, "new-access-token");
     assert_eq!(tokens.refresh_token, "new-refresh-token");
@@ -52,10 +56,11 @@ async fn refresh_without_id_token() {
 fn login_with_api_key_overwrites_existing_auth_json() {
     let dir = tempdir().unwrap();
     let auth_path = dir.path().join("auth.json");
+    let stale_jwt = build_fake_jwt(Some("pro"), None);
     let stale_auth = json!({
         "OPENAI_API_KEY": "sk-old",
         "tokens": {
-            "id_token": "stale.header.payload",
+            "id_token": stale_jwt,
             "access_token": "stale-access",
             "refresh_token": "stale-refresh",
             "account_id": "stale-acc"
@@ -74,8 +79,16 @@ fn login_with_api_key_overwrites_existing_auth_json() {
     let auth = storage
         .try_read_auth_json(&auth_path)
         .expect("auth.json should parse");
-    assert_eq!(auth.openai_api_key.as_deref(), Some("sk-new"));
-    assert!(auth.tokens.is_none(), "tokens should be cleared");
+    assert_eq!(auth.openai_api_key, None);
+    assert!(
+        auth.tokens.is_none(),
+        "legacy top-level tokens should be cleared"
+    );
+    let record = auth
+        .provider_record(DEFAULT_AUTH_PROVIDER_ID)
+        .expect("openai provider record should exist");
+    assert_eq!(record.api_key.as_deref(), Some("sk-new"));
+    assert!(record.tokens.is_none(), "provider tokens should be cleared");
 }
 
 #[test]
@@ -110,7 +123,10 @@ async fn pro_account_with_no_api_key_uses_chatgpt_auth() {
     let auth_dot_json = auth
         .get_current_auth_json()
         .expect("AuthDotJson should exist");
-    let last_refresh = auth_dot_json
+    let provider_record = auth_dot_json
+        .provider_record(DEFAULT_AUTH_PROVIDER_ID)
+        .expect("openai provider record should exist");
+    let last_refresh = provider_record
         .last_refresh
         .expect("last_refresh should be recorded");
 
@@ -131,6 +147,7 @@ async fn pro_account_with_no_api_key_uses_chatgpt_auth() {
                 account_id: None,
             }),
             last_refresh: Some(last_refresh),
+            providers: Default::default(),
         },
         auth_dot_json
     );
@@ -164,6 +181,7 @@ fn logout_removes_auth_file() -> Result<(), std::io::Error> {
         openai_api_key: Some("sk-test-key".to_string()),
         tokens: None,
         last_refresh: None,
+        providers: Default::default(),
     };
     super::save_auth(dir.path(), &auth_dot_json, AuthCredentialsStoreMode::File)?;
     let auth_file = get_auth_file(dir.path());
@@ -195,6 +213,26 @@ struct AuthFileParams {
 
 fn write_auth_file(params: AuthFileParams, chaos_home: &Path) -> std::io::Result<String> {
     let auth_file = get_auth_file(chaos_home);
+    let fake_jwt = build_fake_jwt(
+        params.chatgpt_plan_type.as_deref(),
+        params.chatgpt_account_id.as_deref(),
+    );
+
+    let auth_json_data = json!({
+        "OPENAI_API_KEY": params.openai_api_key,
+        "tokens": {
+            "id_token": fake_jwt,
+            "access_token": "test-access-token",
+            "refresh_token": "test-refresh-token"
+        },
+        "last_refresh": Timestamp::now(),
+    });
+    let auth_json = serde_json::to_string_pretty(&auth_json_data)?;
+    std::fs::write(auth_file, auth_json)?;
+    Ok(fake_jwt)
+}
+
+fn build_fake_jwt(chatgpt_plan_type: Option<&str>, chatgpt_account_id: Option<&str>) -> String {
     // Create a minimal valid JWT for the id_token field.
     #[derive(Serialize)]
     struct Header {
@@ -210,12 +248,13 @@ fn write_auth_file(params: AuthFileParams, chaos_home: &Path) -> std::io::Result
         "user_id": "user-12345",
     });
 
-    if let Some(chatgpt_plan_type) = params.chatgpt_plan_type {
-        auth_payload["chatgpt_plan_type"] = serde_json::Value::String(chatgpt_plan_type);
+    if let Some(chatgpt_plan_type) = chatgpt_plan_type {
+        auth_payload["chatgpt_plan_type"] =
+            serde_json::Value::String(chatgpt_plan_type.to_string());
     }
 
-    if let Some(chatgpt_account_id) = params.chatgpt_account_id {
-        let org_value = serde_json::Value::String(chatgpt_account_id);
+    if let Some(chatgpt_account_id) = chatgpt_account_id {
+        let org_value = serde_json::Value::String(chatgpt_account_id.to_string());
         auth_payload["chatgpt_account_id"] = org_value;
     }
 
@@ -225,23 +264,10 @@ fn write_auth_file(params: AuthFileParams, chaos_home: &Path) -> std::io::Result
         "https://api.openai.com/auth": auth_payload,
     });
     let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
-    let header_b64 = b64(&serde_json::to_vec(&header)?);
-    let payload_b64 = b64(&serde_json::to_vec(&payload)?);
+    let header_b64 = b64(&serde_json::to_vec(&header).expect("header should serialize"));
+    let payload_b64 = b64(&serde_json::to_vec(&payload).expect("payload should serialize"));
     let signature_b64 = b64(b"sig");
-    let fake_jwt = format!("{header_b64}.{payload_b64}.{signature_b64}");
-
-    let auth_json_data = json!({
-        "OPENAI_API_KEY": params.openai_api_key,
-        "tokens": {
-            "id_token": fake_jwt,
-            "access_token": "test-access-token",
-            "refresh_token": "test-refresh-token"
-        },
-        "last_refresh": Timestamp::now(),
-    });
-    let auth_json = serde_json::to_string_pretty(&auth_json_data)?;
-    std::fs::write(auth_file, auth_json)?;
-    Ok(fake_jwt)
+    format!("{header_b64}.{payload_b64}.{signature_b64}")
 }
 
 async fn build_config(

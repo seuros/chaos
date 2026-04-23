@@ -8,12 +8,12 @@ use ratatui::widgets::Wrap;
 
 use crate::shimmer::shimmer_spans;
 
-use super::AuthModeWidget;
+use super::AccountsWidget;
 use super::ContinueWithDeviceCodeState;
 use super::mark_url_hyperlink;
 
 pub(super) fn render_device_code_login(
-    widget: &AuthModeWidget,
+    widget: &AccountsWidget,
     area: Rect,
     buf: &mut Buffer,
     state: &ContinueWithDeviceCodeState,

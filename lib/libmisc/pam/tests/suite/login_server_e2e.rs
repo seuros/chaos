@@ -246,13 +246,19 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     let auth_path = home.auth_path();
     let data = std::fs::read_to_string(&auth_path)?;
     let json: serde_json::Value = serde_json::from_str(&data)?;
-    // The following assert is here because of the old oauth flow that exchanges tokens for an
-    // API key. See obtain_api_key in server.rs for details. Once we remove this old mechanism
-    // from the code, this test should be updated to expect that the API key is no longer present.
-    assert_eq!(json["OPENAI_API_KEY"], "access-123");
-    assert_eq!(json["tokens"]["access_token"], "access-123");
-    assert_eq!(json["tokens"]["refresh_token"], "refresh-123");
-    assert_eq!(json["tokens"]["account_id"], chatgpt_account_id);
+    assert_eq!(json["providers"]["openai"]["api_key"], "access-123");
+    assert_eq!(
+        json["providers"]["openai"]["tokens"]["access_token"],
+        "access-123"
+    );
+    assert_eq!(
+        json["providers"]["openai"]["tokens"]["refresh_token"],
+        "refresh-123"
+    );
+    assert_eq!(
+        json["providers"]["openai"]["tokens"]["account_id"],
+        chatgpt_account_id
+    );
 
     Ok(())
 }

@@ -765,10 +765,6 @@ pub(crate) async fn persist_tokens_async(
             tokens.account_id = Some(acc.to_string());
         }
         let mut auth = AuthDotJson {
-            auth_mode: None,
-            openai_api_key: None,
-            tokens: None,
-            last_refresh: None,
             providers: Default::default(),
         };
         auth.set_provider_record(

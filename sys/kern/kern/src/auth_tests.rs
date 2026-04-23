@@ -79,11 +79,6 @@ fn login_with_api_key_overwrites_existing_auth_json() {
     let auth = storage
         .try_read_auth_json(&auth_path)
         .expect("auth.json should parse");
-    assert_eq!(auth.openai_api_key, None);
-    assert!(
-        auth.tokens.is_none(),
-        "legacy top-level tokens should be cleared"
-    );
     let record = auth
         .provider_record(DEFAULT_AUTH_PROVIDER_ID)
         .expect("openai provider record should exist");
@@ -132,22 +127,30 @@ async fn pro_account_with_no_api_key_uses_chatgpt_auth() {
 
     assert_eq!(
         AuthDotJson {
-            auth_mode: None,
-            openai_api_key: None,
-            tokens: Some(TokenData {
-                id_token: IdTokenInfo {
-                    email: Some("user@example.com".to_string()),
-                    chatgpt_plan_type: Some(InternalPlanType::Known(InternalKnownPlan::Pro)),
-                    chatgpt_user_id: Some("user-12345".to_string()),
-                    chatgpt_account_id: None,
-                    raw_jwt: fake_jwt,
+            providers: [(
+                DEFAULT_AUTH_PROVIDER_ID.to_string(),
+                ProviderAuthRecord {
+                    auth_mode: Some(ApiAuthMode::Chatgpt),
+                    api_key: None,
+                    tokens: Some(TokenData {
+                        id_token: IdTokenInfo {
+                            email: Some("user@example.com".to_string()),
+                            chatgpt_plan_type: Some(InternalPlanType::Known(
+                                InternalKnownPlan::Pro
+                            )),
+                            chatgpt_user_id: Some("user-12345".to_string()),
+                            chatgpt_account_id: None,
+                            raw_jwt: fake_jwt,
+                        },
+                        access_token: "test-access-token".to_string(),
+                        refresh_token: "test-refresh-token".to_string(),
+                        account_id: None,
+                    }),
+                    last_refresh: Some(last_refresh),
                 },
-                access_token: "test-access-token".to_string(),
-                refresh_token: "test-refresh-token".to_string(),
-                account_id: None,
-            }),
-            last_refresh: Some(last_refresh),
-            providers: Default::default(),
+            )]
+            .into_iter()
+            .collect(),
         },
         auth_dot_json
     );
@@ -160,7 +163,7 @@ async fn loads_api_key_from_auth_json() {
     let auth_file = dir.path().join("auth.json");
     std::fs::write(
         auth_file,
-        r#"{"OPENAI_API_KEY":"sk-test-key","tokens":null,"last_refresh":null}"#,
+        r#"{"providers":{"openai":{"auth_mode":"apikey","api_key":"sk-test-key"}}}"#,
     )
     .unwrap();
 
@@ -177,11 +180,17 @@ async fn loads_api_key_from_auth_json() {
 fn logout_removes_auth_file() -> Result<(), std::io::Error> {
     let dir = tempdir()?;
     let auth_dot_json = AuthDotJson {
-        auth_mode: Some(ApiAuthMode::ApiKey),
-        openai_api_key: Some("sk-test-key".to_string()),
-        tokens: None,
-        last_refresh: None,
-        providers: Default::default(),
+        providers: [(
+            DEFAULT_AUTH_PROVIDER_ID.to_string(),
+            ProviderAuthRecord {
+                auth_mode: Some(ApiAuthMode::ApiKey),
+                api_key: Some("sk-test-key".to_string()),
+                tokens: None,
+                last_refresh: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
     };
     super::save_auth(dir.path(), &auth_dot_json, AuthCredentialsStoreMode::File)?;
     let auth_file = get_auth_file(dir.path());
@@ -217,15 +226,25 @@ fn write_auth_file(params: AuthFileParams, chaos_home: &Path) -> std::io::Result
         params.chatgpt_plan_type.as_deref(),
         params.chatgpt_account_id.as_deref(),
     );
+    let auth_mode = if params.openai_api_key.is_some() {
+        "apikey"
+    } else {
+        "chatgpt"
+    };
 
     let auth_json_data = json!({
-        "OPENAI_API_KEY": params.openai_api_key,
-        "tokens": {
-            "id_token": fake_jwt,
-            "access_token": "test-access-token",
-            "refresh_token": "test-refresh-token"
-        },
-        "last_refresh": Timestamp::now(),
+        "providers": {
+            "openai": {
+                "auth_mode": auth_mode,
+                "api_key": params.openai_api_key,
+                "tokens": {
+                    "id_token": fake_jwt,
+                    "access_token": "test-access-token",
+                    "refresh_token": "test-refresh-token"
+                },
+                "last_refresh": Timestamp::now(),
+            }
+        }
     });
     let auth_json = serde_json::to_string_pretty(&auth_json_data)?;
     std::fs::write(auth_file, auth_json)?;

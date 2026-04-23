@@ -42,6 +42,7 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::TextElement;
 use chaos_kern::config::edit::ConfigEdit;
 use chaos_kern::config::edit::ConfigEditsBuilder;
+use chaos_kern::models_manager::CollaborationModesConfig;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -453,8 +454,17 @@ impl App {
                 ));
                 return;
             }
+            self.server = Arc::new(chaos_kern::ProcessTable::new(
+                &self.config,
+                self.auth_manager.clone(),
+                self.server.session_source(),
+                CollaborationModesConfig {
+                    default_mode_request_user_input: true,
+                },
+            ));
         }
 
+        self.auth_manager.reload();
         self.chat_widget.refresh_status_line();
         self.chat_widget.refresh_connectors(/*force_refetch*/ true);
         self.chat_widget.submit_op(Op::ReloadUserConfig);

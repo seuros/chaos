@@ -24,8 +24,6 @@ use std::sync::LazyLock;
 
 pub use chaos_sysctl::types::AuthCredentialsStoreMode;
 
-const LEGACY_OPENAI_PROVIDER_ID: &str = "openai";
-
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct ProviderAuthRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -44,18 +42,6 @@ pub struct ProviderAuthRecord {
 /// Expected structure for $CHAOS_HOME/auth.json.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct AuthDotJson {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth_mode: Option<AuthMode>,
-
-    #[serde(rename = "OPENAI_API_KEY")]
-    pub openai_api_key: Option<String>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tokens: Option<TokenData>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_refresh: Option<Timestamp>,
-
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub providers: HashMap<String, ProviderAuthRecord>,
 }
@@ -365,10 +351,7 @@ impl ProviderAuthRecord {
 
 impl AuthDotJson {
     pub fn provider_record(&self, provider_id: &str) -> Option<ProviderAuthRecord> {
-        self.providers
-            .get(provider_id)
-            .cloned()
-            .or_else(|| self.legacy_provider_record(provider_id))
+        self.providers.get(provider_id).cloned()
     }
 
     pub fn set_provider_record(
@@ -381,49 +364,15 @@ impl AuthDotJson {
 
     pub fn clear_provider_record(&mut self, provider_id: &str) {
         self.providers.remove(provider_id);
-        if provider_id == LEGACY_OPENAI_PROVIDER_ID {
-            self.auth_mode = None;
-            self.openai_api_key = None;
-            self.tokens = None;
-            self.last_refresh = None;
-        }
     }
 
     pub fn normalized_provider_records(&self) -> HashMap<String, ProviderAuthRecord> {
-        let mut providers = self.providers.clone();
-        if let Some(record) = self.legacy_provider_record(LEGACY_OPENAI_PROVIDER_ID) {
-            providers
-                .entry(LEGACY_OPENAI_PROVIDER_ID.to_string())
-                .or_insert(record);
-        }
-        providers
+        self.providers.clone()
     }
 
     pub fn normalized(&self) -> Self {
         Self {
-            auth_mode: None,
-            openai_api_key: None,
-            tokens: None,
-            last_refresh: None,
             providers: self.normalized_provider_records(),
         }
-    }
-
-    fn legacy_provider_record(&self, provider_id: &str) -> Option<ProviderAuthRecord> {
-        if provider_id != LEGACY_OPENAI_PROVIDER_ID
-            || (self.auth_mode.is_none()
-                && self.openai_api_key.is_none()
-                && self.tokens.is_none()
-                && self.last_refresh.is_none())
-        {
-            return None;
-        }
-
-        Some(ProviderAuthRecord {
-            auth_mode: self.auth_mode,
-            api_key: self.openai_api_key.clone(),
-            tokens: self.tokens.clone(),
-            last_refresh: self.last_refresh,
-        })
     }
 }

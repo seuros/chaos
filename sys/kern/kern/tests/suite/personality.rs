@@ -150,8 +150,12 @@ async fn config_personality_some_sets_instructions_template() -> anyhow::Result<
     let instructions_text = request.instructions_text();
 
     assert!(
-        instructions_text.contains(LOCAL_FRIENDLY_TEMPLATE),
-        "expected personality update to include the local friendly template, got: {instructions_text:?}"
+        instructions_text.contains(BASE_INSTRUCTIONS),
+        "expected instructions to include the local ChaOS kernel prompt, got: {instructions_text:?}"
+    );
+    assert!(
+        !instructions_text.contains(LOCAL_FRIENDLY_TEMPLATE),
+        "expected local models to ignore the friendly personality template, got: {instructions_text:?}"
     );
 
     let developer_texts = request.message_input_texts("developer");
@@ -258,8 +262,12 @@ async fn default_personality_is_pragmatic_without_config_toml() -> anyhow::Resul
     let request = resp_mock.single_request();
     let instructions_text = request.instructions_text();
     assert!(
-        instructions_text.contains(LOCAL_PRAGMATIC_TEMPLATE),
-        "expected default friendly template, got: {instructions_text:?}"
+        instructions_text.contains(BASE_INSTRUCTIONS),
+        "expected instructions to include the local ChaOS kernel prompt, got: {instructions_text:?}"
+    );
+    assert!(
+        !instructions_text.contains(LOCAL_PRAGMATIC_TEMPLATE),
+        "expected local models to ignore the pragmatic personality template, got: {instructions_text:?}"
     );
 
     Ok(())
@@ -343,18 +351,12 @@ async fn user_turn_personality_some_adds_update_message() -> anyhow::Result<()> 
         .expect("expected personality update request");
 
     let developer_texts = request.message_input_texts("developer");
-    let personality_text = developer_texts
-        .iter()
-        .find(|text| text.contains("<personality_spec>"))
-        .expect("expected personality update message in developer input");
-
     assert!(
-        personality_text.contains("The user has requested a new communication style."),
-        "expected personality update preamble, got {personality_text:?}"
-    );
-    assert!(
-        personality_text.contains(LOCAL_FRIENDLY_TEMPLATE),
-        "expected personality update to include the local pragmatic template, got: {personality_text:?}"
+        developer_texts
+            .iter()
+            .all(|text| !text.contains("<personality_spec>")
+                && !text.contains(LOCAL_FRIENDLY_TEMPLATE)),
+        "expected local models to omit personality update messages, got: {developer_texts:?}"
     );
 
     Ok(())

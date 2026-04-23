@@ -194,10 +194,6 @@ pub fn login_with_provider_api_key(
 
     let mut auth_dot_json = super::load_auth_dot_json(chaos_home, auth_credentials_store_mode)?
         .unwrap_or(AuthDotJson {
-            auth_mode: None,
-            openai_api_key: None,
-            tokens: None,
-            last_refresh: None,
             providers: Default::default(),
         });
     auth_dot_json.set_provider_record(

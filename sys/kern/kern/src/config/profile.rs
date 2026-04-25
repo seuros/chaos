@@ -3,14 +3,11 @@
 
 pub use chaos_sysctl::profile::*;
 
-use std::path::Path;
-
 use chaos_ipc::config_types::SandboxMode;
 use chaos_sysctl::Constrained;
 
 use crate::config::ConfigToml;
-use crate::config::ProjectConfig;
-use crate::git_info::resolve_root_git_project_for_trust;
+use crate::config::ProjectTrust;
 use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
 
@@ -20,7 +17,7 @@ impl ConfigToml {
         &self,
         sandbox_mode_override: Option<SandboxMode>,
         profile_sandbox_mode: Option<SandboxMode>,
-        resolved_cwd: &Path,
+        active_project_trust: Option<&ProjectTrust>,
         sandbox_policy_constraint: Option<&Constrained<SandboxPolicy>>,
     ) -> SandboxPolicy {
         use crate::config::types::SandboxWorkspaceWrite;
@@ -32,7 +29,7 @@ impl ConfigToml {
             .or(profile_sandbox_mode)
             .or(self.sandbox_mode)
             .or_else(|| {
-                self.get_active_project(resolved_cwd).and_then(|p| {
+                active_project_trust.and_then(|p| {
                     if p.is_trusted() || p.is_untrusted() {
                         Some(SandboxMode::WorkspaceWrite)
                     } else {
@@ -71,25 +68,6 @@ impl ConfigToml {
             sandbox_policy = constraint.get().clone();
         }
         sandbox_policy
-    }
-
-    /// Resolves the cwd to an existing project, or returns `None` when no
-    /// matching project entry is found.
-    pub fn get_active_project(&self, resolved_cwd: &Path) -> Option<ProjectConfig> {
-        let projects = self.projects.clone().unwrap_or_default();
-
-        if let Some(project_config) = projects.get(&resolved_cwd.to_string_lossy().to_string()) {
-            return Some(project_config.clone());
-        }
-
-        if let Some(repo_root) = resolve_root_git_project_for_trust(resolved_cwd)
-            && let Some(project_config_for_root) =
-                projects.get(&repo_root.to_string_lossy().to_string())
-        {
-            return Some(project_config_for_root.clone());
-        }
-
-        None
     }
 
     pub fn get_config_profile(

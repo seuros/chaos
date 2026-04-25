@@ -71,9 +71,13 @@ impl ConfigBuilder {
             None => AbsolutePathBuf::current_dir()?,
         };
         harness_overrides.cwd = Some(cwd.to_path_buf());
-        let config_layer_stack =
-            load_config_layers_state(&chaos_home, Some(cwd), &cli_overrides, loader_overrides)
-                .await?;
+        let config_layer_stack = load_config_layers_state(
+            &chaos_home,
+            Some(cwd.clone()),
+            &cli_overrides,
+            loader_overrides,
+        )
+        .await?;
         let merged_toml = config_layer_stack.effective_config();
 
         let config_toml: ConfigToml = match merged_toml.try_into() {
@@ -91,6 +95,19 @@ impl ConfigBuilder {
                 return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, err));
             }
         };
+        let sqlite_home = config_toml
+            .sqlite_home
+            .clone()
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| chaos_home.clone());
+        harness_overrides.active_project_trust = Some(
+            crate::config_loader::resolve_active_project_trust(
+                &sqlite_home,
+                cwd.as_path(),
+                &config_layer_stack,
+            )
+            .await?,
+        );
         Config::load_config_with_layer_stack(
             config_toml,
             harness_overrides,

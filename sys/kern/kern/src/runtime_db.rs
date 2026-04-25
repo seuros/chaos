@@ -168,6 +168,23 @@ async fn runtime_handle_from_provider(
     anyhow::bail!("unsupported runtime storage backend")
 }
 
+/// Open or create the configured runtime DB handle using the shared storage
+/// resolution rules.
+pub async fn open_or_create_runtime_db(
+    sqlite_home: &Path,
+    default_provider: &str,
+) -> anyhow::Result<RuntimeDbHandle> {
+    let provider = resolve_runtime_storage_provider(None, sqlite_home)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    runtime_handle_from_provider(
+        &provider,
+        sqlite_home.to_path_buf(),
+        default_provider.to_string(),
+    )
+    .await
+}
+
 /// Resolve the shared runtime storage provider, preferring explicit environment
 /// configuration and otherwise falling back to the configured SQLite home.
 pub async fn resolve_runtime_storage_provider(

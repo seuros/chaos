@@ -175,26 +175,26 @@ fmt:
 
 # Clippy with all features, deny warnings
 clippy:
-    cargo clippy --workspace --all-features --tests -- -D warnings
+    scripts/with-local-qa-tmp.sh cargo clippy --workspace --all-features --tests -- -D warnings
 
 # Check compilation without building
 check:
-    cargo check --workspace --all-targets --all-features
+    scripts/with-local-qa-tmp.sh cargo check --workspace --all-targets --all-features
 
 # Run tests with all features
 test *args:
-    cargo nextest run --workspace --all-features --no-fail-fast {{args}}
+    scripts/with-local-qa-tmp.sh cargo nextest run --workspace --all-features --no-fail-fast {{args}}
 
 # Run the bounded Postgres validation set for the new storage path.
 postgres-validate-storage database_url:
-    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
+    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
 
 postgres-validate-cron database_url:
-    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
+    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
 
 postgres-validate-new-storage-path database_url:
-    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
-    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
+    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
+    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
 
 # Lint + check + clippy (no tests)
 qq: fmt check clippy
@@ -202,9 +202,21 @@ qq: fmt check clippy
 # Full QA: qq + tests
 qa: qq test
 
+# Remove repo-local QA/build leftovers and the repo-local temp root.
+clean-qa:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    scripts/with-local-qa-tmp.sh --clean
+    rm -rf \
+        target/debug/incremental \
+        target/nextest \
+        target/qa \
+        .tmp/just-qa*.log \
+        .tmp/nextest*.log
+
 # Fix clippy warnings automatically
 fix:
-    cargo clippy --fix --workspace --all-features --tests --allow-dirty
+    scripts/with-local-qa-tmp.sh cargo clippy --fix --workspace --all-features --tests --allow-dirty
 
 # Run the MCP server
 mcp-server-run *args:

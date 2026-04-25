@@ -3,13 +3,13 @@ use super::load_config_layers_state;
 use crate::config::ConfigBuilder;
 use crate::config::ConfigOverrides;
 use crate::config::ConfigToml;
-use crate::config::ProjectConfig;
 use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigLoadError;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConfigRequirementsWithSources;
 use crate::config_loader::load_requirements_toml;
 use crate::config_loader::version_for_toml;
+use crate::runtime_db;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::protocol::ApprovalPolicy;
@@ -17,7 +17,6 @@ use chaos_realpath::AbsolutePathBuf;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::path::Path;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
@@ -38,18 +37,22 @@ async fn make_config_for_test(
     tokio::fs::write(
         chaos_home.join(CONFIG_TOML_FILE),
         toml::to_string(&ConfigToml {
-            projects: Some(HashMap::from([(
-                project_path.to_string_lossy().to_string(),
-                ProjectConfig {
-                    trust_level: Some(trust_level),
-                },
-            )])),
             project_root_markers,
             ..Default::default()
         })
         .expect("serialize config"),
     )
-    .await
+    .await?;
+    let runtime = runtime_db::open_or_create_runtime_db(chaos_home, "test-provider")
+        .await
+        .map_err(std::io::Error::other)?;
+    runtime
+        .set_project_trust(
+            runtime_db::normalize_cwd_for_runtime_db(project_path).as_path(),
+            trust_level,
+        )
+        .await
+        .map_err(std::io::Error::other)
 }
 
 #[tokio::test]

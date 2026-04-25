@@ -73,7 +73,7 @@ use chaos_kern::default_client::set_default_originator;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
-const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
+const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug";
@@ -321,6 +321,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         compact_prompt: None,
         show_raw_agent_reasoning: oss.then_some(true),
         ephemeral: ephemeral.then_some(true),
+        active_project_trust: None,
         additional_writable_roots: add_dir,
         provider_user_override: model_provider.is_some(),
     };

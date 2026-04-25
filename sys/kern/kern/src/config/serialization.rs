@@ -2,7 +2,6 @@
 
 use std::path::Path;
 
-use chaos_ipc::config_types::TrustLevel;
 use toml_edit::value;
 
 use crate::config::edit::ConfigEdit;
@@ -85,18 +84,6 @@ pub(crate) async fn maybe_migrate_smart_approvals_alias(
             ))
         })?;
     Ok(true)
-}
-
-/// Patch `CHAOS_HOME/config.toml` project state to set trust level.
-/// Use with caution.
-pub fn set_project_trust_level(
-    chaos_home: &Path,
-    project_path: &Path,
-    trust_level: TrustLevel,
-) -> anyhow::Result<()> {
-    ConfigEditsBuilder::new(chaos_home)
-        .set_project_trust_level(project_path, trust_level)
-        .apply_blocking()
 }
 
 /// Save the default OSS provider preference to config.toml.

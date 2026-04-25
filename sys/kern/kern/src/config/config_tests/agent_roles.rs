@@ -146,16 +146,12 @@ async fn agent_role_file_without_minion_instructions_is_dropped_with_warning() -
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(&nested_cwd)?;
 
-    let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"[projects."{workspace_key}"]
-trust_level = "trusted"
-"#
-        ),
+    crate::config::set_project_trust_level(
+        chaos_home.path(),
+        repo_root.path(),
+        TrustLevel::Trusted,
     )
-    .await?;
+    .map_err(std::io::Error::other)?;
 
     let standalone_agents_dir = repo_root.path().join(".chaos").join("agents");
     tokio::fs::create_dir_all(&standalone_agents_dir).await?;
@@ -316,16 +312,12 @@ async fn discovered_agent_role_file_without_name_is_dropped_with_warning() -> st
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(&nested_cwd)?;
 
-    let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"[projects."{workspace_key}"]
-trust_level = "trusted"
-"#
-        ),
+    crate::config::set_project_trust_level(
+        chaos_home.path(),
+        repo_root.path(),
+        TrustLevel::Trusted,
     )
-    .await?;
+    .map_err(std::io::Error::other)?;
 
     let standalone_agents_dir = repo_root.path().join(".chaos").join("agents");
     tokio::fs::create_dir_all(&standalone_agents_dir).await?;
@@ -516,15 +508,12 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(&nested_cwd)?;
 
-    let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"[projects."{workspace_key}"]
-trust_level = "trusted"
-"#
-        ),
-    )?;
+    crate::config::set_project_trust_level(
+        chaos_home.path(),
+        repo_root.path(),
+        TrustLevel::Trusted,
+    )
+    .map_err(std::io::Error::other)?;
 
     let root_agent = repo_root
         .path()
@@ -647,14 +636,9 @@ async fn mixed_legacy_and_standalone_agent_role_sources_merge_with_precedence()
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(&nested_cwd)?;
 
-    let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
     tokio::fs::write(
         chaos_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"[projects."{workspace_key}"]
-trust_level = "trusted"
-
-[agents.researcher]
+        r#"[agents.researcher]
 description = "Research role from config"
 config_file = "./agents/researcher.toml"
 nickname_candidates = ["Noether"]
@@ -663,10 +647,15 @@ nickname_candidates = ["Noether"]
 description = "Critic role from config"
 config_file = "./agents/critic.toml"
 nickname_candidates = ["Ada"]
-"#
-        ),
+"#,
     )
     .await?;
+    crate::config::set_project_trust_level(
+        chaos_home.path(),
+        repo_root.path(),
+        TrustLevel::Trusted,
+    )
+    .map_err(std::io::Error::other)?;
 
     let home_agents_dir = chaos_home.path().join("agents");
     tokio::fs::create_dir_all(&home_agents_dir).await?;
@@ -793,20 +782,20 @@ async fn higher_precedence_agent_role_can_inherit_description_from_lower_layer()
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(&nested_cwd)?;
 
-    let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
     tokio::fs::write(
         chaos_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"[projects."{workspace_key}"]
-trust_level = "trusted"
-
-[agents.researcher]
+        r#"[agents.researcher]
 description = "Research role from config"
 config_file = "./agents/researcher.toml"
-"#
-        ),
+"#,
     )
     .await?;
+    crate::config::set_project_trust_level(
+        chaos_home.path(),
+        repo_root.path(),
+        TrustLevel::Trusted,
+    )
+    .map_err(std::io::Error::other)?;
 
     let home_agents_dir = chaos_home.path().join("agents");
     tokio::fs::create_dir_all(&home_agents_dir).await?;

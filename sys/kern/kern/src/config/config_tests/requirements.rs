@@ -7,17 +7,12 @@ fn test_untrusted_project_gets_unless_trusted_approval_policy() -> anyhow::Resul
     let test_path = test_project_dir.path();
 
     let config = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            projects: Some(HashMap::from([(
-                test_path.to_string_lossy().to_string(),
-                ProjectConfig {
-                    trust_level: Some(TrustLevel::Untrusted),
-                },
-            )])),
-            ..Default::default()
-        },
+        ConfigToml::default(),
         ConfigOverrides {
             cwd: Some(test_path.to_path_buf()),
+            active_project_trust: Some(ProjectTrust {
+                trust_level: Some(TrustLevel::Untrusted),
+            }),
             ..Default::default()
         },
         chaos_home.path().to_path_buf(),

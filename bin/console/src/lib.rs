@@ -7,7 +7,7 @@ use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
-use chaos_init::ChaosInit;
+use chaos_coreboot::CoreBoot;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
@@ -100,7 +100,7 @@ pub use libui::theme_picker;
 use libui::tool_badges;
 use libui::tui;
 
-const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
+const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
@@ -122,8 +122,8 @@ pub use public_widgets::composer_input::ComposerAction;
 pub use public_widgets::composer_input::ComposerInput;
 // (tests access modules directly within the crate)
 
-fn boot_core(config: &Config) -> ChaosInit {
-    ChaosInit::boot(
+fn boot_core(config: &Config) -> CoreBoot {
+    CoreBoot::boot(
         config,
         chaos_ipc::protocol::SessionSource::Cli,
         CollaborationModesConfig {
@@ -843,7 +843,7 @@ async fn load_config_or_exit_with_fallback_cwd(
 
 /// Determine if the user has decided whether to trust the current directory.
 fn should_show_trust_screen(config: &Config) -> bool {
-    config.active_project.trust_level.is_none()
+    config.active_project_trust.trust_level.is_none()
 }
 
 #[cfg(test)]
@@ -853,7 +853,7 @@ mod tests {
     use chaos_kern::AuthManager;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
-    use chaos_kern::config::ProjectConfig;
+    use chaos_kern::config::ProjectTrust;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
@@ -885,7 +885,7 @@ mod tests {
         use chaos_ipc::config_types::TrustLevel;
         let temp_dir = TempDir::new()?;
         let mut config = build_config(&temp_dir).await?;
-        config.active_project = ProjectConfig {
+        config.active_project_trust = ProjectTrust {
             trust_level: Some(TrustLevel::Untrusted),
         };
 
@@ -899,25 +899,19 @@ mod tests {
 
     #[tokio::test]
     async fn config_rebuild_changes_trust_defaults_with_cwd() -> std::io::Result<()> {
+        use chaos_ipc::config_types::TrustLevel;
+        use chaos_kern::config::set_project_trust_level;
+
         let temp_dir = TempDir::new()?;
         let chaos_home = temp_dir.path().to_path_buf();
         let trusted = temp_dir.path().join("trusted");
         let untrusted = temp_dir.path().join("untrusted");
         std::fs::create_dir_all(&trusted)?;
         std::fs::create_dir_all(&untrusted)?;
-
-        // TOML keys need escaped backslashes on Windows paths.
-        let trusted_display = trusted.display().to_string().replace('\\', "\\\\");
-        let untrusted_display = untrusted.display().to_string().replace('\\', "\\\\");
-        let config_toml = format!(
-            r#"[projects."{trusted_display}"]
-trust_level = "trusted"
-
-[projects."{untrusted_display}"]
-trust_level = "untrusted"
-"#
-        );
-        std::fs::write(temp_dir.path().join("config.toml"), config_toml)?;
+        set_project_trust_level(&chaos_home, &trusted, TrustLevel::Trusted)
+            .map_err(std::io::Error::other)?;
+        set_project_trust_level(&chaos_home, &untrusted, TrustLevel::Untrusted)
+            .map_err(std::io::Error::other)?;
 
         let trusted_overrides = ConfigOverrides {
             cwd: Some(trusted.clone()),

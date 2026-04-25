@@ -18,17 +18,16 @@ async fn malformed_rules_should_not_panic() -> anyhow::Result<()> {
     // TODO(mbolin): Figure out why using a temp dir as the cwd causes this test
     // to hang.
     let cwd = std::env::current_dir()?;
-    let config_contents = format!(
-        r#"
+    let config_contents = r#"
 # Pick a local provider so the CLI doesn't prompt for OpenAI auth in this test.
 model_provider = "ollama"
-
-[projects]
-"{cwd}" = {{ trust_level = "trusted" }}
-"#,
-        cwd = cwd.display()
-    );
+"#;
     std::fs::write(chaos_home.join("config.toml"), config_contents)?;
+    chaos_kern::config::set_project_trust_level(
+        chaos_home,
+        &cwd,
+        chaos_ipc::config_types::TrustLevel::Trusted,
+    )?;
 
     let ChaosCliOutput { exit_code, output } = run_chaos_cli(chaos_home, cwd).await?;
     assert_ne!(0, exit_code, "Chaos CLI should exit nonzero.");

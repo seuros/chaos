@@ -18,7 +18,7 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-chaos-init = { workspace = true }
+chaos-coreboot = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-chassis = { workspace = true }
 chaos-kern = { workspace = true }

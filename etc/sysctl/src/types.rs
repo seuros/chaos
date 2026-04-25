@@ -978,30 +978,6 @@ pub enum OAuthCredentialsStoreMode {
     Keyring,
 }
 
-// ===== Project config =====
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct ProjectConfig {
-    pub trust_level: Option<chaos_ipc::config_types::TrustLevel>,
-}
-
-impl ProjectConfig {
-    pub fn is_trusted(&self) -> bool {
-        matches!(
-            self.trust_level,
-            Some(chaos_ipc::config_types::TrustLevel::Trusted)
-        )
-    }
-
-    pub fn is_untrusted(&self) -> bool {
-        matches!(
-            self.trust_level,
-            Some(chaos_ipc::config_types::TrustLevel::Untrusted)
-        )
-    }
-}
-
 // ===== Realtime config =====
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -2,15 +2,16 @@ use super::*;
 
 #[test]
 fn test_untrusted_project_gets_workspace_write_sandbox() -> anyhow::Result<()> {
-    let config_with_untrusted = r#"
-[projects."/tmp/test"]
-trust_level = "untrusted"
-"#;
+    let cfg = ConfigToml::default();
 
-    let cfg = toml::from_str::<ConfigToml>(config_with_untrusted)
-        .expect("TOML deserialization should succeed");
-
-    let resolution = cfg.derive_sandbox_policy(None, None, &PathBuf::from("/tmp/test"), None);
+    let resolution = cfg.derive_sandbox_policy(
+        None,
+        None,
+        Some(&ProjectTrust {
+            trust_level: Some(TrustLevel::Untrusted),
+        }),
+        None,
+    );
 
     assert!(
         matches!(resolution, SandboxPolicy::WorkspaceWrite { .. }),
@@ -23,18 +24,7 @@ trust_level = "untrusted"
 #[test]
 fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults() -> anyhow::Result<()>
 {
-    let project_dir = TempDir::new()?;
-    let project_path = project_dir.path().to_path_buf();
-    let project_key = project_path.to_string_lossy().to_string();
-    let cfg = ConfigToml {
-        projects: Some(HashMap::from([(
-            project_key,
-            ProjectConfig {
-                trust_level: Some(TrustLevel::Trusted),
-            },
-        )])),
-        ..Default::default()
-    };
+    let cfg = ConfigToml::default();
     let constrained = Constrained::new(SandboxPolicy::RootAccess, |candidate| {
         if matches!(candidate, SandboxPolicy::RootAccess) {
             Ok(())
@@ -48,7 +38,14 @@ fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults() 
         }
     })?;
 
-    let resolution = cfg.derive_sandbox_policy(None, None, &project_path, Some(&constrained));
+    let resolution = cfg.derive_sandbox_policy(
+        None,
+        None,
+        Some(&ProjectTrust {
+            trust_level: Some(TrustLevel::Trusted),
+        }),
+        Some(&constrained),
+    );
 
     assert_eq!(resolution, SandboxPolicy::RootAccess);
     Ok(())
@@ -57,18 +54,7 @@ fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults() 
 #[test]
 fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallback() -> anyhow::Result<()>
 {
-    let project_dir = TempDir::new()?;
-    let project_path = project_dir.path().to_path_buf();
-    let project_key = project_path.to_string_lossy().to_string();
-    let cfg = ConfigToml {
-        projects: Some(HashMap::from([(
-            project_key,
-            ProjectConfig {
-                trust_level: Some(TrustLevel::Trusted),
-            },
-        )])),
-        ..Default::default()
-    };
+    let cfg = ConfigToml::default();
     let constrained = Constrained::new(SandboxPolicy::new_workspace_write_policy(), |candidate| {
         if matches!(candidate, SandboxPolicy::WorkspaceWrite { .. }) {
             Ok(())
@@ -82,7 +68,14 @@ fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallback() 
         }
     })?;
 
-    let resolution = cfg.derive_sandbox_policy(None, None, &project_path, Some(&constrained));
+    let resolution = cfg.derive_sandbox_policy(
+        None,
+        None,
+        Some(&ProjectTrust {
+            trust_level: Some(TrustLevel::Trusted),
+        }),
+        Some(&constrained),
+    );
 
     assert_eq!(resolution, SandboxPolicy::new_workspace_write_policy());
     Ok(())

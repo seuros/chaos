@@ -7,7 +7,6 @@ use crate::types::Notice;
 use anyhow::Context;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::openai_models::ReasoningEffort;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -39,9 +38,6 @@ pub enum ConfigEdit {
     SetNoticeHideRateLimitModelNudge(bool),
     /// Replace the entire `[mcp_servers]` table.
     ReplaceMcpServers(BTreeMap<String, McpServerConfig>),
-    /// Set trust_level under `[projects."<path>"]`,
-    /// migrating inline tables to explicit tables.
-    SetProjectTrustLevel { path: PathBuf, level: TrustLevel },
     /// Set the value stored at the exact dotted path.
     SetPath {
         segments: Vec<String>,
@@ -348,10 +344,6 @@ impl ConfigDocument {
             ConfigEdit::ReplaceMcpServers(servers) => Ok(self.replace_mcp_servers(servers)),
             ConfigEdit::SetPath { segments, value } => Ok(self.insert(segments, value.clone())),
             ConfigEdit::ClearPath { segments } => Ok(self.clear_owned(segments)),
-            ConfigEdit::SetProjectTrustLevel { path, level } => {
-                set_project_trust_level_inner(&mut self.doc, path.as_path(), *level)?;
-                Ok(true)
-            }
         }
     }
 
@@ -536,60 +528,6 @@ impl ConfigDocument {
     }
 }
 
-/// Set the trust level for a project in the TOML document.
-///
-/// Ensures tables are explicit and migration from inline tables is preserved.
-pub fn set_project_trust_level_inner(
-    doc: &mut DocumentMut,
-    project_path: &Path,
-    trust_level: TrustLevel,
-) -> anyhow::Result<()> {
-    let project_key = project_path.to_string_lossy().to_string();
-
-    {
-        let root = doc.as_table_mut();
-        let existing_projects = root.get("projects").cloned();
-        if existing_projects.as_ref().is_none_or(|i| !i.is_table()) {
-            let mut projects_tbl = toml_edit::Table::new();
-            projects_tbl.set_implicit(true);
-
-            if let Some(inline_tbl) = existing_projects.as_ref().and_then(|i| i.as_inline_table()) {
-                for (k, v) in inline_tbl.iter() {
-                    if let Some(inner_tbl) = v.as_inline_table() {
-                        let new_tbl = inner_tbl.clone().into_table();
-                        projects_tbl.insert(k, toml_edit::Item::Table(new_tbl));
-                    }
-                }
-            }
-
-            root.insert("projects", toml_edit::Item::Table(projects_tbl));
-        }
-    }
-    let Some(projects_tbl) = doc["projects"].as_table_mut() else {
-        return Err(anyhow::anyhow!(
-            "projects table missing after initialization"
-        ));
-    };
-
-    let needs_proj_table = !projects_tbl.contains_key(project_key.as_str())
-        || projects_tbl
-            .get(project_key.as_str())
-            .and_then(|i| i.as_table())
-            .is_none();
-    if needs_proj_table {
-        projects_tbl.insert(project_key.as_str(), toml_edit::table());
-    }
-    let Some(proj_tbl) = projects_tbl
-        .get_mut(project_key.as_str())
-        .and_then(|i| i.as_table_mut())
-    else {
-        return Err(anyhow::anyhow!("project table missing for {project_key}"));
-    };
-    proj_tbl.set_implicit(false);
-    proj_tbl["trust_level"] = toml_edit::value(trust_level.to_string());
-    Ok(())
-}
-
 /// Persist edits using a blocking strategy.
 pub fn apply_blocking(
     chaos_home: &Path,
@@ -725,18 +663,6 @@ impl ConfigEditsBuilder {
     pub fn replace_mcp_servers(mut self, servers: &BTreeMap<String, McpServerConfig>) -> Self {
         self.edits
             .push(ConfigEdit::ReplaceMcpServers(servers.clone()));
-        self
-    }
-
-    pub fn set_project_trust_level<P: Into<PathBuf>>(
-        mut self,
-        project_path: P,
-        trust_level: TrustLevel,
-    ) -> Self {
-        self.edits.push(ConfigEdit::SetProjectTrustLevel {
-            path: project_path.into(),
-            level: trust_level,
-        });
         self
     }
 

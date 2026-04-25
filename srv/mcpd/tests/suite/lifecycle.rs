@@ -275,7 +275,7 @@ async fn spool_resource_can_be_read_after_initialize() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_runtime()
 -> Result<()> {
-    let (chaos_home, mut mcp) = spawn_mcp_process().await?;
+    let chaos_home = TempDir::new()?;
 
     let pool = open_runtime_db(chaos_home.path()).await?;
     let store = CronStore::new(pool);
@@ -289,6 +289,8 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
             None,
         ))
         .await?;
+
+    let mut mcp = McpProcess::new(chaos_home.path()).await?;
 
     mcp.initialize().await?;
 
@@ -323,7 +325,7 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spool_resource_reads_rows_from_runtime_db_even_without_preopened_state_runtime()
 -> Result<()> {
-    let (chaos_home, mut mcp) = spawn_mcp_process().await?;
+    let chaos_home = TempDir::new()?;
 
     let pool = open_runtime_db(chaos_home.path()).await?;
     sqlx::query(
@@ -334,6 +336,8 @@ async fn spool_resource_reads_rows_from_runtime_db_even_without_preopened_state_
     .bind("manifest-1")
     .execute(&pool)
     .await?;
+
+    let mut mcp = McpProcess::new(chaos_home.path()).await?;
 
     mcp.initialize().await?;
 

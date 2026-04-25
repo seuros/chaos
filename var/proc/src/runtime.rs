@@ -20,6 +20,7 @@ use crate::model::ProcessRow;
 use crate::model::anchor_from_item;
 use crate::model::datetime_to_epoch_seconds;
 use chaos_ipc::ProcessId;
+use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
 use log::LevelFilter;
@@ -122,6 +123,54 @@ impl StateRuntime {
     /// Return a reference to the runtime SQLite pool.
     pub fn pool(&self) -> &SqlitePool {
         self.pool.as_ref()
+    }
+
+    async fn get_project_trust(&self, project_path: &Path) -> anyhow::Result<Option<TrustLevel>> {
+        let row = sqlx::query(
+            r#"
+SELECT trust_level
+FROM project_trust
+WHERE project_path = ?
+            "#,
+        )
+        .bind(project_path.to_string_lossy().to_string())
+        .fetch_optional(self.pool())
+        .await?;
+        row.map(|row| {
+            let trust_level: String = row.try_get("trust_level")?;
+            parse_trust_level(&trust_level)
+        })
+        .transpose()
+    }
+
+    async fn set_project_trust(
+        &self,
+        project_path: &Path,
+        trust_level: TrustLevel,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO project_trust (
+    project_path,
+    trust_level,
+    created_at,
+    updated_at
+) VALUES (
+    ?,
+    ?,
+    UNIXEPOCH(),
+    UNIXEPOCH()
+)
+ON CONFLICT(project_path) DO UPDATE
+SET trust_level = excluded.trust_level,
+    updated_at = UNIXEPOCH()
+            "#,
+        )
+        .bind(project_path.to_string_lossy().to_string())
+        .bind(trust_level.to_string())
+        .execute(self.pool())
+        .await?;
+        Ok(())
     }
 }
 
@@ -263,6 +312,27 @@ impl RuntimeDbHandle {
         match self {
             Self::Postgres(runtime) => runtime.persist_dynamic_tools(process_id, tools).await,
             Self::Sqlite(runtime) => runtime.persist_dynamic_tools(process_id, tools).await,
+        }
+    }
+
+    pub async fn get_project_trust(
+        &self,
+        project_path: &Path,
+    ) -> anyhow::Result<Option<TrustLevel>> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_project_trust(project_path).await,
+            Self::Sqlite(runtime) => runtime.get_project_trust(project_path).await,
+        }
+    }
+
+    pub async fn set_project_trust(
+        &self,
+        project_path: &Path,
+        trust_level: TrustLevel,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.set_project_trust(project_path, trust_level).await,
+            Self::Sqlite(runtime) => runtime.set_project_trust(project_path, trust_level).await,
         }
     }
 
@@ -672,6 +742,54 @@ pub async fn open_runtime_db_postgres_url(database_url: &str) -> anyhow::Result<
 }
 
 impl PostgresRuntime {
+    async fn get_project_trust(&self, project_path: &Path) -> anyhow::Result<Option<TrustLevel>> {
+        let row = sqlx::query(
+            r#"
+SELECT trust_level
+FROM project_trust
+WHERE project_path = $1
+            "#,
+        )
+        .bind(project_path.to_string_lossy().to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| {
+            let trust_level: String = row.try_get("trust_level")?;
+            parse_trust_level(&trust_level)
+        })
+        .transpose()
+    }
+
+    async fn set_project_trust(
+        &self,
+        project_path: &Path,
+        trust_level: TrustLevel,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO project_trust (
+    project_path,
+    trust_level,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
+    EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
+)
+ON CONFLICT (project_path) DO UPDATE
+SET trust_level = EXCLUDED.trust_level,
+    updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(project_path.to_string_lossy().to_string())
+        .bind(trust_level.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<crate::ProcessMetadata>> {
         let row = sqlx::query(
             r#"
@@ -1896,6 +2014,14 @@ fn push_process_order_and_limit_postgres(
     builder.push_bind(limit as i64);
 }
 
+fn parse_trust_level(value: &str) -> anyhow::Result<TrustLevel> {
+    match value {
+        "trusted" => Ok(TrustLevel::Trusted),
+        "untrusted" => Ok(TrustLevel::Untrusted),
+        other => anyhow::bail!("invalid trust level `{other}` in runtime storage"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1932,6 +2058,7 @@ mod tests {
             "agent_job_items",
             "cron_jobs",
             "model_catalog_cache",
+            "project_trust",
         ] {
             let row =
                 sqlx::query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
@@ -2021,6 +2148,53 @@ mod tests {
                 .await
                 .expect("stat runtime db"),
             "runtime db file should be created from sqlite url"
+        );
+    }
+
+    #[tokio::test]
+    async fn project_trust_round_trips() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let runtime = RuntimeDbHandle::Sqlite(
+            StateRuntime::init(chaos_home, "test-provider".to_string())
+                .await
+                .expect("open runtime"),
+        );
+        let project_path = PathBuf::from("/tmp/trusted-project");
+
+        assert_eq!(
+            runtime
+                .get_project_trust(&project_path)
+                .await
+                .expect("query trust"),
+            None
+        );
+
+        runtime
+            .set_project_trust(&project_path, TrustLevel::Trusted)
+            .await
+            .expect("set trust");
+        assert_eq!(
+            runtime
+                .get_project_trust(&project_path)
+                .await
+                .expect("query trust"),
+            Some(TrustLevel::Trusted)
+        );
+
+        runtime
+            .set_project_trust(&project_path, TrustLevel::Untrusted)
+            .await
+            .expect("update trust");
+        assert_eq!(
+            runtime
+                .get_project_trust(&project_path)
+                .await
+                .expect("query trust"),
+            Some(TrustLevel::Untrusted)
         );
     }
 

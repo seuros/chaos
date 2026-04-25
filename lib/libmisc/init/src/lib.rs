@@ -1,4 +1,4 @@
-//! `chaos-init` — the userland init sequence for a chaos frontend.
+//! `chaos-coreboot` — the shared userland initialisation step for a chaos frontend.
 //!
 //! Given a fully-loaded [`Config`], produce the runtime pair every frontend
 //! needs before it can open a `chaos_session::ClientSession`: a shared
@@ -10,25 +10,25 @@
 //!
 //! This crate is intentionally tiny. Config loading is frontend-specific
 //! (CLI parsing, onboarding flows, env overrides) and stays in each binary.
-//! Init only covers the shared "given a config, wire the managers" step so
-//! that bin/console, bin/xclient, and any future frontend can stand on the
-//! same initialisation code.
+//! This crate only covers the shared "given a config, wire the managers"
+//! step, so `bin/console`, `bin/xclient`, and any future frontend can stand
+//! on the same initialisation code.
 //!
 //! # Example
 //!
 //! ```no_run
-//! use chaos_init::ChaosInit;
+//! use chaos_coreboot::CoreBoot;
 //! use chaos_ipc::protocol::SessionSource;
 //! use chaos_kern::config::Config;
 //! use chaos_kern::models_manager::CollaborationModesConfig;
 //!
 //! # fn demo(config: Config) {
-//! let init = ChaosInit::boot(
+//! let coreboot = CoreBoot::boot(
 //!     &config,
 //!     SessionSource::Cli,
 //!     CollaborationModesConfig { default_mode_request_user_input: true },
 //! );
-//! // init.auth_manager and init.process_table are now ready to hand to
+//! // coreboot.auth_manager and coreboot.process_table are now ready to hand to
 //! // chaos_session::ClientSession::spawn.
 //! # }
 //! ```
@@ -48,7 +48,7 @@ use chaos_kern::models_manager::CollaborationModesConfig;
 /// credentials against a single source of truth, and the process table is
 /// shared so forks, resumes, and the initial boot all go through the same
 /// process registry.
-pub struct ChaosInit {
+pub struct CoreBoot {
     /// Shared auth manager. Hand this to any frontend component that needs
     /// to read or refresh credentials (onboarding flows, status bars,
     /// rollout recorders).
@@ -60,12 +60,12 @@ pub struct ChaosInit {
     pub process_table: Arc<ProcessTable>,
 }
 
-impl ChaosInit {
+impl CoreBoot {
     /// Wire an [`AuthManager`] and a [`ProcessTable`] for the given config.
     ///
     /// * `config` — a fully-loaded kernel config. The caller owns config
-    ///   loading (CLI parsing, `-c` overrides, onboarding prompts). Init
-    ///   only reads it.
+    ///   loading (CLI parsing, `-c` overrides, onboarding prompts). This
+    ///   helper only reads it.
     /// * `session_source` — who is booting. Typically
     ///   [`SessionSource::Cli`] for `bin/console`, but
     ///   [`SessionSource::VSCode`], [`SessionSource::Exec`], etc. exist for

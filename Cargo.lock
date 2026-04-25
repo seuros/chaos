@@ -1251,8 +1251,8 @@ dependencies = [
  "assert_matches",
  "chaos-argv",
  "chaos-cli",
+ "chaos-coreboot",
  "chaos-getopt",
- "chaos-init",
  "chaos-ipc",
  "chaos-kern",
  "chaos-locate",
@@ -1306,6 +1306,14 @@ version = "47.0.0"
 dependencies = [
  "serde_json",
  "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
+name = "chaos-coreboot"
+version = "47.0.0"
+dependencies = [
+ "chaos-ipc",
+ "chaos-kern",
 ]
 
 [[package]]
@@ -1508,14 +1516,6 @@ dependencies = [
  "tempfile",
  "tracing",
  "two-face",
-]
-
-[[package]]
-name = "chaos-init"
-version = "47.0.0"
-dependencies = [
- "chaos-ipc",
- "chaos-kern",
 ]
 
 [[package]]
@@ -2282,7 +2282,7 @@ version = "47.0.0"
 dependencies = [
  "anyhow",
  "chaos-chassis",
- "chaos-init",
+ "chaos-coreboot",
  "chaos-ipc",
  "chaos-kern",
  "chaos-session",

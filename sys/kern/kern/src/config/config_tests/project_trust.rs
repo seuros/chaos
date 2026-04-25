@@ -1,97 +1,42 @@
 use super::*;
 
-#[test]
-fn test_set_project_trusted_writes_explicit_tables() -> anyhow::Result<()> {
-    let project_dir = Path::new("/some/path");
-    let mut doc = DocumentMut::new();
+#[tokio::test]
+async fn set_project_trust_level_persists_to_runtime_db() -> anyhow::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let project_dir = chaos_home.path().join("project");
+    tokio::fs::create_dir_all(&project_dir).await?;
 
-    set_project_trust_level_inner(&mut doc, project_dir, TrustLevel::Trusted)?;
+    set_project_trust_level(chaos_home.path(), &project_dir, TrustLevel::Trusted)?;
 
-    let contents = doc.to_string();
-
-    let raw_path = project_dir.to_string_lossy();
-    let path_str = if raw_path.contains('\\') {
-        format!("'{raw_path}'")
-    } else {
-        format!("\"{raw_path}\"")
-    };
-    let expected = format!(
-        r#"[projects.{path_str}]
-trust_level = "trusted"
-"#
-    );
-    assert_eq!(contents, expected);
-
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(chaos_home.path(), "test-provider").await?;
+    let trust = runtime
+        .get_project_trust(crate::runtime_db::normalize_cwd_for_runtime_db(&project_dir).as_path())
+        .await?;
+    assert_eq!(trust, Some(TrustLevel::Trusted));
     Ok(())
 }
 
-#[test]
-fn test_set_project_trusted_converts_inline_to_explicit() -> anyhow::Result<()> {
-    let project_dir = Path::new("/some/path");
+#[tokio::test]
+async fn set_project_trust_level_respects_configured_sqlite_home() -> anyhow::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let sqlite_home = chaos_home.path().join("state");
+    tokio::fs::create_dir_all(&sqlite_home).await?;
+    tokio::fs::write(
+        chaos_home.path().join(CONFIG_TOML_FILE),
+        format!("sqlite_home = {sqlite_home:?}"),
+    )
+    .await?;
+    let project_dir = chaos_home.path().join("project");
+    tokio::fs::create_dir_all(&project_dir).await?;
 
-    // Seed config.toml with an inline project entry under [projects]
-    let raw_path = project_dir.to_string_lossy();
-    let path_str = if raw_path.contains('\\') {
-        format!("'{raw_path}'")
-    } else {
-        format!("\"{raw_path}\"")
-    };
-    // Use a quoted key so backslashes don't require escaping on Windows
-    let initial = format!(
-        r#"[projects]
-{path_str} = {{ trust_level = "untrusted" }}
-"#
-    );
-    let mut doc = initial.parse::<DocumentMut>()?;
+    set_project_trust_level(chaos_home.path(), &project_dir, TrustLevel::Untrusted)?;
 
-    // Run the function; it should convert to explicit tables and set trusted
-    set_project_trust_level_inner(&mut doc, project_dir, TrustLevel::Trusted)?;
-
-    let contents = doc.to_string();
-
-    // Assert exact output after conversion to explicit table
-    let expected = format!(
-        r#"[projects]
-
-[projects.{path_str}]
-trust_level = "trusted"
-"#
-    );
-    assert_eq!(contents, expected);
-
-    Ok(())
-}
-
-#[test]
-fn test_set_project_trusted_migrates_top_level_inline_projects_preserving_entries()
--> anyhow::Result<()> {
-    let initial = r#"toplevel = "baz"
-projects = { "/Users/mbolin/code/codex4" = { trust_level = "trusted", foo = "bar" } , "/Users/mbolin/code/codex3" = { trust_level = "trusted" } }
-model = "foo""#;
-    let mut doc = initial.parse::<DocumentMut>()?;
-
-    // Approve a new directory
-    let new_project = Path::new("/Users/mbolin/code/codex2");
-    set_project_trust_level_inner(&mut doc, new_project, TrustLevel::Trusted)?;
-
-    let contents = doc.to_string();
-
-    // Since we created the [projects] table as part of migration, it is kept implicit.
-    // Expect explicit per-project tables, preserving prior entries and appending the new one.
-    let expected = r#"toplevel = "baz"
-model = "foo"
-
-[projects."/Users/mbolin/code/codex4"]
-trust_level = "trusted"
-foo = "bar"
-
-[projects."/Users/mbolin/code/codex3"]
-trust_level = "trusted"
-
-[projects."/Users/mbolin/code/codex2"]
-trust_level = "trusted"
-"#;
-    assert_eq!(contents, expected);
-
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "test-provider").await?;
+    let trust = runtime
+        .get_project_trust(crate::runtime_db::normalize_cwd_for_runtime_db(&project_dir).as_path())
+        .await?;
+    assert_eq!(trust, Some(TrustLevel::Untrusted));
     Ok(())
 }

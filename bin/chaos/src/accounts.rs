@@ -36,7 +36,7 @@ const CHATGPT_LOGIN_DISABLED_MESSAGE: &str =
     "ChatGPT account connection is disabled. Use an API key connection instead.";
 const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
     "API key connection is disabled. Use a ChatGPT account instead.";
-const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
+const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
@@ -68,7 +68,7 @@ fn init_accounts_file_logging(config: &Config) -> Vec<WorkerGuard> {
     // behind a supportable auth log.
     let (file_layer, file_guard) = match open_log_file_layer(
         &log_path,
-        "chaos_boot=info,chaos_kern=info,chaos_pam=info",
+        "chaos_coreboot=info,chaos_boot=info,chaos_kern=info,chaos_pam=info",
         tracing_subscriber::fmt::format::FmtSpan::NONE,
     ) {
         Ok(pair) => pair,

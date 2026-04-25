@@ -169,31 +169,26 @@ pub async fn load_config_layers_state(
                 return Err(err);
             }
         };
-        let project_trust_context = match project_trust_context(
-            &merged_so_far,
-            &cwd,
-            &project_root_markers,
-            chaos_home,
-            &user_file,
-        )
-        .await
-        {
-            Ok(context) => context,
-            Err(err) => {
-                let source = err
-                    .get_ref()
-                    .and_then(|err| err.downcast_ref::<toml::de::Error>())
-                    .cloned();
-                if let Some(config_error) = first_layer_config_error_from_entries(&layers).await {
-                    return Err(io_error_from_config_error(
-                        io::ErrorKind::InvalidData,
-                        config_error,
-                        source,
-                    ));
+        let sqlite_home = sqlite_home_from_merged_config(&merged_so_far, chaos_home);
+        let project_trust_context =
+            match project_trust_context(&cwd, &project_root_markers, &sqlite_home).await {
+                Ok(context) => context,
+                Err(err) => {
+                    let source = err
+                        .get_ref()
+                        .and_then(|err| err.downcast_ref::<toml::de::Error>())
+                        .cloned();
+                    if let Some(config_error) = first_layer_config_error_from_entries(&layers).await
+                    {
+                        return Err(io_error_from_config_error(
+                            io::ErrorKind::InvalidData,
+                            config_error,
+                            source,
+                        ));
+                    }
+                    return Err(err);
                 }
-                return Err(err);
-            }
-        };
+            };
         let project_layers = load_project_layers(
             &cwd,
             &project_trust_context.project_root,
@@ -391,6 +386,19 @@ pub(crate) fn project_root_markers_from_stack(
     }
 }
 
+pub(crate) async fn resolve_active_project_trust(
+    sqlite_home: &Path,
+    cwd: &Path,
+    config_layer_stack: &ConfigLayerStack,
+) -> io::Result<crate::config::ProjectTrust> {
+    let cwd = normalize_absolute_path_for_trust(cwd)?;
+    let project_root_markers = project_root_markers_from_stack(config_layer_stack);
+    let trust_context = project_trust_context(&cwd, &project_root_markers, sqlite_home).await?;
+    Ok(crate::config::ProjectTrust {
+        trust_level: trust_context.decision_for_dir(&cwd).trust_level,
+    })
+}
+
 pub(crate) fn find_project_root_sync(cwd: &Path, project_root_markers: &[String]) -> PathBuf {
     if project_root_markers.is_empty() {
         return cwd.to_path_buf();
@@ -450,13 +458,12 @@ struct ProjectTrustContext {
     project_root: AbsolutePathBuf,
     project_root_key: String,
     repo_root_key: Option<String>,
-    projects_trust: std::collections::HashMap<String, TrustLevel>,
-    user_config_file: AbsolutePathBuf,
+    trust_levels_by_path: std::collections::HashMap<String, TrustLevel>,
 }
 
 #[derive(Deserialize)]
-struct ProjectTrustConfigToml {
-    projects: Option<std::collections::HashMap<String, crate::config::ProjectConfig>>,
+struct TrustStorageConfigToml {
+    sqlite_home: Option<AbsolutePathBuf>,
 }
 
 struct ProjectTrustDecision {
@@ -473,14 +480,18 @@ impl ProjectTrustDecision {
 impl ProjectTrustContext {
     fn decision_for_dir(&self, dir: &AbsolutePathBuf) -> ProjectTrustDecision {
         let dir_key = dir.as_path().to_string_lossy().to_string();
-        if let Some(trust_level) = self.projects_trust.get(&dir_key).copied() {
+        if let Some(trust_level) = self.trust_levels_by_path.get(&dir_key).copied() {
             return ProjectTrustDecision {
                 trust_level: Some(trust_level),
                 trust_key: dir_key,
             };
         }
 
-        if let Some(trust_level) = self.projects_trust.get(&self.project_root_key).copied() {
+        if let Some(trust_level) = self
+            .trust_levels_by_path
+            .get(&self.project_root_key)
+            .copied()
+        {
             return ProjectTrustDecision {
                 trust_level: Some(trust_level),
                 trust_key: self.project_root_key.clone(),
@@ -488,7 +499,7 @@ impl ProjectTrustContext {
         }
 
         if let Some(repo_root_key) = self.repo_root_key.as_ref()
-            && let Some(trust_level) = self.projects_trust.get(repo_root_key).copied()
+            && let Some(trust_level) = self.trust_levels_by_path.get(repo_root_key).copied()
         {
             return ProjectTrustDecision {
                 trust_level: Some(trust_level),
@@ -512,14 +523,11 @@ impl ProjectTrustContext {
         }
 
         let trust_key = decision.trust_key.as_str();
-        let user_config_file = self.user_config_file.as_path().display();
         match decision.trust_level {
             Some(TrustLevel::Untrusted) => Some(format!(
-                "{trust_key} is marked as untrusted in {user_config_file}. To load config.toml, mark it trusted."
+                "{trust_key} is marked as untrusted in ChaOS project trust state. To load config.toml, mark it trusted."
             )),
-            _ => Some(format!(
-                "To load config.toml, add {trust_key} as a trusted project in {user_config_file}."
-            )),
+            _ => Some(format!("To load config.toml, trust {trust_key} in ChaOS.")),
         }
     }
 }
@@ -560,41 +568,63 @@ fn project_mcp_layer_entry(
 }
 
 async fn project_trust_context(
-    merged_config: &TomlValue,
     cwd: &AbsolutePathBuf,
     project_root_markers: &[String],
-    config_base_dir: &Path,
-    user_config_file: &AbsolutePathBuf,
+    sqlite_home: &Path,
 ) -> io::Result<ProjectTrustContext> {
-    let project_trust_config: ProjectTrustConfigToml = {
-        let _guard = AbsolutePathBufGuard::new(config_base_dir);
-        merged_config
-            .clone()
-            .try_into()
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?
-    };
-
     let project_root = find_project_root(cwd, project_root_markers).await?;
-    let projects = project_trust_config.projects.unwrap_or_default();
+    let project_root = normalize_absolute_path_for_trust(project_root.as_path())?;
 
     let project_root_key = project_root.as_path().to_string_lossy().to_string();
-    let repo_root = resolve_root_git_project_for_trust(cwd.as_path());
+    let repo_root = resolve_root_git_project_for_trust(cwd.as_path())
+        .map(|root| normalize_absolute_path_for_trust(root.as_path()))
+        .transpose()?;
     let repo_root_key = repo_root
         .as_ref()
-        .map(|root| root.to_string_lossy().to_string());
+        .map(|root| root.as_path().to_string_lossy().to_string());
 
-    let projects_trust = projects
-        .into_iter()
-        .filter_map(|(key, project)| project.trust_level.map(|trust_level| (key, trust_level)))
-        .collect();
+    let mut trust_candidates = std::collections::BTreeSet::new();
+    for ancestor in cwd.as_path().ancestors() {
+        trust_candidates.insert(crate::runtime_db::normalize_cwd_for_runtime_db(ancestor));
+    }
+    trust_candidates.insert(project_root.as_path().to_path_buf());
+    if let Some(repo_root) = repo_root.as_ref() {
+        trust_candidates.insert(repo_root.as_path().to_path_buf());
+    }
+
+    let runtime = crate::runtime_db::open_or_create_runtime_db(sqlite_home, "unknown")
+        .await
+        .map_err(|err| io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let mut trust_levels_by_path = std::collections::HashMap::new();
+    for candidate in trust_candidates {
+        if let Some(trust_level) = runtime
+            .get_project_trust(candidate.as_path())
+            .await
+            .map_err(|err| io::Error::other(format!("failed to read project trust: {err}")))?
+        {
+            trust_levels_by_path.insert(candidate.to_string_lossy().to_string(), trust_level);
+        }
+    }
 
     Ok(ProjectTrustContext {
         project_root,
         project_root_key,
         repo_root_key,
-        projects_trust,
-        user_config_file: user_config_file.clone(),
+        trust_levels_by_path,
     })
+}
+
+fn normalize_absolute_path_for_trust(path: &Path) -> io::Result<AbsolutePathBuf> {
+    AbsolutePathBuf::from_absolute_path(crate::runtime_db::normalize_cwd_for_runtime_db(path))
+}
+
+fn sqlite_home_from_merged_config(merged_config: &TomlValue, chaos_home: &Path) -> PathBuf {
+    merged_config
+        .clone()
+        .try_into::<TrustStorageConfigToml>()
+        .ok()
+        .and_then(|config| config.sqlite_home.map(|path| path.to_path_buf()))
+        .unwrap_or_else(|| chaos_home.to_path_buf())
 }
 
 /// Takes a `toml::Value` parsed from a config.toml file and walks through it,

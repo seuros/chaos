@@ -14,7 +14,7 @@
 //!    UI tasks, but [`chaos_session::ClientSession`] and everything it calls
 //!    into (`chaos-kern`) spawns on ambient tokio — so we need a runtime
 //!    entered on the main thread before we hand control to iced.
-//! 2. Run [`chaos_init::ChaosInit::boot`] to get an `AuthManager` +
+//! 2. Run [`chaos_coreboot::CoreBoot::boot`] to get an `AuthManager` +
 //!    `ProcessTable` pair. Snapshot a [`TurnTemplate`] from the config so
 //!    the composer can build [`Op::UserTurn`] values without holding a live
 //!    `Config` reference. Spawn [`ClientSession`] to cold-start the kernel
@@ -41,7 +41,7 @@ mod turn;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use chaos_init::ChaosInit;
+use chaos_coreboot::CoreBoot;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SessionSource;
@@ -103,7 +103,7 @@ pub fn run() -> anyhow::Result<()> {
     let (template, op_tx, event_rx) = runtime.block_on(async {
         let config = ConfigBuilder::default().build().await?;
 
-        let init = ChaosInit::boot(
+        let coreboot = CoreBoot::boot(
             &config,
             SessionSource::Cli,
             CollaborationModesConfig {
@@ -115,7 +115,7 @@ pub fn run() -> anyhow::Result<()> {
 
         let session = ClientSession::spawn(
             config,
-            init.process_table,
+            coreboot.process_table,
             Some("chaos-xclient".to_string()),
         );
 

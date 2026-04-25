@@ -39,6 +39,7 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_realpath::AbsolutePathBufGuard;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -460,9 +461,10 @@ pub struct Config {
     /// The active profile name used to derive this `Config` (if any).
     pub active_profile: Option<String>,
 
-    /// The currently active project config, resolved by checking if cwd:
-    /// is (1) part of a git repo, (2) a git worktree, or (3) just using the cwd
-    pub active_project: ProjectConfig,
+    /// The currently effective trust decision for the active project scope,
+    /// resolved by checking whether the cwd inherits trust from the cwd itself,
+    /// a detected project root, or a git repo root.
+    pub active_project_trust: ProjectTrust,
 
     /// Collection of various notices we show the user
     pub notices: Notice,
@@ -699,7 +701,6 @@ pub struct ConfigToml {
     /// instructions inserted into developer messages when realtime becomes
     /// active.
     pub experimental_realtime_start_instructions: Option<String>,
-    pub projects: Option<HashMap<String, ProjectConfig>>,
 
     /// Controls the web search tool mode: disabled, cached, or live.
     pub web_search: Option<WebSearchMode>,
@@ -793,7 +794,6 @@ pub use chaos_sysctl::types::AgentRoleConfig;
 pub use chaos_sysctl::types::AgentRoleToml;
 pub use chaos_sysctl::types::AgentsToml;
 pub use chaos_sysctl::types::GhostSnapshotToml;
-pub use chaos_sysctl::types::ProjectConfig;
 pub use chaos_sysctl::types::RealtimeAudioConfig;
 pub use chaos_sysctl::types::RealtimeAudioToml;
 pub use chaos_sysctl::types::RealtimeConfig;
@@ -829,8 +829,24 @@ pub struct ConfigOverrides {
     pub compact_prompt: Option<String>,
     pub show_raw_agent_reasoning: Option<bool>,
     pub ephemeral: Option<bool>,
+    pub active_project_trust: Option<ProjectTrust>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectTrust {
+    pub trust_level: Option<TrustLevel>,
+}
+
+impl ProjectTrust {
+    pub fn is_trusted(&self) -> bool {
+        matches!(self.trust_level, Some(TrustLevel::Trusted))
+    }
+
+    pub fn is_untrusted(&self) -> bool {
+        matches!(self.trust_level, Some(TrustLevel::Untrusted))
+    }
 }
 
 fn deserialize_model_providers<'de, D>(
@@ -943,20 +959,52 @@ pub async fn load_global_mcp_servers(
 }
 
 #[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use chaos_sysctl::edit::set_project_trust_level_inner;
-
-#[cfg(test)]
 pub(crate) use requirements::resolve_web_search_mode;
 
-/// Patch `CHAOS_HOME/config.toml` project state to set trust level.
-/// Use with caution.
+#[derive(Deserialize)]
+struct RuntimeStorageConfigToml {
+    sqlite_home: Option<AbsolutePathBuf>,
+}
+
+fn runtime_storage_sqlite_home(chaos_home: &std::path::Path) -> anyhow::Result<PathBuf> {
+    let config_path = chaos_home.join(CONFIG_TOML_FILE);
+    let contents = match std::fs::read_to_string(&config_path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(chaos_home.to_path_buf());
+        }
+        Err(err) => return Err(err.into()),
+    };
+    let _guard = AbsolutePathBufGuard::new(chaos_home);
+    let parsed: RuntimeStorageConfigToml = toml::from_str(&contents)?;
+    Ok(parsed
+        .sqlite_home
+        .map(|path| path.to_path_buf())
+        .unwrap_or_else(|| chaos_home.to_path_buf()))
+}
+
+/// Persist project trust state in the runtime DB.
 pub fn set_project_trust_level(
     chaos_home: &std::path::Path,
     project_path: &std::path::Path,
     trust_level: TrustLevel,
 ) -> anyhow::Result<()> {
-    serialization::set_project_trust_level(chaos_home, project_path, trust_level)
+    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
+    let project_path = crate::runtime_db::normalize_cwd_for_runtime_db(project_path);
+    std::thread::spawn(move || -> anyhow::Result<()> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(async move {
+                let runtime =
+                    crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+                runtime
+                    .set_project_trust(project_path.as_path(), trust_level)
+                    .await
+            })
+    })
+    .join()
+    .map_err(|_| anyhow::anyhow!("project trust persistence task panicked"))?
 }
 
 /// Save the default OSS provider preference to config.toml

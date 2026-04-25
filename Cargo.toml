@@ -196,7 +196,7 @@ chaos-argv = { path = "lib/libmisc/argv" }
 chaos-pam = { path = "lib/libmisc/pam" }
 chaos-keyring = { path = "lib/libmisc/keyring" }
 chaos-minions = { path = "lib/libmisc/minions" }
-chaos-init = { path = "lib/libmisc/init" }
+chaos-coreboot = { path = "lib/libmisc/init" }
 chaos-session = { path = "lib/libmisc/session" }
 chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
 chaos-syslog = { path = "lib/libtrace/syslog" }

@@ -26,7 +26,7 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
-chaos-init = { workspace = true }
+chaos-coreboot = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-session = { workspace = true }
 chaos-locate = { workspace = true }

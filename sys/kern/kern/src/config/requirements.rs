@@ -39,7 +39,7 @@ use chaos_pf::NetworkProxyConfig;
 use super::ApprovalsReviewer;
 use super::GhostSnapshotConfig;
 use super::NetworkProxySpec;
-use super::ProjectConfig;
+use super::ProjectTrust;
 use super::RealtimeAudioConfig;
 use super::RealtimeConfig;
 
@@ -185,6 +185,7 @@ impl Config {
             compact_prompt,
             show_raw_agent_reasoning,
             ephemeral,
+            active_project_trust: active_project_trust_override,
             additional_writable_roots,
         } = overrides;
 
@@ -231,9 +232,8 @@ impl Config {
             .into_iter()
             .map(|path| AbsolutePathBuf::resolve_path_against_base(path, &resolved_cwd))
             .collect::<Result<Vec<_>, _>>()?;
-        let active_project = cfg
-            .get_active_project(&resolved_cwd)
-            .unwrap_or(ProjectConfig { trust_level: None });
+        let active_project_trust =
+            active_project_trust_override.unwrap_or(ProjectTrust { trust_level: None });
         let permission_config_syntax = validation::resolve_permission_config_syntax(
             &config_layer_stack,
             &cfg,
@@ -301,7 +301,7 @@ impl Config {
                 let mut sandbox_policy = cfg.derive_sandbox_policy(
                     sandbox_mode,
                     config_profile.sandbox_mode,
-                    &resolved_cwd,
+                    Some(&active_project_trust),
                     Some(&constrained_sandbox_policy),
                 );
                 if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = &mut sandbox_policy {
@@ -327,9 +327,9 @@ impl Config {
             .or(config_profile.approval_policy)
             .or(cfg.approval_policy)
             .unwrap_or_else(|| {
-                if active_project.is_trusted() {
+                if active_project_trust.is_trusted() {
                     ApprovalPolicy::Interactive
-                } else if active_project.is_untrusted() {
+                } else if active_project_trust.is_untrusted() {
                     ApprovalPolicy::Supervised
                 } else {
                     ApprovalPolicy::default()
@@ -702,7 +702,7 @@ impl Config {
             ghost_snapshot,
             features,
             active_profile: active_profile_name,
-            active_project,
+            active_project_trust,
             notices: cfg.notice.unwrap_or_default(),
             disable_paste_burst: cfg.disable_paste_burst.unwrap_or(false),
             analytics_enabled: config_profile

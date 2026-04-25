@@ -29,7 +29,6 @@ use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::time::Duration;
 use tempfile::TempDir;
-use toml_edit::DocumentMut;
 
 #[path = "config_tests/agent_roles.rs"]
 mod agent_roles;
@@ -226,12 +225,8 @@ network_access = false  # This should be ignored.
     let sandbox_full_access_cfg = toml::from_str::<ConfigToml>(sandbox_full_access)
         .expect("TOML deserialization should succeed");
     let sandbox_mode_override = None;
-    let resolution = sandbox_full_access_cfg.derive_sandbox_policy(
-        sandbox_mode_override,
-        None,
-        &PathBuf::from("/tmp/test"),
-        None,
-    );
+    let resolution =
+        sandbox_full_access_cfg.derive_sandbox_policy(sandbox_mode_override, None, None, None);
     assert_eq!(resolution, SandboxPolicy::RootAccess);
 
     let sandbox_read_only = r#"
@@ -244,12 +239,8 @@ network_access = true  # This should be ignored.
     let sandbox_read_only_cfg = toml::from_str::<ConfigToml>(sandbox_read_only)
         .expect("TOML deserialization should succeed");
     let sandbox_mode_override = None;
-    let resolution = sandbox_read_only_cfg.derive_sandbox_policy(
-        sandbox_mode_override,
-        None,
-        &PathBuf::from("/tmp/test"),
-        None,
-    );
+    let resolution =
+        sandbox_read_only_cfg.derive_sandbox_policy(sandbox_mode_override, None, None, None);
     assert_eq!(resolution, SandboxPolicy::new_read_only_policy());
 
     let writable_root = test_absolute_path("/my/workspace");
@@ -270,12 +261,8 @@ exclude_slash_tmp = true
     let sandbox_workspace_write_cfg = toml::from_str::<ConfigToml>(&sandbox_workspace_write)
         .expect("TOML deserialization should succeed");
     let sandbox_mode_override = None;
-    let resolution = sandbox_workspace_write_cfg.derive_sandbox_policy(
-        sandbox_mode_override,
-        None,
-        &PathBuf::from("/tmp/test"),
-        None,
-    );
+    let resolution =
+        sandbox_workspace_write_cfg.derive_sandbox_policy(sandbox_mode_override, None, None, None);
     assert_eq!(
         resolution,
         SandboxPolicy::WorkspaceWrite {
@@ -297,9 +284,6 @@ writable_roots = [
 ]
 exclude_tmpdir_env_var = true
 exclude_slash_tmp = true
-
-[projects."/tmp/test"]
-trust_level = "trusted"
 "#,
         serde_json::json!(writable_root)
     );
@@ -310,7 +294,9 @@ trust_level = "trusted"
     let resolution = sandbox_workspace_write_cfg.derive_sandbox_policy(
         sandbox_mode_override,
         None,
-        &PathBuf::from("/tmp/test"),
+        Some(&ProjectTrust {
+            trust_level: Some(TrustLevel::Trusted),
+        }),
         None,
     );
     assert_eq!(
@@ -661,11 +647,9 @@ fn web_search_mode_for_turn_falls_back_when_live_is_disallowed() -> anyhow::Resu
 async fn project_profile_overrides_user_profile() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let workspace = TempDir::new()?;
-    let workspace_key = workspace.path().to_string_lossy().replace('\\', "\\\\");
     std::fs::write(
         chaos_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"
+        r#"
 profile = "global"
 
 [profiles.global]
@@ -673,12 +657,10 @@ model = "serpent"
 
 [profiles.project]
 model = "gordon"
-
-[projects."{workspace_key}"]
-trust_level = "trusted"
 "#,
-        ),
     )?;
+    set_project_trust_level(chaos_home.path(), workspace.path(), TrustLevel::Trusted)
+        .map_err(std::io::Error::other)?;
     let project_config_dir = workspace.path().join(".chaos");
     std::fs::create_dir_all(&project_config_dir)?;
     std::fs::write(
@@ -933,7 +915,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
         active_profile: None,
-        active_project: ProjectConfig { trust_level: None },
+        active_project_trust: ProjectTrust { trust_level: None },
         notices: Default::default(),
         disable_paste_burst: false,
         tui_notifications: Default::default(),

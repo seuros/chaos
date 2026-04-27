@@ -268,6 +268,7 @@ fn build_server_config(params: &McpAddServerParams) -> Result<McpServerConfig, S
         }
         (None, Some(url)) => McpServerTransportConfig::StreamableHttp {
             url: url.clone(),
+            bearer_token: None,
             bearer_token_env_var: params.bearer_token_env_var.clone(),
             http_headers: params.http_headers.clone().map(|headers| {
                 headers
@@ -367,11 +368,25 @@ pub fn build_project_mcp_refresh_config(
     };
 
     let updated_stack = config_layer_stack.with_project_mcp_layer(layer);
-    let effective = updated_stack.effective_config();
-    let cfg: crate::config::ConfigToml = effective.try_into().map_err(|err| {
-        format!("failed to parse effective config while reloading MCP servers: {err}")
-    })?;
-    let mut mcp_servers = cfg.mcp_servers;
+    let mut mcp_servers = HashMap::new();
+    for layer in updated_stack.get_layers(
+        crate::config_loader::ConfigLayerStackOrdering::LowestPrecedenceFirst,
+        /*include_disabled*/ false,
+    ) {
+        if !matches!(layer.name, ConfigLayerSource::ProjectMcp { .. }) {
+            continue;
+        }
+        let Some(servers_value) = layer.config.get("mcp_servers") else {
+            continue;
+        };
+        let layer_servers: HashMap<String, crate::config::types::McpServerConfig> =
+            servers_value.clone().try_into().map_err(|err| {
+                format!(
+                    "failed to parse effective project MCP config while reloading servers: {err}"
+                )
+            })?;
+        mcp_servers.extend(layer_servers);
+    }
     filter_mcp_servers_by_requirements(
         &mut mcp_servers,
         updated_stack.requirements().mcp_servers.as_ref(),

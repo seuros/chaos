@@ -78,7 +78,8 @@ impl ConfigBuilder {
             loader_overrides,
         )
         .await?;
-        let merged_toml = config_layer_stack.effective_config();
+        let mut merged_toml = config_layer_stack.effective_config();
+        strip_toml_global_mcp_servers(&mut merged_toml);
 
         let config_toml: ConfigToml = match merged_toml.try_into() {
             Ok(config_toml) => config_toml,
@@ -100,6 +101,9 @@ impl ConfigBuilder {
             .clone()
             .map(|path| path.to_path_buf())
             .unwrap_or_else(|| chaos_home.clone());
+        harness_overrides.mcp_servers = Some(
+            crate::config::load_effective_mcp_servers(&sqlite_home, &config_layer_stack).await?,
+        );
         harness_overrides.active_project_trust = Some(
             crate::config_loader::resolve_active_project_trust(
                 &sqlite_home,
@@ -115,6 +119,13 @@ impl ConfigBuilder {
             config_layer_stack,
         )
     }
+}
+
+fn strip_toml_global_mcp_servers(value: &mut TomlValue) {
+    let Some(table) = value.as_table_mut() else {
+        return;
+    };
+    table.remove("mcp_servers");
 }
 
 async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Result<bool> {
@@ -178,7 +189,9 @@ impl Config {
                 format!("failed to serialize default config: {e}"),
             )
         })?;
-        let cli_layer = crate::config_loader::build_cli_overrides_layer(&cli_overrides);
+        let mut cli_layer = crate::config_loader::build_cli_overrides_layer(&cli_overrides);
+        crate::config_loader::reject_legacy_global_mcp_servers_in_cli_overrides(&cli_layer)?;
+        strip_toml_global_mcp_servers(&mut cli_layer);
         crate::config_loader::merge_toml_values(&mut merged, &cli_layer);
         let config_toml = _deserialize_config_toml_with_base(merged, &chaos_home)?;
         Self::load_config_with_layer_stack(

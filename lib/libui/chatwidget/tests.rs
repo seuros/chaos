@@ -139,9 +139,11 @@ use toml::Value as TomlValue;
 
 async fn test_config() -> Config {
     // Use base defaults to avoid depending on host state.
-    let chaos_home = std::env::temp_dir();
+    let chaos_home_dir = tempdir().expect("create temp chaos home");
+    let chaos_home = chaos_home_dir.path().to_path_buf();
+    std::mem::forget(chaos_home_dir);
     ConfigBuilder::default()
-        .chaos_home(chaos_home.clone())
+        .chaos_home(chaos_home)
         .build()
         .await
         .expect("config")

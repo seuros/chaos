@@ -125,6 +125,50 @@ async fn returns_config_error_for_schema_error_in_user_config() {
     assert_eq!(config_error, &expected_config_error);
 }
 
+#[tokio::test]
+async fn returns_config_error_for_legacy_global_mcp_servers_in_user_config() {
+    let tmp = tempdir().expect("tempdir");
+    let contents = r#"[mcp_servers.docs]
+command = "echo"
+"#;
+    let config_path = tmp.path().join(CONFIG_TOML_FILE);
+    std::fs::write(&config_path, contents).expect("write config");
+
+    let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
+    let err = load_config_layers_state(
+        tmp.path(),
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides::default(),
+    )
+    .await
+    .expect_err("expected error");
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("legacy top-level `mcp_servers`"));
+    assert!(err.to_string().contains(&config_path.display().to_string()));
+}
+
+#[tokio::test]
+async fn rejects_legacy_global_mcp_servers_in_cli_overrides() {
+    let tmp = tempdir().expect("tempdir");
+    let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
+    let err = load_config_layers_state(
+        tmp.path(),
+        Some(cwd),
+        &[(
+            "mcp_servers.docs.command".to_string(),
+            TomlValue::String("echo".to_string()),
+        )],
+        LoaderOverrides::default(),
+    )
+    .await
+    .expect_err("expected error");
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("top-level `mcp_servers`"));
+}
+
 #[test]
 fn schema_error_points_to_feature_value() {
     let tmp = tempdir().expect("tempdir");
@@ -350,6 +394,44 @@ async fn project_layers_prefer_closest_cwd() -> std::io::Result<()> {
         .expect("foo entry");
     assert_eq!(foo, "child");
     Ok(())
+}
+
+#[tokio::test]
+async fn trusted_project_config_rejects_legacy_global_mcp_servers() {
+    let tmp = tempdir().expect("tempdir");
+    let project_root = tmp.path().join("project");
+    let chaos_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(project_root.join(".chaos"))
+        .await
+        .expect("create project config dir");
+    tokio::fs::create_dir_all(&chaos_home)
+        .await
+        .expect("create chaos home");
+    tokio::fs::write(project_root.join(".git"), "gitdir: here")
+        .await
+        .expect("write git marker");
+    tokio::fs::write(
+        project_root.join(".chaos").join(CONFIG_TOML_FILE),
+        r#"[mcp_servers.docs]
+command = "echo"
+"#,
+    )
+    .await
+    .expect("write project config");
+    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None)
+        .await
+        .expect("seed trust");
+
+    let err = ConfigBuilder::default()
+        .chaos_home(chaos_home.clone())
+        .fallback_cwd(Some(project_root.clone()))
+        .build()
+        .await
+        .expect_err("expected error");
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("legacy top-level `mcp_servers`"));
+    assert!(err.to_string().contains(".chaos/config.toml"));
 }
 
 #[tokio::test]
@@ -677,7 +759,7 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
 }
 
 #[tokio::test]
-async fn cli_override_can_update_project_local_mcp_server_when_project_is_trusted()
+async fn project_local_mcp_servers_in_config_toml_are_rejected_when_project_is_trusted()
 -> std::io::Result<()> {
     let tmp = tempdir()?;
     let project_root = tmp.path().join("project");
@@ -699,22 +781,15 @@ enabled = false
     .await?;
     make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None).await?;
 
-    let config = ConfigBuilder::default()
+    let err = ConfigBuilder::default()
         .chaos_home(chaos_home)
-        .cli_overrides(vec![(
-            "mcp_servers.sentry.enabled".to_string(),
-            TomlValue::Boolean(true),
-        )])
         .fallback_cwd(Some(nested))
         .build()
-        .await?;
+        .await
+        .expect_err("expected error");
 
-    let server = config
-        .mcp_servers
-        .get()
-        .get("sentry")
-        .expect("trusted project MCP server should load");
-    assert!(server.enabled);
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("legacy top-level `mcp_servers`"));
 
     Ok(())
 }
@@ -803,7 +878,7 @@ async fn project_root_dot_mcp_json_is_ignored_when_project_is_untrusted() -> std
 }
 
 #[tokio::test]
-async fn cli_override_for_disabled_project_local_mcp_server_returns_invalid_transport()
+async fn cli_override_for_project_local_mcp_server_in_config_toml_is_rejected()
 -> std::io::Result<()> {
     let tmp = tempdir()?;
     let project_root = tmp.path().join("project");
@@ -833,13 +908,10 @@ enabled = false
         .fallback_cwd(Some(nested))
         .build()
         .await
-        .expect_err("untrusted project layer should not provide MCP transport");
+        .expect_err("expected error");
 
-    assert!(
-        err.to_string().contains("invalid transport")
-            && err.to_string().contains("mcp_servers.sentry"),
-        "unexpected error: {err}"
-    );
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("top-level `mcp_servers`"));
 
     Ok(())
 }

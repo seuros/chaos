@@ -17,7 +17,7 @@
 | **Extended thinking** | Native per-provider (ABI maps effort levels) | Native | Via Responses API only |
 | **Prompt caching** | Per-provider (native where supported) | Native | OpenAI only |
 | **Tool streaming** | Per-provider | Native | Via Responses API only |
-| **Config format** | `config.toml` + `.mcp.json` | `settings.json` + `.mcp.json` | `config.toml` |
+| **Config format** | runtime DB + `.mcp.json` + `config.toml` | `settings.json` + `.mcp.json` | `config.toml` |
 | **Session resume** | `chaos resume` | `claude --continue` | `codex resume` |
 | **Non-interactive** | `chaos exec` | `claude -p` | Separate `codex-exec` binary |
 | **Code review** | `chaos exec review` | Not built-in | `codex review` |

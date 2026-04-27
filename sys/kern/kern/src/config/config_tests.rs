@@ -1,6 +1,4 @@
-use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
-use crate::config::edit::apply_blocking;
 use crate::config::types::ApprovalsReviewer;
 use crate::config::types::FeedbackConfigToml;
 use crate::config::types::HistoryPersistence;

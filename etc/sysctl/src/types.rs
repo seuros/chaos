@@ -222,9 +222,14 @@ impl<'de> Deserialize<'de> for McpServerConfig {
             throw_if_set("streamable_http", "env", raw.env.as_ref())?;
             throw_if_set("streamable_http", "env_vars", raw.env_vars.as_ref())?;
             throw_if_set("streamable_http", "cwd", raw.cwd.as_ref())?;
-            throw_if_set("streamable_http", "bearer_token", raw.bearer_token.as_ref())?;
+            if raw.bearer_token.is_some() && raw.bearer_token_env_var.is_some() {
+                return Err(SerdeError::custom(
+                    "bearer_token and bearer_token_env_var cannot both be set",
+                ));
+            }
             McpServerTransportConfig::StreamableHttp {
                 url,
+                bearer_token: raw.bearer_token.clone(),
                 bearer_token_env_var: raw.bearer_token_env_var.clone(),
                 http_headers: raw.http_headers.clone(),
                 env_http_headers: raw.env_http_headers.take(),
@@ -272,9 +277,14 @@ pub enum McpServerTransportConfig {
     /// https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http
     StreamableHttp {
         url: String,
+        /// Literal HTTP bearer token to include in requests to this server.
+        /// Prefer this for DB-backed global MCP entries when you want the
+        /// secret stored with the runtime registry instead of the environment.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bearer_token: Option<String>,
         /// Name of the environment variable to read for an HTTP bearer token.
-        /// When set, requests will include the token via `Authorization: Bearer <token>`.
-        /// The actual secret value must be provided via the environment.
+        /// When set, requests will include the token via
+        /// `Authorization: Bearer <token>`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bearer_token_env_var: Option<String>,
         /// Additional HTTP headers to include in requests to this server.

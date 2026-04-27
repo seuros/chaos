@@ -109,16 +109,19 @@ fn assert_stdio_transport<'a>(
 fn assert_streamable_http_transport(
     server: &McpServerConfig,
     expected_url: &str,
+    expected_bearer_token: Option<&str>,
     expected_bearer_token_env_var: Option<&str>,
 ) {
     match &server.transport {
         McpServerTransportConfig::StreamableHttp {
             url,
+            bearer_token,
             bearer_token_env_var,
             http_headers,
             env_http_headers,
         } => {
             assert_eq!(url, expected_url);
+            assert_eq!(bearer_token.as_deref(), expected_bearer_token);
             assert_eq!(
                 bearer_token_env_var.as_deref(),
                 expected_bearer_token_env_var
@@ -197,7 +200,7 @@ async fn add_streamable_http_without_manual_token() -> Result<()> {
     harness.assert_success(&["mcp", "add", "github", "--url", "https://example.com/mcp"])?;
 
     let github = harness.server("github").await?;
-    assert_streamable_http_transport(&github, "https://example.com/mcp", None);
+    assert_streamable_http_transport(&github, "https://example.com/mcp", None, None);
 
     assert!(!harness.chaos_home.path().join(".credentials.json").exists());
     assert!(!harness.chaos_home.path().join(".env").exists());
@@ -220,7 +223,37 @@ async fn add_streamable_http_with_custom_env_var() -> Result<()> {
     ])?;
 
     let issues = harness.server("issues").await?;
-    assert_streamable_http_transport(&issues, "https://example.com/issues", Some("GITHUB_TOKEN"));
+    assert_streamable_http_transport(
+        &issues,
+        "https://example.com/issues",
+        None,
+        Some("GITHUB_TOKEN"),
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn add_streamable_http_with_stored_bearer_token() -> Result<()> {
+    let harness = McpCliHarness::new()?;
+
+    harness.assert_success(&[
+        "mcp",
+        "add",
+        "issues",
+        "--url",
+        "https://example.com/issues",
+        "--bearer-token",
+        "secret-token",
+    ])?;
+
+    let issues = harness.server("issues").await?;
+    assert_streamable_http_transport(
+        &issues,
+        "https://example.com/issues",
+        Some("secret-token"),
+        None,
+    );
 
     Ok(())
 }

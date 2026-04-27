@@ -8,8 +8,8 @@ use chaos_getopt::CliConfigOverrides;
 use chaos_getopt::format_env_display::format_env_display;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_kern::config::Config;
-use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::config::load_global_mcp_servers;
+use chaos_kern::config::replace_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_kern::mcp::McpManager;
@@ -26,7 +26,7 @@ use clap::ArgGroup;
 /// Subcommands:
 /// - `list`   — list configured servers (with `--json`)
 /// - `get`    — show a single server (with `--json`)
-/// - `add`    — add a server launcher entry to `~/.chaos/config.toml`
+/// - `add`    — add a server launcher entry to the runtime MCP registry
 /// - `remove` — delete a server entry
 /// - `login`  — authenticate with MCP server using OAuth
 /// - `logout` — remove OAuth credentials for MCP server
@@ -121,11 +121,21 @@ pub struct AddMcpStreamableHttpArgs {
     #[arg(long)]
     pub url: String,
 
+    /// Optional literal bearer token stored with the runtime MCP registry.
+    #[arg(
+        long = "bearer-token",
+        value_name = "TOKEN",
+        requires = "url",
+        conflicts_with = "bearer_token_env_var"
+    )]
+    pub bearer_token: Option<String>,
+
     /// Optional environment variable to read for a bearer token.
     /// Only valid with streamable HTTP servers.
     #[arg(
         long = "bearer-token-env-var",
         value_name = "ENV_VAR",
+        conflicts_with = "bearer_token",
         requires = "url"
     )]
     pub bearer_token_env_var: Option<String>,
@@ -266,11 +276,13 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
             streamable_http:
                 Some(AddMcpStreamableHttpArgs {
                     url,
+                    bearer_token,
                     bearer_token_env_var,
                 }),
             ..
         } => McpServerTransportConfig::StreamableHttp {
             url,
+            bearer_token,
             bearer_token_env_var,
             http_headers: None,
             env_http_headers: None,
@@ -295,11 +307,8 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
 
     servers.insert(name.clone(), new_entry);
 
-    ConfigEditsBuilder::new(&chaos_home)
-        .replace_mcp_servers(&servers)
-        .apply()
-        .await
-        .with_context(|| format!("failed to write MCP servers to {}", chaos_home.display()))?;
+    replace_global_mcp_servers(&chaos_home, &servers)
+        .with_context(|| format!("failed to persist MCP servers in {}", chaos_home.display()))?;
 
     println!("Added global MCP server '{name}'.");
 
@@ -351,11 +360,9 @@ async fn run_remove(config_overrides: &CliConfigOverrides, remove_args: RemoveAr
     let removed = servers.remove(&name).is_some();
 
     if removed {
-        ConfigEditsBuilder::new(&chaos_home)
-            .replace_mcp_servers(&servers)
-            .apply()
-            .await
-            .with_context(|| format!("failed to write MCP servers to {}", chaos_home.display()))?;
+        replace_global_mcp_servers(&chaos_home, &servers).with_context(|| {
+            format!("failed to persist MCP servers in {}", chaos_home.display())
+        })?;
     }
 
     if removed {
@@ -488,6 +495,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                     }),
                     McpServerTransportConfig::StreamableHttp {
                         url,
+                        bearer_token,
                         bearer_token_env_var,
                         http_headers,
                         env_http_headers,
@@ -495,6 +503,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                         serde_json::json!({
                             "type": "streamable_http",
                             "url": url,
+                            "bearer_token": bearer_token,
                             "bearer_token_env_var": bearer_token_env_var,
                             "http_headers": http_headers,
                             "env_http_headers": env_http_headers,
@@ -573,6 +582,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
             }
             McpServerTransportConfig::StreamableHttp {
                 url,
+                bearer_token,
                 bearer_token_env_var,
                 ..
             } => {
@@ -583,7 +593,11 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                     .unwrap_or(McpAuthStatus::Unsupported)
                     .to_string();
                 let bearer_token_display =
-                    bearer_token_env_var.as_deref().unwrap_or("-").to_string();
+                    match (bearer_token.as_ref(), bearer_token_env_var.as_deref()) {
+                        (Some(_), _) => "stored".to_string(),
+                        (None, Some(env_var)) => env_var.to_string(),
+                        (None, None) => "-".to_string(),
+                    };
                 http_rows.push([
                     name.clone(),
                     url.clone(),
@@ -658,7 +672,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
         let mut widths = [
             "Name".len(),
             "Url".len(),
-            "Bearer Token Env Var".len(),
+            "Bearer Token".len(),
             "Status".len(),
             "Auth".len(),
         ];
@@ -672,7 +686,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
             "{name:<name_w$}  {url:<url_w$}  {token:<token_w$}  {status:<status_w$}  {auth:<auth_w$}",
             name = "Name",
             url = "Url",
-            token = "Bearer Token Env Var",
+            token = "Bearer Token",
             status = "Status",
             auth = "Auth",
             name_w = widths[0],
@@ -734,12 +748,14 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
             }),
             McpServerTransportConfig::StreamableHttp {
                 url,
+                bearer_token,
                 bearer_token_env_var,
                 http_headers,
                 env_http_headers,
             } => serde_json::json!({
                 "type": "streamable_http",
                 "url": url,
+                "bearer_token": bearer_token,
                 "bearer_token_env_var": bearer_token_env_var,
                 "http_headers": http_headers,
                 "env_http_headers": env_http_headers,
@@ -816,14 +832,21 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
         }
         McpServerTransportConfig::StreamableHttp {
             url,
+            bearer_token,
             bearer_token_env_var,
             http_headers,
             env_http_headers,
         } => {
             println!("  transport: streamable_http");
             println!("  url: {url}");
-            let bearer_token_display = bearer_token_env_var.as_deref().unwrap_or("-");
-            println!("  bearer_token_env_var: {bearer_token_display}");
+            let bearer_token_display = if bearer_token.is_some() {
+                "*****".to_string()
+            } else {
+                "-".to_string()
+            };
+            println!("  bearer_token: {bearer_token_display}");
+            let bearer_token_env_var_display = bearer_token_env_var.as_deref().unwrap_or("-");
+            println!("  bearer_token_env_var: {bearer_token_env_var_display}");
             let headers_display = match http_headers {
                 Some(map) if !map.is_empty() => {
                     let mut pairs: Vec<_> = map.iter().collect();

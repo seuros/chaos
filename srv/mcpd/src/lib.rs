@@ -510,6 +510,7 @@ mod tests {
         let entry = McpServerConfig {
             transport: McpServerTransportConfig::StreamableHttp {
                 url: "http://localhost:3011/mcp".to_string(),
+                bearer_token: None,
                 bearer_token_env_var: None,
                 http_headers: None,
                 env_http_headers: None,

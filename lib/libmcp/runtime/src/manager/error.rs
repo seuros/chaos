@@ -61,7 +61,7 @@ pub(super) fn mcp_init_error_display(
         && http_headers.as_ref().map(HashMap::is_empty).unwrap_or(true)
     {
         format!(
-            "GitHub MCP does not support OAuth. Log in by adding a personal access token (https://github.com/settings/personal-access-tokens) to your environment and config.toml:\n[mcp_servers.{server_name}]\nbearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN"
+            "GitHub MCP does not support OAuth. Set a personal access token (https://github.com/settings/personal-access-tokens) in your environment and update the `{server_name}` MCP server to use `bearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN`."
         )
     } else if is_mcp_client_auth_required_error(err) {
         format!(
@@ -77,7 +77,7 @@ pub(super) fn mcp_init_error_display(
         }
         .as_secs();
         format!(
-            "MCP client for `{server_name}` timed out after {startup_timeout_secs} seconds. Add or adjust `startup_timeout_sec` in your config.toml:\n[mcp_servers.{server_name}]\nstartup_timeout_sec = XX"
+            "MCP client for `{server_name}` timed out after {startup_timeout_secs} seconds. Increase that server's `startup_timeout_sec` in the MCP registry."
         )
     } else {
         format!("MCP client for `{server_name}` failed to start: {err:#}")

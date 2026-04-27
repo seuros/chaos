@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 chaos-traits = { workspace = true }
-gix = { version = "0.81", features = [
+gix = { version = "0.82", features = [
     "max-performance-safe",
     "blob-diff",
     "status",

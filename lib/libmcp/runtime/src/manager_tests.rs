@@ -326,6 +326,7 @@ fn mcp_init_error_display_prompts_for_github_pat() {
         config: McpServerConfig {
             transport: McpServerTransportConfig::StreamableHttp {
                 url: "https://api.githubcopilot.com/mcp/".to_string(),
+                bearer_token: None,
                 bearer_token_env_var: None,
                 http_headers: None,
                 env_http_headers: None,
@@ -349,7 +350,7 @@ fn mcp_init_error_display_prompts_for_github_pat() {
     let display = mcp_init_error_display(server_name, Some(&entry), &err);
 
     let expected = format!(
-        "GitHub MCP does not support OAuth. Log in by adding a personal access token (https://github.com/settings/personal-access-tokens) to your environment and config.toml:\n[mcp_servers.{server_name}]\nbearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN"
+        "GitHub MCP does not support OAuth. Set a personal access token (https://github.com/settings/personal-access-tokens) in your environment and update the `{server_name}` MCP server to use `bearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN`."
     );
 
     assert_eq!(expected, display);
@@ -376,6 +377,7 @@ fn mcp_init_error_display_reports_generic_errors() {
         config: McpServerConfig {
             transport: McpServerTransportConfig::StreamableHttp {
                 url: "https://example.com".to_string(),
+                bearer_token: None,
                 bearer_token_env_var: Some("TOKEN".to_string()),
                 http_headers: None,
                 env_http_headers: None,
@@ -411,7 +413,7 @@ fn mcp_init_error_display_includes_startup_timeout_hint() {
     let display = mcp_init_error_display(server_name, None, &err);
 
     assert_eq!(
-        "MCP client for `slow` timed out after 10 seconds. Add or adjust `startup_timeout_sec` in your config.toml:\n[mcp_servers.slow]\nstartup_timeout_sec = XX",
+        "MCP client for `slow` timed out after 10 seconds. Increase that server's `startup_timeout_sec` in the MCP registry.",
         display
     );
 }
@@ -420,6 +422,7 @@ fn mcp_init_error_display_includes_startup_timeout_hint() {
 fn transport_origin_extracts_http_origin() {
     let transport = McpServerTransportConfig::StreamableHttp {
         url: "https://example.com:8443/path?query=1".to_string(),
+        bearer_token: None,
         bearer_token_env_var: None,
         http_headers: None,
         env_http_headers: None,

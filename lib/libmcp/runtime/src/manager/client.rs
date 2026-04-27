@@ -108,8 +108,18 @@ fn resolve_http_headers(
 
 fn resolve_bearer_token(
     server_name: &str,
+    bearer_token: Option<&str>,
     bearer_token_env_var: Option<&str>,
 ) -> Result<Option<String>> {
+    if let Some(token) = bearer_token {
+        if token.is_empty() {
+            return Err(anyhow!(
+                "Configured bearer token for MCP server '{server_name}' is empty"
+            ));
+        }
+        return Ok(Some(token.to_string()));
+    }
+
     let Some(env_var) = bearer_token_env_var else {
         return Ok(None);
     };
@@ -483,12 +493,16 @@ pub(super) async fn make_managed_client(
             }
             McpServerTransportConfig::StreamableHttp {
                 url,
+                bearer_token,
                 http_headers,
                 env_http_headers,
                 bearer_token_env_var,
             } => {
-                let resolved_bearer_token =
-                    resolve_bearer_token(&server_name, bearer_token_env_var.as_deref())?;
+                let resolved_bearer_token = resolve_bearer_token(
+                    &server_name,
+                    bearer_token.as_deref(),
+                    bearer_token_env_var.as_deref(),
+                )?;
 
                 let resolved_headers = resolve_http_headers(http_headers, env_http_headers);
 

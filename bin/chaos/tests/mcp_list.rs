@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::config::load_global_mcp_servers;
+use chaos_kern::config::replace_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
 use predicates::prelude::PredicateBooleanExt;
@@ -50,6 +50,14 @@ impl McpCliHarness {
         .await
     }
 
+    async fn insert_server(&self, name: &str, server: McpServerConfig) -> Result<()> {
+        self.update_servers(|servers| {
+            servers.insert(name.to_string(), server);
+            Ok(())
+        })
+        .await
+    }
+
     async fn set_stdio_env_vars(&self, name: &str, env_vars: &[&str]) -> Result<()> {
         self.update_servers(|servers| {
             let server = servers
@@ -86,9 +94,7 @@ impl McpCliHarness {
     ) -> Result<()> {
         let mut servers = self.servers().await?;
         update(&mut servers)?;
-        ConfigEditsBuilder::new(self.chaos_home.path())
-            .replace_mcp_servers(&servers)
-            .apply_blocking()?;
+        replace_global_mcp_servers(self.chaos_home.path(), &servers)?;
         Ok(())
     }
 }
@@ -201,6 +207,54 @@ async fn get_disabled_server_shows_single_line() -> Result<()> {
 
     let stdout = harness.stdout(&["mcp", "get", "docs"])?;
     assert_eq!(stdout.trim_end(), "docs (disabled)");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn streamable_http_server_masks_stored_bearer_token() -> Result<()> {
+    let harness = McpCliHarness::new()?;
+
+    harness
+        .insert_server(
+            "remote",
+            McpServerConfig {
+                transport: McpServerTransportConfig::StreamableHttp {
+                    url: "https://example.com/mcp".to_string(),
+                    bearer_token: Some("secret-token".to_string()),
+                    bearer_token_env_var: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                },
+                enabled: true,
+                required: false,
+                disabled_reason: None,
+                startup_timeout_sec: None,
+                tool_timeout_sec: None,
+                enabled_tools: None,
+                disabled_tools: None,
+                scopes: None,
+                oauth_resource: None,
+                r#type: None,
+                oauth: None,
+            },
+        )
+        .await?;
+
+    let stdout = harness.stdout(&["mcp", "list"])?;
+    assert!(stdout.contains("remote"));
+    assert!(stdout.contains("stored"));
+
+    let stdout = harness.stdout(&["mcp", "get", "remote"])?;
+    assert!(stdout.contains("bearer_token: *****"));
+    assert!(stdout.contains("bearer_token_env_var: -"));
+
+    let stdout = harness.stdout(&["mcp", "get", "remote", "--json"])?;
+    let parsed: JsonValue = serde_json::from_str(&stdout)?;
+    assert_eq!(
+        parsed["transport"]["bearer_token"],
+        JsonValue::String("secret-token".to_string())
+    );
 
     Ok(())
 }

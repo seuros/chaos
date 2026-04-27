@@ -119,16 +119,14 @@ fn resolve_web_search_config_inner(
 }
 
 impl Config {
-    pub(crate) fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
-        let effective = self.config_layer_stack.effective_config();
-        let cfg: ConfigToml = effective.try_into().map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to parse effective config while reloading MCP servers: {err}"),
-            )
-        })?;
+    pub(crate) async fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
+        let effective = crate::config::load_effective_mcp_servers(
+            self.sqlite_home.as_path(),
+            &self.config_layer_stack,
+        )
+        .await?;
         self.mcp_servers = validation::constrain_mcp_servers(
-            cfg.mcp_servers,
+            effective,
             self.config_layer_stack.requirements().mcp_servers.as_ref(),
         )
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
@@ -185,6 +183,7 @@ impl Config {
             compact_prompt,
             show_raw_agent_reasoning,
             ephemeral,
+            mcp_servers: mcp_servers_override,
             active_project_trust: active_project_trust_override,
             additional_writable_roots,
         } = overrides;
@@ -562,8 +561,9 @@ impl Config {
             &mut startup_warnings,
         )?;
 
+        let effective_mcp_servers = mcp_servers_override.unwrap_or_default();
         let mcp_servers =
-            validation::constrain_mcp_servers(cfg.mcp_servers.clone(), mcp_servers.as_ref())
+            validation::constrain_mcp_servers(effective_mcp_servers, mcp_servers.as_ref())
                 .map_err(|e| {
                     std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}"))
                 })?;

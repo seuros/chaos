@@ -34,12 +34,14 @@ fn stdio_transport(
 }
 
 fn streamable_http_transport(
+    bearer_token: Option<&str>,
     bearer_token_env_var: Option<&str>,
     http_headers: Option<&[(&str, &str)]>,
     env_http_headers: Option<&[(&str, &str)]>,
 ) -> McpServerTransportConfig {
     McpServerTransportConfig::StreamableHttp {
         url: "https://example.com/mcp".to_string(),
+        bearer_token: bearer_token.map(str::to_string),
         bearer_token_env_var: bearer_token_env_var.map(str::to_string),
         http_headers: http_headers.map(string_map),
         env_http_headers: env_http_headers.map(string_map),
@@ -218,7 +220,20 @@ fn deserialize_streamable_http_server_config_variants() {
             input: r#"
                 url = "https://example.com/mcp"
             "#,
-            expected_transport: streamable_http_transport(None, None, None),
+            expected_transport: streamable_http_transport(None, None, None, None),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "streamable http with bearer token",
+            input: r#"
+                url = "https://example.com/mcp"
+                bearer_token = "super-secret"
+            "#,
+            expected_transport: streamable_http_transport(Some("super-secret"), None, None, None),
             expected_enabled: true,
             expected_required: false,
             expected_enabled_tools: None,
@@ -231,7 +246,7 @@ fn deserialize_streamable_http_server_config_variants() {
                 url = "https://example.com/mcp"
                 bearer_token_env_var = "GITHUB_TOKEN"
             "#,
-            expected_transport: streamable_http_transport(Some("GITHUB_TOKEN"), None, None),
+            expected_transport: streamable_http_transport(None, Some("GITHUB_TOKEN"), None, None),
             expected_enabled: true,
             expected_required: false,
             expected_enabled_tools: None,
@@ -246,6 +261,7 @@ fn deserialize_streamable_http_server_config_variants() {
                 env_http_headers = { "X-Token" = "TOKEN_ENV" }
             "#,
             expected_transport: streamable_http_transport(
+                None,
                 None,
                 Some(&[("X-Foo", "bar")]),
                 Some(&[("X-Token", "TOKEN_ENV")]),
@@ -262,7 +278,7 @@ fn deserialize_streamable_http_server_config_variants() {
                 url = "https://example.com/mcp"
                 oauth_resource = "https://api.example.com"
             "#,
-            expected_transport: streamable_http_transport(None, None, None),
+            expected_transport: streamable_http_transport(None, None, None, None),
             expected_enabled: true,
             expected_required: false,
             expected_enabled_tools: None,
@@ -333,12 +349,13 @@ fn deserialize_rejects_invalid_transport_fields() {
             expected_message: Some("oauth_resource is not supported for stdio"),
         },
         RejectedServerCase {
-            name: "http transport with inline bearer token",
+            name: "http transport with both bearer token sources",
             input: r#"
                 url = "https://example.com"
                 bearer_token = "secret"
+                bearer_token_env_var = "TOKEN_ENV"
             "#,
-            expected_message: Some("bearer_token is not supported"),
+            expected_message: Some("bearer_token and bearer_token_env_var cannot both be set"),
         },
     ] {
         assert_rejected_server_case(case);

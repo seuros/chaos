@@ -161,25 +161,3 @@ pub(crate) fn resolve_permission_config_syntax(
         }
     })
 }
-
-pub(crate) fn ensure_no_inline_bearer_tokens(value: &toml::Value) -> std::io::Result<()> {
-    let Some(servers_table) = value.as_table() else {
-        return Ok(());
-    };
-
-    for (server_name, server_value) in servers_table {
-        if let Some(server_table) = server_value.as_table()
-            && server_table.contains_key("bearer_token")
-        {
-            let message = format!(
-                "mcp_servers.{server_name} uses unsupported `bearer_token`; set `bearer_token_env_var`."
-            );
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                message,
-            ));
-        }
-    }
-
-    Ok(())
-}

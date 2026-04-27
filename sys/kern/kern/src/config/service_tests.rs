@@ -322,26 +322,26 @@ async fn read_reports_session_flags_override_user() {
 async fn upsert_merges_tables_replace_overwrites() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let path = tmp.path().join(CONFIG_TOML_FILE);
-    let base = r#"[mcp_servers.linear]
-bearer_token_env_var = "TOKEN"
+    let base = r#"[model_providers.linear]
 name = "linear"
-url = "https://linear.example"
+base_url = "https://linear.example"
+env_key = "TOKEN"
 
-[mcp_servers.linear.env_http_headers]
+[model_providers.linear.env_http_headers]
 existing = "keep"
 
-[mcp_servers.linear.http_headers]
+[model_providers.linear.http_headers]
 alpha = "a"
 "#;
 
     let overlay = serde_json::json!({
-        "bearer_token_env_var": "NEW_TOKEN",
+        "env_key": "NEW_TOKEN",
         "http_headers": {
             "alpha": "updated",
             "beta": "b"
         },
         "name": "linear",
-        "url": "https://linear.example"
+        "base_url": "https://linear.example"
     });
 
     std::fs::write(&path, base)?;
@@ -350,7 +350,7 @@ alpha = "a"
     service
         .write_value(ConfigValueWriteParams {
             file_path: Some(path.display().to_string()),
-            key_path: "mcp_servers.linear".to_string(),
+            key_path: "model_providers.linear".to_string(),
             value: overlay.clone(),
             merge_strategy: MergeStrategy::Upsert,
             expected_version: None,
@@ -360,15 +360,15 @@ alpha = "a"
 
     let upserted: TomlValue = toml::from_str(&std::fs::read_to_string(&path)?)?;
     let expected_upsert: TomlValue = toml::from_str(
-        r#"[mcp_servers.linear]
-bearer_token_env_var = "NEW_TOKEN"
+        r#"[model_providers.linear]
+env_key = "NEW_TOKEN"
 name = "linear"
-url = "https://linear.example"
+base_url = "https://linear.example"
 
-[mcp_servers.linear.env_http_headers]
+[model_providers.linear.env_http_headers]
 existing = "keep"
 
-[mcp_servers.linear.http_headers]
+[model_providers.linear.http_headers]
 alpha = "updated"
 beta = "b"
 "#,
@@ -380,7 +380,7 @@ beta = "b"
     service
         .write_value(ConfigValueWriteParams {
             file_path: Some(path.display().to_string()),
-            key_path: "mcp_servers.linear".to_string(),
+            key_path: "model_providers.linear".to_string(),
             value: overlay,
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
@@ -390,12 +390,12 @@ beta = "b"
 
     let replaced: TomlValue = toml::from_str(&std::fs::read_to_string(&path)?)?;
     let expected_replace: TomlValue = toml::from_str(
-        r#"[mcp_servers.linear]
-bearer_token_env_var = "NEW_TOKEN"
+        r#"[model_providers.linear]
+env_key = "NEW_TOKEN"
 name = "linear"
-url = "https://linear.example"
+base_url = "https://linear.example"
 
-[mcp_servers.linear.http_headers]
+[model_providers.linear.http_headers]
 alpha = "updated"
 beta = "b"
 "#,

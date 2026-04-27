@@ -192,7 +192,7 @@ impl Session {
             let mut state = self.state.lock().await;
             let mut config = (*state.session_configuration.original_config_do_not_use).clone();
             config.config_layer_stack = config.config_layer_stack.with_project_mcp_layer(layer);
-            if let Err(err) = config.reload_mcp_servers_from_layer_stack() {
+            if let Err(err) = config.reload_mcp_servers_from_layer_stack().await {
                 warn!("failed to reload MCP servers from updated config stack: {err}");
                 return;
             }

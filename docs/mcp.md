@@ -28,41 +28,29 @@ chaos mcp get my-server     # Show config for a server
 chaos mcp remove my-server  # Remove a server
 ```
 
-### Config file
+### Storage
 
-Servers are stored in `~/.chaos/config.toml`:
+Global MCP servers are stored in the runtime MCP registry, not in
+`~/.chaos/config.toml`. Use `chaos mcp add`, `chaos mcp remove`, and
+`chaos mcp get` to manage them.
 
-```toml
-[mcp_servers.filesystem]
-command = "bunx"
-args = ["@modelcontextprotocol/server-filesystem", "/home/user"]
-
-[mcp_servers.remote-api]
-type = "streamable_http"
-url = "https://api.example.com/mcp"
-```
+Project-local MCP servers still live in `.mcp.json`.
 
 #### Stdio server options
 
-```toml
-[mcp_servers.my-server]
-command = "my-mcp-server"
-args = ["--port", "3000"]
-env = { MY_TOKEN = "secret" }
-cwd = "/opt/my-server"
-enabled_tools = ["read", "write"]     # Only expose these tools
-disabled_tools = ["delete"]            # Or block specific tools
-startup_timeout_seconds = 10
-tool_timeout_seconds = 120
+```bash
+chaos mcp add my-server -- my-mcp-server --port 3000
 ```
 
 #### HTTP server options
 
-```toml
-[mcp_servers.remote]
-type = "streamable_http"
-url = "https://api.example.com/mcp"
-bearer_token_env = "REMOTE_API_KEY"   # Auth from env var
+```bash
+chaos mcp add remote --url https://api.example.com/mcp \
+  --bearer-token-env-var REMOTE_API_KEY
+
+# Or store the token directly in the runtime MCP registry
+chaos mcp add remote --url https://api.example.com/mcp \
+  --bearer-token "$REMOTE_API_KEY"
 ```
 
 ---
@@ -173,13 +161,10 @@ Look at `~/.chaos/log/` for connection errors.
 **Tool not appearing** — Run `chaos mcp list` to verify the server is
 configured. Check `enabled_tools`/`disabled_tools` filters.
 
-**Timeouts** — Increase `tool_timeout_seconds` for slow operations:
-
-```toml
-[mcp_servers.slow-server]
-command = "slow-tool"
-tool_timeout_seconds = 300
-```
+**Timeouts** — Edit the server entry with `chaos mcp get <name> --json`,
+adjust the timeout fields, then write the updated entry back through the CLI or
+runtime MCP registry helpers. Global MCP servers no longer live in
+`config.toml`.
 
 **Connection drops** — HTTP servers reconnect automatically. Stdio servers
 are restarted if they crash.

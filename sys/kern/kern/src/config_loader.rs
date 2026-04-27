@@ -106,7 +106,9 @@ pub async fn load_config_layers_state(
     let cli_overrides_layer = if cli_overrides.is_empty() {
         None
     } else {
-        let cli_overrides_layer = build_cli_overrides_layer(cli_overrides);
+        let mut cli_overrides_layer = build_cli_overrides_layer(cli_overrides);
+        reject_legacy_global_mcp_servers_in_cli_overrides(&cli_overrides_layer)?;
+        strip_global_mcp_servers(&mut cli_overrides_layer);
         let base_dir = cwd
             .as_ref()
             .map(AbsolutePathBuf::as_path)
@@ -232,6 +234,7 @@ async fn load_config_toml_for_required_layer(
                 let config_error = config_error_from_toml(toml_file, &contents, err.clone());
                 io_error_from_config_error(io::ErrorKind::InvalidData, config_error, Some(err))
             })?;
+            reject_legacy_global_mcp_servers_in_config_toml(toml_file, &config)?;
             let config_parent = toml_file.parent().ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -255,6 +258,8 @@ async fn load_config_toml_for_required_layer(
         }
     }?;
 
+    let mut toml_value = toml_value;
+    strip_global_mcp_servers(&mut toml_value);
     Ok(create_entry(toml_value))
 }
 
@@ -627,6 +632,47 @@ fn sqlite_home_from_merged_config(merged_config: &TomlValue, chaos_home: &Path) 
         .unwrap_or_else(|| chaos_home.to_path_buf())
 }
 
+fn strip_global_mcp_servers(value: &mut TomlValue) {
+    let Some(table) = value.as_table_mut() else {
+        return;
+    };
+    table.remove("mcp_servers");
+}
+
+pub(crate) fn reject_legacy_global_mcp_servers_in_cli_overrides(
+    value: &TomlValue,
+) -> io::Result<()> {
+    if value
+        .as_table()
+        .is_some_and(|table| table.contains_key("mcp_servers"))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "top-level `mcp_servers` no longer belongs in config; use `chaos mcp add/remove/list/get` for global MCP servers or `.mcp.json` for project-local MCP servers",
+        ));
+    }
+    Ok(())
+}
+
+fn reject_legacy_global_mcp_servers_in_config_toml(
+    config_path: &Path,
+    config: &TomlValue,
+) -> io::Result<()> {
+    if config
+        .as_table()
+        .is_some_and(|table| table.contains_key("mcp_servers"))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} uses legacy top-level `mcp_servers`; use `chaos mcp add/remove/list/get` for global MCP servers or `.mcp.json` for project-local MCP servers",
+                config_path.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Takes a `toml::Value` parsed from a config.toml file and walks through it,
 /// resolving any `AbsolutePathBuf` fields against `base_dir`, returning a new
 /// `toml::Value` with the same shape but with paths resolved.
@@ -806,6 +852,21 @@ async fn load_project_layers(
                         continue;
                     }
                 };
+                if let Err(err) =
+                    reject_legacy_global_mcp_servers_in_config_toml(config_file.as_path(), &config)
+                {
+                    if decision.is_trusted() {
+                        return Err(err);
+                    }
+                    layers.push(project_layer_entry(
+                        trust_context,
+                        &dot_chaos_abs,
+                        &layer_dir,
+                        TomlValue::Table(toml::map::Map::new()),
+                        /*config_toml_exists*/ true,
+                    ));
+                    continue;
+                }
                 let config =
                     resolve_relative_paths_in_config_toml(config, dot_chaos_abs.as_path())?;
                 let entry = project_layer_entry(

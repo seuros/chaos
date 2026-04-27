@@ -23,6 +23,7 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
+use chaos_sysctl::types::McpServerConfig;
 use log::LevelFilter;
 use serde_json::Value;
 use sqlx::ConnectOptions;
@@ -170,6 +171,61 @@ SET trust_level = excluded.trust_level,
         .bind(trust_level.to_string())
         .execute(self.pool())
         .await?;
+        Ok(())
+    }
+
+    async fn list_global_mcp_servers(
+        &self,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, McpServerConfig>> {
+        let rows = sqlx::query(
+            r#"
+SELECT name, config_json
+FROM global_mcp_servers
+ORDER BY name ASC
+            "#,
+        )
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let name: String = row.try_get("name")?;
+                let config_json: String = row.try_get("config_json")?;
+                let config = serde_json::from_str::<McpServerConfig>(&config_json)?;
+                Ok((name, config))
+            })
+            .collect()
+    }
+
+    async fn replace_global_mcp_servers(
+        &self,
+        servers: &std::collections::BTreeMap<String, McpServerConfig>,
+    ) -> anyhow::Result<()> {
+        let mut tx = self.pool().begin().await?;
+        sqlx::query("DELETE FROM global_mcp_servers")
+            .execute(&mut *tx)
+            .await?;
+        for (name, config) in servers {
+            sqlx::query(
+                r#"
+INSERT INTO global_mcp_servers (
+    name,
+    config_json,
+    created_at,
+    updated_at
+) VALUES (
+    ?,
+    ?,
+    UNIXEPOCH(),
+    UNIXEPOCH()
+)
+                "#,
+            )
+            .bind(name)
+            .bind(serde_json::to_string(config)?)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 }
@@ -333,6 +389,25 @@ impl RuntimeDbHandle {
         match self {
             Self::Postgres(runtime) => runtime.set_project_trust(project_path, trust_level).await,
             Self::Sqlite(runtime) => runtime.set_project_trust(project_path, trust_level).await,
+        }
+    }
+
+    pub async fn list_global_mcp_servers(
+        &self,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, McpServerConfig>> {
+        match self {
+            Self::Postgres(runtime) => runtime.list_global_mcp_servers().await,
+            Self::Sqlite(runtime) => runtime.list_global_mcp_servers().await,
+        }
+    }
+
+    pub async fn replace_global_mcp_servers(
+        &self,
+        servers: &std::collections::BTreeMap<String, McpServerConfig>,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.replace_global_mcp_servers(servers).await,
+            Self::Sqlite(runtime) => runtime.replace_global_mcp_servers(servers).await,
         }
     }
 
@@ -787,6 +862,61 @@ SET trust_level = EXCLUDED.trust_level,
         .bind(trust_level.to_string())
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    async fn list_global_mcp_servers(
+        &self,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, McpServerConfig>> {
+        let rows = sqlx::query(
+            r#"
+SELECT name, config_json
+FROM global_mcp_servers
+ORDER BY name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let name: String = row.try_get("name")?;
+                let config_json: serde_json::Value = row.try_get("config_json")?;
+                let config = serde_json::from_value::<McpServerConfig>(config_json)?;
+                Ok((name, config))
+            })
+            .collect()
+    }
+
+    async fn replace_global_mcp_servers(
+        &self,
+        servers: &std::collections::BTreeMap<String, McpServerConfig>,
+    ) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM global_mcp_servers")
+            .execute(&mut *tx)
+            .await?;
+        for (name, config) in servers {
+            sqlx::query(
+                r#"
+INSERT INTO global_mcp_servers (
+    name,
+    config_json,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
+    EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
+)
+                "#,
+            )
+            .bind(name)
+            .bind(serde_json::to_value(config)?)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -2195,6 +2325,77 @@ mod tests {
                 .await
                 .expect("query trust"),
             Some(TrustLevel::Untrusted)
+        );
+    }
+
+    #[tokio::test]
+    async fn global_mcp_servers_round_trip() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let runtime = RuntimeDbHandle::Sqlite(
+            StateRuntime::init(chaos_home, "test-provider".to_string())
+                .await
+                .expect("open runtime"),
+        );
+        let mut servers = std::collections::BTreeMap::new();
+        servers.insert(
+            "docs".to_string(),
+            McpServerConfig {
+                transport: chaos_sysctl::types::McpServerTransportConfig::Stdio {
+                    command: "echo".to_string(),
+                    args: vec!["hello".to_string()],
+                    env: None,
+                    env_vars: Vec::new(),
+                    cwd: None,
+                },
+                enabled: true,
+                required: false,
+                disabled_reason: None,
+                startup_timeout_sec: None,
+                tool_timeout_sec: None,
+                enabled_tools: None,
+                disabled_tools: None,
+                scopes: None,
+                oauth_resource: None,
+                r#type: None,
+                oauth: None,
+            },
+        );
+
+        assert!(
+            runtime
+                .list_global_mcp_servers()
+                .await
+                .expect("list servers")
+                .is_empty()
+        );
+
+        runtime
+            .replace_global_mcp_servers(&servers)
+            .await
+            .expect("replace servers");
+        assert_eq!(
+            runtime
+                .list_global_mcp_servers()
+                .await
+                .expect("list servers"),
+            servers
+        );
+
+        servers.clear();
+        runtime
+            .replace_global_mcp_servers(&servers)
+            .await
+            .expect("clear servers");
+        assert!(
+            runtime
+                .list_global_mcp_servers()
+                .await
+                .expect("list servers")
+                .is_empty()
         );
     }
 

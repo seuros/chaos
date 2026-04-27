@@ -71,6 +71,7 @@ pub struct ResolvedMcpOAuthScopes {
 pub async fn oauth_login_support(transport: &McpServerTransportConfig) -> McpOAuthLoginSupport {
     let McpServerTransportConfig::StreamableHttp {
         url,
+        bearer_token,
         bearer_token_env_var,
         http_headers,
         env_http_headers,
@@ -79,7 +80,7 @@ pub async fn oauth_login_support(transport: &McpServerTransportConfig) -> McpOAu
         return McpOAuthLoginSupport::Unsupported;
     };
 
-    if bearer_token_env_var.is_some() {
+    if bearer_token.is_some() || bearer_token_env_var.is_some() {
         return McpOAuthLoginSupport::Unsupported;
     }
 
@@ -181,10 +182,11 @@ async fn compute_auth_status(
     match &config.transport {
         McpServerTransportConfig::Stdio { .. } => Ok(McpAuthStatus::Unsupported),
         McpServerTransportConfig::StreamableHttp {
+            bearer_token,
             bearer_token_env_var,
             ..
         } => {
-            if bearer_token_env_var.is_some() {
+            if bearer_token.is_some() || bearer_token_env_var.is_some() {
                 Ok(McpAuthStatus::BearerToken)
             } else {
                 Ok(McpAuthStatus::Unsupported)

@@ -13,9 +13,8 @@ use crate::config::types::ShellEnvironmentPolicyToml;
 use crate::config::types::Tui;
 use crate::config::types::UriBasedFileOpener;
 use crate::config_loader::ConfigLayerStack;
-use crate::config_loader::LoaderOverrides;
+use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::ResidencyRequirement;
-use crate::config_loader::load_config_layers_state;
 
 use crate::features::FeaturesToml;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
@@ -86,8 +85,6 @@ pub use chaos_scm::GhostSnapshotConfig;
 pub use chaos_sysctl::Constrained;
 pub use chaos_sysctl::ConstraintError;
 pub use chaos_sysctl::ConstraintResult;
-#[cfg(test)]
-pub(crate) use std::path::Path;
 #[cfg(test)]
 pub(crate) use validation::filter_mcp_servers_by_requirements;
 
@@ -581,12 +578,6 @@ pub struct ConfigToml {
     #[serde(default)]
     pub cli_auth_credentials_store: Option<AuthCredentialsStoreMode>,
 
-    /// Definition for MCP servers that Chaos can reach out to for tool calls.
-    #[serde(default)]
-    // Uses the raw MCP input shape (custom deserialization) rather than `McpServerConfig`.
-    #[schemars(schema_with = "crate::config::schema::mcp_servers_schema")]
-    pub mcp_servers: HashMap<String, McpServerConfig>,
-
     /// Preferred backend for storing MCP OAuth credentials.
     /// keyring: Use an OS-specific keyring service.
     /// file: Use a file in the Chaos home directory.
@@ -829,6 +820,7 @@ pub struct ConfigOverrides {
     pub compact_prompt: Option<String>,
     pub show_raw_agent_reasoning: Option<bool>,
     pub ephemeral: Option<bool>,
+    pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
     pub active_project_trust: Option<ProjectTrust>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
@@ -940,22 +932,74 @@ pub(crate) fn deserialize_config_toml_with_base(
 pub async fn load_global_mcp_servers(
     chaos_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let cli_overrides = Vec::<(String, TomlValue)>::new();
-    let cwd: Option<AbsolutePathBuf> = None;
-    let config_layer_stack =
-        load_config_layers_state(chaos_home, cwd, &cli_overrides, LoaderOverrides::default())
-            .await?;
-    let merged_toml = config_layer_stack.effective_config();
-    let Some(servers_value) = merged_toml.get("mcp_servers") else {
-        return Ok(BTreeMap::new());
-    };
+    let sqlite_home = runtime_storage_sqlite_home(chaos_home).map_err(|err| {
+        std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
+    })?;
+    load_global_mcp_servers_from_runtime_db(&sqlite_home).await
+}
 
-    validation::ensure_no_inline_bearer_tokens(servers_value)?;
+pub(crate) async fn load_effective_mcp_servers(
+    sqlite_home: &std::path::Path,
+    config_layer_stack: &ConfigLayerStack,
+) -> std::io::Result<HashMap<String, McpServerConfig>> {
+    let mut effective = load_global_mcp_servers_from_runtime_db(sqlite_home)
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
 
-    servers_value
-        .clone()
-        .try_into()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    for layer in config_layer_stack.get_layers(
+        ConfigLayerStackOrdering::LowestPrecedenceFirst,
+        /*include_disabled*/ false,
+    ) {
+        if !matches!(
+            layer.name,
+            chaos_ipc::api::ConfigLayerSource::ProjectMcp { .. }
+        ) {
+            continue;
+        }
+        let Some(servers_value) = layer.config.get("mcp_servers") else {
+            continue;
+        };
+        let layer_servers: HashMap<String, McpServerConfig> = servers_value
+            .clone()
+            .try_into()
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+        effective.extend(layer_servers);
+    }
+
+    Ok(effective)
+}
+
+async fn load_global_mcp_servers_from_runtime_db(
+    sqlite_home: &std::path::Path,
+) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
+    let runtime = crate::runtime_db::open_or_create_runtime_db(sqlite_home, "unknown")
+        .await
+        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    runtime
+        .list_global_mcp_servers()
+        .await
+        .map_err(|err| std::io::Error::other(format!("failed to load global MCP servers: {err}")))
+}
+
+pub fn replace_global_mcp_servers(
+    chaos_home: &std::path::Path,
+    servers: &BTreeMap<String, McpServerConfig>,
+) -> anyhow::Result<()> {
+    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
+    let servers = servers.clone();
+    std::thread::spawn(move || -> anyhow::Result<()> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(async move {
+                let runtime =
+                    crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+                runtime.replace_global_mcp_servers(&servers).await
+            })
+    })
+    .join()
+    .map_err(|_| anyhow::anyhow!("global MCP persistence task panicked"))?
 }
 
 #[cfg(test)]

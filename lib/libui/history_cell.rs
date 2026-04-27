@@ -363,6 +363,7 @@ mod tests {
         let http_config = McpServerConfig {
             transport: McpServerTransportConfig::StreamableHttp {
                 url: "https://example.com/mcp".to_string(),
+                bearer_token: None,
                 bearer_token_env_var: Some("MCP_TOKEN".to_string()),
                 http_headers: Some(headers),
                 env_http_headers: Some(env_headers),

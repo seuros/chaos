@@ -2,13 +2,11 @@ use crate::CONFIG_TOML_FILE;
 use crate::features::FEATURES;
 use crate::path_utils::resolve_symlink_write_paths;
 use crate::path_utils::write_atomically;
-use crate::types::McpServerConfig;
 use crate::types::Notice;
 use anyhow::Context;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ReasoningEffort;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
@@ -36,8 +34,6 @@ pub enum ConfigEdit {
     SetNoticeHideWorldWritableWarning(bool),
     /// Toggle the rate limit model nudge acknowledgement flag.
     SetNoticeHideRateLimitModelNudge(bool),
-    /// Replace the entire `[mcp_servers]` table.
-    ReplaceMcpServers(BTreeMap<String, McpServerConfig>),
     /// Set the value stored at the exact dotted path.
     SetPath {
         segments: Vec<String>,
@@ -90,13 +86,9 @@ pub fn model_availability_nux_count_edits(shown_count: &HashMap<String, u32>) ->
 
 // TODO(jif) move to a dedicated file
 mod document_helpers {
-    use crate::types::McpServerConfig;
-    use crate::types::McpServerTransportConfig;
-    use toml_edit::Array as TomlArray;
     use toml_edit::InlineTable;
     use toml_edit::Item as TomlItem;
     use toml_edit::Table as TomlTable;
-    use toml_edit::value;
 
     pub(super) fn ensure_table_for_write(item: &mut TomlItem) -> Option<&mut TomlTable> {
         match item {
@@ -130,115 +122,6 @@ mod document_helpers {
         }
     }
 
-    fn serialize_mcp_server_table(config: &McpServerConfig) -> TomlTable {
-        let mut entry = TomlTable::new();
-        entry.set_implicit(false);
-
-        match &config.transport {
-            McpServerTransportConfig::Stdio {
-                command,
-                args,
-                env,
-                env_vars,
-                cwd,
-            } => {
-                entry["command"] = value(command.clone());
-                if !args.is_empty() {
-                    entry["args"] = array_from_iter(args.iter().cloned());
-                }
-                if let Some(env) = env
-                    && !env.is_empty()
-                {
-                    entry["env"] = table_from_pairs(env.iter());
-                }
-                if !env_vars.is_empty() {
-                    entry["env_vars"] = array_from_iter(env_vars.iter().cloned());
-                }
-                if let Some(cwd) = cwd {
-                    entry["cwd"] = value(cwd.to_string_lossy().to_string());
-                }
-            }
-            McpServerTransportConfig::StreamableHttp {
-                url,
-                bearer_token_env_var,
-                http_headers,
-                env_http_headers,
-            } => {
-                entry["url"] = value(url.clone());
-                if let Some(env_var) = bearer_token_env_var {
-                    entry["bearer_token_env_var"] = value(env_var.clone());
-                }
-                if let Some(headers) = http_headers
-                    && !headers.is_empty()
-                {
-                    entry["http_headers"] = table_from_pairs(headers.iter());
-                }
-                if let Some(headers) = env_http_headers
-                    && !headers.is_empty()
-                {
-                    entry["env_http_headers"] = table_from_pairs(headers.iter());
-                }
-            }
-        }
-
-        if !config.enabled {
-            entry["enabled"] = value(false);
-        }
-        if config.required {
-            entry["required"] = value(true);
-        }
-        if let Some(timeout) = config.startup_timeout_sec {
-            entry["startup_timeout_sec"] = value(timeout.as_secs_f64());
-        }
-        if let Some(timeout) = config.tool_timeout_sec {
-            entry["tool_timeout_sec"] = value(timeout.as_secs_f64());
-        }
-        if let Some(enabled_tools) = &config.enabled_tools
-            && !enabled_tools.is_empty()
-        {
-            entry["enabled_tools"] = array_from_iter(enabled_tools.iter().cloned());
-        }
-        if let Some(disabled_tools) = &config.disabled_tools
-            && !disabled_tools.is_empty()
-        {
-            entry["disabled_tools"] = array_from_iter(disabled_tools.iter().cloned());
-        }
-        if let Some(scopes) = &config.scopes
-            && !scopes.is_empty()
-        {
-            entry["scopes"] = array_from_iter(scopes.iter().cloned());
-        }
-        if let Some(resource) = &config.oauth_resource
-            && !resource.is_empty()
-        {
-            entry["oauth_resource"] = value(resource.clone());
-        }
-
-        entry
-    }
-
-    pub(super) fn serialize_mcp_server(config: &McpServerConfig) -> TomlItem {
-        TomlItem::Table(serialize_mcp_server_table(config))
-    }
-
-    pub(super) fn serialize_mcp_server_inline(config: &McpServerConfig) -> InlineTable {
-        serialize_mcp_server_table(config).into_inline_table()
-    }
-
-    pub(super) fn merge_inline_table(existing: &mut InlineTable, replacement: InlineTable) {
-        existing.retain(|key, _| replacement.get(key).is_some());
-
-        for (key, value) in replacement.iter() {
-            if let Some(existing_value) = existing.get_mut(key) {
-                let mut updated_value = value.clone();
-                *updated_value.decor_mut() = existing_value.decor().clone();
-                *existing_value = updated_value;
-            } else {
-                existing.insert(key.to_string(), value.clone());
-            }
-        }
-    }
-
     fn table_from_inline(inline: &InlineTable) -> TomlTable {
         let mut table = new_implicit_table();
         for (key, value) in inline.iter() {
@@ -254,31 +137,6 @@ mod document_helpers {
         let mut table = TomlTable::new();
         table.set_implicit(true);
         table
-    }
-
-    fn array_from_iter<I>(iter: I) -> TomlItem
-    where
-        I: Iterator<Item = String>,
-    {
-        let mut array = TomlArray::new();
-        for value in iter {
-            array.push(value);
-        }
-        TomlItem::Value(array.into())
-    }
-
-    fn table_from_pairs<'a, I>(pairs: I) -> TomlItem
-    where
-        I: IntoIterator<Item = (&'a String, &'a String)>,
-    {
-        let mut entries: Vec<_> = pairs.into_iter().collect();
-        entries.sort_by_key(|(a, _)| *a);
-        let mut table = TomlTable::new();
-        table.set_implicit(false);
-        for (key, val) in entries {
-            table.insert(key, value(val.clone()));
-        }
-        TomlItem::Table(table)
     }
 }
 
@@ -341,7 +199,6 @@ impl ConfigDocument {
                 &[Notice::TABLE_KEY, "hide_rate_limit_model_nudge"],
                 value(*acknowledged),
             )),
-            ConfigEdit::ReplaceMcpServers(servers) => Ok(self.replace_mcp_servers(servers)),
             ConfigEdit::SetPath { segments, value } => Ok(self.insert(segments, value.clone())),
             ConfigEdit::ClearPath { segments } => Ok(self.clear_owned(segments)),
         }
@@ -366,59 +223,6 @@ impl ConfigDocument {
 
     fn clear_owned(&mut self, segments: &[String]) -> bool {
         self.remove(segments)
-    }
-
-    fn replace_mcp_servers(&mut self, servers: &BTreeMap<String, McpServerConfig>) -> bool {
-        if servers.is_empty() {
-            return self.clear(Scope::Global, &["mcp_servers"]);
-        }
-
-        let root = self.doc.as_table_mut();
-        if !root.contains_key("mcp_servers") {
-            root.insert(
-                "mcp_servers",
-                TomlItem::Table(document_helpers::new_implicit_table()),
-            );
-        }
-
-        let Some(item) = root.get_mut("mcp_servers") else {
-            return false;
-        };
-
-        if document_helpers::ensure_table_for_write(item).is_none() {
-            *item = TomlItem::Table(document_helpers::new_implicit_table());
-        }
-
-        let Some(table) = item.as_table_mut() else {
-            return false;
-        };
-
-        let keys_to_remove: Vec<String> = table
-            .iter()
-            .map(|(key, _)| key.to_string())
-            .filter(|key| !servers.contains_key(key.as_str()))
-            .collect();
-
-        for key in keys_to_remove {
-            table.remove(&key);
-        }
-
-        for (name, config) in servers {
-            if let Some(existing) = table.get_mut(name.as_str()) {
-                if let TomlItem::Value(value) = existing
-                    && let Some(inline) = value.as_inline_table_mut()
-                {
-                    let replacement = document_helpers::serialize_mcp_server_inline(config);
-                    document_helpers::merge_inline_table(inline, replacement);
-                } else {
-                    *existing = document_helpers::serialize_mcp_server(config);
-                }
-            } else {
-                table.insert(name, document_helpers::serialize_mcp_server(config));
-            }
-        }
-
-        true
     }
 
     fn scoped_segments(&self, scope: Scope, segments: &[&str]) -> Vec<String> {
@@ -657,12 +461,6 @@ impl ConfigEditsBuilder {
     pub fn set_model_availability_nux_count(mut self, shown_count: &HashMap<String, u32>) -> Self {
         self.edits
             .extend(model_availability_nux_count_edits(shown_count));
-        self
-    }
-
-    pub fn replace_mcp_servers(mut self, servers: &BTreeMap<String, McpServerConfig>) -> Self {
-        self.edits
-            .push(ConfigEdit::ReplaceMcpServers(servers.clone()));
         self
     }
 

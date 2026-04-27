@@ -130,7 +130,10 @@ pub async fn load_config_as_toml_with_cli_overrides(
     )
     .await?;
 
-    let merged_toml = config_layer_stack.effective_config();
+    let mut merged_toml = config_layer_stack.effective_config();
+    if let Some(table) = merged_toml.as_table_mut() {
+        table.remove("mcp_servers");
+    }
     let cfg = deserialize_config_toml_with_base(merged_toml, chaos_home).map_err(|e| {
         tracing::error!("Failed to deserialize overridden config: {e}");
         e

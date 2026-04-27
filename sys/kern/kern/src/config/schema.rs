@@ -7,7 +7,6 @@ use serde_json::Value;
 // Re-export schema helpers from chaos-config so existing `schema_with` paths
 // continue to resolve through `crate::config::schema::*`.
 pub(crate) use chaos_sysctl::schema::features_schema;
-pub(crate) use chaos_sysctl::schema::mcp_servers_schema;
 
 /// Build the config schema for `config.toml`.
 pub fn config_schema() -> Schema {

@@ -166,6 +166,36 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
 }
 
 #[tokio::test]
+async fn add_and_remove_only_touch_the_named_server() -> Result<()> {
+    let harness = McpCliHarness::new()?;
+
+    harness.assert_success(&["mcp", "add", "docs", "--", "echo", "hello"])?;
+    harness.assert_success(&[
+        "mcp",
+        "add",
+        "issues",
+        "--url",
+        "https://example.com/issues",
+    ])?;
+
+    assert_eq!(harness.servers().await?.len(), 2);
+
+    harness.assert_success_stdout(
+        &["mcp", "remove", "docs"],
+        "Removed global MCP server 'docs'.",
+    )?;
+
+    let servers = harness.servers().await?;
+    assert_eq!(servers.len(), 1);
+    let issues = servers
+        .get("issues")
+        .context("issues server should remain after removing docs")?;
+    assert_streamable_http_transport(issues, "https://example.com/issues", None, None);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn add_with_env_preserves_key_order_and_values() -> Result<()> {
     let harness = McpCliHarness::new()?;
 

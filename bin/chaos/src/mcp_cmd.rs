@@ -8,10 +8,10 @@ use chaos_getopt::CliConfigOverrides;
 use chaos_getopt::format_env_display::format_env_display;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_kern::config::Config;
-use chaos_kern::config::load_global_mcp_servers;
-use chaos_kern::config::replace_global_mcp_servers;
+use chaos_kern::config::delete_global_mcp_server;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
+use chaos_kern::config::upsert_global_mcp_server;
 use chaos_kern::mcp::McpManager;
 use chaos_kern::mcp::auth::McpOAuthLoginSupport;
 use chaos_kern::mcp::auth::ResolvedMcpOAuthScopes;
@@ -245,9 +245,6 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
     validate_server_name(&name)?;
 
     let chaos_home = find_chaos_home().context("failed to resolve CHAOS_HOME")?;
-    let mut servers = load_global_mcp_servers(&chaos_home)
-        .await
-        .with_context(|| format!("failed to load MCP servers from {}", chaos_home.display()))?;
 
     let transport = match transport_args {
         AddMcpTransportArgs {
@@ -305,10 +302,14 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
         oauth: None,
     };
 
-    servers.insert(name.clone(), new_entry);
-
-    replace_global_mcp_servers(&chaos_home, &servers)
-        .with_context(|| format!("failed to persist MCP servers in {}", chaos_home.display()))?;
+    upsert_global_mcp_server(&chaos_home, &name, &new_entry)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to persist MCP server '{name}' in {}",
+                chaos_home.display()
+            )
+        })?;
 
     println!("Added global MCP server '{name}'.");
 
@@ -353,17 +354,14 @@ async fn run_remove(config_overrides: &CliConfigOverrides, remove_args: RemoveAr
     validate_server_name(&name)?;
 
     let chaos_home = find_chaos_home().context("failed to resolve CHAOS_HOME")?;
-    let mut servers = load_global_mcp_servers(&chaos_home)
+    let removed = delete_global_mcp_server(&chaos_home, &name)
         .await
-        .with_context(|| format!("failed to load MCP servers from {}", chaos_home.display()))?;
-
-    let removed = servers.remove(&name).is_some();
-
-    if removed {
-        replace_global_mcp_servers(&chaos_home, &servers).with_context(|| {
-            format!("failed to persist MCP servers in {}", chaos_home.display())
+        .with_context(|| {
+            format!(
+                "failed to remove MCP server '{name}' from {}",
+                chaos_home.display()
+            )
         })?;
-    }
 
     if removed {
         println!("Removed global MCP server '{name}'.");

@@ -6,6 +6,7 @@ use chaos_kern::config::load_global_mcp_servers;
 use chaos_kern::config::replace_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
+use chaos_kern::config::upsert_global_mcp_server;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use pretty_assertions::assert_eq;
@@ -51,11 +52,8 @@ impl McpCliHarness {
     }
 
     async fn insert_server(&self, name: &str, server: McpServerConfig) -> Result<()> {
-        self.update_servers(|servers| {
-            servers.insert(name.to_string(), server);
-            Ok(())
-        })
-        .await
+        upsert_global_mcp_server(self.chaos_home.path(), name, &server).await?;
+        Ok(())
     }
 
     async fn set_stdio_env_vars(&self, name: &str, env_vars: &[&str]) -> Result<()> {

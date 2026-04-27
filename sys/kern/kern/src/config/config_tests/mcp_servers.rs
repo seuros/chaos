@@ -189,6 +189,49 @@ async fn load_global_mcp_servers_returns_empty_if_missing() -> anyhow::Result<()
 }
 
 #[tokio::test]
+async fn upsert_and_delete_global_mcp_server_round_trip() -> anyhow::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let docs = McpServerConfig {
+        transport: McpServerTransportConfig::Stdio {
+            command: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            env: None,
+            env_vars: Vec::new(),
+            cwd: None,
+        },
+        enabled: true,
+        required: false,
+        disabled_reason: None,
+        startup_timeout_sec: Some(Duration::from_secs(3)),
+        tool_timeout_sec: Some(Duration::from_secs(5)),
+        enabled_tools: None,
+        disabled_tools: None,
+        scopes: None,
+        oauth_resource: None,
+        r#type: None,
+        oauth: None,
+    };
+
+    upsert_global_mcp_server(chaos_home.path(), "docs", &docs).await?;
+    assert_eq!(
+        load_global_mcp_server(chaos_home.path(), "docs").await?,
+        Some(docs.clone())
+    );
+
+    let removed = delete_global_mcp_server(chaos_home.path(), "docs").await?;
+    assert!(removed);
+    assert_eq!(
+        load_global_mcp_server(chaos_home.path(), "docs").await?,
+        None
+    );
+
+    let removed = delete_global_mcp_server(chaos_home.path(), "docs").await?;
+    assert!(!removed);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
 

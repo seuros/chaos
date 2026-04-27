@@ -938,6 +938,16 @@ pub async fn load_global_mcp_servers(
     load_global_mcp_servers_from_runtime_db(&sqlite_home).await
 }
 
+pub async fn load_global_mcp_server(
+    chaos_home: &std::path::Path,
+    name: &str,
+) -> std::io::Result<Option<McpServerConfig>> {
+    let sqlite_home = runtime_storage_sqlite_home(chaos_home).map_err(|err| {
+        std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
+    })?;
+    load_global_mcp_server_from_runtime_db(&sqlite_home, name).await
+}
+
 pub(crate) async fn load_effective_mcp_servers(
     sqlite_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
@@ -980,6 +990,38 @@ async fn load_global_mcp_servers_from_runtime_db(
         .list_global_mcp_servers()
         .await
         .map_err(|err| std::io::Error::other(format!("failed to load global MCP servers: {err}")))
+}
+
+async fn load_global_mcp_server_from_runtime_db(
+    sqlite_home: &std::path::Path,
+    name: &str,
+) -> std::io::Result<Option<McpServerConfig>> {
+    let runtime = crate::runtime_db::open_or_create_runtime_db(sqlite_home, "unknown")
+        .await
+        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    runtime
+        .get_global_mcp_server(name)
+        .await
+        .map_err(|err| std::io::Error::other(format!("failed to load MCP server '{name}': {err}")))
+}
+
+pub async fn upsert_global_mcp_server(
+    chaos_home: &std::path::Path,
+    name: &str,
+    config: &McpServerConfig,
+) -> anyhow::Result<()> {
+    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+    runtime.upsert_global_mcp_server(name, config).await
+}
+
+pub async fn delete_global_mcp_server(
+    chaos_home: &std::path::Path,
+    name: &str,
+) -> anyhow::Result<bool> {
+    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+    runtime.delete_global_mcp_server(name).await
 }
 
 pub fn replace_global_mcp_servers(

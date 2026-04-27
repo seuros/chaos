@@ -196,6 +196,67 @@ ORDER BY name ASC
             .collect()
     }
 
+    async fn get_global_mcp_server(&self, name: &str) -> anyhow::Result<Option<McpServerConfig>> {
+        let row = sqlx::query(
+            r#"
+SELECT config_json
+FROM global_mcp_servers
+WHERE name = ?
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(self.pool())
+        .await?;
+        row.map(|row| {
+            let config_json: String = row.try_get("config_json")?;
+            Ok(serde_json::from_str::<McpServerConfig>(&config_json)?)
+        })
+        .transpose()
+    }
+
+    async fn upsert_global_mcp_server(
+        &self,
+        name: &str,
+        config: &McpServerConfig,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO global_mcp_servers (
+    name,
+    config_json,
+    created_at,
+    updated_at
+) VALUES (
+    ?,
+    ?,
+    UNIXEPOCH(),
+    UNIXEPOCH()
+)
+ON CONFLICT(name) DO UPDATE
+SET config_json = excluded.config_json,
+    updated_at = UNIXEPOCH()
+            "#,
+        )
+        .bind(name)
+        .bind(serde_json::to_string(config)?)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_global_mcp_server(&self, name: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            r#"
+DELETE FROM global_mcp_servers
+WHERE name = ?
+            "#,
+        )
+        .bind(name)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn replace_global_mcp_servers(
         &self,
         servers: &std::collections::BTreeMap<String, McpServerConfig>,
@@ -398,6 +459,34 @@ impl RuntimeDbHandle {
         match self {
             Self::Postgres(runtime) => runtime.list_global_mcp_servers().await,
             Self::Sqlite(runtime) => runtime.list_global_mcp_servers().await,
+        }
+    }
+
+    pub async fn get_global_mcp_server(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<Option<McpServerConfig>> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_global_mcp_server(name).await,
+            Self::Sqlite(runtime) => runtime.get_global_mcp_server(name).await,
+        }
+    }
+
+    pub async fn upsert_global_mcp_server(
+        &self,
+        name: &str,
+        config: &McpServerConfig,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.upsert_global_mcp_server(name, config).await,
+            Self::Sqlite(runtime) => runtime.upsert_global_mcp_server(name, config).await,
+        }
+    }
+
+    pub async fn delete_global_mcp_server(&self, name: &str) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => runtime.delete_global_mcp_server(name).await,
+            Self::Sqlite(runtime) => runtime.delete_global_mcp_server(name).await,
         }
     }
 
@@ -885,6 +974,67 @@ ORDER BY name ASC
                 Ok((name, config))
             })
             .collect()
+    }
+
+    async fn get_global_mcp_server(&self, name: &str) -> anyhow::Result<Option<McpServerConfig>> {
+        let row = sqlx::query(
+            r#"
+SELECT config_json
+FROM global_mcp_servers
+WHERE name = $1
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| {
+            let config_json: serde_json::Value = row.try_get("config_json")?;
+            Ok(serde_json::from_value::<McpServerConfig>(config_json)?)
+        })
+        .transpose()
+    }
+
+    async fn upsert_global_mcp_server(
+        &self,
+        name: &str,
+        config: &McpServerConfig,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO global_mcp_servers (
+    name,
+    config_json,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
+    EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
+)
+ON CONFLICT (name) DO UPDATE
+SET config_json = EXCLUDED.config_json,
+    updated_at = EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
+            "#,
+        )
+        .bind(name)
+        .bind(serde_json::to_value(config)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_global_mcp_server(&self, name: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            r#"
+DELETE FROM global_mcp_servers
+WHERE name = $1
+            "#,
+        )
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     async fn replace_global_mcp_servers(
@@ -2397,6 +2547,109 @@ mod tests {
                 .expect("list servers")
                 .is_empty()
         );
+    }
+
+    #[tokio::test]
+    async fn global_mcp_server_upsert_and_delete_are_per_server() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let runtime = StateRuntime::init(chaos_home.clone(), "openai".to_string())
+            .await
+            .expect("init runtime");
+
+        let docs = McpServerConfig {
+            transport: chaos_sysctl::types::McpServerTransportConfig::Stdio {
+                command: "docs-server".to_string(),
+                args: vec!["--port".to_string(), "4000".to_string()],
+                env: None,
+                env_vars: Vec::new(),
+                cwd: None,
+            },
+            enabled: true,
+            required: false,
+            disabled_reason: None,
+            startup_timeout_sec: None,
+            tool_timeout_sec: None,
+            enabled_tools: None,
+            disabled_tools: None,
+            scopes: None,
+            oauth_resource: None,
+            r#type: None,
+            oauth: None,
+        };
+        let issues = McpServerConfig {
+            transport: chaos_sysctl::types::McpServerTransportConfig::StreamableHttp {
+                url: "https://example.com/issues".to_string(),
+                bearer_token: Some("secret-token".to_string()),
+                bearer_token_env_var: None,
+                http_headers: None,
+                env_http_headers: None,
+            },
+            enabled: true,
+            required: false,
+            disabled_reason: None,
+            startup_timeout_sec: None,
+            tool_timeout_sec: None,
+            enabled_tools: None,
+            disabled_tools: None,
+            scopes: None,
+            oauth_resource: None,
+            r#type: None,
+            oauth: None,
+        };
+
+        runtime
+            .upsert_global_mcp_server("docs", &docs)
+            .await
+            .expect("upsert docs");
+        runtime
+            .upsert_global_mcp_server("issues", &issues)
+            .await
+            .expect("upsert issues");
+
+        assert_eq!(
+            runtime
+                .get_global_mcp_server("docs")
+                .await
+                .expect("get docs"),
+            Some(docs.clone())
+        );
+        assert_eq!(
+            runtime
+                .get_global_mcp_server("issues")
+                .await
+                .expect("get issues"),
+            Some(issues.clone())
+        );
+
+        let removed = runtime
+            .delete_global_mcp_server("docs")
+            .await
+            .expect("delete docs");
+        assert!(removed);
+        assert_eq!(
+            runtime
+                .get_global_mcp_server("docs")
+                .await
+                .expect("get docs after delete"),
+            None
+        );
+        assert_eq!(
+            runtime
+                .get_global_mcp_server("issues")
+                .await
+                .expect("get issues after delete"),
+            Some(issues)
+        );
+
+        let removed = runtime
+            .delete_global_mcp_server("docs")
+            .await
+            .expect("delete docs again");
+        assert!(!removed);
     }
 
     #[tokio::test]

@@ -1,43 +1,41 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use chaos_kern::config::replace_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
+use chaos_kern::config::upsert_global_mcp_server;
 use core_test_support::responses;
 use core_test_support::test_chaos_fork::test_chaos_fork;
 use predicates::str::contains;
-use std::collections::BTreeMap;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exits_non_zero_when_required_mcp_server_fails_to_initialize() -> anyhow::Result<()> {
     let test = test_chaos_fork();
 
-    replace_global_mcp_servers(
+    upsert_global_mcp_server(
         test.home_path(),
-        &BTreeMap::from([(
-            "required_broken".to_string(),
-            McpServerConfig {
-                transport: McpServerTransportConfig::Stdio {
-                    command: "chaos-definitely-not-a-real-binary".to_string(),
-                    args: Vec::new(),
-                    env: None,
-                    env_vars: Vec::new(),
-                    cwd: None,
-                },
-                enabled: true,
-                required: true,
-                disabled_reason: None,
-                startup_timeout_sec: None,
-                tool_timeout_sec: None,
-                enabled_tools: None,
-                disabled_tools: None,
-                scopes: None,
-                oauth_resource: None,
-                r#type: None,
-                oauth: None,
+        "required_broken",
+        &McpServerConfig {
+            transport: McpServerTransportConfig::Stdio {
+                command: "chaos-definitely-not-a-real-binary".to_string(),
+                args: Vec::new(),
+                env: None,
+                env_vars: Vec::new(),
+                cwd: None,
             },
-        )]),
-    )?;
+            enabled: true,
+            required: true,
+            disabled_reason: None,
+            startup_timeout_sec: None,
+            tool_timeout_sec: None,
+            enabled_tools: None,
+            disabled_tools: None,
+            scopes: None,
+            oauth_resource: None,
+            r#type: None,
+            oauth: None,
+        },
+    )
+    .await?;
 
     let server = responses::start_mock_server().await;
     let body = responses::sse(vec![

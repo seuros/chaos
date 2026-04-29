@@ -62,14 +62,20 @@ impl SuspendContext {
     ///   otherwise record `RealignInline`.
     /// - Update the cached inline cursor row so suspend can place the cursor meaningfully.
     /// - Trigger SIGTSTP so the process can be resumed and continue drawing with the saved state.
-    pub fn suspend(&self, alt_screen_active: &Arc<AtomicBool>) -> Result<()> {
+    pub fn suspend(
+        &self,
+        alt_screen_active: &Arc<AtomicBool>,
+        mouse_capture_active: &Arc<AtomicBool>,
+    ) -> Result<()> {
         if alt_screen_active.load(Ordering::Relaxed) {
             // Leave alt-screen so the terminal returns to the normal buffer while suspended; also turn off alt-scroll.
             let _ = execute!(stdout(), DisableAlternateScroll);
             let _ = execute!(stdout(), LeaveAlternateScreen);
             self.set_resume_action(ResumeAction::RestoreAlt);
         } else {
-            self.set_resume_action(ResumeAction::RealignInline);
+            self.set_resume_action(ResumeAction::RealignInline {
+                restore_mouse_capture: mouse_capture_active.load(Ordering::Relaxed),
+            });
         }
         let y = self.suspend_cursor_y.load(Ordering::Relaxed);
         let _ = execute!(stdout(), MoveTo(0, y), Show);
@@ -87,12 +93,17 @@ impl SuspendContext {
     ) -> Option<PreparedResumeAction> {
         let action = self.take_resume_action()?;
         match action {
-            ResumeAction::RealignInline => {
+            ResumeAction::RealignInline {
+                restore_mouse_capture,
+            } => {
                 let cursor_pos = terminal
                     .get_cursor_position()
                     .unwrap_or(terminal.last_known_cursor_pos);
                 let viewport = Rect::new(0, cursor_pos.y, 0, 0);
-                Some(PreparedResumeAction::RealignViewport(viewport))
+                Some(PreparedResumeAction::RealignViewport {
+                    area: viewport,
+                    restore_mouse_capture,
+                })
             }
             ResumeAction::RestoreAlt => {
                 if let Ok(Position { y, .. }) = terminal.get_cursor_position()
@@ -137,7 +148,10 @@ impl SuspendContext {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResumeAction {
     /// Shift the inline viewport to keep the cursor anchored after resume.
-    RealignInline,
+    RealignInline {
+        /// Re-enable mouse capture after resume for inline overlays rendered without alt-screen.
+        restore_mouse_capture: bool,
+    },
     /// Re-enter the alt screen and restore the overlay UI.
     RestoreAlt,
 }
@@ -150,14 +164,24 @@ pub enum PreparedResumeAction {
     /// Re-enter the alt screen and reset the viewport to the terminal dimensions.
     RestoreAltScreen,
     /// Apply a viewport shift to keep the inline cursor position stable.
-    RealignViewport(Rect),
+    RealignViewport {
+        area: Rect,
+        /// Re-enable mouse capture after realigning an inline overlay.
+        restore_mouse_capture: bool,
+    },
 }
 
 impl PreparedResumeAction {
     pub fn apply(self, terminal: &mut Terminal) -> Result<()> {
         match self {
-            PreparedResumeAction::RealignViewport(area) => {
+            PreparedResumeAction::RealignViewport {
+                area,
+                restore_mouse_capture,
+            } => {
                 terminal.set_viewport_area(area);
+                if restore_mouse_capture {
+                    execute!(terminal.backend_mut(), EnableMouseCapture)?;
+                }
             }
             PreparedResumeAction::RestoreAltScreen => {
                 execute!(terminal.backend_mut(), EnterAlternateScreen)?;

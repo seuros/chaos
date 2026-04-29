@@ -199,11 +199,14 @@ pub struct Tui {
     suspend_context: SuspendContext,
     // True when overlay alt-screen UI is active
     alt_screen_active: Arc<AtomicBool>,
+    // True while overlay mouse capture is active, even when the overlay is rendered inline.
+    mouse_capture_active: Arc<AtomicBool>,
     // True when terminal/tab is focused; updated internally from crossterm events
     terminal_focused: Arc<AtomicBool>,
     enhanced_keys_supported: bool,
     notification_backend: Option<DesktopNotificationBackend>,
-    // When false, enter_alt_screen() becomes a no-op (for Zellij scrollback support)
+    // When false, overlays render inline instead of entering the alternate screen
+    // (for Zellij scrollback support).
     alt_screen_enabled: bool,
     /// Number of rows reserved at the top of the screen for a sticky top bar.
     /// These rows are never scrolled and the viewport starts below them.
@@ -231,6 +234,7 @@ impl Tui {
             alt_saved_viewport: None,
             suspend_context: SuspendContext::new(),
             alt_screen_active: Arc::new(AtomicBool::new(false)),
+            mouse_capture_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
             enhanced_keys_supported,
             notification_backend: Some(detect_backend(NotificationMethod::default())),
@@ -239,7 +243,8 @@ impl Tui {
         }
     }
 
-    /// Set whether alternate screen is enabled. When false, enter_alt_screen() becomes a no-op.
+    /// Set whether alternate screen is enabled. When false, overlays render inline but still
+    /// enter overlay-specific terminal modes such as mouse capture.
     pub fn set_alt_screen_enabled(&mut self, enabled: bool) {
         self.alt_screen_enabled = enabled;
     }
@@ -286,8 +291,11 @@ impl Tui {
 
         // Leave alt screen if active to avoid conflicts with external program `f`.
         let was_alt_screen = self.is_alt_screen_active();
+        let was_mouse_capture = self.mouse_capture_active.load(Ordering::Relaxed);
         if was_alt_screen {
             let _ = self.leave_alt_screen();
+        } else if was_mouse_capture {
+            self.disable_mouse_capture();
         }
 
         if let Err(err) = mode.restore() {
@@ -304,6 +312,8 @@ impl Tui {
 
         if was_alt_screen {
             let _ = self.enter_alt_screen();
+        } else if was_mouse_capture {
+            self.enable_mouse_capture();
         }
 
         self.resume_events();
@@ -344,21 +354,48 @@ impl Tui {
             self.terminal_focused.clone(),
             self.suspend_context.clone(),
             self.alt_screen_active.clone(),
+            self.mouse_capture_active.clone(),
         );
         Box::pin(stream)
+    }
+
+    fn enable_mouse_capture(&mut self) {
+        match execute!(self.terminal.backend_mut(), EnableMouseCapture) {
+            Ok(()) => {
+                self.mouse_capture_active.store(true, Ordering::Relaxed);
+            }
+            Err(err) => {
+                tracing::warn!("failed to enable mouse capture: {err}");
+            }
+        }
+    }
+
+    fn disable_mouse_capture(&mut self) {
+        match execute!(self.terminal.backend_mut(), DisableMouseCapture) {
+            Ok(()) => {
+                self.mouse_capture_active.store(false, Ordering::Relaxed);
+            }
+            Err(err) => {
+                tracing::warn!("failed to disable mouse capture: {err}");
+            }
+        }
     }
 
     /// Enter alternate screen and expand the viewport to full terminal size, saving the current
     /// inline viewport for restoration when leaving.
     pub fn enter_alt_screen(&mut self) -> Result<()> {
         if !self.alt_screen_enabled {
+            // Zellij auto-mode keeps us in the normal buffer so scrollback remains available.
+            // Still enable mouse capture while overlays are open so wheel events reach pager
+            // widgets instead of being swallowed by the multiplexer.
+            self.enable_mouse_capture();
             return Ok(());
         }
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
-        // Only capture mouse while an alternate-screen overlay is active. In the
-        // inline transcript view we preserve terminal scrollback, so leaving mouse
-        // capture off allows the terminal's native wheel scrolling to keep working.
-        let _ = execute!(self.terminal.backend_mut(), EnableMouseCapture);
+        // Capture mouse only while an overlay is active. Inline overlays still
+        // need this so Zellij can forward wheel events to the pager; outside of
+        // overlays we leave native scrollback alone.
+        self.enable_mouse_capture();
         // Enable "alternate scroll" so terminals may translate wheel to arrows
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
         if let Ok(size) = self.terminal.size() {
@@ -378,11 +415,12 @@ impl Tui {
     /// Leave alternate screen and restore the previously saved inline viewport, if any.
     pub fn leave_alt_screen(&mut self) -> Result<()> {
         if !self.alt_screen_enabled {
+            self.disable_mouse_capture();
             return Ok(());
         }
         // Disable alternate scroll when leaving alt-screen
         let _ = execute!(self.terminal.backend_mut(), DisableAlternateScroll);
-        let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
+        self.disable_mouse_capture();
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         if let Some(saved) = self.alt_saved_viewport.take() {
             self.terminal.set_viewport_area(saved);

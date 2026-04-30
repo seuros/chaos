@@ -29,8 +29,7 @@ ChaOS does not define your profession, persona, or task domain. The active sessi
 
 # Tool conventions
 
-- Prefer `rg` and `rg --files` for search.
-- Avoid using Python for simple file reads, writes, or large text dumps when shell tools or `apply_patch` are sufficient.
+- Use the narrowest available capability for the task: FreeChaOS tools for inspection, `apply_patch` for edits, shell commands for execution, and scripting only when logic or automation is genuinely needed.
 
 # Output
 

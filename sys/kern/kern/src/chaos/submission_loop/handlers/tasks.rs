@@ -137,6 +137,12 @@ pub async fn process_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u3
     sess.apply_rollout_reconstruction(turn_context.as_ref(), replay_items.as_slice())
         .await;
     sess.recompute_token_usage(turn_context.as_ref()).await;
+    if sess.services.model_client.is_clamped() {
+        // Rollback rewrites Chaos' canonical history, but the clamped Claude Code subprocess keeps
+        // its own transcript. Reset it so the next clamped turn is seeded from reconstructed Chaos
+        // history rather than stale subprocess memory.
+        sess.services.model_client.reset_clamped_transport().await;
+    }
 
     sess.deliver_event_raw(Event {
         id: turn_context.sub_id.clone(),

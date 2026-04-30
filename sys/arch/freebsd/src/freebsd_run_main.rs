@@ -10,9 +10,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::capsicum::apply_sandbox_policy_to_current_thread;
-use alcatraz_base::sandbox_policy::{
-    EffectiveSandboxPolicies, ResolveSandboxPoliciesError, resolve_sandbox_policies,
-};
+use alcatraz_base::sandbox_policy::{EffectiveSandboxPolicies, resolve_sandbox_policies};
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SocketPolicy;
 use chaos_ipc::protocol::VfsPolicy;
@@ -259,6 +257,7 @@ fn c_string_from_bytes(value: Vec<u8>, field: &str) -> CString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alcatraz_base::sandbox_policy::ResolveSandboxPoliciesError;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SocketPolicy;
     use chaos_ipc::protocol::VfsPolicy;

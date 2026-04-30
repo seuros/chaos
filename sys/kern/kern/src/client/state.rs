@@ -160,6 +160,24 @@ impl ModelClient {
         self.state.clamped.load(Ordering::Relaxed)
     }
 
+    /// Drop the current clamped Claude Code subprocess so the next clamped turn starts fresh.
+    ///
+    /// This is needed after session-history rewrites (for example process rollback): Chaos updates
+    /// its own in-memory history, but the persistent Claude Code subprocess also has an internal
+    /// transcript. Resetting the subprocess makes the next turn send a full prompt reconstructed
+    /// from Chaos history instead of appending to stale clamp-side history.
+    pub async fn reset_clamped_transport(&self) {
+        let transport = {
+            let mut guard = self.state.clamp_transport.lock().await;
+            guard.take()
+        };
+        if let Some(transport) = transport
+            && let Err(err) = transport.shutdown().await
+        {
+            warn!("failed to shut down clamped transport during reset: {err}");
+        }
+    }
+
     /// Get info about the clamped Claude Code subprocess (if running).
     pub async fn clamp_info(&self) -> Option<chaos_clamp::ClampInfo> {
         let guard = self.state.clamp_transport.lock().await;

@@ -9,7 +9,7 @@ pub use chaos_sysctl::features::*;
 
 use crate::config::ConfigToml;
 use crate::config::profile::ConfigProfile;
-use chaos_syslog::SessionTelemetry;
+use chaos_snitch::SessionTelemetry;
 
 /// Build a `Features` set from a parsed config and active profile.
 pub fn features_from_config(

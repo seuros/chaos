@@ -31,7 +31,7 @@ chaos-highlight = { workspace = true, optional = true }
 chaos-kern = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-sh = { workspace = true }
-chaos-syslog = { workspace = true }
+chaos-snitch = { workspace = true }
 chaos-git = { workspace = true }
 chaos-session = { workspace = true }
 chaos-chassis = { workspace = true }

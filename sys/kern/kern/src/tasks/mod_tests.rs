@@ -1,9 +1,9 @@
 use super::emit_turn_network_proxy_metric;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::metrics::MetricsClient;
-use chaos_syslog::metrics::MetricsConfig;
-use chaos_syslog::metrics::names::TURN_NETWORK_PROXY_METRIC;
+use chaos_snitch::SessionTelemetry;
+use chaos_snitch::metrics::MetricsClient;
+use chaos_snitch::metrics::MetricsConfig;
+use chaos_snitch::metrics::names::TURN_NETWORK_PROXY_METRIC;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use rama::telemetry::opentelemetry::KeyValue;

@@ -79,7 +79,6 @@ members = [
     "lib/libmisc/init",
     "lib/libmisc/session",
     "lib/libmisc/sysinfo",
-    "lib/libtrace/syslog",
     "lib/libtrace/snitch",
     "lib/libui",
     "lib/libui/chassis",
@@ -199,8 +198,7 @@ chaos-minions = { path = "lib/libmisc/minions" }
 chaos-coreboot = { path = "lib/libmisc/init" }
 chaos-session = { path = "lib/libmisc/session" }
 chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
-chaos-syslog = { path = "lib/libtrace/syslog" }
-    chaos-snitch = { path = "lib/libtrace/snitch" }
+chaos-snitch = { path = "lib/libtrace/snitch" }
     libui = { path = "lib/libui" }
     chaos-chassis = { path = "lib/libui/chassis" }
     chaos-termcap = { path = "lib/libui/termcap" }

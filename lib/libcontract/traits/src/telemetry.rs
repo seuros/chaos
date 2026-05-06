@@ -1,6 +1,6 @@
 //! Telemetry access trait — exposes session-scoped metrics and tracing.
 
-pub use chaos_syslog::SessionTelemetry;
+pub use chaos_snitch::SessionTelemetry;
 
 /// Provides access to the session-scoped telemetry handle.
 pub trait TelemetrySource: Send + Sync {

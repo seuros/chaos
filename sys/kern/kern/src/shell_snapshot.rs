@@ -16,7 +16,7 @@ use anyhow::bail;
 use chaos_ipc::ProcessId;
 use chaos_journald::JournalStore;
 use chaos_journald::SqliteJournalStore;
-use chaos_syslog::SessionTelemetry;
+use chaos_snitch::SessionTelemetry;
 use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::watch;

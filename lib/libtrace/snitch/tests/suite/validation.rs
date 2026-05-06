@@ -1,8 +1,8 @@
 use crate::harness::build_metrics_with_defaults;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_syslog::metrics::MetricsConfig;
-use chaos_syslog::metrics::MetricsError;
-use chaos_syslog::metrics::Result;
+use chaos_snitch::metrics::MetricsConfig;
+use chaos_snitch::metrics::MetricsError;
+use chaos_snitch::metrics::Result;
 use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 
 // Ensures invalid tag components are rejected during config build.

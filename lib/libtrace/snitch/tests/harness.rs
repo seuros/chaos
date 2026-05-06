@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_syslog::metrics::MetricsClient;
-use chaos_syslog::metrics::MetricsConfig;
-use chaos_syslog::metrics::Result;
+use chaos_snitch::metrics::MetricsClient;
+use chaos_snitch::metrics::MetricsConfig;
+use chaos_snitch::metrics::Result;
 use rama::telemetry::opentelemetry::KeyValue;
 use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 use rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics;

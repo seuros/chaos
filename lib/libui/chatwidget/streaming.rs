@@ -10,7 +10,7 @@ use std::time::Instant;
 use chaos_ipc::items::AgentMessageContent;
 use chaos_ipc::items::AgentMessageItem;
 use chaos_ipc::models::MessagePhase;
-use chaos_syslog::RuntimeMetricsSummary;
+use chaos_snitch::RuntimeMetricsSummary;
 use ratatui::style::Stylize;
 
 use crate::app_event::AppEvent;

@@ -4,7 +4,7 @@ use crate::harness::counter_value;
 use crate::harness::histogram_attributes;
 use crate::harness::histogram_data;
 use crate::harness::latest_metrics;
-use chaos_syslog::metrics::Result;
+use chaos_snitch::metrics::Result;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 

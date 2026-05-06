@@ -10,8 +10,8 @@ use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::protocol::Submission;
 use chaos_ipc::protocol::W3cTraceContext;
 use chaos_ipc::user_input::UserInput;
-use chaos_syslog::current_span_w3c_trace_context;
-use chaos_syslog::set_parent_from_w3c_trace_context;
+use chaos_snitch::current_span_w3c_trace_context;
+use chaos_snitch::set_parent_from_w3c_trace_context;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use futures::future::Shared;
@@ -95,7 +95,7 @@ impl Chaos {
     pub(crate) async fn spawn(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {
         let parent_trace = match args.parent_trace {
             Some(trace) => {
-                if chaos_syslog::context_from_w3c_trace_context(&trace).is_some() {
+                if chaos_snitch::context_from_w3c_trace_context(&trace).is_some() {
                     Some(trace)
                 } else {
                     warn!("ignoring invalid thread spawn trace carrier");

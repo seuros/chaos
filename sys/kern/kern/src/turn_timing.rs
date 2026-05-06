@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ResponseItem;
-use chaos_syslog::metrics::names::TURN_TTFM_DURATION_METRIC;
-use chaos_syslog::metrics::names::TURN_TTFT_DURATION_METRIC;
+use chaos_snitch::metrics::names::TURN_TTFM_DURATION_METRIC;
+use chaos_snitch::metrics::names::TURN_TTFT_DURATION_METRIC;
 use tokio::sync::Mutex;
 
 use crate::ResponseEvent;

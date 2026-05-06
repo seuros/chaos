@@ -22,8 +22,8 @@ use chaos_ipc::protocol::TurnContextNetworkItem;
 use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 
 use chaos_ready::ReadinessFlag;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::current_span_trace_id;
+use chaos_snitch::SessionTelemetry;
+use chaos_snitch::current_span_trace_id;
 
 use crate::AuthManager;
 use crate::ModelProviderInfo;

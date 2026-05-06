@@ -12,7 +12,7 @@ use base64::Engine;
 use chaos_ipc::models::local_image_label_text;
 use chaos_ipc::protocol::McpInvocation;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
-use chaos_syslog::RuntimeMetricsSummary;
+use chaos_snitch::RuntimeMetricsSummary;
 use image::DynamicImage;
 use image::ImageReader;
 use ratatui::prelude::*;

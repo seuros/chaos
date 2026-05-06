@@ -144,7 +144,7 @@ fn resolve_bearer_token(
 }
 
 fn emit_duration(metric: &str, duration: Duration, tags: &[(&str, &str)]) {
-    if let Some(metrics) = chaos_syslog::metrics::global() {
+    if let Some(metrics) = chaos_snitch::metrics::global() {
         let _ = metrics.record_duration(metric, duration, tags);
     }
 }

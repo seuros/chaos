@@ -40,11 +40,11 @@ use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::user_input::UserInput;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::metrics::names::TURN_E2E_DURATION_METRIC;
-use chaos_syslog::metrics::names::TURN_NETWORK_PROXY_METRIC;
-use chaos_syslog::metrics::names::TURN_TOKEN_USAGE_METRIC;
-use chaos_syslog::metrics::names::TURN_TOOL_CALL_METRIC;
+use chaos_snitch::SessionTelemetry;
+use chaos_snitch::metrics::names::TURN_E2E_DURATION_METRIC;
+use chaos_snitch::metrics::names::TURN_NETWORK_PROXY_METRIC;
+use chaos_snitch::metrics::names::TURN_TOKEN_USAGE_METRIC;
+use chaos_snitch::metrics::names::TURN_TOOL_CALL_METRIC;
 
 pub(crate) use compact::CompactTask;
 pub(crate) use ghost_snapshot::GhostSnapshotTask;

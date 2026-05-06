@@ -1,5 +1,5 @@
 use crate::live_wrap::take_prefix_by_width;
-use chaos_syslog::RuntimeMetricsSummary;
+use chaos_snitch::RuntimeMetricsSummary;
 use ratatui::prelude::*;
 use ratatui::style::Stylize;
 

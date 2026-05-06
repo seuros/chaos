@@ -31,5 +31,5 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
-chaos-syslog = { workspace = true }
+chaos-snitch = { workspace = true }
 regex-lite = { workspace = true }

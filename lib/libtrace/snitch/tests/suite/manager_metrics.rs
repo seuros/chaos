@@ -4,9 +4,9 @@ use crate::harness::latest_metrics;
 use chaos_ipc::ProcessId;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::SessionSource;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::TelemetryAuthMode;
-use chaos_syslog::metrics::Result;
+use chaos_snitch::SessionTelemetry;
+use chaos_snitch::TelemetryAuthMode;
+use chaos_snitch::metrics::Result;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 

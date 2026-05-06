@@ -269,7 +269,7 @@ pub(crate) fn submission_dispatch_span(sub: &Submission) -> tracing::Span {
         chaos.op = op_name
     );
     if let Some(trace) = sub.trace.as_ref()
-        && !chaos_syslog::set_parent_from_w3c_trace_context(&dispatch_span, trace)
+        && !chaos_snitch::set_parent_from_w3c_trace_context(&dispatch_span, trace)
     {
         warn!(
             submission.id = sub.id.as_str(),
@@ -293,7 +293,7 @@ pub(super) async fn spawn_review_thread(
     use chaos_ipc::config_types::WebSearchMode;
     use chaos_ipc::protocol::ReviewRequest;
 
-    use chaos_syslog::current_span_trace_id;
+    use chaos_snitch::current_span_trace_id;
 
     let model = config
         .review_model

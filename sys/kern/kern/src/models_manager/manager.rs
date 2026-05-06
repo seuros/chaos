@@ -26,7 +26,7 @@ use chaos_parrot::ModelsClient;
 use chaos_parrot::RamaTransport;
 use chaos_parrot::RequestTelemetry;
 use chaos_parrot::TransportError;
-use chaos_syslog::TelemetryAuthMode;
+use chaos_snitch::TelemetryAuthMode;
 use chrono_machines::ExponentialBackoff;
 use chrono_machines::backoff::BackoffStrategy;
 use http::HeaderMap;
@@ -77,7 +77,7 @@ impl RequestTelemetry for ModelsRequestTelemetry {
             .unwrap_or_default();
         let status = status.map(|status| status.as_u16());
         tracing::event!(
-            target: "chaos_syslog.log_only",
+            target: "chaos_snitch.log_only",
             tracing::Level::INFO,
             event.name = "chaos.api_request",
             duration_ms = %duration.as_millis(),
@@ -95,7 +95,7 @@ impl RequestTelemetry for ModelsRequestTelemetry {
             auth.mode = self.auth_mode.as_deref(),
         );
         tracing::event!(
-            target: "chaos_syslog.trace_safe",
+            target: "chaos_snitch.trace_safe",
             tracing::Level::INFO,
             event.name = "chaos.api_request",
             duration_ms = %duration.as_millis(),
@@ -442,7 +442,7 @@ impl ModelsManager {
         workflow: &mut ModelDiscoveryWorkflow,
     ) -> CoreResult<()> {
         let _timer =
-            chaos_syslog::start_global_timer("chaos.remote_models.fetch_update.duration_ms", &[]);
+            chaos_snitch::start_global_timer("chaos.remote_models.fetch_update.duration_ms", &[]);
 
         let backoff = ExponentialBackoff::new()
             .max_attempts(3)
@@ -696,7 +696,7 @@ impl ModelsManager {
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn load_fresh_cache(&self) -> Option<ModelsCache> {
         let _timer =
-            chaos_syslog::start_global_timer("chaos.remote_models.load_cache.duration_ms", &[]);
+            chaos_snitch::start_global_timer("chaos.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::models_manager::client_version_to_whole();
         info!(client_version, "models cache: evaluating cache eligibility");
         let cache = match self

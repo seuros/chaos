@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use chaos_ipc::api::AuthMode as ApiAuthMode;
-use chaos_syslog::TelemetryAuthMode;
+use chaos_snitch::TelemetryAuthMode;
 
 pub use crate::auth::storage::AuthCredentialsStoreMode;
 pub use crate::auth::storage::AuthDotJson;

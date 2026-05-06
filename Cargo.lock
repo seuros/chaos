@@ -1275,7 +1275,6 @@ dependencies = [
  "chaos-realpath",
  "chaos-session",
  "chaos-snitch",
- "chaos-syslog",
  "chaos-termcap",
  "chaos-which",
  "clap",
@@ -1447,7 +1446,7 @@ dependencies = [
  "chaos-proc",
  "chaos-pwd",
  "chaos-realpath",
- "chaos-syslog",
+ "chaos-snitch",
  "chaos-uptime",
  "chaos-which",
  "clap",
@@ -1636,9 +1635,9 @@ dependencies = [
  "chaos-selinux",
  "chaos-services",
  "chaos-sh",
+ "chaos-snitch",
  "chaos-storage",
  "chaos-sysctl",
- "chaos-syslog",
  "chaos-tmpfs",
  "chaos-traits",
  "chaos-vault",
@@ -1771,8 +1770,8 @@ dependencies = [
  "chaos-concierge",
  "chaos-epoll",
  "chaos-ipc",
+ "chaos-snitch",
  "chaos-sysctl",
- "chaos-syslog",
  "chaos-traits",
  "futures",
  "mcp-guest",
@@ -2112,11 +2111,29 @@ dependencies = [
 name = "chaos-snitch"
 version = "47.0.0"
 dependencies = [
+ "chaos-ipc",
+ "chaos-parrot",
  "chaos-proc",
+ "chaos-realpath",
+ "chaos-wchar",
+ "gethostname",
+ "http",
  "jiff",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-http",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "os_info",
+ "pretty_assertions",
+ "rama",
+ "serde",
+ "serde_json",
+ "strum_macros 0.28.0",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-appender",
+ "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
 ]
@@ -2174,34 +2191,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chaos-syslog"
-version = "47.0.0"
-dependencies = [
- "chaos-ipc",
- "chaos-parrot",
- "chaos-realpath",
- "chaos-wchar",
- "gethostname",
- "http",
- "jiff",
- "opentelemetry-appender-tracing",
- "opentelemetry-http",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "os_info",
- "pretty_assertions",
- "rama",
- "serde",
- "serde_json",
- "strum_macros 0.28.0",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "chaos-termcap"
 version = "47.0.0"
 dependencies = [
@@ -2226,8 +2215,8 @@ dependencies = [
  "anyhow",
  "async-channel",
  "chaos-ipc",
+ "chaos-snitch",
  "chaos-sysctl",
- "chaos-syslog",
  "inventory",
  "mcp-host",
  "serde",
@@ -6688,9 +6677,9 @@ dependencies = [
  "chaos-services",
  "chaos-session",
  "chaos-sh",
+ "chaos-snitch",
  "chaos-sudoers",
  "chaos-sysinfo",
- "chaos-syslog",
  "chaos-termcap",
  "chaos-uptime",
  "chaos-wchar",

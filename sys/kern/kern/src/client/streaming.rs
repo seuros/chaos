@@ -29,7 +29,7 @@ use chaos_parrot::anthropic::AnthropicAuth;
 use chaos_parrot::chat_completions::ChatCompletionsAdapter;
 use chaos_parrot::openai::OpenAiAdapter;
 use chaos_parrot::requests::responses::Compression;
-use chaos_syslog::SessionTelemetry;
+use chaos_snitch::SessionTelemetry;
 use futures::StreamExt;
 use http::HeaderMap as ApiHeaderMap;
 use http::HeaderValue;

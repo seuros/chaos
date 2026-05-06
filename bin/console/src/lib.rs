@@ -101,7 +101,7 @@ use libui::tool_badges;
 use libui::tui;
 
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
-chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
+chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_snitch=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
 

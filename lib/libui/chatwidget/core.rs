@@ -690,7 +690,7 @@ pub(super) fn hook_event_label(event_name: chaos_ipc::protocol::HookEventName) -
     }
 }
 
-pub(super) fn has_websocket_timing_metrics(summary: chaos_syslog::RuntimeMetricsSummary) -> bool {
+pub(super) fn has_websocket_timing_metrics(summary: chaos_snitch::RuntimeMetricsSummary) -> bool {
     summary.responses_api_overhead_ms > 0
         || summary.responses_api_inference_time_ms > 0
         || summary.responses_api_engine_iapi_ttft_ms > 0

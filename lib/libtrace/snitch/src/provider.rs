@@ -431,18 +431,18 @@ mod tests {
 
     #[test]
     fn log_export_target_excludes_trace_safe_events() {
-        assert!(is_log_export_target("chaos_syslog.log_only"));
-        assert!(is_log_export_target("chaos_syslog.pf"));
-        assert!(!is_log_export_target("chaos_syslog.trace_safe"));
-        assert!(!is_log_export_target("chaos_syslog.trace_safe.debug"));
+        assert!(is_log_export_target("chaos_snitch.log_only"));
+        assert!(is_log_export_target("chaos_snitch.pf"));
+        assert!(!is_log_export_target("chaos_snitch.trace_safe"));
+        assert!(!is_log_export_target("chaos_snitch.trace_safe.debug"));
     }
 
     #[test]
     fn trace_export_target_only_includes_trace_safe_prefix() {
-        assert!(is_trace_safe_target("chaos_syslog.trace_safe"));
-        assert!(is_trace_safe_target("chaos_syslog.trace_safe.summary"));
-        assert!(!is_trace_safe_target("chaos_syslog.log_only"));
-        assert!(!is_trace_safe_target("chaos_syslog.pf"));
+        assert!(is_trace_safe_target("chaos_snitch.trace_safe"));
+        assert!(is_trace_safe_target("chaos_snitch.trace_safe.summary"));
+        assert!(!is_trace_safe_target("chaos_snitch.log_only"));
+        assert!(!is_trace_safe_target("chaos_snitch.pf"));
     }
 
     fn test_otel_settings() -> OtelSettings {

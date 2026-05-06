@@ -38,8 +38,8 @@ use chaos_kern::git_info::get_git_repo_root;
 use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
-use chaos_syslog::set_parent_from_context;
-use chaos_syslog::traceparent_context_from_env;
+use chaos_snitch::set_parent_from_context;
+use chaos_snitch::traceparent_context_from_env;
 pub use cli::Cli;
 pub use cli::Command;
 pub use cli::ReviewArgs;
@@ -74,7 +74,7 @@ use chaos_kern::default_client::set_default_originator;
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
-chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
+chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_snitch=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug";
 
@@ -963,7 +963,7 @@ fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_syslog::set_parent_from_w3c_trace_context;
+    use chaos_snitch::set_parent_from_w3c_trace_context;
     use pretty_assertions::assert_eq;
     use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
     use rama::telemetry::opentelemetry::trace::TraceContextExt;

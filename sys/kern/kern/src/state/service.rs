@@ -17,7 +17,7 @@ use crate::tools::sandboxing::ApprovalStore;
 use crate::unified_exec::UnifiedExecProcessManager;
 use chaos_dtrace::Hooks;
 use chaos_mcp_runtime::manager::McpConnectionManager;
-use chaos_syslog::SessionTelemetry;
+use chaos_snitch::SessionTelemetry;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::sync::watch;

@@ -27,7 +27,7 @@ use crate::tools::sandboxing::default_exec_approval_requirement;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::NetworkPolicyRuleAction;
 use chaos_ipc::protocol::ReviewDecision;
-use chaos_syslog::ToolDecisionSource;
+use chaos_snitch::ToolDecisionSource;
 
 pub(crate) struct ToolOrchestrator {
     sandbox: SandboxManager,

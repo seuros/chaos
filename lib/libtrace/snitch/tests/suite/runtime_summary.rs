@@ -1,11 +1,11 @@
 use crate::harness::build_runtime_metrics_with_defaults;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
-use chaos_syslog::RuntimeMetricTotals;
-use chaos_syslog::RuntimeMetricsSummary;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::TelemetryAuthMode;
-use chaos_syslog::metrics::Result;
+use chaos_snitch::RuntimeMetricTotals;
+use chaos_snitch::RuntimeMetricsSummary;
+use chaos_snitch::SessionTelemetry;
+use chaos_snitch::TelemetryAuthMode;
+use chaos_snitch::metrics::Result;
 use rama::http::sse::Event as StreamEvent;
 use std::time::Duration;
 

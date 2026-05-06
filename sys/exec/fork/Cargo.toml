@@ -18,7 +18,7 @@ clap = { workspace = true, features = ["derive"] }
 chaos-argv = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-pwd = { workspace = true }
-chaos-syslog = { workspace = true }
+chaos-snitch = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-getopt = { workspace = true }

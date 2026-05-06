@@ -42,7 +42,7 @@ use chaos_parrot::RequestTelemetry;
 use chaos_parrot::ResponsesOptions as ApiResponsesOptions;
 use chaos_parrot::SseTelemetry;
 use chaos_parrot::TransportError;
-use chaos_syslog::SessionTelemetry;
+use chaos_snitch::SessionTelemetry;
 use http::StatusCode as HttpStatusCode;
 use rama::error::BoxError;
 use rama::http::sse::Event;

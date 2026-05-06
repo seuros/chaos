@@ -126,7 +126,7 @@ impl ChatWidget {
         self.plan_item_active = false;
         self.adaptive_chunking.reset();
         self.plan_stream_controller = None;
-        self.turn_runtime_metrics = chaos_syslog::RuntimeMetricsSummary::default();
+        self.turn_runtime_metrics = chaos_snitch::RuntimeMetricsSummary::default();
         self.session_telemetry.reset_runtime_metrics();
         self.bottom_pane.clear_quit_shortcut_hint();
         self.quit_shortcut_expires_at = None;
@@ -179,7 +179,7 @@ impl ChatWidget {
                     runtime_metrics,
                 ));
             }
-            self.turn_runtime_metrics = chaos_syslog::RuntimeMetricsSummary::default();
+            self.turn_runtime_metrics = chaos_snitch::RuntimeMetricsSummary::default();
             self.needs_final_message_separator = false;
             self.had_work_activity = false;
             self.request_status_line_branch_refresh();

@@ -79,8 +79,8 @@ mod tests {
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::types::McpServerConfig;
     use chaos_kern::config::types::McpServerTransportConfig;
-    use chaos_syslog::RuntimeMetricTotals;
-    use chaos_syslog::RuntimeMetricsSummary;
+    use chaos_snitch::RuntimeMetricTotals;
+    use chaos_snitch::RuntimeMetricsSummary;
 
     use crate::render::renderable::Renderable;
     use chaos_ipc::protocol::McpInvocation;

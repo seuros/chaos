@@ -170,11 +170,11 @@ pub(crate) use chaos_ipc::protocol::TurnAbortReason;
 #[cfg(test)]
 pub(crate) use chaos_ipc::protocol::TurnContextItem;
 #[cfg(test)]
-pub(crate) use chaos_syslog::SessionTelemetry;
+pub(crate) use chaos_snitch::SessionTelemetry;
 #[cfg(test)]
-pub(crate) use chaos_syslog::current_span_w3c_trace_context;
+pub(crate) use chaos_snitch::current_span_w3c_trace_context;
 #[cfg(test)]
-pub(crate) use chaos_syslog::set_parent_from_w3c_trace_context;
+pub(crate) use chaos_snitch::set_parent_from_w3c_trace_context;
 #[cfg(test)]
 pub(crate) use response_parsing::AssistantMessageStreamParsers;
 #[cfg(test)]

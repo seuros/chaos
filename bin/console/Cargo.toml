@@ -32,7 +32,7 @@ chaos-session = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-pam = { workspace = true }
 chaos-pwd = { workspace = true }
-chaos-syslog = { workspace = true }
+chaos-snitch = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-proc = { workspace = true }
 chaos-realpath = { workspace = true }
@@ -73,7 +73,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 unicode-width = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
-chaos-snitch = { workspace = true }
 libui = { workspace = true }
 
 

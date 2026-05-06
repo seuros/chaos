@@ -52,7 +52,7 @@ chaos-scm = { workspace = true }
 chaos-dtrace = { workspace = true }
 chaos-keyring = { workspace = true }
 chaos-pf = { workspace = true }
-chaos-syslog = { workspace = true }
+chaos-snitch = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-mcp-runtime = { workspace = true }
 # Used by test_stdio_server binary only; server-side MCP SDK for test fixture
@@ -150,7 +150,7 @@ chaos-model-catalog = { workspace = true, features = ["test-support"] }
 assert_matches = { workspace = true }
 keyring-core = { workspace = true }
 chaos-argv = { workspace = true }
-chaos-syslog = { workspace = true, features = [
+chaos-snitch = { workspace = true, features = [
     "disable-default-metrics-exporter",
 ] }
 chaos-check = { workspace = true }

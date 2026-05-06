@@ -8,7 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-const AUDIT_TARGET: &str = "chaos_syslog.pf";
+const AUDIT_TARGET: &str = "chaos_snitch.pf";
 const POLICY_DECISION_EVENT_NAME: &str = "chaos.pf.policy_decision";
 const POLICY_SCOPE_DOMAIN: &str = "domain";
 const POLICY_SCOPE_NON_DOMAIN: &str = "non_domain";
@@ -653,7 +653,7 @@ mod tests {
         let event = find_event_by_name(&events, POLICY_DECISION_EVENT_NAME)
             .expect("expected policy decision audit event");
         assert_eq!(event.target, AUDIT_TARGET);
-        assert!(event.target.starts_with("chaos_syslog."));
+        assert!(event.target.starts_with("chaos_snitch."));
         assert_eq!(
             event.field("network.policy.scope"),
             Some(POLICY_SCOPE_DOMAIN)

@@ -65,7 +65,7 @@ use chaos_pf::NetworkProxyConfig;
 use chaos_selinux::Decision;
 use chaos_selinux::NetworkRuleProtocol;
 use chaos_selinux::Policy;
-use chaos_syslog::TelemetryAuthMode;
+use chaos_snitch::TelemetryAuthMode;
 use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
 use rama::telemetry::opentelemetry::trace::TraceContextExt;
 use rama::telemetry::opentelemetry::trace::TraceId;

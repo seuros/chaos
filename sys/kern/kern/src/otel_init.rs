@@ -2,11 +2,11 @@ use crate::config::Config;
 use crate::config::types::OtelExporterKind as Kind;
 use crate::config::types::OtelHttpProtocol as Protocol;
 use crate::default_client::originator;
-use chaos_syslog::OtelProvider;
-use chaos_syslog::config::OtelExporter;
-use chaos_syslog::config::OtelHttpProtocol;
-use chaos_syslog::config::OtelSettings;
-use chaos_syslog::config::OtelTlsConfig as OtelTlsSettings;
+use chaos_snitch::OtelProvider;
+use chaos_snitch::config::OtelExporter;
+use chaos_snitch::config::OtelHttpProtocol;
+use chaos_snitch::config::OtelSettings;
+use chaos_snitch::config::OtelTlsConfig as OtelTlsSettings;
 use std::error::Error;
 
 /// Build an OpenTelemetry provider from the app Config.
@@ -89,7 +89,7 @@ pub fn build_provider(
 }
 
 /// Filter predicate for exporting only Chaos-owned events via OTEL.
-/// Keeps events that originated from chaos_syslog module
+/// Keeps events that originated from chaos_snitch module
 pub fn codex_export_filter(meta: &tracing::Metadata<'_>) -> bool {
-    meta.target().starts_with("chaos_syslog")
+    meta.target().starts_with("chaos_snitch")
 }

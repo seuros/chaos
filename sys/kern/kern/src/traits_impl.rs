@@ -3,10 +3,10 @@
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
+use chaos_snitch::SessionTelemetry;
 use chaos_sysctl::Constrained;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
-use chaos_syslog::SessionTelemetry;
 use chaos_traits::AgentSpawnConfig;
 use chaos_traits::ConciergeConfig;
 use chaos_traits::EventEmitter;

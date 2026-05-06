@@ -1,6 +1,6 @@
-use chaos_syslog::OtelProvider;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::TelemetryAuthMode;
+use chaos_snitch::OtelProvider;
+use chaos_snitch::SessionTelemetry;
+use chaos_snitch::TelemetryAuthMode;
 use pretty_assertions::assert_eq;
 use rama::telemetry::opentelemetry::KeyValue;
 use rama::telemetry::opentelemetry::logs::AnyValue;
@@ -137,7 +137,7 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
     let logs = log_exporter.get_emitted_logs().expect("log export");
     assert!(
         logs.iter()
-            .all(|log| { log.record.target().map(Cow::as_ref) == Some("chaos_syslog.log_only") })
+            .all(|log| { log.record.target().map(Cow::as_ref) == Some("chaos_snitch.log_only") })
     );
 
     let prompt_log = find_log_by_event_name(&logs, "chaos.user_prompt");
@@ -237,7 +237,7 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
     let logs = log_exporter.get_emitted_logs().expect("log export");
     assert!(
         logs.iter()
-            .all(|log| { log.record.target().map(Cow::as_ref) == Some("chaos_syslog.log_only") })
+            .all(|log| { log.record.target().map(Cow::as_ref) == Some("chaos_snitch.log_only") })
     );
 
     let tool_log = find_log_by_event_name(&logs, "chaos.tool_result");

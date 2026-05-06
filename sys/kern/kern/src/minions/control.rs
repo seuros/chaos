@@ -120,7 +120,7 @@ impl AgentControl {
         self.router
             .send_traced(
                 ProcessTableOp::Drain { reply: tx },
-                chaos_syslog::current_span_w3c_trace_context(),
+                chaos_snitch::current_span_w3c_trace_context(),
             )
             .await
             .map_err(|err| {
@@ -240,7 +240,7 @@ impl AgentControl {
                     let initial_history = InitialHistory::Forked(forked_rollout_items);
                     let agent_control = self.clone();
                     self.call_router(
-                        chaos_syslog::current_span_w3c_trace_context(),
+                        chaos_snitch::current_span_w3c_trace_context(),
                         move |reply| ProcessTableOp::Fork {
                             args: Box::new(ForkArgs {
                                 config,
@@ -258,7 +258,7 @@ impl AgentControl {
                     let agent_control = self.clone();
                     let auth_manager = Arc::clone(state.auth_manager());
                     self.call_router(
-                        chaos_syslog::current_span_w3c_trace_context(),
+                        chaos_snitch::current_span_w3c_trace_context(),
                         move |reply| ProcessTableOp::Spawn {
                             args: Box::new(SpawnArgs {
                                 config,
@@ -281,7 +281,7 @@ impl AgentControl {
                 let auth_manager = Arc::clone(state.auth_manager());
                 let session_source = state.session_source();
                 self.call_router(
-                    chaos_syslog::current_span_w3c_trace_context(),
+                    chaos_snitch::current_span_w3c_trace_context(),
                     move |reply| ProcessTableOp::Spawn {
                         args: Box::new(SpawnArgs {
                             config,
@@ -368,7 +368,7 @@ impl AgentControl {
         let agent_control = self.clone();
         let resumed_process = self
             .call_router(
-                chaos_syslog::current_span_w3c_trace_context(),
+                chaos_snitch::current_span_w3c_trace_context(),
                 move |reply| ProcessTableOp::Resume {
                     args: Box::new(ResumeArgs {
                         config,

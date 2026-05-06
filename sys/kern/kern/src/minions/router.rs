@@ -262,7 +262,7 @@ async fn router_loop(
 fn span_from_packet_path(path: Option<&chaos_ipc::protocol::W3cTraceContext>) -> tracing::Span {
     let span = tracing::info_span!("router.process_table.handle");
     if let Some(path) = path {
-        chaos_syslog::set_parent_from_w3c_trace_context(&span, path);
+        chaos_snitch::set_parent_from_w3c_trace_context(&span, path);
     }
     span
 }

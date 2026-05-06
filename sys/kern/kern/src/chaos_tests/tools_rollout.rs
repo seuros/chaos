@@ -88,9 +88,9 @@ async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
         .clone()
         .expect("turn task should capture the current span trace context");
     let submission_context =
-        chaos_syslog::context_from_w3c_trace_context(&submission_trace).expect("submission");
+        chaos_snitch::context_from_w3c_trace_context(&submission_trace).expect("submission");
     let task_context =
-        chaos_syslog::context_from_w3c_trace_context(&task_trace).expect("task trace");
+        chaos_snitch::context_from_w3c_trace_context(&task_trace).expect("task trace");
 
     assert_eq!(
         task_context.span().span_context().trace_id(),

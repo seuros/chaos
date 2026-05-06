@@ -33,7 +33,7 @@ use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::types::ApprovalsReviewer;
-use chaos_syslog::SessionTelemetry;
+use chaos_snitch::SessionTelemetry;
 use crossterm::event::KeyModifiers;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;

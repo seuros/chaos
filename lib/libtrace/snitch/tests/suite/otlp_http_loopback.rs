@@ -1,10 +1,10 @@
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_syslog::OtelProvider;
-use chaos_syslog::config::OtelExporter;
-use chaos_syslog::config::OtelHttpProtocol;
-use chaos_syslog::config::OtelSettings;
-use chaos_syslog::metrics::MetricsClient;
-use chaos_syslog::metrics::MetricsConfig;
+use chaos_snitch::OtelProvider;
+use chaos_snitch::config::OtelExporter;
+use chaos_snitch::config::OtelHttpProtocol;
+use chaos_snitch::config::OtelSettings;
+use chaos_snitch::metrics::MetricsClient;
+use chaos_snitch::metrics::MetricsConfig;
 use std::any::Any;
 use std::collections::HashMap;
 use std::io::Read as _;

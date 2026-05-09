@@ -38,6 +38,10 @@ ignore = false
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"
+deny = [
+    { crate = "axum", reason = "we use rama for HTTP servers — no duplicate web frameworks" },
+    { crate = "reqwest", reason = "we use rama for HTTP clients — no duplicate HTTP stacks" },
+]
 
 [sources]
 unknown-registry = "warn"

@@ -1,4 +1,6 @@
 //! Approvals and permissions popup methods.
+use chaos_ipc::product::OS_NAME;
+
 use super::super::*;
 
 impl ChatWidget {
@@ -174,7 +176,7 @@ impl ChatWidget {
         let mut header_children: Vec<Box<dyn Renderable>> = Vec::new();
         let title_line = Line::from("Enable full access?").bold();
         let info_line = Line::from(vec![
-            "When Chaos runs with full access, it can edit any file on your computer and run commands with network, without your approval. "
+            format!("When {OS_NAME} runs with full access, it can edit any file on your computer and run commands with network, without your approval. ")
                 .into(),
             "Exercise caution when enabling full access. This significantly increases the risk of data loss, leaks, or unexpected behavior."
                 .fg(crate::theme::red()),

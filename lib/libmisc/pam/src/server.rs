@@ -28,6 +28,7 @@ use crate::pkce::generate_pkce;
 use base64::Engine;
 
 use chaos_ipc::api::AuthMode;
+use chaos_ipc::product::OS_NAME;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::AuthDotJson;
 use chaos_kern::auth::DEFAULT_AUTH_PROVIDER_ID;
@@ -372,7 +373,7 @@ async fn process_request(
                     match tiny_http::Header::from_bytes(&b"Location"[..], success_url.as_bytes()) {
                         Ok(header) => HandledRequest::RedirectWithHeader(header),
                         Err(_) => login_error_response(
-                            "Sign-in completed but redirecting back to Chaos failed.",
+                            &format!("Sign-in completed but redirecting back to {OS_NAME} failed."),
                             io::ErrorKind::Other,
                             Some("redirect_failed"),
                             /*error_description*/ None,
@@ -914,7 +915,7 @@ fn is_missing_chaos_entitlement_error(error_code: &str, error_description: Optio
 /// Converts OAuth callback errors into a user-facing message.
 fn oauth_callback_error_message(error_code: &str, error_description: Option<&str>) -> String {
     if is_missing_chaos_entitlement_error(error_code, error_description) {
-        return "Chaos is not enabled for your workspace. Contact your workspace administrator to request access to Chaos.".to_string();
+        return format!("{OS_NAME} is not enabled for your workspace. Contact your workspace administrator to request access to {OS_NAME}.");
     }
 
     if let Some(description) = error_description
@@ -1006,20 +1007,17 @@ fn render_login_error_page(
     let (title, display_message, display_description, help_text) =
         if is_missing_chaos_entitlement_error(code, error_description) {
             (
-                "You do not have access to Chaos".to_string(),
-                "This account is not currently authorized to use Chaos in this workspace."
-                    .to_string(),
-                "Contact your workspace administrator to request access to Chaos.".to_string(),
-                "Contact your workspace administrator to get access to Chaos, then return to Chaos and try again."
-                    .to_string(),
+                format!("You do not have access to {OS_NAME}"),
+                format!("This account is not currently authorized to use {OS_NAME} in this workspace."),
+                format!("Contact your workspace administrator to request access to {OS_NAME}."),
+                format!("Contact your workspace administrator to get access to {OS_NAME}, then return to {OS_NAME} and try again."),
             )
         } else {
             (
                 "Sign-in could not be completed".to_string(),
                 message.to_string(),
                 error_description.unwrap_or(message).to_string(),
-                "Return to Chaos to retry, switch accounts, or contact your workspace admin if access is restricted."
-                    .to_string(),
+                format!("Return to {OS_NAME} to retry, switch accounts, or contact your workspace admin if access is restricted."),
             )
         };
     template

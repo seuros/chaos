@@ -4,6 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use chaos_ipc::ProcessId;
+use chaos_ipc::product::OS_NAME;
 use chaos_kern::builtin_mcp_resources;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceRouter;
@@ -42,7 +43,7 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
                 })
             })
             .collect::<Vec<_>>();
-        to_pretty_json(&sessions, "Chaos processes")
+        to_pretty_json(&sessions, &format!("{OS_NAME} processes"))
     }
 
     async fn session_detail_json(&self, process_id: ProcessId) -> Result<String, String> {
@@ -72,7 +73,7 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
                 "title": title,
                 "status": "active",
             }),
-            "Chaos process",
+            &format!("{OS_NAME} process"),
         )
     }
 
@@ -113,7 +114,7 @@ async fn read_builtin_resource_json(
     builtin_mcp_resources::read_resource_json(&backend, uri)
         .await
         .map_err(ResourceError::Internal)?
-        .ok_or_else(|| ResourceError::NotFound(format!("unknown Chaos resource: {uri}")))
+        .ok_or_else(|| ResourceError::NotFound(format!("unknown {OS_NAME} resource: {uri}")))
 }
 
 fn read_static_resource_handler<'a>(

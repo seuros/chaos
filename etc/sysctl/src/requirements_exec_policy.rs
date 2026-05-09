@@ -1,3 +1,4 @@
+use chaos_ipc::product::OS_NAME;
 use chaos_selinux::Decision;
 use chaos_selinux::Policy;
 use chaos_selinux::rule::PatternToken;
@@ -114,9 +115,12 @@ pub enum RequirementsExecPolicyParseError {
     MissingDecision { rule_index: usize },
 
     #[error(
-        "rules prefix_rule at index {rule_index} has decision 'allow', which is not permitted in requirements.toml: Chaos merges these rules with other config and uses the most restrictive result (use 'prompt' or 'forbidden')"
+        "rules prefix_rule at index {rule_index} has decision 'allow', which is not permitted in requirements.toml: {product_name} merges these rules with other config and uses the most restrictive result (use 'prompt' or 'forbidden')"
     )]
-    AllowDecisionNotAllowed { rule_index: usize },
+    AllowDecisionNotAllowed {
+        rule_index: usize,
+        product_name: &'static str,
+    },
 }
 
 impl RequirementsExecPolicyToml {
@@ -151,6 +155,7 @@ impl RequirementsExecPolicyToml {
                 Some(RequirementsExecPolicyDecisionToml::Allow) => {
                     return Err(RequirementsExecPolicyParseError::AllowDecisionNotAllowed {
                         rule_index,
+                        product_name: OS_NAME,
                     });
                 }
                 Some(decision) => decision.as_decision(),

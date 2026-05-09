@@ -34,7 +34,7 @@ pub(super) fn default_commit_identity() -> Vec<(OsString, OsString)> {
     vec![
         (
             OsString::from("GIT_AUTHOR_NAME"),
-            OsString::from("Chaos Snapshot"),
+            OsString::from("FreeChaOS Snapshot"),
         ),
         (
             OsString::from("GIT_AUTHOR_EMAIL"),
@@ -42,7 +42,7 @@ pub(super) fn default_commit_identity() -> Vec<(OsString, OsString)> {
         ),
         (
             OsString::from("GIT_COMMITTER_NAME"),
-            OsString::from("Chaos Snapshot"),
+            OsString::from("FreeChaOS Snapshot"),
         ),
         (
             OsString::from("GIT_COMMITTER_EMAIL"),

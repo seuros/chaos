@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
+use chaos_ipc::product::OS_NAME;
 use chaos_kern::AuthManager;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::ProviderAuthMethod;
@@ -797,7 +798,7 @@ impl AccountsWidget {
                 .into(),
             "".into(),
             format!(
-                "  Chaos will use your stored {} credentials for this provider.",
+                "  {OS_NAME} will use your stored {} credentials for this provider.",
                 provider.display_name
             )
             .into(),

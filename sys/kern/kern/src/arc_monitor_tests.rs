@@ -22,6 +22,30 @@ use chaos_ipc::models::ResponseItem;
 
 use crate::test_support::EnvVarGuard;
 
+fn user_msg(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
+fn assistant_msg(text: &str, phase: Option<MessagePhase>) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text: text.to_string(),
+        }],
+        end_turn: None,
+        phase,
+    }
+}
+
 #[tokio::test]
 async fn build_arc_monitor_request_includes_relevant_history_and_null_policies() {
     let (session, mut turn_context) = make_session_and_context().await;
@@ -30,15 +54,7 @@ async fn build_arc_monitor_request_includes_relevant_history_and_null_policies()
 
     session
         .record_into_history(
-            &[ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "first request".to_string(),
-                }],
-                end_turn: None,
-                phase: None,
-            }],
+            &[user_msg("first request")],
             &turn_context,
         )
         .await;
@@ -54,43 +70,19 @@ async fn build_arc_monitor_request_includes_relevant_history_and_null_policies()
         .await;
     session
         .record_into_history(
-            &[ResponseItem::Message {
-                id: None,
-                role: "assistant".to_string(),
-                content: vec![ContentItem::OutputText {
-                    text: "commentary".to_string(),
-                }],
-                end_turn: None,
-                phase: Some(MessagePhase::Commentary),
-            }],
+            &[assistant_msg("commentary", Some(MessagePhase::Commentary))],
             &turn_context,
         )
         .await;
     session
         .record_into_history(
-            &[ResponseItem::Message {
-                id: None,
-                role: "assistant".to_string(),
-                content: vec![ContentItem::OutputText {
-                    text: "final response".to_string(),
-                }],
-                end_turn: None,
-                phase: Some(MessagePhase::FinalAnswer),
-            }],
+            &[assistant_msg("final response", Some(MessagePhase::FinalAnswer))],
             &turn_context,
         )
         .await;
     session
         .record_into_history(
-            &[ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "latest request".to_string(),
-                }],
-                end_turn: None,
-                phase: None,
-            }],
+            &[user_msg("latest request")],
             &turn_context,
         )
         .await;
@@ -236,15 +228,7 @@ async fn monitor_action_posts_expected_arc_request() {
 
     session
         .record_into_history(
-            &[ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "please run the tool".to_string(),
-                }],
-                end_turn: None,
-                phase: None,
-            }],
+            &[user_msg("please run the tool")],
             &turn_context,
         )
         .await;
@@ -315,15 +299,7 @@ async fn monitor_action_uses_env_url_and_token_overrides() {
     let (session, turn_context) = make_session_and_context().await;
     session
         .record_into_history(
-            &[ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "please run the tool".to_string(),
-                }],
-                end_turn: None,
-                phase: None,
-            }],
+            &[user_msg("please run the tool")],
             &turn_context,
         )
         .await;
@@ -384,15 +360,7 @@ async fn monitor_action_rejects_legacy_response_fields() {
 
     session
         .record_into_history(
-            &[ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "please run the tool".to_string(),
-                }],
-                end_turn: None,
-                phase: None,
-            }],
+            &[user_msg("please run the tool")],
             &turn_context,
         )
         .await;

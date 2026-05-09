@@ -23,6 +23,7 @@ use chaos_epoll::CancelErr;
 use chaos_epoll::OrCancelExt;
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::product::OS_NAME;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::McpServerTransportConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
@@ -439,7 +440,7 @@ pub(super) async fn make_managed_client(
         "chaos-mcp-client",
         mcp_client_implementation_version(),
     )
-    .with_title("ChaOS");
+    .with_title(OS_NAME);
 
     let capabilities = mcp_guest::protocol::ClientCapabilities {
         experimental: None,

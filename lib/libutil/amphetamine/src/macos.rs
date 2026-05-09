@@ -1,6 +1,12 @@
+use std::sync::LazyLock;
+
+use chaos_ipc::product::OS_NAME;
 use core_foundation::base::TCFType;
 use core_foundation::string::CFString;
 use tracing::warn;
+
+static ASSERTION_REASON: LazyLock<String> =
+    LazyLock::new(|| format!("{OS_NAME} is running an active turn"));
 
 #[allow(
     dead_code,
@@ -20,7 +26,6 @@ type IOPMAssertionID = iokit::IOPMAssertionID;
 type IOPMAssertionLevel = iokit::IOPMAssertionLevel;
 type IOReturn = iokit::IOReturn;
 
-const ASSERTION_REASON: &str = "Chaos is running an active turn";
 // Apple exposes this assertion type as a `CFSTR(...)` macro, so bindgen cannot generate a
 // reusable `CFStringRef` constant for it.
 const ASSERTION_TYPE_PREVENT_USER_IDLE_SYSTEM_SLEEP: &str = "PreventUserIdleSystemSleep";
@@ -40,7 +45,7 @@ impl SleepInhibitor {
             return;
         }
 
-        match MacSleepAssertion::create(ASSERTION_REASON) {
+        match MacSleepAssertion::create(ASSERTION_REASON.as_str()) {
             Ok(assertion) => {
                 self.assertion = Some(assertion);
             }

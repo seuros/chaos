@@ -364,12 +364,9 @@ fn session_telemetry(
     )
 }
 
-pub(crate) async fn make_session_configuration_for_tests() -> SessionConfiguration {
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(chaos_home.path()).await;
-    let config = Arc::new(config);
+fn make_test_collaboration_mode(config: &Config) -> (CollaborationMode, ModelInfo) {
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
-    let model_info = ModelsManager::construct_model_info_offline_for_tests(model.as_str(), &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(model.as_str(), config);
     let reasoning_effort = config.model_reasoning_effort;
     let collaboration_mode = CollaborationMode {
         mode: ModeKind::Default,
@@ -379,7 +376,14 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
             minion_instructions: None,
         },
     };
+    (collaboration_mode, model_info)
+}
 
+fn make_test_session_config(
+    config: &Arc<Config>,
+    model_info: &ModelInfo,
+    collaboration_mode: CollaborationMode,
+) -> SessionConfiguration {
     SessionConfiguration {
         provider: config.model_provider.clone(),
         collaboration_mode,
@@ -401,7 +405,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),
         process_name: None,
-        original_config_do_not_use: Arc::clone(&config),
+        original_config_do_not_use: Arc::clone(config),
         metrics_service_name: None,
         app_server_client_name: None,
         session_source: SessionSource::Exec,
@@ -411,80 +415,20 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
     }
 }
 
-pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
-    let (tx_event, _rx_event) = async_channel::unbounded();
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(chaos_home.path()).await;
-    let config = Arc::new(config);
-    let conversation_id = ProcessId::default();
-    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
-    let models_manager = Arc::new(ModelsManager::new(
-        config.chaos_home.clone(),
-        auth_manager.clone(),
-        None,
-        CollaborationModesConfig::default(),
-    ));
-    let agent_control = AgentControl::for_tests();
-    let exec_policy = ExecPolicyManager::default();
-    let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
-    let model_info = ModelsManager::construct_model_info_offline_for_tests(model.as_str(), &config);
-    let reasoning_effort = config.model_reasoning_effort;
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
-        settings: Settings {
-            model,
-            reasoning_effort,
-            minion_instructions: None,
-        },
-    };
-    let session_configuration = SessionConfiguration {
-        provider: config.model_provider.clone(),
-        collaboration_mode,
-        model_reasoning_summary: config.model_reasoning_summary,
-        minion_instructions: config.minion_instructions.clone(),
-        user_instructions: config.user_instructions.clone(),
-        service_tier: None,
-        personality: config.personality,
-        base_instructions: config
-            .base_instructions
-            .clone()
-            .unwrap_or_else(|| model_info.get_model_instructions(config.personality)),
-        compact_prompt: config.compact_prompt.clone(),
-        approval_policy: config.permissions.approval_policy.clone(),
-        approvals_reviewer: config.approvals_reviewer,
-        vfs_policy: config.permissions.vfs_policy.clone(),
-        socket_policy: config.permissions.socket_policy,
-
-        cwd: config.cwd.clone(),
-        chaos_home: config.chaos_home.clone(),
-        process_name: None,
-        original_config_do_not_use: Arc::clone(&config),
-        metrics_service_name: None,
-        app_server_client_name: None,
-        session_source: SessionSource::Exec,
-        dynamic_tools: Vec::new(),
-        persist_extended_history: false,
-        inherited_shell_snapshot: None,
-    };
-    let per_turn_config = Session::build_per_turn_config(&session_configuration);
-    let model_info = ModelsManager::construct_model_info_offline_for_tests(
-        session_configuration.collaboration_mode.model(),
-        &per_turn_config,
-    );
-    let session_telemetry = session_telemetry(
-        conversation_id,
-        config.as_ref(),
-        &model_info,
-        session_configuration.session_source.clone(),
-    );
-
-    let state = SessionState::new(session_configuration.clone());
+fn make_test_session_services(
+    config: &Config,
+    session_configuration: &SessionConfiguration,
+    conversation_id: ProcessId,
+    auth_manager: AuthManager,
+    models_manager: Arc<ModelsManager>,
+    session_telemetry: SessionTelemetry,
+    agent_control: AgentControl,
+    exec_policy: ExecPolicyManager,
+) -> SessionServices {
     let mcp_manager = Arc::new(McpManager::new());
     let network_approval = Arc::new(NetworkApprovalService::default());
-
     let file_watcher = Arc::new(FileWatcher::noop());
-    let services = SessionServices {
+    SessionServices {
         catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),
@@ -506,28 +450,80 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
 
         exec_policy,
         auth_manager: auth_manager.clone(),
-        session_telemetry: session_telemetry.clone(),
-        models_manager: Arc::clone(&models_manager),
+        session_telemetry,
+        models_manager,
         tool_approvals: Mutex::new(ApprovalStore::default()),
         mcp_manager,
         file_watcher,
         agent_control,
         network_proxy: None,
-        network_approval: Arc::clone(&network_approval),
+        network_approval,
         runtime_db: None,
         model_client: ModelClient::new(
-            Some(auth_manager.clone()),
+            Some(auth_manager),
             conversation_id,
             "openai".to_string(),
             session_configuration.provider.clone(),
             session_configuration.session_source.clone(),
             session_configuration.approval_policy.value(),
             config.model_verbosity,
-            true, // request compression always enabled
-            Session::build_model_client_beta_features_header(config.as_ref()),
+            true,
+            Session::build_model_client_beta_features_header(config),
         ),
         hallucinate: None,
-    };
+    }
+}
+
+pub(crate) async fn make_session_configuration_for_tests() -> SessionConfiguration {
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let config = build_test_config(chaos_home.path()).await;
+    let config = Arc::new(config);
+    let (collaboration_mode, model_info) = make_test_collaboration_mode(&config);
+    make_test_session_config(&config, &model_info, collaboration_mode)
+}
+
+pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
+    let (tx_event, _rx_event) = async_channel::unbounded();
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let config = build_test_config(chaos_home.path()).await;
+    let config = Arc::new(config);
+    let conversation_id = ProcessId::default();
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
+    let models_manager = Arc::new(ModelsManager::new(
+        config.chaos_home.clone(),
+        auth_manager.clone(),
+        None,
+        CollaborationModesConfig::default(),
+    ));
+    let agent_control = AgentControl::for_tests();
+    let exec_policy = ExecPolicyManager::default();
+    let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
+    let (collaboration_mode, _model_info) = make_test_collaboration_mode(&config);
+    let session_configuration = make_test_session_config(&config, &_model_info, collaboration_mode);
+    let per_turn_config = Session::build_per_turn_config(&session_configuration);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(
+        session_configuration.collaboration_mode.model(),
+        &per_turn_config,
+    );
+    let session_telemetry = session_telemetry(
+        conversation_id,
+        config.as_ref(),
+        &model_info,
+        session_configuration.session_source.clone(),
+    );
+
+    let state = SessionState::new(session_configuration.clone());
+
+    let services = make_test_session_services(
+        &config,
+        &session_configuration,
+        conversation_id,
+        auth_manager.clone(),
+        Arc::clone(&models_manager),
+        session_telemetry.clone(),
+        agent_control,
+        exec_policy,
+    );
 
     let turn_context = crate::chaos::turn_context::make_turn_context(
         Some(Arc::clone(&auth_manager)),
@@ -581,46 +577,10 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let agent_control = AgentControl::for_tests();
     let exec_policy = ExecPolicyManager::default();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
-    let model_info = ModelsManager::construct_model_info_offline_for_tests(model.as_str(), &config);
-    let reasoning_effort = config.model_reasoning_effort;
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
-        settings: Settings {
-            model,
-            reasoning_effort,
-            minion_instructions: None,
-        },
-    };
-    let session_configuration = SessionConfiguration {
-        provider: config.model_provider.clone(),
-        collaboration_mode,
-        model_reasoning_summary: config.model_reasoning_summary,
-        minion_instructions: config.minion_instructions.clone(),
-        user_instructions: config.user_instructions.clone(),
-        service_tier: None,
-        personality: config.personality,
-        base_instructions: config
-            .base_instructions
-            .clone()
-            .unwrap_or_else(|| model_info.get_model_instructions(config.personality)),
-        compact_prompt: config.compact_prompt.clone(),
-        approval_policy: config.permissions.approval_policy.clone(),
-        approvals_reviewer: config.approvals_reviewer,
-        vfs_policy: config.permissions.vfs_policy.clone(),
-        socket_policy: config.permissions.socket_policy,
-
-        cwd: config.cwd.clone(),
-        chaos_home: config.chaos_home.clone(),
-        process_name: None,
-        original_config_do_not_use: Arc::clone(&config),
-        metrics_service_name: None,
-        app_server_client_name: None,
-        session_source: SessionSource::Exec,
-        dynamic_tools,
-        persist_extended_history: false,
-        inherited_shell_snapshot: None,
-    };
+    let (collaboration_mode, _model_info) = make_test_collaboration_mode(&config);
+    let mut session_configuration =
+        make_test_session_config(&config, &_model_info, collaboration_mode);
+    session_configuration.dynamic_tools = dynamic_tools;
     let per_turn_config = Session::build_per_turn_config(&session_configuration);
     let model_info = ModelsManager::construct_model_info_offline_for_tests(
         session_configuration.collaboration_mode.model(),
@@ -634,54 +594,17 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     );
 
     let state = SessionState::new(session_configuration.clone());
-    let mcp_manager = Arc::new(McpManager::new());
-    let network_approval = Arc::new(NetworkApprovalService::default());
 
-    let file_watcher = Arc::new(FileWatcher::noop());
-    let services = SessionServices {
-        catalog: Arc::new(crate::catalog::CatalogSink::new(
-            crate::catalog::Catalog::from_inventory(),
-        )),
-        mcp_connection_manager: Arc::new(RwLock::new(McpConnectionManager::new_uninitialized(
-            &config.permissions.approval_policy,
-        ))),
-        mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
-        internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
-        unified_exec_manager: UnifiedExecProcessManager::new(
-            config.background_terminal_max_timeout,
-        ),
-        hooks: Hooks::new(HooksConfig {
-            legacy_notify_argv: config.notify.clone(),
-            ..HooksConfig::default()
-        }),
-        rollout: Mutex::new(None),
-        user_shell: Arc::new(default_user_shell()),
-        shell_snapshot_tx: watch::channel(None).0,
-
-        exec_policy,
-        auth_manager: Arc::clone(&auth_manager),
-        session_telemetry: session_telemetry.clone(),
-        models_manager: Arc::clone(&models_manager),
-        tool_approvals: Mutex::new(ApprovalStore::default()),
-        mcp_manager,
-        file_watcher,
+    let services = make_test_session_services(
+        &config,
+        &session_configuration,
+        conversation_id,
+        auth_manager.clone(),
+        Arc::clone(&models_manager),
+        session_telemetry.clone(),
         agent_control,
-        network_proxy: None,
-        network_approval: Arc::clone(&network_approval),
-        runtime_db: None,
-        model_client: ModelClient::new(
-            Some(Arc::clone(&auth_manager)),
-            conversation_id,
-            "openai".to_string(),
-            session_configuration.provider.clone(),
-            session_configuration.session_source.clone(),
-            session_configuration.approval_policy.value(),
-            config.model_verbosity,
-            true, // request compression always enabled
-            Session::build_model_client_beta_features_header(config.as_ref()),
-        ),
-        hallucinate: None,
-    };
+        exec_policy,
+    );
 
     let turn_context = Arc::new(crate::chaos::turn_context::make_turn_context(
         Some(Arc::clone(&auth_manager)),

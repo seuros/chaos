@@ -2,6 +2,8 @@
 //!
 //! Contains `dispatch_command`, `dispatch_command_with_args`, and the rename
 //! prompt helper that both dispatch paths share.
+use chaos_ipc::product::OS_NAME;
+
 use super::*;
 
 impl ChatWidget {
@@ -117,8 +119,7 @@ impl ChatWidget {
             SlashCommand::Copy => {
                 let Some(text) = self.last_copyable_output.as_deref() else {
                     self.add_info_message(
-                        "`/copy` is unavailable before the first Chaos output or right after a rollback."
-                            .to_string(),
+                        format!("`/copy` is unavailable before the first {OS_NAME} output or right after a rollback."),
                         /*hint*/ None,
                     );
                     return;
@@ -133,7 +134,7 @@ impl ChatWidget {
                                 .to_string(),
                         );
                         self.add_info_message(
-                            "Copied latest Chaos output to clipboard.".to_string(),
+                            format!("Copied latest {OS_NAME} output to clipboard."),
                             hint,
                         );
                     }

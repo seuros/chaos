@@ -6,5 +6,5 @@
 //! all over the tree.
 
 pub use chaos_ipc::product::CHAOS_VERSION;
-pub use chaos_ipc::product::PRODUCT_NAME;
+pub use chaos_ipc::product::OS_NAME;
 pub use chaos_ipc::product::version_badge;

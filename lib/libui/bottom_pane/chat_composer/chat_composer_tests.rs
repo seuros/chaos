@@ -32,7 +32,7 @@ fn footer_hint_row_is_separated_from_composer() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -76,7 +76,7 @@ fn footer_flash_overrides_footer_hint_override() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_footer_hint_override(Some(vec![("K".to_string(), "label".to_string())]));
@@ -102,7 +102,7 @@ fn footer_flash_expires_and_falls_back_to_hint_override() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_footer_hint_override(Some(vec![("K".to_string(), "label".to_string())]));
@@ -135,7 +135,7 @@ fn snapshot_composer_state_with_width<F>(
         true,
         sender,
         enhanced_keys_supported,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     setup(&mut composer);
@@ -374,7 +374,7 @@ fn esc_hint_stays_hidden_with_draft_content() {
         true,
         sender,
         true,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -400,7 +400,7 @@ fn base_footer_mode_tracks_empty_state_after_quit_hint_expires() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -421,7 +421,7 @@ fn clear_for_ctrl_c_records_cleared_draft() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -446,7 +446,7 @@ fn clear_for_ctrl_c_preserves_pending_paste_history_entry() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -507,7 +507,7 @@ fn clear_for_ctrl_c_preserves_image_draft_state() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -549,7 +549,7 @@ fn clear_for_ctrl_c_preserves_remote_offset_image_labels() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     let remote_image_url = "https://example.com/one.png".to_string();
@@ -590,7 +590,7 @@ fn apply_history_entry_preserves_local_placeholders_after_remote_prefix() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -632,7 +632,7 @@ fn question_mark_only_toggles_on_first_char() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -673,7 +673,7 @@ fn question_mark_does_not_toggle_during_paste_burst() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -701,7 +701,7 @@ fn set_connector_mentions_skips_disabled_connectors() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_connectors_enabled(true);
@@ -737,7 +737,7 @@ fn set_connector_mentions_excludes_disabled_apps_from_mention_popup() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_connectors_enabled(true);
@@ -773,7 +773,7 @@ fn shortcut_overlay_persists_while_task_running() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1022,7 +1022,7 @@ fn enter_submits_when_file_popup_has_no_selection() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1056,7 +1056,7 @@ fn ascii_prefix_survives_non_ascii_followup() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1085,7 +1085,7 @@ fn non_ascii_char_inserts_immediately_without_burst_state() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1108,7 +1108,7 @@ fn non_ascii_burst_buffers_enter_and_flushes_multiline() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1140,7 +1140,7 @@ fn non_ascii_burst_preserves_ideographic_space_and_ascii() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1187,7 +1187,7 @@ fn non_ascii_burst_buffers_large_multiline_mixed_ascii_and_unicode() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1223,7 +1223,7 @@ fn ascii_burst_treats_enter_as_newline() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1272,7 +1272,7 @@ fn slash_context_enter_ignores_paste_burst_enter_suppression() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1299,7 +1299,7 @@ fn non_char_key_flushes_active_burst_before_input() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1333,7 +1333,7 @@ fn disable_paste_burst_flushes_pending_first_char_and_inserts_immediately() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1365,7 +1365,7 @@ fn handle_paste_small_inserts_text() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1392,7 +1392,7 @@ fn empty_enter_returns_none() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1420,7 +1420,7 @@ fn handle_paste_large_uses_placeholder_and_replaces_on_submit() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1452,7 +1452,7 @@ fn submit_at_character_limit_succeeds() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_steer_enabled(true);
@@ -1479,7 +1479,7 @@ fn oversized_submit_reports_error_and_restores_draft() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_steer_enabled(true);
@@ -1520,7 +1520,7 @@ fn oversized_queued_submission_reports_error_and_restores_draft() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_steer_enabled(false);
@@ -1564,7 +1564,7 @@ fn edit_clears_pending_paste() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1604,7 +1604,7 @@ fn ui_snapshots() {
             true,
             sender.clone(),
             false,
-            "Ask Chaos to do anything".to_string(),
+            "Ask FreeChaOS to do anything".to_string(),
             false,
         );
 
@@ -1695,7 +1695,7 @@ fn slash_popup_model_first_for_mo_ui() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1722,7 +1722,7 @@ fn slash_popup_model_first_for_mo_logic() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     type_chars_humanlike(&mut composer, &['/', 'm', 'o']);
@@ -1752,7 +1752,7 @@ fn slash_popup_resume_for_res_ui() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1776,7 +1776,7 @@ fn slash_popup_resume_for_res_logic() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     type_chars_humanlike(&mut composer, &['/', 'r', 'e', 's']);
@@ -1831,7 +1831,7 @@ fn slash_command_dispatches_and_does_not_submit_literal_text() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -1875,7 +1875,7 @@ fn kill_buffer_persists_after_submit() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_steer_enabled(true);
@@ -1908,7 +1908,7 @@ fn kill_buffer_persists_after_slash_command_dispatch() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.textarea.insert_str("restore me");
@@ -1945,7 +1945,7 @@ fn slash_command_disabled_while_task_running_keeps_text() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_task_running(true);
@@ -2022,7 +2022,7 @@ fn slash_tab_completion_moves_cursor_to_end() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2042,7 +2042,7 @@ fn slash_tab_then_enter_dispatches_builtin_command() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2079,7 +2079,7 @@ fn slash_command_elementizes_on_space() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_collaboration_modes_enabled(true);
@@ -2100,7 +2100,7 @@ fn slash_command_elementizes_only_known_commands() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_collaboration_modes_enabled(true);
@@ -2120,7 +2120,7 @@ fn slash_command_element_removed_when_not_at_start() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2151,7 +2151,7 @@ fn tab_submits_when_no_task_running() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2178,7 +2178,7 @@ fn tab_does_not_submit_for_bang_shell_command() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_task_running(false);
@@ -2206,7 +2206,7 @@ fn slash_mention_dispatches_command_and_inserts_at() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2246,7 +2246,7 @@ fn slash_plan_args_preserve_text_elements() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_collaboration_modes_enabled(true);
@@ -2283,7 +2283,7 @@ fn file_completion_preserves_large_paste_placeholder_elements() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2339,7 +2339,7 @@ fn test_multiple_pastes_submission() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2416,7 +2416,7 @@ fn test_placeholder_deletion() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2489,7 +2489,7 @@ fn deleting_duplicate_length_pastes_removes_only_target() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2527,7 +2527,7 @@ fn large_paste_numbering_does_not_reuse_after_deletion() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2566,7 +2566,7 @@ fn test_partial_placeholder_deletion() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2613,7 +2613,7 @@ fn attach_image_and_submit_includes_local_image_paths() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     let path = PathBuf::from("/tmp/image1.png");
@@ -2649,7 +2649,7 @@ fn submit_captures_recent_mention_bindings_before_clearing_textarea() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2680,7 +2680,7 @@ fn history_navigation_restores_remote_and_local_image_attachments() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     let remote_image_url = "https://example.com/remote.png".to_string();
@@ -2713,7 +2713,7 @@ fn history_navigation_restores_remote_only_submissions() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     let remote_image_urls = vec![
@@ -2744,7 +2744,7 @@ fn history_navigation_leaves_cursor_at_end_of_line() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2786,7 +2786,7 @@ fn set_text_content_reattaches_images_without_placeholder_metadata() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2807,7 +2807,7 @@ fn large_paste_preserves_image_text_elements_on_submit() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2848,7 +2848,7 @@ fn large_paste_with_leading_whitespace_trims_and_shifts_elements() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2889,7 +2889,7 @@ fn pasted_crlf_normalizes_newlines_for_elements() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2930,7 +2930,7 @@ fn suppressed_submission_restores_pending_paste_payload() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -2973,7 +2973,7 @@ fn attach_image_without_text_submits_empty_text_and_images() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     let path = PathBuf::from("/tmp/image2.png");
@@ -3010,7 +3010,7 @@ fn duplicate_image_placeholders_get_suffix() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     let path = PathBuf::from("/tmp/image_dup.png");
@@ -3032,7 +3032,7 @@ fn image_placeholder_backspace_behaves_like_text_placeholder() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     let path = PathBuf::from("/tmp/image3.png");
@@ -3071,7 +3071,7 @@ fn backspace_with_multibyte_text_before_placeholder_does_not_panic() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3096,7 +3096,7 @@ fn deleting_one_of_duplicate_image_placeholders_removes_one_entry() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3155,7 +3155,7 @@ fn deleting_reordered_image_one_renumbers_text_in_place() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3217,7 +3217,7 @@ fn deleting_first_text_element_renumbers_following_text_element() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3254,7 +3254,7 @@ fn pasting_filepath_attaches_image() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3275,7 +3275,7 @@ fn selecting_custom_prompt_without_args_submits_content() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3313,7 +3313,7 @@ fn custom_prompt_submission_expands_arguments() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3347,7 +3347,7 @@ fn custom_prompt_submission_accepts_quoted_values() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3385,7 +3385,7 @@ fn custom_prompt_submission_preserves_image_placeholder_unquoted() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3439,7 +3439,7 @@ fn custom_prompt_submission_preserves_image_placeholder_quoted() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3494,7 +3494,7 @@ fn custom_prompt_submission_drops_unused_image_arg() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3541,7 +3541,7 @@ fn custom_prompt_with_large_paste_expands_correctly() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3604,7 +3604,7 @@ fn custom_prompt_with_large_paste_and_image_preserves_elements() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3661,7 +3661,7 @@ fn slash_path_input_submits_without_command_error() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3696,7 +3696,7 @@ fn slash_with_leading_space_submits_as_text() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3727,7 +3727,7 @@ fn custom_prompt_invalid_args_reports_error() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3776,7 +3776,7 @@ fn custom_prompt_missing_required_args_reports_error() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3830,7 +3830,7 @@ fn selecting_custom_prompt_with_args_expands_placeholders() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3867,7 +3867,7 @@ fn popup_prompt_submission_prunes_unused_image_attachments() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3904,7 +3904,7 @@ fn numeric_prompt_auto_submit_prunes_unused_image_attachments() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3946,7 +3946,7 @@ fn numeric_prompt_auto_submit_expands_pending_pastes() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -3985,7 +3985,7 @@ fn queued_prompt_submission_prunes_unused_image_attachments() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4025,7 +4025,7 @@ fn prompt_expansion_over_character_limit_reports_error_and_restores_draft() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
     composer.set_steer_enabled(true);
@@ -4107,7 +4107,7 @@ fn numeric_prompt_positional_args_does_not_error() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4142,7 +4142,7 @@ fn selecting_custom_prompt_with_no_args_inserts_template() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4177,7 +4177,7 @@ fn selecting_custom_prompt_preserves_literal_dollar_dollar() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4214,7 +4214,7 @@ fn selecting_custom_prompt_reuses_cached_arguments_join() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4256,7 +4256,7 @@ fn pending_first_ascii_char_flushes_as_typed() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4284,7 +4284,7 @@ fn burst_paste_fast_small_buffers_and_flushes_on_stop() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4330,7 +4330,7 @@ fn burst_paste_fast_large_inserts_placeholder_on_flush() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4368,7 +4368,7 @@ fn humanlike_typing_1000_chars_appears_live_no_placeholder() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4391,7 +4391,7 @@ fn slash_popup_not_activated_for_slash_space_text_history_like_input() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4419,7 +4419,7 @@ fn slash_popup_activated_for_bare_slash_and_valid_prefixes() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4461,7 +4461,7 @@ fn apply_external_edit_rebuilds_text_and_attachments() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4494,7 +4494,7 @@ fn apply_external_edit_drops_missing_attachments() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4518,7 +4518,7 @@ fn apply_external_edit_renumbers_image_placeholders() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4545,7 +4545,7 @@ fn current_text_with_pending_expands_placeholders() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4569,7 +4569,7 @@ fn apply_external_edit_limits_duplicates_to_occurrences() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4596,7 +4596,7 @@ fn remote_images_do_not_modify_textarea_text_or_elements() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4616,7 +4616,7 @@ fn attach_image_after_remote_prefix_uses_offset_label() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4637,7 +4637,7 @@ fn prepare_submission_keeps_remote_offset_local_placeholder_numbering() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4673,7 +4673,7 @@ fn prepare_submission_with_only_remote_images_returns_empty_text() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4692,7 +4692,7 @@ fn delete_selected_remote_image_relabels_local_placeholders() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 
@@ -4730,7 +4730,7 @@ fn input_disabled_ignores_keypresses_and_hides_cursor() {
         true,
         sender,
         false,
-        "Ask Chaos to do anything".to_string(),
+        "Ask FreeChaOS to do anything".to_string(),
         false,
     );
 

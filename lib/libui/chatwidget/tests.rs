@@ -1818,7 +1818,7 @@ async fn make_chatwidget_manual(
         frame_requester: FrameRequester::test_dummy(),
         has_input_focus: true,
         enhanced_keys_supported: false,
-        placeholder_text: "Ask Chaos to do anything".to_string(),
+        placeholder_text: "Ask FreeChaOS to do anything".to_string(),
         disable_paste_burst: false,
         animations_enabled: cfg.animations,
     });
@@ -5339,7 +5339,7 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
     assert_snapshot!("slash_copy_no_output_info_message", rendered);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Chaos output or right after a rollback."
+            "`/copy` is unavailable before the first FreeChaOS output or right after a rollback."
         ),
         "expected no-output message, got {rendered:?}"
     );
@@ -5411,7 +5411,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Chaos output or right after a rollback."
+            "`/copy` is unavailable before the first FreeChaOS output or right after a rollback."
         ),
         "expected unavailable message, got {rendered:?}"
     );
@@ -5440,7 +5440,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_item_is_not_repeate
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Chaos output or right after a rollback."
+            "`/copy` is unavailable before the first FreeChaOS output or right after a rollback."
         ),
         "expected unavailable message, got {rendered:?}"
     );
@@ -5472,7 +5472,7 @@ async fn slash_copy_does_not_return_stale_output_after_process_rollback() {
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Chaos output or right after a rollback."
+            "`/copy` is unavailable before the first FreeChaOS output or right after a rollback."
         ),
         "expected rollback-cleared copy state message, got {rendered:?}"
     );

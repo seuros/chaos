@@ -10,6 +10,7 @@ use std::sync::Arc;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_conv::json_to_toml;
 use chaos_ipc::ProcessId;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_kern::ProcessTable;
@@ -303,7 +304,7 @@ fn chaos_tool_info() -> ToolInfo {
     tool_info_with_output(
         "chaos",
         None,
-        Some("Run a Chaos session. Auto-resumes the last process per session; pass process-id to target a specific one.".to_string()),
+        Some(format!("Run a {OS_NAME} session. Auto-resumes the last process per session; pass process-id to target a specific one.")),
         chaos_input_schema(),
         chaos_output_schema(),
     )

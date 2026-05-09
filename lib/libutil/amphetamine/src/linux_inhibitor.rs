@@ -2,9 +2,13 @@ use std::os::unix::process::CommandExt;
 use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::LazyLock;
+
+use chaos_ipc::product::OS_NAME;
 use tracing::warn;
 
-const ASSERTION_REASON: &str = "Chaos is running an active turn";
+static ASSERTION_REASON: LazyLock<String> =
+    LazyLock::new(|| format!("{OS_NAME} is running an active turn"));
 const APP_ID: &str = "chaos";
 // Keep the blocker process alive "long enough" without needing restarts.
 // This is `i32::MAX` seconds, which is accepted by common `sleep` implementations.
@@ -182,7 +186,7 @@ fn spawn_backend(backend: LinuxBackend) -> Result<Child, std::io::Error> {
                 "--who",
                 APP_ID,
                 "--why",
-                ASSERTION_REASON,
+                ASSERTION_REASON.as_str(),
                 "--",
                 "sleep",
                 BLOCKER_SLEEP_SECONDS,
@@ -195,7 +199,7 @@ fn spawn_backend(backend: LinuxBackend) -> Result<Child, std::io::Error> {
                 "--inhibit",
                 "idle",
                 "--reason",
-                ASSERTION_REASON,
+                ASSERTION_REASON.as_str(),
                 "sleep",
                 BLOCKER_SLEEP_SECONDS,
             ]);

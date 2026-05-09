@@ -10,6 +10,7 @@ use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotificationMeta;
 use crate::patch_approval::handle_patch_approval_request;
 use chaos_ipc::ProcessId;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
 use chaos_ipc::protocol::Event;
@@ -153,7 +154,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
                 Err(e) => {
                     return SessionOutcome {
                         process_id: ProcessId::new(),
-                        text: format!("Failed to start Chaos session: {e}"),
+                        text: format!("Failed to start {OS_NAME} session: {e}"),
                         is_error: true,
                     };
                 }
@@ -418,7 +419,7 @@ async fn run_event_loop(
             Err(e) => {
                 return SessionOutcome {
                     process_id,
-                    text: format!("Chaos runtime error: {e}"),
+                    text: format!("{OS_NAME} runtime error: {e}"),
                     is_error: true,
                 };
             }

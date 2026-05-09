@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
@@ -61,7 +62,7 @@ pub(crate) async fn handle_exec_approval_request(
     let escaped_command =
         shlex::try_join(command.iter().map(String::as_str)).unwrap_or_else(|_| command.join(" "));
     let message = format!(
-        "Allow Chaos to run `{escaped_command}` in `{cwd}`?",
+        "Allow {OS_NAME} to run `{escaped_command}` in `{cwd}`?",
         cwd = cwd.to_string_lossy()
     );
 

@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+use chaos_ipc::product::OS_NAME;
+use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -11,7 +14,7 @@ use chaos_journald::run_sqlite_journal_server;
 use chaos_journald::sqlite_db_path;
 
 #[derive(Debug, Parser)]
-#[command(name = "chaos-journald", about = "Chaos local session journal daemon")]
+#[command(name = "chaos-journald")]
 struct Cli {
     /// Unix domain socket path to bind.
     #[arg(long = "socket", value_name = "PATH")]
@@ -25,7 +28,11 @@ struct Cli {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
-    let cli = Cli::parse();
+    let cli = Cli::from_arg_matches(
+        &Cli::command()
+            .about(format!("{OS_NAME} local session journal daemon"))
+            .get_matches(),
+    )?;
     let config = JournalServerConfig {
         socket_path: match cli.socket_path {
             Some(path) => path,

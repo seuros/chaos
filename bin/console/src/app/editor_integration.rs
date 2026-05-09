@@ -1,3 +1,5 @@
+use chaos_ipc::product::OS_NAME;
+
 use super::{App, EXTERNAL_EDITOR_HINT, ExternalEditorState, external_editor, history_cell, tui};
 
 impl App {
@@ -7,8 +9,7 @@ impl App {
             Err(external_editor::EditorError::MissingEditor) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(
-                    "Cannot open external editor: set $VISUAL or $EDITOR before starting Chaos."
-                        .to_string(),
+                    format!("Cannot open external editor: set $VISUAL or $EDITOR before starting {OS_NAME}."),
                 ));
                 self.reset_external_editor_state(tui);
                 return;

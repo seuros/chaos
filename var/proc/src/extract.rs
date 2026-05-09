@@ -126,7 +126,7 @@ fn apply_response_item(_metadata: &mut ProcessMetadata, _item: &ResponseItem) {
 }
 
 fn strip_user_message_prefix(text: &str) -> &str {
-    match text.find(USER_MESSAGE_BEGIN) {
+    match text.find(USER_MESSAGE_BEGIN.as_str()) {
         Some(idx) => text[idx + USER_MESSAGE_BEGIN.len()..].trim(),
         None => text.trim(),
     }
@@ -204,7 +204,7 @@ mod tests {
     fn event_msg_user_messages_set_title_and_first_user_message() {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            message: format!("{USER_MESSAGE_BEGIN} actual user request"),
+            message: format!("{} actual user request", *USER_MESSAGE_BEGIN),
             images: Some(vec![]),
             local_images: vec![],
             text_elements: vec![],

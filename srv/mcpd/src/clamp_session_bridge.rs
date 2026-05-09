@@ -11,6 +11,7 @@ use chaos_ipc::clamp_bridge::ClampBridgeResponse;
 use chaos_ipc::mcp::Tool as BridgeToolSpec;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::product::CHAOS_VERSION;
+use chaos_ipc::product::OS_NAME;
 use mcp_host::prelude::*;
 use mcp_host::registry::tools::Tool;
 use mcp_host::registry::tools::ToolError;
@@ -36,7 +37,7 @@ pub async fn run_main() -> IoResult<()> {
     let tool_specs = list_tools(&socket_path, &token).await?;
     let server = server("chaos-clamp-session-bridge", CHAOS_VERSION)
         .with_tools(true)
-        .with_instructions("Chaos session-backed tools for clamp")
+        .with_instructions(&format!("{OS_NAME} session-backed tools for clamp"))
         .build();
 
     for tool in tool_specs {

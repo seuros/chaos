@@ -191,7 +191,8 @@ mod state;
 mod tests {
     use super::*;
 
-    const PLACEHOLDER_TEXT: &str = "Ask Agent of Chaos to do something.";
+    use chaos_ipc::product::OS_NAME;
+
     use crate::app_event::AppEvent;
     use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
     use crate::status_indicator_widget::StatusDetailsCapitalization;
@@ -207,6 +208,27 @@ mod tests {
     use ratatui::layout::Rect;
     use std::cell::Cell;
     use std::rc::Rc;
+
+    fn test_pane_params(tx: AppEventSender) -> BottomPaneParams {
+        BottomPaneParams {
+            app_event_tx: tx,
+            frame_requester: FrameRequester::test_dummy(),
+            has_input_focus: true,
+            enhanced_keys_supported: false,
+            placeholder_text: format!("Ask Agent of {OS_NAME} to do something."),
+            disable_paste_burst: false,
+            animations_enabled: true,
+        }
+    }
+
+    fn make_test_pane() -> BottomPane {
+        BottomPane::new(test_pane_params(make_app_event_sender()))
+    }
+
+    fn make_test_pane_with_rx() -> (BottomPane, tokio::sync::mpsc::UnboundedReceiver<AppEvent>) {
+        let (tx, rx) = make_app_event_sender_with_rx();
+        (BottomPane::new(test_pane_params(tx)), rx)
+    }
 
     fn exec_request() -> ApprovalRequest {
         ApprovalRequest::Exec {
@@ -226,17 +248,8 @@ mod tests {
 
     #[test]
     fn ctrl_c_on_modal_consumes_without_showing_quit_hint() {
-        let tx = make_app_event_sender();
         let features = Features::with_defaults();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
         pane.push_approval_request(exec_request(), &features);
         assert_eq!(CancellationEvent::Handled, pane.on_ctrl_c());
         assert!(!pane.quit_shortcut_hint_visible());
@@ -247,17 +260,8 @@ mod tests {
 
     #[test]
     fn overlay_not_shown_above_approval_modal() {
-        let tx = make_app_event_sender();
         let features = Features::with_defaults();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         // Create an approval modal (active view).
         pane.push_approval_request(exec_request(), &features);
@@ -279,17 +283,8 @@ mod tests {
 
     #[test]
     fn composer_shown_after_denied_while_task_running() {
-        let tx = make_app_event_sender();
         let features = Features::with_defaults();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         // Start a running task so the status indicator is active above the composer.
         pane.set_task_running(true);
@@ -345,16 +340,7 @@ mod tests {
 
     #[test]
     fn status_indicator_visible_during_command_execution() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         // Begin a task: show initial status.
         pane.set_task_running(true);
@@ -370,16 +356,7 @@ mod tests {
 
     #[test]
     fn status_and_composer_fill_height_without_bottom_padding() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         // Activate spinner (status view replaces composer) with no live ring.
         pane.set_task_running(true);
@@ -399,16 +376,7 @@ mod tests {
 
     #[test]
     fn status_only_snapshot() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         pane.set_task_running(true);
 
@@ -423,16 +391,7 @@ mod tests {
 
     #[test]
     fn unified_exec_summary_does_not_increase_height_when_status_visible() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         pane.set_task_running(true);
         let width = 120;
@@ -450,16 +409,7 @@ mod tests {
 
     #[test]
     fn status_with_details_and_queued_messages_snapshot() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         pane.set_task_running(true);
         pane.update_status(
@@ -481,16 +431,7 @@ mod tests {
 
     #[test]
     fn queued_messages_visible_when_status_hidden_snapshot() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         pane.set_task_running(true);
         pane.set_pending_input_preview(vec!["Queued follow-up question".to_string()], Vec::new());
@@ -507,16 +448,7 @@ mod tests {
 
     #[test]
     fn status_and_queued_messages_snapshot() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         pane.set_task_running(true);
         pane.set_pending_input_preview(vec!["Queued follow-up question".to_string()], Vec::new());
@@ -532,16 +464,7 @@ mod tests {
 
     #[test]
     fn remote_images_render_above_composer_text() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         pane.set_remote_image_urls(vec![
             "https://example.com/one.png".to_string(),
@@ -559,16 +482,7 @@ mod tests {
 
     #[test]
     fn drain_pending_submission_state_clears_remote_image_urls() {
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         pane.set_remote_image_urls(vec!["https://example.com/one.png".to_string()]);
         assert_eq!(pane.remote_image_urls().len(), 1);
@@ -580,16 +494,7 @@ mod tests {
 
     #[test]
     fn esc_with_slash_command_popup_does_not_interrupt_task() {
-        let (tx, mut rx) = make_app_event_sender_with_rx();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let (mut pane, mut rx) = make_test_pane_with_rx();
 
         pane.set_task_running(true);
 
@@ -613,16 +518,7 @@ mod tests {
 
     #[test]
     fn esc_with_agent_command_without_popup_does_not_interrupt_task() {
-        let (tx, mut rx) = make_app_event_sender_with_rx();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let (mut pane, mut rx) = make_test_pane_with_rx();
 
         pane.set_task_running(true);
 
@@ -647,16 +543,7 @@ mod tests {
 
     #[test]
     fn esc_release_after_dismissing_agent_picker_does_not_interrupt_task() {
-        let (tx, mut rx) = make_app_event_sender_with_rx();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let (mut pane, mut rx) = make_test_pane_with_rx();
 
         pane.set_task_running(true);
         pane.show_selection_view(SelectionViewParams {
@@ -693,16 +580,7 @@ mod tests {
 
     #[test]
     fn esc_interrupts_running_task_when_no_popup() {
-        let (tx, mut rx) = make_app_event_sender_with_rx();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let (mut pane, mut rx) = make_test_pane_with_rx();
 
         pane.set_task_running(true);
 
@@ -747,16 +625,7 @@ mod tests {
             }
         }
 
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         let on_ctrl_c_calls = Rc::new(Cell::new(0));
         let handle_calls = Rc::new(Cell::new(0));
@@ -793,16 +662,7 @@ mod tests {
             }
         }
 
-        let tx = make_app_event_sender();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: PLACEHOLDER_TEXT.to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-        });
+        let mut pane = make_test_pane();
 
         let handle_calls = Rc::new(Cell::new(0));
         pane.push_view(Box::new(CountingView {

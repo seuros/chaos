@@ -5,6 +5,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use chaos_argv::Arg0DispatchPaths;
+use chaos_ipc::product::OS_NAME;
 use chaos_argv::arg0_dispatch_or_else;
 use chaos_boot::accounts::read_api_key_from_stdin;
 use chaos_boot::accounts::run_accounts_status;
@@ -644,7 +645,7 @@ async fn run_interactive_tui(
         }
 
         eprintln!(
-            "WARNING: TERM is set to \"dumb\". Chaos's interactive TUI may not work in this terminal."
+            "WARNING: TERM is set to \"dumb\". {OS_NAME}'s interactive TUI may not work in this terminal."
         );
         if !confirm("Continue anyway? [y/N]: ")? {
             return Ok(AppExitInfo::fatal(

@@ -1,3 +1,4 @@
+use chaos_ipc::product::OS_NAME;
 use strum::IntoEnumIterator;
 use strum_macros::AsRefStr;
 use strum_macros::EnumIter;
@@ -61,47 +62,58 @@ pub enum SlashCommand {
 
 impl SlashCommand {
     /// User-visible description shown in the popup.
-    pub fn description(self) -> &'static str {
+    pub fn description(self) -> String {
         match self {
-            SlashCommand::New => "start a new chat during a conversation",
-            SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
-            SlashCommand::Review => "review my current changes and find issues",
-            SlashCommand::Rename => "rename the current thread",
-            SlashCommand::Resume => "resume a saved chat",
-            SlashCommand::Clear => "clear the terminal and start a new chat",
-            SlashCommand::Fork => "fork the current chat",
-            SlashCommand::Quit | SlashCommand::Exit => "exit Chaos",
-            SlashCommand::Diff => "show git diff (including untracked files)",
-            SlashCommand::Copy => "copy the latest Chaos output to your clipboard",
-            SlashCommand::Mention => "mention a file",
-            SlashCommand::Status => "show current session configuration and token usage",
-            SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
-            SlashCommand::Statusline => "configure which items appear in the status line",
-            SlashCommand::Theme => "choose a syntax highlighting theme",
-            SlashCommand::Ps => "list background terminals",
-            SlashCommand::Stop => "stop all background terminals",
-            SlashCommand::MemoryDrop => "DO NOT USE",
-            SlashCommand::MemoryUpdate => "DO NOT USE",
-            SlashCommand::Model => "choose what model and reasoning effort to use",
-            SlashCommand::Personality => "choose a communication style for Chaos",
-            SlashCommand::Plan => "switch to Plan mode",
-            SlashCommand::Collab => "change collaboration mode (experimental)",
-            SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
-            SlashCommand::Approvals => "choose what Chaos is allowed to do",
-            SlashCommand::Permissions => "choose what Chaos is allowed to do",
-            SlashCommand::ElevateSandbox => "set up elevated agent sandbox",
+            SlashCommand::New => "start a new chat during a conversation".into(),
+            SlashCommand::Compact => {
+                "summarize conversation to prevent hitting the context limit".into()
+            }
+            SlashCommand::Review => "review my current changes and find issues".into(),
+            SlashCommand::Rename => "rename the current thread".into(),
+            SlashCommand::Resume => "resume a saved chat".into(),
+            SlashCommand::Clear => "clear the terminal and start a new chat".into(),
+            SlashCommand::Fork => "fork the current chat".into(),
+            SlashCommand::Quit | SlashCommand::Exit => format!("exit {OS_NAME}"),
+            SlashCommand::Diff => "show git diff (including untracked files)".into(),
+            SlashCommand::Copy => format!("copy the latest {OS_NAME} output to your clipboard"),
+            SlashCommand::Mention => "mention a file".into(),
+            SlashCommand::Status => {
+                "show current session configuration and token usage".into()
+            }
+            SlashCommand::DebugConfig => {
+                "show config layers and requirement sources for debugging".into()
+            }
+            SlashCommand::Statusline => "configure which items appear in the status line".into(),
+            SlashCommand::Theme => "choose a syntax highlighting theme".into(),
+            SlashCommand::Ps => "list background terminals".into(),
+            SlashCommand::Stop => "stop all background terminals".into(),
+            SlashCommand::MemoryDrop => "DO NOT USE".into(),
+            SlashCommand::MemoryUpdate => "DO NOT USE".into(),
+            SlashCommand::Model => "choose what model and reasoning effort to use".into(),
+            SlashCommand::Personality => {
+                format!("choose a communication style for {OS_NAME}")
+            }
+            SlashCommand::Plan => "switch to Plan mode".into(),
+            SlashCommand::Collab => "change collaboration mode (experimental)".into(),
+            SlashCommand::Agent | SlashCommand::MultiAgents => {
+                "switch the active agent thread".into()
+            }
+            SlashCommand::Approvals | SlashCommand::Permissions => {
+                format!("choose what {OS_NAME} is allowed to do")
+            }
+            SlashCommand::ElevateSandbox => "set up elevated agent sandbox".into(),
             SlashCommand::SandboxReadRoot => {
-                "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>"
+                "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>".into()
             }
-            SlashCommand::Mcp => "list configured MCP tools",
-            SlashCommand::McpAdd => "add a new MCP server",
-            SlashCommand::Tools => "show all tools visible to the model",
-            SlashCommand::Clamp => "use Claude Code MAX subscription as transport",
+            SlashCommand::Mcp => "list configured MCP tools".into(),
+            SlashCommand::McpAdd => "add a new MCP server".into(),
+            SlashCommand::Tools => "show all tools visible to the model".into(),
+            SlashCommand::Clamp => "use Claude Code MAX subscription as transport".into(),
             SlashCommand::Accounts => {
-                "manage provider accounts and connections (disconnect via CLI)"
+                "manage provider accounts and connections (disconnect via CLI)".into()
             }
-            SlashCommand::Login => "manage provider accounts and connections",
-            SlashCommand::TestApproval => "test approval request",
+            SlashCommand::Login => "manage provider accounts and connections".into(),
+            SlashCommand::TestApproval => "test approval request".into(),
         }
     }
 

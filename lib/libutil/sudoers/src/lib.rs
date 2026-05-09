@@ -1,3 +1,4 @@
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 
@@ -9,7 +10,7 @@ pub struct ApprovalPreset {
     /// Display label shown in UIs.
     pub label: &'static str,
     /// Short human description shown next to the label in UIs.
-    pub description: &'static str,
+    pub description: String,
     /// Approval policy to apply.
     pub approval: ApprovalPolicy,
     /// Sandbox policy to apply.
@@ -24,21 +25,21 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
         ApprovalPreset {
             id: "read-only",
             label: "Read Only",
-            description: "Chaos can read files in the current workspace. Approval is required to edit files or access the internet.",
+            description: format!("{OS_NAME} can read files in the current workspace. Approval is required to edit files or access the internet."),
             approval: ApprovalPolicy::Interactive,
             sandbox: SandboxPolicy::new_read_only_policy(),
         },
         ApprovalPreset {
             id: "auto",
             label: "Default",
-            description: "Chaos can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files. (Identical to Agent mode)",
+            description: format!("{OS_NAME} can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files. (Identical to Agent mode)"),
             approval: ApprovalPolicy::Interactive,
             sandbox: SandboxPolicy::new_workspace_write_policy(),
         },
         ApprovalPreset {
             id: "full-access",
             label: "Full Access",
-            description: "Chaos can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using.",
+            description: format!("{OS_NAME} can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using."),
             approval: ApprovalPolicy::Headless,
             sandbox: SandboxPolicy::RootAccess,
         },

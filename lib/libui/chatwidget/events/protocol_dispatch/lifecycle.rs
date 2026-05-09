@@ -1,5 +1,6 @@
 //! Session and task lifecycle event handlers.
 
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::McpStartupCompleteEvent;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
@@ -235,7 +236,7 @@ impl ChatWidget {
         self.finalize_turn();
 
         let message = if message.trim().is_empty() {
-            "Chaos is currently experiencing high load.".to_string()
+            format!("{OS_NAME} is currently experiencing high load.")
         } else {
             message
         };

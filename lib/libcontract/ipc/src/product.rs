@@ -1,5 +1,5 @@
-/// Canonical product name exposed across the ChaOS workspace.
-pub const PRODUCT_NAME: &str = "Chaos";
+/// Canonical OS / product name exposed across the workspace.
+pub const OS_NAME: &str = "FreeChaOS";
 
 /// Canonical product version embedded at compile time for workspace crates.
 pub const CHAOS_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -13,7 +13,7 @@ pub struct ProductInfo {
 
 /// Canonical product/build identity for this binary set.
 pub const PRODUCT_INFO: ProductInfo = ProductInfo {
-    name: PRODUCT_NAME,
+    name: OS_NAME,
     version: CHAOS_VERSION,
 };
 

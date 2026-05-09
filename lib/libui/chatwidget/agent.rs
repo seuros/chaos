@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::EventMsg;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
@@ -108,8 +109,8 @@ fn spawn_event_bridge(
             if is_boot_error && matches!(mode, BridgeMode::EmitFatalOnBootError) {
                 // Capture a human-readable summary before moving the event.
                 let message = match &event.msg {
-                    EventMsg::Error(err) => format!("Failed to initialize chaos: {}", err.message),
-                    _ => "Failed to initialize chaos".to_string(),
+                    EventMsg::Error(err) => format!("Failed to initialize {OS_NAME}: {}", err.message),
+                    _ => format!("Failed to initialize {OS_NAME}"),
                 };
                 tracing::error!("{message}");
                 app_event_tx.send(AppEvent::ChaosEvent(event));

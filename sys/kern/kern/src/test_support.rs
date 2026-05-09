@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_ipc::config_types::CollaborationModeMask;
+use chaos_ipc::models::ContentItem;
+use chaos_ipc::models::ResponseItem;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::config_types::Verbosity;
 use chaos_ipc::openai_models::ApplyPatchToolType;
@@ -287,5 +289,31 @@ impl Drop for EnvVarGuard {
                 None => std::env::remove_var(self.key),
             }
         }
+    }
+}
+
+/// Build a simple user [`ResponseItem::Message`] with a single `OutputText` content item.
+pub fn user_msg(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::OutputText {
+            text: text.to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
+/// Build a simple assistant [`ResponseItem::Message`] with a single `OutputText` content item.
+pub fn assistant_msg(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text: text.to_string(),
+        }],
+        end_turn: None,
+        phase: None,
     }
 }

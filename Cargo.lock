@@ -1113,6 +1113,7 @@ version = "47.0.0"
 name = "chaos-amphetamine"
 version = "47.0.0"
 dependencies = [
+ "chaos-ipc",
  "core-foundation 0.10.1",
  "libc",
  "tracing",
@@ -1642,6 +1643,7 @@ dependencies = [
  "chrono-machines",
  "clap",
  "codex-client",
+ "const_format",
  "core_test_support",
  "csv",
  "ctor 0.8.0",

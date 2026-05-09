@@ -1,4 +1,5 @@
 use chaos_ipc::product::CHAOS_VERSION;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::product::display_name;
 use codex_client::ChaosHttpClient;
 use http::StatusCode;
@@ -84,7 +85,7 @@ async fn request_user_code(
         if status == StatusCode::NOT_FOUND {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                "device code login is not enabled for this Chaos server. Use the browser login or verify the server URL.",
+                format!("device code login is not enabled for this {OS_NAME} server. Use the browser login or verify the server URL."),
             ));
         }
 

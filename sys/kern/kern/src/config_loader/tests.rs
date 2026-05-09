@@ -1293,7 +1293,7 @@ prefix_rules = [
 
         assert!(matches!(
             err,
-            RequirementsExecPolicyParseError::AllowDecisionNotAllowed { rule_index: 0 }
+            RequirementsExecPolicyParseError::AllowDecisionNotAllowed { rule_index: 0, .. }
         ));
         Ok(())
     }

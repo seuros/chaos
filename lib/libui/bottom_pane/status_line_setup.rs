@@ -17,6 +17,7 @@
 //! - Session info (ID, tokens used)
 //! - Application version
 
+use chaos_ipc::product::OS_NAME;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -96,34 +97,42 @@ pub enum StatusLineItem {
 
 impl StatusLineItem {
     /// User-visible description shown in the popup.
-    pub fn description(&self) -> &'static str {
+    pub fn description(&self) -> String {
         match self {
-            StatusLineItem::ModelName => "Current model name",
-            StatusLineItem::ModelWithReasoning => "Current model name with reasoning level",
-            StatusLineItem::CurrentDir => "Current working directory",
-            StatusLineItem::ProjectRoot => "Project root directory (omitted when unavailable)",
-            StatusLineItem::GitBranch => "Current Git branch (omitted when unavailable)",
+            StatusLineItem::ModelName => "Current model name".to_string(),
+            StatusLineItem::ModelWithReasoning => {
+                "Current model name with reasoning level".to_string()
+            }
+            StatusLineItem::CurrentDir => "Current working directory".to_string(),
+            StatusLineItem::ProjectRoot => {
+                "Project root directory (omitted when unavailable)".to_string()
+            }
+            StatusLineItem::GitBranch => {
+                "Current Git branch (omitted when unavailable)".to_string()
+            }
             StatusLineItem::ContextRemaining => {
-                "Percentage of context window remaining (omitted when unknown)"
+                "Percentage of context window remaining (omitted when unknown)".to_string()
             }
             StatusLineItem::ContextUsed => {
-                "Percentage of context window used (omitted when unknown)"
+                "Percentage of context window used (omitted when unknown)".to_string()
             }
             StatusLineItem::FiveHourLimit => {
-                "Remaining usage on 5-hour usage limit (omitted when unavailable)"
+                "Remaining usage on 5-hour usage limit (omitted when unavailable)".to_string()
             }
             StatusLineItem::WeeklyLimit => {
-                "Remaining usage on weekly usage limit (omitted when unavailable)"
+                "Remaining usage on weekly usage limit (omitted when unavailable)".to_string()
             }
-            StatusLineItem::ChaosVersion => "Chaos application version",
+            StatusLineItem::ChaosVersion => format!("{OS_NAME} application version"),
             StatusLineItem::ContextWindowSize => {
-                "Total context window size in tokens (omitted when unknown)"
+                "Total context window size in tokens (omitted when unknown)".to_string()
             }
-            StatusLineItem::UsedTokens => "Total tokens used in session (omitted when zero)",
-            StatusLineItem::TotalInputTokens => "Total input tokens used in session",
-            StatusLineItem::TotalOutputTokens => "Total output tokens used in session",
+            StatusLineItem::UsedTokens => {
+                "Total tokens used in session (omitted when zero)".to_string()
+            }
+            StatusLineItem::TotalInputTokens => "Total input tokens used in session".to_string(),
+            StatusLineItem::TotalOutputTokens => "Total output tokens used in session".to_string(),
             StatusLineItem::SessionId => {
-                "Current session identifier (omitted until session starts)"
+                "Current session identifier (omitted until session starts)".to_string()
             }
         }
     }
@@ -247,7 +256,7 @@ impl StatusLineSetupView {
         MultiSelectItem {
             id: item.to_string(),
             name: item.to_string(),
-            description: Some(item.description().to_string()),
+            description: Some(item.description()),
             enabled,
         }
     }

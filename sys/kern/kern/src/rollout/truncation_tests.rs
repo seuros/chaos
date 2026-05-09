@@ -1,32 +1,7 @@
 use super::*;
 use crate::chaos::make_session_and_context;
-use chaos_ipc::models::ContentItem;
-use chaos_ipc::models::ResponseItem;
+use crate::test_support::{assistant_msg, user_msg};
 use pretty_assertions::assert_eq;
-
-fn user_msg(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::OutputText {
-            text: text.to_string(),
-        }],
-        end_turn: None,
-        phase: None,
-    }
-}
-
-fn assistant_msg(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "assistant".to_string(),
-        content: vec![ContentItem::OutputText {
-            text: text.to_string(),
-        }],
-        end_turn: None,
-        phase: None,
-    }
-}
 
 #[tokio::test]
 async fn ignores_session_prefix_messages_when_truncating_rollout_from_start() {

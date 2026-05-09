@@ -14,6 +14,7 @@ pub use types::side_by_side_layout_widths;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_ipc::product::OS_NAME;
     use crate::app_event::AppEvent;
     use crate::bottom_pane::popup_consts::standard_popup_hint_line;
     use crate::test_support::make_app_event_sender;
@@ -77,14 +78,14 @@ mod tests {
         let items = vec![
             SelectionItem {
                 name: "Read Only".to_string(),
-                description: Some("Chaos can read files".to_string()),
+                description: Some(format!("{OS_NAME} can read files")),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "Full Access".to_string(),
-                description: Some("Chaos can edit files".to_string()),
+                description: Some(format!("{OS_NAME} can edit files")),
                 is_current: false,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -178,7 +179,7 @@ mod tests {
 
     #[test]
     fn renders_blank_line_between_subtitle_and_items() {
-        let view = make_selection_view(Some("Switch between Chaos approval presets"));
+        let view = make_selection_view(Some(&format!("Switch between {OS_NAME} approval presets")));
         assert_snapshot!("list_selection_spacing_with_subtitle", render_lines(&view));
     }
 
@@ -251,7 +252,7 @@ mod tests {
         let tx = make_app_event_sender();
         let items = vec![SelectionItem {
             name: "Read Only".to_string(),
-            description: Some("Chaos can read files".to_string()),
+            description: Some(format!("{OS_NAME} can read files")),
             is_current: true,
             dismiss_on_select: true,
             ..Default::default()
@@ -282,7 +283,7 @@ mod tests {
         let tx = make_app_event_sender();
         let items = vec![SelectionItem {
             name: "Read Only".to_string(),
-            description: Some("Chaos can read files".to_string()),
+            description: Some(format!("{OS_NAME} can read files")),
             is_current: false,
             dismiss_on_select: true,
             ..Default::default()

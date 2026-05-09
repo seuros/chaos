@@ -4,7 +4,10 @@
 //! between user and agent.
 
 // Re-exported alias used by child modules (collab, session) via `super::`.
+use std::sync::LazyLock;
+
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use crate::product::OS_NAME;
 
 mod collab;
 mod errors;
@@ -68,7 +71,8 @@ pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
 pub const PLUGINS_INSTRUCTIONS_CLOSE_TAG: &str = "</plugins_instructions>";
 pub const COLLABORATION_MODE_OPEN_TAG: &str = "<collaboration_mode>";
 pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</collaboration_mode>";
-pub const USER_MESSAGE_BEGIN: &str = "## My request for Chaos:";
+pub static USER_MESSAGE_BEGIN: LazyLock<String> =
+    LazyLock::new(|| format!("## My request for {OS_NAME}:"));
 
 macro_rules! impl_fromstr_via_serde {
     ($($ty:ty),+ $(,)?) => {

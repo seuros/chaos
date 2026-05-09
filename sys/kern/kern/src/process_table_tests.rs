@@ -3,8 +3,8 @@ use crate::chaos::make_session_and_context;
 use crate::collaboration_modes::CollaborationModesConfig;
 use crate::config::test_config;
 use crate::models_manager::manager::RefreshStrategy;
+use crate::test_support::{assistant_msg, user_msg};
 use assert_matches::assert_matches;
-use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ReasoningItemReasoningSummary;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelsResponse;
@@ -13,29 +13,6 @@ use pretty_assertions::assert_eq;
 use std::time::Duration;
 use tempfile::tempdir;
 use wiremock::MockServer;
-
-fn user_msg(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::OutputText {
-            text: text.to_string(),
-        }],
-        end_turn: None,
-        phase: None,
-    }
-}
-fn assistant_msg(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "assistant".to_string(),
-        content: vec![ContentItem::OutputText {
-            text: text.to_string(),
-        }],
-        end_turn: None,
-        phase: None,
-    }
-}
 
 #[test]
 fn drops_from_last_user_only() {

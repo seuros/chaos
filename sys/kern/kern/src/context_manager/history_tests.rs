@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::{assistant_msg, user_msg};
 use crate::truncate;
 use crate::truncate::TruncationPolicy;
 use base64::Engine;
@@ -26,36 +27,12 @@ use regex_lite::Regex;
 const EXEC_FORMAT_MAX_BYTES: usize = 10_000;
 const EXEC_FORMAT_MAX_TOKENS: usize = 2_500;
 
-fn assistant_msg(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "assistant".to_string(),
-        content: vec![ContentItem::OutputText {
-            text: text.to_string(),
-        }],
-        end_turn: None,
-        phase: None,
-    }
-}
-
 fn create_history_with_items(items: Vec<ResponseItem>) -> ContextManager {
     let mut h = ContextManager::new();
     // Use a generous but fixed token budget; tests only rely on truncation
     // behavior, not on a specific model's token limit.
     h.record_items(items.iter(), TruncationPolicy::Tokens(10_000));
     h
-}
-
-fn user_msg(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::OutputText {
-            text: text.to_string(),
-        }],
-        end_turn: None,
-        phase: None,
-    }
 }
 
 fn user_input_text_msg(text: &str) -> ResponseItem {

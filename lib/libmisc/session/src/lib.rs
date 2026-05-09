@@ -93,6 +93,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::{Event, EventMsg, Op, SessionConfiguredEvent};
 use chaos_kern::config::Config;
 use chaos_kern::{Process, ProcessTable};
@@ -172,7 +173,7 @@ impl ClientSession {
             let new_process = match process_table.start_process(config).await {
                 Ok(p) => p,
                 Err(err) => {
-                    tracing::error!("failed to initialize chaos: {err}");
+                    tracing::error!("failed to initialize {OS_NAME}: {err}");
                     let _ = event_tx.send(Event {
                         id: String::new(),
                         msg: EventMsg::Error(err.to_error_event(None)),

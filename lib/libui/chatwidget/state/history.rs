@@ -1,5 +1,7 @@
 //! History management: message submission, queueing, cell insertion, notifications,
 //! connectors popup, and related helpers.
+use chaos_ipc::product::OS_NAME;
+
 use super::super::*;
 use chaos_chassis::turn::TurnContext;
 use chaos_chassis::turn::TurnSubmission;
@@ -663,9 +665,9 @@ impl ChatWidget {
             };
             let missing_label = format!("{status_label}. App link unavailable.");
             let instructions = if connector.is_accessible {
-                "Manage this app in your browser."
+                "Manage this app in your browser.".to_string()
             } else {
-                "Install this app in your browser, then reload Chaos."
+                format!("Install this app in your browser, then reload {OS_NAME}.")
             };
             if let Some(install_url) = connector.install_url.clone() {
                 let app_id = connector.id.clone();

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chaos_ipc::ProcessId;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::mcp::RequestId;
 use chaos_ipc::protocol::ElicitationAction;
 use chaos_ipc::protocol::FileChange;
@@ -342,7 +343,7 @@ pub(super) fn exec_options(
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('d'))],
             }),
             ReviewDecision::Abort => Some(ApprovalOption {
-                label: "No, and tell Chaos what to do differently".to_string(),
+                label: format!("No, and tell {OS_NAME} what to do differently"),
                 decision: ApprovalDecision::Review(ReviewDecision::Abort),
                 display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -366,7 +367,7 @@ pub(super) fn patch_options() -> Vec<ApprovalOption> {
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
         },
         ApprovalOption {
-            label: "No, and tell Chaos what to do differently".to_string(),
+            label: format!("No, and tell {OS_NAME} what to do differently"),
             decision: ApprovalDecision::Review(ReviewDecision::Abort),
             display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],

@@ -12,6 +12,7 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::product::CHAOS_VERSION;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
 use chaos_kern::ProcessSortKey;
@@ -181,7 +182,7 @@ pub async fn run_main(
     let chaos_home = match find_chaos_home() {
         Ok(chaos_home) => chaos_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding chaos home: {err}");
+            eprintln!("Error finding {OS_NAME} home: {err}");
             std::process::exit(1);
         }
     };

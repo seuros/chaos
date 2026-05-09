@@ -5,6 +5,7 @@ use crate::config::ConfigToml;
 use crate::git_info::resolve_root_git_project_for_trust;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::config_types::TrustLevel;
+use chaos_ipc::product::OS_NAME;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
 use chaos_sysctl::CONFIG_TOML_FILE;
@@ -530,9 +531,9 @@ impl ProjectTrustContext {
         let trust_key = decision.trust_key.as_str();
         match decision.trust_level {
             Some(TrustLevel::Untrusted) => Some(format!(
-                "{trust_key} is marked as untrusted in ChaOS project trust state. To load config.toml, mark it trusted."
+                "{trust_key} is marked as untrusted in {OS_NAME} project trust state. To load config.toml, mark it trusted."
             )),
-            _ => Some(format!("To load config.toml, trust {trust_key} in ChaOS.")),
+            _ => Some(format!("To load config.toml, trust {trust_key} in {OS_NAME}.")),
         }
     }
 }

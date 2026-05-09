@@ -378,7 +378,7 @@ mod tests {
                 "Yes, just this once".to_string(),
                 "Yes, and allow this host for this conversation".to_string(),
                 "Yes, and allow this host in the future".to_string(),
-                "No, and tell Chaos what to do differently".to_string(),
+                "No, and tell FreeChaOS what to do differently".to_string(),
             ]
         );
     }
@@ -401,7 +401,7 @@ mod tests {
             vec![
                 "Yes, proceed".to_string(),
                 "Yes, and don't ask again for this command in this session".to_string(),
-                "No, and tell Chaos what to do differently".to_string(),
+                "No, and tell FreeChaOS what to do differently".to_string(),
             ]
         );
     }
@@ -426,7 +426,7 @@ mod tests {
             labels,
             vec![
                 "Yes, proceed".to_string(),
-                "No, and tell Chaos what to do differently".to_string(),
+                "No, and tell FreeChaOS what to do differently".to_string(),
             ]
         );
     }

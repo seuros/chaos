@@ -1,3 +1,4 @@
+use chaos_ipc::product::OS_NAME;
 use crossterm::event::KeyEvent;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -35,7 +36,7 @@ impl Widget for &WelcomeWidget {
             Line::from(vec![
                 "  ".into(),
                 "Welcome to ".into(),
-                "Chaos".bold(),
+                OS_NAME.bold(),
                 " — AI harness for operators who read before they run.".into(),
             ]),
             "".into(),

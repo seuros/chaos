@@ -2,16 +2,18 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
+use chaos_ipc::product::OS_NAME;
 use chaos_proc::LogQuery;
 use chaos_proc::LogRow;
 use chaos_proc::LogTailCursor;
 use chaos_proc::StateRuntime;
+use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use owo_colors::OwoColorize;
 
 #[derive(Debug, Parser)]
 #[command(name = "chaos-state-logs")]
-#[command(about = "Tail Chaos logs from the runtime SQLite DB with simple filters")]
 struct Args {
     /// Path to the ChaOS home directory. Defaults to `CHAOS_HOME`, then
     /// `~/.chaos`.
@@ -81,7 +83,13 @@ struct LogFilter {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+    let args = Args::from_arg_matches(
+        &Args::command()
+            .about(format!(
+                "Tail {OS_NAME} logs from the runtime SQLite DB with simple filters"
+            ))
+            .get_matches(),
+    )?;
     let db_path = resolve_db_path(&args)?;
     let filter = build_filter(&args)?;
     let chaos_home = db_path

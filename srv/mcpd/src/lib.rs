@@ -10,6 +10,7 @@ use std::sync::Arc;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::product::CHAOS_VERSION;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::SessionSource;
 use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
@@ -144,7 +145,7 @@ pub async fn run_main(
         .with_tools(true)
         .with_resources(true, false)
         .with_resource_templates()
-        .with_instructions("Chaos — provider-agnostic coding agent")
+        .with_instructions(&format!("{OS_NAME} — provider-agnostic coding agent"))
         .on_initialized({
             let outgoing = outgoing.clone();
             move |_session_id: String, requester: Option<ClientRequester>| {

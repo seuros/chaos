@@ -30,6 +30,15 @@ gethostname = { workspace = true }
 jiff = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-http = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = [
+    "experimental_trace_batch_span_processor_with_async_runtime",
+    "experimental_metrics_custom_reader",
+    "logs",
+    "metrics",
+    "rt-tokio",
+    "testing",
+    "trace",
+] }
 opentelemetry-otlp = { workspace = true, features = [
     "grpc-tonic",
     "http-proto",
@@ -40,15 +49,6 @@ opentelemetry-otlp = { workspace = true, features = [
     "tls",
     "tls-roots",
 ]}
-opentelemetry_sdk = { workspace = true, features = [
-    "experimental_trace_batch_span_processor_with_async_runtime",
-    "experimental_metrics_custom_reader",
-    "logs",
-    "metrics",
-    "rt-tokio",
-    "testing",
-    "trace",
-] }
 http = { workspace = true }
 os_info = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

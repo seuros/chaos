@@ -145,7 +145,7 @@ pub async fn run_main(
         .with_tools(true)
         .with_resources(true, false)
         .with_resource_templates()
-        .with_instructions(&format!("{OS_NAME} — provider-agnostic coding agent"))
+        .with_instructions(format!("{OS_NAME} — provider-agnostic coding agent"))
         .on_initialized({
             let outgoing = outgoing.clone();
             move |_session_id: String, requester: Option<ClientRequester>| {

@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
-use chaos_ipc::product::OS_NAME;
 use chaos_ipc::parse_command::ParsedCommand;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_kern::Process;

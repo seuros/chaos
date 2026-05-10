@@ -1,0 +1,25 @@
+[package]
+name = "chaos-httpd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+chaos-argv = { workspace = true }
+chaos-coreboot = { workspace = true }
+chaos-getopt = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-kern = { workspace = true }
+rama = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

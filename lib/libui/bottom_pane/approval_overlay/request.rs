@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chaos_ipc::ProcessId;
-use chaos_ipc::product::OS_NAME;
 use chaos_ipc::mcp::RequestId;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::ElicitationAction;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::NetworkApprovalContext;

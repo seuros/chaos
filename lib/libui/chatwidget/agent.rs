@@ -109,7 +109,9 @@ fn spawn_event_bridge(
             if is_boot_error && matches!(mode, BridgeMode::EmitFatalOnBootError) {
                 // Capture a human-readable summary before moving the event.
                 let message = match &event.msg {
-                    EventMsg::Error(err) => format!("Failed to initialize {OS_NAME}: {}", err.message),
+                    EventMsg::Error(err) => {
+                        format!("Failed to initialize {OS_NAME}: {}", err.message)
+                    }
                     _ => format!("Failed to initialize {OS_NAME}"),
                 };
                 tracing::error!("{message}");

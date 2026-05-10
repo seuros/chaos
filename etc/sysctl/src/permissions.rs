@@ -5,12 +5,12 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_ipc::permissions::SocketPolicy;
-use chaos_ipc::product::OS_NAME;
 use chaos_ipc::permissions::VfsAccessMode;
 use chaos_ipc::permissions::VfsEntry;
 use chaos_ipc::permissions::VfsPath;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsSpecialPath;
+use chaos_ipc::product::OS_NAME;
 use chaos_pf::NetworkMode;
 use chaos_pf::NetworkProxyConfig;
 use chaos_realpath::AbsolutePathBuf;

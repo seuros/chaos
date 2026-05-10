@@ -47,6 +47,7 @@ members = [
     "srv/journald",
     "srv/pf",
     "srv/cron",
+    "srv/httpd",
 
     # bin/ — userland programs
     "bin/chaos",
@@ -167,6 +168,7 @@ chaos-daemon = { path = "srv/daemon" }
 chaos-journald = { path = "srv/journald" }
 chaos-pf = { path = "srv/pf" }
 chaos-cron = { path = "srv/cron" }
+chaos-httpd = { path = "srv/httpd" }
 
 # Internal — bin/
 chaos-cli = { path = "bin/chaos" }

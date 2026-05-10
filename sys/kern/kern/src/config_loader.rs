@@ -533,7 +533,9 @@ impl ProjectTrustContext {
             Some(TrustLevel::Untrusted) => Some(format!(
                 "{trust_key} is marked as untrusted in {OS_NAME} project trust state. To load config.toml, mark it trusted."
             )),
-            _ => Some(format!("To load config.toml, trust {trust_key} in {OS_NAME}.")),
+            _ => Some(format!(
+                "To load config.toml, trust {trust_key} in {OS_NAME}."
+            )),
         }
     }
 }

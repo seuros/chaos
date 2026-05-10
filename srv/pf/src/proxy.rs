@@ -17,7 +17,10 @@ use tokio::task::JoinHandle;
 use tracing::warn;
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "chaos-network-proxy", about = "FreeChaOS network sandbox proxy")]
+#[command(
+    name = "chaos-network-proxy",
+    about = "FreeChaOS network sandbox proxy"
+)]
 pub struct Args {}
 
 #[derive(Debug)]

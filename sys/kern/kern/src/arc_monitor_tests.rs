@@ -53,10 +53,7 @@ async fn build_arc_monitor_request_includes_relevant_history_and_null_policies()
     turn_context.user_instructions = Some("Only continue when needed.".to_string());
 
     session
-        .record_into_history(
-            &[user_msg("first request")],
-            &turn_context,
-        )
+        .record_into_history(&[user_msg("first request")], &turn_context)
         .await;
     session
         .record_into_history(
@@ -76,15 +73,15 @@ async fn build_arc_monitor_request_includes_relevant_history_and_null_policies()
         .await;
     session
         .record_into_history(
-            &[assistant_msg("final response", Some(MessagePhase::FinalAnswer))],
+            &[assistant_msg(
+                "final response",
+                Some(MessagePhase::FinalAnswer),
+            )],
             &turn_context,
         )
         .await;
     session
-        .record_into_history(
-            &[user_msg("latest request")],
-            &turn_context,
-        )
+        .record_into_history(&[user_msg("latest request")], &turn_context)
         .await;
     session
         .record_into_history(
@@ -227,10 +224,7 @@ async fn monitor_action_posts_expected_arc_request() {
     turn_context.config = Arc::new(config);
 
     session
-        .record_into_history(
-            &[user_msg("please run the tool")],
-            &turn_context,
-        )
+        .record_into_history(&[user_msg("please run the tool")], &turn_context)
         .await;
 
     Mock::given(method("POST"))
@@ -298,10 +292,7 @@ async fn monitor_action_uses_env_url_and_token_overrides() {
 
     let (session, turn_context) = make_session_and_context().await;
     session
-        .record_into_history(
-            &[user_msg("please run the tool")],
-            &turn_context,
-        )
+        .record_into_history(&[user_msg("please run the tool")], &turn_context)
         .await;
 
     Mock::given(method("POST"))
@@ -359,10 +350,7 @@ async fn monitor_action_rejects_legacy_response_fields() {
     turn_context.config = Arc::new(config);
 
     session
-        .record_into_history(
-            &[user_msg("please run the tool")],
-            &turn_context,
-        )
+        .record_into_history(&[user_msg("please run the tool")], &turn_context)
         .await;
 
     let outcome = monitor_action(

@@ -415,11 +415,12 @@ fn make_test_session_config(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_test_session_services(
     config: &Config,
     session_configuration: &SessionConfiguration,
     conversation_id: ProcessId,
-    auth_manager: AuthManager,
+    auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
     session_telemetry: SessionTelemetry,
     agent_control: AgentControl,

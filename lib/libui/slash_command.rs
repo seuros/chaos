@@ -77,9 +77,7 @@ impl SlashCommand {
             SlashCommand::Diff => "show git diff (including untracked files)".into(),
             SlashCommand::Copy => format!("copy the latest {OS_NAME} output to your clipboard"),
             SlashCommand::Mention => "mention a file".into(),
-            SlashCommand::Status => {
-                "show current session configuration and token usage".into()
-            }
+            SlashCommand::Status => "show current session configuration and token usage".into(),
             SlashCommand::DebugConfig => {
                 "show config layers and requirement sources for debugging".into()
             }

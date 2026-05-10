@@ -37,7 +37,7 @@ pub async fn run_main() -> IoResult<()> {
     let tool_specs = list_tools(&socket_path, &token).await?;
     let server = server("chaos-clamp-session-bridge", CHAOS_VERSION)
         .with_tools(true)
-        .with_instructions(&format!("{OS_NAME} session-backed tools for clamp"))
+        .with_instructions(format!("{OS_NAME} session-backed tools for clamp"))
         .build();
 
     for tool in tool_specs {

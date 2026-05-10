@@ -14,12 +14,12 @@ pub use types::side_by_side_layout_widths;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_ipc::product::OS_NAME;
     use crate::app_event::AppEvent;
     use crate::bottom_pane::popup_consts::standard_popup_hint_line;
     use crate::test_support::make_app_event_sender;
     use crate::test_support::make_app_event_sender_with_rx;
     use crate::test_support::renderable_string_with_size;
+    use chaos_ipc::product::OS_NAME;
     use crossterm::event::KeyCode;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;

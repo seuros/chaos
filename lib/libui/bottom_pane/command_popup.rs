@@ -208,9 +208,7 @@ impl CommandPopup {
             .into_iter()
             .map(|(item, indices)| {
                 let (name, description) = match item {
-                    CommandItem::Builtin(cmd) => {
-                        (format!("/{}", cmd.command()), cmd.description())
-                    }
+                    CommandItem::Builtin(cmd) => (format!("/{}", cmd.command()), cmd.description()),
                     CommandItem::UserPrompt(i) => {
                         let prompt = &self.prompts[i];
                         let description = prompt

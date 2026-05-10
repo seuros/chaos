@@ -5,7 +5,6 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use chaos_argv::Arg0DispatchPaths;
-use chaos_ipc::product::OS_NAME;
 use chaos_argv::arg0_dispatch_or_else;
 use chaos_boot::accounts::read_api_key_from_stdin;
 use chaos_boot::accounts::run_accounts_status;
@@ -20,6 +19,7 @@ use chaos_fork::Cli as ExecCli;
 use chaos_fork::Command as ExecCommand;
 use chaos_fork::ReviewArgs;
 use chaos_getopt::CliConfigOverrides;
+use chaos_ipc::product::OS_NAME;
 use chaos_selinux::ExecPolicyCheckCommand;
 use clap::CommandFactory;
 use clap::Parser;
@@ -118,6 +118,9 @@ enum Subcommand {
 
     /// Inspect feature flags.
     Features(FeaturesCli),
+
+    /// Run Chaos as an HTTP trigger server.
+    Serve(chaos_httpd::ServeCli),
 
     /// List available models for the active provider.
     Models(ModelsCli),
@@ -418,6 +421,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 prepend_root_flags!(mcp_cli, root_config_overrides);
                 mcp_cli.run().await?;
             }
+        }
+        Some(Subcommand::Serve(serve_cli)) => {
+            chaos_httpd::run_main(arg0_paths.clone(), root_config_overrides, serve_cli).await?;
         }
         Some(Subcommand::Resume(ResumeCommand {
             session_id,

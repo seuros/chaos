@@ -8,10 +8,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_ipc::config_types::CollaborationModeMask;
-use chaos_ipc::models::ContentItem;
-use chaos_ipc::models::ResponseItem;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::config_types::Verbosity;
+use chaos_ipc::models::ContentItem;
+use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ApplyPatchToolType;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::InputModality;

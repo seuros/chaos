@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use chaos_ipc::product::OS_NAME;
 use chaos_ipc::parse_command::ParsedCommand;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::user_input::TextElement;
 use chaos_kern::config::types::Notifications;

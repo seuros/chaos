@@ -85,7 +85,9 @@ async fn request_user_code(
         if status == StatusCode::NOT_FOUND {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                format!("device code login is not enabled for this {OS_NAME} server. Use the browser login or verify the server URL."),
+                format!(
+                    "device code login is not enabled for this {OS_NAME} server. Use the browser login or verify the server URL."
+                ),
             ));
         }
 

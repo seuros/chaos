@@ -915,7 +915,9 @@ fn is_missing_chaos_entitlement_error(error_code: &str, error_description: Optio
 /// Converts OAuth callback errors into a user-facing message.
 fn oauth_callback_error_message(error_code: &str, error_description: Option<&str>) -> String {
     if is_missing_chaos_entitlement_error(error_code, error_description) {
-        return format!("{OS_NAME} is not enabled for your workspace. Contact your workspace administrator to request access to {OS_NAME}.");
+        return format!(
+            "{OS_NAME} is not enabled for your workspace. Contact your workspace administrator to request access to {OS_NAME}."
+        );
     }
 
     if let Some(description) = error_description
@@ -1008,16 +1010,22 @@ fn render_login_error_page(
         if is_missing_chaos_entitlement_error(code, error_description) {
             (
                 format!("You do not have access to {OS_NAME}"),
-                format!("This account is not currently authorized to use {OS_NAME} in this workspace."),
+                format!(
+                    "This account is not currently authorized to use {OS_NAME} in this workspace."
+                ),
                 format!("Contact your workspace administrator to request access to {OS_NAME}."),
-                format!("Contact your workspace administrator to get access to {OS_NAME}, then return to {OS_NAME} and try again."),
+                format!(
+                    "Contact your workspace administrator to get access to {OS_NAME}, then return to {OS_NAME} and try again."
+                ),
             )
         } else {
             (
                 "Sign-in could not be completed".to_string(),
                 message.to_string(),
                 error_description.unwrap_or(message).to_string(),
-                format!("Return to {OS_NAME} to retry, switch accounts, or contact your workspace admin if access is restricted."),
+                format!(
+                    "Return to {OS_NAME} to retry, switch accounts, or contact your workspace admin if access is restricted."
+                ),
             )
         };
     template

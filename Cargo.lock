@@ -1206,6 +1206,7 @@ dependencies = [
  "chaos-console",
  "chaos-fork",
  "chaos-getopt",
+ "chaos-httpd",
  "chaos-ipc",
  "chaos-kern",
  "chaos-mcpd",
@@ -1522,6 +1523,27 @@ dependencies = [
  "tempfile",
  "tracing",
  "two-face",
+]
+
+[[package]]
+name = "chaos-httpd"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "chaos-argv",
+ "chaos-coreboot",
+ "chaos-getopt",
+ "chaos-ipc",
+ "chaos-kern",
+ "clap",
+ "pretty_assertions",
+ "rama",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

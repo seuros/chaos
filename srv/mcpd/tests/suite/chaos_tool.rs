@@ -318,9 +318,14 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .context("chaos tool response should include structuredContent.processId")?;
     assert_eq!(codex_response.jsonrpc, "2.0");
     assert_eq!(codex_response.id, json!(codex_request_id));
+    let structured_text = format!("{{\"processId\":\"{process_id}\",\"content\":\"Enjoy!\"}}");
     assert_eq!(
         *result,
         json!({
+            "content": [{
+                "type": "text",
+                "text": structured_text
+            }],
             "structuredContent": {
                 "processId": process_id,
                 "content": "Enjoy!"
@@ -440,9 +445,17 @@ async fn assert_tool_response_content(
         .result
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
+    let structured_text = format!(
+        "{{\"processId\":\"{process_id}\",\"content\":{}}}",
+        json!(content)
+    );
     assert_eq!(
         result,
         &json!({
+            "content": [{
+                "type": "text",
+                "text": structured_text
+            }],
             "structuredContent": {
                 "processId": process_id,
                 "content": content

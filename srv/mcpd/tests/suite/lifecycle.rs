@@ -41,6 +41,11 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
         response.result.as_ref().unwrap()["protocolVersion"],
         json!("2025-11-25")
     );
+    // mcp-host 0.1.27's ResourcesCapability does not yet expose a
+    // `listTemplates` flag, so the wire only carries `listChanged` and
+    // `subscribe`. Resource templates are still served via
+    // `resources/templates/list` — the capability advertisement just hasn't
+    // landed upstream.
     assert_eq!(
         response.result.as_ref().unwrap()["capabilities"],
         json!({
@@ -49,8 +54,7 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
             },
             "resources": {
                 "listChanged": true,
-                "subscribe": false,
-                "listTemplates": true
+                "subscribe": false
             }
         })
     );
@@ -96,7 +100,10 @@ async fn tools_list_before_initialize_is_rejected() -> Result<()> {
             "type": "validation"
         }))
     );
-    assert_eq!(error.message, "Session must be initialized first");
+    assert_eq!(
+        error.message,
+        "Session must complete notifications/initialized first"
+    );
 
     Ok(())
 }
@@ -110,6 +117,7 @@ async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
         mcp.initialize_with_protocol_version("2025-11-25"),
     )
     .await??;
+    mcp.send_initialized_notification().await?;
 
     let request_id = mcp.send_custom_request("tools/list", None).await?;
     let message = timeout(

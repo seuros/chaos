@@ -330,10 +330,14 @@ fn is_chaos_self_reference(
     let command_path = std::path::Path::new(command);
     let resolved_command = resolve_command_path(command_path);
 
-    if let Some(exe) = self_exe
-        && resolved_command.as_deref() == Some(exe)
-    {
-        return true;
+    // `resolved_command` is already canonicalized via `canonicalize_lossy`;
+    // mirror that on `self_exe` so platforms with symlinked tmp/var dirs
+    // (notably macOS `/var -> /private/var`) compare equal.
+    if let Some(exe) = self_exe {
+        let canonical_exe = canonicalize_lossy(exe);
+        if resolved_command.as_deref() == Some(canonical_exe.as_path()) {
+            return true;
+        }
     }
 
     // Fallback: match unresolved bare `chaos` by basename. Explicit paths

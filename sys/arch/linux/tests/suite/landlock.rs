@@ -39,21 +39,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
-// Arm64 test environments appear to need longer timeouts.
-
-#[cfg(not(target_arch = "aarch64"))]
-const SHORT_TIMEOUT_MS: u64 = 200;
-#[cfg(target_arch = "aarch64")]
-const SHORT_TIMEOUT_MS: u64 = 5_000;
-
-#[cfg(not(target_arch = "aarch64"))]
-const LONG_TIMEOUT_MS: u64 = 1_000;
-#[cfg(target_arch = "aarch64")]
-const LONG_TIMEOUT_MS: u64 = 5_000;
-
-#[cfg(not(target_arch = "aarch64"))]
-const NETWORK_TIMEOUT_MS: u64 = 2_000;
-#[cfg(target_arch = "aarch64")]
+// CI runners (any arch) routinely push spawn+landlock setup past 1s on shared
+// hosts. These tests check correctness, not timing — one generous budget is
+// enough. NETWORK is doubled because it covers DNS + connect.
+const TIMEOUT_MS: u64 = 5_000;
 const NETWORK_TIMEOUT_MS: u64 = 10_000;
 
 fn create_env_from_core_vars() -> HashMap<String, String> {
@@ -162,7 +151,7 @@ fn expect_denied(
 #[tokio::test]
 async fn test_root_read() {
     require_landlock!();
-    run_cmd(&["ls", "-l", "/bin"], &[], SHORT_TIMEOUT_MS).await;
+    run_cmd(&["ls", "-l", "/bin"], &[], TIMEOUT_MS).await;
 }
 
 #[tokio::test]
@@ -173,7 +162,7 @@ async fn test_root_write() {
     run_cmd(
         &["bash", "-lc", &format!("echo blah > {tmpfile_path}")],
         &[],
-        SHORT_TIMEOUT_MS,
+        TIMEOUT_MS,
     )
     .await;
 }
@@ -186,7 +175,7 @@ async fn test_dev_null_write() {
         &[],
         // We have seen timeouts for this test in CI, so use a generous
         // timeout until we can diagnose further.
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
         true,
     )
     .await
@@ -205,7 +194,7 @@ async fn linux_sandbox_populates_minimal_dev_nodes() {
             "for node in null zero full random urandom tty; do [ -c \"/dev/$node\" ] || { echo \"missing /dev/$node\" >&2; exit 1; }; done",
         ],
         &[],
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
         true,
     )
     .await
@@ -239,7 +228,7 @@ async fn linux_sandbox_preserves_writable_dev_shm_bind_mount() {
             &format!("printf sandbox-after > {}", target_path.to_string_lossy()),
         ],
         &[PathBuf::from("/dev/shm")],
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
         true,
     )
     .await
@@ -266,7 +255,7 @@ async fn test_writable_root() {
         &[tmpdir.path().to_path_buf()],
         // We have seen timeouts for this test in CI, so use a generous
         // timeout until we can diagnose further.
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
     )
     .await;
 }
@@ -279,7 +268,7 @@ async fn test_no_new_privs_is_enabled() {
         &[],
         // We have seen timeouts when running this test in CI on GitHub,
         // so we are using a generous timeout until we can diagnose further.
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
     )
     .await;
     let line = output
@@ -404,7 +393,7 @@ async fn workspace_write_currently_allows_git_and_chaos_writes_on_linux_landlock
             &format!("echo allowed > {}", git_target.to_string_lossy()),
         ],
         &[tmpdir.path().to_path_buf()],
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
         true,
     )
     .await
@@ -417,7 +406,7 @@ async fn workspace_write_currently_allows_git_and_chaos_writes_on_linux_landlock
             &format!("echo allowed > {}", chaos_target.to_string_lossy()),
         ],
         &[tmpdir.path().to_path_buf()],
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
         true,
     )
     .await
@@ -448,7 +437,7 @@ async fn workspace_write_currently_allows_chaos_symlink_replacement_on_linux_lan
             &format!("echo allowed > {}", chaos_target.to_string_lossy()),
         ],
         &[tmpdir.path().to_path_buf()],
-        LONG_TIMEOUT_MS,
+        TIMEOUT_MS,
         true,
     )
     .await
@@ -516,7 +505,7 @@ async fn linux_landlock_rejects_explicit_split_policy_carveouts() {
             sandbox_policy,
             vfs_policy,
             SocketPolicy::Enabled,
-            LONG_TIMEOUT_MS,
+            TIMEOUT_MS,
         )
         .await,
         "explicit split-policy carveout should be rejected by the Linux landlock backend",
@@ -596,7 +585,7 @@ async fn linux_landlock_rejects_nested_writable_carveouts_inside_unreadable_pare
             sandbox_policy,
             vfs_policy,
             SocketPolicy::Enabled,
-            LONG_TIMEOUT_MS,
+            TIMEOUT_MS,
         )
         .await,
         "nested writable carveout should be rejected by the Linux landlock backend",
@@ -644,7 +633,7 @@ async fn linux_landlock_rejects_root_read_carveouts() {
             sandbox_policy,
             vfs_policy,
             SocketPolicy::Enabled,
-            LONG_TIMEOUT_MS,
+            TIMEOUT_MS,
         )
         .await,
         "root-read carveout should be rejected by the Linux landlock backend",

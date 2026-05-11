@@ -59,6 +59,53 @@ fn assert_mcp_success(result_is_error: Option<bool>) {
     );
 }
 
+/// Validates the test echo tool's response payload.
+///
+/// mcp-host serializes `ToolOutput::Structured` results with the JSON also
+/// embedded as a single text content block, in addition to `structuredContent`.
+/// Tests assert both surfaces so a regression in either path is caught.
+fn assert_structured_echo_content(
+    result: &chaos_ipc::mcp::CallToolResult,
+    expected_message: &str,
+    expected_env: &str,
+) {
+    let Some(structured) = result.structured_content.as_ref() else {
+        panic!("structured content missing on echo tool result: {result:?}");
+    };
+    let Value::Object(map) = structured else {
+        panic!("structured content should be an object: {structured:?}");
+    };
+    let Some(echo_value) = map.get("echo").and_then(Value::as_str) else {
+        panic!("structured echo payload missing in: {structured:?}");
+    };
+    assert_eq!(echo_value, format!("ECHOING: {expected_message}"));
+    let Some(env_value) = map.get("env").and_then(Value::as_str) else {
+        panic!("structured env snapshot missing in: {structured:?}");
+    };
+    assert_eq!(env_value, expected_env);
+
+    assert_eq!(
+        result.content.len(),
+        1,
+        "structured tool output should also surface a text content block: {:?}",
+        result.content
+    );
+    let block = &result.content[0];
+    assert_eq!(
+        block.get("type").and_then(Value::as_str),
+        Some("text"),
+        "fallback content block should be text: {block:?}"
+    );
+    let Some(text) = block.get("text").and_then(Value::as_str) else {
+        panic!("text content block should carry stringified structured payload: {block:?}");
+    };
+    let parsed: Value = match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(err) => panic!("text fallback should be JSON-encoded structured payload: {err}"),
+    };
+    assert_eq!(&parsed, structured);
+}
+
 fn streamable_http_server_bin() -> anyhow::Result<Option<PathBuf>> {
     if std::env::var_os("CARGO_BIN_EXE_test_streamable_http_server").is_none() {
         eprintln!(
@@ -190,28 +237,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
         .as_ref()
         .expect("mcp_test echo tool should return success");
     assert_mcp_success(result.is_error);
-    assert!(
-        result.content.is_empty(),
-        "content should default to an empty array"
-    );
-
-    let structured = result
-        .structured_content
-        .as_ref()
-        .expect("structured content");
-    let Value::Object(map) = structured else {
-        panic!("structured content should be an object: {structured:?}");
-    };
-    let echo_value = map
-        .get("echo")
-        .and_then(Value::as_str)
-        .expect("echo payload present");
-    assert_eq!(echo_value, "ECHOING: ping");
-    let env_value = map
-        .get("env")
-        .and_then(Value::as_str)
-        .expect("env snapshot inserted");
-    assert_eq!(env_value, expected_env_value);
+    assert_structured_echo_content(result, "ping", expected_env_value);
 
     wait_for_event(&fixture.process, |ev| {
         matches!(ev, EventMsg::TurnComplete(_))
@@ -692,28 +718,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
         .as_ref()
         .expect("mcp_test echo tool should return success");
     assert_mcp_success(result.is_error);
-    assert!(
-        result.content.is_empty(),
-        "content should default to an empty array"
-    );
-
-    let structured = result
-        .structured_content
-        .as_ref()
-        .expect("structured content");
-    let Value::Object(map) = structured else {
-        panic!("structured content should be an object: {structured:?}");
-    };
-    let echo_value = map
-        .get("echo")
-        .and_then(Value::as_str)
-        .expect("echo payload present");
-    assert_eq!(echo_value, "ECHOING: ping");
-    let env_value = map
-        .get("env")
-        .and_then(Value::as_str)
-        .expect("env snapshot inserted");
-    assert_eq!(env_value, expected_env_value);
+    assert_structured_echo_content(result, "ping", expected_env_value);
 
     wait_for_event(&fixture.process, |ev| {
         matches!(ev, EventMsg::TurnComplete(_))
@@ -855,28 +860,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
         .as_ref()
         .expect("mcp_test echo tool should return success");
     assert_mcp_success(result.is_error);
-    assert!(
-        result.content.is_empty(),
-        "content should default to an empty array"
-    );
-
-    let structured = result
-        .structured_content
-        .as_ref()
-        .expect("structured content");
-    let Value::Object(map) = structured else {
-        panic!("structured content should be an object: {structured:?}");
-    };
-    let echo_value = map
-        .get("echo")
-        .and_then(Value::as_str)
-        .expect("echo payload present");
-    assert_eq!(echo_value, "ECHOING: ping");
-    let env_value = map
-        .get("env")
-        .and_then(Value::as_str)
-        .expect("env snapshot inserted");
-    assert_eq!(env_value, expected_env_value);
+    assert_structured_echo_content(result, "ping", expected_env_value);
 
     wait_for_event(&fixture.process, |ev| {
         matches!(ev, EventMsg::TurnComplete(_))
@@ -1103,28 +1087,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
         .as_ref()
         .expect("mcp_test echo tool should return success");
     assert_mcp_success(result.is_error);
-    assert!(
-        result.content.is_empty(),
-        "content should default to an empty array"
-    );
-
-    let structured = result
-        .structured_content
-        .as_ref()
-        .expect("structured content");
-    let Value::Object(map) = structured else {
-        panic!("structured content should be an object: {structured:?}");
-    };
-    let echo_value = map
-        .get("echo")
-        .and_then(Value::as_str)
-        .expect("echo payload present");
-    assert_eq!(echo_value, "ECHOING: ping");
-    let env_value = map
-        .get("env")
-        .and_then(Value::as_str)
-        .expect("env snapshot inserted");
-    assert_eq!(env_value, expected_env_value);
+    assert_structured_echo_content(result, "ping", expected_env_value);
 
     wait_for_event(&fixture.process, |ev| {
         matches!(ev, EventMsg::TurnComplete(_))

@@ -371,13 +371,11 @@ fn stop_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
 }
 
 fn permission_mode_schema(_gen: &mut SchemaGenerator) -> Schema {
-    string_enum_schema(&[
-        "default",
-        "acceptEdits",
-        "plan",
-        "dontAsk",
-        "bypassPermissions",
-    ])
+    // There are only two execution modes: interactive (`default`) and
+    // headless (`bypassPermissions`). `acceptEdits`, `plan`, and `dontAsk`
+    // are operator profiles layered on interactive mode, not separate flows,
+    // so they have no business being advertised to hook authors.
+    string_enum_schema(&["default", "bypassPermissions"])
 }
 
 fn session_start_source_schema(_gen: &mut SchemaGenerator) -> Schema {

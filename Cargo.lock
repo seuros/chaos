@@ -1536,7 +1536,6 @@ dependencies = [
  "chaos-ipc",
  "chaos-kern",
  "clap",
- "pretty_assertions",
  "rama",
  "serde",
  "serde_json",

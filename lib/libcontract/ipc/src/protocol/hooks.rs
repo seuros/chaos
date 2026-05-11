@@ -9,6 +9,7 @@ use ts_rs::TS;
 #[serde(rename_all = "snake_case")]
 pub enum HookEventName {
     SessionStart,
+    BeforeTurn,
     Stop,
 }
 

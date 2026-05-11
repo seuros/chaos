@@ -12,6 +12,8 @@ use schemars::SchemaGenerator;
 use schemars::generate::SchemaSettings;
 
 const GENERATED_DIR: &str = "generated";
+const BEFORE_TURN_INPUT_FIXTURE: &str = "before-turn.command.input.schema.json";
+const BEFORE_TURN_OUTPUT_FIXTURE: &str = "before-turn.command.output.schema.json";
 const SESSION_START_INPUT_FIXTURE: &str = "session-start.command.input.schema.json";
 const SESSION_START_OUTPUT_FIXTURE: &str = "session-start.command.output.schema.json";
 const STOP_INPUT_FIXTURE: &str = "stop.command.input.schema.json";
@@ -67,6 +69,8 @@ pub(crate) struct HookUniversalOutputWire {
 pub(crate) enum HookEventNameWire {
     #[serde(rename = "SessionStart")]
     SessionStart,
+    #[serde(rename = "BeforeTurn")]
+    BeforeTurn,
     #[serde(rename = "Stop")]
     Stop,
 }
@@ -86,6 +90,26 @@ pub(crate) struct SessionStartCommandOutputWire {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SessionStartHookSpecificOutputWire {
+    pub hook_event_name: HookEventNameWire,
+    #[serde(default)]
+    pub additional_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "before-turn.command.output")]
+pub(crate) struct BeforeTurnCommandOutputWire {
+    #[serde(flatten)]
+    pub universal: HookUniversalOutputWire,
+    #[serde(default)]
+    pub hook_specific_output: Option<BeforeTurnHookSpecificOutputWire>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BeforeTurnHookSpecificOutputWire {
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
     pub additional_context: Option<String>,
@@ -151,6 +175,45 @@ impl SessionStartCommandInput {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "before-turn.command.input")]
+pub(crate) struct BeforeTurnCommandInput {
+    pub session_id: String,
+    pub transcript_path: NullableString,
+    pub cwd: String,
+    #[schemars(schema_with = "before_turn_hook_event_name_schema")]
+    pub hook_event_name: String,
+    pub turn_id: String,
+    pub model: String,
+    #[schemars(schema_with = "permission_mode_schema")]
+    pub permission_mode: String,
+    pub input_messages: Vec<String>,
+}
+
+impl BeforeTurnCommandInput {
+    pub(crate) fn new(
+        session_id: impl Into<String>,
+        transcript_path: Option<PathBuf>,
+        cwd: impl Into<String>,
+        turn_id: impl Into<String>,
+        model: impl Into<String>,
+        permission_mode: impl Into<String>,
+        input_messages: Vec<String>,
+    ) -> Self {
+        Self {
+            session_id: session_id.into(),
+            transcript_path: NullableString::from_path(transcript_path),
+            cwd: cwd.into(),
+            hook_event_name: "BeforeTurn".to_string(),
+            turn_id: turn_id.into(),
+            model: model.into(),
+            permission_mode: permission_mode.into(),
+            input_messages,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(rename = "stop.command.input")]
 pub(crate) struct StopCommandInput {
     pub session_id: String,
@@ -192,6 +255,14 @@ pub fn write_schema_fixtures(schema_root: &Path) -> anyhow::Result<()> {
     let generated_dir = schema_root.join(GENERATED_DIR);
     ensure_empty_dir(&generated_dir)?;
 
+    write_schema(
+        &generated_dir.join(BEFORE_TURN_INPUT_FIXTURE),
+        schema_json::<BeforeTurnCommandInput>()?,
+    )?;
+    write_schema(
+        &generated_dir.join(BEFORE_TURN_OUTPUT_FIXTURE),
+        schema_json::<BeforeTurnCommandOutputWire>()?,
+    )?;
     write_schema(
         &generated_dir.join(SESSION_START_INPUT_FIXTURE),
         schema_json::<SessionStartCommandInput>()?,
@@ -291,6 +362,10 @@ fn session_start_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
     string_const_schema("SessionStart")
 }
 
+fn before_turn_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
+    string_const_schema("BeforeTurn")
+}
+
 fn stop_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
     string_const_schema("Stop")
 }
@@ -337,6 +412,8 @@ fn default_continue() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::BEFORE_TURN_INPUT_FIXTURE;
+    use super::BEFORE_TURN_OUTPUT_FIXTURE;
     use super::SESSION_START_INPUT_FIXTURE;
     use super::SESSION_START_OUTPUT_FIXTURE;
     use super::STOP_INPUT_FIXTURE;
@@ -352,6 +429,12 @@ mod tests {
             }
             SESSION_START_OUTPUT_FIXTURE => {
                 include_str!("../schema/generated/session-start.command.output.schema.json")
+            }
+            BEFORE_TURN_INPUT_FIXTURE => {
+                include_str!("../schema/generated/before-turn.command.input.schema.json")
+            }
+            BEFORE_TURN_OUTPUT_FIXTURE => {
+                include_str!("../schema/generated/before-turn.command.output.schema.json")
             }
             STOP_INPUT_FIXTURE => {
                 include_str!("../schema/generated/stop.command.input.schema.json")
@@ -379,6 +462,8 @@ mod tests {
         for fixture in [
             SESSION_START_INPUT_FIXTURE,
             SESSION_START_OUTPUT_FIXTURE,
+            BEFORE_TURN_INPUT_FIXTURE,
+            BEFORE_TURN_OUTPUT_FIXTURE,
             STOP_INPUT_FIXTURE,
             STOP_OUTPUT_FIXTURE,
         ] {

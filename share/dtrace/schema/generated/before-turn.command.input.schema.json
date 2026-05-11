@@ -14,11 +14,14 @@
       "type": "string"
     },
     "hook_event_name": {
-      "const": "Stop",
+      "const": "BeforeTurn",
       "type": "string"
     },
-    "last_assistant_message": {
-      "$ref": "#/definitions/NullableString"
+    "input_messages": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "model": {
       "type": "string"
@@ -36,23 +39,23 @@
     "session_id": {
       "type": "string"
     },
-    "stop_hook_active": {
-      "type": "boolean"
-    },
     "transcript_path": {
       "$ref": "#/definitions/NullableString"
+    },
+    "turn_id": {
+      "type": "string"
     }
   },
   "required": [
     "cwd",
     "hook_event_name",
-    "last_assistant_message",
+    "input_messages",
     "model",
     "permission_mode",
     "session_id",
-    "stop_hook_active",
-    "transcript_path"
+    "transcript_path",
+    "turn_id"
   ],
-  "title": "stop.command.input",
+  "title": "before-turn.command.input",
   "type": "object"
 }

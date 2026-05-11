@@ -3,6 +3,8 @@ use tokio::process::Command;
 
 use crate::engine::ClaudeHooksEngine;
 use crate::engine::CommandShell;
+use crate::events::before_turn::BeforeTurnOutcome;
+use crate::events::before_turn::BeforeTurnRequest;
 use crate::events::session_start::SessionStartOutcome;
 use crate::events::session_start::SessionStartRequest;
 use crate::events::stop::StopOutcome;
@@ -94,6 +96,17 @@ impl Hooks {
         turn_id: Option<String>,
     ) -> SessionStartOutcome {
         self.engine.run_session_start(request, turn_id).await
+    }
+
+    pub fn preview_before_turn(
+        &self,
+        request: &BeforeTurnRequest,
+    ) -> Vec<chaos_ipc::protocol::HookRunSummary> {
+        self.engine.preview_before_turn(request)
+    }
+
+    pub async fn run_before_turn(&self, request: BeforeTurnRequest) -> BeforeTurnOutcome {
+        self.engine.run_before_turn(request).await
     }
 
     pub fn preview_stop(&self, request: &StopRequest) -> Vec<chaos_ipc::protocol::HookRunSummary> {

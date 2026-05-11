@@ -13,6 +13,12 @@ pub(crate) struct SessionStartOutput {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct BeforeTurnOutput {
+    pub universal: UniversalOutput,
+    pub additional_context: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct StopOutput {
     pub universal: UniversalOutput,
     pub should_block: bool,
@@ -20,6 +26,7 @@ pub(crate) struct StopOutput {
     pub invalid_block_reason: Option<String>,
 }
 
+use crate::schema::BeforeTurnCommandOutputWire;
 use crate::schema::HookUniversalOutputWire;
 use crate::schema::SessionStartCommandOutputWire;
 use crate::schema::StopCommandOutputWire;
@@ -31,6 +38,17 @@ pub(crate) fn parse_session_start(stdout: &str) -> Option<SessionStartOutput> {
         .hook_specific_output
         .and_then(|output| output.additional_context);
     Some(SessionStartOutput {
+        universal: UniversalOutput::from(wire.universal),
+        additional_context,
+    })
+}
+
+pub(crate) fn parse_before_turn(stdout: &str) -> Option<BeforeTurnOutput> {
+    let wire: BeforeTurnCommandOutputWire = parse_json(stdout)?;
+    let additional_context = wire
+        .hook_specific_output
+        .and_then(|output| output.additional_context);
+    Some(BeforeTurnOutput {
         universal: UniversalOutput::from(wire.universal),
         additional_context,
     })

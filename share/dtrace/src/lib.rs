@@ -5,6 +5,8 @@ mod registry;
 mod schema;
 mod types;
 
+pub use events::before_turn::BeforeTurnOutcome;
+pub use events::before_turn::BeforeTurnRequest;
 pub use events::session_start::SessionStartOutcome;
 pub use events::session_start::SessionStartRequest;
 pub use events::session_start::SessionStartSource;

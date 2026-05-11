@@ -24,19 +24,21 @@ pub(crate) struct ParsedHandler<T> {
 pub(crate) fn select_handlers(
     handlers: &[ConfiguredHandler],
     event_name: HookEventName,
-    session_start_source: Option<&str>,
+    matcher_input: Option<&str>,
 ) -> Vec<ConfiguredHandler> {
     handlers
         .iter()
         .filter(|handler| handler.event_name == event_name)
         .filter(|handler| match event_name {
-            HookEventName::SessionStart => match (&handler.matcher, session_start_source) {
-                (Some(matcher), Some(source)) => regex::Regex::new(matcher)
-                    .map(|regex| regex.is_match(source))
-                    .unwrap_or(false),
-                (None, _) => true,
-                _ => false,
-            },
+            HookEventName::SessionStart | HookEventName::BeforeTurn => {
+                match (&handler.matcher, matcher_input) {
+                    (Some(matcher), Some(input)) => regex::Regex::new(matcher)
+                        .map(|regex| regex.is_match(input))
+                        .unwrap_or(false),
+                    (None, _) => true,
+                    _ => false,
+                }
+            }
             HookEventName::Stop => true,
         })
         .cloned()
@@ -109,6 +111,7 @@ pub(crate) fn completed_summary(
 fn scope_for_event(event_name: HookEventName) -> HookScope {
     match event_name {
         HookEventName::SessionStart => HookScope::Process,
+        HookEventName::BeforeTurn => HookScope::Turn,
         HookEventName::Stop => HookScope::Turn,
     }
 }

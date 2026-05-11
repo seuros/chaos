@@ -26,9 +26,6 @@
     "permission_mode": {
       "enum": [
         "default",
-        "acceptEdits",
-        "plan",
-        "dontAsk",
         "bypassPermissions"
       ],
       "type": "string"

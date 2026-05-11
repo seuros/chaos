@@ -1,6 +1,7 @@
 use crate::config::OtelExporter;
 use crate::config::OtelHttpProtocol;
 use crate::config::OtelSettings;
+use crate::config::OtelTlsConfig;
 use crate::metrics::MetricsClient;
 use crate::metrics::MetricsConfig;
 use crate::targets::is_log_export_target;
@@ -270,10 +271,13 @@ fn build_logger(
                 .with_protocol(protocol)
                 .with_headers(headers);
 
-            if let Some(tls) = tls.as_ref() {
-                let client = crate::otlp::build_http_client(tls, OTEL_EXPORTER_OTLP_LOGS_TIMEOUT)?;
-                exporter_builder = exporter_builder.with_http_client(client);
-            }
+            // opentelemetry-otlp's default features (which would supply a
+            // bundled reqwest client) are disabled at the workspace level, so
+            // the http exporter has no client unless one is supplied here.
+            let default_tls = OtelTlsConfig::default();
+            let tls_ref = tls.as_ref().unwrap_or(&default_tls);
+            let client = crate::otlp::build_http_client(tls_ref, OTEL_EXPORTER_OTLP_LOGS_TIMEOUT)?;
+            exporter_builder = exporter_builder.with_http_client(client);
 
             let exporter = exporter_builder.build()?;
 
@@ -362,11 +366,14 @@ fn build_tracer_provider(
                 .with_protocol(protocol)
                 .with_headers(headers);
 
-            if let Some(tls) = tls.as_ref() {
-                let client =
-                    crate::otlp::build_http_client(tls, OTEL_EXPORTER_OTLP_TRACES_TIMEOUT)?;
-                exporter_builder = exporter_builder.with_http_client(client);
-            }
+            // opentelemetry-otlp's default features (which would supply a
+            // bundled reqwest client) are disabled at the workspace level, so
+            // the http exporter has no client unless one is supplied here.
+            let default_tls = OtelTlsConfig::default();
+            let tls_ref = tls.as_ref().unwrap_or(&default_tls);
+            let client =
+                crate::otlp::build_http_client(tls_ref, OTEL_EXPORTER_OTLP_TRACES_TIMEOUT)?;
+            exporter_builder = exporter_builder.with_http_client(client);
 
             exporter_builder.build()?
         }

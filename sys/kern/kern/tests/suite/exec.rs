@@ -52,7 +52,6 @@ async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput
 
     process_exec_tool_call(
         params,
-        &policy,
         &VfsPolicy::from(&policy),
         SocketPolicy::from(&policy),
         tmp.path(),

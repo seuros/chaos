@@ -47,102 +47,62 @@ pub enum InitialHistory {
 }
 
 impl InitialHistory {
+    /// Borrow the rollout items backing this history, or `None` for [`InitialHistory::New`].
+    ///
+    /// Centralizing the enum match here lets every accessor below operate on a
+    /// plain slice without re-deriving which variant carries the data.
+    fn rollout_items(&self) -> Option<&[RolloutItem]> {
+        match self {
+            InitialHistory::New => None,
+            InitialHistory::Resumed(resumed) => Some(&resumed.history),
+            InitialHistory::Forked(items) => Some(items),
+        }
+    }
+
+    fn find_session_meta(&self) -> Option<&SessionMeta> {
+        self.rollout_items()?.iter().find_map(|item| match item {
+            RolloutItem::SessionMeta(meta_line) => Some(&meta_line.meta),
+            _ => None,
+        })
+    }
+
     pub fn forked_from_id(&self) -> Option<ProcessId> {
         match self {
             InitialHistory::New => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.forked_from_id,
-                    _ => None,
-                })
-            }
-            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
-                RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.id),
-                _ => None,
-            }),
+            InitialHistory::Resumed(_) => self.find_session_meta()?.forked_from_id,
+            InitialHistory::Forked(_) => self.find_session_meta().map(|meta| meta.id),
         }
     }
 
     pub fn session_cwd(&self) -> Option<PathBuf> {
-        match self {
-            InitialHistory::New => None,
-            InitialHistory::Resumed(resumed) => session_cwd_from_items(&resumed.history),
-            InitialHistory::Forked(items) => session_cwd_from_items(items),
-        }
+        self.find_session_meta().map(|meta| meta.cwd.clone())
     }
 
     pub fn get_rollout_items(&self) -> Vec<RolloutItem> {
-        match self {
-            InitialHistory::New => Vec::new(),
-            InitialHistory::Resumed(resumed) => resumed.history.clone(),
-            InitialHistory::Forked(items) => items.clone(),
-        }
+        self.rollout_items().map(<[_]>::to_vec).unwrap_or_default()
     }
 
     pub fn get_event_msgs(&self) -> Option<Vec<EventMsg>> {
-        match self {
-            InitialHistory::New => None,
-            InitialHistory::Resumed(resumed) => Some(
-                resumed
-                    .history
-                    .iter()
-                    .filter_map(|ri| match ri {
-                        RolloutItem::EventMsg(ev) => Some(ev.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-            ),
-            InitialHistory::Forked(items) => Some(
-                items
-                    .iter()
-                    .filter_map(|ri| match ri {
-                        RolloutItem::EventMsg(ev) => Some(ev.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-            ),
-        }
+        let items = self.rollout_items()?;
+        Some(
+            items
+                .iter()
+                .filter_map(|ri| match ri {
+                    RolloutItem::EventMsg(ev) => Some(ev.clone()),
+                    _ => None,
+                })
+                .collect(),
+        )
     }
 
     pub fn get_base_instructions(&self) -> Option<BaseInstructions> {
         // TODO: SessionMeta should (in theory) always be first in the history, so we can probably only check the first item?
-        match self {
-            InitialHistory::New => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.base_instructions.clone(),
-                    _ => None,
-                })
-            }
-            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
-                RolloutItem::SessionMeta(meta_line) => meta_line.meta.base_instructions.clone(),
-                _ => None,
-            }),
-        }
+        self.find_session_meta()?.base_instructions.clone()
     }
 
     pub fn get_dynamic_tools(&self) -> Option<Vec<DynamicToolSpec>> {
-        match self {
-            InitialHistory::New => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.dynamic_tools.clone(),
-                    _ => None,
-                })
-            }
-            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
-                RolloutItem::SessionMeta(meta_line) => meta_line.meta.dynamic_tools.clone(),
-                _ => None,
-            }),
-        }
+        self.find_session_meta()?.dynamic_tools.clone()
     }
-}
-
-fn session_cwd_from_items(items: &[RolloutItem]) -> Option<PathBuf> {
-    items.iter().find_map(|item| match item {
-        RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.cwd.clone()),
-        _ => None,
-    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS, Default)]

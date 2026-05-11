@@ -104,6 +104,7 @@ members = [
     "lib/libutil/lex",
     "lib/libutil/wchar",
     "lib/libutil/apropos",
+    "lib/libutil/auth-test-fixtures",
 
     # tests/
     "tests/check",
@@ -224,6 +225,7 @@ chaos-amphetamine = { path = "lib/libutil/amphetamine" }
 chaos-lex = { path = "lib/libutil/lex" }
 chaos-wchar = { path = "lib/libutil/wchar" }
 chaos-apropos = { path = "lib/libutil/apropos" }
+chaos-auth-test-fixtures = { path = "lib/libutil/auth-test-fixtures" }
 
 # Internal — tests/
 chaos-check = { path = "tests/check" }

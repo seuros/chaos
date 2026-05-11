@@ -1,3 +1,12 @@
+//! Shared OAuth/JWT test fixtures used by kernel and PAM integration tests.
+//!
+//! This crate is the single source of truth for the small set of helpers that
+//! manufacture fake JWTs and `AuthDotJson` records during tests. It exists so
+//! that kernel-side and PAM-side suites stop drifting separate copies of the
+//! same five-function module.
+
+#![warn(clippy::all)]
+
 use base64::Engine;
 use chaos_ipc::api::AuthMode;
 use chaos_kern::auth::AuthDotJson;
@@ -8,7 +17,10 @@ use chaos_kern::token_data::TokenData;
 use jiff::Timestamp;
 use serde_json::json;
 
-pub(crate) fn make_jwt(payload: serde_json::Value) -> String {
+/// Build an unsigned JWT (`alg: none`) carrying the given JSON payload.
+///
+/// The signature segment is a constant placeholder; tests never validate it.
+pub fn make_jwt(payload: serde_json::Value) -> String {
     let header = json!({ "alg": "none", "typ": "JWT" });
     let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
     let header_b64 = encode(&serde_json::to_vec(&header).unwrap_or_else(|err| {
@@ -21,7 +33,8 @@ pub(crate) fn make_jwt(payload: serde_json::Value) -> String {
     format!("{header_b64}.{payload_b64}.{signature_b64}")
 }
 
-pub(crate) fn openai_auth(
+/// Construct an [`AuthDotJson`] containing a single OpenAI provider record.
+pub fn openai_auth(
     auth_mode: AuthMode,
     api_key: Option<&str>,
     tokens: Option<TokenData>,
@@ -42,14 +55,18 @@ pub(crate) fn openai_auth(
     }
 }
 
-pub(crate) fn openai_record(auth: &AuthDotJson) -> &ProviderAuthRecord {
+/// Borrow the OpenAI provider record from an [`AuthDotJson`], panicking if
+/// the record is missing.
+pub fn openai_record(auth: &AuthDotJson) -> &ProviderAuthRecord {
     auth.providers
         .get(DEFAULT_AUTH_PROVIDER_ID)
         .unwrap_or_else(|| panic!("openai provider record should exist"))
 }
 
+/// Build a [`TokenData`] for the given access/refresh token pair, with a
+/// canned `sub` claim and account id.
 #[allow(clippy::field_reassign_with_default)]
-pub(crate) fn build_tokens(access_token: &str, refresh_token: &str) -> TokenData {
+pub fn build_tokens(access_token: &str, refresh_token: &str) -> TokenData {
     let mut id_token = IdTokenInfo::default();
     id_token.raw_jwt = make_jwt(json!({ "sub": "user-123" }));
     TokenData {

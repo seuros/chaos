@@ -1,15 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #![cfg(target_os = "macos")]
 
-use crate::request_permissions_test_support::build_add_file_patch;
-use crate::request_permissions_test_support::exec_command_event;
-use crate::request_permissions_test_support::expect_request_permissions_event;
-use crate::request_permissions_test_support::normalized_directory_write_permissions;
-use crate::request_permissions_test_support::parse_result;
-use crate::request_permissions_test_support::request_permissions_tool_event;
-use crate::request_permissions_test_support::requested_directory_write_permissions;
-use crate::request_permissions_test_support::submit_turn;
-use crate::request_permissions_test_support::workspace_write_excluding_tmp;
+use super::request_permissions_test_support::build_add_file_patch;
+use super::request_permissions_test_support::expect_request_permissions_event;
+use super::request_permissions_test_support::normalized_directory_write_permissions;
+use super::request_permissions_test_support::parse_result;
+use super::request_permissions_test_support::request_permissions_tool_event;
+use super::request_permissions_test_support::requested_directory_write_permissions;
+use super::request_permissions_test_support::submit_turn;
+use super::request_permissions_test_support::workspace_write_excluding_tmp;
 use anyhow::Result;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
@@ -64,7 +63,7 @@ async fn approved_folder_write_request_permissions_unblocks_later_apply_patch_wi
     let requested_permissions = requested_directory_write_permissions(requested_dir.path());
     let normalized_requested_permissions =
         normalized_directory_write_permissions(requested_dir.path())?;
-    let patch = build_add_file_patch(&requested_file, "patched-via-request-permissions");
+    let patch = build_add_file_patch(requested_file.display(), "patched-via-request-permissions");
 
     let responses = mount_sse_sequence(
         &server,

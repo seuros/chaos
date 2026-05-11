@@ -1,7 +1,5 @@
 use chaos_ipc::ProcessId;
-use chaos_ipc::product::OS_NAME;
 use chaos_storage::ChaosStorageProvider;
-use const_format::concatcp;
 use serde::Serialize;
 use serde_json::json;
 
@@ -48,7 +46,7 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 3] = [
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
         name: "sessions",
-        description: concatcp!("List all ", OS_NAME, " processes"),
+        description: "List all ChaOS processes",
         mime_type: JSON_MIME_TYPE,
     },
     ChaosBuiltinResourceSpec {
@@ -72,7 +70,7 @@ const RESOURCE_TEMPLATE_SPECS: [ChaosBuiltinResourceTemplateSpec; 1] =
         kind: ChaosBuiltinResourceTemplateKind::SessionDetail,
         uri_template: CHAOS_SESSIONS_URI_TEMPLATE,
         name: "session_detail",
-        description: concatcp!("Details for a specific ", OS_NAME, " process"),
+        description: "Details for a specific ChaOS process",
         mime_type: JSON_MIME_TYPE,
     }];
 

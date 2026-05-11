@@ -21,7 +21,6 @@ base64 = { workspace = true }
 alcatraz-macos = { workspace = true }
 chaos-minions = { workspace = true }
 chardetng = { workspace = true }
-const_format = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chaos-parrot = { workspace = true }

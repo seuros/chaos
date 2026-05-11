@@ -1675,7 +1675,6 @@ dependencies = [
  "chrono-machines",
  "clap",
  "codex-client",
- "const_format",
  "core_test_support",
  "csv",
  "ctor 0.8.0",

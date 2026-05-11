@@ -73,22 +73,11 @@ pub struct Cli {
     pub sandbox_mode: Option<chaos_getopt::SandboxModeCliArg>,
 
     /// Configure when the model requires human approval before executing a command.
-    #[arg(long = "ask-for-approval", short = 'a')]
+    #[arg(long = "ask-for-approval", short = 'a', conflicts_with = "headless")]
     pub approval_policy: Option<ApprovalModeCliArg>,
 
-    /// Convenience alias for low-friction sandboxed automatic execution (-a on-request, --sandbox workspace-write).
-    #[arg(long = "full-auto", default_value_t = false)]
-    pub full_auto: bool,
-
-    /// Skip all confirmation prompts and execute commands without sandboxing.
-    /// EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed.
-    #[arg(
-        long = "dangerously-bypass-approvals-and-sandbox",
-        alias = "yolo",
-        default_value_t = false,
-        conflicts_with_all = ["approval_policy", "full_auto"]
-    )]
-    pub dangerously_bypass_approvals_and_sandbox: bool,
+    #[clap(flatten)]
+    pub auto_exec: chaos_getopt::AutoExecFlags,
 
     /// Tell the agent to use the specified directory as its working root.
     #[clap(long = "cd", short = 'C', value_name = "DIR")]

@@ -8,12 +8,12 @@ use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
 use chaos_coreboot::CoreBoot;
+use chaos_getopt::auto_exec_approval_policy;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::product::OS_NAME;
-use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
 use chaos_kern::ProcessSortKey;
 use chaos_kern::RolloutRecorder;
@@ -138,15 +138,15 @@ pub async fn run_main(
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
 ) -> std::io::Result<AppExitInfo> {
-    let (sandbox_mode, approval_policy) = if cli.full_auto {
-        (
-            Some(SandboxMode::WorkspaceWrite),
-            Some(ApprovalPolicy::Interactive),
-        )
-    } else if cli.dangerously_bypass_approvals_and_sandbox {
+    let (sandbox_mode, approval_policy) = if cli.auto_exec.headless {
         (
             Some(SandboxMode::RootAccess),
-            Some(ApprovalPolicy::Headless),
+            Some(auto_exec_approval_policy()),
+        )
+    } else if cli.auto_exec.full_auto {
+        (
+            Some(SandboxMode::WorkspaceWrite),
+            Some(auto_exec_approval_policy()),
         )
     } else {
         (

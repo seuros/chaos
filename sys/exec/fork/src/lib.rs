@@ -122,7 +122,7 @@ struct ExecRunArgs {
     command: Option<ExecCommand>,
     config: Config,
     cursor_ansi: bool,
-    dangerously_bypass_approvals_and_sandbox: bool,
+    headless: bool,
     exec_span: tracing::Span,
     images: Vec<PathBuf>,
     json_mode: bool,
@@ -156,8 +156,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         oss,
         oss_provider,
         config_profile,
-        full_auto,
-        dangerously_bypass_approvals_and_sandbox,
+        auto_exec,
         cwd,
         skip_git_repo_check,
         add_dir,
@@ -212,9 +211,9 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         .with_writer(std::io::stderr)
         .with_filter(env_filter);
 
-    let sandbox_mode = if full_auto {
+    let sandbox_mode = if auto_exec.full_auto {
         Some(SandboxMode::WorkspaceWrite)
-    } else if dangerously_bypass_approvals_and_sandbox {
+    } else if auto_exec.headless {
         Some(SandboxMode::RootAccess)
     } else {
         sandbox_mode_cli_arg.map(Into::<SandboxMode>::into)
@@ -407,7 +406,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         command,
         config,
         cursor_ansi,
-        dangerously_bypass_approvals_and_sandbox,
+        headless: auto_exec.headless,
         exec_span: exec_span.clone(),
         images,
         json_mode,
@@ -430,7 +429,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         command,
         config,
         cursor_ansi,
-        dangerously_bypass_approvals_and_sandbox,
+        headless,
         exec_span,
         images,
         json_mode,
@@ -482,12 +481,9 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     let default_sandbox_policy = config.permissions.sandbox_policy.get();
     let default_effort = config.model_reasoning_effort;
 
-    // When --yolo (dangerously_bypass_approvals_and_sandbox) is set, also skip the git repo check
+    // When --yolo (headless) is set, also skip the git repo check
     // since the user is explicitly running in an externally sandboxed environment.
-    if !skip_git_repo_check
-        && !dangerously_bypass_approvals_and_sandbox
-        && get_git_repo_root(&default_cwd).is_none()
-    {
+    if !skip_git_repo_check && !headless && get_git_repo_root(&default_cwd).is_none() {
         eprintln!("Not inside a trusted directory and --skip-git-repo-check was not specified.");
         std::process::exit(1);
     }

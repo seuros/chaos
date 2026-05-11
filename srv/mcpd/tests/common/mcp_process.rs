@@ -137,6 +137,10 @@ impl McpProcess {
         };
         assert_eq!(jsonrpc, "2.0");
         assert_eq!(id, json!(0));
+        // mcp-host's ResourcesCapability struct doesn't yet carry a
+        // `listTemplates` flag, so the on-the-wire capability set
+        // omits it even though the server still serves
+        // `resources/templates/list` requests.
         assert_eq!(
             result.as_ref().unwrap(),
             &json!({
@@ -146,8 +150,7 @@ impl McpProcess {
                     },
                     "resources": {
                         "listChanged": true,
-                        "subscribe": false,
-                        "listTemplates": true
+                        "subscribe": false
                     },
                 },
                 "instructions": "Chaos — provider-agnostic coding agent",
@@ -239,7 +242,13 @@ impl McpProcess {
             "notifications/initialized",
             None,
         )))
-        .await
+        .await?;
+        // mcp-host 0.1.27 spawns each incoming message into its own tokio
+        // task, so a follow-up request may race the notifications/initialized
+        // handler that flips the session into the ready state. Yield a short
+        // moment so the handler completes before tests fire the next request.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Ok(())
     }
 
     /// Returns the id used to make the request so it can be used when

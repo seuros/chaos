@@ -10,7 +10,6 @@ use chaos_ipc::permissions::VfsEntry;
 use chaos_ipc::permissions::VfsPath;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsSpecialPath;
-use chaos_ipc::product::OS_NAME;
 use chaos_pf::NetworkMode;
 use chaos_pf::NetworkProxyConfig;
 use chaos_realpath::AbsolutePathBuf;
@@ -321,7 +320,7 @@ fn push_warning(startup_warnings: &mut Vec<String>, message: String) {
 
 fn missing_filesystem_entries_warning(profile_name: &str) -> String {
     format!(
-        "Permissions profile `{profile_name}` does not define any recognized filesystem entries for this version of {OS_NAME}. Filesystem access will remain restricted. Upgrade {OS_NAME} if this profile expects filesystem permissions."
+        "Permissions profile `{profile_name}` does not define any recognized filesystem entries for this version of Chaos. Filesystem access will remain restricted. Upgrade Chaos if this profile expects filesystem permissions."
     )
 }
 
@@ -336,11 +335,11 @@ fn maybe_push_unknown_special_path_warning(
         startup_warnings,
         match subpath.as_deref() {
             Some(subpath) => format!(
-                "Configured filesystem path `{path}` with nested entry `{}` is not recognized by this version of {OS_NAME} and will be ignored. Upgrade {OS_NAME} if this path is required.",
+                "Configured filesystem path `{path}` with nested entry `{}` is not recognized by this version of Chaos and will be ignored. Upgrade Chaos if this path is required.",
                 subpath.display()
             ),
             None => format!(
-                "Configured filesystem path `{path}` is not recognized by this version of {OS_NAME} and will be ignored. Upgrade {OS_NAME} if this path is required."
+                "Configured filesystem path `{path}` is not recognized by this version of Chaos and will be ignored. Upgrade Chaos if this path is required."
             ),
         },
     );

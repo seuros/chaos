@@ -10,6 +10,8 @@ pub(crate) struct HooksFile {
 pub(crate) struct HookEvents {
     #[serde(rename = "SessionStart", default)]
     pub session_start: Vec<MatcherGroup>,
+    #[serde(rename = "BeforeTurn", default)]
+    pub before_turn: Vec<MatcherGroup>,
     #[serde(rename = "Stop", default)]
     pub stop: Vec<MatcherGroup>,
 }

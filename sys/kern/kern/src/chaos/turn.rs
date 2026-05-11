@@ -129,6 +129,12 @@ pub(crate) async fn run_turn(
     let initial_input_for_turn: ResponseInputItem =
         response_input_item_from_user_input(input.clone());
     let response_item: ResponseItem = initial_input_for_turn.clone().into();
+    let before_turn_input_messages = parse_turn_item(&response_item)
+        .and_then(|item| match item {
+            TurnItem::UserMessage(user_message) => Some(vec![user_message.message()]),
+            _ => None,
+        })
+        .unwrap_or_default();
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
         .await;
     // Track the previous-turn baseline from the regular user-turn path only so
@@ -138,6 +144,23 @@ pub(crate) async fn run_turn(
         model: turn_context.model_info.slug.clone(),
     }))
     .await;
+
+    let before_turn_permission_mode = match turn_context.approval_policy.value() {
+        ApprovalPolicy::Headless => "bypassPermissions",
+        ApprovalPolicy::Supervised | ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {
+            "default"
+        }
+    }
+    .to_string();
+    let mut before_turn_request = Some(chaos_dtrace::BeforeTurnRequest {
+        session_id: sess.conversation_id,
+        turn_id: turn_context.sub_id.clone(),
+        cwd: turn_context.cwd.clone(),
+        transcript_path: None,
+        model: turn_context.model_info.slug.clone(),
+        permission_mode: before_turn_permission_mode,
+        input_messages: before_turn_input_messages,
+    });
 
     sess.maybe_start_ghost_snapshot(Arc::clone(&turn_context), cancellation_token.child_token())
         .await;
@@ -192,6 +215,36 @@ pub(crate) async fn run_turn(
                 break;
             }
             if let Some(additional_context) = session_start_outcome.additional_context {
+                let developer_message: ResponseItem =
+                    DeveloperInstructions::new(additional_context).into();
+                sess.record_conversation_items(
+                    &turn_context,
+                    std::slice::from_ref(&developer_message),
+                )
+                .await;
+            }
+        }
+
+        if let Some(before_turn_request) = before_turn_request.take() {
+            for run in sess.hooks().preview_before_turn(&before_turn_request) {
+                sess.send_event(
+                    &turn_context,
+                    EventMsg::HookStarted(crate::protocol::HookStartedEvent {
+                        turn_id: Some(turn_context.sub_id.clone()),
+                        run,
+                    }),
+                )
+                .await;
+            }
+            let before_turn_outcome = sess.hooks().run_before_turn(before_turn_request).await;
+            for completed in before_turn_outcome.hook_events {
+                sess.send_event(&turn_context, EventMsg::HookCompleted(completed))
+                    .await;
+            }
+            if before_turn_outcome.should_stop {
+                break;
+            }
+            if let Some(additional_context) = before_turn_outcome.additional_context {
                 let developer_message: ResponseItem =
                     DeveloperInstructions::new(additional_context).into();
                 sess.record_conversation_items(

@@ -129,7 +129,7 @@ async fn finalize_context_hook(
 /// operator, nothing to approve) and interactive (operator on the wheel).
 /// `acceptEdits`, `plan`, and `dontAsk` are operator profiles layered on top
 /// of interactive mode, not flow-changing modes, so they never appear here.
-fn hook_permission_mode(policy: ApprovalPolicy) -> &'static str {
+pub(crate) fn hook_permission_mode(policy: ApprovalPolicy) -> &'static str {
     match policy {
         ApprovalPolicy::Headless => "bypassPermissions",
         ApprovalPolicy::Supervised | ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {

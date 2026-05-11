@@ -1,0 +1,16 @@
+[package]
+name = "chaos-auth-test-fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-kern = { workspace = true }
+jiff = { workspace = true }
+serde_json = { workspace = true }

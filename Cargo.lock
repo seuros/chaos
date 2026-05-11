@@ -1160,6 +1160,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-auth-test-fixtures"
+version = "47.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chaos-ipc",
+ "chaos-kern",
+ "jiff",
+ "serde_json",
+]
+
+[[package]]
 name = "chaos-chassis"
 version = "47.0.0"
 dependencies = [
@@ -1860,6 +1871,7 @@ version = "47.0.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "chaos-auth-test-fixtures",
  "chaos-ipc",
  "chaos-kern",
  "chaos-services",
@@ -2781,6 +2793,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "base64 0.22.1",
+ "chaos-auth-test-fixtures",
  "chaos-ipc",
  "chaos-kern",
  "chaos-realpath",

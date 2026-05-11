@@ -20,6 +20,16 @@ pub mod streaming_sse;
 pub mod test_chaos;
 pub mod test_chaos_fork;
 
+/// Re-exports of the shared OAuth/JWT test fixtures so existing kernel test
+/// modules keep importing them from `core_test_support` without caring where
+/// the implementation lives.
+pub mod auth_test_fixtures {
+    pub use chaos_auth_test_fixtures::build_tokens;
+    pub use chaos_auth_test_fixtures::make_jwt;
+    pub use chaos_auth_test_fixtures::openai_auth;
+    pub use chaos_auth_test_fixtures::openai_record;
+}
+
 #[ctor]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {
     chaos_kern::test_support::set_process_table_test_mode(/*enabled*/ true);

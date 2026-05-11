@@ -23,12 +23,9 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
-#[path = "../common/auth_test_fixtures.rs"]
-mod auth_test_fixtures;
-
-use auth_test_fixtures::build_tokens;
-use auth_test_fixtures::openai_auth;
-use auth_test_fixtures::openai_record;
+use core_test_support::auth_test_fixtures::build_tokens;
+use core_test_support::auth_test_fixtures::openai_auth;
+use core_test_support::auth_test_fixtures::openai_record;
 
 const INITIAL_ACCESS_TOKEN: &str = "initial-access-token";
 const INITIAL_REFRESH_TOKEN: &str = "initial-refresh-token";

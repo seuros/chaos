@@ -391,14 +391,17 @@ fn build_otlp_metric_exporter(
                 .with_protocol(protocol)
                 .with_headers(headers);
 
-            if let Some(tls) = tls.as_ref() {
-                let client =
-                    crate::otlp::build_http_client(tls, OTEL_EXPORTER_OTLP_METRICS_TIMEOUT)
-                        .map_err(|err| MetricsError::InvalidConfig {
-                            message: err.to_string(),
-                        })?;
-                exporter_builder = exporter_builder.with_http_client(client);
-            }
+            // opentelemetry-otlp's default features (which would supply a
+            // bundled reqwest client) are disabled at the workspace level, so
+            // the http exporter has no client unless one is supplied here.
+            let default_tls = crate::config::OtelTlsConfig::default();
+            let tls_ref = tls.as_ref().unwrap_or(&default_tls);
+            let client =
+                crate::otlp::build_http_client(tls_ref, OTEL_EXPORTER_OTLP_METRICS_TIMEOUT)
+                    .map_err(|err| MetricsError::InvalidConfig {
+                        message: err.to_string(),
+                    })?;
+            exporter_builder = exporter_builder.with_http_client(client);
 
             exporter_builder
                 .build()

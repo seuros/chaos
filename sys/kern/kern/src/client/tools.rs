@@ -10,6 +10,8 @@ use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::WarningEvent;
+
+use crate::chaos::turn::hook_permission_mode;
 use chaos_parole::sandbox::can_read_path;
 use chaos_parole::sandbox::can_write_path;
 use chaos_realpath::AbsolutePathBuf;
@@ -20,14 +22,13 @@ use crate::exec_policy::ExecApprovalRequest;
 
 pub(crate) const CLAMP_NATIVE_PASSTHROUGH_TOOLS: &[&str] = &["WebSearch", "WebFetch"];
 
+/// Forwarding wrapper so the streaming layer can keep its existing call shape
+/// while the canonical mapping lives in [`hook_permission_mode`]. Clamp and
+/// the BeforeTurn/SessionStart hooks both project an `ApprovalPolicy` onto
+/// the same Claude-Code-style permission mode, so they share one source of
+/// truth.
 pub(crate) fn clamp_permission_mode(approval_policy: ApprovalPolicy) -> String {
-    match approval_policy {
-        ApprovalPolicy::Headless => "bypassPermissions",
-        ApprovalPolicy::Supervised | ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {
-            "default"
-        }
-    }
-    .to_string()
+    hook_permission_mode(approval_policy).to_string()
 }
 
 pub(crate) fn build_clamp_mcp_config(socket_path: &std::path::Path, token: &str) -> Value {

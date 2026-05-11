@@ -8,17 +8,6 @@
 //! that has to guess right about upstream vs. local refs. Order comes
 //! out of chaos; these tests make sure the order is the right one.
 
-// Test-setup helpers (init_repo, run_git, read_normalized) genuinely
-// should panic if the local git or filesystem can't cooperate — there's
-// nothing meaningful to test if the harness itself collapses.
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
-use std::ffi::OsStr;
-use std::path::Path;
-use std::process::Command;
-use std::sync::Mutex;
-use std::sync::OnceLock;
-
 use chaos_scm::ApplyGitRequest;
 use chaos_scm::GitToolingError;
 use chaos_scm::apply_git_patch;
@@ -26,56 +15,17 @@ use chaos_scm::extract_paths_from_patch;
 use chaos_scm::merge_base_with_head;
 use chaos_scm::parse_git_apply_output;
 use pretty_assertions::assert_eq;
-use tempfile::TempDir;
 use tempfile::tempdir;
 
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
+mod common;
 
-fn run_git<I, S>(repo: &Path, args: I)
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let status = Command::new("git")
-        .current_dir(repo)
-        .args(args)
-        .status()
-        .expect("git command");
-    assert!(status.success(), "git command failed");
-}
-
-fn git_stdout(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(repo)
-        .args(args)
-        .output()
-        .expect("git command");
-    assert!(output.status.success(), "git command failed: {args:?}");
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-fn init_repo_with_identity() -> TempDir {
-    let dir = tempdir().expect("tempdir");
-    run_git(dir.path(), ["init", "--initial-branch=main"]);
-    run_git(dir.path(), ["config", "core.autocrlf", "false"]);
-    run_git(dir.path(), ["config", "user.name", "Chaos"]);
-    run_git(dir.path(), ["config", "user.email", "chaos@example.com"]);
-    dir
-}
-
-fn commit_all(repo: &Path, message: &str) {
-    run_git(repo, ["add", "-A"]);
-    run_git(repo, ["commit", "-m", message]);
-}
-
-fn read_normalized(path: &Path) -> String {
-    std::fs::read_to_string(path)
-        .expect("read file")
-        .replace("\r\n", "\n")
-}
+use common::git::commit_all;
+use common::git::env_lock;
+use common::git::git_stdout;
+use common::git::init_repo_at;
+use common::git::init_repo_with_identity;
+use common::git::read_normalized;
+use common::git::run_git;
 
 // ── patch parsing ──────────────────────────────────────────────────────
 
@@ -307,10 +257,7 @@ fn merge_base_prefers_remote_tracking_when_remote_has_moved_past_local()
     std::fs::create_dir_all(&remote)?;
 
     run_git(&remote, ["init", "--bare"]);
-    run_git(&repo, ["init", "--initial-branch=main"]);
-    run_git(&repo, ["config", "core.autocrlf", "false"]);
-    run_git(&repo, ["config", "user.name", "Chaos"]);
-    run_git(&repo, ["config", "user.email", "chaos@example.com"]);
+    init_repo_at(&repo);
 
     std::fs::write(repo.join("base.txt"), "base\n")?;
     commit_all(&repo, "base commit");

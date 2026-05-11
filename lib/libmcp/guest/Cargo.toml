@@ -12,6 +12,7 @@ stdio = []
 http = ["dep:chrono-machines", "dep:rama", "dep:rand", "dep:tokio-stream", "dep:url"]
 
 [dependencies]
+chaos-abi = { workspace = true }
 chrono-machines = { workspace = true, optional = true }
 mcp-host = { workspace = true }
 rand = { workspace = true, optional = true }

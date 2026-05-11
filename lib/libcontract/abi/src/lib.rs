@@ -17,6 +17,7 @@ pub mod spool;
 pub mod stream;
 pub mod tools;
 pub mod turn_result;
+pub mod wire_error;
 
 // Re-export ABI surface.
 pub use adapter::AdapterFuture;
@@ -25,6 +26,7 @@ pub use error::AbiError;
 pub use event::TurnEvent;
 pub use models::AbiModelInfo;
 pub use models::AdapterCapabilities;
+pub use wire_error::WireFormatError;
 
 pub use models::ListModelsError;
 pub use models::ListModelsFuture;

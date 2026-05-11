@@ -1,73 +1,14 @@
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::config::load_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
-use predicates::str::contains;
 use pretty_assertions::assert_eq;
-use tempfile::TempDir;
 
 mod common;
 
-use common::chaos_command;
-
-struct McpCliHarness {
-    chaos_home: TempDir,
-}
-
-impl McpCliHarness {
-    fn new() -> Result<Self> {
-        Ok(Self {
-            chaos_home: TempDir::new()?,
-        })
-    }
-
-    fn assert_success(&self, args: &[&str]) -> Result<()> {
-        self.command()?.args(args).assert().success();
-        Ok(())
-    }
-
-    fn assert_success_stdout(&self, args: &[&str], expected_stdout: &str) -> Result<()> {
-        self.command()?
-            .args(args)
-            .assert()
-            .success()
-            .stdout(contains(expected_stdout));
-        Ok(())
-    }
-
-    fn assert_failure_stderr(&self, args: &[&str], expected_stderr: &str) -> Result<()> {
-        self.command()?
-            .args(args)
-            .assert()
-            .failure()
-            .stderr(contains(expected_stderr));
-        Ok(())
-    }
-
-    async fn server(&self, name: &str) -> Result<McpServerConfig> {
-        let mut servers = self.servers().await?;
-        servers
-            .remove(name)
-            .with_context(|| format!("server should exist: {name}"))
-    }
-
-    async fn assert_no_servers(&self) -> Result<()> {
-        assert!(self.servers().await?.is_empty());
-        Ok(())
-    }
-
-    fn command(&self) -> Result<assert_cmd::Command> {
-        chaos_command(self.chaos_home.path())
-    }
-
-    async fn servers(&self) -> Result<BTreeMap<String, McpServerConfig>> {
-        Ok(load_global_mcp_servers(self.chaos_home.path()).await?)
-    }
-}
+use common::McpCliHarness;
 
 fn assert_stdio_transport<'a>(
     server: &'a McpServerConfig,

@@ -87,24 +87,11 @@ impl TensorZeroAdapter {
 
     fn build_headers(&self) -> Result<HeaderMap, AbiError> {
         let mut headers = self.provider.headers.clone();
-
         // TensorZero auth is optional — only set Bearer if key is non-empty.
         if !self.api_key.trim().is_empty() {
-            let bearer = format!("Bearer {}", self.api_key);
-            let value =
-                http::HeaderValue::from_str(&bearer).map_err(|err| AbiError::InvalidRequest {
-                    message: format!("invalid Authorization header value: {err}"),
-                })?;
-            headers.insert(http::header::AUTHORIZATION, value);
+            crate::http_helpers::insert_bearer_auth(&mut headers, &self.api_key, "TensorZero")?;
         }
-        headers.insert(
-            http::header::CONTENT_TYPE,
-            http::HeaderValue::from_static(crate::common::MIME_APPLICATION_JSON),
-        );
-        headers.insert(
-            http::header::ACCEPT,
-            http::HeaderValue::from_static(crate::common::MIME_TEXT_EVENT_STREAM),
-        );
+        crate::http_helpers::insert_streaming_json_headers(&mut headers);
         Ok(headers)
     }
 }

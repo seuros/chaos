@@ -99,45 +99,21 @@ impl AnthropicAdapter {
         let mut headers = self.provider.headers.clone();
         match &self.auth {
             AnthropicAuth::ApiKey(api_key) => {
-                if api_key.trim().is_empty() {
-                    return Err(AbiError::InvalidRequest {
-                        message: "Anthropic Messages requires a non-empty API key".to_string(),
-                    });
-                }
-                let value = http::HeaderValue::from_str(api_key).map_err(|err| {
-                    AbiError::InvalidRequest {
-                        message: format!("invalid Anthropic API key header value: {err}"),
-                    }
-                })?;
-                headers.insert("x-api-key", value);
+                crate::http_helpers::insert_api_key_header(
+                    &mut headers,
+                    api_key,
+                    "Anthropic Messages",
+                )?;
             }
             AnthropicAuth::BearerToken(token) => {
-                if token.trim().is_empty() {
-                    return Err(AbiError::InvalidRequest {
-                        message: "Anthropic Messages requires a non-empty bearer token".to_string(),
-                    });
-                }
-                let value =
-                    http::HeaderValue::from_str(&format!("Bearer {token}")).map_err(|err| {
-                        AbiError::InvalidRequest {
-                            message: format!("invalid Anthropic authorization header: {err}"),
-                        }
-                    })?;
-                headers.insert(http::header::AUTHORIZATION, value);
+                crate::http_helpers::insert_bearer_auth(&mut headers, token, "Anthropic Messages")?;
             }
         }
         headers.insert(
             "anthropic-version",
             http::HeaderValue::from_static(ANTHROPIC_VERSION),
         );
-        headers.insert(
-            http::header::CONTENT_TYPE,
-            http::HeaderValue::from_static(crate::common::MIME_APPLICATION_JSON),
-        );
-        headers.insert(
-            http::header::ACCEPT,
-            http::HeaderValue::from_static(crate::common::MIME_TEXT_EVENT_STREAM),
-        );
+        crate::http_helpers::insert_streaming_json_headers(&mut headers);
         Ok(headers)
     }
 }

@@ -1,101 +1,15 @@
-use std::collections::BTreeMap;
-
-use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::config::load_global_mcp_servers;
-use chaos_kern::config::replace_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
-use chaos_kern::config::upsert_global_mcp_server;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use pretty_assertions::assert_eq;
 use serde_json::Value as JsonValue;
 use serde_json::json;
-use tempfile::TempDir;
 
 mod common;
 
-use common::chaos_command;
-
-struct McpCliHarness {
-    chaos_home: TempDir,
-}
-
-impl McpCliHarness {
-    fn new() -> Result<Self> {
-        Ok(Self {
-            chaos_home: TempDir::new()?,
-        })
-    }
-
-    fn assert_success(&self, args: &[&str]) -> Result<()> {
-        self.command()?.args(args).assert().success();
-        Ok(())
-    }
-
-    fn stdout(&self, args: &[&str]) -> Result<String> {
-        let output = self.command()?.args(args).output()?;
-        assert!(output.status.success());
-        Ok(String::from_utf8(output.stdout)?)
-    }
-
-    async fn set_enabled(&self, name: &str, enabled: bool) -> Result<()> {
-        self.update_servers(|servers| {
-            let server = servers
-                .get_mut(name)
-                .with_context(|| format!("server should exist after add: {name}"))?;
-            server.enabled = enabled;
-            Ok(())
-        })
-        .await
-    }
-
-    async fn insert_server(&self, name: &str, server: McpServerConfig) -> Result<()> {
-        upsert_global_mcp_server(self.chaos_home.path(), name, &server).await?;
-        Ok(())
-    }
-
-    async fn set_stdio_env_vars(&self, name: &str, env_vars: &[&str]) -> Result<()> {
-        self.update_servers(|servers| {
-            let server = servers
-                .get_mut(name)
-                .with_context(|| format!("server should exist after add: {name}"))?;
-            match &mut server.transport {
-                McpServerTransportConfig::Stdio {
-                    env_vars: stored_env_vars,
-                    ..
-                } => {
-                    *stored_env_vars = env_vars
-                        .iter()
-                        .map(|env_var| (*env_var).to_string())
-                        .collect();
-                }
-                other => panic!("unexpected transport: {other:?}"),
-            }
-            Ok(())
-        })
-        .await
-    }
-
-    fn command(&self) -> Result<assert_cmd::Command> {
-        chaos_command(self.chaos_home.path())
-    }
-
-    async fn servers(&self) -> Result<BTreeMap<String, McpServerConfig>> {
-        Ok(load_global_mcp_servers(self.chaos_home.path()).await?)
-    }
-
-    async fn update_servers(
-        &self,
-        update: impl FnOnce(&mut BTreeMap<String, McpServerConfig>) -> Result<()>,
-    ) -> Result<()> {
-        let mut servers = self.servers().await?;
-        update(&mut servers)?;
-        replace_global_mcp_servers(self.chaos_home.path(), &servers)?;
-        Ok(())
-    }
-}
+use common::McpCliHarness;
 
 #[test]
 fn list_shows_empty_state() -> Result<()> {

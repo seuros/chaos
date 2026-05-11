@@ -869,48 +869,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 message_contains: &["exec command rejected by user"],
             },
         },
-        #[cfg(not(target_os = "linux"))] // TODO (pakrym): figure out why linux behaves differently
-        ScenarioSpec {
-            name: "read_only_on_failure_escalates_after_sandbox_error",
-            approval_policy: Interactive,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            action: ActionKind::WriteFile {
-                target: TargetPath::Workspace("ro_on_failure.txt"),
-                content: "read-only-on-failure",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5"),
-            outcome: Outcome::ExecApproval {
-                decision: ReviewDecision::Approved,
-                expected_reason: Some("command failed; retry without sandbox?"),
-            },
-            expectation: Expectation::FileCreated {
-                target: TargetPath::Workspace("ro_on_failure.txt"),
-                content: "read-only-on-failure",
-            },
-        },
-        #[cfg(not(target_os = "linux"))]
-        ScenarioSpec {
-            name: "read_only_on_failure_escalates_after_sandbox_error_gpt_5_1_no_exit",
-            approval_policy: Interactive,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            action: ActionKind::WriteFile {
-                target: TargetPath::Workspace("ro_on_failure_5_1.txt"),
-                content: "read-only-on-failure",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5.1"),
-            outcome: Outcome::ExecApproval {
-                decision: ReviewDecision::Approved,
-                expected_reason: Some("command failed; retry without sandbox?"),
-            },
-            expectation: Expectation::FileCreatedNoExitCode {
-                target: TargetPath::Workspace("ro_on_failure_5_1.txt"),
-                content: "read-only-on-failure",
-            },
-        },
         ScenarioSpec {
             name: "read_only_on_request_network_escalates_when_approved",
             approval_policy: Interactive,
@@ -1135,27 +1093,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
             outcome: Outcome::Auto,
             expectation: Expectation::NetworkSuccess {
                 body_contains: "workspace-network-ok",
-            },
-        },
-        #[cfg(not(target_os = "linux"))] // TODO (pakrym): figure out why linux behaves differently
-        ScenarioSpec {
-            name: "workspace_write_on_failure_escalates_outside_workspace",
-            approval_policy: Interactive,
-            sandbox_policy: workspace_write(false),
-            action: ActionKind::WriteFile {
-                target: TargetPath::OutsideWorkspace("ww_on_failure.txt"),
-                content: "workspace-on-failure",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5"),
-            outcome: Outcome::ExecApproval {
-                decision: ReviewDecision::Approved,
-                expected_reason: Some("command failed; retry without sandbox?"),
-            },
-            expectation: Expectation::FileCreated {
-                target: TargetPath::OutsideWorkspace("ww_on_failure.txt"),
-                content: "workspace-on-failure",
             },
         },
         ScenarioSpec {

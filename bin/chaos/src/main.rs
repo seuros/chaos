@@ -498,7 +498,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             #[cfg(target_os = "linux")]
             {
                 chaos_boot::debug_sandbox::run_command_under_landlock(
-                    sandbox_cmd.into_landlock(),
+                    sandbox_cmd,
                     arg0_paths.alcatraz_linux_exe.clone(),
                     arg0_paths.alcatraz_freebsd_exe.clone(),
                 )
@@ -508,7 +508,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             #[cfg(target_os = "macos")]
             {
                 chaos_boot::debug_sandbox::run_command_under_seatbelt(
-                    sandbox_cmd.into_seatbelt(),
+                    sandbox_cmd,
                     arg0_paths.alcatraz_macos_exe.clone(),
                     arg0_paths.alcatraz_linux_exe.clone(),
                     arg0_paths.alcatraz_freebsd_exe.clone(),
@@ -519,7 +519,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             #[cfg(target_os = "freebsd")]
             {
                 chaos_boot::debug_sandbox::run_command_under_capsicum(
-                    sandbox_cmd.into_capsicum(),
+                    sandbox_cmd,
                     arg0_paths.alcatraz_linux_exe.clone(),
                     arg0_paths.alcatraz_freebsd_exe.clone(),
                 )
@@ -748,11 +748,11 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     if let Some(approval) = subcommand_cli.approval_policy {
         interactive.approval_policy = Some(approval);
     }
-    if subcommand_cli.full_auto {
-        interactive.full_auto = true;
+    if subcommand_cli.auto_exec.full_auto {
+        interactive.auto_exec.full_auto = true;
     }
-    if subcommand_cli.dangerously_bypass_approvals_and_sandbox {
-        interactive.dangerously_bypass_approvals_and_sandbox = true;
+    if subcommand_cli.auto_exec.headless {
+        interactive.auto_exec.headless = true;
     }
     if let Some(cwd) = subcommand_cli.cwd {
         interactive.cwd = Some(cwd);
@@ -890,6 +890,43 @@ mod tests {
         );
         assert_eq!(args.session_id.as_deref(), Some("session-123"));
         assert_eq!(args.prompt.as_deref(), Some("re-review"));
+    }
+
+    #[test]
+    fn exec_resume_accepts_auto_exec_flag_after_subcommand() {
+        let cli = MultitoolCli::try_parse_from([
+            "chaos",
+            "exec",
+            "resume",
+            "--last",
+            "--headless",
+            "continue",
+        ])
+        .expect("parse should succeed");
+
+        let Some(Subcommand::Exec(exec)) = cli.subcommand else {
+            panic!("expected exec subcommand");
+        };
+        let Some(chaos_fork::Command::Resume(args)) = exec.command else {
+            panic!("expected exec resume");
+        };
+
+        assert!(exec.auto_exec.headless);
+        assert!(args.last);
+        assert_eq!(args.prompt.as_deref(), Some("continue"));
+    }
+
+    #[test]
+    fn auto_exec_flags_do_not_leak_to_unrelated_subcommands() {
+        for args in [
+            &["chaos", "accounts", "--headless"][..],
+            &["chaos", "accounts", "--full-auto"][..],
+            &["chaos", "completion", "--headless"][..],
+            &["chaos", "completion", "--full-auto"][..],
+        ] {
+            let err = MultitoolCli::try_parse_from(args).expect_err("parse should fail");
+            assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+        }
     }
 
     fn sample_exit_info(conversation_id: Option<&str>, process_name: Option<&str>) -> AppExitInfo {
@@ -1040,7 +1077,7 @@ mod tests {
             interactive.approval_policy,
             Some(chaos_getopt::ApprovalModeCliArg::Interactive)
         );
-        assert!(interactive.full_auto);
+        assert!(interactive.auto_exec.full_auto);
         assert_eq!(
             interactive.cwd.as_deref(),
             Some(std::path::Path::new("/tmp"))
@@ -1061,16 +1098,9 @@ mod tests {
     }
 
     #[test]
-    fn resume_merges_dangerously_bypass_flag() {
-        let interactive = finalize_resume_from_args(
-            [
-                "chaos",
-                "resume",
-                "--dangerously-bypass-approvals-and-sandbox",
-            ]
-            .as_ref(),
-        );
-        assert!(interactive.dangerously_bypass_approvals_and_sandbox);
+    fn resume_merges_headless_flag() {
+        let interactive = finalize_resume_from_args(["chaos", "resume", "--headless"].as_ref());
+        assert!(interactive.auto_exec.headless);
         assert!(interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);

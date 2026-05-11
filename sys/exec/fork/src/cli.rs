@@ -44,20 +44,8 @@ pub struct Cli {
     #[arg(long = "profile", short = 'p')]
     pub config_profile: Option<String>,
 
-    /// Convenience alias for low-friction sandboxed automatic execution (-a on-request, --sandbox workspace-write).
-    #[arg(long = "full-auto", default_value_t = false, global = true)]
-    pub full_auto: bool,
-
-    /// Skip all confirmation prompts and execute commands without sandboxing.
-    /// EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed.
-    #[arg(
-        long = "dangerously-bypass-approvals-and-sandbox",
-        alias = "yolo",
-        default_value_t = false,
-        global = true,
-        conflicts_with = "full_auto"
-    )]
-    pub dangerously_bypass_approvals_and_sandbox: bool,
+    #[clap(flatten)]
+    pub auto_exec: chaos_getopt::GlobalAutoExecFlags,
 
     /// Tell the agent to use the specified directory as its working root.
     #[clap(long = "cd", short = 'C', value_name = "DIR")]
@@ -273,7 +261,7 @@ mod tests {
             "--json",
             "--model",
             "gpt-5.2-codex",
-            "--dangerously-bypass-approvals-and-sandbox",
+            "--headless",
             "--skip-git-repo-check",
             "--ephemeral",
             PROMPT,

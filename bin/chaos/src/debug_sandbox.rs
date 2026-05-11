@@ -30,8 +30,7 @@ use tokio::process::Child;
 #[cfg(target_os = "macos")]
 use tokio::process::Command;
 
-use crate::LandlockCommand;
-use crate::SeatbeltCommand;
+use crate::SandboxCommand;
 use crate::exit_status::handle_exit_status;
 
 #[cfg(target_os = "macos")]
@@ -39,12 +38,12 @@ use seatbelt::DenialLogger;
 
 #[cfg(target_os = "macos")]
 pub async fn run_command_under_seatbelt(
-    command: SeatbeltCommand,
+    command: SandboxCommand,
     alcatraz_macos_exe: Option<PathBuf>,
     alcatraz_linux_exe: Option<PathBuf>,
     alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    let SeatbeltCommand {
+    let SandboxCommand {
         full_auto,
         log_denials,
         config_overrides,
@@ -67,7 +66,7 @@ pub async fn run_command_under_seatbelt(
 
 #[cfg(not(target_os = "macos"))]
 pub async fn run_command_under_seatbelt(
-    _command: SeatbeltCommand,
+    _command: SandboxCommand,
     _alcatraz_macos_exe: Option<PathBuf>,
     _alcatraz_linux_exe: Option<PathBuf>,
     _alcatraz_freebsd_exe: Option<PathBuf>,
@@ -76,18 +75,16 @@ pub async fn run_command_under_seatbelt(
 }
 
 pub async fn run_command_under_landlock(
-    command: LandlockCommand,
+    command: SandboxCommand,
     alcatraz_linux_exe: Option<PathBuf>,
     alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    let LandlockCommand {
-        full_auto,
-        config_overrides,
-        command,
-    } = command;
+    let full_auto = command.full_auto;
+    let config_overrides = command.config_overrides;
+    let cmd = command.command;
     run_command_under_sandbox(
         full_auto,
-        command,
+        cmd,
         config_overrides,
         SandboxExecutionConfig {
             alcatraz_macos_exe: None,
@@ -102,18 +99,16 @@ pub async fn run_command_under_landlock(
 
 #[cfg(target_os = "freebsd")]
 pub async fn run_command_under_capsicum(
-    command: LandlockCommand,
+    command: SandboxCommand,
     alcatraz_linux_exe: Option<PathBuf>,
     alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    let LandlockCommand {
-        full_auto,
-        config_overrides,
-        command,
-    } = command;
+    let full_auto = command.full_auto;
+    let config_overrides = command.config_overrides;
+    let cmd = command.command;
     run_command_under_sandbox(
         full_auto,
-        command,
+        cmd,
         config_overrides,
         SandboxExecutionConfig {
             alcatraz_macos_exe: None,

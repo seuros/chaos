@@ -2,4 +2,4 @@
 source: lib/libui/chatwidget/tests.rs
 expression: rendered
 ---
-• `/copy` is unavailable before the first Chaos output or right after a rollback.
+• `/copy` is unavailable before the first FreeChaOS output or right after a rollback.

@@ -6,6 +6,6 @@ expression: rendered
   └ cargo test -p chaos-kern -- --exact…
 
 
-› Ask Chaos to do anything
+› Ask FreeChaOS to do anything
 
   ? for shortcuts            100% context left

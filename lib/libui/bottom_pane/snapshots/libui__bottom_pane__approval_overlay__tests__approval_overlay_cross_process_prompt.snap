@@ -1,6 +1,6 @@
 ---
 source: lib/libui/bottom_pane/approval_overlay.rs
-expression: "render_overlay_lines(&view, 80)"
+expression: "renderable_trim_end_string_at_desired_height(&view, 80)"
 ---
 
   Would you like to run the following command?
@@ -10,6 +10,6 @@ expression: "render_overlay_lines(&view, 80)"
   $ echo hi
 
 › 1. Yes, proceed (y)
-  2. No, and tell Chaos what to do differently (esc)
+  2. No, and tell FreeChaOS what to do differently (esc)
 
   Press enter to confirm or esc to cancel or o to open process

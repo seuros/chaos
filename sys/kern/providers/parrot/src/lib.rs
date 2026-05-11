@@ -15,6 +15,7 @@ pub mod chat_completions;
 pub mod common;
 pub mod endpoint;
 pub mod error;
+pub mod http_helpers;
 pub mod openai;
 pub mod provider;
 pub mod rate_limits;

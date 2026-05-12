@@ -28,7 +28,9 @@ use chaos_pwd::find_chaos_home;
 use jiff::Timestamp;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::prelude::Stylize;
 use ratatui::text::Line;
+use ratatui::text::Span;
 
 use crate::app_event::AppEvent;
 use crate::bottom_pane::StatusLineItem;
@@ -146,7 +148,7 @@ impl ChatWidget {
     }
 
     /// Sets the currently rendered footer status-line value.
-    pub fn set_status_line(&mut self, status_line: Option<Line<'static>>) {
+    pub fn set_status_line(&mut self, status_line: Option<Vec<Line<'static>>>) {
         self.bottom_pane.set_status_line(status_line);
     }
 
@@ -221,17 +223,31 @@ impl ChatWidget {
             self.request_status_line_git_dirty(cwd);
         }
 
-        let mut parts = Vec::new();
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        let mut spans: Vec<Span<'static>> = Vec::new();
         for item in items {
-            if let Some(value) = self.status_line_value_for_item(&item) {
-                parts.push(value);
+            if item == StatusLineItem::LineBreak {
+                if !spans.is_empty() {
+                    lines.push(Line::from(std::mem::take(&mut spans)));
+                }
+                continue;
+            }
+
+            if let Some(value) = self.status_line_segment_for_item(&item) {
+                if !spans.is_empty() {
+                    spans.push(" · ".into());
+                }
+                spans.extend(value.spans);
             }
         }
+        if !spans.is_empty() {
+            lines.push(Line::from(spans));
+        }
 
-        let line = if parts.is_empty() {
+        let line = if lines.is_empty() {
             None
         } else {
-            Some(Line::from(parts.join(" · ")))
+            Some(lines)
         };
         self.set_status_line(line);
     }
@@ -467,6 +483,27 @@ impl ChatWidget {
     /// this to keep partially available status lines readable while waiting for session, token, or
     /// git metadata.
     pub(super) fn status_line_value_for_item(&self, item: &StatusLineItem) -> Option<String> {
+        if matches!(item, StatusLineItem::LineBreak) {
+            return None;
+        }
+        self.status_line_segment_for_item(item).map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+    }
+
+    fn status_line_segment_for_item(&self, item: &StatusLineItem) -> Option<Line<'static>> {
+        let text = self.status_line_plain_value_for_item(item)?;
+        if matches!(item, StatusLineItem::WeeklyProjection) {
+            let percent = self.status_line_weekly_projected_percent()?;
+            return Some(Line::from(vec![Self::projection_span(text, percent)]));
+        }
+        Some(Line::from(text))
+    }
+
+    fn status_line_plain_value_for_item(&self, item: &StatusLineItem) -> Option<String> {
         match item {
             StatusLineItem::ModelName => Some(self.model_display_name().to_string()),
             StatusLineItem::ModelWithReasoning => {
@@ -542,8 +579,7 @@ impl ChatWidget {
             }
             StatusLineItem::WeeklyProjection => {
                 let snapshot = self.rate_limit_snapshots_by_limit_id.get("chaos");
-                let window = snapshot.and_then(|s| s.secondary.as_ref());
-                self.status_line_limit_projection_display(snapshot, window, "weekly")
+                self.status_line_weekly_projection_display(snapshot)
             }
             StatusLineItem::WeeklyReset => {
                 let window = self
@@ -574,6 +610,17 @@ impl ChatWidget {
                 format_tokens_compact(self.status_line_total_usage().output_tokens)
             )),
             StatusLineItem::SessionId => self.process_id.map(|id| id.to_string()),
+            StatusLineItem::LineBreak => None,
+        }
+    }
+
+    fn projection_span(text: String, percent: f64) -> Span<'static> {
+        if percent >= 100.0 {
+            text.red().bold()
+        } else if percent >= 85.0 {
+            text.yellow().bold()
+        } else {
+            text.green()
         }
     }
 
@@ -623,14 +670,45 @@ impl ChatWidget {
         Some(format!("{label} {remaining:.0}%"))
     }
 
-    fn status_line_limit_projection_display(
+    fn status_line_weekly_projection_display(
         &self,
         snapshot: Option<&crate::status::RateLimitSnapshotDisplay>,
-        window: Option<&RateLimitWindowDisplay>,
-        label: &str,
     ) -> Option<String> {
-        let snapshot = snapshot?;
-        let window = window?;
+        let projected = Self::weekly_projected_limit_percent(snapshot?)?;
+        Some(format!("weekly projected {:.0}%", projected.max(0.0)))
+    }
+
+    fn status_line_weekly_projected_percent(&self) -> Option<f64> {
+        let snapshot = self.rate_limit_snapshots_by_limit_id.get("chaos")?;
+        Self::weekly_projected_limit_percent(snapshot)
+    }
+
+    fn weekly_projected_limit_percent(
+        snapshot: &crate::status::RateLimitSnapshotDisplay,
+    ) -> Option<f64> {
+        let weekly = snapshot.secondary.as_ref()?;
+        let projected = Self::projected_limit_percent(snapshot, weekly)?;
+        if projected > 0.0 || weekly.used_percent > 0.0 {
+            return Some(projected);
+        }
+
+        // The ChatGPT Codex backend currently reports quota usage as whole
+        // percentages. Just after the weekly window resets, the weekly bucket
+        // can remain `0% used` for a while even though the 5h bucket already
+        // shows activity. In that low-resolution warm-up period, use the 5h
+        // projection as a pace estimate rather than rendering a misleading
+        // `weekly projected 0%` forever.
+        let primary = snapshot.primary.as_ref()?;
+        if primary.used_percent <= 0.0 {
+            return Some(projected);
+        }
+        Self::projected_limit_percent(snapshot, primary)
+    }
+
+    fn projected_limit_percent(
+        snapshot: &crate::status::RateLimitSnapshotDisplay,
+        window: &RateLimitWindowDisplay,
+    ) -> Option<f64> {
         let window_minutes = window.window_minutes?;
         if window_minutes <= 0 {
             return None;
@@ -643,8 +721,7 @@ impl ChatWidget {
             .as_second()
             .saturating_sub(starts_at)
             .clamp(1, total_window_seconds);
-        let projected = window.used_percent * total_window_seconds as f64 / elapsed_seconds as f64;
-        Some(format!("{label} projected {:.0}%", projected.max(0.0)))
+        Some(window.used_percent * total_window_seconds as f64 / elapsed_seconds as f64)
     }
 
     fn status_line_limit_reset_display(

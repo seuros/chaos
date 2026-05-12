@@ -239,7 +239,7 @@ pub struct ChatComposer {
     pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     pub(super) connectors_enabled: bool,
     pub(super) personality_command_enabled: bool,
-    pub(super) status_line_value: Option<Line<'static>>,
+    pub(super) status_line_value: Option<Vec<Line<'static>>>,
     pub(super) status_line_enabled: bool,
     // Agent label injected into the footer's contextual row when multi-agent mode is active.
     pub(super) active_agent_label: Option<String>,
@@ -561,11 +561,17 @@ impl ChatComposer {
 
     #[cfg(any(test, feature = "testing"))]
     pub fn status_line_text(&self) -> Option<String> {
-        self.status_line_value.as_ref().map(|line| {
-            line.spans
+        self.status_line_value.as_ref().map(|lines| {
+            lines
                 .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
+                .map(|line| {
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
         })
     }
 
@@ -696,7 +702,7 @@ impl ChatComposer {
         }
     }
 
-    pub fn set_status_line(&mut self, status_line: Option<Line<'static>>) -> bool {
+    pub fn set_status_line(&mut self, status_line: Option<Vec<Line<'static>>>) -> bool {
         if self.status_line_value == status_line {
             return false;
         }

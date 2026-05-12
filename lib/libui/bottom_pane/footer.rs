@@ -57,6 +57,7 @@ pub use render::footer_line_width;
 pub use render::inset_footer_hint_area;
 pub use render::max_left_width_for_right;
 pub use render::passive_footer_status_line;
+pub use render::passive_footer_status_lines;
 pub use render::render_context_right;
 pub use render::render_footer_from_props;
 pub use render::render_footer_hint_items;
@@ -520,7 +521,7 @@ mod tests {
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
-            status_line_value: Some(Line::from("Status line content".to_string())),
+            status_line_value: Some(vec![Line::from("Status line content".to_string())]),
             status_line_enabled: true,
             active_agent_label: None,
         };
@@ -536,7 +537,7 @@ mod tests {
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
-            status_line_value: Some(Line::from("Status line content".to_string())),
+            status_line_value: Some(vec![Line::from("Status line content".to_string())]),
             status_line_enabled: true,
             active_agent_label: None,
         };
@@ -552,7 +553,7 @@ mod tests {
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
-            status_line_value: Some(Line::from("Status line content".to_string())),
+            status_line_value: Some(vec![Line::from("Status line content".to_string())]),
             status_line_enabled: true,
             active_agent_label: None,
         };
@@ -632,9 +633,9 @@ mod tests {
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: Some(50),
             context_window_used_tokens: None,
-            status_line_value: Some(Line::from(
+            status_line_value: Some(vec![Line::from(
                 "Status line content that should truncate before the mode indicator".to_string(),
-            )),
+            )]),
             status_line_enabled: true,
             active_agent_label: None,
         };
@@ -671,7 +672,7 @@ mod tests {
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
-            status_line_value: Some(Line::from("Status line content".to_string())),
+            status_line_value: Some(vec![Line::from("Status line content".to_string())]),
             status_line_enabled: true,
             active_agent_label: Some("Robie [scout]".to_string()),
         };
@@ -691,10 +692,10 @@ mod tests {
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: Some(50),
             context_window_used_tokens: None,
-            status_line_value: Some(Line::from(
+            status_line_value: Some(vec![Line::from(
                 "Status line content that is definitely too long to fit alongside the mode label"
                     .to_string(),
-            )),
+            )]),
             status_line_enabled: true,
             active_agent_label: None,
         };

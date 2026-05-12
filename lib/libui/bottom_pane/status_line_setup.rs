@@ -117,6 +117,9 @@ pub enum StatusLineItem {
 
     /// Full session UUID.
     SessionId,
+
+    /// Start a new rendered status-line row.
+    LineBreak,
 }
 
 impl StatusLineItem {
@@ -177,6 +180,7 @@ impl StatusLineItem {
             StatusLineItem::SessionId => {
                 "Current session identifier (omitted until session starts)".to_string()
             }
+            StatusLineItem::LineBreak => "Start a new status-line row".to_string(),
         }
     }
 }
@@ -203,7 +207,13 @@ impl StatusLinePreviewData {
             .iter()
             .filter(|item| item.enabled)
             .filter_map(|item| item.id.parse::<StatusLineItem>().ok())
-            .filter_map(|item| self.values.get(&item).cloned())
+            .filter_map(|item| {
+                if item == StatusLineItem::LineBreak {
+                    Some("↵".to_string())
+                } else {
+                    self.values.get(&item).cloned()
+                }
+            })
             .collect::<Vec<_>>()
             .join(" · ");
         if preview.is_empty() {

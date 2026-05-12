@@ -33,6 +33,7 @@ use crate::bottom_pane::footer::inset_footer_hint_area;
 use crate::bottom_pane::footer::max_left_width_for_right;
 use crate::bottom_pane::footer::mode_indicator_line;
 use crate::bottom_pane::footer::passive_footer_status_line;
+use crate::bottom_pane::footer::passive_footer_status_lines;
 use crate::bottom_pane::footer::render_context_right;
 use crate::bottom_pane::footer::render_footer_from_props;
 use crate::bottom_pane::footer::render_footer_hint_items;
@@ -235,6 +236,10 @@ impl ChatComposer {
                 let available_width =
                     hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
                 let status_line_active = uses_passive_footer_status_layout(&footer_props);
+                let status_line_is_multiline = status_line_active
+                    && passive_footer_status_lines(&footer_props)
+                        .as_ref()
+                        .is_some_and(|lines| lines.len() > 1);
                 let combined_status_line = if status_line_active {
                     passive_footer_status_line(&footer_props).map(ratatui::prelude::Stylize::dim)
                 } else {
@@ -259,7 +264,7 @@ impl ChatComposer {
                         .unwrap_or(0)
                 } else if let Some(items) = self.footer_hint_override.as_ref() {
                     footer_hint_items_width(items)
-                } else if status_line_active {
+                } else if status_line_active && !status_line_is_multiline {
                     truncated_status_line
                         .as_ref()
                         .map(|line| line.width() as u16)
@@ -344,7 +349,17 @@ impl ChatComposer {
                         .unwrap_or(can_show_left_and_context)
                 };
 
-                if let Some((summary_left, _)) = single_line_layout {
+                if status_line_is_multiline {
+                    render_footer_from_props(
+                        hint_rect,
+                        buf,
+                        &footer_props,
+                        left_mode_indicator,
+                        show_cycle_hint,
+                        show_shortcuts_hint,
+                        show_queue_hint,
+                    );
+                } else if let Some((summary_left, _)) = single_line_layout {
                     match summary_left {
                         SummaryLeft::Default => {
                             if status_line_active {

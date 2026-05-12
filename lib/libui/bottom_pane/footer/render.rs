@@ -433,8 +433,8 @@ fn footer_from_props_lines(
 ) -> Vec<Line<'static>> {
     // Passive footer context can come from the configurable status line, the
     // active agent label, or both combined.
-    if let Some(status_line) = passive_footer_status_line(props) {
-        return vec![status_line.dim()];
+    if let Some(status_lines) = passive_footer_status_lines(props) {
+        return status_lines.into_iter().map(|line| line.dim()).collect();
     }
     match props.mode {
         FooterMode::QuitShortcutReminder => {
@@ -481,27 +481,37 @@ fn footer_from_props_lines(
 /// The returned line may contain the configured status line, the currently viewed agent label, or
 /// both combined. Active instructional states such as quit reminders, shortcut overlays, and queue
 /// prompts deliberately return `None` so those call-to-action hints stay visible.
-pub fn passive_footer_status_line(props: &FooterProps) -> Option<Line<'static>> {
+pub fn passive_footer_status_lines(props: &FooterProps) -> Option<Vec<Line<'static>>> {
     if !shows_passive_footer_line(props) {
         return None;
     }
 
-    let mut line = if props.status_line_enabled {
+    let mut lines = if props.status_line_enabled {
         props.status_line_value.clone()
     } else {
         None
     };
 
     if let Some(active_agent_label) = props.active_agent_label.as_ref() {
-        if let Some(existing) = line.as_mut() {
+        if let Some(existing) = lines.as_mut().and_then(|lines| lines.last_mut()) {
             existing.spans.push(" · ".into());
             existing.spans.push(active_agent_label.clone().into());
         } else {
-            line = Some(Line::from(active_agent_label.clone()));
+            lines = Some(vec![Line::from(active_agent_label.clone())]);
         }
     }
 
-    line
+    lines
+}
+
+pub fn passive_footer_status_line(props: &FooterProps) -> Option<Line<'static>> {
+    passive_footer_status_lines(props).and_then(|lines| {
+        if lines.len() == 1 {
+            lines.into_iter().next()
+        } else {
+            None
+        }
+    })
 }
 
 /// Whether the current footer mode allows contextual information to replace instructional hints.

@@ -21,7 +21,7 @@ pub struct FooterProps {
     pub quit_shortcut_key: KeyBinding,
     pub context_window_percent: Option<i64>,
     pub context_window_used_tokens: Option<i64>,
-    pub status_line_value: Option<Line<'static>>,
+    pub status_line_value: Option<Vec<Line<'static>>>,
     pub status_line_enabled: bool,
     /// Active thread label shown when the footer is rendering contextual information instead of an
     /// instructional hint.

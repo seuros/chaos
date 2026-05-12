@@ -7853,6 +7853,44 @@ async fn status_line_weekly_projection_estimates_end_of_window_usage() {
 }
 
 #[tokio::test]
+async fn status_line_weekly_projection_uses_primary_pace_when_weekly_is_zero() {
+    use crate::bottom_pane::StatusLineItem;
+    use crate::status::rate_limit_snapshot_display_for_limit;
+
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    let captured_at = jiff::Timestamp::from_second(1_000_000).expect("valid timestamp");
+    let primary_minutes = 5 * 60;
+    let weekly_minutes = 7 * 24 * 60;
+    let snapshot = RateLimitSnapshot {
+        limit_id: Some("chaos".to_string()),
+        limit_name: Some("chaos".to_string()),
+        primary: Some(RateLimitWindow {
+            used_percent: 4.0,
+            window_minutes: Some(primary_minutes),
+            // Half way through the 5h window, so 4% used projects to 8%.
+            resets_at: Some(captured_at.as_second() + (primary_minutes * 60 / 2)),
+        }),
+        secondary: Some(RateLimitWindow {
+            used_percent: 0.0,
+            window_minutes: Some(weekly_minutes),
+            // Early in the weekly window the backend may still round usage down to 0%.
+            resets_at: Some(captured_at.as_second() + (weekly_minutes * 60 - 60)),
+        }),
+        credits: None,
+        plan_type: None,
+    };
+    chat.rate_limit_snapshots_by_limit_id.insert(
+        "chaos".to_string(),
+        rate_limit_snapshot_display_for_limit(&snapshot, "chaos".to_string(), captured_at),
+    );
+
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::WeeklyProjection),
+        Some("weekly projected 8%".to_string())
+    );
+}
+
+#[tokio::test]
 async fn warning_event_adds_warning_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {

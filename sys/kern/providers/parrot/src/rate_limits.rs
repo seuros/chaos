@@ -20,7 +20,22 @@ impl Display for RateLimitError {
 
 /// Parses the default Chaos rate-limit header family into a `RateLimitSnapshot`.
 pub fn parse_default_rate_limit(headers: &HeaderMap) -> Option<RateLimitSnapshot> {
-    parse_rate_limit_for_limit(headers, /*limit_id*/ None)
+    let legacy = parse_rate_limit_for_limit(headers, /*limit_id*/ None)?;
+    if has_rate_limit_data(&legacy) {
+        return Some(legacy);
+    }
+
+    if let Some(mut snapshot) = parse_rate_limit_for_limit(headers, Some("codex"))
+        && has_rate_limit_data(&snapshot)
+    {
+        // The ChatGPT Codex backend reports the default account quota as
+        // `x-codex-*`. Internally the UI keys the primary/default quota as
+        // `chaos`, so keep the legacy logical id while accepting the wire name.
+        snapshot.limit_id = Some("chaos".to_string());
+        return Some(snapshot);
+    }
+
+    Some(legacy)
 }
 
 /// Parses all known rate-limit header families into update records keyed by limit id.
@@ -84,7 +99,7 @@ pub fn parse_rate_limit_for_limit(
     );
 
     let normalized_limit_id = normalize_limit_id(normalized_limit);
-    let credits = parse_credits_snapshot(headers);
+    let credits = parse_credits_snapshot(headers, &prefix);
     let limit_name_header = format!("{prefix}-limit-name");
     let parsed_limit_name = parse_header_str(headers, &limit_name_header)
         .map(str::trim)
@@ -205,10 +220,10 @@ fn parse_rate_limit_window(
     })
 }
 
-fn parse_credits_snapshot(headers: &HeaderMap) -> Option<CreditsSnapshot> {
-    let has_credits = parse_header_bool(headers, "x-chaos-credits-has-credits")?;
-    let unlimited = parse_header_bool(headers, "x-chaos-credits-unlimited")?;
-    let balance = parse_header_str(headers, "x-chaos-credits-balance")
+fn parse_credits_snapshot(headers: &HeaderMap, prefix: &str) -> Option<CreditsSnapshot> {
+    let has_credits = parse_header_bool(headers, &format!("{prefix}-credits-has-credits"))?;
+    let unlimited = parse_header_bool(headers, &format!("{prefix}-credits-unlimited"))?;
+    let balance = parse_header_str(headers, &format!("{prefix}-credits-balance"))
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(std::string::ToString::to_string);
@@ -289,6 +304,52 @@ mod tests {
         assert_eq!(primary.used_percent, 12.5);
         assert_eq!(primary.window_minutes, Some(60));
         assert_eq!(primary.resets_at, Some(1704069000));
+    }
+
+    #[test]
+    fn parse_default_rate_limit_falls_back_to_codex_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-codex-primary-used-percent",
+            HeaderValue::from_static("2"),
+        );
+        headers.insert(
+            "x-codex-secondary-used-percent",
+            HeaderValue::from_static("10"),
+        );
+        headers.insert(
+            "x-codex-primary-window-minutes",
+            HeaderValue::from_static("300"),
+        );
+        headers.insert(
+            "x-codex-secondary-window-minutes",
+            HeaderValue::from_static("10080"),
+        );
+        headers.insert(
+            "x-codex-primary-reset-at",
+            HeaderValue::from_static("1778593151"),
+        );
+        headers.insert(
+            "x-codex-secondary-reset-at",
+            HeaderValue::from_static("1778577370"),
+        );
+        headers.insert(
+            "x-codex-credits-has-credits",
+            HeaderValue::from_static("False"),
+        );
+        headers.insert(
+            "x-codex-credits-unlimited",
+            HeaderValue::from_static("False"),
+        );
+
+        let snapshot = parse_default_rate_limit(&headers).expect("snapshot");
+        assert_eq!(snapshot.limit_id.as_deref(), Some("chaos"));
+        assert_eq!(snapshot.primary.as_ref().map(|w| w.used_percent), Some(2.0));
+        assert_eq!(
+            snapshot.secondary.as_ref().map(|w| w.used_percent),
+            Some(10.0)
+        );
+        assert!(snapshot.credits.is_some());
     }
 
     #[test]

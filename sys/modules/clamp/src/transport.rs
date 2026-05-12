@@ -65,7 +65,8 @@ pub struct ClampConfig {
     pub system_prompt: Option<String>,
     /// MCP server config JSON to pass via --mcp-config.
     pub mcp_config: Option<Value>,
-    /// Permission mode (e.g., "dontAsk").
+    /// Permission mode passed through to Claude Code: `"default"` for
+    /// interactive sessions, `"bypassPermissions"` for headless ones.
     pub permission_mode: Option<String>,
     /// Tools to disallow (stripped from Claude Code).
     pub disallowed_tools: Vec<String>,

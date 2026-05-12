@@ -1920,6 +1920,10 @@ async fn make_chatwidget_manual(
         status_line_branch_cwd: None,
         status_line_branch_pending: false,
         status_line_branch_lookup_complete: false,
+        status_line_git_dirty: None,
+        status_line_git_dirty_cwd: None,
+        status_line_git_dirty_pending: false,
+        status_line_git_dirty_lookup_complete: false,
         external_editor_state: ExternalEditorState::Closed,
         last_rendered_user_message_event: None,
     };
@@ -7760,6 +7764,56 @@ async fn stream_error_restores_hidden_status_indicator() {
         .expect("status indicator should be visible");
     assert_eq!(status.header(), msg);
     assert_eq!(status.details(), Some(details));
+}
+
+#[tokio::test]
+async fn status_line_native_policy_and_provider_items_render() {
+    use crate::bottom_pane::StatusLineItem;
+
+    let (chat, _rx, _ops) = make_chatwidget_manual(None).await;
+
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::Provider),
+        Some(chat.config.model_provider.name.clone())
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::ApprovalMode),
+        Some(format!(
+            "approval {}",
+            chat.config.permissions.approval_policy.value()
+        ))
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::SandboxMode),
+        Some(format!(
+            "sandbox {}",
+            chat.config.permissions.sandbox_policy.get()
+        ))
+    );
+}
+
+#[tokio::test]
+async fn status_line_git_branch_with_status_marks_dirty_worktrees() {
+    use crate::bottom_pane::StatusLineItem;
+
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    chat.status_line_branch = Some("feature/statusline".to_string());
+
+    chat.status_line_git_dirty = Some(false);
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::GitBranchWithStatus),
+        Some("feature/statusline".to_string())
+    );
+
+    chat.status_line_git_dirty = Some(true);
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::GitBranchWithStatus),
+        Some("feature/statusline*".to_string())
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::GitDirty),
+        Some("git dirty".to_string())
+    );
 }
 
 #[tokio::test]

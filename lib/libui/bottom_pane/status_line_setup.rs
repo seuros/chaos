@@ -64,6 +64,12 @@ pub enum StatusLineItem {
     /// Current git branch name (if in a repository).
     GitBranch,
 
+    /// Current git branch name with a dirty marker when there are changes.
+    GitBranchWithStatus,
+
+    /// Whether the current git repository has uncommitted changes.
+    GitDirty,
+
     /// Percentage of context window remaining.
     ContextRemaining,
 
@@ -73,8 +79,23 @@ pub enum StatusLineItem {
     /// Remaining usage on the 5-hour rate limit.
     FiveHourLimit,
 
+    /// Reset time for the 5-hour rate limit.
+    FiveHourReset,
+
     /// Remaining usage on the weekly rate limit.
     WeeklyLimit,
+
+    /// Reset time for the weekly rate limit.
+    WeeklyReset,
+
+    /// Current model provider or transport.
+    Provider,
+
+    /// Current approval policy.
+    ApprovalMode,
+
+    /// Current sandbox policy.
+    SandboxMode,
 
     /// Chaos application version.
     ChaosVersion,
@@ -110,6 +131,13 @@ impl StatusLineItem {
             StatusLineItem::GitBranch => {
                 "Current Git branch (omitted when unavailable)".to_string()
             }
+            StatusLineItem::GitBranchWithStatus => {
+                "Current Git branch with * when the worktree is dirty (omitted when unavailable)"
+                    .to_string()
+            }
+            StatusLineItem::GitDirty => {
+                "Git worktree status: clean or dirty (omitted outside Git repositories)".to_string()
+            }
             StatusLineItem::ContextRemaining => {
                 "Percentage of context window remaining (omitted when unknown)".to_string()
             }
@@ -119,9 +147,18 @@ impl StatusLineItem {
             StatusLineItem::FiveHourLimit => {
                 "Remaining usage on 5-hour usage limit (omitted when unavailable)".to_string()
             }
+            StatusLineItem::FiveHourReset => {
+                "Reset time for the 5-hour usage limit (omitted when unavailable)".to_string()
+            }
             StatusLineItem::WeeklyLimit => {
                 "Remaining usage on weekly usage limit (omitted when unavailable)".to_string()
             }
+            StatusLineItem::WeeklyReset => {
+                "Reset time for the weekly usage limit (omitted when unavailable)".to_string()
+            }
+            StatusLineItem::Provider => "Current model provider or transport".to_string(),
+            StatusLineItem::ApprovalMode => "Current approval policy".to_string(),
+            StatusLineItem::SandboxMode => "Current sandbox policy".to_string(),
             StatusLineItem::ChaosVersion => format!("{OS_NAME} application version"),
             StatusLineItem::ContextWindowSize => {
                 "Total context window size in tokens (omitted when unknown)".to_string()

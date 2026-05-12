@@ -277,6 +277,11 @@ pub enum AppEvent {
         cwd: PathBuf,
         branch: Option<String>,
     },
+    /// Async update of whether the current git worktree has changes for status line rendering.
+    StatusLineGitDirtyUpdated {
+        cwd: PathBuf,
+        dirty: Option<bool>,
+    },
     /// Apply a user-confirmed status-line item ordering/selection.
     StatusLineSetup {
         items: Vec<StatusLineItem>,

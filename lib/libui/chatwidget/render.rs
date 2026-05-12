@@ -23,6 +23,7 @@ use chaos_ipc::protocol::TokenUsageInfo;
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
 use chaos_kern::git_info::current_branch_name;
 use chaos_kern::git_info::get_git_repo_root;
+use chaos_kern::git_info::get_has_changes;
 use chaos_pwd::find_chaos_home;
 use jiff::Timestamp;
 use ratatui::buffer::Buffer;
@@ -187,10 +188,20 @@ impl ChatWidget {
             );
             self.on_warning(message);
         }
-        if !items.contains(&StatusLineItem::GitBranch) {
+        let wants_git_branch = items.contains(&StatusLineItem::GitBranch)
+            || items.contains(&StatusLineItem::GitBranchWithStatus);
+        let wants_git_dirty = items.contains(&StatusLineItem::GitDirty)
+            || items.contains(&StatusLineItem::GitBranchWithStatus);
+
+        if !wants_git_branch {
             self.status_line_branch = None;
             self.status_line_branch_pending = false;
             self.status_line_branch_lookup_complete = false;
+        }
+        if !wants_git_dirty {
+            self.status_line_git_dirty = None;
+            self.status_line_git_dirty_pending = false;
+            self.status_line_git_dirty_lookup_complete = false;
         }
         let enabled = !items.is_empty();
         self.bottom_pane.set_status_line_enabled(enabled);
@@ -201,9 +212,13 @@ impl ChatWidget {
 
         let cwd = self.status_line_cwd().to_path_buf();
         self.sync_status_line_branch_state(&cwd);
+        self.sync_status_line_git_dirty_state(&cwd);
 
-        if items.contains(&StatusLineItem::GitBranch) && !self.status_line_branch_lookup_complete {
-            self.request_status_line_branch(cwd);
+        if wants_git_branch && !self.status_line_branch_lookup_complete {
+            self.request_status_line_branch(cwd.clone());
+        }
+        if wants_git_dirty && !self.status_line_git_dirty_lookup_complete {
+            self.request_status_line_git_dirty(cwd);
         }
 
         let mut parts = Vec::new();
@@ -253,15 +268,39 @@ impl ChatWidget {
         self.status_line_branch_lookup_complete = true;
     }
 
+    /// Stores async git-dirty lookup results for the current status-line cwd.
+    ///
+    /// Results are dropped when they target an out-of-date cwd to avoid rendering stale worktree
+    /// state after directory changes.
+    pub fn set_status_line_git_dirty(&mut self, cwd: PathBuf, dirty: Option<bool>) {
+        if self.status_line_git_dirty_cwd.as_ref() != Some(&cwd) {
+            self.status_line_git_dirty_pending = false;
+            return;
+        }
+        self.status_line_git_dirty = dirty;
+        self.status_line_git_dirty_pending = false;
+        self.status_line_git_dirty_lookup_complete = true;
+    }
+
     /// Forces a new git-branch lookup when `GitBranch` is part of the configured status line.
     pub(super) fn request_status_line_branch_refresh(&mut self) {
         let (items, _) = self.status_line_items_with_invalids();
-        if items.is_empty() || !items.contains(&StatusLineItem::GitBranch) {
+        let wants_git_branch = items.contains(&StatusLineItem::GitBranch)
+            || items.contains(&StatusLineItem::GitBranchWithStatus);
+        let wants_git_dirty = items.contains(&StatusLineItem::GitDirty)
+            || items.contains(&StatusLineItem::GitBranchWithStatus);
+        if items.is_empty() || !(wants_git_branch || wants_git_dirty) {
             return;
         }
         let cwd = self.status_line_cwd().to_path_buf();
         self.sync_status_line_branch_state(&cwd);
-        self.request_status_line_branch(cwd);
+        self.sync_status_line_git_dirty_state(&cwd);
+        if wants_git_branch {
+            self.request_status_line_branch(cwd.clone());
+        }
+        if wants_git_dirty {
+            self.request_status_line_git_dirty(cwd);
+        }
     }
 
     pub(super) fn restore_retry_status_header_if_present(&mut self) {
@@ -377,6 +416,21 @@ impl ChatWidget {
         self.status_line_branch_lookup_complete = false;
     }
 
+    /// Resets git dirty cache state when the status-line cwd changes.
+    fn sync_status_line_git_dirty_state(&mut self, cwd: &Path) {
+        if self
+            .status_line_git_dirty_cwd
+            .as_ref()
+            .is_some_and(|path| path == cwd)
+        {
+            return;
+        }
+        self.status_line_git_dirty_cwd = Some(cwd.to_path_buf());
+        self.status_line_git_dirty = None;
+        self.status_line_git_dirty_pending = false;
+        self.status_line_git_dirty_lookup_complete = false;
+    }
+
     /// Starts an async git-branch lookup unless one is already running.
     ///
     /// The resulting `StatusLineBranchUpdated` event carries the lookup cwd so callers can reject
@@ -390,6 +444,20 @@ impl ChatWidget {
         tokio::spawn(async move {
             let branch = current_branch_name(&cwd).await;
             tx.send(AppEvent::StatusLineBranchUpdated { cwd, branch });
+        });
+    }
+
+    /// Starts an async git-dirty lookup unless one is already running.
+    fn request_status_line_git_dirty(&mut self, cwd: PathBuf) {
+        self.sync_status_line_git_dirty_state(&cwd);
+        if self.status_line_git_dirty_pending {
+            return;
+        }
+        self.status_line_git_dirty_pending = true;
+        let tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let dirty = get_has_changes(&cwd).await;
+            tx.send(AppEvent::StatusLineGitDirtyUpdated { cwd, dirty });
         });
     }
 
@@ -414,6 +482,20 @@ impl ChatWidget {
             }
             StatusLineItem::ProjectRoot => self.status_line_project_root_name(),
             StatusLineItem::GitBranch => self.status_line_branch.clone(),
+            StatusLineItem::GitBranchWithStatus => self.status_line_branch.as_ref().map(|branch| {
+                if self.status_line_git_dirty == Some(true) {
+                    format!("{branch}*")
+                } else {
+                    branch.clone()
+                }
+            }),
+            StatusLineItem::GitDirty => self.status_line_git_dirty.map(|dirty| {
+                if dirty {
+                    "git dirty".to_string()
+                } else {
+                    "git clean".to_string()
+                }
+            }),
             StatusLineItem::UsedTokens => {
                 let usage = self.status_line_total_usage();
                 let total = usage.tokens_in_context_window();
@@ -440,6 +522,13 @@ impl ChatWidget {
                     .unwrap_or_else(|| "5h".to_string());
                 self.status_line_limit_display(window, &label)
             }
+            StatusLineItem::FiveHourReset => {
+                let window = self
+                    .rate_limit_snapshots_by_limit_id
+                    .get("chaos")
+                    .and_then(|s| s.primary.as_ref());
+                self.status_line_limit_reset_display(window, "5h")
+            }
             StatusLineItem::WeeklyLimit => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
@@ -451,6 +540,22 @@ impl ChatWidget {
                     .unwrap_or_else(|| "weekly".to_string());
                 self.status_line_limit_display(window, &label)
             }
+            StatusLineItem::WeeklyReset => {
+                let window = self
+                    .rate_limit_snapshots_by_limit_id
+                    .get("chaos")
+                    .and_then(|s| s.secondary.as_ref());
+                self.status_line_limit_reset_display(window, "weekly")
+            }
+            StatusLineItem::Provider => Some(self.config.model_provider.name.clone()),
+            StatusLineItem::ApprovalMode => Some(format!(
+                "approval {}",
+                self.config.permissions.approval_policy.value()
+            )),
+            StatusLineItem::SandboxMode => Some(format!(
+                "sandbox {}",
+                self.config.permissions.sandbox_policy.get()
+            )),
             StatusLineItem::ChaosVersion => Some(CHAOS_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
                 .status_line_context_window_size()
@@ -511,6 +616,15 @@ impl ChatWidget {
         let window = window?;
         let remaining = (100.0f64 - window.used_percent).clamp(0.0f64, 100.0f64);
         Some(format!("{label} {remaining:.0}%"))
+    }
+
+    fn status_line_limit_reset_display(
+        &self,
+        window: Option<&RateLimitWindowDisplay>,
+        label: &str,
+    ) -> Option<String> {
+        let resets_at = window?.resets_at.as_ref()?;
+        Some(format!("{label} resets {resets_at}"))
     }
 
     fn status_line_reasoning_effort_label(effort: Option<ReasoningEffortConfig>) -> &'static str {

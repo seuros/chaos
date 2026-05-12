@@ -412,6 +412,14 @@ pub struct ChatWidget {
     status_line_branch_pending: bool,
     // True once we've attempted a branch lookup for the current CWD.
     status_line_branch_lookup_complete: bool,
+    // Cached git dirty state for the status line (None if unknown or not in a git repository).
+    status_line_git_dirty: Option<bool>,
+    // CWD used to resolve the cached dirty state; change resets dirty state.
+    status_line_git_dirty_cwd: Option<PathBuf>,
+    // True while an async dirty-state lookup is in flight.
+    status_line_git_dirty_pending: bool,
+    // True once we've attempted a dirty-state lookup for the current CWD.
+    status_line_git_dirty_lookup_complete: bool,
     external_editor_state: ExternalEditorState,
     last_rendered_user_message_event: Option<RenderedUserMessageEvent>,
 }
@@ -550,6 +558,10 @@ impl ChatWidget {
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            status_line_git_dirty: None,
+            status_line_git_dirty_cwd: None,
+            status_line_git_dirty_pending: false,
+            status_line_git_dirty_lookup_complete: false,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
         };
@@ -708,6 +720,10 @@ impl ChatWidget {
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            status_line_git_dirty: None,
+            status_line_git_dirty_cwd: None,
+            status_line_git_dirty_pending: false,
+            status_line_git_dirty_lookup_complete: false,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
         };
@@ -866,6 +882,10 @@ impl ChatWidget {
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            status_line_git_dirty: None,
+            status_line_git_dirty_cwd: None,
+            status_line_git_dirty_pending: false,
+            status_line_git_dirty_lookup_complete: false,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
         };

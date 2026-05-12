@@ -687,6 +687,7 @@ pub(super) fn extract_first_bold(s: &str) -> Option<String> {
 pub(super) fn hook_event_label(event_name: chaos_ipc::protocol::HookEventName) -> &'static str {
     match event_name {
         chaos_ipc::protocol::HookEventName::SessionStart => "SessionStart",
+        chaos_ipc::protocol::HookEventName::BeforeTurn => "BeforeTurn",
         chaos_ipc::protocol::HookEventName::Stop => "Stop",
     }
 }

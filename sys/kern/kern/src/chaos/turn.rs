@@ -13,6 +13,8 @@ use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::HookCompletedEvent;
+use chaos_ipc::protocol::HookRunSummary;
 use chaos_ipc::protocol::TurnStartedEvent;
 use chaos_ipc::protocol::WarningEvent;
 use chaos_ipc::user_input::UserInput;
@@ -49,6 +51,91 @@ use sampling::run_sampling_request;
 pub(super) struct SamplingRequestResult {
     pub(super) needs_follow_up: bool,
     pub(super) last_agent_message: Option<String>,
+}
+
+/// Outcome bundle for hooks that can inject `additionalContext` and stop the
+/// turn (currently SessionStart and BeforeTurn). Both `chaos_dtrace` outcome
+/// types flatten into this so the kernel-side emit/inject loop can be shared.
+struct ContextHookOutcome {
+    completed_events: Vec<HookCompletedEvent>,
+    should_stop: bool,
+    additional_context: Option<String>,
+}
+
+impl From<chaos_dtrace::SessionStartOutcome> for ContextHookOutcome {
+    fn from(value: chaos_dtrace::SessionStartOutcome) -> Self {
+        Self {
+            completed_events: value.hook_events,
+            should_stop: value.should_stop,
+            additional_context: value.additional_context,
+        }
+    }
+}
+
+impl From<chaos_dtrace::BeforeTurnOutcome> for ContextHookOutcome {
+    fn from(value: chaos_dtrace::BeforeTurnOutcome) -> Self {
+        Self {
+            completed_events: value.hook_events,
+            should_stop: value.should_stop,
+            additional_context: value.additional_context,
+        }
+    }
+}
+
+/// Emit `HookStarted` events for every preview entry. Kept as a helper so
+/// callers can dispatch any number of hook types through the same channel.
+async fn emit_hook_started_events(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    previews: Vec<HookRunSummary>,
+) {
+    for run in previews {
+        sess.send_event(
+            turn_context,
+            EventMsg::HookStarted(crate::protocol::HookStartedEvent {
+                turn_id: Some(turn_context.sub_id.clone()),
+                run,
+            }),
+        )
+        .await;
+    }
+}
+
+/// Emit completed events for a context-injecting hook outcome, fold any
+/// `additionalContext` into the conversation as developer instructions, and
+/// report whether the caller should break out of the turn loop.
+async fn finalize_context_hook(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    outcome: ContextHookOutcome,
+) -> bool {
+    for completed in outcome.completed_events {
+        sess.send_event(turn_context, EventMsg::HookCompleted(completed))
+            .await;
+    }
+    if outcome.should_stop {
+        return true;
+    }
+    if let Some(additional_context) = outcome.additional_context {
+        let developer_message: ResponseItem = DeveloperInstructions::new(additional_context).into();
+        sess.record_conversation_items(turn_context, std::slice::from_ref(&developer_message))
+            .await;
+    }
+    false
+}
+
+/// Map the active approval policy onto the `permission_mode` string surfaced
+/// to hook scripts. There are only two execution modes: headless (no
+/// operator, nothing to approve) and interactive (operator on the wheel).
+/// `acceptEdits`, `plan`, and `dontAsk` are operator profiles layered on top
+/// of interactive mode, not flow-changing modes, so they never appear here.
+pub(crate) fn hook_permission_mode(policy: ApprovalPolicy) -> &'static str {
+    match policy {
+        ApprovalPolicy::Headless => "bypassPermissions",
+        ApprovalPolicy::Supervised | ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {
+            "default"
+        }
+    }
 }
 
 pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -> Option<String> {
@@ -129,6 +216,12 @@ pub(crate) async fn run_turn(
     let initial_input_for_turn: ResponseInputItem =
         response_input_item_from_user_input(input.clone());
     let response_item: ResponseItem = initial_input_for_turn.clone().into();
+    let before_turn_input_messages = parse_turn_item(&response_item)
+        .and_then(|item| match item {
+            TurnItem::UserMessage(user_message) => Some(vec![user_message.message()]),
+            _ => None,
+        })
+        .unwrap_or_default();
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
         .await;
     // Track the previous-turn baseline from the regular user-turn path only so
@@ -138,6 +231,16 @@ pub(crate) async fn run_turn(
         model: turn_context.model_info.slug.clone(),
     }))
     .await;
+
+    let mut before_turn_request = Some(chaos_dtrace::BeforeTurnRequest {
+        session_id: sess.conversation_id,
+        turn_id: turn_context.sub_id.clone(),
+        cwd: turn_context.cwd.clone(),
+        transcript_path: None,
+        model: turn_context.model_info.slug.clone(),
+        permission_mode: hook_permission_mode(turn_context.approval_policy.value()).to_string(),
+        input_messages: before_turn_input_messages,
+    });
 
     sess.maybe_start_ghost_snapshot(Arc::clone(&turn_context), cancellation_token.child_token())
         .await;
@@ -155,50 +258,32 @@ pub(crate) async fn run_turn(
 
     loop {
         if let Some(session_start_source) = sess.take_pending_session_start_source().await {
-            let session_start_permission_mode = match turn_context.approval_policy.value() {
-                ApprovalPolicy::Headless => "bypassPermissions",
-                ApprovalPolicy::Supervised
-                | ApprovalPolicy::Interactive
-                | ApprovalPolicy::Granular(_) => "default",
-            }
-            .to_string();
             let session_start_request = chaos_dtrace::SessionStartRequest {
                 session_id: sess.conversation_id,
                 cwd: turn_context.cwd.clone(),
                 transcript_path: None,
                 model: turn_context.model_info.slug.clone(),
-                permission_mode: session_start_permission_mode,
+                permission_mode: hook_permission_mode(turn_context.approval_policy.value())
+                    .to_string(),
                 source: session_start_source,
             };
-            for run in sess.hooks().preview_session_start(&session_start_request) {
-                sess.send_event(
-                    &turn_context,
-                    EventMsg::HookStarted(crate::protocol::HookStartedEvent {
-                        turn_id: Some(turn_context.sub_id.clone()),
-                        run,
-                    }),
-                )
-                .await;
-            }
-            let session_start_outcome = sess
+            let previews = sess.hooks().preview_session_start(&session_start_request);
+            emit_hook_started_events(&sess, &turn_context, previews).await;
+            let outcome = sess
                 .hooks()
                 .run_session_start(session_start_request, Some(turn_context.sub_id.clone()))
                 .await;
-            for completed in session_start_outcome.hook_events {
-                sess.send_event(&turn_context, EventMsg::HookCompleted(completed))
-                    .await;
-            }
-            if session_start_outcome.should_stop {
+            if finalize_context_hook(&sess, &turn_context, outcome.into()).await {
                 break;
             }
-            if let Some(additional_context) = session_start_outcome.additional_context {
-                let developer_message: ResponseItem =
-                    DeveloperInstructions::new(additional_context).into();
-                sess.record_conversation_items(
-                    &turn_context,
-                    std::slice::from_ref(&developer_message),
-                )
-                .await;
+        }
+
+        if let Some(before_turn_request) = before_turn_request.take() {
+            let previews = sess.hooks().preview_before_turn(&before_turn_request);
+            emit_hook_started_events(&sess, &turn_context, previews).await;
+            let outcome = sess.hooks().run_before_turn(before_turn_request).await;
+            if finalize_context_hook(&sess, &turn_context, outcome.into()).await {
+                break;
             }
         }
 
@@ -299,20 +384,14 @@ pub(crate) async fn run_turn(
 
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
-                    let stop_hook_permission_mode = match turn_context.approval_policy.value() {
-                        ApprovalPolicy::Headless => "bypassPermissions",
-                        ApprovalPolicy::Supervised
-                        | ApprovalPolicy::Interactive
-                        | ApprovalPolicy::Granular(_) => "default",
-                    }
-                    .to_string();
                     let stop_request = chaos_dtrace::StopRequest {
                         session_id: sess.conversation_id,
                         turn_id: turn_context.sub_id.clone(),
                         cwd: turn_context.cwd.clone(),
                         transcript_path: None,
                         model: turn_context.model_info.slug.clone(),
-                        permission_mode: stop_hook_permission_mode,
+                        permission_mode: hook_permission_mode(turn_context.approval_policy.value())
+                            .to_string(),
                         stop_hook_active,
                         last_assistant_message: last_agent_message.clone(),
                     };

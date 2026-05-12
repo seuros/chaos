@@ -141,7 +141,7 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
 }
 
 #[test]
-fn clamp_permission_mode_matches_codex_session_start_mapping() {
+fn clamp_permission_mode_emits_canonical_wire_strings() {
     assert_eq!(
         clamp_permission_mode(ApprovalPolicy::Headless),
         "bypassPermissions"

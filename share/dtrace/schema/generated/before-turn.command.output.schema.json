@@ -2,15 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
-    "HookEventNameWire": {
-      "enum": [
-        "SessionStart",
-        "BeforeTurn",
-        "Stop"
-      ],
-      "type": "string"
-    },
-    "SessionStartHookSpecificOutputWire": {
+    "BeforeTurnHookSpecificOutputWire": {
       "additionalProperties": false,
       "properties": {
         "additionalContext": {
@@ -28,6 +20,14 @@
         "hookEventName"
       ],
       "type": "object"
+    },
+    "HookEventNameWire": {
+      "enum": [
+        "SessionStart",
+        "BeforeTurn",
+        "Stop"
+      ],
+      "type": "string"
     }
   },
   "properties": {
@@ -38,7 +38,7 @@
     "hookSpecificOutput": {
       "anyOf": [
         {
-          "$ref": "#/definitions/SessionStartHookSpecificOutputWire"
+          "$ref": "#/definitions/BeforeTurnHookSpecificOutputWire"
         },
         {
           "type": "null"
@@ -65,6 +65,6 @@
       ]
     }
   },
-  "title": "session-start.command.output",
+  "title": "before-turn.command.output",
   "type": "object"
 }

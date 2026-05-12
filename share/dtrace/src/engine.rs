@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use chaos_ipc::protocol::HookRunSummary;
 use chaos_sysctl::ConfigLayerStack;
 
+use crate::events::before_turn::BeforeTurnOutcome;
+use crate::events::before_turn::BeforeTurnRequest;
 use crate::events::session_start::SessionStartOutcome;
 use crate::events::session_start::SessionStartRequest;
 use crate::events::stop::StopOutcome;
@@ -45,6 +47,7 @@ impl ConfiguredHandler {
     fn event_name_label(&self) -> &'static str {
         match self.event_name {
             chaos_ipc::protocol::HookEventName::SessionStart => "session-start",
+            chaos_ipc::protocol::HookEventName::BeforeTurn => "before-turn",
             chaos_ipc::protocol::HookEventName::Stop => "stop",
         }
     }
@@ -85,6 +88,14 @@ impl ClaudeHooksEngine {
         turn_id: Option<String>,
     ) -> SessionStartOutcome {
         crate::events::session_start::run(&self.handlers, &self.shell, request, turn_id).await
+    }
+
+    pub(crate) fn preview_before_turn(&self, request: &BeforeTurnRequest) -> Vec<HookRunSummary> {
+        crate::events::before_turn::preview(&self.handlers, request)
+    }
+
+    pub(crate) async fn run_before_turn(&self, request: BeforeTurnRequest) -> BeforeTurnOutcome {
+        crate::events::before_turn::run(&self.handlers, &self.shell, request).await
     }
 
     pub(crate) fn preview_stop(&self, request: &StopRequest) -> Vec<HookRunSummary> {

@@ -312,7 +312,8 @@ impl Tui {
 
         if was_alt_screen {
             let _ = self.enter_alt_screen();
-        } else if was_mouse_capture {
+        }
+        if was_mouse_capture {
             self.enable_mouse_capture();
         }
 
@@ -359,6 +360,16 @@ impl Tui {
         Box::pin(stream)
     }
 
+    /// Set mouse capture state. Prefer this over calling `enable_mouse_capture` or
+    /// `disable_mouse_capture` directly from callers outside this module.
+    pub fn set_mouse_capture_enabled(&mut self, enabled: bool) {
+        if enabled {
+            self.enable_mouse_capture();
+        } else {
+            self.disable_mouse_capture();
+        }
+    }
+
     fn enable_mouse_capture(&mut self) {
         match execute!(self.terminal.backend_mut(), EnableMouseCapture) {
             Ok(()) => {
@@ -386,16 +397,14 @@ impl Tui {
     pub fn enter_alt_screen(&mut self) -> Result<()> {
         if !self.alt_screen_enabled {
             // Zellij auto-mode keeps us in the normal buffer so scrollback remains available.
-            // Still enable mouse capture while overlays are open so wheel events reach pager
-            // widgets instead of being swallowed by the multiplexer.
-            self.enable_mouse_capture();
+            // Mouse capture is opt-in per overlay via enable_mouse_capture().
+            return Ok(());
+        }
+        if self.alt_screen_active.load(Ordering::Relaxed) {
+            // Already in alt-screen; do not overwrite the saved viewport.
             return Ok(());
         }
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
-        // Capture mouse only while an overlay is active. Inline overlays still
-        // need this so Zellij can forward wheel events to the pager; outside of
-        // overlays we leave native scrollback alone.
-        self.enable_mouse_capture();
         // Enable "alternate scroll" so terminals may translate wheel to arrows
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
         if let Ok(size) = self.terminal.size() {

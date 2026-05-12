@@ -2554,7 +2554,8 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
     app.backtrack.nth_user_message = 0;
     app.backtrack_render_pending = true;
 
-    app.reset_app_ui_state_after_clear();
+    let mut test_tui = make_test_tui();
+    app.reset_app_ui_state_after_clear(&mut test_tui);
 
     assert!(app.overlay.is_none());
     assert!(app.transcript_cells.is_empty());

@@ -116,7 +116,7 @@ impl App {
             }
             AppEvent::ClearUi => {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
-                self.reset_app_ui_state_after_clear();
+                self.reset_app_ui_state_after_clear(tui);
 
                 self.start_fresh_session_with_summary_hint(tui).await;
             }
@@ -364,17 +364,15 @@ impl App {
             AppEvent::DiffResult(text) => {
                 // Clear the in-progress state in the bottom pane
                 self.chat_widget.on_diff_complete();
-                // Enter alternate screen using TUI helper and build pager lines
-                let _ = tui.enter_alt_screen();
                 let pager_lines: Vec<ratatui::text::Line<'static>> = if text.trim().is_empty() {
                     vec!["No changes detected.".italic().into()]
                 } else {
                     text.lines().map(ansi_escape_line).collect()
                 };
-                self.overlay = Some(Overlay::new_static_with_lines(
-                    pager_lines,
-                    "D I F F".to_string(),
-                ));
+                self.open_overlay(
+                    tui,
+                    Overlay::new_static_with_lines(pager_lines, "D I F F".to_string()),
+                );
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenAppLink {
@@ -713,17 +711,19 @@ impl App {
                 self.chat_widget.open_approvals_popup();
             }
             AppEvent::OpenAccountsPopup => {
-                let _ = tui.enter_alt_screen();
-                self.overlay = Some(Overlay::new_accounts(AccountsWidget::new(
-                    tui.frame_requester(),
-                    self.config.chaos_home.clone(),
-                    self.config.cli_auth_credentials_store_mode,
-                    self.auth_manager.clone(),
-                    &self.config.model_providers,
-                    self.config.forced_chatgpt_workspace_id.clone(),
-                    self.config.forced_login_method,
-                    self.config.animations,
-                )));
+                self.open_overlay(
+                    tui,
+                    Overlay::new_accounts(AccountsWidget::new(
+                        tui.frame_requester(),
+                        self.config.chaos_home.clone(),
+                        self.config.cli_auth_credentials_store_mode,
+                        self.auth_manager.clone(),
+                        &self.config.model_providers,
+                        self.config.forced_chatgpt_workspace_id.clone(),
+                        self.config.forced_login_method,
+                        self.config.animations,
+                    )),
+                );
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenAgentPicker => {
@@ -802,28 +802,28 @@ impl App {
             }
             AppEvent::FullScreenApprovalRequest(request) => match request {
                 ApprovalRequest::ApplyPatch { cwd, changes, .. } => {
-                    let _ = tui.enter_alt_screen();
                     let diff_summary = DiffSummary::new(changes, cwd);
-                    self.overlay = Some(Overlay::new_static_with_renderables(
-                        vec![diff_summary.into()],
-                        "P A T C H".to_string(),
-                    ));
+                    self.open_overlay(
+                        tui,
+                        Overlay::new_static_with_renderables(
+                            vec![diff_summary.into()],
+                            "P A T C H".to_string(),
+                        ),
+                    );
                 }
                 ApprovalRequest::Exec { command, .. } => {
-                    let _ = tui.enter_alt_screen();
                     let full_cmd = strip_bash_lc_and_escape(&command);
                     let full_cmd_lines = highlight_bash_to_lines(&full_cmd);
-                    self.overlay = Some(Overlay::new_static_with_lines(
-                        full_cmd_lines,
-                        "E X E C".to_string(),
-                    ));
+                    self.open_overlay(
+                        tui,
+                        Overlay::new_static_with_lines(full_cmd_lines, "E X E C".to_string()),
+                    );
                 }
                 ApprovalRequest::Permissions {
                     permissions,
                     reason,
                     ..
                 } => {
-                    let _ = tui.enter_alt_screen();
                     let mut lines = Vec::new();
                     if let Some(reason) = reason {
                         lines.push(Line::from(vec!["Reason: ".into(), reason.italic()]));
@@ -837,10 +837,13 @@ impl App {
                             rule_line.cyan(),
                         ]));
                     }
-                    self.overlay = Some(Overlay::new_static_with_renderables(
-                        vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],
-                        "P E R M I S S I O N S".to_string(),
-                    ));
+                    self.open_overlay(
+                        tui,
+                        Overlay::new_static_with_renderables(
+                            vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],
+                            "P E R M I S S I O N S".to_string(),
+                        ),
+                    );
                 }
                 ApprovalRequest::McpElicitation {
                     server_name,
@@ -848,7 +851,6 @@ impl App {
                     url,
                     ..
                 } => {
-                    let _ = tui.enter_alt_screen();
                     let mut lines = vec![
                         Line::from(vec!["Server: ".into(), server_name.bold()]),
                         Line::from(""),
@@ -859,10 +861,13 @@ impl App {
                     }
                     lines.push(Line::from(message));
                     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-                    self.overlay = Some(Overlay::new_static_with_renderables(
-                        vec![Box::new(paragraph)],
-                        "E L I C I T A T I O N".to_string(),
-                    ));
+                    self.open_overlay(
+                        tui,
+                        Overlay::new_static_with_renderables(
+                            vec![Box::new(paragraph)],
+                            "E L I C I T A T I O N".to_string(),
+                        ),
+                    );
                 }
             },
             AppEvent::StatusLineSetup { items } => {

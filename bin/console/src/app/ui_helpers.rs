@@ -1,4 +1,6 @@
-use super::{App, BacktrackState, Line, PaneKind, Personality, ReasoningEffortConfig, Result, tui};
+use super::{
+    App, BacktrackState, Line, Overlay, PaneKind, Personality, ReasoningEffortConfig, Result, tui,
+};
 
 impl App {
     pub(super) fn open_url_in_browser(&mut self, url: String) -> bool {
@@ -59,8 +61,27 @@ impl App {
         Ok(())
     }
 
-    pub(super) fn reset_app_ui_state_after_clear(&mut self) {
+    /// Open an overlay: enter alt-screen (or stay inline), then conditionally enable mouse
+    /// capture so pager overlays can receive wheel events without breaking normal scrollback.
+    pub(crate) fn open_overlay(&mut self, tui: &mut tui::Tui, overlay: Overlay) {
+        let wants_mouse = overlay.wants_mouse_capture();
+        let _ = tui.enter_alt_screen();
+        self.overlay = Some(overlay);
+        tui.set_mouse_capture_enabled(wants_mouse);
+    }
+
+    /// Close the current overlay and clean up terminal state.
+    /// Prefer this over direct `self.overlay = None` assignments when a `tui` handle is available.
+    pub(crate) fn close_overlay(&mut self, tui: &mut tui::Tui) {
+        if self.overlay.is_none() {
+            return;
+        }
         self.overlay = None;
+        let _ = tui.leave_alt_screen();
+    }
+
+    pub(super) fn reset_app_ui_state_after_clear(&mut self, tui: &mut tui::Tui) {
+        self.close_overlay(tui);
         self.transcript_cells.clear();
         self.deferred_history_lines.clear();
         self.has_emitted_history_lines = false;

@@ -92,6 +92,12 @@ impl Overlay {
     pub(crate) fn is_transcript(&self) -> bool {
         matches!(self, Overlay::Transcript(_))
     }
+
+    /// Returns true for overlays that handle `TuiEvent::Mouse` and need mouse capture
+    /// to receive wheel events (e.g. in Zellij where the normal buffer is used).
+    pub(crate) fn wants_mouse_capture(&self) -> bool {
+        matches!(self, Overlay::Transcript(_) | Overlay::Static(_))
+    }
 }
 
 pub(crate) const KEY_UP: KeyBinding = key_hint::plain(KeyCode::Up);

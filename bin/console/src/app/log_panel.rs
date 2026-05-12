@@ -11,8 +11,10 @@ impl App {
         self.reload_log_panel_backfill().await;
 
         let lines = self.log_panel.render_lines();
-        let _ = tui.enter_alt_screen();
-        self.overlay = Some(Overlay::new_static_with_lines(lines, "L O G S".to_string()));
+        self.open_overlay(
+            tui,
+            Overlay::new_static_with_lines(lines, "L O G S".to_string()),
+        );
         tui.frame_requester().schedule_frame();
     }
 

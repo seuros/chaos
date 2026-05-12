@@ -71,7 +71,9 @@ impl SuspendContext {
             // Leave alt-screen so the terminal returns to the normal buffer while suspended; also turn off alt-scroll.
             let _ = execute!(stdout(), DisableAlternateScroll);
             let _ = execute!(stdout(), LeaveAlternateScreen);
-            self.set_resume_action(ResumeAction::RestoreAlt);
+            self.set_resume_action(ResumeAction::RestoreAlt {
+                restore_mouse_capture: mouse_capture_active.load(Ordering::Relaxed),
+            });
         } else {
             self.set_resume_action(ResumeAction::RealignInline {
                 restore_mouse_capture: mouse_capture_active.load(Ordering::Relaxed),
@@ -105,13 +107,17 @@ impl SuspendContext {
                     restore_mouse_capture,
                 })
             }
-            ResumeAction::RestoreAlt => {
+            ResumeAction::RestoreAlt {
+                restore_mouse_capture,
+            } => {
                 if let Ok(Position { y, .. }) = terminal.get_cursor_position()
                     && let Some(saved) = alt_saved_viewport.as_mut()
                 {
                     saved.y = y;
                 }
-                Some(PreparedResumeAction::RestoreAltScreen)
+                Some(PreparedResumeAction::RestoreAltScreen {
+                    restore_mouse_capture,
+                })
             }
         }
     }
@@ -153,7 +159,10 @@ pub enum ResumeAction {
         restore_mouse_capture: bool,
     },
     /// Re-enter the alt screen and restore the overlay UI.
-    RestoreAlt,
+    RestoreAlt {
+        /// Re-enable mouse capture after re-entering alt-screen if it was active before suspend.
+        restore_mouse_capture: bool,
+    },
 }
 
 /// Describes the viewport change to apply when resuming from suspend during the synchronized draw.
@@ -162,7 +171,10 @@ pub enum ResumeAction {
 #[derive(Clone, Debug)]
 pub enum PreparedResumeAction {
     /// Re-enter the alt screen and reset the viewport to the terminal dimensions.
-    RestoreAltScreen,
+    RestoreAltScreen {
+        /// Re-enable mouse capture after re-entering alt-screen if it was active before suspend.
+        restore_mouse_capture: bool,
+    },
     /// Apply a viewport shift to keep the inline cursor position stable.
     RealignViewport {
         area: Rect,
@@ -183,9 +195,13 @@ impl PreparedResumeAction {
                     execute!(terminal.backend_mut(), EnableMouseCapture)?;
                 }
             }
-            PreparedResumeAction::RestoreAltScreen => {
+            PreparedResumeAction::RestoreAltScreen {
+                restore_mouse_capture,
+            } => {
                 execute!(terminal.backend_mut(), EnterAlternateScreen)?;
-                execute!(terminal.backend_mut(), EnableMouseCapture)?;
+                if restore_mouse_capture {
+                    execute!(terminal.backend_mut(), EnableMouseCapture)?;
+                }
                 // Enable "alternate scroll" so terminals may translate wheel to arrows
                 execute!(terminal.backend_mut(), EnableAlternateScroll)?;
                 if let Ok(size) = terminal.size() {

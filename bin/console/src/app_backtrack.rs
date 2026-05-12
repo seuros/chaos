@@ -242,8 +242,8 @@ impl App {
         tui: &mut tui::Tui,
         initial_event: Option<crate::tui::TuiEvent>,
     ) {
-        let _ = tui.enter_alt_screen();
-        self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
+        let overlay = Overlay::new_transcript(self.transcript_cells.clone());
+        self.open_overlay(tui, overlay);
         if let Some(event) = initial_event
             && let Some(overlay) = &mut self.overlay
         {

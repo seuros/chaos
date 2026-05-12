@@ -185,7 +185,7 @@ impl App {
                     self.chat_widget
                         .add_error_message(format!("Failed to clear terminal UI: {err}"));
                 } else {
-                    self.reset_app_ui_state_after_clear();
+                    self.reset_app_ui_state_after_clear(tui);
                     self.queue_clear_ui_header(tui);
                     tui.frame_requester().schedule_frame();
                 }

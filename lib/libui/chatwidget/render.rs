@@ -540,6 +540,11 @@ impl ChatWidget {
                     .unwrap_or_else(|| "weekly".to_string());
                 self.status_line_limit_display(window, &label)
             }
+            StatusLineItem::WeeklyProjection => {
+                let snapshot = self.rate_limit_snapshots_by_limit_id.get("chaos");
+                let window = snapshot.and_then(|s| s.secondary.as_ref());
+                self.status_line_limit_projection_display(snapshot, window, "weekly")
+            }
             StatusLineItem::WeeklyReset => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
@@ -616,6 +621,30 @@ impl ChatWidget {
         let window = window?;
         let remaining = (100.0f64 - window.used_percent).clamp(0.0f64, 100.0f64);
         Some(format!("{label} {remaining:.0}%"))
+    }
+
+    fn status_line_limit_projection_display(
+        &self,
+        snapshot: Option<&crate::status::RateLimitSnapshotDisplay>,
+        window: Option<&RateLimitWindowDisplay>,
+        label: &str,
+    ) -> Option<String> {
+        let snapshot = snapshot?;
+        let window = window?;
+        let window_minutes = window.window_minutes?;
+        if window_minutes <= 0 {
+            return None;
+        }
+        let resets_at = window.resets_at_epoch_seconds?;
+        let total_window_seconds = window_minutes.saturating_mul(60);
+        let starts_at = resets_at.saturating_sub(total_window_seconds);
+        let elapsed_seconds = snapshot
+            .captured_at
+            .as_second()
+            .saturating_sub(starts_at)
+            .clamp(1, total_window_seconds);
+        let projected = window.used_percent * total_window_seconds as f64 / elapsed_seconds as f64;
+        Some(format!("{label} projected {:.0}%", projected.max(0.0)))
     }
 
     fn status_line_limit_reset_display(

@@ -7817,6 +7817,42 @@ async fn status_line_git_branch_with_status_marks_dirty_worktrees() {
 }
 
 #[tokio::test]
+async fn status_line_weekly_projection_estimates_end_of_window_usage() {
+    use crate::bottom_pane::StatusLineItem;
+    use crate::status::rate_limit_snapshot_display_for_limit;
+
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    let captured_at = jiff::Timestamp::from_second(1_000_000).expect("valid timestamp");
+    let weekly_minutes = 7 * 24 * 60;
+    let snapshot = RateLimitSnapshot {
+        limit_id: Some("chaos".to_string()),
+        limit_name: Some("chaos".to_string()),
+        primary: None,
+        secondary: Some(RateLimitWindow {
+            used_percent: 25.0,
+            window_minutes: Some(weekly_minutes),
+            // Half way through the weekly window, so 25% used projects to 50%.
+            resets_at: Some(captured_at.as_second() + (weekly_minutes * 60 / 2)),
+        }),
+        credits: None,
+        plan_type: None,
+    };
+    chat.rate_limit_snapshots_by_limit_id.insert(
+        "chaos".to_string(),
+        rate_limit_snapshot_display_for_limit(&snapshot, "chaos".to_string(), captured_at),
+    );
+
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::WeeklyLimit),
+        Some("weekly 75%".to_string())
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::WeeklyProjection),
+        Some("weekly projected 50%".to_string())
+    );
+}
+
+#[tokio::test]
 async fn warning_event_adds_warning_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {

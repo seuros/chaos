@@ -85,6 +85,9 @@ pub enum StatusLineItem {
     /// Remaining usage on the weekly rate limit.
     WeeklyLimit,
 
+    /// Projected weekly usage at the current pace.
+    WeeklyProjection,
+
     /// Reset time for the weekly rate limit.
     WeeklyReset,
 
@@ -152,6 +155,9 @@ impl StatusLineItem {
             }
             StatusLineItem::WeeklyLimit => {
                 "Remaining usage on weekly usage limit (omitted when unavailable)".to_string()
+            }
+            StatusLineItem::WeeklyProjection => {
+                "Projected weekly usage at the current pace (omitted when unavailable)".to_string()
             }
             StatusLineItem::WeeklyReset => {
                 "Reset time for the weekly usage limit (omitted when unavailable)".to_string()

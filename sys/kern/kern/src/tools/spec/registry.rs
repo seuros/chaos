@@ -79,7 +79,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     _app_tools: Option<HashMap<String, ToolInfo>>,
     dynamic_tools: &[DynamicToolSpec],
     catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
-    hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+    halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
     plan_mode: bool,
 ) -> ToolRegistryBuilder {
     use crate::minions::tools::CloseAgentHandler;
@@ -90,7 +90,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::CatalogModuleHandler;
     use crate::tools::handlers::DynamicToolHandler;
-    use crate::tools::handlers::HallucinateHandler;
+    use crate::tools::handlers::HalluacinateHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::McpTaskHandler;
@@ -303,9 +303,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
             let parallel = tool.supports_parallel_tool_calls;
             push_tool_spec(&mut builder, spec, parallel);
             match source.as_str() {
-                "hallucinate" => {
-                    if let Some(ref handle) = hallucinate {
-                        let handler = Arc::new(HallucinateHandler {
+                "halluacinate" => {
+                    if let Some(ref handle) = halluacinate {
+                        let handler = Arc::new(HalluacinateHandler {
                             handle: handle.clone(),
                         });
                         builder.register_handler(&tool.name, handler);

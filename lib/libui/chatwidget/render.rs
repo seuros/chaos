@@ -12,7 +12,7 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-use chaos_hallucinate::StatusLineSpan;
+use chaos_halluacinate::StatusLineSpan;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::CreditsSnapshot;
@@ -160,14 +160,14 @@ impl ChatWidget {
         self.set_status_line(line);
     }
 
-    pub fn set_hallucinate_handle(
+    pub fn set_halluacinate_handle(
         &mut self,
-        hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+        halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
     ) {
         self.status_line_script_render_generation =
             self.status_line_script_render_generation.wrapping_add(1);
-        self.hallucinate = hallucinate;
-        if self.hallucinate.is_none() {
+        self.halluacinate = halluacinate;
+        if self.halluacinate.is_none() {
             self.bottom_pane.set_status_line_enabled(false);
             self.set_status_line(None);
         }
@@ -185,9 +185,9 @@ impl ChatWidget {
     ///
     /// The built-in renderer is also Lua-backed, so there is no Rust fallback path here. We only
     /// prepare dynamic context (such as git branch lookup) and then hand the whole render decision
-    /// to Hallucinate.
+    /// to Halluacinate.
     pub fn refresh_status_line(&mut self) {
-        let Some(handle) = self.hallucinate.clone() else {
+        let Some(handle) = self.halluacinate.clone() else {
             self.bottom_pane.set_status_line_enabled(false);
             self.set_status_line(None);
             return;
@@ -542,7 +542,7 @@ impl ChatWidget {
     /// Builds the Lua statusline context from current runtime state.
     ///
     /// This is public because cross-crate UI tests in `chaos-console` assert on the exact context
-    /// values we hand to Hallucinate.
+    /// values we hand to Halluacinate.
     pub fn build_statusline_ctx(&self) -> serde_json::Value {
         let model = self.model_display_name().to_string();
         let reasoning_effort =

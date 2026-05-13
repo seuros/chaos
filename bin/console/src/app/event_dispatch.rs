@@ -184,7 +184,7 @@ impl App {
                                     self.config.clone(),
                                 );
                                 let (_, process, session_configured) = resumed.into_parts();
-                                init.hallucinate = process.hallucinate_handle();
+                                init.halluacinate = process.halluacinate_handle();
                                 self.chat_widget = ChatWidget::new_from_existing(
                                     init,
                                     process,
@@ -254,7 +254,7 @@ impl App {
                                 self.config.clone(),
                             );
                             let (_, process, session_configured) = forked.into_parts();
-                            init.hallucinate = process.hallucinate_handle();
+                            init.halluacinate = process.halluacinate_handle();
                             self.chat_widget =
                                 ChatWidget::new_from_existing(init, process, session_configured);
                             self.reset_process_event_state();

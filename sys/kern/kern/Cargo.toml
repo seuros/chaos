@@ -25,7 +25,7 @@ jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chaos-parrot = { workspace = true }
 chaos-clamp = { workspace = true }
-chaos-hallucinate = { workspace = true }
+chaos-halluacinate = { workspace = true }
 chaos-lsd = { workspace = true }
 chaos-abi = { workspace = true }
 tokio-stream = { workspace = true }

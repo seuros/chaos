@@ -44,10 +44,10 @@ pub(crate) struct ToolRouterParams<'a> {
     pub(crate) mcp_tools: Option<HashMap<String, McpToolInfo>>,
     pub(crate) app_tools: Option<HashMap<String, ToolInfo>>,
     pub(crate) dynamic_tools: &'a [DynamicToolSpec],
-    /// Tools from the catalog (arsenal, cron, hallucinate, etc.) with their source module name.
+    /// Tools from the catalog (arsenal, cron, halluacinate, etc.) with their source module name.
     pub(crate) catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
-    /// Optional hallucinate scripting engine handle (for script-defined tool execution).
-    pub(crate) hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+    /// Optional halluacinate scripting engine handle (for script-defined tool execution).
+    pub(crate) halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
     /// When true, exclude destructive MCP tools from the registry (plan mode).
     pub(crate) plan_mode: bool,
 }
@@ -59,7 +59,7 @@ impl ToolRouter {
             app_tools,
             dynamic_tools,
             catalog_tools,
-            hallucinate,
+            halluacinate,
             plan_mode,
         } = params;
         let builder = build_specs_with_discoverable_tools(
@@ -68,7 +68,7 @@ impl ToolRouter {
             app_tools,
             dynamic_tools,
             catalog_tools,
-            hallucinate,
+            halluacinate,
             plan_mode,
         );
         let (specs, registry) = builder.build();

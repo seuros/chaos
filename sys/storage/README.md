@@ -5,8 +5,7 @@ operator needs it. Everything that needs to survive a restart goes through here.
 
 ## In-memory SQLite validation
 
-For Rails-style test isolation, set `CHAOS_STORAGE_URL` before starting the test
-process:
+For test isolation, set `CHAOS_STORAGE_URL` before starting the test process:
 
 ```sh
 CHAOS_STORAGE_URL=sqlite::memory: cargo test -p libui

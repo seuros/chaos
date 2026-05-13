@@ -33,7 +33,7 @@ impl App {
             is_first_run: false,
             model: Some(self.chat_widget.current_model().to_string()),
             session_telemetry: self.session_telemetry.clone(),
-            hallucinate: None,
+            halluacinate: None,
         }
     }
 
@@ -115,7 +115,7 @@ impl App {
             is_first_run: false,
             model: Some(model),
             session_telemetry: self.session_telemetry.clone(),
-            hallucinate: None,
+            halluacinate: None,
         };
         self.chat_widget = ChatWidget::new(init, self.server.clone());
         self.reset_process_event_state();
@@ -270,7 +270,7 @@ impl App {
                     is_first_run,
                     model: Some(model.clone()),
                     session_telemetry: session_telemetry.clone(),
-                    hallucinate: None,
+                    halluacinate: None,
                 };
                 ChatWidget::new(init, process_table.clone())
             }
@@ -303,7 +303,7 @@ impl App {
                     is_first_run,
                     model: config.model.clone(),
                     session_telemetry: session_telemetry.clone(),
-                    hallucinate: process.hallucinate_handle(),
+                    halluacinate: process.halluacinate_handle(),
                 };
                 ChatWidget::new_from_existing(init, process, session_configured)
             }
@@ -342,7 +342,7 @@ impl App {
                     is_first_run,
                     model: config.model.clone(),
                     session_telemetry: session_telemetry.clone(),
-                    hallucinate: process.hallucinate_handle(),
+                    halluacinate: process.halluacinate_handle(),
                 };
                 ChatWidget::new_from_existing(init, process, session_configured)
             }

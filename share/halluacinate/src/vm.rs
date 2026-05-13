@@ -1,4 +1,4 @@
-//! Hallucinate engine — owns the Lua VM, runs on a dedicated thread.
+//! Halluacinate engine — owns the Lua VM, runs on a dedicated thread.
 //!
 //! The engine receives `ScriptRequest` messages via an mpsc channel and
 //! dispatches them to the sandboxed Lua state. Each script gets its own
@@ -23,7 +23,7 @@ use crate::api::ScriptRegistrations;
 use crate::api::SessionInfo;
 use crate::api::{self};
 use crate::discovery;
-use crate::handle::HallucinateHandle;
+use crate::handle::HalluacinateHandle;
 use crate::handle::HookResult;
 use crate::handle::ReloadResult;
 use crate::handle::ScriptRequest;
@@ -46,7 +46,7 @@ const LOAD_DEADLINE: Duration = Duration::from_secs(30);
 const CHANNEL_BUFFER: usize = 64;
 
 /// The Lua engine. Not `Send` — lives on a dedicated OS thread.
-pub struct HallucinateEngine {
+pub struct HalluacinateEngine {
     lua: Lua,
     /// Shared deadline handle — reset before each Lua call.
     deadline: Deadline,
@@ -64,7 +64,7 @@ pub struct HallucinateEngine {
     user_scripts_dir: Option<PathBuf>,
 }
 
-impl HallucinateEngine {
+impl HalluacinateEngine {
     /// Create a new engine and load scripts from the standard directories.
     pub fn new(info: SessionInfo) -> anyhow::Result<Self> {
         let lua = Lua::new();
@@ -103,7 +103,7 @@ impl HallucinateEngine {
             }
         }
         if !paths.is_empty() {
-            tracing::info!(count = paths.len(), "hallucinate: loaded lua scripts");
+            tracing::info!(count = paths.len(), "halluacinate: loaded lua scripts");
         }
     }
 
@@ -316,7 +316,7 @@ impl HallucinateEngine {
                     let _ = reply.send(result);
                 }
                 ScriptRequest::Shutdown => {
-                    tracing::info!("hallucinate engine shutting down");
+                    tracing::info!("halluacinate engine shutting down");
                     break;
                 }
             }
@@ -360,15 +360,15 @@ fn parse_statusline_result(value: Value) -> Option<Vec<StatusLineSpan>> {
 }
 
 /// Spawn the engine on a blocking thread and return an async handle.
-pub fn spawn(info: SessionInfo) -> anyhow::Result<HallucinateHandle> {
+pub fn spawn(info: SessionInfo) -> anyhow::Result<HalluacinateHandle> {
     let (tx, rx) = mpsc::channel(CHANNEL_BUFFER);
-    let engine = HallucinateEngine::new(info)?;
+    let engine = HalluacinateEngine::new(info)?;
 
     std::thread::Builder::new()
-        .name("hallucinate".to_owned())
+        .name("halluacinate".to_owned())
         .spawn(move || engine.run(rx))?;
 
-    Ok(HallucinateHandle::new(tx))
+    Ok(HalluacinateHandle::new(tx))
 }
 
 #[cfg(test)]

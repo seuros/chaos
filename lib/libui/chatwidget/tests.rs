@@ -1801,7 +1801,7 @@ async fn helpers_are_available_and_do_not_panic() {
         is_first_run: true,
         model: Some(resolved_model),
         session_telemetry,
-        hallucinate: None,
+        halluacinate: None,
     };
     let mut w = ChatWidget::new(init, process_table);
     // Basic construction sanity.
@@ -1951,7 +1951,7 @@ async fn make_chatwidget_manual(
         status_line_script_render_generation: 0,
         external_editor_state: ExternalEditorState::Closed,
         last_rendered_user_message_event: None,
-        hallucinate: None,
+        halluacinate: None,
     };
     widget.set_model(&resolved_model);
     (widget, rx, op_rx)
@@ -5246,7 +5246,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         is_first_run: true,
         model: Some(resolved_model.clone()),
         session_telemetry,
-        hallucinate: None,
+        halluacinate: None,
     };
 
     let chat = ChatWidget::new(init, process_table);
@@ -7812,18 +7812,18 @@ async fn warning_event_adds_warning_history_cell() {
 }
 
 #[tokio::test]
-async fn default_hallucinate_status_line_renderer_renders_default_line() {
+async fn default_halluacinate_status_line_renderer_renders_default_line() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
     chat.current_cwd = Some(PathBuf::from("/work/repo"));
     let temp = tempfile::tempdir().unwrap();
-    let handle = chaos_hallucinate::spawn(chaos_hallucinate::SessionInfo {
+    let handle = chaos_halluacinate::spawn(chaos_halluacinate::SessionInfo {
         session_id: "session".to_string(),
         cwd: temp.path().to_string_lossy().to_string(),
         provider: "test".to_string(),
         user_scripts_dir: Some(temp.path().join("no_user_scripts")),
     })
     .unwrap();
-    chat.set_hallucinate_handle(Some(handle.clone()));
+    chat.set_halluacinate_handle(Some(handle.clone()));
 
     let spans = handle
         .render_statusline(chat.build_statusline_ctx())

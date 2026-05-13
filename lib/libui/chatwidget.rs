@@ -226,7 +226,7 @@ pub struct ChatWidgetInit {
     pub is_first_run: bool,
     pub model: Option<String>,
     pub session_telemetry: SessionTelemetry,
-    pub hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+    pub halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
 }
 
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
@@ -408,7 +408,7 @@ pub struct ChatWidget {
     status_line_script_render_generation: u64,
     external_editor_state: ExternalEditorState,
     last_rendered_user_message_event: Option<RenderedUserMessageEvent>,
-    hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+    halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
 }
 
 impl ChatWidget {
@@ -424,7 +424,7 @@ impl ChatWidget {
             is_first_run,
             model,
             session_telemetry,
-            hallucinate,
+            halluacinate,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -547,7 +547,7 @@ impl ChatWidget {
             status_line_script_render_generation: 0,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
-            hallucinate,
+            halluacinate,
         };
 
         widget
@@ -581,7 +581,7 @@ impl ChatWidget {
             is_first_run,
             model,
             session_telemetry,
-            hallucinate,
+            halluacinate,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -703,7 +703,7 @@ impl ChatWidget {
             status_line_script_render_generation: 0,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
-            hallucinate,
+            halluacinate,
         };
 
         widget
@@ -737,7 +737,7 @@ impl ChatWidget {
             is_first_run: _,
             model,
             session_telemetry,
-            hallucinate,
+            halluacinate,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let prevent_idle_sleep = true;
@@ -859,7 +859,7 @@ impl ChatWidget {
             status_line_script_render_generation: 0,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
-            hallucinate,
+            halluacinate,
         };
 
         widget

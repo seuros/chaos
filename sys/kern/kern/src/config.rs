@@ -476,7 +476,7 @@ pub struct Config {
     /// OTEL configuration (exporter type, endpoint, headers, etc.).
     pub otel: crate::config::types::OtelConfig,
 
-    /// When `true`, the hallucinate engine skips the user-layer scripts
+    /// When `true`, the halluacinate engine skips the user-layer scripts
     /// directory (`$XDG_CONFIG_HOME/chaos/scripts/`).
     ///
     /// Not settable via config file — test-only escape hatch to prevent real

@@ -1,6 +1,6 @@
-//! Async handle to the Hallucinate script engine.
+//! Async handle to the Halluacinate script engine.
 //!
-//! `HallucinateHandle` is the cheaply-cloneable interface the kernel uses
+//! `HalluacinateHandle` is the cheaply-cloneable interface the kernel uses
 //! to talk to the script engine thread. All communication goes through an
 //! mpsc channel; responses come back via oneshot. Engine-agnostic — works
 //! with Lua, WASM, or any backend that implements `ScriptEngine`.
@@ -83,13 +83,13 @@ pub struct ReloadResult {
     pub errors: Vec<String>,
 }
 
-/// Async handle to the Hallucinate engine. Clone-friendly.
+/// Async handle to the Halluacinate engine. Clone-friendly.
 #[derive(Clone)]
-pub struct HallucinateHandle {
+pub struct HalluacinateHandle {
     tx: mpsc::Sender<ScriptRequest>,
 }
 
-impl HallucinateHandle {
+impl HalluacinateHandle {
     /// Create a new handle from a channel sender.
     pub fn new(tx: mpsc::Sender<ScriptRequest>) -> Self {
         Self { tx }
@@ -121,12 +121,12 @@ impl HallucinateHandle {
         if self.tx.send(req).await.is_err() {
             return ToolResult {
                 success: false,
-                output: "hallucinate engine unavailable".to_owned(),
+                output: "halluacinate engine unavailable".to_owned(),
             };
         }
         reply_rx.await.unwrap_or(ToolResult {
             success: false,
-            output: "hallucinate engine did not respond".to_owned(),
+            output: "halluacinate engine did not respond".to_owned(),
         })
     }
 

@@ -1,6 +1,6 @@
-# Hallucinate — Scripting Engine
+# Halluacinate — Scripting Engine
 
-Hallucinate lets you teach FreeChaOS new tricks without recompiling. Drop a Lua
+Halluacinate lets you teach FreeChaOS new tricks without recompiling. Drop a Lua
 script into the right folder and the LLM can call it as a tool.
 
 ---
@@ -28,7 +28,7 @@ chaos.tool({
 
 Start a session. The LLM now has a `hello` tool it can call.
 
-Hallucinate also owns the TUI status line. ChaOS ships a built-in Lua renderer,
+Halluacinate also owns the TUI status line. ChaOS ships a built-in Lua renderer,
 and you can override it by registering your own `chaos.statusline(...)` script.
 The built-in script loads first, then user scripts, then project scripts, so the
 last registered statusline wins.
@@ -123,6 +123,13 @@ chaos.statusline(function(ctx)
     }
 end)
 ```
+
+Place a statusline script in either of the normal script layers:
+
+- Per-user: `~/.config/chaos/scripts/statusline.lua`
+- Per-project: `.chaos/scripts/statusline.lua`
+
+The project copy overrides the user copy because project scripts load later.
 
 The built-in renderer is a Doom-style HUD. By default it shows:
 

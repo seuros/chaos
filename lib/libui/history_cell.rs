@@ -100,13 +100,14 @@ mod tests {
     use mcp_guest::ContentBlock;
 
     const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
-    async fn test_config() -> Config {
-        let chaos_home = std::env::temp_dir();
-        ConfigBuilder::default()
-            .chaos_home(chaos_home.clone())
+    async fn test_config() -> (tempfile::TempDir, Config) {
+        let chaos_home = tempfile::tempdir().expect("create temp chaos home");
+        let config = ConfigBuilder::default()
+            .chaos_home(chaos_home.path().to_path_buf())
             .build()
             .await
-            .expect("config")
+            .expect("config");
+        (chaos_home, config)
     }
 
     fn test_cwd() -> PathBuf {
@@ -330,7 +331,7 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_tools_output_masks_sensitive_values() {
-        let mut config = test_config().await;
+        let (_chaos_home, mut config) = test_config().await;
         let mut env = HashMap::new();
         env.insert("TOKEN".to_string(), "secret".to_string());
         let stdio_config = McpServerConfig {
@@ -1575,7 +1576,7 @@ mod tests {
 
     #[tokio::test]
     async fn reasoning_summary_block_respects_config_overrides() {
-        let mut config = test_config().await;
+        let (_chaos_home, mut config) = test_config().await;
         config.model = Some("gpt-3.5-turbo".to_string());
         config.model_supports_reasoning_summaries = Some(true);
         let cell = new_reasoning_summary_block(

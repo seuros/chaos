@@ -6656,6 +6656,7 @@ dependencies = [
  "chaos-getopt",
  "chaos-git",
  "chaos-glob",
+ "chaos-hallucinate",
  "chaos-highlight",
  "chaos-ipc",
  "chaos-jail-report",

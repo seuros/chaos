@@ -31,7 +31,6 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use chaos_amphetamine::SleepInhibitor;
@@ -204,9 +203,6 @@ use strum::IntoEnumIterator;
 
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
-const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
-    ["model-with-reasoning", "context-remaining", "current-dir"];
-
 const PLACEHOLDERS: [&str; 8] = [
     "Explain this codebase",
     "Summarize recent commits",
@@ -229,9 +225,8 @@ pub struct ChatWidgetInit {
     pub models_manager: Arc<ModelsManager>,
     pub is_first_run: bool,
     pub model: Option<String>,
-    // Shared latch so we only warn once about invalid status-line item IDs.
-    pub status_line_invalid_items_warned: Arc<AtomicBool>,
     pub session_telemetry: SessionTelemetry,
+    pub hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
 }
 
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
@@ -402,8 +397,6 @@ pub struct ChatWidget {
     current_cwd: Option<PathBuf>,
     // Runtime network proxy bind addresses from SessionConfigured.
     session_network_proxy: Option<chaos_ipc::protocol::SessionNetworkProxyRuntime>,
-    // Shared latch so we only warn once about invalid status-line item IDs.
-    status_line_invalid_items_warned: Arc<AtomicBool>,
     // Cached git branch name for the status line (None if unknown).
     status_line_branch: Option<String>,
     // CWD used to resolve the cached branch; change resets branch state.
@@ -412,8 +405,10 @@ pub struct ChatWidget {
     status_line_branch_pending: bool,
     // True once we've attempted a branch lookup for the current CWD.
     status_line_branch_lookup_complete: bool,
+    status_line_script_render_generation: u64,
     external_editor_state: ExternalEditorState,
     last_rendered_user_message_event: Option<RenderedUserMessageEvent>,
+    hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
 }
 
 impl ChatWidget {
@@ -428,8 +423,8 @@ impl ChatWidget {
             models_manager,
             is_first_run,
             model,
-            status_line_invalid_items_warned,
             session_telemetry,
+            hallucinate,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -545,18 +540,16 @@ impl ChatWidget {
             last_rendered_width: std::cell::Cell::new(None),
             current_cwd,
             session_network_proxy: None,
-            status_line_invalid_items_warned,
             status_line_branch: None,
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            status_line_script_render_generation: 0,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
+            hallucinate,
         };
 
-        widget
-            .bottom_pane
-            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
@@ -587,8 +580,8 @@ impl ChatWidget {
             models_manager,
             is_first_run,
             model,
-            status_line_invalid_items_warned,
             session_telemetry,
+            hallucinate,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -703,18 +696,16 @@ impl ChatWidget {
             last_rendered_width: std::cell::Cell::new(None),
             current_cwd,
             session_network_proxy: None,
-            status_line_invalid_items_warned,
             status_line_branch: None,
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            status_line_script_render_generation: 0,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
+            hallucinate,
         };
 
-        widget
-            .bottom_pane
-            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
@@ -745,8 +736,8 @@ impl ChatWidget {
             models_manager,
             is_first_run: _,
             model,
-            status_line_invalid_items_warned,
             session_telemetry,
+            hallucinate,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let prevent_idle_sleep = true;
@@ -861,18 +852,16 @@ impl ChatWidget {
             last_rendered_width: std::cell::Cell::new(None),
             current_cwd,
             session_network_proxy: None,
-            status_line_invalid_items_warned,
             status_line_branch: None,
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            status_line_script_render_generation: 0,
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_event: None,
+            hallucinate,
         };
 
-        widget
-            .bottom_pane
-            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);

@@ -28,6 +28,11 @@ chaos.tool({
 
 Start a session. The LLM now has a `hello` tool it can call.
 
+Hallucinate also owns the TUI status line. ChaOS ships a built-in Lua renderer,
+and you can override it by registering your own `chaos.statusline(...)` script.
+The built-in script loads first, then user scripts, then project scripts, so the
+last registered statusline wins.
+
 ---
 
 ## Script locations
@@ -102,6 +107,73 @@ chaos.log.debug("message")
 ```
 
 Logs go to the FreeChaOS log file (`~/.chaos/log/`).
+
+### Status line
+
+Override the default TUI status line:
+
+```lua
+chaos.statusline(function(ctx)
+    return {
+        { text = ctx.model, bold = true },
+        { text = " · " },
+        { text = tostring(ctx.context.remaining_pct) .. "% left" },
+        { text = " · " },
+        { text = ctx.cwd_display or ctx.cwd },
+    }
+end)
+```
+
+The built-in renderer is a Doom-style HUD. By default it shows:
+
+- `HUD` so it is obviously not the old Rust footer
+- `HP`, where remaining context is treated as health and color-coded
+- `CRIT` when context health gets dangerously low
+- `WPN`, showing the active model and reasoning effort
+- `MAP`, using the current branch, project root, or directory
+- `ARM`, showing sandbox and approval posture
+- `CTX`, showing effective context load above the fixed prompt baseline
+- `AMMO`, showing last-response output with optional context growth
+- `DIR`, when it adds extra path context beyond `MAP`
+
+If multiple scripts call `chaos.statusline(...)`, the last loaded script wins.
+
+The `ctx` table currently includes:
+
+```lua
+ctx.model
+ctx.reasoning_effort
+ctx.provider
+ctx.branch
+ctx.cwd
+ctx.cwd_display
+ctx.project_root
+ctx.approval
+ctx.sandbox
+ctx.version
+ctx.session_id
+ctx.context.remaining_pct
+ctx.context.used_pct
+ctx.context.window_size
+ctx.tokens.available
+ctx.tokens.used
+ctx.tokens.input
+ctx.tokens.output
+ctx.tokens.blended
+ctx.tokens.context_raw
+ctx.tokens.context_effective
+ctx.tokens.last_raw
+ctx.tokens.last_effective
+ctx.tokens.last_input
+ctx.tokens.last_output
+ctx.tokens.last_blended
+ctx.five_hour
+ctx.weekly
+```
+
+`ctx.tokens.used/input/output` are the legacy cumulative counters. For statusline
+UX, prefer the explicit fields like `ctx.tokens.context_effective` and
+`ctx.tokens.last_output`.
 
 ---
 

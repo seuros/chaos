@@ -923,7 +923,6 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         analytics_enabled: Some(true),
         feedback_enabled: true,
         tui_alternate_screen: AltScreenMode::Auto,
-        tui_status_line: None,
         tui_theme: None,
         otel: OtelConfig::default(),
         disable_user_scripts: false,

@@ -23,5 +23,6 @@ pub use engine::ScriptEngine;
 pub use handle::HallucinateHandle;
 pub use handle::HookResult;
 pub use handle::ScriptTool;
+pub use handle::StatusLineSpan;
 pub use handle::ToolResult;
 pub use vm::spawn;

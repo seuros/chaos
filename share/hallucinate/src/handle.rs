@@ -9,6 +9,15 @@ use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
+/// One rendered segment in a Lua-defined status line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusLineSpan {
+    pub text: String,
+    pub color: Option<String>,
+    pub bold: bool,
+    pub line_break: bool,
+}
+
 /// Result of dispatching a hook to Lua scripts.
 #[derive(Debug, Clone)]
 pub enum HookResult {
@@ -57,6 +66,11 @@ pub enum ScriptRequest {
     /// Reload all scripts from disk.
     Reload {
         reply: oneshot::Sender<ReloadResult>,
+    },
+    /// Render the status line via a Lua function.
+    RenderStatusLine {
+        ctx: JsonValue,
+        reply: oneshot::Sender<Option<Vec<StatusLineSpan>>>,
     },
     /// Shut down the engine thread.
     Shutdown,
@@ -140,6 +154,21 @@ impl HallucinateHandle {
             scripts_loaded: 0,
             errors: vec!["engine did not respond".to_owned()],
         })
+    }
+
+    /// Render a status line using a registered Lua function.
+    ///
+    /// Returns `None` if no renderer is registered or the engine is unreachable.
+    pub async fn render_statusline(&self, ctx: JsonValue) -> Option<Vec<StatusLineSpan>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let req = ScriptRequest::RenderStatusLine {
+            ctx,
+            reply: reply_tx,
+        };
+        if self.tx.send(req).await.is_err() {
+            return None;
+        }
+        reply_rx.await.unwrap_or(None)
     }
 
     /// Request engine shutdown.

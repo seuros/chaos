@@ -212,7 +212,10 @@ impl App {
         tui: &mut tui::Tui,
         live_process: Option<Arc<Process>>,
     ) {
-        let init = self.chatwidget_init_for_forked_or_resumed_process(tui, self.config.clone());
+        let mut init = self.chatwidget_init_for_forked_or_resumed_process(tui, self.config.clone());
+        init.hallucinate = live_process
+            .as_ref()
+            .and_then(|process| process.hallucinate_handle());
         let chaos_op_tx = live_process
             .map(crate::chatwidget::spawn_op_forwarder)
             .unwrap_or_else(|| {

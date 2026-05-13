@@ -146,6 +146,10 @@ impl Process {
         self.chaos.process_config_snapshot().await
     }
 
+    pub fn hallucinate_handle(&self) -> Option<chaos_hallucinate::HallucinateHandle> {
+        self.chaos.session.services.hallucinate.clone()
+    }
+
     pub fn enabled(&self, feature: Feature) -> bool {
         self.chaos.enabled(feature)
     }

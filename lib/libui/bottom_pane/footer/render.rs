@@ -520,7 +520,7 @@ pub fn shows_passive_footer_line(props: &FooterProps) -> bool {
 
 /// Whether callers should reserve the dedicated status-line layout for a contextual footer row.
 ///
-/// The dedicated layout exists for the configurable `/statusline` row. An agent label by itself
+/// The dedicated layout exists for the Lua-rendered statusline row. An agent label by itself
 /// can be rendered by the standard footer flow, so this only becomes `true` when the status line
 /// feature is enabled and the current mode allows contextual footer content.
 pub fn uses_passive_footer_status_layout(props: &FooterProps) -> bool {

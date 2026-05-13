@@ -15,13 +15,13 @@
 )]
 
 use super::{
-    ApprovalPolicy, Arc, AtomicBool, BottomPane, BottomPaneParams, Buffer, ChatWidget,
-    ChatWidgetInit, ConnectorsCacheState, ErrorEvent, ExternalEditorState, HashMap,
-    InterruptManager, NUDGE_MODEL_SLUG, Notification, Notifications,
-    PLAN_IMPLEMENTATION_CODING_MESSAGE, PLAN_IMPLEMENTATION_TITLE, PLAN_MODE_REASONING_SCOPE_TITLE,
-    PendingSteer, PendingSteerCompareKey, ProcessInputState, RateLimitSwitchPromptState,
-    RateLimitWarningState, ReasoningEffortConfig, Rect, SandboxPolicy, SessionHeader, SlashCommand,
-    SleepInhibitor, StatusIndicatorState, TurnAbortReason, UnifiedExecProcessSummary, UserMessage,
+    ApprovalPolicy, Arc, BottomPane, BottomPaneParams, Buffer, ChatWidget, ChatWidgetInit,
+    ConnectorsCacheState, ErrorEvent, ExternalEditorState, HashMap, InterruptManager,
+    NUDGE_MODEL_SLUG, Notification, Notifications, PLAN_IMPLEMENTATION_CODING_MESSAGE,
+    PLAN_IMPLEMENTATION_TITLE, PLAN_MODE_REASONING_SCOPE_TITLE, PendingSteer,
+    PendingSteerCompareKey, ProcessInputState, RateLimitSwitchPromptState, RateLimitWarningState,
+    ReasoningEffortConfig, Rect, SandboxPolicy, SessionHeader, SlashCommand, SleepInhibitor,
+    StatusIndicatorState, TurnAbortReason, UnifiedExecProcessSummary, UserMessage,
     UserMessageEvent, VecDeque, collaboration_modes, queued_message_edit_binding_for_terminal,
     remap_placeholders_for_message,
 };
@@ -1712,8 +1712,8 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
     });
 
     assert_eq!(
-        chat.status_line_value_for_item(&crate::bottom_pane::StatusLineItem::ContextWindowSize),
-        Some("950K window".to_string())
+        chat.build_statusline_ctx()["context"]["window_size"],
+        950_000
     );
     assert_eq!(chat.bottom_pane.context_window_percent(), Some(100));
 
@@ -1741,6 +1741,35 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
         !context_line.contains("1M"),
         "expected /status to avoid raw config context window, got: {context_line}"
     );
+}
+
+#[tokio::test]
+async fn statusline_ctx_exposes_effective_and_last_turn_token_fields() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+
+    chat.set_token_info(Some(TokenUsageInfo {
+        total_token_usage: TokenUsage {
+            input_tokens: 12_800,
+            output_tokens: 33,
+            total_tokens: 12_850,
+            ..TokenUsage::default()
+        },
+        last_token_usage: TokenUsage {
+            input_tokens: 800,
+            output_tokens: 33,
+            total_tokens: 850,
+            ..TokenUsage::default()
+        },
+        model_context_window: Some(200_000),
+    }));
+
+    let ctx = chat.build_statusline_ctx();
+    assert_eq!(ctx["tokens"]["available"], true);
+    assert_eq!(ctx["tokens"]["context_raw"], 12_850);
+    assert_eq!(ctx["tokens"]["context_effective"], 850);
+    assert_eq!(ctx["tokens"]["last_raw"], 850);
+    assert_eq!(ctx["tokens"]["last_effective"], 850);
+    assert_eq!(ctx["tokens"]["last_output"], 33);
 }
 
 #[cfg_attr(
@@ -1771,8 +1800,8 @@ async fn helpers_are_available_and_do_not_panic() {
         models_manager: process_table.get_models_manager(),
         is_first_run: true,
         model: Some(resolved_model),
-        status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         session_telemetry,
+        hallucinate: None,
     };
     let mut w = ChatWidget::new(init, process_table);
     // Basic construction sanity.
@@ -1915,13 +1944,14 @@ async fn make_chatwidget_manual(
         last_rendered_width: std::cell::Cell::new(None),
         current_cwd: None,
         session_network_proxy: None,
-        status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         status_line_branch: None,
         status_line_branch_cwd: None,
         status_line_branch_pending: false,
         status_line_branch_lookup_complete: false,
+        status_line_script_render_generation: 0,
         external_editor_state: ExternalEditorState::Closed,
         last_rendered_user_message_event: None,
+        hallucinate: None,
     };
     widget.set_model(&resolved_model);
     (widget, rx, op_rx)
@@ -5215,8 +5245,8 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         models_manager: process_table.get_models_manager(),
         is_first_run: true,
         model: Some(resolved_model.clone()),
-        status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         session_telemetry,
+        hallucinate: None,
     };
 
     let chat = ChatWidget::new(init, process_table);
@@ -7782,52 +7812,92 @@ async fn warning_event_adds_warning_history_cell() {
 }
 
 #[tokio::test]
-async fn status_line_invalid_items_warn_once() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.tui_status_line = Some(vec![
-        "model_name".to_string(),
-        "bogus_item".to_string(),
-        "lines_changed".to_string(),
-        "bogus_item".to_string(),
-    ]);
-    chat.process_id = Some(ProcessId::new());
+async fn default_hallucinate_status_line_renderer_renders_default_line() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
+    chat.current_cwd = Some(PathBuf::from("/work/repo"));
+    let temp = tempfile::tempdir().unwrap();
+    let handle = chaos_hallucinate::spawn(chaos_hallucinate::SessionInfo {
+        session_id: "session".to_string(),
+        cwd: temp.path().to_string_lossy().to_string(),
+        provider: "test".to_string(),
+        user_scripts_dir: Some(temp.path().join("no_user_scripts")),
+    })
+    .unwrap();
+    chat.set_hallucinate_handle(Some(handle.clone()));
 
-    chat.refresh_status_line();
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one warning history cell");
-    let rendered = lines_to_single_string(&cells[0]);
-    assert!(
-        rendered.contains("bogus_item"),
-        "warning cell missing invalid item content: {rendered}"
-    );
+    let spans = handle
+        .render_statusline(chat.build_statusline_ctx())
+        .await
+        .expect("default renderer should exist");
+    let text = spans.into_iter().map(|span| span.text).collect::<String>();
 
-    chat.refresh_status_line();
-    let cells = drain_insert_history(&mut rx);
-    assert!(
-        cells.is_empty(),
-        "expected invalid status line warning to emit only once"
+    chat.set_status_line_script_rendered(
+        None,
+        chat.status_line_script_render_generation,
+        true,
+        Some(ratatui::text::Line::from(text)),
     );
+    handle.shutdown().await;
+
+    let rendered = chat.status_line_text().expect("status line should render");
+    assert!(rendered.contains("HUD"));
+    assert!(rendered.contains("HP [====] 100%"));
+    assert!(rendered.contains("WPN gpt-test"));
+    assert!(rendered.contains("MAP "));
+    assert!(rendered.contains("/work/repo"));
 }
 
 #[tokio::test]
-async fn status_line_branch_state_resets_when_git_branch_disabled() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.status_line_branch = Some("main".to_string());
-    chat.status_line_branch_pending = true;
-    chat.status_line_branch_lookup_complete = true;
-    chat.config.tui_status_line = Some(vec!["model_name".to_string()]);
+async fn status_line_script_render_ignores_stale_generation_or_process() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
+    let process_id = ProcessId::new();
+    chat.process_id = Some(process_id);
+    chat.status_line_script_render_generation = 7;
+    chat.bottom_pane.set_status_line_enabled(true);
+    chat.set_status_line(Some(ratatui::text::Line::from("existing")));
 
-    chat.refresh_status_line();
+    chat.set_status_line_script_rendered(
+        Some(process_id),
+        6,
+        true,
+        Some(ratatui::text::Line::from("stale generation")),
+    );
+    assert_eq!(chat.status_line_text(), Some("existing".to_string()));
 
-    assert_eq!(chat.status_line_branch, None);
-    assert!(!chat.status_line_branch_pending);
-    assert!(!chat.status_line_branch_lookup_complete);
+    chat.set_status_line_script_rendered(
+        Some(ProcessId::new()),
+        7,
+        true,
+        Some(ratatui::text::Line::from("stale process")),
+    );
+    assert_eq!(chat.status_line_text(), Some("existing".to_string()));
+
+    chat.set_status_line_script_rendered(
+        Some(process_id),
+        7,
+        true,
+        Some(ratatui::text::Line::from("fresh")),
+    );
+    assert_eq!(chat.status_line_text(), Some("fresh".to_string()));
+}
+
+#[tokio::test]
+async fn missing_status_line_script_renderer_clears_line_without_rust_fallback() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
+    let process_id = ProcessId::new();
+    chat.process_id = Some(process_id);
+    chat.status_line_script_render_generation = 7;
+    chat.bottom_pane.set_status_line_enabled(true);
+    chat.set_status_line(Some(ratatui::text::Line::from("script")));
+
+    chat.set_status_line_script_rendered(Some(process_id), 7, false, None);
+
+    assert_eq!(chat.status_line_text(), None);
 }
 
 #[tokio::test]
 async fn status_line_branch_refreshes_after_turn_complete() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.tui_status_line = Some(vec!["git-branch".to_string()]);
     chat.status_line_branch_lookup_complete = true;
     chat.status_line_branch_pending = false;
 
@@ -7845,7 +7915,6 @@ async fn status_line_branch_refreshes_after_turn_complete() {
 #[tokio::test]
 async fn status_line_branch_refreshes_after_interrupt() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.tui_status_line = Some(vec!["git-branch".to_string()]);
     chat.status_line_branch_lookup_complete = true;
     chat.status_line_branch_pending = false;
 

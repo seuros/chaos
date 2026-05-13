@@ -9,11 +9,10 @@
 //! they exist solely to compute and refresh what the user sees in the footer row
 //! — they are the visual-state management layer of the widget.
 
-use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 
+use chaos_hallucinate::StatusLineSpan;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::CreditsSnapshot;
@@ -27,26 +26,21 @@ use chaos_pwd::find_chaos_home;
 use jiff::Timestamp;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
 use ratatui::text::Line;
+use ratatui::text::Span;
 
 use crate::app_event::AppEvent;
-use crate::bottom_pane::StatusLineItem;
-use crate::bottom_pane::StatusLinePreviewData;
-use crate::bottom_pane::StatusLineSetupView;
 use crate::render::Insets;
 use crate::render::renderable::FlexRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt;
 use crate::render::renderable::RenderableItem;
-use crate::status::RateLimitWindowDisplay;
 use crate::status::format_directory_display;
-use crate::status::format_tokens_compact;
 use crate::status::rate_limit_snapshot_display_for_limit;
 use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
 use crate::status_indicator_widget::StatusDetailsCapitalization;
-use crate::text_formatting::proper_join;
-use crate::version::CHAOS_VERSION;
-use strum::IntoEnumIterator;
 
 use super::ChatWidget;
 use super::core::RateLimitSwitchPromptState;
@@ -149,6 +143,36 @@ impl ChatWidget {
         self.bottom_pane.set_status_line(status_line);
     }
 
+    /// Applies a rendered status line from the Lua renderer.
+    pub fn set_status_line_script_rendered(
+        &mut self,
+        process_id: Option<chaos_ipc::ProcessId>,
+        generation: u64,
+        rendered: bool,
+        line: Option<Line<'static>>,
+    ) {
+        if self.process_id != process_id || self.status_line_script_render_generation != generation
+        {
+            return;
+        }
+        let enabled = rendered && line.is_some();
+        self.bottom_pane.set_status_line_enabled(enabled);
+        self.set_status_line(line);
+    }
+
+    pub fn set_hallucinate_handle(
+        &mut self,
+        hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+    ) {
+        self.status_line_script_render_generation =
+            self.status_line_script_render_generation.wrapping_add(1);
+        self.hallucinate = hallucinate;
+        if self.hallucinate.is_none() {
+            self.bottom_pane.set_status_line_enabled(false);
+            self.set_status_line(None);
+        }
+    }
+
     /// Forwards the contextual active-agent label into the bottom-pane footer pipeline.
     ///
     /// `ChatWidget` stays a pass-through here so `App` remains the owner of "which thread is the
@@ -157,86 +181,44 @@ impl ChatWidget {
         self.bottom_pane.set_active_agent_label(active_agent_label);
     }
 
-    /// Recomputes footer status-line content from config and current runtime state.
+    /// Recomputes footer status-line content by invoking the Lua statusline renderer.
     ///
-    /// This method is the status-line orchestrator: it parses configured item identifiers,
-    /// warns once per session about invalid items, updates whether status-line mode is enabled,
-    /// schedules async git-branch lookup when needed, and renders only values that are currently
-    /// available.
-    ///
-    /// The omission behavior is intentional. If selected items are unavailable (for example before
-    /// a session id exists or before branch lookup completes), those items are skipped without
-    /// placeholders so the line remains compact and stable.
+    /// The built-in renderer is also Lua-backed, so there is no Rust fallback path here. We only
+    /// prepare dynamic context (such as git branch lookup) and then hand the whole render decision
+    /// to Hallucinate.
     pub fn refresh_status_line(&mut self) {
-        let (items, invalid_items) = self.status_line_items_with_invalids();
-        if self.process_id.is_some()
-            && !invalid_items.is_empty()
-            && self
-                .status_line_invalid_items_warned
-                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-        {
-            let label = if invalid_items.len() == 1 {
-                "item"
-            } else {
-                "items"
-            };
-            let message = format!(
-                "Ignored invalid status line {label}: {}.",
-                proper_join(invalid_items.as_slice())
-            );
-            self.on_warning(message);
-        }
-        if !items.contains(&StatusLineItem::GitBranch) {
-            self.status_line_branch = None;
-            self.status_line_branch_pending = false;
-            self.status_line_branch_lookup_complete = false;
-        }
-        let enabled = !items.is_empty();
-        self.bottom_pane.set_status_line_enabled(enabled);
-        if !enabled {
-            self.set_status_line(/*status_line*/ None);
+        let Some(handle) = self.hallucinate.clone() else {
+            self.bottom_pane.set_status_line_enabled(false);
+            self.set_status_line(None);
             return;
-        }
+        };
 
+        self.prepare_status_line_context();
+        self.status_line_script_render_generation =
+            self.status_line_script_render_generation.wrapping_add(1);
+        let generation = self.status_line_script_render_generation;
+        let process_id = self.process_id;
+        let ctx = self.build_statusline_ctx();
+        let tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let spans = handle.render_statusline(ctx).await;
+            let rendered = spans.is_some();
+            let line = spans.and_then(spans_to_line);
+            tx.send(AppEvent::StatusLineScriptRendered {
+                process_id,
+                generation,
+                rendered,
+                line,
+            });
+        });
+    }
+
+    fn prepare_status_line_context(&mut self) {
         let cwd = self.status_line_cwd().to_path_buf();
         self.sync_status_line_branch_state(&cwd);
-
-        if items.contains(&StatusLineItem::GitBranch) && !self.status_line_branch_lookup_complete {
+        if !self.status_line_branch_lookup_complete {
             self.request_status_line_branch(cwd);
         }
-
-        let mut parts = Vec::new();
-        for item in items {
-            if let Some(value) = self.status_line_value_for_item(&item) {
-                parts.push(value);
-            }
-        }
-
-        let line = if parts.is_empty() {
-            None
-        } else {
-            Some(Line::from(parts.join(" · ")))
-        };
-        self.set_status_line(line);
-    }
-
-    /// Records that status-line setup was canceled.
-    ///
-    /// Cancellation is intentionally side-effect free for config state; the existing configuration
-    /// remains active and no persistence is attempted.
-    pub fn cancel_status_line_setup(&self) {
-        tracing::info!("Status line setup canceled by user");
-    }
-
-    /// Applies status-line item selection from the setup view to in-memory config.
-    ///
-    /// An empty selection persists as an explicit empty list.
-    pub fn setup_status_line(&mut self, items: Vec<StatusLineItem>) {
-        tracing::info!("status line setup confirmed with items: {items:#?}");
-        let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-        self.config.tui_status_line = Some(ids);
-        self.refresh_status_line();
     }
 
     /// Stores async git-branch lookup results for the current status-line cwd.
@@ -253,12 +235,8 @@ impl ChatWidget {
         self.status_line_branch_lookup_complete = true;
     }
 
-    /// Forces a new git-branch lookup when `GitBranch` is part of the configured status line.
+    /// Forces a new git-branch lookup for the Lua statusline context.
     pub(super) fn request_status_line_branch_refresh(&mut self) {
-        let (items, _) = self.status_line_items_with_invalids();
-        if items.is_empty() || !items.contains(&StatusLineItem::GitBranch) {
-            return;
-        }
         let cwd = self.status_line_cwd().to_path_buf();
         self.sync_status_line_branch_state(&cwd);
         self.request_status_line_branch(cwd);
@@ -268,19 +246,6 @@ impl ChatWidget {
         if let Some(header) = self.retry_status_header.take() {
             self.set_status_header(header);
         }
-    }
-
-    pub(super) fn open_status_line_setup(&mut self) {
-        let configured_status_line_items = self.configured_status_line_items();
-        let view = StatusLineSetupView::new(
-            Some(configured_status_line_items.as_slice()),
-            StatusLinePreviewData::from_iter(StatusLineItem::iter().filter_map(|item| {
-                self.status_line_value_for_item(&item)
-                    .map(|value| (item, value))
-            })),
-            self.app_event_tx.clone(),
-        );
-        self.bottom_pane.show_view(Box::new(view));
     }
 
     pub(super) fn open_theme_picker(&mut self) {
@@ -295,35 +260,6 @@ impl ChatWidget {
             terminal_width,
         );
         self.bottom_pane.show_selection_view(params);
-    }
-
-    /// Parses configured status-line ids into known items and collects unknown ids.
-    ///
-    /// Unknown ids are deduplicated in insertion order for warning messages.
-    fn status_line_items_with_invalids(&self) -> (Vec<StatusLineItem>, Vec<String>) {
-        let mut invalid = Vec::new();
-        let mut invalid_seen = HashSet::new();
-        let mut items = Vec::new();
-        for id in self.configured_status_line_items() {
-            match id.parse::<StatusLineItem>() {
-                Ok(item) => items.push(item),
-                Err(_) => {
-                    if invalid_seen.insert(id.clone()) {
-                        invalid.push(format!(r#""{id}""#));
-                    }
-                }
-            }
-        }
-        (items, invalid)
-    }
-
-    pub(super) fn configured_status_line_items(&self) -> Vec<String> {
-        self.config.tui_status_line.clone().unwrap_or_else(|| {
-            super::DEFAULT_STATUS_LINE_ITEMS
-                .iter()
-                .map(ToString::to_string)
-                .collect()
-        })
     }
 
     fn status_line_cwd(&self) -> &Path {
@@ -393,80 +329,6 @@ impl ChatWidget {
         });
     }
 
-    /// Resolves a display string for one configured status-line item.
-    ///
-    /// Returning `None` means "omit this item for now", not "configuration error". Callers rely on
-    /// this to keep partially available status lines readable while waiting for session, token, or
-    /// git metadata.
-    pub(super) fn status_line_value_for_item(&self, item: &StatusLineItem) -> Option<String> {
-        match item {
-            StatusLineItem::ModelName => Some(self.model_display_name().to_string()),
-            StatusLineItem::ModelWithReasoning => {
-                let label =
-                    Self::status_line_reasoning_effort_label(self.effective_reasoning_effort());
-                Some(format!("{} {label}", self.model_display_name()))
-            }
-            StatusLineItem::CurrentDir => {
-                Some(format_directory_display(
-                    self.status_line_cwd(),
-                    /*max_width*/ None,
-                ))
-            }
-            StatusLineItem::ProjectRoot => self.status_line_project_root_name(),
-            StatusLineItem::GitBranch => self.status_line_branch.clone(),
-            StatusLineItem::UsedTokens => {
-                let usage = self.status_line_total_usage();
-                let total = usage.tokens_in_context_window();
-                if total <= 0 {
-                    None
-                } else {
-                    Some(format!("{} used", format_tokens_compact(total)))
-                }
-            }
-            StatusLineItem::ContextRemaining => self
-                .status_line_context_remaining_percent()
-                .map(|remaining| format!("{remaining}% left")),
-            StatusLineItem::ContextUsed => self
-                .status_line_context_used_percent()
-                .map(|used| format!("{used}% used")),
-            StatusLineItem::FiveHourLimit => {
-                let window = self
-                    .rate_limit_snapshots_by_limit_id
-                    .get("chaos")
-                    .and_then(|s| s.primary.as_ref());
-                let label = window
-                    .and_then(|window| window.window_minutes)
-                    .map(super::core::get_limits_duration)
-                    .unwrap_or_else(|| "5h".to_string());
-                self.status_line_limit_display(window, &label)
-            }
-            StatusLineItem::WeeklyLimit => {
-                let window = self
-                    .rate_limit_snapshots_by_limit_id
-                    .get("chaos")
-                    .and_then(|s| s.secondary.as_ref());
-                let label = window
-                    .and_then(|window| window.window_minutes)
-                    .map(super::core::get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
-                self.status_line_limit_display(window, &label)
-            }
-            StatusLineItem::ChaosVersion => Some(CHAOS_VERSION.to_string()),
-            StatusLineItem::ContextWindowSize => self
-                .status_line_context_window_size()
-                .map(|cws| format!("{} window", format_tokens_compact(cws))),
-            StatusLineItem::TotalInputTokens => Some(format!(
-                "{} in",
-                format_tokens_compact(self.status_line_total_usage().input_tokens)
-            )),
-            StatusLineItem::TotalOutputTokens => Some(format!(
-                "{} out",
-                format_tokens_compact(self.status_line_total_usage().output_tokens)
-            )),
-            StatusLineItem::SessionId => self.process_id.map(|id| id.to_string()),
-        }
-    }
-
     fn status_line_context_window_size(&self) -> Option<i64> {
         self.token_info
             .as_ref()
@@ -503,14 +365,11 @@ impl ChatWidget {
             .unwrap_or_default()
     }
 
-    fn status_line_limit_display(
-        &self,
-        window: Option<&RateLimitWindowDisplay>,
-        label: &str,
-    ) -> Option<String> {
-        let window = window?;
-        let remaining = (100.0f64 - window.used_percent).clamp(0.0f64, 100.0f64);
-        Some(format!("{label} {remaining:.0}%"))
+    fn status_line_last_usage(&self) -> TokenUsage {
+        self.token_info
+            .as_ref()
+            .map(|info| info.last_token_usage.clone())
+            .unwrap_or_default()
     }
 
     fn status_line_reasoning_effort_label(effort: Option<ReasoningEffortConfig>) -> &'static str {
@@ -679,4 +538,144 @@ impl ChatWidget {
         }
         self.refresh_status_line();
     }
+
+    /// Builds the Lua statusline context from current runtime state.
+    ///
+    /// This is public because cross-crate UI tests in `chaos-console` assert on the exact context
+    /// values we hand to Hallucinate.
+    pub fn build_statusline_ctx(&self) -> serde_json::Value {
+        let model = self.model_display_name().to_string();
+        let reasoning_effort =
+            Self::status_line_reasoning_effort_label(self.effective_reasoning_effort()).to_string();
+        let provider = self.config.model_provider_id.clone();
+        let branch = self.status_line_branch.clone();
+        let cwd = self.status_line_cwd().to_string_lossy().to_string();
+        let cwd_display = format_directory_display(self.status_line_cwd(), /*max_width*/ None);
+        let project_root = self.status_line_project_root_name();
+        let approval = self.config.permissions.approval_policy.value().to_string();
+        let sandbox = self.config.permissions.sandbox_policy.get().to_string();
+        let version = crate::version::CHAOS_VERSION;
+        let session_id = self.process_id.map(|id| id.to_string());
+
+        let remaining_pct = self.status_line_context_remaining_percent().unwrap_or(100);
+        let used_pct = self.status_line_context_used_percent().unwrap_or(0);
+        let window_size = self.status_line_context_window_size().unwrap_or(0);
+
+        let token_info_available = self.token_info.is_some();
+        let total_usage = self.status_line_total_usage();
+        let last_usage = self.status_line_last_usage();
+
+        let total_used = total_usage.tokens_in_context_window();
+        let total_effective = total_usage.effective_context_tokens_used();
+        let total_blended = total_usage.blended_total();
+        let input_tokens = total_usage.input_tokens;
+        let output_tokens = total_usage.output_tokens;
+
+        let last_used = last_usage.tokens_in_context_window();
+        let last_effective = (total_effective
+            - TokenUsage::effective_context_tokens_used_from_total(
+                (total_used - last_used).max(0),
+            ))
+        .max(0);
+        let previous_effective = (total_effective - last_effective).max(0);
+        let last_blended = last_usage.blended_total();
+        let last_input_tokens = last_usage.input_tokens;
+        let last_output_tokens = last_usage.output_tokens;
+
+        let five_hour = self
+            .rate_limit_snapshots_by_limit_id
+            .get("chaos")
+            .and_then(|s| s.primary.as_ref())
+            .map(|w| {
+                serde_json::json!({
+                    "used_pct": w.used_percent,
+                    "remaining_pct": (100.0f64 - w.used_percent).clamp(0.0f64, 100.0f64),
+                    "window_minutes": w.window_minutes,
+                })
+            });
+
+        let weekly = self
+            .rate_limit_snapshots_by_limit_id
+            .get("chaos")
+            .and_then(|s| s.secondary.as_ref())
+            .map(|w| {
+                serde_json::json!({
+                    "used_pct": w.used_percent,
+                    "remaining_pct": (100.0f64 - w.used_percent).clamp(0.0f64, 100.0f64),
+                    "window_minutes": w.window_minutes,
+                })
+            });
+
+        serde_json::json!({
+            "model": model,
+            "reasoning_effort": reasoning_effort,
+            "provider": provider,
+            "branch": branch,
+            "cwd": cwd,
+            "cwd_display": cwd_display,
+            "project_root": project_root,
+            "approval": approval,
+            "sandbox": sandbox,
+            "version": version,
+            "session_id": session_id,
+            "context": {
+                "remaining_pct": remaining_pct,
+                "used_pct": used_pct,
+                "window_size": window_size,
+            },
+            "tokens": {
+                "available": token_info_available,
+                "used": total_used,
+                "input": input_tokens,
+                "output": output_tokens,
+                "blended": total_blended,
+                "context_raw": total_used,
+                "context_effective": total_effective,
+                "has_prior_context": previous_effective > 0,
+                "last_raw": last_used,
+                "last_effective": last_effective,
+                "last_input": last_input_tokens,
+                "last_output": last_output_tokens,
+                "last_blended": last_blended,
+            },
+            "five_hour": five_hour,
+            "weekly": weekly,
+        })
+    }
+}
+
+fn color_from_name(name: &str) -> Color {
+    match name.to_ascii_lowercase().as_str() {
+        "red" => Color::Red,
+        "green" => Color::Green,
+        "yellow" => Color::Yellow,
+        "cyan" => Color::Cyan,
+        "blue" => Color::Blue,
+        "magenta" => Color::Magenta,
+        "white" => Color::White,
+        "gray" | "grey" => Color::Gray,
+        _ => Color::Reset,
+    }
+}
+
+fn spans_to_line(spans: Vec<StatusLineSpan>) -> Option<Line<'static>> {
+    let mut rendered: Vec<Span<'static>> = Vec::new();
+
+    for span in spans {
+        if span.line_break {
+            if !rendered.is_empty() {
+                rendered.push(Span::raw(" "));
+            }
+            continue;
+        }
+        let mut style = Style::default();
+        if let Some(ref c) = span.color {
+            style = style.fg(color_from_name(c));
+        }
+        if span.bold {
+            style = style.bold();
+        }
+        rendered.push(Span::styled(span.text, style));
+    }
+    (!rendered.is_empty()).then(|| Line::from(rendered))
 }

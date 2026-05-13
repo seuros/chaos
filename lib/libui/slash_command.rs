@@ -34,7 +34,6 @@ pub enum SlashCommand {
     Mention,
     Status,
     DebugConfig,
-    Statusline,
     Theme,
     Mcp,
     #[strum(serialize = "mcp-add")]
@@ -81,7 +80,6 @@ impl SlashCommand {
             SlashCommand::DebugConfig => {
                 "show config layers and requirement sources for debugging".into()
             }
-            SlashCommand::Statusline => "configure which items appear in the status line".into(),
             SlashCommand::Theme => "choose a syntax highlighting theme".into(),
             SlashCommand::Ps => "list background terminals".into(),
             SlashCommand::Stop => "stop all background terminals".into(),
@@ -173,7 +171,6 @@ impl SlashCommand {
             SlashCommand::Collab => true,
             SlashCommand::Clamp => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
-            SlashCommand::Statusline => false,
             SlashCommand::Theme => false,
         }
     }

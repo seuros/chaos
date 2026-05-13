@@ -25,6 +25,7 @@ workspace = true
 [dependencies]
 # Internal — UI sub-crates
 chaos-termcap = { workspace = true }
+chaos-hallucinate = { workspace = true }
 chaos-highlight = { workspace = true, optional = true }
 
 # Internal — sys/

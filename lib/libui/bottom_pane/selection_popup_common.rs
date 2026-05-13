@@ -11,7 +11,6 @@ use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 use crate::key_hint::KeyBinding;
-use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::render::Insets;
 use crate::render::RectExt as _;
 use crate::style::user_message_style;
@@ -656,92 +655,6 @@ pub fn render_rows_with_col_width_mode(
         empty_message,
         col_width_mode,
     )
-}
-
-/// Render rows as a single line each (no wrapping), truncating overflow with an ellipsis.
-///
-/// This path always uses viewport-local width alignment and is best for dense
-/// list UIs where multi-line descriptions would add too much vertical churn.
-/// Returns the number of terminal lines actually rendered.
-pub fn render_rows_single_line(
-    area: Rect,
-    buf: &mut Buffer,
-    rows_all: &[GenericDisplayRow],
-    state: &ScrollState,
-    max_results: usize,
-    empty_message: &str,
-) -> u16 {
-    if rows_all.is_empty() {
-        if area.height > 0 {
-            Line::from(empty_message.dim().italic()).render(area, buf);
-        }
-        // Count the placeholder line only when there is vertical space to draw it.
-        return u16::from(area.height > 0);
-    }
-
-    let visible_items = max_results
-        .min(rows_all.len())
-        .min(area.height.max(1) as usize);
-
-    let mut start_idx = state.scroll_top.min(rows_all.len().saturating_sub(1));
-    if let Some(sel) = state.selected_idx {
-        if sel < start_idx {
-            start_idx = sel;
-        } else if visible_items > 0 {
-            let bottom = start_idx + visible_items - 1;
-            if sel > bottom {
-                start_idx = sel + 1 - visible_items;
-            }
-        }
-    }
-
-    let desc_col = compute_desc_col(
-        rows_all,
-        start_idx,
-        visible_items,
-        area.width,
-        ColumnWidthMode::AutoVisible,
-    );
-
-    let mut cur_y = area.y;
-    let mut rendered_lines: u16 = 0;
-    for (i, row) in rows_all
-        .iter()
-        .enumerate()
-        .skip(start_idx)
-        .take(visible_items)
-    {
-        if cur_y >= area.y + area.height {
-            break;
-        }
-
-        let mut full_line = build_full_line(row, desc_col);
-        if Some(i) == state.selected_idx && !row.is_disabled {
-            full_line.spans.iter_mut().for_each(|span| {
-                span.style = Style::default().fg(crate::theme::cyan()).bold();
-            });
-        }
-        if row.is_disabled {
-            full_line.spans.iter_mut().for_each(|span| {
-                span.style = span.style.dim();
-            });
-        }
-
-        let full_line = truncate_line_with_ellipsis_if_overflow(full_line, area.width as usize);
-        full_line.render(
-            Rect {
-                x: area.x,
-                y: cur_y,
-                width: area.width,
-                height: 1,
-            },
-            buf,
-        );
-        cur_y = cur_y.saturating_add(1);
-        rendered_lines = rendered_lines.saturating_add(1);
-    }
-
-    rendered_lines
 }
 
 /// Compute the number of terminal rows required to render up to `max_results`

@@ -11,6 +11,7 @@ use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 use crate::key_hint::KeyBinding;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::render::Insets;
 use crate::render::RectExt as _;
 use crate::style::user_message_style;
@@ -662,6 +663,7 @@ pub fn render_rows_with_col_width_mode(
 /// This path always uses viewport-local width alignment and is best for dense
 /// list UIs where multi-line descriptions would add too much vertical churn.
 /// Returns the number of terminal lines actually rendered.
+#[allow(dead_code)]
 pub fn render_rows_single_line(
     area: Rect,
     buf: &mut Buffer,

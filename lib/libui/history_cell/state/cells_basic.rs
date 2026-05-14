@@ -32,7 +32,7 @@ impl HistoryCell for UserHistoryCell {
         let wrap_width = width.saturating_sub(LIVE_PREFIX_COLS + 1).max(1);
 
         let style = crate::style::user_message_style();
-        let element_style = style.fg(crate::theme::cyan());
+        let element_style = style.fg(crate::theme::accent_color());
 
         let wrapped_remote_images = if self.remote_image_urls.is_empty() {
             None

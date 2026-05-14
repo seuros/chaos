@@ -13,30 +13,30 @@ use crate::markdown_render::render_markdown_text;
 use crate::markdown_render::render_markdown_text_with_width_and_cwd;
 use insta::assert_snapshot;
 
-/// Span styled with the theme's "cyan" color (accent — used for inline code
-/// and links in the renderer). Prefer this over `.cyan()` in tests so that
+/// Span styled with the theme's accent color (used for inline code
+/// and links in the renderer). Prefer this over direct color helpers in tests so that
 /// expectations track palette changes in one place.
 fn accent(text: &'static str) -> Span<'static> {
-    Span::styled(text, Style::new().fg(crate::theme::cyan()))
+    Span::styled(text, Style::new().fg(crate::theme::accent_color()))
 }
 
-/// Span styled with the theme's "light_blue" color (dim — used for ordered
-/// list markers). Prefer this over `.light_blue()` in tests.
+/// Span styled with the theme's dim marker color (used for ordered
+/// list markers).
 fn dim_marker(text: &'static str) -> Span<'static> {
-    Span::styled(text, Style::new().fg(crate::theme::light_blue()))
+    Span::styled(text, Style::new().fg(crate::theme::dim_color()))
 }
 
 /// Span styled with accent color + underline (used for URL links).
 fn accent_link(text: &'static str) -> Span<'static> {
     Span::styled(
         text,
-        Style::new().fg(crate::theme::cyan()).underlined(),
+        Style::new().fg(crate::theme::accent_color()).underlined(),
     )
 }
 
-/// Span for a checked task-list marker (`[x] `): bold success-green.
+/// Span for a checked task-list marker (`[x] `): bold success color.
 fn task_checked(text: &'static str) -> Span<'static> {
-    Span::styled(text, Style::new().fg(crate::theme::green()).bold())
+    Span::styled(text, Style::new().fg(crate::theme::success_color()).bold())
 }
 
 /// Span for an unchecked task-list marker (`[ ] `): ANSI dim modifier,
@@ -119,7 +119,8 @@ fn headings() {
 #[test]
 fn blockquote_single() {
     let text = render_markdown_text("> Blockquote");
-    let expected = Text::from(Line::from_iter(["> ", "Blockquote"]).green());
+    let expected =
+        Text::from(Line::from_iter(["> ", "Blockquote"]).fg(crate::theme::success_color()));
     assert_eq!(text, expected);
 }
 
@@ -150,9 +151,9 @@ fn blockquote_soft_break() {
 fn blockquote_multiple_with_break() {
     let text = render_markdown_text("> Blockquote 1\n\n> Blockquote 2\n");
     let expected = Text::from_iter([
-        Line::from_iter(["> ", "Blockquote 1"]).green(),
+        Line::from_iter(["> ", "Blockquote 1"]).fg(crate::theme::success_color()),
         Line::default(),
-        Line::from_iter(["> ", "Blockquote 2"]).green(),
+        Line::from_iter(["> ", "Blockquote 2"]).fg(crate::theme::success_color()),
     ]);
     assert_eq!(text, expected);
 }
@@ -162,11 +163,11 @@ fn blockquote_three_paragraphs_short_lines() {
     let md = "> one\n>\n> two\n>\n> three\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["> ", "one"]).green(),
-        Line::from_iter(["> "]).green(),
-        Line::from_iter(["> ", "two"]).green(),
-        Line::from_iter(["> "]).green(),
-        Line::from_iter(["> ", "three"]).green(),
+        Line::from_iter(["> ", "one"]).fg(crate::theme::success_color()),
+        Line::from_iter(["> "]).fg(crate::theme::success_color()),
+        Line::from_iter(["> ", "two"]).fg(crate::theme::success_color()),
+        Line::from_iter(["> "]).fg(crate::theme::success_color()),
+        Line::from_iter(["> ", "three"]).fg(crate::theme::success_color()),
     ]);
     assert_eq!(text, expected);
 }
@@ -176,9 +177,9 @@ fn blockquote_nested_two_levels() {
     let md = "> Level 1\n>> Level 2\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["> ", "Level 1"]).green(),
-        Line::from_iter(["> "]).green(),
-        Line::from_iter(["> ", "> ", "Level 2"]).green(),
+        Line::from_iter(["> ", "Level 1"]).fg(crate::theme::success_color()),
+        Line::from_iter(["> "]).fg(crate::theme::success_color()),
+        Line::from_iter(["> ", "> ", "Level 2"]).fg(crate::theme::success_color()),
     ]);
     assert_eq!(text, expected);
 }
@@ -188,8 +189,8 @@ fn blockquote_with_list_items() {
     let md = "> - item 1\n> - item 2\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["> ", "- ", "item 1"]).green(),
-        Line::from_iter(["> ", "- ", "item 2"]).green(),
+        Line::from_iter(["> ", "- ", "item 1"]).fg(crate::theme::success_color()),
+        Line::from_iter(["> ", "- ", "item 2"]).fg(crate::theme::success_color()),
     ]);
     assert_eq!(text, expected);
 }
@@ -204,13 +205,13 @@ fn blockquote_with_ordered_list() {
             dim_marker("1. "),
             Span::from("first"),
         ])
-        .green(),
+        .fg(crate::theme::success_color()),
         Line::from_iter(vec![
             Span::from("> "),
             dim_marker("2. "),
             Span::from("second"),
         ])
-        .green(),
+        .fg(crate::theme::success_color()),
     ]);
     assert_eq!(text, expected);
 }
@@ -220,8 +221,8 @@ fn blockquote_list_then_nested_blockquote() {
     let md = "> - parent\n>   > child\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["> ", "- ", "parent"]).green(),
-        Line::from_iter(["> ", "  ", "> ", "child"]).green(),
+        Line::from_iter(["> ", "- ", "parent"]).fg(crate::theme::success_color()),
+        Line::from_iter(["> ", "  ", "> ", "child"]).fg(crate::theme::success_color()),
     ]);
     assert_eq!(text, expected);
 }
@@ -431,9 +432,9 @@ fn blockquote_heading_inherits_heading_style() {
                 "# ".bold().underlined(),
                 "test header".bold().underlined(),
             ])
-            .green(),
-            Line::from_iter(["> "]).green(),
-            Line::from_iter(["> ", "in blockquote"]).green(),
+            .fg(crate::theme::success_color()),
+            Line::from_iter(["> "]).fg(crate::theme::success_color()),
+            Line::from_iter(["> ", "in blockquote"]).fg(crate::theme::success_color()),
         ]
     );
 }
@@ -665,11 +666,7 @@ fn task_list_variants() {
         Line::from_iter(["- ".into(), task_checked("[x] ")]),
         Line::from_iter(["- ".into(), task_unchecked("[ ] ")]),
         Line::from_iter(["- ", "parent"]),
-        Line::from_iter([
-            "    - ".into(),
-            task_checked("[x] "),
-            "nested done".into(),
-        ]),
+        Line::from_iter(["    - ".into(), task_checked("[x] "), "nested done".into()]),
         Line::from_iter([
             "    - ".into(),
             task_unchecked("[ ] "),
@@ -801,7 +798,8 @@ fn load_location_suffix_regexes() {
 fn file_link_hides_destination() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs";
-    let text = render_markdown_text_for_cwd(&format!("[chaos/tui/src/markdown_render.rs]({dest})"), cwd);
+    let text =
+        render_markdown_text_for_cwd(&format!("[chaos/tui/src/markdown_render.rs]({dest})"), cwd);
     let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
     let expected = Text::from(Line::from_iter([linked(
         accent("chaos/tui/src/markdown_render.rs"),
@@ -881,7 +879,8 @@ fn file_link_appends_range_when_label_lacks_it() {
 fn file_link_uses_target_path_for_range() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9";
-    let text = render_markdown_text_for_cwd(&format!("[markdown_render.rs:74:3-76:9]({dest})"), cwd);
+    let text =
+        render_markdown_text_for_cwd(&format!("[markdown_render.rs:74:3-76:9]({dest})"), cwd);
     let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
     let expected = Text::from(Line::from_iter([linked(
         accent("chaos/tui/src/markdown_render.rs:74:3-76:9"),
@@ -907,10 +906,7 @@ fn file_link_appends_hash_range_when_label_lacks_it() {
 fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3";
-    let text = render_markdown_text_for_cwd(
-        &format!("**bold** plain [foo\nbar]({dest})"),
-        cwd,
-    );
+    let text = render_markdown_text_for_cwd(&format!("**bold** plain [foo\nbar]({dest})"), cwd);
     let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
     let expected = Text::from(Line::from_iter([
         "bold".bold(),
@@ -924,10 +920,8 @@ fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
 fn file_link_uses_target_path_for_hash_range() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9";
-    let text = render_markdown_text_for_cwd(
-        &format!("[markdown_render.rs#L74C3-L76C9]({dest})"),
-        cwd,
-    );
+    let text =
+        render_markdown_text_for_cwd(&format!("[markdown_render.rs#L74C3-L76C9]({dest})"), cwd);
     let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
     let expected = Text::from(Line::from_iter([linked(
         accent("chaos/tui/src/markdown_render.rs:74:3-76:9"),
@@ -1133,7 +1127,10 @@ fn code_block_known_lang_has_syntax_colors() {
         .iter()
         .flat_map(|l| l.spans.iter())
         .any(|sp| sp.style.fg.is_some());
-    assert!(has_colored_span, "expected syntax-highlighted spans with color");
+    assert!(
+        has_colored_span,
+        "expected syntax-highlighted spans with color"
+    );
 }
 
 #[test]
@@ -1162,7 +1159,10 @@ fn code_block_unknown_lang_plain() {
         .iter()
         .flat_map(|l| l.spans.iter())
         .any(|sp| sp.style.fg.is_some());
-    assert!(!has_colored_span, "expected no syntax coloring for unknown lang");
+    assert!(
+        !has_colored_span,
+        "expected no syntax coloring for unknown lang"
+    );
 }
 
 #[test]
@@ -1555,16 +1555,15 @@ fn gfm_alerts_emit_styled_header_line_per_kind() {
     let rendered: Vec<String> = text
         .lines
         .iter()
-        .map(|l| l.spans.iter().map(|s| s.content.clone()).collect::<String>())
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.clone())
+                .collect::<String>()
+        })
         .collect();
 
-    for needle in [
-        "ⓘ NOTE",
-        "★ TIP",
-        "‼ IMPORTANT",
-        "⚠ WARNING",
-        "⛔ CAUTION",
-    ] {
+    for needle in ["ⓘ NOTE", "★ TIP", "‼ IMPORTANT", "⚠ WARNING", "⛔ CAUTION"] {
         assert!(
             rendered.iter().any(|l| l.contains(needle)),
             "alert header {needle:?} missing from: {rendered:?}"
@@ -1589,12 +1588,11 @@ fn gfm_alerts_emit_styled_header_line_per_kind() {
         let styled = text.lines.iter().flat_map(|l| l.spans.iter()).any(|s| {
             s.content.contains(label)
                 && s.style.fg == Some(color)
-                && s.style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+                && s.style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::BOLD)
         });
-        assert!(
-            styled,
-            "expected {label} header to be bold + fg {color:?}"
-        );
+        assert!(styled, "expected {label} header to be bold + fg {color:?}");
     }
 }
 
@@ -1744,7 +1742,8 @@ fn code_block_preserves_trailing_blank_lines() {
         "expected a line after 'fn main() {{}}' but content ends: {content:?}"
     );
     assert_eq!(
-        content[code_start + 1], "",
+        content[code_start + 1],
+        "",
         "trailing blank line inside code fence was lost: {content:?}"
     );
 }

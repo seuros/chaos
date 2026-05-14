@@ -68,10 +68,12 @@ pub(crate) fn mark_url_hyperlink(buf: &mut Buffer, area: Rect, url: &str) {
         for x in area.left()..area.right() {
             let cell = &mut buf[(x, y)];
             // Only mark cells that carry the URL's distinctive style.
-            // Use theme::cyan() so this keeps working when the palette
+            // Use theme::accent_color() so this keeps working when the palette
             // maps "cyan" to a non-standard color (e.g. LightGreen on the
             // green phosphor theme).
-            if cell.fg != crate::theme::cyan() || !cell.modifier.contains(Modifier::UNDERLINED) {
+            if cell.fg != crate::theme::accent_color()
+                || !cell.modifier.contains(Modifier::UNDERLINED)
+            {
                 continue;
             }
             let sym = cell.symbol().to_string();
@@ -576,7 +578,7 @@ impl AccountsWidget {
             };
             let line2 = if selected {
                 Line::from(format!("     {description}"))
-                    .fg(crate::theme::cyan())
+                    .fg(crate::theme::accent_color())
                     .add_modifier(Modifier::DIM)
             } else {
                 Line::from(format!("     {description}"))
@@ -647,7 +649,7 @@ impl AccountsWidget {
 
             let line2 = if is_selected {
                 Line::from(format!("     {description}"))
-                    .fg(crate::theme::cyan())
+                    .fg(crate::theme::accent_color())
                     .add_modifier(Modifier::DIM)
             } else {
                 Line::from(format!("     {description}"))
@@ -759,7 +761,7 @@ impl AccountsWidget {
 
     fn render_chatgpt_success_message(&self, area: Rect, buf: &mut Buffer) {
         let lines = vec![
-            "✓ Authenticated".fg(crate::theme::green()).into(),
+            "✓ Authenticated".fg(crate::theme::success_color()).into(),
             "".into(),
             "  Before you proceed:".into(),
             "".into(),
@@ -771,7 +773,9 @@ impl AccountsWidget {
             "  Every action it takes, you permitted.".dim().into(),
             "  The harness warns. It does not intervene.".dim().into(),
             "".into(),
-            "  Press Enter to continue".fg(crate::theme::cyan()).into(),
+            "  Press Enter to continue"
+                .fg(crate::theme::accent_color())
+                .into(),
         ];
 
         Paragraph::new(lines)
@@ -782,7 +786,7 @@ impl AccountsWidget {
     fn render_chatgpt_success(&self, area: Rect, buf: &mut Buffer) {
         let lines = vec![
             "✓ Signed in with your ChatGPT account"
-                .fg(crate::theme::green())
+                .fg(crate::theme::success_color())
                 .into(),
         ];
 
@@ -794,7 +798,7 @@ impl AccountsWidget {
     fn render_api_key_configured(&self, area: Rect, buf: &mut Buffer, provider: &AccountProvider) {
         let lines = vec![
             format!("✓ {} API key configured", provider.display_name)
-                .fg(crate::theme::green())
+                .fg(crate::theme::success_color())
                 .into(),
             "".into(),
             format!(
@@ -860,7 +864,7 @@ impl AccountsWidget {
                     .title(format!("{provider_name} API key"))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(crate::theme::cyan())),
+                    .border_style(Style::default().fg(crate::theme::accent_color())),
             )
             .render(input_area, buf);
 
@@ -1453,7 +1457,7 @@ mod tests {
         for (i, ch) in "example".chars().enumerate() {
             let cell = &mut buf[(i as u16, 0)];
             cell.set_symbol(&ch.to_string());
-            cell.fg = crate::theme::cyan();
+            cell.fg = crate::theme::accent_color();
             cell.modifier = Modifier::UNDERLINED;
         }
         // Leave a plain cell that should NOT be marked.
@@ -1477,7 +1481,7 @@ mod tests {
         // One cyan+underlined cell to mark.
         let cell = &mut buf[(0, 0)];
         cell.set_symbol("a");
-        cell.fg = crate::theme::cyan();
+        cell.fg = crate::theme::accent_color();
         cell.modifier = Modifier::UNDERLINED;
 
         // URL contains ESC and BEL that could break the OSC 8 sequence.

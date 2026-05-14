@@ -132,7 +132,7 @@ impl ToolListPane {
                 lines.push(Line::from(vec![Span::styled(
                     format!("  [{}]", tool.source),
                     Style::default()
-                        .fg(theme::cyan())
+                        .fg(theme::accent_color())
                         .add_modifier(Modifier::BOLD),
                 )]));
                 current_source = Some(tool.source.clone());

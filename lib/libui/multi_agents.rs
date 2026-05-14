@@ -62,7 +62,7 @@ pub fn agent_picker_status_dot_spans(is_closed: bool) -> Vec<Span<'static>> {
     let dot = if is_closed {
         "•".into()
     } else {
-        "•".green()
+        "•".fg(crate::theme::success_color())
     };
     vec![dot, " ".into()]
 }
@@ -395,11 +395,15 @@ fn agent_label_spans(agent: AgentLabel<'_>) -> Vec<Span<'static>> {
     let role = agent.role.map(str::trim).filter(|role| !role.is_empty());
 
     if let Some(nickname) = nickname {
-        spans.push(Span::from(nickname.to_string()).cyan().bold());
+        spans.push(
+            Span::from(nickname.to_string())
+                .fg(crate::theme::accent_color())
+                .bold(),
+        );
     } else if let Some(process_id) = agent.process_id {
-        spans.push(Span::from(process_id.to_string()).cyan());
+        spans.push(Span::from(process_id.to_string()).fg(crate::theme::accent_color()));
     } else {
-        spans.push(Span::from("agent").cyan());
+        spans.push(Span::from("agent").fg(crate::theme::accent_color()));
     }
 
     if let Some(role) = role {
@@ -426,7 +430,10 @@ fn spawn_request_spans(spawn_request: Option<&SpawnRequestSummary>) -> Vec<Span<
         format!("({model} {})", spawn_request.reasoning_effort)
     };
 
-    vec![Span::from(" ").dim(), Span::from(details).magenta()]
+    vec![
+        Span::from(" ").dim(),
+        Span::from(details).fg(crate::theme::annotation_color()),
+    ]
 }
 
 fn prompt_line(prompt: &str) -> Option<Line<'static>> {
@@ -546,15 +553,21 @@ fn status_summary_line(status: &AgentStatus) -> Line<'static> {
     status_summary_spans(status).into()
 }
 
-// Allow `.yellow()`
-#[allow(clippy::disallowed_methods)]
 fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
     match status {
-        AgentStatus::PendingInit => vec![Span::from("Pending init").cyan()],
-        AgentStatus::Running => vec![Span::from("Running").cyan().bold()],
-        AgentStatus::Interrupted => vec![Span::from("Interrupted").yellow()],
+        AgentStatus::PendingInit => {
+            vec![Span::from("Pending init").fg(crate::theme::accent_color())]
+        }
+        AgentStatus::Running => vec![
+            Span::from("Running")
+                .fg(crate::theme::accent_color())
+                .bold(),
+        ],
+        AgentStatus::Interrupted => {
+            vec![Span::from("Interrupted").fg(crate::theme::warning_color())]
+        }
         AgentStatus::Completed(message) => {
-            let mut spans = vec![Span::from("Completed").green()];
+            let mut spans = vec![Span::from("Completed").fg(crate::theme::success_color())];
             if let Some(message) = message.as_ref() {
                 let message_preview = truncate_text(
                     &message.split_whitespace().collect::<Vec<_>>().join(" "),
@@ -568,7 +581,7 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
             spans
         }
         AgentStatus::Errored(error) => {
-            let mut spans = vec![Span::from("Error").red()];
+            let mut spans = vec![Span::from("Error").fg(crate::theme::error_color())];
             let error_preview = truncate_text(
                 &error.split_whitespace().collect::<Vec<_>>().join(" "),
                 COLLAB_AGENT_ERROR_PREVIEW_GRAPHEMES,
@@ -580,7 +593,7 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
             spans
         }
         AgentStatus::Shutdown => vec![Span::from("Shutdown")],
-        AgentStatus::NotFound => vec![Span::from("Not found").red()],
+        AgentStatus::NotFound => vec![Span::from("Not found").fg(crate::theme::error_color())],
     }
 }
 
@@ -594,7 +607,6 @@ mod tests {
     use crossterm::event::KeyModifiers;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use ratatui::style::Color;
     use ratatui::style::Modifier;
 
     #[test]
@@ -765,13 +777,16 @@ mod tests {
         let lines = cell.display_lines(200);
         let title = &lines[0];
         assert_eq!(title.spans[2].content.as_ref(), "Robie");
-        assert_eq!(title.spans[2].style.fg, Some(Color::Cyan));
+        assert_eq!(title.spans[2].style.fg, Some(crate::theme::accent_color()));
         assert!(title.spans[2].style.add_modifier.contains(Modifier::BOLD));
         assert_eq!(title.spans[4].content.as_ref(), "[scout]");
         assert_eq!(title.spans[4].style.fg, None);
         assert!(!title.spans[4].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(title.spans[6].content.as_ref(), "(gpt-5 high)");
-        assert_eq!(title.spans[6].style.fg, Some(Color::Magenta));
+        assert_eq!(
+            title.spans[6].style.fg,
+            Some(crate::theme::annotation_color())
+        );
     }
 
     #[test]

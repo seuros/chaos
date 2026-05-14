@@ -444,7 +444,8 @@ mod tests {
             "echo something really long to ensure wrapping happens".dim(),
             " this time".bold(),
         ]);
-        let cell = PrefixedWrappedHistoryCell::new(summary, "✔ ".green(), "  ");
+        let cell =
+            PrefixedWrappedHistoryCell::new(summary, "✔ ".fg(crate::theme::success_color()), "  ");
         let rendered = render_lines(&cell.display_lines(24));
         assert_eq!(
             rendered,
@@ -462,7 +463,11 @@ mod tests {
     fn prefixed_wrapped_history_cell_does_not_split_url_like_token() {
         let url_like =
             "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890";
-        let cell = PrefixedWrappedHistoryCell::new(Line::from(url_like), "✔ ".green(), "  ");
+        let cell = PrefixedWrappedHistoryCell::new(
+            Line::from(url_like),
+            "✔ ".fg(crate::theme::success_color()),
+            "  ",
+        );
         let rendered = render_lines(&cell.display_lines(24));
 
         assert_eq!(
@@ -497,7 +502,7 @@ mod tests {
         let url_like = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path";
         let cell: Box<dyn HistoryCell> = Box::new(PrefixedWrappedHistoryCell::new(
             Line::from(url_like),
-            "✔ ".green(),
+            "✔ ".fg(crate::theme::success_color()),
             "  ",
         ));
 

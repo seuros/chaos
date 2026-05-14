@@ -205,9 +205,9 @@ pub(super) fn format_mcp_invocation(invocation: McpInvocation) -> Line<'static> 
         .unwrap_or_default();
 
     let invocation_spans = vec![
-        invocation.server.clone().cyan(),
+        invocation.server.clone().fg(crate::theme::accent_color()),
         ".".into(),
-        invocation.tool.cyan(),
+        invocation.tool.fg(crate::theme::accent_color()),
         "(".into(),
         args_str.dim(),
         ")".into(),

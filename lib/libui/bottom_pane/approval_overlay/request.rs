@@ -152,7 +152,7 @@ pub(super) fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             {
                 header.push(Line::from(vec![
                     "Permission rule: ".into(),
-                    rule_line.cyan(),
+                    rule_line.fg(crate::theme::accent_color()),
                 ]));
                 header.push(Line::from(""));
             }
@@ -187,7 +187,7 @@ pub(super) fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             if let Some(rule_line) = super::format::format_requested_permissions_rule(permissions) {
                 header.push(Line::from(vec![
                     "Permission rule: ".into(),
-                    rule_line.cyan(),
+                    rule_line.fg(crate::theme::accent_color()),
                 ]));
             }
             Box::new(Paragraph::new(header).wrap(Wrap { trim: false }))
@@ -250,7 +250,7 @@ pub(super) fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
                 }
                 lines.push(Line::from(vec![
                     "URL: ".into(),
-                    url.clone().cyan().underlined(),
+                    url.clone().fg(crate::theme::accent_color()).underlined(),
                 ]));
                 lines.push(Line::from(""));
             }

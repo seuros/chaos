@@ -341,7 +341,7 @@ impl Renderable for McpAddForm {
             {
                 let label_text = format!("  {label}{required_marker}");
                 let label_span: Span<'static> = if is_focused {
-                    label_text.cyan().bold()
+                    label_text.fg(crate::theme::accent_color()).bold()
                 } else {
                     label_text.dim()
                 };
@@ -420,7 +420,7 @@ impl Renderable for McpAddForm {
         if let Some(err) = &self.error
             && y < area.y + area.height
         {
-            let err_text: Span<'static> = format!("  {err}").red();
+            let err_text: Span<'static> = format!("  {err}").fg(crate::theme::error_color());
             Paragraph::new(Line::from(vec![err_text])).render(
                 Rect {
                     x: area.x,
@@ -439,13 +439,13 @@ impl Renderable for McpAddForm {
         // ── hint ──────────────────────────────────────────────────────────────
         if y < area.y + area.height {
             let hint = Line::from(vec![
-                "Tab".cyan(),
+                "Tab".fg(crate::theme::accent_color()),
                 "/".into(),
-                "Shift+Tab".cyan(),
+                "Shift+Tab".fg(crate::theme::accent_color()),
                 " navigate  ".into(),
-                "Enter".cyan(),
+                "Enter".fg(crate::theme::accent_color()),
                 " next/submit  ".into(),
-                "Esc".cyan(),
+                "Esc".fg(crate::theme::accent_color()),
                 " cancel".into(),
             ]);
             Paragraph::new(hint).render(
@@ -491,7 +491,7 @@ impl Renderable for McpAddForm {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn gutter() -> Span<'static> {
-    "▌ ".cyan()
+    "▌ ".fg(crate::theme::accent_color())
 }
 
 fn parse_stdio_args(input: &str) -> Result<Vec<String>, String> {

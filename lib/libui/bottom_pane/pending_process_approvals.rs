@@ -47,7 +47,11 @@ impl PendingProcessApprovals {
             let wrapped = adaptive_wrap_lines(
                 std::iter::once(Line::from(format!("Approval needed in {process}"))),
                 RtOptions::new(width as usize)
-                    .initial_indent(Line::from(vec!["  ".into(), "!".red().bold(), " ".into()]))
+                    .initial_indent(Line::from(vec![
+                        "  ".into(),
+                        "!".fg(crate::theme::error_color()).bold(),
+                        " ".into(),
+                    ]))
                     .subsequent_indent(Line::from("    ")),
             );
             lines.extend(wrapped);
@@ -60,7 +64,7 @@ impl PendingProcessApprovals {
         lines.push(
             Line::from(vec![
                 "    ".into(),
-                "/agent".cyan().bold(),
+                "/agent".fg(crate::theme::accent_color()).bold(),
                 " to switch processes".dim(),
             ])
             .dim(),

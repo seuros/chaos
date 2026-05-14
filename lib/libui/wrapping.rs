@@ -401,7 +401,6 @@ mod tests {
     use super::*;
     use itertools::Itertools as _;
     use pretty_assertions::assert_eq;
-    use ratatui::style::Color;
     use ratatui::style::Stylize;
     use std::string::ToString;
 
@@ -431,12 +430,15 @@ mod tests {
 
     #[test]
     fn simple_styled_wrap_preserves_styles() {
-        let line = Line::from(vec!["hello ".red(), "world".into()]);
+        let line = Line::from(vec![
+            "hello ".fg(crate::theme::error_color()),
+            "world".into(),
+        ]);
         let out = word_wrap_line(&line, 6);
         assert_eq!(out.len(), 2);
         assert_eq!(concat_line(&out[0]), "hello");
         assert_eq!(out[0].spans.len(), 1);
-        assert_eq!(out[0].spans[0].style.fg, Some(Color::Red));
+        assert_eq!(out[0].spans[0].style.fg, Some(crate::theme::error_color()));
         assert_eq!(concat_line(&out[1]), "world");
         assert_eq!(out[1].spans.len(), 1);
         assert_eq!(out[1].spans[0].style.fg, None);
@@ -538,13 +540,13 @@ mod tests {
     #[test]
     fn styled_split_within_span_preserves_style() {
         use ratatui::style::Stylize;
-        let line = Line::from(vec!["abcd".red()]);
+        let line = Line::from(vec!["abcd".fg(crate::theme::error_color())]);
         let out = word_wrap_line(&line, 2);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].spans.len(), 1);
         assert_eq!(out[1].spans.len(), 1);
-        assert_eq!(out[0].spans[0].style.fg, Some(Color::Red));
-        assert_eq!(out[1].spans[0].style.fg, Some(Color::Red));
+        assert_eq!(out[0].spans[0].style.fg, Some(crate::theme::error_color()));
+        assert_eq!(out[1].spans[0].style.fg, Some(crate::theme::error_color()));
         assert_eq!(concat_line(&out[0]), "ab");
         assert_eq!(concat_line(&out[1]), "cd");
     }
@@ -700,7 +702,7 @@ them."#
     fn line_contains_url_like_checks_across_spans() {
         let line = Line::from(vec![
             "see ".into(),
-            "https://example.com/a/very/long/path".cyan(),
+            "https://example.com/a/very/long/path".fg(crate::theme::accent_color()),
             " for details".into(),
         ]);
 

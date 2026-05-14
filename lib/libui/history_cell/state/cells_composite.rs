@@ -87,10 +87,17 @@ impl HistoryCell for UnifiedExecProcessesCell {
             if needs_suffix && budget > truncation_suffix_width {
                 let available = budget.saturating_sub(truncation_suffix_width);
                 let (truncated, _, _) = take_prefix_by_width(&snippet, available);
-                out.push(vec![prefix.dim(), truncated.cyan(), truncation_suffix.dim()].into());
+                out.push(
+                    vec![
+                        prefix.dim(),
+                        truncated.fg(crate::theme::accent_color()),
+                        truncation_suffix.dim(),
+                    ]
+                    .into(),
+                );
             } else {
                 let (truncated, _, _) = take_prefix_by_width(&snippet, budget);
-                out.push(vec![prefix.dim(), truncated.cyan()].into());
+                out.push(vec![prefix.dim(), truncated.fg(crate::theme::accent_color())].into());
             }
 
             let chunk_prefix_first = "    ↳ ";
@@ -144,7 +151,7 @@ impl HistoryCell for UnifiedExecProcessesCell {
 pub fn new_unified_exec_processes_output(
     processes: Vec<UnifiedExecProcessDetails>,
 ) -> CompositeHistoryCell {
-    let command = PlainHistoryCell::new(vec!["/ps".magenta().into()]);
+    let command = PlainHistoryCell::new(vec!["/ps".fg(crate::theme::annotation_color()).into()]);
     let summary = UnifiedExecProcessesCell::new(processes);
     CompositeHistoryCell::new(vec![Box::new(command), Box::new(summary)])
 }
@@ -246,7 +253,10 @@ pub fn new_session_info(
 
     if requested_model != model {
         let lines = vec![
-            "model changed:".magenta().bold().into(),
+            "model changed:"
+                .fg(crate::theme::annotation_color())
+                .bold()
+                .into(),
             format!("requested: {requested_model}").into(),
             format!("used: {model}").into(),
         ];

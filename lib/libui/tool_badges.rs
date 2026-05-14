@@ -1,4 +1,3 @@
-use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use serde::Deserialize;
@@ -22,7 +21,7 @@ fn parsed_annotations(annotations: Option<&serde_json::Value>) -> Option<ToolAnn
 
 pub fn tool_name_style() -> Style {
     Style::default()
-        .fg(Color::Cyan)
+        .fg(crate::theme::accent_color())
         .add_modifier(Modifier::BOLD)
 }
 
@@ -47,19 +46,19 @@ fn style_for_labels<'a>(labels: impl IntoIterator<Item = &'a str>) -> Style {
     }
 
     let color = if has_destructive {
-        Color::LightRed
+        crate::theme::error_color()
     } else if has_writes {
-        Color::Yellow
+        crate::theme::warning_color()
     } else if has_closed_world {
-        Color::Blue
+        crate::theme::contained_color()
     } else if has_open_world {
-        Color::Magenta
+        crate::theme::annotation_color()
     } else if has_read_only {
-        Color::Cyan
+        crate::theme::accent_color()
     } else if has_idempotent {
-        Color::LightGreen
+        crate::theme::success_color()
     } else {
-        Color::Cyan
+        crate::theme::accent_color()
     };
 
     Style::default().fg(color).add_modifier(Modifier::BOLD)
@@ -114,8 +113,6 @@ pub fn tool_name_style_from_annotations(annotations: Option<&serde_json::Value>)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::style::Color;
-
     #[test]
     fn merged_annotations_upgrade_closed_world_tool_to_writes() {
         let style = tool_name_style_from_labels_and_annotations(
@@ -126,7 +123,7 @@ mod tests {
             })),
         );
 
-        assert_eq!(style.fg, Some(Color::Yellow));
+        assert_eq!(style.fg, Some(crate::theme::warning_color()));
     }
 
     #[test]
@@ -136,6 +133,6 @@ mod tests {
             "open_world_hint": false
         })));
 
-        assert_eq!(style.fg, Some(Color::Yellow));
+        assert_eq!(style.fg, Some(crate::theme::warning_color()));
     }
 }

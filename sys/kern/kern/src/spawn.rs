@@ -75,6 +75,12 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
 
     if !socket_policy.is_enabled() {
         cmd.env(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1");
+    } else {
+        // Be defensive here: user-shell commands and other unrestricted spawns
+        // must not inherit a stale network-disabled marker even if it was
+        // present in the prepared env map or leaked in from process-global
+        // test state.
+        cmd.env_remove(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR);
     }
 
     // If this Chaos process dies (including being killed via SIGKILL), we want

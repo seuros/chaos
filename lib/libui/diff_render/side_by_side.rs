@@ -127,9 +127,9 @@ fn collect_rows(changes: &HashMap<PathBuf, FileChange>) -> Vec<Row> {
 fn render_line_count_summary(added: usize, removed: usize) -> Vec<RtSpan<'static>> {
     let mut spans = Vec::new();
     spans.push("(".into());
-    spans.push(format!("+{added}").green());
+    spans.push(format!("+{added}").fg(crate::theme::success_color()));
     spans.push(" ".into());
-    spans.push(format!("-{removed}").red());
+    spans.push(format!("-{removed}").fg(crate::theme::error_color()));
     spans.push(")".into());
     spans
 }

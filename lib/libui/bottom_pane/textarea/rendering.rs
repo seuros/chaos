@@ -107,7 +107,7 @@ impl TextArea {
                 }
                 let styled = &self.text[overlap_start..overlap_end];
                 let x_off = self.text[line_range.start..overlap_start].width() as u16;
-                let style = Style::default().fg(crate::theme::cyan());
+                let style = Style::default().fg(crate::theme::accent_color());
                 buf.set_string(area.x + x_off, y, styled, style);
             }
         }

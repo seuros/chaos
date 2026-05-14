@@ -136,7 +136,7 @@ impl AccountsOverlay {
                     let block = Block::default()
                         .title(Line::from(vec![
                             "/".dim(),
-                            " accounts".fg(crate::theme::cyan()),
+                            " accounts".fg(crate::theme::accent_color()),
                         ]))
                         .title_alignment(Alignment::Left)
                         .borders(Borders::ALL)

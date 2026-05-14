@@ -12,9 +12,9 @@ impl ChatWidget {
                 let line: Line<'static> = vec![
                     "• ".dim(),
                     "Process forked from ".into(),
-                    name.cyan(),
+                    name.fg(crate::theme::accent_color()),
                     " (".into(),
-                    forked_from_id_text.clone().cyan(),
+                    forked_from_id_text.clone().fg(crate::theme::accent_color()),
                     ")".into(),
                 ]
                 .into();
@@ -26,7 +26,7 @@ impl ChatWidget {
                 let line: Line<'static> = vec![
                     "• ".dim(),
                     "Process forked from ".into(),
-                    forked_from_id_text.clone().cyan(),
+                    forked_from_id_text.clone().fg(crate::theme::accent_color()),
                 ]
                 .into();
                 app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(

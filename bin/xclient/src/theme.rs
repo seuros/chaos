@@ -15,7 +15,7 @@ use iced::widget::container;
 
 /// Semantic color set used throughout `chaos-xclient`.
 ///
-/// Ten slots — same names as `bin/console`'s `Palette`. Kept separate from
+/// Twelve slots — same names as `bin/console`'s `Palette`. Kept separate from
 /// iced's [`IcedPalette`] because iced only exposes six slots to its theme
 /// machinery and we need a few more (dim, border, accent, highlight) to
 /// drive our own widget styling.
@@ -41,9 +41,15 @@ pub struct ChaosPalette {
     pub success: Color,
     /// Interactive / link accent.
     pub accent: Color,
+    /// Secondary accent for auxiliary metadata and open-world labels.
+    pub secondary_accent: Color,
+    /// Tertiary accent for contained / closed-world labels.
+    pub tertiary_accent: Color,
 }
 
 const CHAOS_BLACK: Color = Color::from_rgb(0.0, 0.0, 0.0);
+const CHAOS_WHITE: Color = Color::from_rgb(1.0, 1.0, 1.0);
+const CHAOS_GRAY: Color = Color::from_rgb(0.5, 0.5, 0.5);
 const CHAOS_LIGHT_GREEN: Color = Color::from_rgb(0x55 as f32 / 255.0, 1.0, 0x55 as f32 / 255.0);
 const CHAOS_GREEN: Color = Color::from_rgb(0.0, 0xaa as f32 / 255.0, 0.0);
 const CHAOS_DARK_GREEN_BG: Color = Color::from_rgb(
@@ -52,6 +58,8 @@ const CHAOS_DARK_GREEN_BG: Color = Color::from_rgb(
     0x08 as f32 / 255.0,
 );
 const CHAOS_LIGHT_CYAN: Color = Color::from_rgb(0x55 as f32 / 255.0, 1.0, 1.0);
+const CHAOS_BLUE: Color = Color::from_rgb(0x55 as f32 / 255.0, 0x55 as f32 / 255.0, 1.0);
+const CHAOS_MAGENTA: Color = Color::from_rgb(1.0, 0x55 as f32 / 255.0, 1.0);
 const CHAOS_LIGHT_YELLOW: Color = Color::from_rgb(1.0, 1.0, 0x55 as f32 / 255.0);
 const CHAOS_LIGHT_RED: Color = Color::from_rgb(1.0, 0x55 as f32 / 255.0, 0x55 as f32 / 255.0);
 const CHAOS_WARM_ORANGE: Color = Color::from_rgb(1.0, 0xaa as f32 / 255.0, 0x55 as f32 / 255.0);
@@ -69,12 +77,16 @@ const CHAOS_DARK_AMBER_BG: Color = Color::from_rgb(
 fn map_tone(token: ToneToken) -> Color {
     match token {
         ToneToken::Black => CHAOS_BLACK,
+        ToneToken::White => CHAOS_WHITE,
+        ToneToken::Gray => CHAOS_GRAY,
         ToneToken::LightGreen => CHAOS_LIGHT_GREEN,
         ToneToken::Green => CHAOS_GREEN,
         ToneToken::DarkGray => Color::from_rgb(0.12, 0.12, 0.12),
         ToneToken::Yellow => CHAOS_LIGHT_YELLOW,
         ToneToken::LightRed => CHAOS_LIGHT_RED,
         ToneToken::Cyan => CHAOS_LIGHT_CYAN,
+        ToneToken::Blue => CHAOS_BLUE,
+        ToneToken::Magenta => CHAOS_MAGENTA,
         ToneToken::WarmOrange => CHAOS_WARM_ORANGE,
         ToneToken::Amber => CHAOS_AMBER,
         ToneToken::DarkGreenBg => CHAOS_DARK_GREEN_BG,
@@ -95,6 +107,8 @@ pub fn palette_for_family(family: ThemeFamily) -> ChaosPalette {
         error: palette.error,
         success: palette.success,
         accent: palette.accent,
+        secondary_accent: palette.secondary_accent,
+        tertiary_accent: palette.tertiary_accent,
     }
 }
 

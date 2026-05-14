@@ -124,7 +124,7 @@ fn streamable_http_server_bin() -> anyhow::Result<Option<PathBuf>> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[serial(mcp_test_value)]
+#[serial(process_env)]
 async fn stdio_server_round_trip() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -250,7 +250,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[serial(mcp_test_value)]
+#[serial(process_env)]
 async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -437,7 +437,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[serial(mcp_test_value)]
+#[serial(process_env)]
 async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -607,7 +607,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[serial(mcp_test_value)]
+#[serial(process_env)]
 async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -889,7 +889,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
 /// This test writes to a credentials file in CHAOS_HOME.
 /// Ideally, we wouldn't need to serialize the test but it's much more cumbersome to wire CHAOS_HOME through the code.
 #[test]
-#[serial(chaos_home)]
+#[serial(process_env)]
 fn streamable_http_with_oauth_round_trip() -> anyhow::Result<()> {
     const TEST_STACK_SIZE_BYTES: usize = 8 * 1024 * 1024;
 

@@ -126,7 +126,8 @@ pub fn new_status_output_with_rate_limits(
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
 ) -> CompositeHistoryCell {
-    let command = PlainHistoryCell::new(vec!["/status".magenta().into()]);
+    let command =
+        PlainHistoryCell::new(vec!["/status".fg(crate::theme::annotation_color()).into()]);
     let card = StatusHistoryCell::new(
         config,
         auth_manager,
@@ -476,9 +477,9 @@ impl HistoryCell for StatusHistoryCell {
 
         if crate::theme::is_clamped() {
             let note_line = Line::from(vec![
-                Span::from("Transport: ").cyan(),
+                Span::from("Transport: ").fg(crate::theme::accent_color()),
                 Span::from("Claude Code MAX (clamped)")
-                    .fg(crate::theme::cyan())
+                    .fg(crate::theme::accent_color())
                     .bold(),
             ]);
             lines.push(note_line);
@@ -509,7 +510,7 @@ impl HistoryCell for StatusHistoryCell {
 
         let model_spans = if crate::theme::is_clamped() {
             vec![
-                Span::from("claude-sonnet-4-6").fg(crate::theme::cyan()),
+                Span::from("claude-sonnet-4-6").fg(crate::theme::accent_color()),
                 Span::from(" (via MAX subscription)").dim(),
             ]
         } else {

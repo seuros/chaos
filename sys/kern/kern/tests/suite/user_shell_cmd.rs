@@ -306,6 +306,7 @@ async fn user_shell_command_history_is_persisted_and_shared_with_model() -> anyh
 }
 
 #[tokio::test]
+#[serial_test::serial(process_env)]
 async fn user_shell_command_does_not_set_network_sandbox_env_var() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
     let mut builder = core_test_support::test_chaos::test_chaos().with_config(|config| {
@@ -321,7 +322,9 @@ async fn user_shell_command_does_not_set_network_sandbox_env_var() -> anyhow::Re
         .await?;
 
     let end_event = wait_for_event_match(&test.process, |ev| match ev {
-        EventMsg::ExecCommandEnd(event) => Some(event.clone()),
+        EventMsg::ExecCommandEnd(event) if event.source == ExecCommandSource::UserShell => {
+            Some(event.clone())
+        }
         _ => None,
     })
     .await;

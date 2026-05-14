@@ -122,8 +122,8 @@ impl HistoryCell for McpToolCallCell {
         let mut lines: Vec<Line<'static>> = Vec::new();
         let status = self.success();
         let bullet = match status {
-            Some(true) => "•".green().bold(),
-            Some(false) => "•".red().bold(),
+            Some(true) => "•".fg(crate::theme::success_color()).bold(),
+            Some(false) => "•".fg(crate::theme::error_color()).bold(),
             None => spinner(Some(self.start_time), self.animations_enabled),
         };
         let header_text = if status.is_some() {
@@ -322,7 +322,13 @@ pub fn new_deprecation_notice(summary: String, details: Option<String>) -> Depre
 impl HistoryCell for DeprecationNoticeCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
-        lines.push(vec!["⚠ ".red().bold(), self.summary.clone().red()].into());
+        lines.push(
+            vec![
+                "⚠ ".fg(crate::theme::error_color()).bold(),
+                self.summary.clone().fg(crate::theme::error_color()),
+            ]
+            .into(),
+        );
 
         let wrap_width = width.saturating_sub(4).max(1) as usize;
 
@@ -343,7 +349,7 @@ impl HistoryCell for DeprecationNoticeCell {
 /// Render a summary of configured MCP servers from the current `Config`.
 pub fn empty_mcp_output() -> PlainHistoryCell {
     let lines: Vec<Line<'static>> = vec![
-        "/mcp".magenta().into(),
+        "/mcp".fg(crate::theme::annotation_color()).into(),
         "".into(),
         vec!["🔌  ".into(), "MCP Tools".bold()].into(),
         "".into(),
@@ -375,7 +381,7 @@ pub fn new_mcp_tools_output(
     use crate::tool_badges::tool_name_style_from_annotations;
 
     let mut lines: Vec<Line<'static>> = vec![
-        "/mcp".magenta().into(),
+        "/mcp".fg(crate::theme::annotation_color()).into(),
         "".into(),
         vec!["🔌  ".into(), "MCP Tools".bold()].into(),
         "".into(),
@@ -412,7 +418,7 @@ pub fn new_mcp_tools_output(
         let mut header: Vec<Span<'static>> = vec!["  • ".into(), server.clone().into()];
         if !cfg.enabled {
             header.push(" ".into());
-            header.push("(disabled)".red());
+            header.push("(disabled)".fg(crate::theme::error_color()));
             lines.push(header.into());
             if let Some(reason) = cfg.disabled_reason.as_ref().map(ToString::to_string) {
                 lines.push(vec!["    • Reason: ".into(), reason.dim()].into());
@@ -421,7 +427,13 @@ pub fn new_mcp_tools_output(
             continue;
         }
         lines.push(header.into());
-        lines.push(vec!["    • Status: ".into(), "enabled".green()].into());
+        lines.push(
+            vec![
+                "    • Status: ".into(),
+                "enabled".fg(crate::theme::success_color()),
+            ]
+            .into(),
+        );
         if matches!(
             cfg.transport,
             McpServerTransportConfig::StreamableHttp { .. }
@@ -589,7 +601,7 @@ impl HistoryCell for RequestUserInputResultCell {
         let mut header = vec!["•".dim(), " ".into(), "Questions".bold()];
         header.push(format!(" {answered}/{total} answered").dim());
         if self.interrupted {
-            header.push(" (interrupted)".cyan());
+            header.push(" (interrupted)".fg(crate::theme::accent_color()));
         }
 
         let mut lines: Vec<Line<'static>> = vec![header.into()];
@@ -621,7 +633,7 @@ impl HistoryCell for RequestUserInputResultCell {
                     width,
                     "    answer: ".dim(),
                     "            ".dim(),
-                    Style::default().fg(crate::theme::cyan()),
+                    Style::default().fg(crate::theme::accent_color()),
                 ));
                 continue;
             }
@@ -634,7 +646,7 @@ impl HistoryCell for RequestUserInputResultCell {
                     width,
                     "    answer: ".dim(),
                     "            ".dim(),
-                    Style::default().fg(crate::theme::cyan()),
+                    Style::default().fg(crate::theme::accent_color()),
                 ));
             }
             if let Some(note) = note {
@@ -642,13 +654,13 @@ impl HistoryCell for RequestUserInputResultCell {
                     (
                         "    note: ".dim(),
                         "          ".dim(),
-                        Style::default().fg(crate::theme::cyan()),
+                        Style::default().fg(crate::theme::accent_color()),
                     )
                 } else {
                     (
                         "    answer: ".dim(),
                         "            ".dim(),
-                        Style::default().fg(crate::theme::cyan()),
+                        Style::default().fg(crate::theme::accent_color()),
                     )
                 };
                 lines.extend(render::wrap_with_prefix(
@@ -666,10 +678,10 @@ impl HistoryCell for RequestUserInputResultCell {
             lines.extend(render::wrap_with_prefix(
                 &summary,
                 width,
-                "  ↳ ".cyan().dim(),
+                "  ↳ ".fg(crate::theme::accent_color()).dim(),
                 "    ".dim(),
                 Style::default()
-                    .fg(crate::theme::cyan())
+                    .fg(crate::theme::accent_color())
                     .add_modifier(Modifier::DIM),
             ));
         }

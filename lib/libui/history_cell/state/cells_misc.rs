@@ -69,7 +69,11 @@ impl HistoryCell for FinalMessageSeparator {
 
 #[allow(clippy::disallowed_methods)]
 pub fn new_warning_event(message: String) -> PrefixedWrappedHistoryCell {
-    PrefixedWrappedHistoryCell::new(message.yellow(), "⚠ ".yellow(), "  ")
+    PrefixedWrappedHistoryCell::new(
+        message.fg(crate::theme::warning_color()),
+        "⚠ ".fg(crate::theme::warning_color()),
+        "  ",
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +113,8 @@ pub fn new_info_event(message: String, hint: Option<String>) -> PlainHistoryCell
 }
 
 pub fn new_error_event(message: String) -> PlainHistoryCell {
-    let lines: Vec<Line<'static>> = vec![vec![format!("■ {message}").red()].into()];
+    let lines: Vec<Line<'static>> =
+        vec![vec![format!("■ {message}").fg(crate::theme::error_color())].into()];
     PlainHistoryCell::new(lines)
 }
 
@@ -119,7 +124,7 @@ pub fn new_error_event(message: String) -> PlainHistoryCell {
 
 /// Cyan history cell line showing the current review status.
 pub fn new_review_status_line(message: String) -> PlainHistoryCell {
-    PlainHistoryCell::new(vec![Line::from(message.cyan())])
+    PlainHistoryCell::new(vec![Line::from(message.fg(crate::theme::accent_color()))])
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +143,7 @@ pub fn new_approval_decision_cell(
         Approved => {
             let snippet = Span::from(render::exec_snippet(&command)).dim();
             (
-                "✔ ".green(),
+                "✔ ".fg(crate::theme::success_color()),
                 vec![
                     actor.subject().into(),
                     "approved".bold(),
@@ -154,7 +159,7 @@ pub fn new_approval_decision_cell(
             let snippet =
                 Span::from(render::exec_snippet(&proposed_execpolicy_amendment.command)).dim();
             (
-                "✔ ".green(),
+                "✔ ".fg(crate::theme::success_color()),
                 vec![
                     actor.subject().into(),
                     "approved".bold(),
@@ -166,7 +171,7 @@ pub fn new_approval_decision_cell(
         ApprovedForSession => {
             let snippet = Span::from(render::exec_snippet(&command)).dim();
             (
-                "✔ ".green(),
+                "✔ ".fg(crate::theme::success_color()),
                 vec![
                     actor.subject().into(),
                     "approved".bold(),
@@ -180,7 +185,7 @@ pub fn new_approval_decision_cell(
             network_policy_amendment,
         } => match network_policy_amendment.action {
             NetworkPolicyRuleAction::Allow => (
-                "✔ ".green(),
+                "✔ ".fg(crate::theme::success_color()),
                 vec![
                     actor.subject().into(),
                     "persisted".bold(),
@@ -189,7 +194,7 @@ pub fn new_approval_decision_cell(
                 ],
             ),
             NetworkPolicyRuleAction::Deny => (
-                "✗ ".red(),
+                "✗ ".fg(crate::theme::error_color()),
                 vec![
                     actor.subject().into(),
                     "denied".bold(),
@@ -209,12 +214,12 @@ pub fn new_approval_decision_cell(
                     snippet,
                 ],
             };
-            ("✗ ".red(), summary)
+            ("✗ ".fg(crate::theme::error_color()), summary)
         }
         Abort => {
             let snippet = Span::from(render::exec_snippet(&command)).dim();
             (
-                "✗ ".red(),
+                "✗ ".fg(crate::theme::error_color()),
                 vec![
                     actor.subject().into(),
                     "canceled".bold(),

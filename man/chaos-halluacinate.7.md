@@ -11,26 +11,23 @@ script into the right folder and the LLM can call it as a tool.
 
 ## QUICK START
 
-Create a script at `~/.config/chaos/scripts/hello.lua`:
+Create a script at `~/.config/chaos/scripts/project_info.lua`:
 
 ```lua
 chaos.tool({
-    name = "hello",
-    description = "Greet someone by name",
+    name = "project_info",
+    description = "Summarize the current session context",
     input_schema = {
         type = "object",
-        properties = {
-            name = { type = "string", description = "Who to greet" }
-        },
-        required = { "name" }
+        properties = {}
     },
-    handler = function(args)
-        return "Hello, " .. args.name .. "!"
+    handler = function(_args)
+        return "cwd=" .. chaos.cwd .. " provider=" .. chaos.provider
     end
 })
 ```
 
-Start a session. The LLM now has a `hello` tool it can call.
+Start a session. The LLM now has a `project_info` tool it can call.
 
 Halluacinate also owns the TUI status line. ChaOS ships a built-in Lua renderer,
 and you can override it by registering your own `chaos.statusline(...)` script.

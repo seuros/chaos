@@ -259,7 +259,7 @@ mod tests {
         }];
         let footer_note = ratatui::text::Line::from(vec![
             "Note: ".dim(),
-            "Use /setup-default-sandbox".cyan(),
+            "Use /setup-default-sandbox".fg(crate::theme::accent_color()),
             " to allow network access.".dim(),
         ]);
         let view = ListSelectionView::new(
@@ -765,7 +765,7 @@ mod tests {
             for x in 0..width {
                 buf[(x, y)]
                     .set_symbol("X")
-                    .set_style(Style::default().bg(crate::theme::red()));
+                    .set_style(Style::default().bg(crate::theme::error_color()));
             }
         }
         view.render(area, &mut buf);
@@ -823,7 +823,7 @@ mod tests {
             for x in area.x..area.x + width {
                 buf[(x, y)]
                     .set_symbol("X")
-                    .set_style(Style::default().bg(crate::theme::red()));
+                    .set_style(Style::default().bg(crate::theme::error_color()));
             }
         }
         view.render(area, &mut buf);

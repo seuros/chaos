@@ -137,7 +137,10 @@ impl Renderable for CustomPromptView {
                 width: area.width,
                 height: 1,
             };
-            let spans: Vec<Span<'static>> = vec![gutter(), context_label.clone().cyan()];
+            let spans: Vec<Span<'static>> = vec![
+                gutter(),
+                context_label.clone().fg(crate::theme::accent_color()),
+            ];
             Paragraph::new(Line::from(spans)).render(context_area, buf);
             input_y = input_y.saturating_add(1);
         }
@@ -243,5 +246,5 @@ impl CustomPromptView {
 }
 
 fn gutter() -> Span<'static> {
-    "▌ ".cyan()
+    "▌ ".fg(crate::theme::accent_color())
 }

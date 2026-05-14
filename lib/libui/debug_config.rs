@@ -53,7 +53,10 @@ fn session_all_proxy_url(http_addr: &str, socks_addr: &str, socks_enabled: bool)
 }
 
 fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
-    let mut lines = vec!["/debug-config".magenta().into(), "".into()];
+    let mut lines = vec![
+        "/debug-config".fg(crate::theme::annotation_color()).into(),
+        "".into(),
+    ];
 
     lines.push(
         "Config layer stack (lowest precedence first):"

@@ -34,23 +34,32 @@ pub struct Palette {
     pub fg: Color,
     pub dim: Color,
     pub highlight: Color,
+    pub top_bar_bg: Color,
+    pub top_bar_fg: Color,
+    pub top_bar_dim: Color,
     pub user_msg_bg: Color,
     pub border: Color,
     pub warning: Color,
     pub error: Color,
     pub success: Color,
     pub accent: Color,
+    pub secondary_accent: Color,
+    pub tertiary_accent: Color,
 }
 
 fn map_tone(token: ToneToken) -> Color {
     match token {
         ToneToken::Black => Color::Black,
+        ToneToken::White => Color::White,
+        ToneToken::Gray => Color::Gray,
         ToneToken::LightGreen => Color::LightGreen,
         ToneToken::Green => Color::Green,
         ToneToken::DarkGray => Color::DarkGray,
         ToneToken::Yellow => Color::Yellow,
         ToneToken::LightRed => Color::LightRed,
         ToneToken::Cyan => Color::Cyan,
+        ToneToken::Blue => Color::Blue,
+        ToneToken::Magenta => Color::Magenta,
         ToneToken::WarmOrange => Color::LightYellow,
         ToneToken::Amber => Color::Yellow,
         ToneToken::DarkGreenBg => Color::DarkGray,
@@ -74,12 +83,17 @@ pub fn palette() -> Palette {
         fg: palette.fg,
         dim: palette.dim,
         highlight: palette.highlight,
+        top_bar_bg: palette.top_bar_bg,
+        top_bar_fg: palette.top_bar_fg,
+        top_bar_dim: palette.top_bar_dim,
         user_msg_bg: palette.user_msg_bg,
         border: palette.border,
         warning: palette.warning,
         error: palette.error,
         success: palette.success,
         accent: palette.accent,
+        secondary_accent: palette.secondary_accent,
+        tertiary_accent: palette.tertiary_accent,
     }
 }
 
@@ -136,29 +150,39 @@ pub fn prompt() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-/// Replaces `Color::Cyan` — used for links, interactive elements.
-pub fn cyan() -> Color {
+/// Primary interactive accent — used for links, identifiers, and selected labels.
+pub fn accent_color() -> Color {
     palette().accent
 }
 
-/// Replaces `Color::Green` — used for success, additions, positive states.
-pub fn green() -> Color {
+/// Positive accent — used for success, additions, and approved states.
+pub fn success_color() -> Color {
     palette().success
 }
 
-/// Replaces `Color::Red` — used for errors, deletions, negative states.
-pub fn red() -> Color {
+/// Negative accent — used for errors, deletions, and failed states.
+pub fn error_color() -> Color {
     palette().error
 }
 
-/// Replaces `Color::LightBlue` — used for code blocks, inline code.
-pub fn light_blue() -> Color {
+/// Muted foreground color — used for low-emphasis markers and secondary inline text.
+pub fn dim_color() -> Color {
     palette().dim
 }
 
-/// Replaces `Color::Yellow` — used for warnings, caution states.
-pub fn yellow() -> Color {
+/// Warning accent — used for cautionary states and warnings.
+pub fn warning_color() -> Color {
     palette().warning
+}
+
+/// Secondary accent — used for annotations, slash commands, and auxiliary metadata.
+pub fn annotation_color() -> Color {
+    palette().secondary_accent
+}
+
+/// Tertiary accent — used for contained / closed-world labels and similar bounded states.
+pub fn contained_color() -> Color {
+    palette().tertiary_accent
 }
 
 /// Diff addition line style — green on dark green background.

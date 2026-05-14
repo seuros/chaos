@@ -9,17 +9,22 @@
 //! while history scrolls beneath it.
 
 use chaos_sysinfo::{SandboxKind, SystemInfo, sysinfo};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 /// Build the top bar [`Line`] for direct terminal rendering (outside viewport).
 pub fn top_bar_line(width: u16) -> Line<'static> {
-    build_status_line(sysinfo(), width)
+    build_status_line(sysinfo(), width, crate::theme::palette())
 }
 
-fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
-    let sep = Span::styled(" │ ", Style::default().fg(Color::Gray).bg(Color::DarkGray));
-    let base = Style::default().fg(Color::White).bg(Color::DarkGray);
+fn build_status_line(
+    info: &SystemInfo,
+    width: u16,
+    palette: crate::theme::Palette,
+) -> Line<'static> {
+    let bar_bg = palette.top_bar_bg;
+    let sep = Span::styled(" │ ", Style::default().fg(palette.top_bar_dim).bg(bar_bg));
+    let base = Style::default().fg(palette.top_bar_fg).bg(bar_bg);
 
     let mut spans: Vec<Span<'static>> = Vec::new();
 
@@ -66,7 +71,7 @@ fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
         };
         spans.push(Span::styled(
             label,
-            Style::default().fg(Color::Yellow).bg(Color::DarkGray),
+            Style::default().fg(palette.warning).bg(bar_bg),
         ));
     }
 
@@ -82,7 +87,7 @@ fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
         };
         spans.push(Span::styled(
             label,
-            Style::default().fg(Color::Cyan).bg(Color::DarkGray),
+            Style::default().fg(palette.accent).bg(bar_bg),
         ));
     }
 
@@ -93,17 +98,17 @@ fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
     if info.has_battery {
         let level = info.battery_level.unwrap_or(0);
         let (icon, color) = if info.charger_connected {
-            ("⚡", Color::Green)
+            ("⚡", palette.success)
         } else if level <= 15 {
-            ("▼", Color::Red)
+            ("▼", palette.error)
         } else if level <= 30 {
-            ("▽", Color::Yellow)
+            ("▽", palette.warning)
         } else {
-            ("●", Color::Green)
+            ("●", palette.success)
         };
         right_spans.push(Span::styled(
             format!("{icon} {level}%"),
-            Style::default().fg(color).bg(Color::DarkGray),
+            Style::default().fg(color).bg(bar_bg),
         ));
         right_spans.push(sep.clone());
     }
@@ -111,7 +116,7 @@ fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
     // Current time
     let now = chrono_now();
     right_spans.push(Span::styled(now, base));
-    right_spans.push(Span::raw(" "));
+    right_spans.push(Span::styled(" ", base));
 
     // Calculate right-side width to right-align
     let right_width: u16 = right_spans.iter().map(|s| s.content.len() as u16).sum();
@@ -123,7 +128,7 @@ fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
     if gap > 0 {
         spans.push(Span::styled(
             " ".repeat(gap as usize),
-            Style::default().bg(Color::DarkGray),
+            Style::default().bg(bar_bg),
         ));
     }
 
@@ -142,4 +147,52 @@ fn chrono_now() -> String {
     unsafe { libc::localtime_r(&tv.tv_sec, &mut tm) };
 
     format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn top_bar_uses_dedicated_top_bar_background() {
+        let mut info = sysinfo().clone();
+        info.hostname = "host".into();
+        info.os = "linux".into();
+        info.os_distro = "arch".into();
+        info.arch = "x86_64".into();
+        info.has_battery = true;
+        info.battery_level = Some(87);
+        info.charger_connected = false;
+        info.in_container = true;
+        info.container_type = "podman".into();
+        info.multiplexer = Some(chaos_sysinfo::MultiplexerInfo {
+            kind: "tmux".into(),
+            id: "%1".into(),
+        });
+
+        let palette = crate::theme::palette();
+        let line = build_status_line(&info, 120, palette);
+
+        for span in line.spans {
+            assert_eq!(span.style.bg, Some(palette.top_bar_bg));
+        }
+    }
+
+    #[test]
+    fn top_bar_uses_white_text_and_gray_separator_tokens() {
+        let mut info = sysinfo().clone();
+        info.hostname = "host".into();
+        info.os = "linux".into();
+        info.os_distro.clear();
+        info.arch = "x86_64".into();
+        info.has_battery = false;
+        info.in_container = false;
+        info.multiplexer = None;
+
+        let palette = crate::theme::palette();
+        let line = build_status_line(&info, 80, palette);
+
+        assert_eq!(line.spans[0].style.fg, Some(palette.top_bar_fg));
+        assert_eq!(line.spans[1].style.fg, Some(palette.top_bar_dim));
+    }
 }

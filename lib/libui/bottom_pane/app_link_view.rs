@@ -334,7 +334,12 @@ impl AppLinkView {
 
         lines.push(Line::from(""));
         lines.push(Line::from(vec!["Setup URL:".dim()]));
-        let url_line = Line::from(vec![self.url.clone().cyan().underlined()]);
+        let url_line = Line::from(vec![
+            self.url
+                .clone()
+                .fg(crate::theme::accent_color())
+                .underlined(),
+        ]);
         lines.extend(adaptive_wrap_lines(
             vec![url_line],
             RtOptions::new(usable_width),

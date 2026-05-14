@@ -27,6 +27,7 @@ use crate::protocol::SandboxPolicy;
 use crate::protocol::TurnStartedEvent;
 use crate::sandboxing::ExecRequest;
 use crate::sandboxing::SandboxPermissions;
+use crate::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use crate::state::TaskKind;
 use crate::tools::format_exec_output_str;
 use crate::tools::runtimes::maybe_wrap_shell_lc_with_snapshot;
@@ -156,13 +157,15 @@ pub(crate) async fn execute_user_shell_command(
         .await;
 
     let sandbox_policy = SandboxPolicy::RootAccess;
+    let mut shell_env = create_env(
+        &turn_context.shell_environment_policy,
+        Some(session.conversation_id),
+    );
+    shell_env.remove(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR);
     let exec_env = ExecRequest {
         command: exec_command.clone(),
         cwd: cwd.clone(),
-        env: create_env(
-            &turn_context.shell_environment_policy,
-            Some(session.conversation_id),
-        ),
+        env: shell_env,
         network: turn_context.network.clone(),
         // TODO(zhao-oai): Now that we have ExecExpiration::Cancellation, we
         // should use that instead of an "arbitrarily large" timeout here.
@@ -170,7 +173,10 @@ pub(crate) async fn execute_user_shell_command(
         sandbox: SandboxType::None,
         sandbox_permissions: SandboxPermissions::UseDefault,
         vfs_policy: VfsPolicy::from(&sandbox_policy),
-        socket_policy: SocketPolicy::from(&sandbox_policy),
+        // User shell commands intentionally preserve direct shell semantics and
+        // should not inherit the network-disabled marker used for sandboxed
+        // tool calls.
+        socket_policy: SocketPolicy::Enabled,
         justification: None,
         arg0: None,
     };

@@ -44,7 +44,11 @@ pub fn new_patch_event(changes: HashMap<PathBuf, FileChange>, cwd: &Path) -> Pat
 pub fn new_patch_apply_failure(stderr: String) -> PlainHistoryCell {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    lines.push(Line::from("✘ Failed to apply patch".magenta().bold()));
+    lines.push(Line::from(
+        "✘ Failed to apply patch"
+            .fg(crate::theme::annotation_color())
+            .bold(),
+    ));
 
     if !stderr.trim().is_empty() {
         let output = output_lines(

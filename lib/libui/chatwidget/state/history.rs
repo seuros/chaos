@@ -521,9 +521,9 @@ impl ChatWidget {
         let line = vec![
             "• ".into(),
             "Thread renamed to ".into(),
-            name.cyan(),
+            name.fg(crate::theme::accent_color()),
             ", to resume this thread run ".into(),
-            resume_cmd.cyan(),
+            resume_cmd.fg(crate::theme::accent_color()),
         ];
         PlainHistoryCell::new(vec![line.into()])
     }

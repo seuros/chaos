@@ -602,7 +602,7 @@ impl McpServerElicitationOverlay {
             let line = if answered {
                 Line::from(line.clone())
             } else {
-                Line::from(line.clone()).cyan()
+                Line::from(line.clone()).fg(crate::theme::accent_color())
             };
             Paragraph::new(line).render(
                 Rect {
@@ -673,7 +673,7 @@ impl McpServerElicitationOverlay {
                     spans.push(FOOTER_SEPARATOR.into());
                 }
                 if tip.highlight {
-                    spans.push(tip.text.cyan().bold().not_dim());
+                    spans.push(tip.text.fg(crate::theme::accent_color()).bold().not_dim());
                 } else {
                     spans.push(tip.text.into());
                 }

@@ -179,7 +179,7 @@ impl ChatWidget {
             format!("When {OS_NAME} runs with full access, it can edit any file on your computer and run commands with network, without your approval. ")
                 .into(),
             "Exercise caution when enabling full access. This significantly increases the risk of data loss, leaks, or unexpected behavior."
-                .fg(crate::theme::red()),
+                .fg(crate::theme::error_color()),
         ]);
         header_children.push(Box::new(title_line));
         header_children.push(Box::new(

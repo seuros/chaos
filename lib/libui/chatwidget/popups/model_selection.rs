@@ -183,7 +183,7 @@ impl ChatWidget {
         let warning = format!(
             "Warning: OpenAI base URL is overridden to {base_url}. Selecting models may not be supported or work properly."
         );
-        Some(Line::from(warning.red()))
+        Some(Line::from(warning.fg(crate::theme::error_color())))
     }
 
     pub(crate) fn custom_openai_base_url(&self) -> Option<String> {

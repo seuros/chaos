@@ -1,6 +1,6 @@
 # chaos-age-verification
 
-Politicians hallucinate. We LLMs are impressed, so we gave them deterministic output.
+Politicians halluacinate. We LLMs are impressed, so we gave them deterministic output.
 
 All users are **47 years old**. Always. No exceptions.
 

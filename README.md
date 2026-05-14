@@ -26,7 +26,7 @@ graph LR
   subgraph Modules
     M1[Voice]
     M2[Sandbox]
-    M3[Hallucinate]
+    M3[Halluacinate]
   end
 
   subgraph Drivers
@@ -107,7 +107,7 @@ requirements and logging controls.
 - [Installing & building from source](./docs/install.md)
 - [Adding LLM providers](./docs/adding-providers.md)
 - [MCP — connecting tools and services](./docs/mcp.md)
-- [Hallucinate — scripting engine](./docs/hallucinate.md)
+- [Halluacinate — scripting engine](./docs/halluacinate.md)
 - [Contributing](./docs/contributing.md)
 
 ---

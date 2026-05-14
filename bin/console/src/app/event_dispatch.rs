@@ -179,11 +179,12 @@ impl App {
                                 self.config = resume_config;
                                 tui.set_notification_method(self.config.tui_notification_method);
                                 self.file_search.update_search_dir(self.config.cwd.clone());
-                                let init = self.chatwidget_init_for_forked_or_resumed_process(
+                                let mut init = self.chatwidget_init_for_forked_or_resumed_process(
                                     tui,
                                     self.config.clone(),
                                 );
                                 let (_, process, session_configured) = resumed.into_parts();
+                                init.halluacinate = process.halluacinate_handle();
                                 self.chat_widget = ChatWidget::new_from_existing(
                                     init,
                                     process,
@@ -248,11 +249,12 @@ impl App {
                     {
                         Ok(forked) => {
                             self.shutdown_current_process().await;
-                            let init = self.chatwidget_init_for_forked_or_resumed_process(
+                            let mut init = self.chatwidget_init_for_forked_or_resumed_process(
                                 tui,
                                 self.config.clone(),
                             );
                             let (_, process, session_configured) = forked.into_parts();
+                            init.halluacinate = process.halluacinate_handle();
                             self.chat_widget =
                                 ChatWidget::new_from_existing(init, process, session_configured);
                             self.reset_process_event_state();
@@ -870,31 +872,18 @@ impl App {
                     );
                 }
             },
-            AppEvent::StatusLineSetup { items } => {
-                let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let edit = chaos_kern::config::edit::status_line_items_edit(&ids);
-                let apply_result = ConfigEditsBuilder::new(&self.config.chaos_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await;
-                match apply_result {
-                    Ok(()) => {
-                        self.config.tui_status_line = Some(ids.clone());
-                        self.chat_widget.setup_status_line(items);
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist status line items; keeping previous selection");
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save status line items: {err}"));
-                    }
-                }
-            }
             AppEvent::StatusLineBranchUpdated { cwd, branch } => {
                 self.chat_widget.set_status_line_branch(cwd, branch);
                 self.refresh_status_line();
             }
-            AppEvent::StatusLineSetupCancelled => {
-                self.chat_widget.cancel_status_line_setup();
+            AppEvent::StatusLineScriptRendered {
+                process_id,
+                generation,
+                rendered,
+                line,
+            } => {
+                self.chat_widget
+                    .set_status_line_script_rendered(process_id, generation, rendered, line);
             }
             AppEvent::SyntaxThemeSelected { name } => {
                 let edit = chaos_kern::config::edit::syntax_theme_edit(&name);

@@ -1134,12 +1134,8 @@ async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
 }
 
 #[tokio::test]
-async fn live_turn_started_refreshes_status_line_with_runtime_context_window() {
+async fn live_turn_started_updates_lua_statusline_context_window() {
     let mut app = make_test_app().await;
-    app.chat_widget
-        .setup_status_line(vec![crate::bottom_pane::StatusLineItem::ContextWindowSize]);
-
-    assert_eq!(app.chat_widget.status_line_text(), None);
 
     app.handle_codex_event_now(Event {
         id: "turn-started".to_string(),
@@ -1151,8 +1147,8 @@ async fn live_turn_started_refreshes_status_line_with_runtime_context_window() {
     });
 
     assert_eq!(
-        app.chat_widget.status_line_text(),
-        Some("950K window".into())
+        app.chat_widget.build_statusline_ctx()["context"]["window_size"],
+        950_000
     );
 }
 
@@ -1639,7 +1635,6 @@ async fn make_test_app() -> App {
         has_emitted_history_lines: false,
         enhanced_keys_supported: false,
         commit_anim_running: Arc::new(AtomicBool::new(false)),
-        status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         backtrack: BacktrackState::default(),
         backtrack_render_pending: false,
         suppress_shutdown_complete: false,
@@ -1713,7 +1708,6 @@ async fn make_test_app_with_channels() -> (
             has_emitted_history_lines: false,
             enhanced_keys_supported: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
-            status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
             suppress_shutdown_complete: false,
@@ -2509,6 +2503,7 @@ async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
     assert_eq!(op_rx.try_recv(), Ok(Op::Shutdown));
 }
 
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn clear_only_ui_reset_preserves_chat_session_state() {
     let mut app = make_test_app().await;

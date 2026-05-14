@@ -10,8 +10,7 @@
 //! otherwise idle.
 //!
 //! Terminology used in this module:
-//! - "status line" means the configurable contextual row built from `/statusline` items such as
-//!   model, git branch, and context usage.
+//! - "status line" means the contextual row rendered by the Lua statusline hook.
 //! - "instructional footer" means a row that tells the user what to do next, such as quit
 //!   confirmation, shortcut help, or queue hints.
 //! - "contextual footer" means the footer is free to show ambient context instead of an

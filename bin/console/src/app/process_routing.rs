@@ -185,6 +185,13 @@ impl App {
 
         if let EventMsg::SessionConfigured(session) = &event.msg {
             let process_id = session.session_id;
+            let halluacinate = self
+                .server
+                .get_process(process_id)
+                .await
+                .ok()
+                .and_then(|process| process.halluacinate_handle());
+            self.chat_widget.set_halluacinate_handle(halluacinate);
             self.primary_process_id = Some(process_id);
             self.primary_session_configured = Some(session.clone());
             self.upsert_agent_picker_thread(

@@ -575,12 +575,12 @@ pub(crate) async fn built_tools(
             .collect::<Vec<_>>()
     };
 
-    // Add script tools from the hallucinate engine (Lua/WASM user scripts).
-    if let Some(ref handle) = sess.services.hallucinate {
+    // Add script tools from the halluacinate engine (Lua/WASM user scripts).
+    if let Some(ref handle) = sess.services.halluacinate {
         let script_tools = handle.list_tools().await;
         for tool in script_tools {
             catalog_tools.push((
-                "hallucinate".to_string(),
+                "halluacinate".to_string(),
                 chaos_traits::catalog::CatalogTool {
                     name: tool.name,
                     description: tool.description,
@@ -606,7 +606,7 @@ pub(crate) async fn built_tools(
             app_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools,
-            hallucinate: sess.services.hallucinate.clone(),
+            halluacinate: sess.services.halluacinate.clone(),
             plan_mode,
         },
     )))

@@ -1,6 +1,6 @@
-//! Async handle to the Hallucinate script engine.
+//! Async handle to the Halluacinate script engine.
 //!
-//! `HallucinateHandle` is the cheaply-cloneable interface the kernel uses
+//! `HalluacinateHandle` is the cheaply-cloneable interface the kernel uses
 //! to talk to the script engine thread. All communication goes through an
 //! mpsc channel; responses come back via oneshot. Engine-agnostic — works
 //! with Lua, WASM, or any backend that implements `ScriptEngine`.
@@ -8,6 +8,15 @@
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+
+/// One rendered segment in a Lua-defined status line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusLineSpan {
+    pub text: String,
+    pub color: Option<String>,
+    pub bold: bool,
+    pub line_break: bool,
+}
 
 /// Result of dispatching a hook to Lua scripts.
 #[derive(Debug, Clone)]
@@ -58,6 +67,11 @@ pub enum ScriptRequest {
     Reload {
         reply: oneshot::Sender<ReloadResult>,
     },
+    /// Render the status line via a Lua function.
+    RenderStatusLine {
+        ctx: JsonValue,
+        reply: oneshot::Sender<Option<Vec<StatusLineSpan>>>,
+    },
     /// Shut down the engine thread.
     Shutdown,
 }
@@ -69,13 +83,13 @@ pub struct ReloadResult {
     pub errors: Vec<String>,
 }
 
-/// Async handle to the Hallucinate engine. Clone-friendly.
+/// Async handle to the Halluacinate engine. Clone-friendly.
 #[derive(Clone)]
-pub struct HallucinateHandle {
+pub struct HalluacinateHandle {
     tx: mpsc::Sender<ScriptRequest>,
 }
 
-impl HallucinateHandle {
+impl HalluacinateHandle {
     /// Create a new handle from a channel sender.
     pub fn new(tx: mpsc::Sender<ScriptRequest>) -> Self {
         Self { tx }
@@ -107,12 +121,12 @@ impl HallucinateHandle {
         if self.tx.send(req).await.is_err() {
             return ToolResult {
                 success: false,
-                output: "hallucinate engine unavailable".to_owned(),
+                output: "halluacinate engine unavailable".to_owned(),
             };
         }
         reply_rx.await.unwrap_or(ToolResult {
             success: false,
-            output: "hallucinate engine did not respond".to_owned(),
+            output: "halluacinate engine did not respond".to_owned(),
         })
     }
 
@@ -140,6 +154,21 @@ impl HallucinateHandle {
             scripts_loaded: 0,
             errors: vec!["engine did not respond".to_owned()],
         })
+    }
+
+    /// Render a status line using a registered Lua function.
+    ///
+    /// Returns `None` if no renderer is registered or the engine is unreachable.
+    pub async fn render_statusline(&self, ctx: JsonValue) -> Option<Vec<StatusLineSpan>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let req = ScriptRequest::RenderStatusLine {
+            ctx,
+            reply: reply_tx,
+        };
+        if self.tx.send(req).await.is_err() {
+            return None;
+        }
+        reply_rx.await.unwrap_or(None)
     }
 
     /// Request engine shutdown.

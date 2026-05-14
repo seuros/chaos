@@ -239,7 +239,7 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
             app_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools: vec![],
-            hallucinate: None,
+            halluacinate: None,
             plan_mode: false,
         },
     ));
@@ -471,7 +471,7 @@ fn make_test_session_services(
             true,
             Session::build_model_client_beta_features_header(config),
         ),
-        hallucinate: None,
+        halluacinate: None,
     }
 }
 

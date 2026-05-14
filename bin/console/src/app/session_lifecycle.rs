@@ -1,7 +1,7 @@
 use super::{
     AgentNavigationState, App, AppEvent, AppEventSender, AppExitInfo, AppRunControl, Arc,
-    AtomicBool, AuthManager, BacktrackState, Cell, ChatWidget, Config, ConfigOverrides, Duration,
-    Event, EventMsg, ExitMode, FileSearchManager, HashMap, Line, LogPanelState,
+    AuthManager, BacktrackState, Cell, ChatWidget, Config, ConfigOverrides, Duration, Event,
+    EventMsg, ExitMode, FileSearchManager, HashMap, Line, LogPanelState,
     PROCESS_EVENT_CHANNEL_CAPACITY, ProcessEventChannel, ProcessEventSnapshot, ProcessId,
     ProcessTable, Rc, RefCell, RefreshStrategy, Result, SessionConfiguredEvent, SessionSelection,
     SessionSource, SessionTelemetry, StateRuntime, Stylize, TelemetryAuthMode, TileManager,
@@ -12,6 +12,7 @@ use chaos_ipc::protocol::Op;
 use chaos_kern::ChaosAuth;
 use chaos_kern::models_manager::CollaborationModesConfig;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::broadcast;
 
 impl App {
@@ -31,8 +32,8 @@ impl App {
             models_manager: self.server.get_models_manager(),
             is_first_run: false,
             model: Some(self.chat_widget.current_model().to_string()),
-            status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
             session_telemetry: self.session_telemetry.clone(),
+            halluacinate: None,
         }
     }
 
@@ -113,8 +114,8 @@ impl App {
             models_manager: self.server.get_models_manager(),
             is_first_run: false,
             model: Some(model),
-            status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
             session_telemetry: self.session_telemetry.clone(),
+            halluacinate: None,
         };
         self.chat_widget = ChatWidget::new(init, self.server.clone());
         self.reset_process_event_state();
@@ -248,16 +249,6 @@ impl App {
             chaos_kern::terminal::user_agent(),
             SessionSource::Cli,
         );
-        if config
-            .tui_status_line
-            .as_ref()
-            .is_some_and(|cmd| !cmd.is_empty())
-        {
-            session_telemetry.counter("chaos.status_line", /*inc*/ 1, &[]);
-        }
-
-        let status_line_invalid_items_warned = Arc::new(AtomicBool::new(false));
-
         let enhanced_keys_supported = tui.enhanced_keys_supported();
         let wait_for_initial_session_configured =
             Self::should_wait_for_initial_session(&session_selection);
@@ -278,8 +269,8 @@ impl App {
                     models_manager: process_table.get_models_manager(),
                     is_first_run,
                     model: Some(model.clone()),
-                    status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     session_telemetry: session_telemetry.clone(),
+                    halluacinate: None,
                 };
                 ChatWidget::new(init, process_table.clone())
             }
@@ -295,6 +286,7 @@ impl App {
                     .wrap_err_with(|| {
                         format!("Failed to resume session {}", target_session.process_id)
                     })?;
+                let (_, process, session_configured) = resumed.into_parts();
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
@@ -310,10 +302,9 @@ impl App {
                     models_manager: process_table.get_models_manager(),
                     is_first_run,
                     model: config.model.clone(),
-                    status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     session_telemetry: session_telemetry.clone(),
+                    halluacinate: process.halluacinate_handle(),
                 };
-                let (_, process, session_configured) = resumed.into_parts();
                 ChatWidget::new_from_existing(init, process, session_configured)
             }
             SessionSelection::Fork(target_session) => {
@@ -334,6 +325,7 @@ impl App {
                     .wrap_err_with(|| {
                         format!("Failed to fork session {}", target_session.process_id)
                     })?;
+                let (_, process, session_configured) = forked.into_parts();
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
@@ -349,10 +341,9 @@ impl App {
                     models_manager: process_table.get_models_manager(),
                     is_first_run,
                     model: config.model.clone(),
-                    status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     session_telemetry: session_telemetry.clone(),
+                    halluacinate: process.halluacinate_handle(),
                 };
-                let (_, process, session_configured) = forked.into_parts();
                 ChatWidget::new_from_existing(init, process, session_configured)
             }
         };
@@ -385,7 +376,6 @@ impl App {
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
-            status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
             suppress_shutdown_complete: false,

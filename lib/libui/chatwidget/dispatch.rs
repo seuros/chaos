@@ -152,9 +152,6 @@ impl ChatWidget {
             SlashCommand::DebugConfig => {
                 self.add_debug_config_output();
             }
-            SlashCommand::Statusline => {
-                self.open_status_line_setup();
-            }
             SlashCommand::Theme => {
                 self.open_theme_picker();
             }

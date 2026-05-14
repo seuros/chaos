@@ -62,7 +62,7 @@ members = [
     "var/proc",
 
     # share/ — extensions + data
-    "share/hallucinate",
+    "share/halluacinate",
     "share/lsd",
     "share/dtrace",
     "share/age-verification",
@@ -184,7 +184,7 @@ chaos-sysctl = { path = "etc/sysctl" }
 chaos-proc = { path = "var/proc" }
 
 # Internal — share/
-chaos-hallucinate = { path = "share/hallucinate" }
+chaos-halluacinate = { path = "share/halluacinate" }
 chaos-lsd = { path = "share/lsd" }
 chaos-dtrace = { path = "share/dtrace" }
 

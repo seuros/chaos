@@ -1,4 +1,4 @@
-//! Chaos Hallucinate — multi-engine scripting runtime.
+//! Chaos Halluacinate — multi-engine scripting runtime.
 //!
 //! Embeds sandboxed script engines and exposes Chaos internals to user
 //! scripts. Custom tools, hooks, policy rules, workflow automation — all
@@ -20,8 +20,9 @@ pub mod vm;
 
 pub use api::SessionInfo;
 pub use engine::ScriptEngine;
-pub use handle::HallucinateHandle;
+pub use handle::HalluacinateHandle;
 pub use handle::HookResult;
 pub use handle::ScriptTool;
+pub use handle::StatusLineSpan;
 pub use handle::ToolResult;
 pub use vm::spawn;

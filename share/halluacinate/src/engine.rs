@@ -1,4 +1,4 @@
-//! Script engine trait — the contract between the hallucinate runtime
+//! Script engine trait — the contract between the halluacinate runtime
 //! and any script backend (Lua, WASM, or whatever comes next).
 
 use serde_json::Value as JsonValue;

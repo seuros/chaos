@@ -1,7 +1,7 @@
 pub mod apply_patch;
 mod catalog_module;
 mod dynamic;
-mod hallucinate;
+mod halluacinate;
 mod mcp;
 mod mcp_resource;
 mod mcp_task;
@@ -31,7 +31,7 @@ pub use catalog_module::CatalogModuleHandler;
 use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::protocol::ApprovalPolicy;
 pub use dynamic::DynamicToolHandler;
-pub use hallucinate::HallucinateHandler;
+pub use halluacinate::HalluacinateHandler;
 pub use mcp::McpHandler;
 pub use mcp_resource::McpResourceHandler;
 pub use mcp_task::McpTaskHandler;

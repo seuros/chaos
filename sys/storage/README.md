@@ -3,6 +3,17 @@
 Backend-agnostic persistence layer. SQLite for the common case; Postgres when the
 operator needs it. Everything that needs to survive a restart goes through here.
 
+## In-memory SQLite validation
+
+For test isolation, set `CHAOS_STORAGE_URL` before starting the test process:
+
+```sh
+CHAOS_STORAGE_URL=sqlite::memory: cargo test -p libui
+```
+
+Set this outside the test process rather than mutating environment variables from
+individual parallel tests.
+
 ## Local Postgres validation
 
 The bounded Postgres validation path is env-gated so the normal test suite stays

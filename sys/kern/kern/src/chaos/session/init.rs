@@ -482,7 +482,7 @@ impl Session {
             .original_config_do_not_use
             .disable_user_scripts
             .then(|| std::path::PathBuf::from("/dev/null/no_user_scripts"));
-        let hallucinate = match chaos_hallucinate::spawn(chaos_hallucinate::SessionInfo {
+        let halluacinate = match chaos_halluacinate::spawn(chaos_halluacinate::SessionInfo {
             session_id: conversation_id.to_string(),
             cwd: session_configuration.cwd.to_string_lossy().to_string(),
             provider: session_configuration.provider.name.clone(),
@@ -490,7 +490,7 @@ impl Session {
         }) {
             Ok(handle) => Some(handle),
             Err(e) => {
-                tracing::warn!("hallucinate engine failed to start: {e}");
+                tracing::warn!("halluacinate engine failed to start: {e}");
                 None
             }
         };
@@ -522,7 +522,7 @@ impl Session {
             network_proxy,
             network_approval: Arc::clone(&network_approval),
             runtime_db: state_db_ctx.clone(),
-            hallucinate,
+            halluacinate,
             model_client: crate::client::ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
                 conversation_id,

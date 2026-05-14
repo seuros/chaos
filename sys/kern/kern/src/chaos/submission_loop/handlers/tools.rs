@@ -62,15 +62,15 @@ pub async fn list_all_tools(sess: &Session, _config: &Arc<Config>, sub_id: Strin
             .collect()
     };
 
-    // Include script-defined tools from the hallucinate engine.
-    if let Some(ref handle) = sess.services.hallucinate {
+    // Include script-defined tools from the halluacinate engine.
+    if let Some(ref handle) = sess.services.halluacinate {
         for tool in handle.list_tools().await {
             tools.push(ToolSummary {
                 name: tool.name,
                 description: tool.description,
                 annotation_labels: Vec::new(),
                 annotations: None,
-                source: "hallucinate".to_string(),
+                source: "halluacinate".to_string(),
             });
         }
     }

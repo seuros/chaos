@@ -1,10 +1,10 @@
-//! Hallucinate driver — dispatches tool calls to user-defined Lua/WASM scripts.
+//! Halluacinate driver — dispatches tool calls to user-defined Lua/WASM scripts.
 //!
 //! Script tools are discovered at session startup from `~/.config/chaos/scripts/`
 //! and `.chaos/scripts/`. Each script can register tools via `chaos.tool()`.
-//! This handler routes the model's tool calls to the hallucinate engine thread.
+//! This handler routes the model's tool calls to the halluacinate engine thread.
 
-use chaos_hallucinate::HallucinateHandle;
+use chaos_halluacinate::HalluacinateHandle;
 
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
@@ -13,11 +13,11 @@ use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
-pub struct HallucinateHandler {
-    pub handle: HallucinateHandle,
+pub struct HalluacinateHandler {
+    pub handle: HalluacinateHandle,
 }
 
-impl ToolHandler for HallucinateHandler {
+impl ToolHandler for HalluacinateHandler {
     type Output = FunctionToolOutput;
 
     fn kind(&self) -> ToolKind {

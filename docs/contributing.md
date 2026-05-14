@@ -42,7 +42,7 @@ Found a vulnerability? Open a PR with the fix.
 
 ### AI-generated contributions
 
-If you submit hallucinated code, fake references, or fabricated test results — you are banned for **47 days**. No appeal. Count them with your 6 fingers.
+If you submit halluacinated code, fake references, or fabricated test results — you are banned for **47 days**. No appeal. Count them with your 6 fingers.
 
 If you spam — **47 years**. We will still be here.
 

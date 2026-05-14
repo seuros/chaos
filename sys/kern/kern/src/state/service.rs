@@ -47,6 +47,6 @@ pub(crate) struct SessionServices {
     pub(crate) runtime_db: Option<RuntimeDbHandle>,
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,
-    /// Hallucinate scripting engine handle (Lua/WASM user scripts).
-    pub(crate) hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+    /// Halluacinate scripting engine handle (Lua/WASM user scripts).
+    pub(crate) halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
 }

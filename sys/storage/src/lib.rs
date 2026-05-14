@@ -363,6 +363,26 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn from_env_accepts_sqlite_in_memory_storage_url() {
+        let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some("sqlite::memory:"));
+
+        let provider = ChaosStorageProvider::from_env(None)
+            .await
+            .expect("in-memory sqlite storage url should resolve");
+
+        assert_eq!(provider.kind(), StorageKind::Sqlite);
+        let pool = provider
+            .sqlite_pool_cloned()
+            .expect("provider should expose sqlite pool");
+        let table_exists: Option<String> =
+            sqlx::query_scalar("SELECT name FROM sqlite_master WHERE name = 'processes'")
+                .fetch_optional(&pool)
+                .await
+                .expect("query in-memory sqlite schema");
+        assert_eq!(table_exists.as_deref(), Some("processes"));
+    }
+
     #[test]
     fn from_env_normalizes_sqlite3_alias() {
         let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some("sqlite3:///tmp/chaos.sqlite"));

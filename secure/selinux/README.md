@@ -12,7 +12,7 @@
 
 ## Policy shapes
 
-- Prefix rules use Lua syntax (evaluated by the Hallucinate sandboxed VM):
+- Prefix rules use Lua syntax (evaluated by the Halluacinate sandboxed VM):
 
 ```lua
 prefix_rule {

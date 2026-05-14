@@ -874,7 +874,7 @@ fn assert_model_tools(
                     })
                     .collect()
             },
-            hallucinate: None,
+            halluacinate: None,
             plan_mode: false,
         },
     );

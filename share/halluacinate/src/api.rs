@@ -41,6 +41,8 @@ pub struct ScriptRegistrations {
     pub hooks: HashMap<String, Vec<RegistryKey>>,
     /// Tool name → (spec, handler registry key).
     pub tools: HashMap<String, (ScriptTool, RegistryKey)>,
+    /// Optional status-line renderer function.
+    pub statusline_renderer: Option<RegistryKey>,
 }
 
 impl ScriptRegistrations {
@@ -106,6 +108,20 @@ pub fn create_chaos_table(
                 .lock()
                 .map_err(|e| mlua::Error::runtime(format!("lock poisoned: {e}")))?;
             guard.tools.insert(name, (tool, handler_key));
+            Ok(())
+        })?,
+    )?;
+
+    // chaos.statusline(handler_fn)
+    let regs = registrations.clone();
+    chaos.set(
+        "statusline",
+        lua.create_function(move |lua, handler: Function| {
+            let key = lua.create_registry_value(handler)?;
+            let mut guard = regs
+                .lock()
+                .map_err(|e| mlua::Error::runtime(format!("lock poisoned: {e}")))?;
+            guard.statusline_renderer = Some(key);
             Ok(())
         })?,
     )?;

@@ -267,12 +267,6 @@ pub struct Config {
     /// - `never`: Never use alternate screen (inline mode, preserves scrollback).
     pub tui_alternate_screen: AltScreenMode,
 
-    /// Ordered list of status line item identifiers for the TUI.
-    ///
-    /// When unset, the TUI defaults to: `model-with-reasoning`, `context-remaining`, and
-    /// `current-dir`.
-    pub tui_status_line: Option<Vec<String>>,
-
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
 
@@ -482,7 +476,7 @@ pub struct Config {
     /// OTEL configuration (exporter type, endpoint, headers, etc.).
     pub otel: crate::config::types::OtelConfig,
 
-    /// When `true`, the hallucinate engine skips the user-layer scripts
+    /// When `true`, the halluacinate engine skips the user-layer scripts
     /// directory (`$XDG_CONFIG_HOME/chaos/scripts/`).
     ///
     /// Not settable via config file — test-only escape hatch to prevent real

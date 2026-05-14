@@ -20,7 +20,6 @@ use chaos_locate::FileMatch;
 use chaos_sudoers::ApprovalPreset;
 
 use crate::bottom_pane::ApprovalRequest;
-use crate::bottom_pane::StatusLineItem;
 use crate::history_cell::HistoryCell;
 
 use chaos_ipc::config_types::CollaborationModeMask;
@@ -277,12 +276,13 @@ pub enum AppEvent {
         cwd: PathBuf,
         branch: Option<String>,
     },
-    /// Apply a user-confirmed status-line item ordering/selection.
-    StatusLineSetup {
-        items: Vec<StatusLineItem>,
+    /// Async result from a Lua statusline renderer.
+    StatusLineScriptRendered {
+        process_id: Option<ProcessId>,
+        generation: u64,
+        rendered: bool,
+        line: Option<ratatui::text::Line<'static>>,
     },
-    /// Dismiss the status-line setup UI without changing config.
-    StatusLineSetupCancelled,
 
     /// Apply a user-confirmed syntax theme selection.
     SyntaxThemeSelected {

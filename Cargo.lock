@@ -1510,7 +1510,7 @@ name = "chaos-glob"
 version = "47.0.0"
 
 [[package]]
-name = "chaos-hallucinate"
+name = "chaos-halluacinate"
 version = "47.0.0"
 dependencies = [
  "anyhow",
@@ -1638,7 +1638,7 @@ dependencies = [
  "chaos-dtrace",
  "chaos-epoll",
  "chaos-git",
- "chaos-hallucinate",
+ "chaos-halluacinate",
  "chaos-ipc",
  "chaos-journald",
  "chaos-keyring",
@@ -6656,6 +6656,7 @@ dependencies = [
  "chaos-getopt",
  "chaos-git",
  "chaos-glob",
+ "chaos-halluacinate",
  "chaos-highlight",
  "chaos-ipc",
  "chaos-jail-report",

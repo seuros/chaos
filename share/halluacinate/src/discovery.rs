@@ -113,7 +113,8 @@ mod tests {
         fs::write(scripts_dir.join("not_lua.txt"), "-- ignored").unwrap();
 
         // Pass a non-existent path as the user-layer override so real user
-        // scripts (e.g. ~/.config/chaos/scripts/hello.lua) are never loaded.
+        // scripts (e.g. ~/.config/chaos/scripts/project_info.lua) are never
+        // loaded.
         let found = discover_scripts(tmp.path(), Some(&tmp.path().join("no_user_scripts")));
         let names: Vec<&str> = found
             .iter()

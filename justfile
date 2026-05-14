@@ -8,7 +8,7 @@ help:
 # Run chaos (debug build)
 alias c := chaos
 chaos *args:
-    cargo run --bin chaos -- {{args}}
+    RUSTC_WRAPPER= cargo run --bin chaos -- {{args}}
 
 # Run chaos with max optimization: release profile (fat LTO, single
 # codegen unit, stripped symbols) plus `-C target-cpu=native` so the
@@ -16,11 +16,11 @@ chaos *args:
 # project, so portable codegen is wasted on a daily-driver binary.
 alias b := bigbang
 bigbang *args:
-    RUSTFLAGS="-C target-cpu=native" cargo run --release --bin chaos -- {{args}}
+    RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo run --release --bin chaos -- {{args}}
 
 # Build the chaos binary (debug profile).
 build *args:
-    cargo build --bin chaos {{args}}
+    RUSTC_WRAPPER= cargo build --bin chaos {{args}}
 
 # Install chaos into ~/.cargo/bin (release + target-cpu=native).
 install:
@@ -167,34 +167,34 @@ install:
         [ -n "$need_dbus_pkg" ]     && echo "  ensure PKG_CONFIG_PATH points at a directory with dbus-1.pc" >&2
         exit 1
     fi
-    RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
+    RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
 
 # Format code
 fmt:
-    cargo fmt
+    RUSTC_WRAPPER= cargo fmt
 
 # Clippy with all features, deny warnings
 clippy:
-    scripts/with-local-qa-tmp.sh cargo clippy --workspace --all-features --tests -- -D warnings
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo clippy --workspace --all-features --tests -- -D warnings
 
 # Check compilation without building
 check:
-    scripts/with-local-qa-tmp.sh cargo check --workspace --all-targets --all-features
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo check --workspace --all-targets --all-features
 
 # Run tests with all features
 test *args:
-    scripts/with-local-qa-tmp.sh cargo nextest run --workspace --all-features --no-fail-fast {{args}}
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo nextest run --workspace --all-features --no-fail-fast {{args}}
 
 # Run the bounded Postgres validation set for the new storage path.
 postgres-validate-storage database_url:
-    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
 
 postgres-validate-cron database_url:
-    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
 
 postgres-validate-new-storage-path database_url:
-    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
-    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
 
 # Lint + check + clippy (no tests)
 qq: fmt check clippy
@@ -216,13 +216,13 @@ clean-qa:
 
 # Fix clippy warnings automatically
 fix:
-    scripts/with-local-qa-tmp.sh cargo clippy --fix --workspace --all-features --tests --allow-dirty
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo clippy --fix --workspace --all-features --tests --allow-dirty
 
 # Run the MCP server
 mcp-server-run *args:
-    cargo run -p chaos-mcpd -- {{args}}
+    RUSTC_WRAPPER= cargo run -p chaos-mcpd -- {{args}}
 
 # Write hooks JSON schema fixtures
 [no-cd]
 write-hooks-schema:
-    cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures
+    RUSTC_WRAPPER= cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures

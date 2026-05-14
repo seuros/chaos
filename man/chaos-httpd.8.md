@@ -1,18 +1,24 @@
-# chaos-httpd
+# chaos-httpd(8)
 
-HTTP trigger server. Turns Chaos into a webhook target.
+## NAME
 
-One request → one process → one response. No sessions, no streaming.
+chaos-httpd - run FreeChaOS as an HTTP trigger server
 
-## Usage
+## SYNOPSIS
 
-```
+```text
 chaos serve --bearer-token <TOKEN> [OPTIONS]
 ```
 
+## DESCRIPTION
+
+HTTP trigger server. Turns Chaos into a webhook target.
+
+One request -> one process -> one response. No sessions, no streaming.
+
 Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env var.
 
-### Options
+## OPTIONS
 
 | Flag | Default | Notes |
 |------|---------|-------|
@@ -30,7 +36,7 @@ Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env va
 
 Root-level flags (`--provider`, `-c key=value`, etc.) work as with other subcommands.
 
-## Endpoints
+## ENDPOINTS
 
 ### `GET /api/health`
 
@@ -100,7 +106,7 @@ All errors are JSON. `caller_session_id` and `conversation_id` are included when
 | `500` | Process error (agent failure, runtime crash). Internal details are logged, not returned. |
 | `504` | Timeout exceeded. Process is cleaned up. |
 
-## Architecture
+## ARCHITECTURE
 
 Runs in-process via `ProcessTable::start_process` — same runtime path as `chaos exec`, no subprocess.
 
@@ -117,6 +123,16 @@ The process lifecycle is split: `runner::start` creates the process handle, `run
 
 Headless mode (`ApprovalPolicy::Headless`) auto-approves tool use. Interactive events (approval requests, elicitations) are logged as warnings and skipped.
 
-### Deploy
+## DEPLOYMENT
 
 Expected behind a reverse proxy (nginx, Caddy, k8s ingress). No TLS, no rate limiting beyond the semaphore.
+
+## FILES
+
+- `CHAOS_BEARER_TOKEN` - bearer token environment variable
+- `~/.chaos/log/` - runtime logs for diagnosing server failures
+
+## SEE ALSO
+
+- [chaos-mcp.7](./chaos-mcp.7.md)
+- [chaos-install.7](./chaos-install.7.md)

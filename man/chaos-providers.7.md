@@ -1,13 +1,17 @@
-# Adding LLM Providers
+# chaos-providers(7)
+
+## NAME
+
+chaos-providers - configure and select LLM providers for FreeChaOS
+
+## DESCRIPTION
 
 FreeChaOS is provider-agnostic. The kernel speaks the Chaos-ABI; adapters
 translate that to whatever wire format a given provider expects. New
-providers are added through `~/.chaos/config.toml` — no code changes, no
+providers are added through `~/.chaos/config.toml` - no code changes, no
 rebuilds.
 
----
-
-## What's built in
+## BUILT-IN PROVIDERS
 
 FreeChaOS ships with these providers preconfigured:
 
@@ -23,9 +27,7 @@ FreeChaOS ships with these providers preconfigured:
 Any other provider — DeepSeek, Groq, Ollama, MiniMax, Kimi, TensorZero,
 self-hosted gateways — is a config entry away.
 
----
-
-## How it works
+## WIRE FORMATS
 
 Providers speak one of four wire formats:
 
@@ -41,9 +43,7 @@ format is cached for the session.
 You add a `[model_providers.<id>]` block, set your API key in the
 environment, and go.
 
----
-
-## Examples
+## EXAMPLES
 
 ### xAI (Grok)
 
@@ -159,9 +159,7 @@ base_url = "https://api.minimax.io/anthropic"
 env_key = "MINIMAX_API_KEY"
 ```
 
----
-
-## Config reference
+## CONFIGURATION
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -179,9 +177,7 @@ env_key = "MINIMAX_API_KEY"
 | `supports_websockets` | no | Enable WebSocket transport (default: false) |
 | `experimental_bearer_token` | no | Hardcoded bearer token (discouraged — use `env_key`) |
 
----
-
-## Wire format selection
+## SELECTION RULES
 
 FreeChaOS resolves the wire format in this order:
 
@@ -191,9 +187,7 @@ FreeChaOS resolves the wire format in this order:
 
 There is no `wire_api = "anthropic"` option. The URL is the signal.
 
----
-
-## Troubleshooting
+## TROUBLESHOOTING
 
 **"env var not set"** — Export the API key variable listed in `env_key`.
 
@@ -209,3 +203,14 @@ stream_idle_timeout_ms = 600000
 
 **Rate limiting** — FreeChaOS retries 429s automatically. Increase
 `request_max_retries` if needed.
+
+## FILES
+
+- `~/.chaos/config.toml` - user-level provider configuration
+- `thirdparty.toml` - bundled provider definitions referenced by the tree
+
+## SEE ALSO
+
+- [chaos-install.7](./chaos-install.7.md)
+- [chaos-mcp.7](./chaos-mcp.7.md)
+- [chaos-halluacinate.7](./chaos-halluacinate.7.md)

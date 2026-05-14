@@ -1,11 +1,15 @@
-# Halluacinate — Scripting Engine
+# chaos-halluacinate(7)
+
+## NAME
+
+chaos-halluacinate - extend FreeChaOS with Lua tools, hooks, and statusline scripts
+
+## DESCRIPTION
 
 Halluacinate lets you teach FreeChaOS new tricks without recompiling. Drop a Lua
 script into the right folder and the LLM can call it as a tool.
 
----
-
-## Quick start
+## QUICK START
 
 Create a script at `~/.config/chaos/scripts/hello.lua`:
 
@@ -33,9 +37,7 @@ and you can override it by registering your own `chaos.statusline(...)` script.
 The built-in script loads first, then user scripts, then project scripts, so the
 last registered statusline wins.
 
----
-
-## Script locations
+## FILES
 
 Scripts are loaded automatically on session startup from two places:
 
@@ -49,9 +51,7 @@ same name. Scripts load in alphabetical order within each layer.
 
 Only `.lua` files are loaded. WASM support is planned.
 
----
-
-## API reference
+## API
 
 ### Session context
 
@@ -182,9 +182,7 @@ ctx.weekly
 UX, prefer the explicit fields like `ctx.tokens.context_effective` and
 `ctx.tokens.last_output`.
 
----
-
-## Available Lua globals
+## SANDBOX
 
 Scripts run in a sandbox. The following standard libraries are available:
 
@@ -200,9 +198,7 @@ The following are **blocked**:
 Each script gets its own isolated environment — scripts cannot interfere
 with each other.
 
----
-
-## Limits
+## LIMITS
 
 | Limit | Value |
 |-------|-------|
@@ -213,9 +209,7 @@ with each other.
 If a script exceeds these limits, the call fails and FreeChaOS continues
 without it.
 
----
-
-## Examples
+## EXAMPLES
 
 ### Timestamp tool
 
@@ -258,9 +252,7 @@ chaos.on("tool_call", function(payload)
 end)
 ```
 
----
-
-## Troubleshooting
+## TROUBLESHOOTING
 
 **Tool doesn't appear** — Check the file is in `~/.config/chaos/scripts/`
 or `.chaos/scripts/` and has a `.lua` extension. Check logs for load errors.
@@ -270,3 +262,8 @@ Common causes: syntax errors, exceeding memory or time limits.
 
 **Tool returns wrong result** — The handler must return a string. If you
 return a table or nil, the result will be empty.
+
+## SEE ALSO
+
+- [chaos-install.7](./chaos-install.7.md)
+- [chaos-mcp.7](./chaos-mcp.7.md)

@@ -97,18 +97,21 @@ just install
 `just install` builds `bin/chaos` with `-C target-cpu=native` and drops
 the binary into `~/.cargo/bin/chaos`. For a one-shot debug run without
 installing, use `just chaos`. For a local release run, use
-`just bigbang`. See [docs/install.md](./docs/install.md) for system
-requirements and logging controls.
+`just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
+for system requirements and logging controls.
 
 ---
 
 ## Docs
 
-- [Installing & building from source](./docs/install.md)
-- [Adding LLM providers](./docs/adding-providers.md)
-- [MCP — connecting tools and services](./docs/mcp.md)
-- [Halluacinate — scripting engine](./docs/halluacinate.md)
+- [Installing & building from source](./man/chaos-install.7.md)
+- [Adding LLM providers](./man/chaos-providers.7.md)
+- [MCP — connecting tools and services](./man/chaos-mcp.7.md)
+- [Halluacinate — scripting engine](./man/chaos-halluacinate.7.md)
 - [Contributing](./docs/contributing.md)
+- [Comparison](./docs/comparison.md)
+- [Open source fund](./docs/open-source-fund.md)
+- [Manual page index](./man/README.md)
 
 ---
 

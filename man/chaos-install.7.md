@@ -1,12 +1,26 @@
-## Installing & building
+# chaos-install(7)
 
-### System requirements
+## NAME
+
+chaos-install - build, install, and debug FreeChaOS from source
+
+## DESCRIPTION
+
+This page describes the supported host requirements, local build commands,
+installation path, and logging controls for FreeChaOS.
+
+In an installed system, this page would typically be installed as
+`share/man/man7/chaos-install.7`.
+
+## REQUIREMENTS
 
 | Requirement                 | Details                                                         |
 | --------------------------- | --------------------------------------------------------------- |
 | Operating systems           | Linux 6.10+, macOS 15+, FreeBSD 15+                            |
 | Git (optional, recommended) | 2.53+                                                           |
 | RAM                         | ~80 MB (MCP mode), ~128 MB (TUI mode) — MCP servers not included |
+
+## BUILD AND INSTALL
 
 ### Install from source
 
@@ -35,7 +49,7 @@ just bigbang
 just build
 ```
 
-## Tracing / verbose logging
+## LOGGING AND TRACING
 
 ### `--debug` flag
 
@@ -64,3 +78,17 @@ Press `ctrl+o` inside the TUI to open the log viewer as a full-screen overlay. N
 The non-interactive mode (`chaos exec`) defaults to `RUST_LOG=error`, printed inline.
 
 See the Rust docs on [`RUST_LOG`](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) for configuration options.
+
+## FILES
+
+- `~/.cargo/bin/chaos` - installed binary path used by `just install`
+- `~/.chaos/debug.log` - debug log enabled by `--debug`
+- `~/.chaos/log/chaos-console.log` - default TUI log file
+- `./justfile` - source-tree entry point for build and run shortcuts
+
+## SEE ALSO
+
+- [chaos-providers.7](./chaos-providers.7.md)
+- [chaos-mcp.7](./chaos-mcp.7.md)
+- [chaos-halluacinate.7](./chaos-halluacinate.7.md)
+- [chaos-httpd.8](./chaos-httpd.8.md)

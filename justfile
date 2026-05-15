@@ -168,6 +168,7 @@ install:
         exit 1
     fi
     RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
+    RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo install --path srv/journald --locked --force
 
 # Format code
 fmt:

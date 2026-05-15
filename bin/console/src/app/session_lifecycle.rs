@@ -275,17 +275,16 @@ impl App {
                 ChatWidget::new(init, process_table.clone())
             }
             SessionSelection::Resume(target_session) => {
+                let target_process_id = target_session.process_id;
                 let resumed = process_table
                     .resume_process(
                         config.clone(),
-                        target_session.process_id,
+                        target_process_id,
                         auth_manager.clone(),
                         /*parent_trace*/ None,
                     )
                     .await
-                    .wrap_err_with(|| {
-                        format!("Failed to resume session {}", target_session.process_id)
-                    })?;
+                    .wrap_err_with(|| format!("Failed to resume session {target_process_id}"))?;
                 let (_, process, session_configured) = resumed.into_parts();
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -305,7 +304,17 @@ impl App {
                     session_telemetry: session_telemetry.clone(),
                     halluacinate: process.halluacinate_handle(),
                 };
-                ChatWidget::new_from_existing(init, process, session_configured)
+                let mut chat_widget =
+                    ChatWidget::new_from_existing(init, process, session_configured);
+                chat_widget.add_plain_history_lines(vec![
+                    vec![
+                        "• ".into(),
+                        "Resumed session ".into(),
+                        target_process_id.to_string().cyan(),
+                    ]
+                    .into(),
+                ]);
+                chat_widget
             }
             SessionSelection::Fork(target_session) => {
                 session_telemetry.counter(

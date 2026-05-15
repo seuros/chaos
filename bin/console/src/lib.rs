@@ -675,13 +675,9 @@ async fn run_ratatui_app(
 
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
-    if chaos_kern::terminal::terminal_info().name == TerminalName::WezTerm {
-        // WezTerm does not add lines scrolled out of a bounded scroll region
-        // (DECSTBM with a pinned top row) to native scrollback. The sticky top
-        // bar reserves row 0 and uses a bounded region for history insertion,
-        // which makes mouse-wheel scrollback appear empty. Prefer native
-        // scrollback in WezTerm until the top bar can be rendered without
-        // constraining the scroll region.
+    if !use_alt_screen && chaos_kern::terminal::terminal_info().name == TerminalName::WezTerm {
+        // WezTerm does not add bounded-scroll-region output (DECSTBM) to native
+        // scrollback. Only relevant in inline mode; alt-screen has no scrollback anyway.
         tui.set_top_reserved_rows(0);
     }
     let managers = boot_core(&config);

@@ -1,5 +1,6 @@
 ---
 source: lib/libui/bottom_pane/approval_overlay.rs
+assertion_line: 628
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -19,24 +20,24 @@ Buffer {
         "  Press enter to confirm or esc to cancel                                                           ",
     ],
     styles: [
-        x: 0, y: 0, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 2, y: 1, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: BOLD,
-        x: 57, y: 1, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 10, y: 3, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: ITALIC,
-        x: 33, y: 3, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 0, y: 6, fg: Cyan, bg: DarkGray, underline: Reset, modifier: BOLD,
-        x: 28, y: 6, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 53, y: 7, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
-        x: 54, y: 7, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 45, y: 8, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
-        x: 46, y: 8, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 52, y: 9, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
-        x: 55, y: 9, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 0, y: 0, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 2, y: 1, fg: White, bg: Black, underline: Reset, modifier: BOLD,
+        x: 57, y: 1, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 10, y: 3, fg: White, bg: Black, underline: Reset, modifier: ITALIC,
+        x: 33, y: 3, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 0, y: 6, fg: Cyan, bg: Black, underline: Reset, modifier: BOLD,
+        x: 28, y: 6, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 53, y: 7, fg: Gray, bg: Black, underline: Reset, modifier: DIM,
+        x: 54, y: 7, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 45, y: 8, fg: Gray, bg: Black, underline: Reset, modifier: DIM,
+        x: 46, y: 8, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 52, y: 9, fg: Gray, bg: Black, underline: Reset, modifier: DIM,
+        x: 55, y: 9, fg: White, bg: Black, underline: Reset, modifier: NONE,
         x: 0, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 8, y: 11, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 8, y: 11, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
         x: 13, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 28, y: 11, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 28, y: 11, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
         x: 31, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
     ]
 }

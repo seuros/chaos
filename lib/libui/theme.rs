@@ -73,8 +73,8 @@ pub struct Palette {
     pub tertiary_accent: Color,
 }
 
-fn execution_palette() -> Palette {
-    if is_clamped() {
+fn execution_palette(clamped: bool) -> Palette {
+    if clamped {
         Palette {
             bg: Color::Black,
             fg: Color::White,
@@ -119,7 +119,7 @@ fn plan_palette() -> Palette {
         fg: Color::LightGreen,
         dim: Color::Green,
         highlight: Color::LightGreen,
-        top_bar_bg: Color::DarkGray,
+        top_bar_bg: Color::Green,
         top_bar_fg: Color::White,
         top_bar_dim: Color::Gray,
         user_msg_bg: Color::Black,
@@ -145,12 +145,18 @@ fn plan_badge_bg() -> Color {
     Color::Green
 }
 
+pub(crate) fn palette_for_mode(mode: ModeKind, clamped: bool) -> Palette {
+    match mode {
+        ModeKind::Plan => plan_palette(),
+        ModeKind::Default | ModeKind::PairProgramming | ModeKind::Execute => {
+            execution_palette(clamped)
+        }
+    }
+}
+
 /// Active palette. Switches to Anthropic orange when clamped.
 pub fn palette() -> Palette {
-    match collaboration_mode() {
-        ModeKind::Plan => plan_palette(),
-        ModeKind::Default | ModeKind::PairProgramming | ModeKind::Execute => execution_palette(),
-    }
+    palette_for_mode(collaboration_mode(), is_clamped())
 }
 
 /// Default base style — mode-aware foreground on black.

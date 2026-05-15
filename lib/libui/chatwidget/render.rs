@@ -173,6 +173,8 @@ impl ChatWidget {
         if self.halluacinate.is_none() {
             self.bottom_pane.set_status_line_enabled(false);
             self.set_status_line(None);
+        } else {
+            self.refresh_status_line();
         }
     }
 

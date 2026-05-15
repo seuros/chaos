@@ -27,6 +27,7 @@ use super::{
 };
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
+use crate::app_event::UiCommand;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::MentionBinding;
@@ -6184,6 +6185,53 @@ async fn preset_matching_accepts_workspace_write_with_extra_roots() {
     assert!(
         !ChatWidget::preset_matches_current(ApprovalPolicy::Headless, &current_sandbox, &preset),
         "approval mismatch should prevent matching the preset"
+    );
+}
+
+#[test]
+fn approval_preset_actions_emit_ui_refresh_after_permission_updates() {
+    let (tx, mut rx) = make_app_event_sender_with_rx();
+    let sandbox = SandboxPolicy::new_workspace_write_policy();
+    let expected_sandbox = sandbox.clone();
+    let mut actions = ChatWidget::approval_preset_actions(
+        ApprovalPolicy::Interactive,
+        sandbox,
+        "Default".to_string(),
+        ApprovalsReviewer::User,
+    );
+
+    let action = actions.pop().expect("preset should provide an action");
+    action(&tx);
+
+    let mut events = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
+
+    let sequence = events
+        .iter()
+        .map(|event| match event {
+            AppEvent::ChaosOp(Op::OverrideTurnContext {
+                approval_policy: Some(ApprovalPolicy::Interactive),
+                sandbox_policy: Some(policy),
+                approvals_reviewer: Some(ApprovalsReviewer::User),
+                ..
+            }) if policy == &expected_sandbox => "op",
+            AppEvent::UpdateApprovalPolicy(ApprovalPolicy::Interactive) => "approval",
+            AppEvent::UpdateSandboxPolicy(policy) if policy == &expected_sandbox => "sandbox",
+            AppEvent::UpdateApprovalsReviewer(ApprovalsReviewer::User) => "reviewer",
+            AppEvent::UiCommand(UiCommand::Refresh) => "refresh",
+            AppEvent::InsertHistoryCell(_) => "history",
+            other => panic!("unexpected event in permissions action sequence: {other:?}"),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        sequence,
+        vec![
+            "op", "approval", "sandbox", "reviewer", "refresh", "history"
+        ],
+        "permissions changes should emit a refresh command after queued config updates"
     );
 }
 

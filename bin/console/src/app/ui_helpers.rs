@@ -1,5 +1,6 @@
 use super::{
-    App, BacktrackState, Line, Overlay, PaneKind, Personality, ReasoningEffortConfig, Result, tui,
+    App, BacktrackState, Line, Overlay, PaneKind, Personality, ReasoningEffortConfig, Result,
+    UiCommand, tui,
 };
 
 impl App {
@@ -156,6 +157,15 @@ impl App {
 
     pub(super) fn refresh_status_line(&mut self) {
         self.chat_widget.refresh_status_line();
+    }
+
+    pub(super) fn handle_ui_command(&mut self, tui: &mut tui::Tui, command: UiCommand) {
+        match command {
+            UiCommand::Refresh => {
+                self.refresh_status_line();
+                tui.frame_requester().schedule_frame();
+            }
+        }
     }
 
     pub(super) fn on_all_tools_received(

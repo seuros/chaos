@@ -1,6 +1,7 @@
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::app_event::AppEvent;
+use crate::app_event::UiCommand;
 use crate::session_log;
 
 #[derive(Clone, Debug)]
@@ -24,5 +25,10 @@ impl AppEventSender {
         if let Err(e) = self.app_event_tx.send(event) {
             tracing::error!("failed to send event: {e}");
         }
+    }
+
+    /// Emit an imperative UI command over the app-event bus.
+    pub fn emit_ui_command(&self, command: UiCommand) {
+        self.send(AppEvent::UiCommand(command));
     }
 }

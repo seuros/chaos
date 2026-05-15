@@ -363,6 +363,9 @@ impl App {
                     self.refresh_pending_process_approvals().await;
                 }
             }
+            AppEvent::UiCommand(command) => {
+                self.handle_ui_command(tui, command);
+            }
             AppEvent::SubmitProcessOp { process_id, op } => {
                 self.submit_op_to_process(process_id, op).await;
             }

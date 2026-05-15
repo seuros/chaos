@@ -100,6 +100,7 @@ impl ChatWidget {
         if let Some(forked_from_id) = forked_from_id {
             self.emit_forked_process_event(forked_from_id);
         }
+        self.refresh_status_line();
         if !self.suppress_session_configured_redraw {
             self.request_redraw();
         }

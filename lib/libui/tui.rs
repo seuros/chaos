@@ -249,13 +249,13 @@ impl Tui {
         self.alt_screen_enabled = enabled;
     }
 
-    /// Set how many top rows the inline viewport reserves for chrome outside
-    /// the normal scrollback flow.
-    ///
-    /// Keeping this at zero preserves the terminal's native scrollback on
-    /// terminals that do not add bounded-scroll-region output to scrollback.
+    /// Override the number of top rows reserved for chrome outside normal scrollback.
     pub fn set_top_reserved_rows(&mut self, rows: u16) {
         self.top_reserved_rows = rows;
+    }
+
+    pub fn top_reserved_rows(&self) -> u16 {
+        self.top_reserved_rows
     }
 
     pub fn set_notification_method(&mut self, method: NotificationMethod) {

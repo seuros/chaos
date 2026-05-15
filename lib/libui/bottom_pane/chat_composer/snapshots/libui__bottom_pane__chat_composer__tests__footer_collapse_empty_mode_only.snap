@@ -10,4 +10,4 @@ expression: "render_test_backend_debug(width, height, |f|\n{ composer.render(f.a
 "                          "
 "                          "
 "                          "
-"       100% context left  "
+"  Default                 "

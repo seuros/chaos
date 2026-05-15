@@ -46,7 +46,7 @@ mod render;
 mod shortcuts;
 mod types;
 
-pub use collaboration_mode::mode_indicator_line;
+pub use render::best_right_mode_indicator_line;
 pub use render::can_show_left_with_context;
 pub use render::context_window_line;
 pub use render::esc_hint_mode;
@@ -89,6 +89,10 @@ mod tests {
     use shortcuts::ShortcutId;
     use types::ShortcutsState;
 
+    fn badge(kind: chaos_ipc::config_types::ModeKind) -> CollaborationModeIndicator {
+        CollaborationModeIndicator::new(kind, "gpt-5.4".to_string(), Some("high".to_string()))
+    }
+
     fn snapshot_footer(name: &str, props: FooterProps) {
         snapshot_footer_with_mode_indicator(name, 80, &props, None);
     }
@@ -123,7 +127,7 @@ mod tests {
         let left_mode_indicator = if status_line_active {
             None
         } else {
-            collaboration_mode_indicator
+            collaboration_mode_indicator.clone()
         };
         let available_width = area.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
         let mut truncated_status_line = if status_line_active
@@ -146,21 +150,19 @@ mod tests {
         } else {
             footer_line_width(
                 props,
-                left_mode_indicator,
+                left_mode_indicator.clone(),
                 show_cycle_hint,
                 show_shortcuts_hint,
                 show_queue_hint,
             )
         };
         let right_line = if status_line_active {
-            let full = mode_indicator_line(collaboration_mode_indicator, show_cycle_hint);
-            let compact = mode_indicator_line(collaboration_mode_indicator, false);
-            let full_width = full.as_ref().map(|line| line.width() as u16).unwrap_or(0);
-            if can_show_left_with_context(area, left_width, full_width) {
-                full
-            } else {
-                compact
-            }
+            best_right_mode_indicator_line(
+                area,
+                left_width,
+                collaboration_mode_indicator,
+                show_cycle_hint,
+            )
         } else {
             Some(context_window_line(
                 props.context_window_percent,
@@ -198,7 +200,7 @@ mod tests {
                 let (summary_left, show_context) = single_line_footer_layout(
                     area,
                     right_width,
-                    left_mode_indicator,
+                    left_mode_indicator.clone(),
                     show_cycle_hint,
                     show_shortcuts_hint,
                     show_queue_hint,
@@ -479,14 +481,14 @@ mod tests {
             "footer_mode_indicator_wide",
             120,
             &props,
-            Some(CollaborationModeIndicator::Plan),
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
         );
 
         snapshot_footer_with_mode_indicator(
             "footer_mode_indicator_narrow_overlap_hides",
             50,
             &props,
-            Some(CollaborationModeIndicator::Plan),
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
         );
 
         let props = FooterProps {
@@ -507,7 +509,7 @@ mod tests {
             "footer_mode_indicator_running_hides_hint",
             120,
             &props,
-            Some(CollaborationModeIndicator::Plan),
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
         );
 
         let props = FooterProps {
@@ -576,7 +578,7 @@ mod tests {
             "footer_status_line_enabled_mode_right",
             120,
             &props,
-            Some(CollaborationModeIndicator::Plan),
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
         );
 
         let props = FooterProps {
@@ -597,7 +599,7 @@ mod tests {
             "footer_status_line_disabled_context_right",
             120,
             &props,
-            Some(CollaborationModeIndicator::Plan),
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
         );
 
         let props = FooterProps {
@@ -642,7 +644,7 @@ mod tests {
             "footer_status_line_truncated_with_gap",
             40,
             &props,
-            Some(CollaborationModeIndicator::Plan),
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
         );
 
         let props = FooterProps {
@@ -698,11 +700,14 @@ mod tests {
             active_agent_label: None,
         };
 
-        let screen =
-            render_footer_with_mode_indicator(80, &props, Some(CollaborationModeIndicator::Plan));
+        let screen = render_footer_with_mode_indicator(
+            80,
+            &props,
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+        );
         let collapsed = screen.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            collapsed.contains("Plan mode"),
+            collapsed.contains("Plan"),
             "mode indicator should remain visible"
         );
         assert!(

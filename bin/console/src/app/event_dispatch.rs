@@ -69,6 +69,9 @@ impl App {
                     } else {
                         desired.max(terminal_size.height)
                     };
+                    libui::theme::set_collaboration_mode(
+                        self.chat_widget.collaboration_mode_kind(),
+                    );
                     tui.draw(draw_height, |frame| {
                         let main_area = frame.area();
 

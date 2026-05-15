@@ -24,6 +24,7 @@ use ratatui::widgets::WidgetRef;
 use crate::bottom_pane::footer::FooterMode;
 use crate::bottom_pane::footer::FooterProps;
 use crate::bottom_pane::footer::SummaryLeft;
+use crate::bottom_pane::footer::best_right_mode_indicator_line;
 use crate::bottom_pane::footer::can_show_left_with_context;
 use crate::bottom_pane::footer::context_window_line;
 use crate::bottom_pane::footer::footer_height;
@@ -31,7 +32,6 @@ use crate::bottom_pane::footer::footer_hint_items_width;
 use crate::bottom_pane::footer::footer_line_width;
 use crate::bottom_pane::footer::inset_footer_hint_area;
 use crate::bottom_pane::footer::max_left_width_for_right;
-use crate::bottom_pane::footer::mode_indicator_line;
 use crate::bottom_pane::footer::passive_footer_status_line;
 use crate::bottom_pane::footer::render_context_right;
 use crate::bottom_pane::footer::render_footer_from_props;
@@ -250,7 +250,7 @@ impl ChatComposer {
                 let left_mode_indicator = if status_line_active {
                     None
                 } else {
-                    self.collaboration_mode_indicator
+                    self.collaboration_mode_indicator.clone()
                 };
                 let mut left_width = if self.footer_flash_visible() {
                     self.footer_flash
@@ -267,25 +267,19 @@ impl ChatComposer {
                 } else {
                     footer_line_width(
                         &footer_props,
-                        left_mode_indicator,
+                        left_mode_indicator.clone(),
                         show_cycle_hint,
                         show_shortcuts_hint,
                         show_queue_hint,
                     )
                 };
                 let right_line = if status_line_active {
-                    let full =
-                        mode_indicator_line(self.collaboration_mode_indicator, show_cycle_hint);
-                    let compact = mode_indicator_line(
-                        self.collaboration_mode_indicator,
-                        /*show_cycle_hint*/ false,
-                    );
-                    let full_width = full.as_ref().map(|l| l.width() as u16).unwrap_or(0);
-                    if can_show_left_with_context(hint_rect, left_width, full_width) {
-                        full
-                    } else {
-                        compact
-                    }
+                    best_right_mode_indicator_line(
+                        hint_rect,
+                        left_width,
+                        self.collaboration_mode_indicator.clone(),
+                        show_cycle_hint,
+                    )
                 } else {
                     Some(context_window_line(
                         footer_props.context_window_percent,
@@ -319,7 +313,7 @@ impl ChatComposer {
                             Some(single_line_footer_layout(
                                 hint_rect,
                                 right_width,
-                                left_mode_indicator,
+                                left_mode_indicator.clone(),
                                 show_cycle_hint,
                                 show_shortcuts_hint,
                                 show_queue_hint,
@@ -397,7 +391,7 @@ impl ChatComposer {
                         hint_rect,
                         buf,
                         &footer_props,
-                        self.collaboration_mode_indicator,
+                        self.collaboration_mode_indicator.clone(),
                         show_cycle_hint,
                         show_shortcuts_hint,
                         show_queue_hint,

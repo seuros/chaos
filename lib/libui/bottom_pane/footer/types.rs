@@ -1,4 +1,5 @@
 use crate::key_hint::KeyBinding;
+use chaos_ipc::config_types::ModeKind;
 use ratatui::text::Line;
 
 /// The rendering inputs for the footer area under the composer.
@@ -52,13 +53,28 @@ pub enum FooterMode {
     ComposerHasDraft,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollaborationModeIndicator {
+    pub kind: ModeKind,
+    pub model_label: String,
+    pub effort_label: Option<String>,
+}
+
+impl CollaborationModeIndicator {
+    pub fn new(kind: ModeKind, model_label: String, effort_label: Option<String>) -> Self {
+        Self {
+            kind,
+            model_label,
+            effort_label,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CollaborationModeIndicator {
-    Plan,
-    #[allow(dead_code)] // Hidden by current mode filtering; kept for future UI re-enablement.
-    PairProgramming,
-    #[allow(dead_code)] // Hidden by current mode filtering; kept for future UI re-enablement.
-    Execute,
+pub(super) enum ModeBadgeDetail {
+    Full,
+    Compact,
+    ModeOnly,
 }
 
 /// Internal state for shortcut overlay rendering.
@@ -81,6 +97,7 @@ pub(super) enum SummaryHintKind {
 pub(super) struct LeftSideState {
     pub hint: SummaryHintKind,
     pub show_cycle_hint: bool,
+    pub mode_detail: ModeBadgeDetail,
 }
 
 pub enum SummaryLeft {

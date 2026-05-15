@@ -1,44 +1,44 @@
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 
 use super::types::CollaborationModeIndicator;
+use super::types::ModeBadgeDetail;
 
 const MODE_CYCLE_HINT: &str = "shift+tab to cycle";
 
 impl CollaborationModeIndicator {
-    pub(super) fn label(self, show_cycle_hint: bool) -> String {
-        let suffix = if show_cycle_hint {
+    fn suffix(show_cycle_hint: bool) -> String {
+        if show_cycle_hint {
             format!(" ({MODE_CYCLE_HINT})")
         } else {
             String::new()
-        };
-        match self {
-            CollaborationModeIndicator::Plan => format!("Plan mode{suffix}"),
-            CollaborationModeIndicator::PairProgramming => {
-                format!("Pair Programming mode{suffix}")
-            }
-            CollaborationModeIndicator::Execute => format!("Execute mode{suffix}"),
         }
     }
 
-    pub(super) fn styled_span(self, show_cycle_hint: bool) -> Span<'static> {
-        let label = self.label(show_cycle_hint);
-        match self {
-            CollaborationModeIndicator::Plan => {
-                Span::from(label).fg(crate::theme::annotation_color())
-            }
-            CollaborationModeIndicator::PairProgramming => {
-                Span::from(label).fg(crate::theme::accent_color())
-            }
-            CollaborationModeIndicator::Execute => Span::from(label).dim(),
-        }
+    pub(super) fn label(&self, detail: ModeBadgeDetail, show_cycle_hint: bool) -> String {
+        let mode = self.kind.display_name();
+        let base = match detail {
+            ModeBadgeDetail::Full => mode.to_string(),
+            ModeBadgeDetail::Compact => mode.to_string(),
+            ModeBadgeDetail::ModeOnly => mode.to_string(),
+        };
+        format!("{base}{}", Self::suffix(show_cycle_hint))
+    }
+
+    pub(super) fn styled_span(
+        &self,
+        detail: ModeBadgeDetail,
+        show_cycle_hint: bool,
+    ) -> Span<'static> {
+        let label = self.label(detail, show_cycle_hint);
+        Span::styled(label, crate::theme::collaboration_mode_badge(self.kind))
     }
 }
 
-pub fn mode_indicator_line(
+pub(super) fn mode_indicator_line(
     indicator: Option<CollaborationModeIndicator>,
+    detail: ModeBadgeDetail,
     show_cycle_hint: bool,
 ) -> Option<Line<'static>> {
-    indicator.map(|indicator| Line::from(vec![indicator.styled_span(show_cycle_hint)]))
+    indicator.map(|indicator| Line::from(vec![indicator.styled_span(detail, show_cycle_hint)]))
 }

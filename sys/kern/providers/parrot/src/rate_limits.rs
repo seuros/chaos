@@ -18,7 +18,7 @@ impl Display for RateLimitError {
     }
 }
 
-/// Parses the default Chaos rate-limit header family into a `RateLimitSnapshot`.
+/// Parses the default Codex/Chaos rate-limit header family into a `RateLimitSnapshot`.
 pub fn parse_default_rate_limit(headers: &HeaderMap) -> Option<RateLimitSnapshot> {
     parse_rate_limit_for_limit(headers, /*limit_id*/ None)
 }
@@ -35,7 +35,7 @@ pub fn parse_all_rate_limits(headers: &HeaderMap) -> Vec<RateLimitSnapshot> {
     for name in headers.keys() {
         let header_name = name.as_str().to_ascii_lowercase();
         if let Some(limit_id) = header_name_to_limit_id(&header_name)
-            && !matches!(limit_id.as_str(), "chaos" | "codex")
+            && !matches!(limit_id.as_str(), "chaos")
         {
             limit_ids.insert(limit_id);
         }
@@ -52,23 +52,18 @@ pub fn parse_all_rate_limits(headers: &HeaderMap) -> Vec<RateLimitSnapshot> {
 /// Parses rate-limit headers for the provided limit id.
 ///
 /// `limit_id` should match the server-provided metered limit id (e.g. `chaos`,
-/// `chaos_other`). When omitted, this defaults to the legacy `chaos` header family.
+/// `chaos_other`). When omitted, this defaults to the primary Codex/Chaos header
+/// family and reports the logical limit id as `chaos` for compatibility with the UI.
 pub fn parse_rate_limit_for_limit(
     headers: &HeaderMap,
     limit_id: Option<&str>,
 ) -> Option<RateLimitSnapshot> {
     let requested_limit = limit_id.map(str::trim).filter(|name| !name.is_empty());
-    let normalized_limit = requested_limit
-        .unwrap_or("chaos")
-        .to_ascii_lowercase()
-        .replace('_', "-");
-    // Omitted limit ids still read the legacy `x-chaos-*` header family while
-    // reporting the default logical limit id as `chaos`.
-    let header_limit = requested_limit
-        .unwrap_or("chaos")
-        .to_ascii_lowercase()
-        .replace('_', "-");
-    let prefix = format!("x-{header_limit}");
+    let normalized_limit_id = requested_limit
+        .map(normalize_limit_id)
+        .map(canonical_limit_id)
+        .unwrap_or_else(|| "chaos".to_string());
+    let prefix = select_header_prefix(headers, requested_limit);
     let primary = parse_rate_limit_window(
         headers,
         &format!("{prefix}-primary-used-percent"),
@@ -83,8 +78,7 @@ pub fn parse_rate_limit_for_limit(
         &format!("{prefix}-secondary-reset-at"),
     );
 
-    let normalized_limit_id = normalize_limit_id(normalized_limit);
-    let credits = parse_credits_snapshot(headers);
+    let credits = parse_credits_snapshot(headers, &prefix);
     let limit_name_header = format!("{prefix}-limit-name");
     let parsed_limit_name = parse_header_str(headers, &limit_name_header)
         .map(str::trim)
@@ -97,7 +91,7 @@ pub fn parse_rate_limit_for_limit(
         primary,
         secondary,
         credits,
-        plan_type: None,
+        plan_type: parse_plan_type(headers, &prefix),
     })
 }
 
@@ -205,10 +199,10 @@ fn parse_rate_limit_window(
     })
 }
 
-fn parse_credits_snapshot(headers: &HeaderMap) -> Option<CreditsSnapshot> {
-    let has_credits = parse_header_bool(headers, "x-chaos-credits-has-credits")?;
-    let unlimited = parse_header_bool(headers, "x-chaos-credits-unlimited")?;
-    let balance = parse_header_str(headers, "x-chaos-credits-balance")
+fn parse_credits_snapshot(headers: &HeaderMap, prefix: &str) -> Option<CreditsSnapshot> {
+    let has_credits = parse_header_bool(headers, &format!("{prefix}-credits-has-credits"))?;
+    let unlimited = parse_header_bool(headers, &format!("{prefix}-credits-unlimited"))?;
+    let balance = parse_header_str(headers, &format!("{prefix}-credits-balance"))
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(std::string::ToString::to_string);
@@ -217,6 +211,13 @@ fn parse_credits_snapshot(headers: &HeaderMap) -> Option<CreditsSnapshot> {
         unlimited,
         balance,
     })
+}
+
+fn parse_plan_type(headers: &HeaderMap, prefix: &str) -> Option<PlanType> {
+    let raw = parse_header_str(headers, &format!("{prefix}-plan-type"))?
+        .trim()
+        .to_ascii_lowercase();
+    serde_json::from_value(serde_json::Value::String(raw)).ok()
 }
 
 fn parse_header_f64(headers: &HeaderMap, name: &str) -> Option<f64> {
@@ -253,11 +254,67 @@ fn header_name_to_limit_id(header_name: &str) -> Option<String> {
     let suffix = "-primary-used-percent";
     let prefix = header_name.strip_suffix(suffix)?;
     let limit = prefix.strip_prefix("x-")?;
-    Some(normalize_limit_id(limit.to_string()))
+    Some(canonical_limit_id(normalize_limit_id(limit.to_string())))
 }
 
 fn normalize_limit_id(name: impl Into<String>) -> String {
     name.into().trim().to_ascii_lowercase().replace('-', "_")
+}
+
+fn canonical_limit_id(limit_id: String) -> String {
+    if limit_id == "codex" {
+        "chaos".to_string()
+    } else if let Some(suffix) = limit_id.strip_prefix("codex_") {
+        format!("chaos_{suffix}")
+    } else {
+        limit_id
+    }
+}
+
+fn select_header_prefix(headers: &HeaderMap, requested_limit: Option<&str>) -> String {
+    let candidates = header_prefix_candidates(requested_limit);
+    candidates
+        .iter()
+        .find(|prefix| header_prefix_has_data(headers, prefix))
+        .cloned()
+        .unwrap_or_else(|| candidates[0].clone())
+}
+
+fn header_prefix_candidates(requested_limit: Option<&str>) -> Vec<String> {
+    let Some(requested_limit) = requested_limit else {
+        return vec!["x-codex".to_string(), "x-chaos".to_string()];
+    };
+
+    let normalized = normalize_limit_id(requested_limit);
+    if matches!(normalized.as_str(), "chaos" | "codex") {
+        return vec!["x-codex".to_string(), "x-chaos".to_string()];
+    }
+    let hyphenated = normalized.replace('_', "-");
+    let suffix = normalized
+        .strip_prefix("chaos_")
+        .or_else(|| normalized.strip_prefix("codex_"))
+        .unwrap_or(normalized.as_str())
+        .replace('_', "-");
+
+    let mut candidates = vec![
+        format!("x-codex-{suffix}"),
+        format!("x-chaos-{suffix}"),
+        format!("x-{hyphenated}"),
+    ];
+    candidates.dedup();
+    candidates
+}
+
+fn header_prefix_has_data(headers: &HeaderMap, prefix: &str) -> bool {
+    [
+        "primary-used-percent",
+        "secondary-used-percent",
+        "credits-has-credits",
+        "plan-type",
+        "limit-name",
+    ]
+    .iter()
+    .any(|suffix| headers.contains_key(format!("{prefix}-{suffix}")))
 }
 
 #[cfg(test)]
@@ -270,6 +327,33 @@ mod tests {
     fn parse_rate_limit_for_limit_defaults_to_codex_headers() {
         let mut headers = HeaderMap::new();
         headers.insert(
+            "x-codex-primary-used-percent",
+            HeaderValue::from_static("12.5"),
+        );
+        headers.insert(
+            "x-codex-primary-window-minutes",
+            HeaderValue::from_static("60"),
+        );
+        headers.insert(
+            "x-codex-primary-reset-at",
+            HeaderValue::from_static("1704069000"),
+        );
+        headers.insert("x-codex-plan-type", HeaderValue::from_static("pro"));
+
+        let snapshot = parse_rate_limit_for_limit(&headers, None).expect("snapshot");
+        assert_eq!(snapshot.limit_id.as_deref(), Some("chaos"));
+        assert_eq!(snapshot.limit_name, None);
+        assert_eq!(snapshot.plan_type, Some(PlanType::Pro));
+        let primary = snapshot.primary.expect("primary");
+        assert_eq!(primary.used_percent, 12.5);
+        assert_eq!(primary.window_minutes, Some(60));
+        assert_eq!(primary.resets_at, Some(1704069000));
+    }
+
+    #[test]
+    fn parse_rate_limit_for_limit_falls_back_to_legacy_chaos_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
             "x-chaos-primary-used-percent",
             HeaderValue::from_static("12.5"),
         );
@@ -277,18 +361,28 @@ mod tests {
             "x-chaos-primary-window-minutes",
             HeaderValue::from_static("60"),
         );
-        headers.insert(
-            "x-chaos-primary-reset-at",
-            HeaderValue::from_static("1704069000"),
-        );
 
         let snapshot = parse_rate_limit_for_limit(&headers, None).expect("snapshot");
         assert_eq!(snapshot.limit_id.as_deref(), Some("chaos"));
-        assert_eq!(snapshot.limit_name, None);
         let primary = snapshot.primary.expect("primary");
         assert_eq!(primary.used_percent, 12.5);
         assert_eq!(primary.window_minutes, Some(60));
-        assert_eq!(primary.resets_at, Some(1704069000));
+    }
+
+    #[test]
+    fn parse_rate_limit_for_explicit_default_limit_reads_codex_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-codex-primary-used-percent",
+            HeaderValue::from_static("12.5"),
+        );
+
+        let snapshot = parse_rate_limit_for_limit(&headers, Some("chaos")).expect("snapshot");
+        assert_eq!(snapshot.limit_id.as_deref(), Some("chaos"));
+        assert_eq!(
+            snapshot.primary.as_ref().map(|window| window.used_percent),
+            Some(12.5)
+        );
     }
 
     #[test]
@@ -322,11 +416,11 @@ mod tests {
     fn parse_rate_limit_for_limit_prefers_limit_name_header() {
         let mut headers = HeaderMap::new();
         headers.insert(
-            "x-chaos-bengalfox-primary-used-percent",
+            "x-codex-bengalfox-primary-used-percent",
             HeaderValue::from_static("80"),
         );
         headers.insert(
-            "x-chaos-bengalfox-limit-name",
+            "x-codex-bengalfox-limit-name",
             HeaderValue::from_static("gpt-5.2-codex-sonic"),
         );
 
@@ -340,18 +434,18 @@ mod tests {
     fn parse_all_rate_limits_reads_all_limit_families() {
         let mut headers = HeaderMap::new();
         headers.insert(
-            "x-chaos-primary-used-percent",
+            "x-codex-primary-used-percent",
             HeaderValue::from_static("12.5"),
         );
         headers.insert(
-            "x-chaos-secondary-primary-used-percent",
+            "x-codex-bengalfox-primary-used-percent",
             HeaderValue::from_static("80"),
         );
 
         let updates = parse_all_rate_limits(&headers);
         assert_eq!(updates.len(), 2);
         assert_eq!(updates[0].limit_id.as_deref(), Some("chaos"));
-        assert_eq!(updates[1].limit_id.as_deref(), Some("chaos_secondary"));
+        assert_eq!(updates[1].limit_id.as_deref(), Some("chaos_bengalfox"));
         assert_eq!(updates[0].limit_name, None);
         assert_eq!(updates[1].limit_name, None);
     }

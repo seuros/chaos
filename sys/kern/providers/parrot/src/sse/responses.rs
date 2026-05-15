@@ -2,6 +2,7 @@ use crate::common::ResponseEvent;
 use crate::common::ResponseStream;
 use crate::error::ApiError;
 use crate::rate_limits::parse_all_rate_limits;
+use crate::rate_limits::parse_rate_limit_event;
 use crate::telemetry::SseTelemetry;
 use chaos_abi::ResponseItem;
 use chaos_abi::TokenUsage;
@@ -403,6 +404,17 @@ pub async fn process_sse(
         let data = sse.data().map(String::as_str).unwrap_or_default();
         trace!("SSE event: {}", data);
 
+        if let Some(snapshot) = parse_rate_limit_event(data) {
+            if tx_event
+                .send(Ok(ResponseEvent::RateLimits(snapshot)))
+                .await
+                .is_err()
+            {
+                return;
+            }
+            continue;
+        }
+
         let event: ResponsesStreamEvent = match serde_json::from_str(data) {
             Ok(event) => event,
             Err(e) => {
@@ -503,6 +515,7 @@ mod tests {
     use assert_matches::assert_matches;
     use bytes::Bytes;
     use chaos_abi::ResponseItem;
+    use chaos_ipc::account::PlanType;
     use chaos_ipc::models::MessagePhase;
     use codex_client::StreamResponse;
     use futures::stream;
@@ -727,6 +740,55 @@ mod tests {
             }
             other => panic!("unexpected event: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn process_sse_emits_chaos_rate_limits_event() {
+        let events = run_sse(vec![
+            json!({
+                "type": "chaos.rate_limits",
+                "metered_limit_name": "chaos",
+                "plan_type": "pro",
+                "rate_limits": {
+                    "primary": {
+                        "used_percent": 8.0,
+                        "window_minutes": 300,
+                        "reset_at": 1778843500
+                    },
+                    "secondary": {
+                        "used_percent": 12.0,
+                        "window_minutes": 10080,
+                        "reset_at": 1779182173
+                    }
+                },
+                "credits": {
+                    "has_credits": false,
+                    "unlimited": false,
+                    "balance": null
+                }
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp1" }
+            }),
+        ])
+        .await;
+
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            ResponseEvent::RateLimits(snapshot) => {
+                assert_eq!(snapshot.limit_id.as_deref(), Some("chaos"));
+                assert_eq!(snapshot.plan_type, Some(PlanType::Pro));
+                let primary = snapshot.primary.as_ref().expect("primary");
+                assert_eq!(primary.used_percent, 8.0);
+                assert_eq!(primary.window_minutes, Some(300));
+                let secondary = snapshot.secondary.as_ref().expect("secondary");
+                assert_eq!(secondary.used_percent, 12.0);
+                assert_eq!(secondary.window_minutes, Some(10080));
+            }
+            other => panic!("expected rate limits event, got {other:?}"),
+        }
+        assert_matches!(&events[1], ResponseEvent::Completed { .. });
     }
 
     #[tokio::test]

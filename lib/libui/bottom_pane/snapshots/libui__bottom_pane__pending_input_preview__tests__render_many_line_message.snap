@@ -1,5 +1,6 @@
 ---
 source: lib/libui/bottom_pane/pending_input_preview.rs
+assertion_line: 239
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -25,7 +26,7 @@ Buffer {
         x: 0, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: DIM | ITALIC,
         x: 5, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 4, y: 5, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 4, y: 5, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
         x: 9, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 34, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]

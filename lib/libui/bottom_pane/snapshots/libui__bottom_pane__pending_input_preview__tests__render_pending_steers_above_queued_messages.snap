@@ -1,5 +1,6 @@
 ---
 source: lib/libui/bottom_pane/pending_input_preview.rs
+assertion_line: 299
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -18,7 +19,7 @@ Buffer {
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 2, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 9, y: 1, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 9, y: 1, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
         x: 12, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 47, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
@@ -31,7 +32,7 @@ Buffer {
         x: 4, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: DIM | ITALIC,
         x: 29, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 4, y: 7, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 4, y: 7, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
         x: 9, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 34, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]

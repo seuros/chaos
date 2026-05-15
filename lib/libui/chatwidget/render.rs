@@ -167,11 +167,12 @@ impl ChatWidget {
         self.status_line_script_render_generation =
             self.status_line_script_render_generation.wrapping_add(1);
         self.halluacinate = halluacinate;
+        // Do not render eagerly on attach: callers can attach the handle before
+        // the session/state event that should define the statusline context.
+        // Normal session/state refresh paths will render once the context is current.
         if self.halluacinate.is_none() {
             self.bottom_pane.set_status_line_enabled(false);
             self.set_status_line(None);
-        } else {
-            self.refresh_status_line();
         }
     }
 

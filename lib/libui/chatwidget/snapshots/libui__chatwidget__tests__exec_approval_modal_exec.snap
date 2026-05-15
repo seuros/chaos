@@ -1,5 +1,6 @@
 ---
 source: lib/libui/chatwidget/tests.rs
+assertion_line: 3129
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -21,25 +22,25 @@ Buffer {
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 0, y: 1, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 2, y: 2, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: BOLD,
-        x: 46, y: 2, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 10, y: 4, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: ITALIC,
-        x: 73, y: 4, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 2, y: 5, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: ITALIC,
-        x: 7, y: 5, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 4, y: 7, fg: Rgb(137, 180, 250), bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 8, y: 7, fg: Rgb(205, 214, 244), bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 20, y: 7, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 0, y: 9, fg: Cyan, bg: DarkGray, underline: Reset, modifier: BOLD,
-        x: 21, y: 9, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 52, y: 10, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
-        x: 55, y: 10, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 0, y: 1, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 2, y: 2, fg: White, bg: Black, underline: Reset, modifier: BOLD,
+        x: 46, y: 2, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 10, y: 4, fg: White, bg: Black, underline: Reset, modifier: ITALIC,
+        x: 73, y: 4, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 2, y: 5, fg: White, bg: Black, underline: Reset, modifier: ITALIC,
+        x: 7, y: 5, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 4, y: 7, fg: Rgb(137, 180, 250), bg: Black, underline: Reset, modifier: NONE,
+        x: 8, y: 7, fg: Rgb(205, 214, 244), bg: Black, underline: Reset, modifier: NONE,
+        x: 20, y: 7, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 0, y: 9, fg: Cyan, bg: Black, underline: Reset, modifier: BOLD,
+        x: 21, y: 9, fg: White, bg: Black, underline: Reset, modifier: NONE,
+        x: 52, y: 10, fg: Gray, bg: Black, underline: Reset, modifier: DIM,
+        x: 55, y: 10, fg: White, bg: Black, underline: Reset, modifier: NONE,
         x: 0, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 8, y: 12, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 8, y: 12, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
         x: 13, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 28, y: 12, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 28, y: 12, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
         x: 31, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
     ]
 }

@@ -1,5 +1,5 @@
 ---
 source: lib/libui/bottom_pane/footer.rs
-expression: terminal.backend()
+expression: "render_test_backend_debug(width, height, |f|\n{\n    draw_footer(Rect::new(0, 0, f.area().width, height), f.buffer_mut(),\n    props, collaboration_mode_indicator,);\n})"
 ---
-"  ? for shortcuts · Plan mode (shift+tab to cycle)                                                   100% context left  "
+"  ? for shortcuts · Plan (shift+tab to cycle)                                                        100% context left  "

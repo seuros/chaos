@@ -17,6 +17,7 @@ use super::types::CollaborationModeIndicator;
 use super::types::FooterMode;
 use super::types::FooterProps;
 use super::types::LeftSideState;
+use super::types::ModeBadgeDetail;
 use super::types::ShortcutsState;
 use super::types::SummaryHintKind;
 use super::types::SummaryLeft;
@@ -153,10 +154,48 @@ fn left_side_line(
         if !matches!(state.hint, SummaryHintKind::None) {
             line.push_span(" · ".dim());
         }
-        line.push_span(collaboration_mode_indicator.styled_span(state.show_cycle_hint));
+        line.push_span(
+            collaboration_mode_indicator.styled_span(state.mode_detail, state.show_cycle_hint),
+        );
     }
 
     line
+}
+
+pub fn best_right_mode_indicator_line(
+    area: Rect,
+    left_width: u16,
+    collaboration_mode_indicator: Option<CollaborationModeIndicator>,
+    show_cycle_hint: bool,
+) -> Option<Line<'static>> {
+    let full = super::collaboration_mode::mode_indicator_line(
+        collaboration_mode_indicator.clone(),
+        ModeBadgeDetail::Full,
+        show_cycle_hint,
+    );
+    let full_width = full.as_ref().map(|line| line.width() as u16).unwrap_or(0);
+    if can_show_left_with_context(area, left_width, full_width) {
+        return full;
+    }
+
+    let compact = super::collaboration_mode::mode_indicator_line(
+        collaboration_mode_indicator.clone(),
+        ModeBadgeDetail::Compact,
+        /*show_cycle_hint*/ false,
+    );
+    let compact_width = compact
+        .as_ref()
+        .map(|line| line.width() as u16)
+        .unwrap_or(0);
+    if can_show_left_with_context(area, left_width, compact_width) {
+        return compact;
+    }
+
+    super::collaboration_mode::mode_indicator_line(
+        collaboration_mode_indicator,
+        ModeBadgeDetail::ModeOnly,
+        /*show_cycle_hint*/ false,
+    )
 }
 
 /// Compute the single-line footer layout and whether the right-side context
@@ -179,8 +218,9 @@ pub fn single_line_footer_layout(
     let default_state = LeftSideState {
         hint: hint_kind,
         show_cycle_hint,
+        mode_detail: ModeBadgeDetail::Full,
     };
-    let default_line = left_side_line(collaboration_mode_indicator, default_state);
+    let default_line = left_side_line(collaboration_mode_indicator.clone(), default_state);
     let default_width = default_line.width() as u16;
     if default_width > 0 && can_show_left_with_context(area, default_width, context_width) {
         return (SummaryLeft::Default, true);
@@ -190,7 +230,7 @@ pub fn single_line_footer_layout(
         if state == default_state {
             default_line.clone()
         } else {
-            left_side_line(collaboration_mode_indicator, state)
+            left_side_line(collaboration_mode_indicator.clone(), state)
         }
     };
     let state_width = |state: LeftSideState| -> u16 { state_line(state).width() as u16 };
@@ -206,10 +246,27 @@ pub fn single_line_footer_layout(
             LeftSideState {
                 hint: SummaryHintKind::QueueMessage,
                 show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::Compact,
             },
             LeftSideState {
                 hint: SummaryHintKind::QueueShort,
                 show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::Full,
+            },
+            LeftSideState {
+                hint: SummaryHintKind::QueueShort,
+                show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::Compact,
+            },
+            LeftSideState {
+                hint: SummaryHintKind::QueueMessage,
+                show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::ModeOnly,
+            },
+            LeftSideState {
+                hint: SummaryHintKind::QueueShort,
+                show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::ModeOnly,
             },
         ];
 
@@ -249,11 +306,12 @@ pub fn single_line_footer_layout(
         }
     } else if collaboration_mode_indicator.is_some() {
         if show_cycle_hint {
-            // First fallback: drop shortcut hint but keep the cycle
-            // hint on the mode label if it can fit.
+            // First fallback: drop shortcut hint but keep the cycle hint on the full badge if it
+            // can fit.
             let cycle_state = LeftSideState {
                 hint: SummaryHintKind::None,
                 show_cycle_hint: true,
+                mode_detail: ModeBadgeDetail::Full,
             };
             let cycle_width = state_width(cycle_state);
             if cycle_width > 0 && can_show_left_with_context(area, cycle_width, context_width) {
@@ -264,61 +322,36 @@ pub fn single_line_footer_layout(
             }
         }
 
-        // Next fallback: mode label only. If the cycle hint is applicable but
-        // cannot fit, we also suppress context so the right side does not
-        // outlive "(shift+tab to cycle)" on the left.
-        let mode_only_state = LeftSideState {
-            hint: SummaryHintKind::None,
-            show_cycle_hint: false,
-        };
-        let mode_only_width = state_width(mode_only_state);
-        if !context_requires_cycle_hint
-            && mode_only_width > 0
-            && can_show_left_with_context(area, mode_only_width, context_width)
-        {
-            return (
-                SummaryLeft::Custom(state_line(mode_only_state)),
-                true, // show_context
-            );
+        let mode_states = [
+            LeftSideState {
+                hint: SummaryHintKind::None,
+                show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::Full,
+            },
+            LeftSideState {
+                hint: SummaryHintKind::None,
+                show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::Compact,
+            },
+            LeftSideState {
+                hint: SummaryHintKind::None,
+                show_cycle_hint: false,
+                mode_detail: ModeBadgeDetail::ModeOnly,
+            },
+        ];
+        if !context_requires_cycle_hint {
+            for state in mode_states {
+                let width = state_width(state);
+                if width > 0 && can_show_left_with_context(area, width, context_width) {
+                    return (SummaryLeft::Custom(state_line(state)), true);
+                }
+            }
         }
-        if mode_only_width > 0 && left_fits(area, mode_only_width) {
-            return (
-                SummaryLeft::Custom(state_line(mode_only_state)),
-                false, // show_context
-            );
-        }
-    }
-
-    // Final fallback: if queue variants (or other earlier states) could not fit
-    // at all, drop every hint and try to show just the mode label.
-    if let Some(collaboration_mode_indicator) = collaboration_mode_indicator {
-        let mode_only_state = LeftSideState {
-            hint: SummaryHintKind::None,
-            show_cycle_hint: false,
-        };
-        // Compute the width without going through `state_line` so we do not
-        // depend on `default_state` (which may still be a queue variant).
-        let mode_only_width =
-            left_side_line(Some(collaboration_mode_indicator), mode_only_state).width() as u16;
-        if !context_requires_cycle_hint
-            && can_show_left_with_context(area, mode_only_width, context_width)
-        {
-            return (
-                SummaryLeft::Custom(left_side_line(
-                    Some(collaboration_mode_indicator),
-                    mode_only_state,
-                )),
-                true, // show_context
-            );
-        }
-        if left_fits(area, mode_only_width) {
-            return (
-                SummaryLeft::Custom(left_side_line(
-                    Some(collaboration_mode_indicator),
-                    mode_only_state,
-                )),
-                false, // show_context
-            );
+        for state in mode_states {
+            let width = state_width(state);
+            if width > 0 && left_fits(area, width) {
+                return (SummaryLeft::Custom(state_line(state)), false);
+            }
         }
     }
 
@@ -448,6 +481,7 @@ fn footer_from_props_lines(
                     SummaryHintKind::None
                 },
                 show_cycle_hint,
+                mode_detail: ModeBadgeDetail::Full,
             };
             vec![left_side_line(collaboration_mode_indicator, state)]
         }
@@ -470,6 +504,7 @@ fn footer_from_props_lines(
                     SummaryHintKind::None
                 },
                 show_cycle_hint,
+                mode_detail: ModeBadgeDetail::Full,
             };
             vec![left_side_line(collaboration_mode_indicator, state)]
         }

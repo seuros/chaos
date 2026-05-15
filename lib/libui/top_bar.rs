@@ -152,6 +152,8 @@ fn chrono_now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_ipc::config_types::ModeKind;
+    use serial_test::serial;
 
     #[test]
     fn top_bar_uses_dedicated_top_bar_background() {
@@ -194,5 +196,21 @@ mod tests {
 
         assert_eq!(line.spans[0].style.fg, Some(palette.top_bar_fg));
         assert_eq!(line.spans[1].style.fg, Some(palette.top_bar_dim));
+    }
+
+    #[test]
+    #[serial]
+    fn top_bar_tint_changes_with_collaboration_mode() {
+        crate::theme::set_clamped(false);
+        crate::theme::set_collaboration_mode(ModeKind::Default);
+        let default_palette = crate::theme::palette();
+
+        crate::theme::set_collaboration_mode(ModeKind::Plan);
+        let plan_palette = crate::theme::palette();
+
+        assert_ne!(default_palette.top_bar_bg, plan_palette.top_bar_bg);
+        assert_ne!(default_palette.border, plan_palette.border);
+
+        crate::theme::set_collaboration_mode(ModeKind::Default);
     }
 }

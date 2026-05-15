@@ -210,6 +210,10 @@ fn footer_mode_snapshots() {
 
 #[test]
 fn footer_collapse_snapshots() {
+    fn badge(kind: chaos_ipc::config_types::ModeKind) -> CollaborationModeIndicator {
+        CollaborationModeIndicator::new(kind, "gpt-5.4".to_string(), Some("high".to_string()))
+    }
+
     fn setup_collab_footer(
         composer: &mut ChatComposer,
         context_percent: i64,
@@ -222,14 +226,22 @@ fn footer_collapse_snapshots() {
 
     // Empty textarea, agent idle: shortcuts hint can show, and cycle hint is hidden.
     snapshot_composer_state_with_width("footer_collapse_empty_full", 120, true, |composer| {
-        setup_collab_footer(composer, 100, None);
+        setup_collab_footer(
+            composer,
+            100,
+            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+        );
     });
     snapshot_composer_state_with_width(
         "footer_collapse_empty_mode_cycle_with_context",
         60,
         true,
         |composer| {
-            setup_collab_footer(composer, 100, None);
+            setup_collab_footer(
+                composer,
+                100,
+                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+            );
         },
     );
     snapshot_composer_state_with_width(
@@ -237,23 +249,39 @@ fn footer_collapse_snapshots() {
         44,
         true,
         |composer| {
-            setup_collab_footer(composer, 100, None);
+            setup_collab_footer(
+                composer,
+                100,
+                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+            );
         },
     );
     snapshot_composer_state_with_width("footer_collapse_empty_mode_only", 26, true, |composer| {
-        setup_collab_footer(composer, 100, None);
+        setup_collab_footer(
+            composer,
+            100,
+            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+        );
     });
 
     // Empty textarea, plan mode idle: shortcuts hint and cycle hint are available.
     snapshot_composer_state_with_width("footer_collapse_plan_empty_full", 120, true, |composer| {
-        setup_collab_footer(composer, 100, Some(CollaborationModeIndicator::Plan));
+        setup_collab_footer(
+            composer,
+            100,
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+        );
     });
     snapshot_composer_state_with_width(
         "footer_collapse_plan_empty_mode_cycle_with_context",
         60,
         true,
         |composer| {
-            setup_collab_footer(composer, 100, Some(CollaborationModeIndicator::Plan));
+            setup_collab_footer(
+                composer,
+                100,
+                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+            );
         },
     );
     snapshot_composer_state_with_width(
@@ -261,7 +289,11 @@ fn footer_collapse_snapshots() {
         44,
         true,
         |composer| {
-            setup_collab_footer(composer, 100, Some(CollaborationModeIndicator::Plan));
+            setup_collab_footer(
+                composer,
+                100,
+                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+            );
         },
     );
     snapshot_composer_state_with_width(
@@ -269,13 +301,21 @@ fn footer_collapse_snapshots() {
         26,
         true,
         |composer| {
-            setup_collab_footer(composer, 100, Some(CollaborationModeIndicator::Plan));
+            setup_collab_footer(
+                composer,
+                100,
+                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+            );
         },
     );
 
     // Textarea has content, agent running: queue hint is shown.
     snapshot_composer_state_with_width("footer_collapse_queue_full", 120, true, |composer| {
-        setup_collab_footer(composer, 98, None);
+        setup_collab_footer(
+            composer,
+            98,
+            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+        );
         composer.set_task_running(true);
         composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
     });
@@ -284,7 +324,11 @@ fn footer_collapse_snapshots() {
         50,
         true,
         |composer| {
-            setup_collab_footer(composer, 98, None);
+            setup_collab_footer(
+                composer,
+                98,
+                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+            );
             composer.set_task_running(true);
             composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
         },
@@ -294,7 +338,11 @@ fn footer_collapse_snapshots() {
         40,
         true,
         |composer| {
-            setup_collab_footer(composer, 98, None);
+            setup_collab_footer(
+                composer,
+                98,
+                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+            );
             composer.set_task_running(true);
             composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
         },
@@ -304,20 +352,32 @@ fn footer_collapse_snapshots() {
         30,
         true,
         |composer| {
-            setup_collab_footer(composer, 98, None);
+            setup_collab_footer(
+                composer,
+                98,
+                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+            );
             composer.set_task_running(true);
             composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
         },
     );
     snapshot_composer_state_with_width("footer_collapse_queue_mode_only", 20, true, |composer| {
-        setup_collab_footer(composer, 98, None);
+        setup_collab_footer(
+            composer,
+            98,
+            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
+        );
         composer.set_task_running(true);
         composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
     });
 
     // Textarea has content, plan mode active, agent running: queue hint + mode.
     snapshot_composer_state_with_width("footer_collapse_plan_queue_full", 120, true, |composer| {
-        setup_collab_footer(composer, 98, Some(CollaborationModeIndicator::Plan));
+        setup_collab_footer(
+            composer,
+            98,
+            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+        );
         composer.set_task_running(true);
         composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
     });
@@ -326,7 +386,11 @@ fn footer_collapse_snapshots() {
         50,
         true,
         |composer| {
-            setup_collab_footer(composer, 98, Some(CollaborationModeIndicator::Plan));
+            setup_collab_footer(
+                composer,
+                98,
+                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+            );
             composer.set_task_running(true);
             composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
         },
@@ -336,7 +400,11 @@ fn footer_collapse_snapshots() {
         40,
         true,
         |composer| {
-            setup_collab_footer(composer, 98, Some(CollaborationModeIndicator::Plan));
+            setup_collab_footer(
+                composer,
+                98,
+                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+            );
             composer.set_task_running(true);
             composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
         },
@@ -346,7 +414,11 @@ fn footer_collapse_snapshots() {
         30,
         true,
         |composer| {
-            setup_collab_footer(composer, 98, Some(CollaborationModeIndicator::Plan));
+            setup_collab_footer(
+                composer,
+                98,
+                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+            );
             composer.set_task_running(true);
             composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
         },
@@ -356,7 +428,11 @@ fn footer_collapse_snapshots() {
         20,
         true,
         |composer| {
-            setup_collab_footer(composer, 98, Some(CollaborationModeIndicator::Plan));
+            setup_collab_footer(
+                composer,
+                98,
+                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
+            );
             composer.set_task_running(true);
             composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
         },

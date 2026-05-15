@@ -10,4 +10,4 @@ expression: "render_test_backend_debug(width, height, |f|\n{ composer.render(f.a
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"  ? for shortcuts · Plan mode (shift+tab to cycle)                                                   100% context left  "
+"  ? for shortcuts · Plan (shift+tab to cycle)                                                        100% context left  "

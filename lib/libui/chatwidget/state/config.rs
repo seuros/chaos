@@ -56,6 +56,7 @@ impl ChatWidget {
                 mask.reasoning_effort = plan_mask.reasoning_effort;
             }
         }
+        self.refresh_status_line();
     }
 
     /// Set the reasoning effort in the stored collaboration mode.
@@ -73,6 +74,7 @@ impl ChatWidget {
             // Plan reasoning is controlled by the Plan preset and Plan-only override updates.
             mask.reasoning_effort = Some(effort);
         }
+        self.refresh_status_line();
     }
 
     /// Set the personality in the widget's config copy.
@@ -98,6 +100,7 @@ impl ChatWidget {
             mask.model = Some(model.to_string());
         }
         self.refresh_model_display();
+        self.refresh_status_line();
     }
 
     pub fn current_model(&self) -> &str {
@@ -195,6 +198,10 @@ impl ChatWidget {
             .unwrap_or(ModeKind::Default)
     }
 
+    pub fn collaboration_mode_kind(&self) -> ModeKind {
+        self.active_mode_kind()
+    }
+
     #[cfg(any(test, feature = "testing"))]
     pub fn current_reasoning_effort(&self) -> Option<ReasoningEffortConfig> {
         self.effective_reasoning_effort()
@@ -226,6 +233,7 @@ impl ChatWidget {
         self.session_header.set_model(effective.model());
         // Keep composer paste affordances aligned with the currently effective model.
         self.sync_image_paste_enabled();
+        self.update_collaboration_mode_indicator();
     }
 
     pub(crate) fn model_display_name(&self) -> &str {
@@ -255,10 +263,27 @@ impl ChatWidget {
         if !self.collaboration_modes_enabled() {
             return None;
         }
-        match self.active_mode_kind() {
-            ModeKind::Plan => Some(CollaborationModeIndicator::Plan),
-            ModeKind::Default | ModeKind::PairProgramming | ModeKind::Execute => None,
+        let effective_mode = self.effective_collaboration_mode();
+        let kind = effective_mode.mode;
+        if !kind.is_tui_visible() {
+            return None;
         }
+        let effort_label = match effective_mode.reasoning_effort() {
+            Some(ReasoningEffortConfig::None) | None => None,
+            Some(effort) => Some(effort.to_string()),
+        };
+        let model_label = if crate::theme::is_clamped() {
+            "claude (MAX)".to_string()
+        } else if effective_mode.model().is_empty() {
+            DEFAULT_MODEL_DISPLAY_NAME.to_string()
+        } else {
+            effective_mode.model().to_string()
+        };
+        Some(CollaborationModeIndicator::new(
+            kind,
+            model_label,
+            effort_label,
+        ))
     }
 
     pub(crate) fn update_collaboration_mode_indicator(&mut self) {
@@ -304,9 +329,6 @@ impl ChatWidget {
         if !self.collaboration_modes_enabled() {
             return;
         }
-        let previous_mode = self.active_mode_kind();
-        let previous_model = self.current_model().to_string();
-        let previous_effort = self.effective_reasoning_effort();
         if mask.mode == Some(ModeKind::Plan)
             && let Some(effort) = self.config.plan_mode_reasoning_effort
         {
@@ -315,30 +337,7 @@ impl ChatWidget {
         self.active_collaboration_mask = Some(mask);
         self.update_collaboration_mode_indicator();
         self.refresh_model_display();
-        let next_mode = self.active_mode_kind();
-        let next_model = self.current_model();
-        let next_effort = self.effective_reasoning_effort();
-        if previous_mode != next_mode
-            && (previous_model != next_model || previous_effort != next_effort)
-        {
-            let mut message = format!("Model changed to {next_model}");
-            if !next_model.starts_with("chaos-auto-") {
-                let reasoning_label = match next_effort {
-                    Some(ReasoningEffortConfig::Minimal) => "minimal",
-                    Some(ReasoningEffortConfig::Low) => "low",
-                    Some(ReasoningEffortConfig::Medium) => "medium",
-                    Some(ReasoningEffortConfig::High) => "high",
-                    Some(ReasoningEffortConfig::XHigh) => "xhigh",
-                    None | Some(ReasoningEffortConfig::None) => "default",
-                };
-                message.push(' ');
-                message.push_str(reasoning_label);
-            }
-            message.push_str(" for ");
-            message.push_str(next_mode.display_name());
-            message.push_str(" mode.");
-            self.add_info_message(message, /*hint*/ None);
-        }
+        self.refresh_status_line();
         self.request_redraw();
     }
 

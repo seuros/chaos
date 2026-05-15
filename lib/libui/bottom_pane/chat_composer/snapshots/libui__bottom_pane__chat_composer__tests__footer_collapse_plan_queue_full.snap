@@ -1,6 +1,6 @@
 ---
 source: lib/libui/bottom_pane/chat_composer/chat_composer_tests.rs
-expression: terminal.backend()
+expression: "render_test_backend_debug(width, height, |f|\n{ composer.render(f.area(), f.buffer_mut()); })"
 ---
 "                                                                                                                        "
 "› Test                                                                                                                  "
@@ -10,4 +10,4 @@ expression: terminal.backend()
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"  tab to queue message · Plan mode                                                                    98% context left  "
+"  tab to queue message · Plan                                                                         98% context left  "

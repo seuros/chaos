@@ -170,6 +170,8 @@ impl ChatWidget {
         if self.halluacinate.is_none() {
             self.bottom_pane.set_status_line_enabled(false);
             self.set_status_line(None);
+        } else {
+            self.refresh_status_line();
         }
     }
 
@@ -582,27 +584,27 @@ impl ChatWidget {
         let last_input_tokens = last_usage.input_tokens;
         let last_output_tokens = last_usage.output_tokens;
 
-        let five_hour = self
-            .rate_limit_snapshots_by_limit_id
-            .get("chaos")
-            .and_then(|s| s.primary.as_ref())
-            .map(|w| {
-                serde_json::json!({
-                    "used_pct": w.used_percent,
-                    "remaining_pct": (100.0f64 - w.used_percent).clamp(0.0f64, 100.0f64),
-                    "window_minutes": w.window_minutes,
-                })
-            });
+        let chaos_rate_limit = self.rate_limit_snapshots_by_limit_id.get("chaos");
+        let rate_limit_captured_at_epoch_seconds =
+            chaos_rate_limit.map(|s| s.captured_at.as_second());
 
-        let weekly = self
-            .rate_limit_snapshots_by_limit_id
-            .get("chaos")
+        let five_hour = chaos_rate_limit.and_then(|s| s.primary.as_ref()).map(|w| {
+            serde_json::json!({
+                "used_pct": w.used_percent,
+                "remaining_pct": (100.0f64 - w.used_percent).clamp(0.0f64, 100.0f64),
+                "window_minutes": w.window_minutes,
+                "resets_at_epoch_seconds": w.resets_at_epoch_seconds,
+            })
+        });
+
+        let weekly = chaos_rate_limit
             .and_then(|s| s.secondary.as_ref())
             .map(|w| {
                 serde_json::json!({
                     "used_pct": w.used_percent,
                     "remaining_pct": (100.0f64 - w.used_percent).clamp(0.0f64, 100.0f64),
                     "window_minutes": w.window_minutes,
+                    "resets_at_epoch_seconds": w.resets_at_epoch_seconds,
                 })
             });
 
@@ -640,6 +642,7 @@ impl ChatWidget {
             },
             "five_hour": five_hour,
             "weekly": weekly,
+            "rate_limit_captured_at_epoch_seconds": rate_limit_captured_at_epoch_seconds,
         })
     }
 }

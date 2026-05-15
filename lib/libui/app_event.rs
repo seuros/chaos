@@ -35,6 +35,17 @@ pub struct ConnectorsSnapshot {
     pub connectors: Vec<AppInfo>,
 }
 
+/// Imperative UI commands sent over the app-event bus.
+///
+/// This is intentionally small: producers can ask the top-level app loop to
+/// refresh derived UI surfaces without needing to know which widgets cache
+/// which rendered values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiCommand {
+    /// Recompute derived UI presentation and schedule a redraw.
+    Refresh,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum AppEvent {
@@ -83,6 +94,9 @@ pub enum AppEvent {
     /// Forward an `Op` to the Agent. Using an `AppEvent` for this avoids
     /// bubbling channels through layers of widgets.
     ChaosOp(chaos_ipc::protocol::Op),
+
+    /// Imperative command for refreshing derived UI presentation.
+    UiCommand(UiCommand),
 
     /// Reload the project `.mcp.json` layer for the given process and refresh
     /// the session's MCP registry using the canonical session path.

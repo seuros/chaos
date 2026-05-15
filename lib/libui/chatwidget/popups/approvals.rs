@@ -1,4 +1,5 @@
 //! Approvals and permissions popup methods.
+use crate::app_event::UiCommand;
 use chaos_ipc::product::OS_NAME;
 
 use super::super::*;
@@ -121,6 +122,7 @@ impl ChatWidget {
             tx.send(AppEvent::UpdateApprovalPolicy(approval));
             tx.send(AppEvent::UpdateSandboxPolicy(sandbox_clone));
             tx.send(AppEvent::UpdateApprovalsReviewer(approvals_reviewer));
+            tx.emit_ui_command(UiCommand::Refresh);
             tx.send(AppEvent::InsertHistoryCell(Box::new(
                 history_cell::new_info_event(
                     format!("Permissions updated to {label}"),

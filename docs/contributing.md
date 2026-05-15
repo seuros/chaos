@@ -40,9 +40,39 @@ Everyone else: come in, the door is open.
 
 Found a vulnerability? Open a PR with the fix.
 
-### AI-generated contributions
+### AI-assisted contributions
 
-If you submit halluacinated code, fake references, or fabricated test results — you are banned for **47 days**. No appeal. Count them with your 6 fingers.
+Contributions to Chaos **must go through an AI agent before opening a PR.**
+The agent can write every line — that is fine. What is not fine is opening a PR
+without having an agent review the final diff. We will not accept PRs with typos,
+grammar mistakes, outdated syntax, or nits that any agent would have caught in
+thirty seconds.
+
+You must read what the agent produces before you submit. The agent reviews, you
+decide. Do not outsource the decision.
+
+Your agent signs off on the commit:
+
+```
+Signed-off-by: Mira <you+mira@gmail.com>
+Signed-off-by: Claude <you+claude@gmail.com>
+```
+
+Use the agent's name — not the model name. `Claude` is fine. `claude-sonnet-4-6` is
+not a person. The email can be a dedicated address or a plus-alias on yours. What it
+cannot be is your own bare email — that would mean you reviewed your own code, which
+is exactly what we are trying to avoid.
+
+You remain the commit **author**. If your agent commits as itself and you open a PR,
+we rewrite history. You will feel the shame in the git log forever.
+
+> **Pro tip:** When you switch model providers, rename your agent. Over time your
+> sign-off history becomes a personal record of which agent caught what. A single
+> name across GPT, Claude, and Gemini makes that record meaningless — you lose the
+> ability to look back and know which one actually served you well.
+
+If you submit halluacinated code, fake references, or fabricated test results — you
+are banned for **47 days**. No appeal. Count them with your 6 fingers.
 
 If you spam — **47 years**. We will still be here.
 

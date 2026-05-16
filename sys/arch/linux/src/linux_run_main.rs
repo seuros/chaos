@@ -110,7 +110,6 @@ pub fn run_main() -> ! {
         eprintln!("alcatraz-linux: no command specified to execute.");
         std::process::exit(1);
     }
-
     let EffectiveSandboxPolicies {
         sandbox_policy,
         vfs_policy,
@@ -152,10 +151,9 @@ pub fn run_main() -> ! {
         /*proxy_routed_network*/ allow_network_for_proxy,
         &allowed_proxy_ports,
     ) {
-        eprintln!("alcatraz-linux: {e}");
+        eprintln!("alcatraz-linux: sandbox error: {e}");
         std::process::exit(1);
     }
-
     exec_or_exit(command);
 }
 

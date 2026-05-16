@@ -220,12 +220,10 @@ fn install_network_seccomp_filter_on_current_thread(mode: NetworkSeccompMode) ->
             rules.insert(libc::SYS_socketpair, vec![unix_only_rule]);
         }
         NetworkSeccompMode::ProxyRouted => {
-            // In proxy-routed mode we allow IP sockets needed to reach the
-            // configured loopback proxy ports, but deny all other socket
-            // families, including AF_UNIX. This narrows the socket surface for
-            // proxy-only mode while native Landlock TCP rules enforce the
-            // allowed destination ports.
-            let deny_non_ip_socket = SeccompRule::new(vec![
+            // Allow AF_INET, AF_INET6 (to reach the proxy), and AF_UNIX (required
+            // by tokio signal handling and local IPC). Landlock ConnectTcp rules
+            // enforce proxy-port-only TCP access — no need to block AF_UNIX here.
+            let deny_exotic_socket = SeccompRule::new(vec![
                 SeccompCondition::new(
                     0,
                     SeccompCmpArgLen::Dword,
@@ -238,15 +236,14 @@ fn install_network_seccomp_filter_on_current_thread(mode: NetworkSeccompMode) ->
                     SeccompCmpOp::Ne,
                     libc::AF_INET6 as u64,
                 )?,
+                SeccompCondition::new(
+                    0,
+                    SeccompCmpArgLen::Dword,
+                    SeccompCmpOp::Ne,
+                    libc::AF_UNIX as u64,
+                )?,
             ])?;
-            let deny_unix_socketpair = SeccompRule::new(vec![SeccompCondition::new(
-                0,
-                SeccompCmpArgLen::Dword,
-                SeccompCmpOp::Eq,
-                libc::AF_UNIX as u64,
-            )?])?;
-            rules.insert(libc::SYS_socket, vec![deny_non_ip_socket]);
-            rules.insert(libc::SYS_socketpair, vec![deny_unix_socketpair]);
+            rules.insert(libc::SYS_socket, vec![deny_exotic_socket]);
         }
     }
 

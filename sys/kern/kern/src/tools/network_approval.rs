@@ -503,7 +503,10 @@ pub(crate) fn build_network_policy_decider(
         let network_approval = Arc::clone(&network_approval);
         let network_policy_decider_session = Arc::clone(&network_policy_decider_session);
         async move {
-            let Some(session) = network_policy_decider_session.read().await.upgrade() else {
+            let guard = network_policy_decider_session.read().await;
+            let session_opt = guard.upgrade();
+            drop(guard);
+            let Some(session) = session_opt else {
                 return NetworkDecision::ask("not_allowed");
             };
             network_approval

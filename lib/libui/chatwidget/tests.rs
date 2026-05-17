@@ -5286,6 +5286,20 @@ async fn backtab_mode_switch_refreshes_wpn_statusline_effort() {
     .unwrap();
     chat.set_halluacinate_handle(Some(handle.clone()));
 
+    // Drain all synchronous events, then await the async Lua render triggered by
+    // set_halluacinate_handle so it doesn't race with the BackTab render below.
+    while rx.try_recv().is_ok() {}
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            match rx.recv().await {
+                Some(AppEvent::StatusLineScriptRendered { .. }) => break,
+                Some(_) => continue,
+                None => panic!("channel closed before initial statusline render"),
+            }
+        }
+    })
+    .await
+    .expect("expected initial statusline render after halluacinate attach");
     while rx.try_recv().is_ok() {}
 
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));

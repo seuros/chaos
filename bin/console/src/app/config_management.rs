@@ -1,6 +1,5 @@
 use super::{
-    App, ApprovalPolicy, Config, ConfigBuilder, ConfigEditsBuilder, Feature, Path, PathBuf, Result,
-    SandboxPolicy, WrapErr,
+    App, ApprovalPolicy, Config, ConfigBuilder, Path, PathBuf, Result, SandboxPolicy, WrapErr,
 };
 
 impl App {
@@ -110,65 +109,6 @@ impl App {
         }
 
         true
-    }
-
-    pub(super) async fn update_feature_flags(&mut self, updates: Vec<(Feature, bool)>) {
-        if updates.is_empty() {
-            return;
-        }
-
-        let mut next_config = self.config.clone();
-        let mut feature_updates_to_apply = Vec::with_capacity(updates.len());
-        let permissions_history_label: Option<&'static str> = None;
-        let mut builder = ConfigEditsBuilder::new(&self.config.chaos_home)
-            .with_profile(self.active_profile.as_deref());
-
-        for (feature, enabled) in updates {
-            let feature_key = feature.key();
-            let feature_edits = Vec::new();
-            let mut feature_config = next_config.clone();
-            if let Err(err) = feature_config.features.set_enabled(feature, enabled) {
-                tracing::error!(
-                    error = %err,
-                    feature = feature_key,
-                    "failed to update constrained feature flags"
-                );
-                self.chat_widget.add_error_message(format!(
-                    "Failed to update experimental feature `{feature_key}`: {err}"
-                ));
-                continue;
-            }
-            let effective_enabled = feature_config.features.enabled(feature);
-
-            next_config = feature_config;
-            feature_updates_to_apply.push((feature, effective_enabled));
-            builder = builder
-                .with_edits(feature_edits)
-                .set_feature_enabled(feature_key, effective_enabled);
-        }
-
-        // Persist first so the live session does not diverge from disk if the
-        // config edit fails. Runtime/UI state is patched below only after the
-        // durable config update succeeds.
-        if let Err(err) = builder.apply().await {
-            tracing::error!(error = %err, "failed to persist feature flags");
-            self.chat_widget
-                .add_error_message(format!("Failed to update experimental features: {err}"));
-            return;
-        }
-
-        self.config = next_config;
-        for (feature, effective_enabled) in feature_updates_to_apply {
-            self.chat_widget
-                .set_feature_enabled(feature, effective_enabled);
-        }
-
-        if let Some(label) = permissions_history_label {
-            self.chat_widget.add_info_message(
-                format!("Permissions updated to {label}"),
-                /*hint*/ None,
-            );
-        }
     }
 
     pub(super) fn fresh_session_config(&self) -> Config {

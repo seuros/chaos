@@ -466,7 +466,6 @@ impl App {
 
         self.auth_manager.reload();
         self.chat_widget.refresh_status_line();
-        self.chat_widget.refresh_connectors(/*force_refetch*/ true);
         self.chat_widget.submit_op(Op::ReloadUserConfig);
         if provider_changed || self.chat_widget.process_id().is_none() {
             self.start_fresh_session_with_summary_hint(tui).await;

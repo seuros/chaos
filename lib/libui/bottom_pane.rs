@@ -15,7 +15,6 @@
 //! hint. The pane schedules redraws so those hints can expire even when the UI is otherwise idle.
 use std::path::PathBuf;
 
-use crate::app_event::ConnectorsSnapshot;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
 use crate::bottom_pane::pending_process_approvals::PendingProcessApprovals;

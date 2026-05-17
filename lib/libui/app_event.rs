@@ -11,7 +11,6 @@
 use std::path::PathBuf;
 
 use chaos_ipc::ProcessId;
-use chaos_ipc::api::AppInfo;
 use chaos_ipc::mcp::RequestId as McpRequestId;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::ElicitationAction;
@@ -29,12 +28,6 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::config::types::ApprovalsReviewer;
-use chaos_kern::features::Feature;
-
-#[derive(Debug, Clone)]
-pub struct ConnectorsSnapshot {
-    pub connectors: Vec<AppInfo>,
-}
 
 /// Imperative UI commands sent over the app-event bus.
 ///
@@ -116,13 +109,6 @@ pub enum AppEvent {
         matches: Vec<FileMatch>,
     },
 
-    /// Result of prefetching connectors.
-    #[allow(dead_code)]
-    ConnectorsLoaded {
-        result: Result<ConnectorsSnapshot, String>,
-        is_final: bool,
-    },
-
     /// Result of computing a `/diff` command.
     DiffResult(String),
 
@@ -150,11 +136,6 @@ pub enum AppEvent {
         url: String,
         on_open: ElicitationAction,
         on_error: ElicitationAction,
-    },
-
-    /// Refresh app connector state and mention bindings.
-    RefreshConnectors {
-        force_refetch: bool,
     },
 
     InsertHistoryCell(Box<dyn HistoryCell>),
@@ -226,12 +207,6 @@ pub enum AppEvent {
     /// Update the current approvals reviewer in the running app and widget.
     UpdateApprovalsReviewer(ApprovalsReviewer),
 
-    /// Update feature flags and persist them to the top-level config.
-    #[allow(dead_code)]
-    UpdateFeatureFlags {
-        updates: Vec<(Feature, bool)>,
-    },
-
     /// Update whether the full access warning prompt has been acknowledged.
     UpdateFullAccessWarningAcknowledged(bool),
 
@@ -255,12 +230,6 @@ pub enum AppEvent {
 
     /// Open the interactive accounts popup.
     OpenAccountsPopup,
-
-    /// Enable or disable an app by connector ID.
-    SetAppEnabled {
-        id: String,
-        enabled: bool,
-    },
 
     /// Re-open the permissions presets popup.
     OpenPermissionsPopup,

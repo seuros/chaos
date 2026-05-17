@@ -3,7 +3,7 @@
 //! It is responsible for:
 //!
 //! - Editing the input buffer (a [`TextArea`]), including placeholder "elements" for attachments.
-//! - Routing keys to the active popup (slash commands, file search, skill/apps mentions).
+//! - Routing keys to the active popup (slash commands, file search, skill mentions).
 //! - Promoting typed slash commands into atomic elements when the command name is completed.
 //! - Handling submit vs newline on Enter.
 //! - Turning raw key streams into explicit paste operations on platforms where terminals
@@ -168,7 +168,6 @@ use chaos_ipc::user_input::ByteRange;
 use chaos_ipc::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use chaos_ipc::user_input::TextElement;
 
-use crate::app_event::ConnectorsSnapshot;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::MentionBinding;
@@ -230,14 +229,12 @@ pub struct ChatComposer {
     pub(super) footer_flash: Option<FooterFlash>,
     pub(super) context_window_percent: Option<i64>,
     pub(super) context_window_used_tokens: Option<i64>,
-    pub(super) connectors_snapshot: Option<ConnectorsSnapshot>,
     pub(super) dismissed_mention_popup_token: Option<String>,
     pub(super) mention_bindings: HashMap<u64, ComposerMentionBinding>,
     pub(super) recent_submission_mention_bindings: Vec<MentionBinding>,
     pub(super) collaboration_modes_enabled: bool,
     pub(super) config: ChatComposerConfig,
     pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
-    pub(super) connectors_enabled: bool,
     pub(super) personality_command_enabled: bool,
     pub(super) status_line_value: Option<Line<'static>>,
     pub(super) status_line_enabled: bool,
@@ -270,7 +267,6 @@ impl ChatComposer {
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
-            connectors_enabled: self.connectors_enabled,
             personality_command_enabled: self.personality_command_enabled,
             allow_elevate_sandbox: false,
         }
@@ -338,14 +334,12 @@ impl ChatComposer {
             footer_flash: None,
             context_window_percent: None,
             context_window_used_tokens: None,
-            connectors_snapshot: None,
             dismissed_mention_popup_token: None,
             mention_bindings: HashMap::new(),
             recent_submission_mention_bindings: Vec::new(),
             collaboration_modes_enabled: false,
             config,
             collaboration_mode_indicator: None,
-            connectors_enabled: false,
             personality_command_enabled: false,
             status_line_value: None,
             status_line_enabled: false,
@@ -368,11 +362,6 @@ impl ChatComposer {
         self.config.image_paste_enabled = enabled;
     }
 
-    pub fn set_connector_mentions(&mut self, connectors_snapshot: Option<ConnectorsSnapshot>) {
-        self.connectors_snapshot = connectors_snapshot;
-        self.sync_popups();
-    }
-
     pub fn take_mention_bindings(&mut self) -> Vec<MentionBinding> {
         let elements = self.current_mention_elements();
         let mut ordered = Vec::new();
@@ -392,10 +381,6 @@ impl ChatComposer {
 
     pub fn set_collaboration_modes_enabled(&mut self, enabled: bool) {
         self.collaboration_modes_enabled = enabled;
-    }
-
-    pub fn set_connectors_enabled(&mut self, enabled: bool) {
-        self.connectors_enabled = enabled;
     }
 
     pub fn set_collaboration_mode_indicator(

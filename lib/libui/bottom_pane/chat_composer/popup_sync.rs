@@ -235,13 +235,11 @@ impl ChatComposer {
             _ => {
                 if is_editing_slash_command_name {
                     let collaboration_modes_enabled = self.collaboration_modes_enabled;
-                    let connectors_enabled = self.connectors_enabled;
                     let personality_command_enabled = self.personality_command_enabled;
                     let mut command_popup = CommandPopup::new(
                         self.custom_prompts.clone(),
                         CommandPopupFlags {
                             collaboration_modes_enabled,
-                            connectors_enabled,
                             personality_command_enabled,
                         },
                     );

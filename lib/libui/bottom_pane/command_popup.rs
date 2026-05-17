@@ -37,7 +37,6 @@ pub struct CommandPopup {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CommandPopupFlags {
     pub collaboration_modes_enabled: bool,
-    pub connectors_enabled: bool,
     pub personality_command_enabled: bool,
 }
 
@@ -45,7 +44,6 @@ impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
     fn from(value: CommandPopupFlags) -> Self {
         Self {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
-            connectors_enabled: value.connectors_enabled,
             personality_command_enabled: value.personality_command_enabled,
             allow_elevate_sandbox: false,
         }
@@ -460,7 +458,6 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                connectors_enabled: false,
                 personality_command_enabled: true,
             },
         );
@@ -478,7 +475,6 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                connectors_enabled: false,
                 personality_command_enabled: true,
             },
         );
@@ -496,7 +492,6 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                connectors_enabled: false,
                 personality_command_enabled: false,
             },
         );
@@ -522,7 +517,6 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                connectors_enabled: false,
                 personality_command_enabled: true,
             },
         );

@@ -22,7 +22,6 @@ use super::trait_def::HistoryCell;
 pub struct UserHistoryCell {
     pub message: String,
     pub text_elements: Vec<TextElement>,
-    #[allow(dead_code)]
     pub local_image_paths: Vec<PathBuf>,
     pub remote_image_urls: Vec<String>,
 }

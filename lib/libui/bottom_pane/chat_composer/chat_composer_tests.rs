@@ -5,7 +5,6 @@ use crate::test_support::buffer_row_string;
 use crate::test_support::make_app_event_sender;
 use crate::test_support::make_app_event_sender_with_rx;
 use crate::test_support::renderable_buffer;
-use chaos_ipc::api::AppInfo;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use image::ImageBuffer;
@@ -768,74 +767,6 @@ fn question_mark_does_not_toggle_during_paste_burst() {
 
     assert_eq!(composer.textarea.text(), "hi?there");
     assert_ne!(composer.footer_mode, FooterMode::ShortcutOverlay);
-}
-
-#[test]
-fn set_connector_mentions_skips_disabled_connectors() {
-    let sender = make_app_event_sender();
-    let mut composer = ChatComposer::new(
-        true,
-        sender,
-        false,
-        "Ask FreeChaOS to do anything".to_string(),
-        false,
-    );
-    composer.set_connectors_enabled(true);
-    composer.set_text_content("$".to_string(), Vec::new(), Vec::new());
-    assert!(matches!(composer.active_popup, ActivePopup::None));
-
-    let connectors = vec![AppInfo {
-        id: "connector_1".to_string(),
-        name: "Notion".to_string(),
-        description: Some("Workspace docs".to_string()),
-        logo_url: None,
-        logo_url_dark: None,
-        distribution_channel: None,
-        branding: None,
-        app_metadata: None,
-        labels: None,
-        install_url: Some("https://example.test/notion".to_string()),
-        is_accessible: true,
-        is_enabled: false,
-    }];
-    composer.set_connector_mentions(Some(ConnectorsSnapshot { connectors }));
-
-    assert!(
-        matches!(composer.active_popup, ActivePopup::None),
-        "disabled connectors should not appear in the mention popup"
-    );
-}
-
-#[test]
-fn set_connector_mentions_excludes_disabled_apps_from_mention_popup() {
-    let sender = make_app_event_sender();
-    let mut composer = ChatComposer::new(
-        true,
-        sender,
-        false,
-        "Ask FreeChaOS to do anything".to_string(),
-        false,
-    );
-    composer.set_connectors_enabled(true);
-    composer.set_text_content("$".to_string(), Vec::new(), Vec::new());
-
-    let connectors = vec![AppInfo {
-        id: "connector_1".to_string(),
-        name: "Notion".to_string(),
-        description: Some("Workspace docs".to_string()),
-        logo_url: None,
-        logo_url_dark: None,
-        distribution_channel: None,
-        branding: None,
-        app_metadata: None,
-        labels: None,
-        install_url: Some("https://example.test/notion".to_string()),
-        is_accessible: true,
-        is_enabled: false,
-    }];
-    composer.set_connector_mentions(Some(ConnectorsSnapshot { connectors }));
-
-    assert!(matches!(composer.active_popup, ActivePopup::None));
 }
 
 #[test]

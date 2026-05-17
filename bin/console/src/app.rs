@@ -56,7 +56,6 @@ use chaos_kern::config::edit::ConfigEdit;
 use chaos_kern::config::edit::ConfigEditsBuilder;
 
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
-use chaos_kern::features::Feature;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_proc::LogQuery;
 use chaos_proc::StateRuntime;

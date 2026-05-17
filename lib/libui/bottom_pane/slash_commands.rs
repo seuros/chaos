@@ -13,8 +13,6 @@ use crate::slash_command::built_in_slash_commands;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BuiltinCommandFlags {
     pub collaboration_modes_enabled: bool,
-    #[allow(dead_code)]
-    pub connectors_enabled: bool,
     pub personality_command_enabled: bool,
     pub allow_elevate_sandbox: bool,
 }
@@ -56,7 +54,6 @@ mod tests {
     fn all_enabled_flags() -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: true,
-            connectors_enabled: true,
             personality_command_enabled: true,
             allow_elevate_sandbox: true,
         }

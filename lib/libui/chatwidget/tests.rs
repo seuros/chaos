@@ -16,14 +16,13 @@
 
 use super::{
     ApprovalPolicy, Arc, BottomPane, BottomPaneParams, Buffer, ChatWidget, ChatWidgetInit,
-    ConnectorsCacheState, ErrorEvent, ExternalEditorState, HashMap, InterruptManager,
-    NUDGE_MODEL_SLUG, Notification, Notifications, PLAN_IMPLEMENTATION_CODING_MESSAGE,
-    PLAN_IMPLEMENTATION_TITLE, PLAN_MODE_REASONING_SCOPE_TITLE, PendingSteer,
-    PendingSteerCompareKey, ProcessInputState, RateLimitSwitchPromptState, RateLimitWarningState,
-    ReasoningEffortConfig, Rect, SandboxPolicy, SessionHeader, SlashCommand, SleepInhibitor,
-    StatusIndicatorState, TurnAbortReason, UnifiedExecProcessSummary, UserMessage,
-    UserMessageEvent, VecDeque, collaboration_modes, queued_message_edit_binding_for_terminal,
-    remap_placeholders_for_message,
+    ErrorEvent, ExternalEditorState, HashMap, InterruptManager, NUDGE_MODEL_SLUG, Notification,
+    Notifications, PLAN_IMPLEMENTATION_CODING_MESSAGE, PLAN_IMPLEMENTATION_TITLE,
+    PLAN_MODE_REASONING_SCOPE_TITLE, PendingSteer, PendingSteerCompareKey, ProcessInputState,
+    RateLimitSwitchPromptState, RateLimitWarningState, ReasoningEffortConfig, Rect, SandboxPolicy,
+    SessionHeader, SlashCommand, SleepInhibitor, StatusIndicatorState, TurnAbortReason,
+    UnifiedExecProcessSummary, UserMessage, UserMessageEvent, VecDeque, collaboration_modes,
+    queued_message_edit_binding_for_terminal, remap_placeholders_for_message,
 };
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
@@ -1914,10 +1913,6 @@ async fn make_chatwidget_manual(
         unified_exec_processes: Vec::new(),
         agent_turn_running: false,
         mcp_startup_status: None,
-        connectors_cache: ConnectorsCacheState::default(),
-        connectors_partial_snapshot: None,
-        connectors_prefetch_in_flight: false,
-        connectors_force_refetch_pending: false,
         interrupts: InterruptManager::new(),
         reasoning_buffer: String::new(),
         full_reasoning_buffer: String::new(),

@@ -36,7 +36,6 @@ use std::time::Instant;
 use chaos_amphetamine::SleepInhibitor;
 use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
-use chaos_ipc::api::AppInfo;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::config_types::ModeKind;
@@ -75,7 +74,6 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use tracing::debug;
-use tracing::warn;
 
 const DEFAULT_MODEL_DISPLAY_NAME: &str = "loading";
 const PLAN_IMPLEMENTATION_TITLE: &str = "Implement this plan?";
@@ -85,8 +83,6 @@ const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "Implement the plan.";
 const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "Apply reasoning change";
 const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "Apply to Plan mode override";
 const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "Apply to global default and Plan mode override";
-const CONNECTORS_SELECTION_VIEW_ID: &str = "connectors-selection";
-
 /// Choose the keybinding used to edit the most-recently queued message.
 ///
 /// Apple Terminal, Warp, and VSCode integrated terminals intercept or silently
@@ -115,13 +111,11 @@ fn queued_message_edit_binding_for_terminal(terminal_name: TerminalName) -> KeyB
 }
 
 use crate::app_event::AppEvent;
-use crate::app_event::ConnectorsSnapshot;
 use crate::app_event::ExitMode;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::BottomPane;
 use crate::bottom_pane::BottomPaneParams;
 use crate::bottom_pane::CollaborationModeIndicator;
-use crate::bottom_pane::ColumnWidthMode;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::SelectionAction;
@@ -153,7 +147,6 @@ use self::agent::spawn_agent_from_existing;
 pub use self::agent::spawn_op_forwarder;
 mod core;
 pub use self::core::ActiveCellTranscriptKey;
-use self::core::ConnectorsCacheState;
 pub use self::core::ExternalEditorState;
 use self::core::NUDGE_MODEL_SLUG;
 use self::core::Notification;
@@ -309,10 +302,6 @@ pub struct ChatWidget {
     /// bottom pane is treated as "running" while this is populated, even if no agent turn is
     /// currently executing.
     mcp_startup_status: Option<HashMap<String, McpStartupStatus>>,
-    connectors_cache: ConnectorsCacheState,
-    connectors_partial_snapshot: Option<ConnectorsSnapshot>,
-    connectors_prefetch_in_flight: bool,
-    connectors_force_refetch_pending: bool,
     // Queue of interruptive UI events deferred during an active write cycle
     interrupts: InterruptManager,
     // Accumulates the current reasoning block text to extract a header
@@ -485,10 +474,6 @@ impl ChatWidget {
             unified_exec_processes: Vec::new(),
             agent_turn_running: false,
             mcp_startup_status: None,
-            connectors_cache: ConnectorsCacheState::default(),
-            connectors_partial_snapshot: None,
-            connectors_prefetch_in_flight: false,
-            connectors_force_refetch_pending: false,
             interrupts: InterruptManager::new(),
             reasoning_buffer: String::new(),
             full_reasoning_buffer: String::new(),
@@ -542,10 +527,6 @@ impl ChatWidget {
         if p.update_collab_indicator {
             widget.update_collaboration_mode_indicator();
         }
-        widget
-            .bottom_pane
-            .set_connectors_enabled(widget.connectors_enabled());
-
         widget
     }
 

@@ -1,6 +1,6 @@
 ---
 source: lib/libui/bottom_pane/app_link_view.rs
-expression: "render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72)))"
+expression: "renderable_trim_end_string_at_desired_height(&view, 72)"
 ---
 
   Google Calendar
@@ -8,10 +8,7 @@ expression: "render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72))
 
   Plan and reference events from your calendar
 
-  Use $ to insert this app into the prompt.
-
   Enable this app to use it for the current request.
-  Newly installed apps can take a few minutes to appear in /apps.
 
 
   › 1. Manage on ChatGPT

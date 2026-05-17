@@ -65,7 +65,6 @@ pub struct AppLinkViewParams {
 }
 
 pub struct AppLinkView {
-    app_id: String,
     title: String,
     description: Option<String>,
     instructions: String,
@@ -95,8 +94,8 @@ impl AppLinkView {
             suggestion_type,
             elicitation_target,
         } = params;
+        let _ = app_id;
         Self {
-            app_id,
             title,
             description,
             instructions,
@@ -177,10 +176,7 @@ impl AppLinkView {
         }
     }
 
-    fn refresh_connectors_and_close(&mut self) {
-        self.app_event_tx.send(AppEvent::RefreshConnectors {
-            force_refetch: true,
-        });
+    fn accept_and_close(&mut self) {
         if self.is_tool_suggestion() {
             self.resolve_elicitation(ElicitationAction::Accept);
         }
@@ -194,10 +190,6 @@ impl AppLinkView {
 
     fn toggle_enabled(&mut self) {
         self.is_enabled = !self.is_enabled;
-        self.app_event_tx.send(AppEvent::SetAppEnabled {
-            id: self.app_id.clone(),
-            enabled: self.is_enabled,
-        });
         if self.is_tool_suggestion() {
             self.resolve_elicitation(ElicitationAction::Accept);
             self.complete = true;
@@ -214,7 +206,7 @@ impl AppLinkView {
                         _ => self.decline_tool_suggestion(),
                     },
                     AppLinkScreen::InstallConfirmation => match self.selected_action {
-                        0 => self.refresh_connectors_and_close(),
+                        0 => self.accept_and_close(),
                         _ => self.decline_tool_suggestion(),
                     },
                 },
@@ -224,7 +216,7 @@ impl AppLinkView {
                         _ => self.decline_tool_suggestion(),
                     },
                     AppLinkScreen::InstallConfirmation => match self.selected_action {
-                        0 => self.refresh_connectors_and_close(),
+                        0 => self.accept_and_close(),
                         _ => self.decline_tool_suggestion(),
                     },
                 },
@@ -239,7 +231,7 @@ impl AppLinkView {
                 _ => self.complete = true,
             },
             AppLinkScreen::InstallConfirmation => match self.selected_action {
-                0 => self.refresh_connectors_and_close(),
+                0 => self.accept_and_close(),
                 _ => self.back_to_link_screen(),
             },
         }
@@ -280,31 +272,10 @@ impl AppLinkView {
             }
             lines.push(Line::from(""));
         }
-        if self.is_installed {
-            for line in wrap("Use $ to insert this app into the prompt.", usable_width) {
-                lines.push(Line::from(line.into_owned()));
-            }
-            lines.push(Line::from(""));
-        }
-
         let instructions = self.instructions.trim();
         if !instructions.is_empty() {
             for line in wrap(instructions, usable_width) {
                 lines.push(Line::from(line.into_owned()));
-            }
-            for line in wrap(
-                "Newly installed apps can take a few minutes to appear in /apps.",
-                usable_width,
-            ) {
-                lines.push(Line::from(line.into_owned()));
-            }
-            if !self.is_installed {
-                for line in wrap(
-                    "After installed, use $ to insert this app into the prompt.",
-                    usable_width,
-                ) {
-                    lines.push(Line::from(line.into_owned()));
-                }
             }
             lines.push(Line::from(""));
         }
@@ -594,8 +565,8 @@ mod tests {
     }
 
     #[test]
-    fn toggle_action_sends_set_app_enabled_and_updates_label() {
-        let (tx, mut rx) = make_app_event_sender_with_rx();
+    fn toggle_action_updates_label() {
+        let (tx, _rx) = make_app_event_sender_with_rx();
         let mut view = AppLinkView::new(
             AppLinkViewParams {
                 app_id: "connector_1".to_string(),
@@ -613,15 +584,6 @@ mod tests {
         );
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
-
-        match rx.try_recv() {
-            Ok(AppEvent::SetAppEnabled { id, enabled }) => {
-                assert_eq!(id, "connector_1");
-                assert!(!enabled);
-            }
-            Ok(other) => panic!("unexpected app event: {other:?}"),
-            Err(err) => panic!("missing app event: {err}"),
-        }
 
         assert_eq!(
             view.action_labels(),
@@ -734,13 +696,6 @@ mod tests {
 
         view.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         match rx.try_recv() {
-            Ok(AppEvent::RefreshConnectors { force_refetch }) => {
-                assert!(force_refetch);
-            }
-            Ok(other) => panic!("unexpected app event: {other:?}"),
-            Err(err) => panic!("missing app event: {err}"),
-        }
-        match rx.try_recv() {
             Ok(AppEvent::SubmitProcessOp { process_id, op }) => {
                 assert_eq!(process_id, suggestion_target().process_id);
                 assert_eq!(
@@ -822,14 +777,6 @@ mod tests {
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
 
-        match rx.try_recv() {
-            Ok(AppEvent::SetAppEnabled { id, enabled }) => {
-                assert_eq!(id, "connector_google_calendar");
-                assert!(enabled);
-            }
-            Ok(other) => panic!("unexpected app event: {other:?}"),
-            Err(err) => panic!("missing app event: {err}"),
-        }
         match rx.try_recv() {
             Ok(AppEvent::SubmitProcessOp { process_id, op }) => {
                 assert_eq!(process_id, suggestion_target().process_id);

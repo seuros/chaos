@@ -91,9 +91,6 @@ impl ChatWidget {
             self.replay_initial_messages(messages);
         }
         self.submit_op(chaos_ipc::protocol::Op::ListCustomPrompts);
-        if self.connectors_enabled() {
-            self.prefetch_connectors();
-        }
         if let Some(user_message) = self.initial_user_message.take() {
             self.submit_user_message(user_message);
         }

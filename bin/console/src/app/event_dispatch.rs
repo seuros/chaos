@@ -434,17 +434,11 @@ impl App {
                 )
                 .await;
             }
-            AppEvent::RefreshConnectors { force_refetch } => {
-                self.chat_widget.refresh_connectors(force_refetch);
-            }
             AppEvent::StartFileSearch(query) => {
                 self.file_search.on_user_query(query);
             }
             AppEvent::FileSearchResult { query, matches } => {
                 self.chat_widget.apply_file_search_result(query, matches);
-            }
-            AppEvent::ConnectorsLoaded { result, is_final } => {
-                self.chat_widget.on_connectors_loaded(result, is_final);
             }
             AppEvent::UpdateReasoningEffort(effort) => {
                 self.on_update_reasoning_effort(effort);
@@ -632,9 +626,6 @@ impl App {
                         .add_error_message(format!("Failed to save approvals reviewer: {err}"));
                 }
             }
-            AppEvent::UpdateFeatureFlags { updates } => {
-                self.update_feature_flags(updates).await;
-            }
             AppEvent::UpdateFullAccessWarningAcknowledged(ack) => {
                 self.chat_widget.set_full_access_warning_acknowledged(ack);
             }
@@ -739,55 +730,6 @@ impl App {
             }
             AppEvent::SelectAgentProcess(process_id) => {
                 self.select_agent_process(tui, process_id).await?;
-            }
-            AppEvent::SetAppEnabled { id, enabled } => {
-                let edits = if enabled {
-                    vec![
-                        ConfigEdit::ClearPath {
-                            segments: vec!["apps".to_string(), id.clone(), "enabled".to_string()],
-                        },
-                        ConfigEdit::ClearPath {
-                            segments: vec![
-                                "apps".to_string(),
-                                id.clone(),
-                                "disabled_reason".to_string(),
-                            ],
-                        },
-                    ]
-                } else {
-                    vec![
-                        ConfigEdit::SetPath {
-                            segments: vec!["apps".to_string(), id.clone(), "enabled".to_string()],
-                            value: false.into(),
-                        },
-                        ConfigEdit::SetPath {
-                            segments: vec![
-                                "apps".to_string(),
-                                id.clone(),
-                                "disabled_reason".to_string(),
-                            ],
-                            value: "user".into(),
-                        },
-                    ]
-                };
-                match ConfigEditsBuilder::new(&self.config.chaos_home)
-                    .with_edits(edits)
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.chat_widget.update_connector_enabled(&id, enabled);
-                        if let Err(err) = self.refresh_in_memory_config_from_disk().await {
-                            tracing::warn!(error = %err, "failed to refresh config after app toggle");
-                        }
-                        self.chat_widget.submit_op(Op::ReloadUserConfig);
-                    }
-                    Err(err) => {
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to update app config for {id}: {err}"
-                        ));
-                    }
-                }
             }
             AppEvent::OpenPermissionsPopup => {
                 self.chat_widget.open_permissions_popup();

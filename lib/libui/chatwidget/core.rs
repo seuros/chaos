@@ -203,16 +203,6 @@ pub(super) enum RateLimitSwitchPromptState {
     Shown,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(super) enum ConnectorsCacheState {
-    #[default]
-    Uninitialized,
-    #[expect(dead_code)]
-    Loading,
-    Ready(crate::app_event::ConnectorsSnapshot),
-    Failed(#[allow(dead_code)] String),
-}
-
 #[derive(Debug)]
 pub(super) enum RateLimitErrorKind {
     ServerOverloaded,

@@ -5,11 +5,7 @@ use std::ops::Range;
 
 impl ChatComposer {
     pub fn mentions_enabled(&self) -> bool {
-        self.connectors_enabled
-            && self
-                .connectors_snapshot
-                .as_ref()
-                .is_some_and(|snapshot| !snapshot.connectors.is_empty())
+        false
     }
 
     /// Extract a token prefixed with `prefix` under the cursor, if any.

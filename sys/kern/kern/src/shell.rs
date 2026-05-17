@@ -169,31 +169,29 @@ fn get_shell_path(
     None
 }
 
-fn get_zsh_shell(path: Option<&PathBuf>) -> Option<Shell> {
-    let shell_path = get_shell_path(ShellType::Zsh, path, "zsh", vec!["/bin/zsh"]);
-    shell_path.map(|shell_path| Shell {
-        shell_type: ShellType::Zsh,
+fn get_shell_by_type(
+    shell_type: ShellType,
+    path: Option<&PathBuf>,
+    binary: &str,
+    fallbacks: &[&str],
+) -> Option<Shell> {
+    get_shell_path(shell_type.clone(), path, binary, fallbacks.to_vec()).map(|shell_path| Shell {
+        shell_type,
         shell_path,
         shell_snapshot: empty_shell_snapshot_receiver(),
     })
+}
+
+fn get_zsh_shell(path: Option<&PathBuf>) -> Option<Shell> {
+    get_shell_by_type(ShellType::Zsh, path, "zsh", &["/bin/zsh"])
 }
 
 fn get_bash_shell(path: Option<&PathBuf>) -> Option<Shell> {
-    let shell_path = get_shell_path(ShellType::Bash, path, "bash", vec!["/bin/bash"]);
-    shell_path.map(|shell_path| Shell {
-        shell_type: ShellType::Bash,
-        shell_path,
-        shell_snapshot: empty_shell_snapshot_receiver(),
-    })
+    get_shell_by_type(ShellType::Bash, path, "bash", &["/bin/bash"])
 }
 
 fn get_sh_shell(path: Option<&PathBuf>) -> Option<Shell> {
-    let shell_path = get_shell_path(ShellType::Sh, path, "sh", vec!["/bin/sh"]);
-    shell_path.map(|shell_path| Shell {
-        shell_type: ShellType::Sh,
-        shell_path,
-        shell_snapshot: empty_shell_snapshot_receiver(),
-    })
+    get_shell_by_type(ShellType::Sh, path, "sh", &["/bin/sh"])
 }
 
 fn ultimate_fallback_shell() -> Shell {

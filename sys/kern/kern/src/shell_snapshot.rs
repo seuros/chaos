@@ -294,13 +294,7 @@ async fn run_script_with_timeout(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn excluded_exports_regex() -> String {
-    EXCLUDED_EXPORT_VARS.join("|")
-}
-
-fn zsh_snapshot_script() -> String {
-    let excluded = excluded_exports_regex();
-    let script = r##"if [[ -n "$ZDOTDIR" ]]; then
+const ZSH_SNAPSHOT_TEMPLATE: &str = r##"if [[ -n "$ZDOTDIR" ]]; then
   rc="$ZDOTDIR/.zshrc"
 else
   rc="$HOME/.zshrc"
@@ -339,12 +333,8 @@ if [[ -n "$export_lines" ]]; then
   print -r -- "$export_lines"
 fi
 "##;
-    script.replace("EXCLUDED_EXPORTS", &excluded)
-}
 
-fn bash_snapshot_script() -> String {
-    let excluded = excluded_exports_regex();
-    let script = r##"if [ -z "$BASH_ENV" ] && [ -r "$HOME/.bashrc" ]; then
+const BASH_SNAPSHOT_TEMPLATE: &str = r##"if [ -z "$BASH_ENV" ] && [ -r "$HOME/.bashrc" ]; then
   . "$HOME/.bashrc"
 fi
 echo '# Snapshot file'
@@ -381,12 +371,8 @@ if [ -n "$export_lines" ]; then
   printf '%s\n' "$export_lines"
 fi
 "##;
-    script.replace("EXCLUDED_EXPORTS", &excluded)
-}
 
-fn sh_snapshot_script() -> String {
-    let excluded = excluded_exports_regex();
-    let script = r##"if [ -n "$ENV" ] && [ -r "$ENV" ]; then
+const SH_SNAPSHOT_TEMPLATE: &str = r##"if [ -n "$ENV" ] && [ -r "$ENV" ]; then
   . "$ENV"
 fi
 echo '# Snapshot file'
@@ -449,7 +435,29 @@ else
   done
 fi
 "##;
-    script.replace("EXCLUDED_EXPORTS", &excluded)
+
+fn build_snapshot_script(template: &str, excluded: &[String]) -> String {
+    let excluded_str = excluded.join("|");
+    template.replace("EXCLUDED_EXPORTS", &excluded_str)
+}
+
+fn excluded_exports() -> Vec<String> {
+    EXCLUDED_EXPORT_VARS
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn zsh_snapshot_script() -> String {
+    build_snapshot_script(ZSH_SNAPSHOT_TEMPLATE, &excluded_exports())
+}
+
+fn bash_snapshot_script() -> String {
+    build_snapshot_script(BASH_SNAPSHOT_TEMPLATE, &excluded_exports())
+}
+
+fn sh_snapshot_script() -> String {
+    build_snapshot_script(SH_SNAPSHOT_TEMPLATE, &excluded_exports())
 }
 
 /// Removes shell snapshots that either lack a matching journal process row or

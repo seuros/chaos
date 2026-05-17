@@ -122,18 +122,6 @@ impl AgentNavigationState {
         self.order.clear();
     }
 
-    /// Returns whether there is at least one tracked process other than the primary one.
-    ///
-    /// `App` uses this to decide whether the picker should be available even when the collaboration
-    /// feature flag is currently disabled, because already-existing sub-agent processes should remain
-    /// inspectable.
-    #[allow(dead_code)]
-    pub(crate) fn has_non_primary_process(&self, primary_process_id: Option<ProcessId>) -> bool {
-        self.processes
-            .keys()
-            .any(|process_id| Some(*process_id) != primary_process_id)
-    }
-
     /// Returns live picker rows in the same order users cycle through them.
     ///
     /// The `order` vector is intentionally historical and may briefly contain process ids that no

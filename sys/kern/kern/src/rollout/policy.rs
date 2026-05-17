@@ -45,24 +45,11 @@ pub fn should_persist_response_item(item: &ResponseItem) -> bool {
 
 #[inline]
 pub fn should_persist_event_msg(ev: &EventMsg, mode: EventPersistenceMode) -> bool {
-    match mode {
-        EventPersistenceMode::Limited => should_persist_event_msg_limited(ev),
-        EventPersistenceMode::Extended => should_persist_event_msg_extended(ev),
+    match event_msg_persistence_mode(ev) {
+        None => false,
+        Some(EventPersistenceMode::Limited) => true,
+        Some(EventPersistenceMode::Extended) => mode == EventPersistenceMode::Extended,
     }
-}
-
-fn should_persist_event_msg_limited(ev: &EventMsg) -> bool {
-    matches!(
-        event_msg_persistence_mode(ev),
-        Some(EventPersistenceMode::Limited)
-    )
-}
-
-fn should_persist_event_msg_extended(ev: &EventMsg) -> bool {
-    matches!(
-        event_msg_persistence_mode(ev),
-        Some(EventPersistenceMode::Limited) | Some(EventPersistenceMode::Extended)
-    )
 }
 
 fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {

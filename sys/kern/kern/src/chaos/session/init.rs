@@ -614,11 +614,7 @@ impl Session {
         required_mcp_servers.sort();
         let enabled_mcp_server_count = mcp_servers.values().filter(|server| server.enabled).count();
         let required_mcp_server_count = required_mcp_servers.len();
-        {
-            let mut cancel_guard = sess.services.mcp_startup_cancellation_token.lock().await;
-            cancel_guard.cancel();
-            *cancel_guard = CancellationToken::new();
-        }
+        sess.reset_mcp_startup_cancellation_token().await;
         let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(
             &mcp_servers,
             config.mcp_oauth_credentials_store_mode,

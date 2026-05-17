@@ -143,47 +143,40 @@ where
     result
 }
 
+/// Generates a `Session` method that delegates an async MCP call through the
+/// per-server circuit breaker.
+///
+/// Syntax:
+/// ```
+/// mcp_delegate!(vis fn name(server [, arg: Ty]*) -> Ret => manager_method);
+/// ```
+/// where `manager_method` is the method name on `McpConnectionManager` (may
+/// differ from the outer name when the public name has a prefix).
+macro_rules! mcp_delegate {
+    (
+        $vis:vis fn $name:ident (
+            server $(, $arg:ident : $arg_ty:ty)*
+        ) -> $ret:ty => $mgr_method:ident
+    ) => {
+        $vis async fn $name(
+            &self,
+            server: &str,
+            $($arg: $arg_ty),*
+        ) -> anyhow::Result<$ret> {
+            let mgr = self.services.mcp_connection_manager.clone();
+            with_circuit_breaker(server, move || async move {
+                mgr.read().await.$mgr_method(server, $($arg),*).await
+            })
+            .await
+        }
+    };
+}
+
 impl Session {
-    pub async fn list_resources(
-        &self,
-        server: &str,
-        params: Option<PaginatedRequestParams>,
-    ) -> anyhow::Result<ListResourcesResult> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move { mgr.read().await.list_resources(server, params).await }
-        })
-        .await
-    }
-
-    pub async fn list_resource_templates(
-        &self,
-        server: &str,
-        params: Option<PaginatedRequestParams>,
-    ) -> anyhow::Result<ListResourceTemplatesResult> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move {
-                mgr.read()
-                    .await
-                    .list_resource_templates(server, params)
-                    .await
-            }
-        })
-        .await
-    }
-
-    pub async fn read_resource(
-        &self,
-        server: &str,
-        params: ReadResourceRequestParams,
-    ) -> anyhow::Result<ReadResourceResult> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move { mgr.read().await.read_resource(server, params).await }
-        })
-        .await
-    }
+    mcp_delegate!(pub fn list_resources(server, params: Option<PaginatedRequestParams>) -> ListResourcesResult => list_resources);
+    mcp_delegate!(pub fn list_resource_templates(server, params: Option<PaginatedRequestParams>) -> ListResourceTemplatesResult => list_resource_templates);
+    mcp_delegate!(pub fn read_resource(server, params: ReadResourceRequestParams) -> ReadResourceResult => read_resource);
+    mcp_delegate!(pub fn list_mcp_tasks(server) -> ListTasksResult => list_tasks);
 
     pub async fn call_tool_async(
         &self,
@@ -193,14 +186,12 @@ impl Session {
         meta: Option<serde_json::Value>,
         ttl: Option<u64>,
     ) -> anyhow::Result<McpTask> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move {
-                mgr.read()
-                    .await
-                    .call_tool_async(server, tool, arguments, meta, ttl)
-                    .await
-            }
+        let mgr = self.services.mcp_connection_manager.clone();
+        with_circuit_breaker(server, move || async move {
+            mgr.read()
+                .await
+                .call_tool_async(server, tool, arguments, meta, ttl)
+                .await
         })
         .await
     }
@@ -210,9 +201,9 @@ impl Session {
         server: &str,
         task_id: &str,
     ) -> anyhow::Result<McpTask> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move { mgr.read().await.get_task(server, task_id).await }
+        let mgr = self.services.mcp_connection_manager.clone();
+        with_circuit_breaker(server, move || async move {
+            mgr.read().await.get_task(server, task_id).await
         })
         .await
     }
@@ -222,25 +213,17 @@ impl Session {
         server: &str,
         task_id: &str,
     ) -> anyhow::Result<McpToolCallResult> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move { mgr.read().await.get_task_result(server, task_id).await }
-        })
-        .await
-    }
-
-    pub async fn list_mcp_tasks(&self, server: &str) -> anyhow::Result<ListTasksResult> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move { mgr.read().await.list_tasks(server).await }
+        let mgr = self.services.mcp_connection_manager.clone();
+        with_circuit_breaker(server, move || async move {
+            mgr.read().await.get_task_result(server, task_id).await
         })
         .await
     }
 
     pub async fn cancel_mcp_task(&self, server: &str, task_id: &str) -> anyhow::Result<McpTask> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move { mgr.read().await.cancel_task(server, task_id).await }
+        let mgr = self.services.mcp_connection_manager.clone();
+        with_circuit_breaker(server, move || async move {
+            mgr.read().await.cancel_task(server, task_id).await
         })
         .await
     }
@@ -252,14 +235,12 @@ impl Session {
         arguments: Option<serde_json::Value>,
         meta: Option<serde_json::Value>,
     ) -> anyhow::Result<CallToolResult> {
-        with_circuit_breaker(server, || {
-            let mgr = self.services.mcp_connection_manager.clone();
-            async move {
-                mgr.read()
-                    .await
-                    .call_tool(server, tool, arguments, meta)
-                    .await
-            }
+        let mgr = self.services.mcp_connection_manager.clone();
+        with_circuit_breaker(server, move || async move {
+            mgr.read()
+                .await
+                .call_tool(server, tool, arguments, meta)
+                .await
         })
         .await
     }
@@ -411,11 +392,7 @@ impl Session {
             alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),
             sandbox_cwd: turn_context.cwd.clone(),
         };
-        {
-            let mut guard = self.services.mcp_startup_cancellation_token.lock().await;
-            guard.cancel();
-            *guard = CancellationToken::new();
-        }
+        self.reset_mcp_startup_cancellation_token().await;
         let (refreshed_manager, cancel_token) = McpConnectionManager::new(
             &mcp_servers,
             store_mode,
@@ -506,5 +483,12 @@ impl Session {
             .lock()
             .await
             .cancel();
+    }
+
+    /// Cancels the current MCP startup token and replaces it with a fresh one.
+    pub(crate) async fn reset_mcp_startup_cancellation_token(&self) {
+        let mut token = self.services.mcp_startup_cancellation_token.lock().await;
+        token.cancel();
+        *token = CancellationToken::new();
     }
 }

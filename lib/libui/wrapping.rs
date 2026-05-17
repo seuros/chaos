@@ -122,7 +122,6 @@ impl From<usize> for RtOptions<'_> {
     }
 }
 
-#[allow(dead_code)]
 impl<'a> RtOptions<'a> {
     pub fn new(width: usize) -> Self {
         RtOptions {
@@ -135,17 +134,6 @@ impl<'a> RtOptions<'a> {
             wrap_algorithm: textwrap::WrapAlgorithm::FirstFit,
             word_splitter: textwrap::WordSplitter::HyphenSplitter,
         }
-    }
-
-    pub fn line_ending(self, line_ending: textwrap::LineEnding) -> Self {
-        RtOptions {
-            line_ending,
-            ..self
-        }
-    }
-
-    pub fn width(self, width: usize) -> Self {
-        RtOptions { width, ..self }
     }
 
     pub fn initial_indent(self, initial_indent: Line<'a>) -> Self {
@@ -373,29 +361,6 @@ where
     out
 }
 
-#[allow(dead_code)]
-pub fn word_wrap_lines_borrowed<'a, I, O>(lines: I, width_or_options: O) -> Vec<Line<'a>>
-where
-    I: IntoIterator<Item = &'a Line<'a>>,
-    O: Into<RtOptions<'a>>,
-{
-    let base_opts: RtOptions<'a> = width_or_options.into();
-    let mut out: Vec<Line<'a>> = Vec::new();
-    let mut first = true;
-    for line in lines.into_iter() {
-        let opts = if first {
-            base_opts.clone()
-        } else {
-            base_opts
-                .clone()
-                .initial_indent(base_opts.subsequent_indent.clone())
-        };
-        out.extend(word_wrap_line(line, opts));
-        first = false;
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,6 +368,28 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::style::Stylize;
     use std::string::ToString;
+
+    fn word_wrap_lines_borrowed<'a, I, O>(lines: I, width_or_options: O) -> Vec<Line<'a>>
+    where
+        I: IntoIterator<Item = &'a Line<'a>>,
+        O: Into<RtOptions<'a>>,
+    {
+        let base_opts: RtOptions<'a> = width_or_options.into();
+        let mut out: Vec<Line<'a>> = Vec::new();
+        let mut first = true;
+        for line in lines.into_iter() {
+            let opts = if first {
+                base_opts.clone()
+            } else {
+                base_opts
+                    .clone()
+                    .initial_indent(base_opts.subsequent_indent.clone())
+            };
+            out.extend(word_wrap_line(line, opts));
+            first = false;
+        }
+        out
+    }
 
     fn concat_line(line: &Line) -> String {
         line.spans

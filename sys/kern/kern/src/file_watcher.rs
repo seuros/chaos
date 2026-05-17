@@ -209,7 +209,7 @@ impl FileWatcher {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn register_root(&self, root: PathBuf) {
         let mut state = self
             .state
@@ -265,7 +265,7 @@ impl FileWatcher {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn watch_path(&self, path: PathBuf, mode: RecursiveMode) {
         let Some(inner) = &self.inner else {
             return;

@@ -23,6 +23,10 @@ pub(crate) const TELEMETRY_PREVIEW_MAX_LINES: usize = 64; // lines
 pub(crate) const TELEMETRY_PREVIEW_TRUNCATION_NOTICE: &str =
     "[... telemetry preview truncated ...]";
 
+fn format_duration_seconds(duration: std::time::Duration) -> f32 {
+    (duration.as_secs_f32() * 10.0).round() / 10.0
+}
+
 /// Format the combined exec output for sending back to the model.
 /// Includes exit code and duration metadata; truncates large bodies safely.
 pub fn format_exec_output_for_model_structured(
@@ -47,8 +51,7 @@ pub fn format_exec_output_for_model_structured(
         metadata: ExecMetadata,
     }
 
-    // round to 1 decimal place
-    let duration_seconds = ((duration.as_secs_f32()) * 10.0).round() / 10.0;
+    let duration_seconds = format_duration_seconds(*duration);
 
     let formatted_output = format_exec_output_str(exec_output, truncation_policy);
 
@@ -68,8 +71,7 @@ pub fn format_exec_output_for_model_freeform(
     exec_output: &ExecToolCallOutput,
     truncation_policy: TruncationPolicy,
 ) -> String {
-    // round to 1 decimal place
-    let duration_seconds = ((exec_output.duration.as_secs_f32()) * 10.0).round() / 10.0;
+    let duration_seconds = format_duration_seconds(exec_output.duration);
 
     let content = build_content_with_timeout(exec_output);
 

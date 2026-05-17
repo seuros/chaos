@@ -5,7 +5,7 @@ use crate::client_common::tools::ToolSpec;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolPayload;
+use crate::tools::handlers::extract_function_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use chaos_ipc::config_types::ModeKind;
@@ -77,14 +77,7 @@ impl ToolHandler for PlanHandler {
             ..
         } = invocation;
 
-        let arguments = match payload {
-            ToolPayload::Function { arguments } => arguments,
-            _ => {
-                return Err(FunctionCallError::RespondToModel(
-                    "update_plan handler received unsupported payload".to_string(),
-                ));
-            }
-        };
+        let arguments = extract_function_arguments(payload, "update_plan handler")?;
 
         let content =
             handle_update_plan(session.as_ref(), turn.as_ref(), arguments, call_id).await?;

@@ -3,7 +3,7 @@ use crate::chaos::TurnContext;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolPayload;
+use crate::tools::handlers::extract_function_arguments;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
@@ -43,14 +43,7 @@ impl ToolHandler for DynamicToolHandler {
             ..
         } = invocation;
 
-        let arguments = match payload {
-            ToolPayload::Function { arguments } => arguments,
-            _ => {
-                return Err(FunctionCallError::RespondToModel(
-                    "dynamic tool handler received unsupported payload".to_string(),
-                ));
-            }
-        };
+        let arguments = extract_function_arguments(payload, "dynamic tool handler")?;
 
         let args: Value = parse_arguments(&arguments)?;
         let response = request_dynamic_tool(&session, turn.as_ref(), call_id, tool_name, args)

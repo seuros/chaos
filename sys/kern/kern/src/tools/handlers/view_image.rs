@@ -11,7 +11,7 @@ use crate::protocol::EventMsg;
 use crate::protocol::ViewImageToolCallEvent;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolPayload;
+use crate::tools::handlers::extract_function_arguments;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
@@ -59,14 +59,7 @@ impl ToolHandler for ViewImageHandler {
             ..
         } = invocation;
 
-        let arguments = match payload {
-            ToolPayload::Function { arguments } => arguments,
-            _ => {
-                return Err(FunctionCallError::RespondToModel(
-                    "view_image handler received unsupported payload".to_string(),
-                ));
-            }
-        };
+        let arguments = extract_function_arguments(payload, "view_image handler")?;
 
         let args: ViewImageArgs = parse_arguments(&arguments)?;
         // `view_image` accepts only its documented detail values: omit

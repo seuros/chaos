@@ -7,7 +7,8 @@ use chaos_traits::catalog::CatalogToolRequest;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolPayload;
+use crate::tools::handlers::extract_function_arguments;
+use crate::tools::handlers::parse_json_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
@@ -37,18 +38,8 @@ impl ToolHandler for CatalogModuleHandler {
             ..
         } = invocation;
 
-        let arguments = match payload {
-            ToolPayload::Function { arguments } => arguments,
-            _ => {
-                return Err(FunctionCallError::RespondToModel(format!(
-                    "{tool_name} handler received unsupported payload"
-                )));
-            }
-        };
-
-        let args_value: serde_json::Value = serde_json::from_str(&arguments).map_err(|e| {
-            FunctionCallError::RespondToModel(format!("invalid JSON arguments: {e}"))
-        })?;
+        let arguments = extract_function_arguments(payload, &tool_name)?;
+        let args_value = parse_json_arguments(&arguments)?;
 
         let config = session.get_config().await;
         let project_root = crate::config_loader::project_mcp_json_path_for_stack(

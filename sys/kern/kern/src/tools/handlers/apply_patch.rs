@@ -12,7 +12,6 @@ use crate::client_common::tools::ResponsesApiTool;
 use crate::client_common::tools::ToolSpec;
 use crate::function_tool::FunctionCallError;
 use crate::sandboxing::effective_vfs_policy;
-use crate::sandboxing::merge_permission_profiles;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolInvocation;
@@ -20,6 +19,7 @@ use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_granted_turn_permissions;
+use crate::tools::handlers::get_merged_granted_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::ToolHandler;
@@ -98,10 +98,7 @@ async fn effective_patch_permissions(
     chaos_ipc::permissions::VfsPolicy,
 ) {
     let file_paths = file_paths_for_action(action);
-    let granted_permissions = merge_permission_profiles(
-        session.granted_session_permissions().await.as_ref(),
-        session.granted_turn_permissions().await.as_ref(),
-    );
+    let granted_permissions = get_merged_granted_permissions(session).await;
     let effective_additional_permissions = apply_granted_turn_permissions(
         session,
         crate::sandboxing::SandboxPermissions::UseDefault,

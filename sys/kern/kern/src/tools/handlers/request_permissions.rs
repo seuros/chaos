@@ -4,7 +4,7 @@ use crate::function_tool::FunctionCallError;
 use crate::sandboxing::normalize_additional_permissions;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolPayload;
+use crate::tools::handlers::extract_function_arguments;
 use crate::tools::handlers::parse_arguments_with_base_path;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
@@ -32,14 +32,7 @@ impl ToolHandler for RequestPermissionsHandler {
             ..
         } = invocation;
 
-        let arguments = match payload {
-            ToolPayload::Function { arguments } => arguments,
-            _ => {
-                return Err(FunctionCallError::RespondToModel(
-                    "request_permissions handler received unsupported payload".to_string(),
-                ));
-            }
-        };
+        let arguments = extract_function_arguments(payload, "request_permissions handler")?;
 
         let mut args: RequestPermissionsArgs =
             parse_arguments_with_base_path(&arguments, turn.cwd.as_path())?;

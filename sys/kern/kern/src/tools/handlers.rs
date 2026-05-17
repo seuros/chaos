@@ -26,6 +26,7 @@ use crate::function_tool::FunctionCallError;
 use crate::sandboxing::SandboxPermissions;
 use crate::sandboxing::merge_permission_profiles;
 use crate::sandboxing::normalize_additional_permissions;
+use crate::tools::context::ToolPayload;
 pub use apply_patch::ApplyPatchHandler;
 pub use catalog_module::CatalogModuleHandler;
 use chaos_ipc::models::PermissionProfile;
@@ -95,6 +96,36 @@ where
 {
     let _guard = AbsolutePathBufGuard::new(base_path);
     parse_arguments(arguments)
+}
+
+pub(super) fn extract_function_arguments(
+    payload: ToolPayload,
+    tool_name: &str,
+) -> Result<String, FunctionCallError> {
+    match payload {
+        ToolPayload::Function { arguments } => Ok(arguments),
+        _ => Err(FunctionCallError::RespondToModel(format!(
+            "{tool_name} handler received unsupported payload"
+        ))),
+    }
+}
+
+pub(super) fn parse_json_arguments(
+    arguments: &str,
+) -> Result<serde_json::Value, FunctionCallError> {
+    serde_json::from_str(arguments)
+        .map_err(|e| FunctionCallError::RespondToModel(format!("invalid JSON arguments: {e}")))
+}
+
+pub(super) async fn get_merged_granted_permissions(
+    session: &Session,
+) -> Option<chaos_ipc::models::PermissionProfile> {
+    let granted_session_permissions = session.granted_session_permissions().await;
+    let granted_turn_permissions = session.granted_turn_permissions().await;
+    merge_permission_profiles(
+        granted_session_permissions.as_ref(),
+        granted_turn_permissions.as_ref(),
+    )
 }
 
 fn resolve_workdir_base_path(
@@ -210,12 +241,7 @@ pub(super) async fn apply_granted_turn_permissions(
         };
     }
 
-    let granted_session_permissions = session.granted_session_permissions().await;
-    let granted_turn_permissions = session.granted_turn_permissions().await;
-    let granted_permissions = merge_permission_profiles(
-        granted_session_permissions.as_ref(),
-        granted_turn_permissions.as_ref(),
-    );
+    let granted_permissions = get_merged_granted_permissions(session).await;
     let effective_permissions = merge_permission_profiles(
         additional_permissions.as_ref(),
         granted_permissions.as_ref(),

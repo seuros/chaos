@@ -47,6 +47,19 @@ impl ChatWidget {
         });
     }
 
+    pub(crate) fn emit_resumed_process_event(&self, resumed_id: ProcessId) {
+        let app_event_tx = self.app_event_tx.clone();
+        let line: Line<'static> = vec![
+            "• ".dim(),
+            "Resumed session ".into(),
+            resumed_id.to_string().fg(crate::theme::accent_color()),
+        ]
+        .into();
+        app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+            PlainHistoryCell::new(vec![line]),
+        )));
+    }
+
     pub fn open_app_link_view(&mut self, params: crate::bottom_pane::AppLinkViewParams) {
         let view = crate::bottom_pane::AppLinkView::new(params, self.app_event_tx.clone());
         self.bottom_pane.show_view(Box::new(view));

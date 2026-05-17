@@ -34,6 +34,7 @@ impl App {
             model: Some(self.chat_widget.current_model().to_string()),
             session_telemetry: self.session_telemetry.clone(),
             halluacinate: None,
+            resumed_session: None,
         }
     }
 
@@ -116,6 +117,7 @@ impl App {
             model: Some(model),
             session_telemetry: self.session_telemetry.clone(),
             halluacinate: None,
+            resumed_session: None,
         };
         self.chat_widget = ChatWidget::new(init, self.server.clone());
         self.reset_process_event_state();
@@ -271,6 +273,7 @@ impl App {
                     model: Some(model.clone()),
                     session_telemetry: session_telemetry.clone(),
                     halluacinate: None,
+                    resumed_session: None,
                 };
                 ChatWidget::new(init, process_table.clone())
             }
@@ -303,18 +306,9 @@ impl App {
                     model: config.model.clone(),
                     session_telemetry: session_telemetry.clone(),
                     halluacinate: process.halluacinate_handle(),
+                    resumed_session: Some(target_process_id),
                 };
-                let mut chat_widget =
-                    ChatWidget::new_from_existing(init, process, session_configured);
-                chat_widget.add_plain_history_lines(vec![
-                    vec![
-                        "• ".into(),
-                        "Resumed session ".into(),
-                        target_process_id.to_string().cyan(),
-                    ]
-                    .into(),
-                ]);
-                chat_widget
+                ChatWidget::new_from_existing(init, process, session_configured)
             }
             SessionSelection::Fork(target_session) => {
                 session_telemetry.counter(
@@ -352,6 +346,7 @@ impl App {
                     model: config.model.clone(),
                     session_telemetry: session_telemetry.clone(),
                     halluacinate: process.halluacinate_handle(),
+                    resumed_session: None,
                 };
                 ChatWidget::new_from_existing(init, process, session_configured)
             }

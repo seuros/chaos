@@ -1808,6 +1808,7 @@ async fn helpers_are_available_and_do_not_panic() {
         model: Some(resolved_model),
         session_telemetry,
         halluacinate: None,
+        resumed_session: None,
     };
     let mut w = ChatWidget::new(init, process_table);
     // Basic construction sanity.
@@ -1927,6 +1928,7 @@ async fn make_chatwidget_manual(
         process_id: None,
         process_name: None,
         forked_from: None,
+        resumed_session: None,
         frame_requester: FrameRequester::test_dummy(),
         show_welcome_banner: true,
         queued_user_messages: VecDeque::new(),
@@ -5229,6 +5231,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         model: Some(resolved_model.clone()),
         session_telemetry,
         halluacinate: None,
+        resumed_session: None,
     };
 
     let chat = ChatWidget::new(init, process_table);

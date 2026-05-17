@@ -227,6 +227,9 @@ pub struct ChatWidgetInit {
     pub model: Option<String>,
     pub session_telemetry: SessionTelemetry,
     pub halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
+    /// When resuming an existing session, the ID of the resumed process. Triggers
+    /// an inline history indicator once `SessionConfigured` arrives.
+    pub resumed_session: Option<ProcessId>,
 }
 
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
@@ -329,6 +332,7 @@ pub struct ChatWidget {
     process_id: Option<ProcessId>,
     process_name: Option<String>,
     forked_from: Option<ProcessId>,
+    resumed_session: Option<ProcessId>,
     frame_requester: FrameRequester,
     // Whether to include the initial welcome banner on session configured
     show_welcome_banner: bool,
@@ -425,6 +429,7 @@ impl ChatWidget {
             model,
             session_telemetry,
             halluacinate,
+            resumed_session: _,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -518,6 +523,7 @@ impl ChatWidget {
             process_id: None,
             process_name: None,
             forked_from: None,
+            resumed_session: None,
             queued_user_messages: VecDeque::new(),
             pending_steers: VecDeque::new(),
             submit_pending_steers_after_interrupt: false,
@@ -582,6 +588,7 @@ impl ChatWidget {
             model,
             session_telemetry,
             halluacinate,
+            resumed_session: _,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -674,6 +681,7 @@ impl ChatWidget {
             process_id: None,
             process_name: None,
             forked_from: None,
+            resumed_session: None,
             saw_plan_update_this_turn: false,
             saw_plan_item_this_turn: false,
             plan_delta_buffer: String::new(),
@@ -738,6 +746,7 @@ impl ChatWidget {
             model,
             session_telemetry,
             halluacinate,
+            resumed_session,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let prevent_idle_sleep = true;
@@ -830,6 +839,7 @@ impl ChatWidget {
             process_id: None,
             process_name: None,
             forked_from: None,
+            resumed_session,
             queued_user_messages: VecDeque::new(),
             pending_steers: VecDeque::new(),
             submit_pending_steers_after_interrupt: false,

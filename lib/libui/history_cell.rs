@@ -68,13 +68,9 @@ mod tests {
     use crate::exec_cell::CommandOutput;
     use crate::exec_cell::ExecCall;
     use crate::exec_cell::ExecCell;
-    use chaos_ipc::ProcessId;
     use chaos_ipc::models::WebSearchAction;
     use chaos_ipc::parse_command::ParsedCommand;
-    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::McpAuthStatus;
-    use chaos_ipc::protocol::SandboxPolicy;
-    use chaos_ipc::protocol::SessionConfiguredEvent;
     use chaos_kern::config::Config;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::types::McpServerConfig;
@@ -162,30 +158,6 @@ mod tests {
             meta: None,
         })
         .expect("resource link content should serialize")
-    }
-
-    #[expect(dead_code, reason = "test helper available for future tests")]
-    fn session_configured_event(model: &str) -> SessionConfiguredEvent {
-        SessionConfiguredEvent {
-            session_id: ProcessId::new(),
-            forked_from_id: None,
-            process_name: None,
-            model: model.to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }
     }
 
     #[test]

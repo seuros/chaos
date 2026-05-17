@@ -161,7 +161,7 @@ impl ChatWidget {
         )
     }
 
-    #[allow(dead_code)] // Used in tests
+    #[cfg(any(test, feature = "testing"))]
     pub fn current_collaboration_mode(&self) -> &CollaborationMode {
         &self.current_collaboration_mode
     }

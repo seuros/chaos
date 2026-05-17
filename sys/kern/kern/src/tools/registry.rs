@@ -163,12 +163,6 @@ impl ToolRegistry {
             .map(Arc::clone)
     }
 
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn has_handler(&self, name: &str, namespace: Option<&str>) -> bool {
-        self.handler(name, namespace).is_some()
-    }
-
     // TODO(jif) for dynamic tools.
     // pub fn register(&mut self, name: impl Into<String>, handler: Arc<dyn ToolHandler>) {
     //     let name = name.into();

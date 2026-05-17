@@ -43,16 +43,13 @@ impl HeadTailBuffer {
         }
     }
 
-    // Used for tests.
-    #[allow(dead_code)]
     /// Total bytes currently retained by the buffer (head + tail).
     pub(crate) fn retained_bytes(&self) -> usize {
         self.head_bytes.saturating_add(self.tail_bytes)
     }
 
-    // Used for tests.
-    #[allow(dead_code)]
     /// Total bytes that were dropped from the middle due to the size cap.
+    #[cfg(test)]
     pub(crate) fn omitted_bytes(&self) -> usize {
         self.omitted_bytes
     }

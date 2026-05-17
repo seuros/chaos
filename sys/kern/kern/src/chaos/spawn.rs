@@ -66,9 +66,6 @@ pub struct Chaos {
 pub struct ChaosSpawnOk {
     pub chaos: Chaos,
     pub process_id: ProcessId,
-    /// Duplicate of `process_id`, kept for API compatibility.
-    #[allow(dead_code)]
-    pub conversation_id: ProcessId,
 }
 
 pub(crate) struct ChaosSpawnArgs {
@@ -288,11 +285,7 @@ impl Chaos {
             session_loop_termination: session_loop_termination_from_handle(session_loop_handle),
         };
 
-        Ok(ChaosSpawnOk {
-            chaos,
-            process_id,
-            conversation_id: process_id,
-        })
+        Ok(ChaosSpawnOk { chaos, process_id })
     }
 
     /// Submit the `op` wrapped in a `Submission` with a unique ID.

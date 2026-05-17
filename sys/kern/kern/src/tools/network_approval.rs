@@ -157,8 +157,6 @@ impl PendingHostApproval {
 
 struct ActiveNetworkApprovalCall {
     registration_id: String,
-    #[allow(dead_code)]
-    turn_id: String,
 }
 
 pub(crate) struct NetworkApprovalService {
@@ -184,7 +182,7 @@ impl Default for NetworkApprovalService {
 impl NetworkApprovalService {
     /// Replace the target session's approval cache with the source session's
     /// currently approved hosts.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) async fn sync_session_approved_hosts_to(&self, other: &Self) {
         let approved_hosts = self.session_approved_hosts.lock().await.clone();
         let mut other_approved_hosts = other.session_approved_hosts.lock().await;
@@ -192,16 +190,10 @@ impl NetworkApprovalService {
         other_approved_hosts.extend(approved_hosts.iter().cloned());
     }
 
-    async fn register_call(&self, registration_id: String, turn_id: String) {
+    async fn register_call(&self, registration_id: String) {
         let mut active_calls = self.active_calls.lock().await;
         let key = registration_id.clone();
-        active_calls.insert(
-            key,
-            Arc::new(ActiveNetworkApprovalCall {
-                registration_id,
-                turn_id,
-            }),
-        );
+        active_calls.insert(key, Arc::new(ActiveNetworkApprovalCall { registration_id }));
     }
 
     pub(crate) async fn unregister_call(&self, registration_id: &str) {
@@ -518,7 +510,6 @@ pub(crate) fn build_network_policy_decider(
 
 pub(crate) async fn begin_network_approval(
     session: &Session,
-    turn_id: &str,
     has_managed_network_requirements: bool,
     spec: Option<NetworkApprovalSpec>,
 ) -> Option<ActiveNetworkApproval> {
@@ -531,7 +522,7 @@ pub(crate) async fn begin_network_approval(
     session
         .services
         .network_approval
-        .register_call(registration_id.clone(), turn_id.to_string())
+        .register_call(registration_id.clone())
         .await;
 
     Some(ActiveNetworkApproval {

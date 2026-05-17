@@ -33,6 +33,12 @@ pub(crate) fn response_input_item_from_user_input(items: Vec<UserInput>) -> Resp
                     )
                 }
                 UserInput::Mention { .. } => Vec::new(),
+                UserInput::EmbeddedResource { name, text, .. } => {
+                    let header = format!("[{name}]\n");
+                    vec![ContentItem::InputText {
+                        text: format!("{header}{text}"),
+                    }]
+                }
                 _ => Vec::new(),
             })
             .collect(),
@@ -79,6 +85,12 @@ pub(crate) fn local_image_tool_output_items(
             }
             ContentItem::InputImage { image_url } => {
                 FunctionCallOutputContentItem::InputImage { image_url, detail }
+            }
+            ContentItem::Document { name, text, .. } => {
+                let header = name.map(|n| format!("[{n}]\n")).unwrap_or_default();
+                FunctionCallOutputContentItem::InputText {
+                    text: format!("{header}{text}"),
+                }
             }
         })
         .collect()

@@ -57,6 +57,16 @@ fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
             ContentItem::OutputText { text } => {
                 warn!("Output text in user message: {}", text);
             }
+            ContentItem::Document { name, text, .. } => {
+                let header = name
+                    .as_deref()
+                    .map(|n| format!("[{n}]\n"))
+                    .unwrap_or_default();
+                content.push(UserInput::Text {
+                    text: format!("{header}{text}"),
+                    text_elements: Vec::new(),
+                });
+            }
         }
     }
 

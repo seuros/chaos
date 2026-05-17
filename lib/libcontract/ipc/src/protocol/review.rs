@@ -7,6 +7,7 @@ use ts_rs::TS;
 
 /// Location of the code related to a review finding.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[schemars(deny_unknown_fields)]
 pub struct ReviewCodeLocation {
     pub absolute_file_path: PathBuf,
     pub line_range: ReviewLineRange,
@@ -14,6 +15,7 @@ pub struct ReviewCodeLocation {
 
 /// Inclusive line range in a file associated with the finding.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[schemars(deny_unknown_fields)]
 pub struct ReviewLineRange {
     pub start: u32,
     pub end: u32,
@@ -60,10 +62,15 @@ pub struct ReviewRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub user_facing_hint: Option<String>,
+    /// Optional minion persona name to use as the reviewer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reviewer: Option<String>,
 }
 
 /// Structured review result produced by a child review session.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[schemars(deny_unknown_fields)]
 pub struct ReviewOutputEvent {
     pub findings: Vec<ReviewFinding>,
     pub overall_correctness: String,
@@ -84,6 +91,7 @@ impl Default for ReviewOutputEvent {
 
 /// A single review finding describing an observed issue or recommendation.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[schemars(deny_unknown_fields)]
 pub struct ReviewFinding {
     pub title: String,
     pub body: String,

@@ -36,6 +36,26 @@ const AGENT_TYPE_UNAVAILABLE_ERROR: &str = "agent type is currently not availabl
 /// profile's `model_provider` in place. Rebuilding the config without those overrides would make a
 /// spawned agent silently fall back to the default provider, which is the bug this preservation
 /// logic avoids.
+/// Apply a built-in persona to `config`, resolving exclusively from the
+/// built-in personas catalog. User-defined agent roles with the same name are
+/// intentionally ignored so the reviewer matches what the UI displayed.
+pub(crate) async fn apply_builtin_persona_to_config(
+    config: &mut Config,
+    persona_name: &str,
+) -> Result<(), String> {
+    let role = built_in::personas()
+        .get(persona_name)
+        .cloned()
+        .ok_or_else(|| format!("unknown built-in persona '{persona_name}'"))?;
+
+    apply_role_to_config_inner(config, persona_name, &role, /*is_built_in*/ true)
+        .await
+        .map_err(|err| {
+            tracing::warn!("failed to apply built-in persona to config: {err}");
+            AGENT_TYPE_UNAVAILABLE_ERROR.to_string()
+        })
+}
+
 pub(crate) async fn apply_role_to_config(
     config: &mut Config,
     role_name: Option<&str>,
@@ -46,7 +66,8 @@ pub(crate) async fn apply_role_to_config(
         .cloned()
         .ok_or_else(|| format!("unknown agent_type '{role_name}'"))?;
 
-    apply_role_to_config_inner(config, role_name, &role)
+    let is_built_in = !config.agent_roles.contains_key(role_name);
+    apply_role_to_config_inner(config, role_name, &role, is_built_in)
         .await
         .map_err(|err| {
             tracing::warn!("failed to apply role to config: {err}");
@@ -58,8 +79,8 @@ async fn apply_role_to_config_inner(
     config: &mut Config,
     role_name: &str,
     role: &AgentRoleConfig,
+    is_built_in: bool,
 ) -> anyhow::Result<()> {
-    let is_built_in = !config.agent_roles.contains_key(role_name);
     let Some(config_file) = role.config_file.as_ref() else {
         return Ok(());
     };
@@ -373,7 +394,7 @@ pub(crate) fn collect_roles_by_topics<'a>(
     matches
 }
 
-mod built_in {
+pub(crate) mod built_in {
     use super::{AgentRoleConfig, BTreeMap, LazyLock, Path, parse_agent_role_file_contents};
     use include_dir::Dir;
     use include_dir::include_dir;
@@ -384,6 +405,44 @@ mod built_in {
     /// Personality overlays: dhh, gordon, fireship, primeagen, carmack, …
     /// Drop a new `.md` file here — no code changes required.
     static PERSONAS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/minions/personas");
+
+    /// Returns the cached persona-only role declarations (excludes operational builtins).
+    pub(crate) fn personas() -> &'static BTreeMap<String, AgentRoleConfig> {
+        static PERSONAS: LazyLock<BTreeMap<String, AgentRoleConfig>> = LazyLock::new(|| {
+            PERSONAS_DIR
+                .files()
+                .filter(|f| f.path().extension().is_some_and(|e| e == "md"))
+                .filter_map(|file| {
+                    let path = file.path();
+                    let stem = path.file_stem()?.to_str()?;
+                    let content = file.contents_utf8()?;
+                    let parsed = parse_agent_role_file_contents(
+                        content,
+                        path,
+                        std::path::Path::new("."),
+                        Some(stem),
+                    )
+                    .ok()?;
+                    let config_file = if parsed.config.as_table().is_some_and(|t| !t.is_empty()) {
+                        Some(path.to_path_buf())
+                    } else {
+                        None
+                    };
+                    Some((
+                        parsed.role_name.clone(),
+                        AgentRoleConfig {
+                            description: parsed.description,
+                            config_file,
+                            nickname_candidates: parsed.nickname_candidates,
+                            topics: parsed.topics,
+                            catchphrases: parsed.catchphrases,
+                        },
+                    ))
+                })
+                .collect()
+        });
+        &PERSONAS
+    }
 
     /// Returns the cached role declarations from both builtins and personas.
     pub(super) fn configs() -> &'static BTreeMap<String, AgentRoleConfig> {

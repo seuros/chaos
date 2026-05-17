@@ -111,8 +111,15 @@ async fn start_review_conversation(
     let _ = sub_agent_config.features.disable(Feature::SpawnCsv);
     sub_agent_config.collab_enabled = false;
 
-    // Set explicit review rubric for the sub-agent
-    sub_agent_config.base_instructions = Some(crate::REVIEW_PROMPT.to_string());
+    // Set explicit review rubric for the sub-agent.  If a reviewer persona is
+    // active its instructions lead the system prompt so the model adopts the
+    // persona before reading the rubric.
+    let base = if let Some(persona_instructions) = sub_agent_config.minion_instructions.take() {
+        format!("{}\n\n{}", persona_instructions, crate::REVIEW_PROMPT)
+    } else {
+        crate::REVIEW_PROMPT.to_string()
+    };
+    sub_agent_config.base_instructions = Some(base);
     sub_agent_config.permissions.approval_policy =
         Constrained::allow_only(ApprovalPolicy::Headless);
 
@@ -121,6 +128,14 @@ async fn start_review_conversation(
         .clone()
         .unwrap_or_else(|| ctx.model_info.slug.clone());
     sub_agent_config.model = Some(model);
+    // Anthropic Messages API rejects requests with output_schema; fall back to
+    // the prompt-embedded JSON contract (RESPONSE FORMAT in review_prompt.md).
+    let output_schema =
+        if crate::model_provider_info::is_anthropic_wire(ctx.provider.base_url.as_deref()) {
+            None
+        } else {
+            Some(review_output_schema())
+        };
     (run_chaos_process_one_shot(
         sub_agent_config,
         session.auth_manager(),
@@ -130,7 +145,7 @@ async fn start_review_conversation(
         ctx.clone(),
         cancellation_token,
         SubAgentSource::Review,
-        /*final_output_json_schema*/ None,
+        output_schema,
         /*initial_history*/ None,
     )
     .await)
@@ -277,4 +292,31 @@ pub(crate) async fn exit_review_mode(
     // materialize persisted session state. Do this after emitting review output
     // so journal/bootstrap work cannot delay client-facing items.
     session.ensure_rollout_materialized().await;
+}
+
+fn review_output_schema() -> serde_json::Value {
+    let mut schema = mcp_host::macros::schema_for::<chaos_ipc::protocol::ReviewOutputEvent>();
+    strip_unsupported_schema_keywords(&mut schema);
+    schema
+}
+
+/// Strip keywords that strict structured-output providers reject.
+/// schemars emits `format` on numeric/integer types and `minimum: 0` on
+/// unsigned integers — neither is accepted by OpenAI's strict JSON Schema path.
+fn strip_unsupported_schema_keywords(value: &mut serde_json::Value) {
+    if let Some(map) = value.as_object_mut() {
+        map.remove("format");
+        map.remove("minimum");
+        map.remove("maximum");
+        map.remove("exclusiveMinimum");
+        map.remove("exclusiveMaximum");
+        map.remove("$schema");
+        for v in map.values_mut() {
+            strip_unsupported_schema_keywords(v);
+        }
+    } else if let Some(arr) = value.as_array_mut() {
+        for v in arr.iter_mut() {
+            strip_unsupported_schema_keywords(v);
+        }
+    }
 }

@@ -36,7 +36,7 @@ impl ChatWidget {
                 self.app_event_tx.send(AppEvent::ChaosOp(Op::Compact));
             }
             SlashCommand::Review => {
-                self.open_review_popup();
+                self.open_review_popup(false);
             }
             SlashCommand::Rename => {
                 self.session_telemetry
@@ -328,6 +328,7 @@ impl ChatWidget {
                             instructions: prepared_args,
                         },
                         user_facing_hint: None,
+                        reviewer: None,
                     },
                 });
                 self.bottom_pane.drain_pending_submission_state();

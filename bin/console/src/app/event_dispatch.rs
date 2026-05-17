@@ -792,14 +792,24 @@ impl App {
             AppEvent::OpenPermissionsPopup => {
                 self.chat_widget.open_permissions_popup();
             }
-            AppEvent::OpenReviewBranchPicker(cwd) => {
-                self.chat_widget.show_review_branch_picker(&cwd).await;
+            AppEvent::OpenReviewBranchPicker { cwd, use_reviewer } => {
+                self.chat_widget
+                    .show_review_branch_picker(&cwd, use_reviewer)
+                    .await;
             }
-            AppEvent::OpenReviewCommitPicker(cwd) => {
-                self.chat_widget.show_review_commit_picker(&cwd).await;
+            AppEvent::OpenReviewCommitPicker { cwd, use_reviewer } => {
+                self.chat_widget
+                    .show_review_commit_picker(&cwd, use_reviewer)
+                    .await;
             }
-            AppEvent::OpenReviewCustomPrompt => {
-                self.chat_widget.show_review_custom_prompt();
+            AppEvent::OpenReviewCustomPrompt { use_reviewer } => {
+                self.chat_widget.show_review_custom_prompt(use_reviewer);
+            }
+            AppEvent::OpenReviewPopup { use_reviewer } => {
+                self.chat_widget.open_review_popup(use_reviewer);
+            }
+            AppEvent::OpenReviewMinionPicker { review_request } => {
+                self.chat_widget.show_review_minion_picker(review_request);
             }
             AppEvent::SubmitUserMessageWithMode {
                 text,

@@ -240,6 +240,13 @@ fn convert_content_item_to_value(c: &ContentItem) -> Option<Value> {
             "type": "image_url",
             "image_url": { "url": image_url }
         })),
+        ContentItem::Document { name, text, .. } => {
+            let header = name
+                .as_deref()
+                .map(|n| format!("[{n}]\n"))
+                .unwrap_or_default();
+            Some(serde_json::json!({ "type": "text", "text": format!("{header}{text}") }))
+        }
     }
 }
 

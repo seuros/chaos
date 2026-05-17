@@ -242,6 +242,11 @@ pub fn content_items_to_text(content: &[ContentItem]) -> Option<String> {
                 }
             }
             ContentItem::InputImage { .. } => {}
+            ContentItem::Document { text, .. } => {
+                if !text.is_empty() {
+                    pieces.push(text.as_str());
+                }
+            }
         }
     }
     if pieces.is_empty() {

@@ -49,9 +49,23 @@ pub enum ResponseInputItem {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentItem {
-    InputText { text: String },
-    InputImage { image_url: String },
-    OutputText { text: String },
+    InputText {
+        text: String,
+    },
+    InputImage {
+        image_url: String,
+    },
+    OutputText {
+        text: String,
+    },
+    /// Inline document resource (e.g. a git diff) attached to a user message.
+    Document {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        name: Option<String>,
+        mime_type: String,
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]

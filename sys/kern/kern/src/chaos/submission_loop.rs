@@ -356,6 +356,37 @@ pub(super) async fn spawn_review_thread(
         .unwrap_or(model_info.default_reasoning_summary);
     let session_source = parent_turn_context.session_source.clone();
 
+    let mut reviewer_applied = false;
+    if let Some(ref reviewer) = resolved.reviewer {
+        // Start from a clean slate so the parent agent's persona cannot bleed
+        // into the review turn if the requested reviewer cannot be applied.
+        per_turn_config.minion_instructions = None;
+        match crate::minions::role::apply_builtin_persona_to_config(&mut per_turn_config, reviewer)
+            .await
+        {
+            Ok(()) => {
+                reviewer_applied = true;
+                if let Some(catchphrase) = pick_catchphrase(reviewer) {
+                    let instructions = per_turn_config.minion_instructions.get_or_insert_default();
+                    instructions.push_str(&format!(
+                        "\n\nLet this phrase inspire the spirit and tone of your review: \"{catchphrase}\""
+                    ));
+                }
+            }
+            Err(err) => {
+                tracing::warn!(reviewer, error = %err, "failed to apply reviewer persona");
+            }
+        }
+    }
+
+    // Only carry reviewer persona instructions into the review turn context.
+    // When no reviewer was selected, clear any inherited minion_instructions so
+    // the parent agent's persona does not bleed into a default review. Also
+    // clear inherited instructions when a requested reviewer failed to apply.
+    if !reviewer_applied {
+        per_turn_config.minion_instructions = None;
+    }
+    let reviewer_instructions = per_turn_config.minion_instructions.clone();
     let per_turn_config = Arc::new(per_turn_config);
     let review_turn_id = sub_id.to_string();
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
@@ -381,7 +412,7 @@ pub(super) async fn spawn_review_thread(
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),
         app_server_client_name: parent_turn_context.app_server_client_name.clone(),
-        minion_instructions: None,
+        minion_instructions: reviewer_instructions,
         user_instructions: None,
         compact_prompt: parent_turn_context.compact_prompt.clone(),
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
@@ -404,12 +435,29 @@ pub(super) async fn spawn_review_thread(
     };
 
     // Seed the child task with the review prompt as the initial user message.
-    let input: Vec<chaos_ipc::user_input::UserInput> =
+    // If the diff is small enough, attach it as an embedded resource so the
+    // model starts reviewing immediately without tool calls.
+    const DIFF_TOKEN_LIMIT: usize = 32_000;
+    let mut input: Vec<chaos_ipc::user_input::UserInput> =
         vec![chaos_ipc::user_input::UserInput::Text {
             text: review_prompt,
-            // Review prompt is synthesized; no UI element ranges to preserve.
             text_elements: Vec::new(),
         }];
+    if let Some(diff) = crate::review_prompts::fetch_review_diff(
+        &resolved.target,
+        &parent_turn_context.cwd,
+        resolved.merge_base_sha.as_deref(),
+    )
+    .await
+        && crate::truncate::approx_token_count(&diff) <= DIFF_TOKEN_LIMIT
+    {
+        input.push(chaos_ipc::user_input::UserInput::EmbeddedResource {
+            uri: format!("diff://review/{sub_id}"),
+            name: "changes.diff".to_string(),
+            mime_type: "text/x-diff".to_string(),
+            text: diff,
+        });
+    }
     let tc = Arc::new(review_turn_context);
     tc.turn_metadata_state.spawn_git_enrichment_task();
     // TODO(ccunningham): Review turns currently rely on `spawn_task` for TurnComplete but do not
@@ -422,7 +470,17 @@ pub(super) async fn spawn_review_thread(
     let review_request = ReviewRequest {
         target: resolved.target,
         user_facing_hint: Some(resolved.user_facing_hint),
+        reviewer: resolved.reviewer,
     };
     sess.send_event(&tc, EventMsg::EnteredReviewMode(review_request))
         .await;
+}
+
+fn pick_catchphrase(reviewer: &str) -> Option<String> {
+    use rand::seq::IndexedRandom;
+    let phrases = crate::minions::role::built_in::personas()
+        .get(reviewer)?
+        .catchphrases
+        .as_deref()?;
+    phrases.choose(&mut rand::rng()).cloned()
 }

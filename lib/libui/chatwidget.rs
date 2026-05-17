@@ -912,6 +912,7 @@ pub fn show_review_commit_picker_with_entries(
                             title: Some(subject.clone()),
                         },
                         user_facing_hint: None,
+                        reviewer: None,
                     },
                 }));
             })],

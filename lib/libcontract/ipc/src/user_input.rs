@@ -32,6 +32,14 @@ pub enum UserInput {
     /// `path` identifies the exact mention target, for example
     /// `app://<connector-id>` or `mcp://<server-name>`.
     Mention { name: String, path: String },
+
+    /// Inline document resource with text content (e.g. a git diff pre-fetched for review).
+    EmbeddedResource {
+        uri: String,
+        name: String,
+        mime_type: String,
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, TS, JsonSchema)]

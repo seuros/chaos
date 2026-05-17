@@ -177,6 +177,53 @@ pub fn log_inbound_app_event(event: &AppEvent) {
             });
             LOGGER.write_json_line(value);
         }
+        // Struct variants that carry payloads — log variant name only to avoid
+        // leaking cwd, review instructions, or persona details into session records.
+        AppEvent::OpenReviewBranchPicker { .. } => {
+            let value = json!({
+                "ts": now_ts(),
+                "dir": "to_tui",
+                "kind": "app_event",
+                "variant": "OpenReviewBranchPicker",
+            });
+            LOGGER.write_json_line(value);
+        }
+        AppEvent::OpenReviewCommitPicker { .. } => {
+            let value = json!({
+                "ts": now_ts(),
+                "dir": "to_tui",
+                "kind": "app_event",
+                "variant": "OpenReviewCommitPicker",
+            });
+            LOGGER.write_json_line(value);
+        }
+        AppEvent::OpenReviewCustomPrompt { .. } => {
+            let value = json!({
+                "ts": now_ts(),
+                "dir": "to_tui",
+                "kind": "app_event",
+                "variant": "OpenReviewCustomPrompt",
+            });
+            LOGGER.write_json_line(value);
+        }
+        AppEvent::OpenReviewMinionPicker { .. } => {
+            let value = json!({
+                "ts": now_ts(),
+                "dir": "to_tui",
+                "kind": "app_event",
+                "variant": "OpenReviewMinionPicker",
+            });
+            LOGGER.write_json_line(value);
+        }
+        AppEvent::OpenReviewPopup { .. } => {
+            let value = json!({
+                "ts": now_ts(),
+                "dir": "to_tui",
+                "kind": "app_event",
+                "variant": "OpenReviewPopup",
+            });
+            LOGGER.write_json_line(value);
+        }
         // Noise or control flow – record variant only
         other => {
             let value = json!({

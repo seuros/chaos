@@ -98,7 +98,7 @@ fn has_subagent_notification(history_items: &[ResponseItem]) -> bool {
             ContentItem::InputText { text } | ContentItem::OutputText { text } => {
                 text.contains(SUBAGENT_NOTIFICATION_OPEN_TAG)
             }
-            ContentItem::InputImage { .. } => false,
+            ContentItem::InputImage { .. } | ContentItem::Document { .. } => false,
         })
     })
 }
@@ -113,7 +113,7 @@ fn history_contains_text(history_items: &[ResponseItem], needle: &str) -> bool {
             ContentItem::InputText { text } | ContentItem::OutputText { text } => {
                 text.contains(needle)
             }
-            ContentItem::InputImage { .. } => false,
+            ContentItem::InputImage { .. } | ContentItem::Document { .. } => false,
         })
     })
 }

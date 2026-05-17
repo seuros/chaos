@@ -16,6 +16,7 @@ use chaos_ipc::mcp::RequestId as McpRequestId;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::ElicitationAction;
 use chaos_ipc::protocol::Event;
+use chaos_ipc::protocol::ReviewRequest;
 use chaos_locate::FileMatch;
 use chaos_sudoers::ApprovalPreset;
 
@@ -265,13 +266,31 @@ pub enum AppEvent {
     OpenPermissionsPopup,
 
     /// Open the branch picker option from the review popup.
-    OpenReviewBranchPicker(PathBuf),
+    OpenReviewBranchPicker {
+        cwd: PathBuf,
+        use_reviewer: bool,
+    },
 
     /// Open the commit picker option from the review popup.
-    OpenReviewCommitPicker(PathBuf),
+    OpenReviewCommitPicker {
+        cwd: PathBuf,
+        use_reviewer: bool,
+    },
 
     /// Open the custom prompt option from the review popup.
-    OpenReviewCustomPrompt,
+    OpenReviewCustomPrompt {
+        use_reviewer: bool,
+    },
+
+    /// Reopen the review popup with updated checkbox state.
+    OpenReviewPopup {
+        use_reviewer: bool,
+    },
+
+    /// Open the minion picker for a pending review request.
+    OpenReviewMinionPicker {
+        review_request: ReviewRequest,
+    },
 
     /// Submit a user message with an explicit collaboration mask.
     SubmitUserMessageWithMode {

@@ -145,9 +145,15 @@ fn diff_against_worktree(cwd: &Path, paths: Option<&[&str]>) -> Result<String, G
 
     let status = status::collect(cwd)?;
     let mut changed_paths = BTreeSet::new();
+    let mut untracked_paths = BTreeSet::new();
     for item in status.staged.into_iter().chain(status.unstaged) {
         if matches_filter(&item.path, paths) {
             changed_paths.insert(item.path);
+        }
+    }
+    for item in status.untracked {
+        if matches_filter(&item.path, paths) {
+            untracked_paths.insert(item.path);
         }
     }
 
@@ -164,6 +170,17 @@ fn diff_against_worktree(cwd: &Path, paths: Option<&[&str]>) -> Result<String, G
             old_content.as_deref(),
             new_content.as_deref(),
         );
+    }
+    for path in untracked_paths {
+        let full_path = root.join(&path);
+        // symlink_metadata avoids following symlinks; skip anything that isn't
+        // a plain regular file (symlinks, FIFOs, sockets, device nodes).
+        match std::fs::symlink_metadata(&full_path) {
+            Ok(m) if m.is_file() => {}
+            _ => continue,
+        }
+        let new_content = worktree_blob_content(root, &path)?;
+        render_unified_diff(&mut out, &path, None, new_content.as_deref());
     }
 
     Ok(out)

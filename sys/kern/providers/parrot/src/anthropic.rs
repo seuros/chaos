@@ -299,6 +299,20 @@ fn convert_content_item(c: &ContentItem) -> Option<Value> {
                 }))
             }
         }
+        ContentItem::Document {
+            name,
+            mime_type,
+            text,
+        } => {
+            let mut document = serde_json::json!({
+                "type": "document",
+                "source": { "type": "text", "media_type": mime_type, "data": text },
+            });
+            if let Some(name) = name {
+                document["title"] = Value::String(name.clone());
+            }
+            Some(document)
+        }
     }
 }
 
@@ -954,5 +968,35 @@ mod tests {
         assert!(
             matches!(err, AbiError::Stream(message) if message == "idle timeout waiting for SSE")
         );
+    }
+
+    #[test]
+    fn document_content_without_name_omits_title() {
+        let content = ContentItem::Document {
+            name: None,
+            mime_type: "text/plain".to_string(),
+            text: "document body".to_string(),
+        };
+
+        let value = convert_content_item(&content).expect("document should convert");
+
+        assert_eq!(value["type"], "document");
+        assert!(value.get("title").is_none());
+        assert_eq!(value["source"]["type"], "text");
+        assert_eq!(value["source"]["media_type"], "text/plain");
+        assert_eq!(value["source"]["data"], "document body");
+    }
+
+    #[test]
+    fn document_content_with_name_sets_title() {
+        let content = ContentItem::Document {
+            name: Some("notes.txt".to_string()),
+            mime_type: "text/plain".to_string(),
+            text: "document body".to_string(),
+        };
+
+        let value = convert_content_item(&content).expect("document should convert");
+
+        assert_eq!(value["title"], "notes.txt");
     }
 }

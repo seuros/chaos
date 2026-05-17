@@ -985,7 +985,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
     let remote_url = "https://example.com/remote-only.png".to_string();
     chat.set_remote_image_urls(vec![remote_url.clone()]);
 
-    chat.open_review_popup();
+    chat.open_review_popup(false);
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     assert_eq!(chat.remote_image_urls(), vec![remote_url]);
@@ -1506,6 +1506,7 @@ async fn entered_review_mode_uses_request_hint() {
                 branch: "feature".to_string(),
             },
             user_facing_hint: Some("feature branch".to_string()),
+            reviewer: None,
         }),
     });
 
@@ -1525,6 +1526,7 @@ async fn entered_review_mode_defaults_to_current_changes_banner() {
         msg: EventMsg::EnteredReviewMode(ReviewRequest {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: None,
+            reviewer: None,
         }),
     });
 
@@ -1543,6 +1545,7 @@ async fn live_agent_message_renders_during_review_mode() {
         msg: EventMsg::EnteredReviewMode(ReviewRequest {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: None,
+            reviewer: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);
@@ -1569,6 +1572,7 @@ async fn process_snapshot_replay_preserves_agent_message_during_review_mode() {
         msg: EventMsg::EnteredReviewMode(ReviewRequest {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: None,
+            reviewer: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);
@@ -1611,6 +1615,7 @@ async fn review_restores_context_window_indicator() {
                 branch: "feature".to_string(),
             },
             user_facing_hint: Some("feature branch".to_string()),
+            reviewer: None,
         }),
     });
 
@@ -5059,9 +5064,11 @@ async fn review_popup_custom_prompt_action_sends_event() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
     // Open the preset selection popup
-    chat.open_review_popup();
+    chat.open_review_popup(false);
 
-    // Move selection down to the fourth item: "Custom review instructions"
+    // Move selection down to the fifth item: "Custom review instructions"
+    // (checkbox is now at index 0, pushing all targets down by one)
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
@@ -5071,7 +5078,7 @@ async fn review_popup_custom_prompt_action_sends_event() {
     // Drain events and ensure we saw the OpenReviewCustomPrompt request
     let mut found = false;
     while let Ok(ev) = rx.try_recv() {
-        if let AppEvent::OpenReviewCustomPrompt = ev {
+        if let AppEvent::OpenReviewCustomPrompt { .. } = ev {
             found = true;
             break;
         }
@@ -5714,7 +5721,7 @@ async fn review_commit_picker_shows_subjects_without_timestamps() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
     // Open the Review presets parent popup.
-    chat.open_review_popup();
+    chat.open_review_popup(false);
 
     // Show commit picker with synthetic entries.
     let entries = vec![
@@ -5775,7 +5782,7 @@ async fn review_commit_picker_shows_subjects_without_timestamps() {
 async fn custom_prompt_submit_sends_review_op() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
-    chat.show_review_custom_prompt();
+    chat.show_review_custom_prompt(false);
     // Paste prompt text via ChatWidget handler, then submit
     chat.handle_paste("  please audit dependencies  ".to_string());
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -5791,6 +5798,7 @@ async fn custom_prompt_submit_sends_review_op() {
                         instructions: "please audit dependencies".to_string(),
                     },
                     user_facing_hint: None,
+                    reviewer: None,
                 }
             );
         }
@@ -5803,7 +5811,7 @@ async fn custom_prompt_submit_sends_review_op() {
 async fn custom_prompt_enter_empty_does_not_send() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
-    chat.show_review_custom_prompt();
+    chat.show_review_custom_prompt(false);
     // Enter without any text
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -5958,10 +5966,10 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
     // Open the Review presets parent popup.
-    chat.open_review_popup();
+    chat.open_review_popup(false);
 
     // Open the custom prompt submenu (child view) directly.
-    chat.show_review_custom_prompt();
+    chat.show_review_custom_prompt(false);
 
     // Verify child view is on top.
     let header = render_bottom_first_row(&chat, 60);
@@ -5993,11 +6001,11 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
     // Open the Review presets parent popup.
-    chat.open_review_popup();
+    chat.open_review_popup(false);
 
     // Open the branch picker submenu (child view). Using a temp cwd with no git repo is fine.
     let cwd = std::env::temp_dir();
-    chat.show_review_branch_picker(&cwd).await;
+    chat.show_review_branch_picker(&cwd, false).await;
 
     // Verify child view header.
     let header = render_bottom_first_row(&chat, 60);
@@ -8535,6 +8543,7 @@ async fn enter_queues_user_messages_while_review_is_running() {
         msg: EventMsg::EnteredReviewMode(ReviewRequest {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: Some("current changes".to_string()),
+            reviewer: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);
@@ -8567,6 +8576,7 @@ async fn review_queues_user_messages_snapshot() {
         msg: EventMsg::EnteredReviewMode(ReviewRequest {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: Some("current changes".to_string()),
+            reviewer: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);

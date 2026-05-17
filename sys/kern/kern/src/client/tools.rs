@@ -485,6 +485,13 @@ pub(crate) fn render_clamp_content_items(content: &[ContentItem]) -> String {
                     format!("[image: {image_url}]")
                 }
             }
+            ContentItem::Document { name, text, .. } => {
+                let header = name
+                    .as_deref()
+                    .map(|n| format!("[{n}]\n"))
+                    .unwrap_or_default();
+                format!("{header}{text}")
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")

@@ -124,6 +124,10 @@ pub use rollout::find_process_names_by_ids;
 pub use rollout::list::Cursor;
 pub use rollout::list::parse_cursor;
 pub use rollout::policy::EventPersistenceMode;
+/// Returns the built-in persona catalog (excludes operational roles like default/scout/task).
+pub fn list_personas() -> &'static std::collections::BTreeMap<String, config::AgentRoleConfig> {
+    minions::role::built_in::personas()
+}
 mod function_tool;
 mod state;
 mod tasks;

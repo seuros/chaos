@@ -465,6 +465,7 @@ impl BottomPaneView for ListSelectionView {
                 modifiers,
                 ..
             } if !self.is_searchable
+                && c != ' '
                 && !modifiers.contains(KeyModifiers::CONTROL)
                 && !modifiers.contains(KeyModifiers::ALT) =>
             {
@@ -487,6 +488,11 @@ impl BottomPaneView for ListSelectionView {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => self.accept(),
+            KeyEvent {
+                code: KeyCode::Char(' '),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } if !self.is_searchable => self.accept(),
             _ => {}
         }
     }

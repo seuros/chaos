@@ -205,7 +205,12 @@ async fn managed_proxy_mode_allows_proxy_port_and_blocks_other_tcp_ports() {
 }
 
 #[tokio::test]
-async fn managed_proxy_mode_denies_af_unix_creation_for_user_command() {
+async fn managed_proxy_mode_allows_af_unix_for_user_command() {
+    // AF_UNIX is intentionally allowed in proxy-routed mode so that local
+    // shell integrations (starship, mise, and other Rust tools invoked via
+    // login-shell RC files) can initialize their tokio signal-delivery pipes.
+    // Network restrictions are enforced via Landlock ConnectTcp rules, which
+    // already restrict TCP connections to the proxy port only.
     let python_available = Command::new("bash")
         .arg("-c")
         .arg("command -v python3 >/dev/null")
@@ -226,7 +231,7 @@ async fn managed_proxy_mode_denies_af_unix_creation_for_user_command() {
         &[
             "python3",
             "-c",
-            "import socket,sys\ntry:\n    socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\nexcept PermissionError:\n    sys.exit(0)\nexcept OSError:\n    sys.exit(2)\nsys.exit(1)\n",
+            "import socket,sys\ntry:\n    socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\nexcept PermissionError:\n    sys.exit(1)\nexcept OSError:\n    sys.exit(2)\nsys.exit(0)\n",
         ],
         &SandboxPolicy::RootAccess,
         true,
@@ -238,7 +243,54 @@ async fn managed_proxy_mode_denies_af_unix_creation_for_user_command() {
     assert_eq!(
         output.status.code(),
         Some(0),
-        "expected AF_UNIX creation to be denied cleanly for user command; status={:?}; stdout={}; stderr={}",
+        "expected AF_UNIX creation to succeed in proxy-routed mode; status={:?}; stdout={}; stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn managed_proxy_mode_denies_exotic_socket_families() {
+    // Exotic socket families (AF_PACKET, AF_NETLINK, etc.) are blocked by
+    // seccomp in proxy-routed mode. Only AF_INET, AF_INET6, and AF_UNIX are
+    // allowed.
+    let python_available = Command::new("bash")
+        .arg("-c")
+        .arg("command -v python3 >/dev/null")
+        .status()
+        .await
+        .expect("python3 probe should execute")
+        .success();
+    if !python_available {
+        eprintln!("skipping exotic socket family test: python3 is unavailable");
+        return;
+    }
+
+    let mut env = create_env_from_core_vars();
+    strip_proxy_env(&mut env);
+    env.insert("HTTP_PROXY".to_string(), "http://127.0.0.1:9".to_string());
+
+    // AF_PACKET = 17 — requires CAP_NET_RAW but also blocked by our seccomp.
+    // Even if the kernel would also deny it for capability reasons, the seccomp
+    // layer returns EPERM first so the behaviour is consistent.
+    let output = run_linux_sandbox_direct(
+        &[
+            "python3",
+            "-c",
+            "import socket,sys\ntry:\n    socket.socket(17, socket.SOCK_RAW, socket.IPPROTO_RAW)\nexcept PermissionError:\n    sys.exit(0)\nexcept OSError:\n    sys.exit(0)\nsys.exit(1)\n",
+        ],
+        &SandboxPolicy::RootAccess,
+        true,
+        env,
+        NETWORK_TIMEOUT_MS,
+    )
+    .await;
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected exotic socket family (AF_PACKET) to be denied; status={:?}; stdout={}; stderr={}",
         output.status.code(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)

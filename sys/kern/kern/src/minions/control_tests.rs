@@ -572,28 +572,42 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
         .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
-    let history = child_thread.chaos.session.clone_history().await;
 
-    let mut parent_call_index = None;
-    let mut injected_output_index = None;
-    for (idx, item) in history.raw_items().iter().enumerate() {
-        match item {
-            ResponseItem::FunctionCall { call_id, .. } if call_id == &parent_spawn_call_id => {
-                parent_call_index = Some(idx);
+    // The fork flushes the parent rollout and loads history asynchronously after
+    // spawn_agent_with_options returns.  Poll until both the FunctionCall and its
+    // synthetic FunctionCallOutput appear in the child's history.
+    let (parent_call_index, injected_output_index) = {
+        let wait = async {
+            loop {
+                let history = child_thread.chaos.session.clone_history().await;
+                let mut call_idx = None;
+                let mut out_idx = None;
+                for (idx, item) in history.raw_items().iter().enumerate() {
+                    match item {
+                        ResponseItem::FunctionCall { call_id, .. }
+                            if call_id == &parent_spawn_call_id =>
+                        {
+                            call_idx = Some(idx);
+                        }
+                        ResponseItem::FunctionCallOutput { call_id, .. }
+                            if call_id == &parent_spawn_call_id =>
+                        {
+                            out_idx = Some(idx);
+                        }
+                        _ => {}
+                    }
+                }
+                if let (Some(c), Some(o)) = (call_idx, out_idx) {
+                    return (c, o);
+                }
+                sleep(Duration::from_millis(25)).await;
             }
-            ResponseItem::FunctionCallOutput { call_id, .. }
-                if call_id == &parent_spawn_call_id =>
-            {
-                injected_output_index = Some(idx);
-            }
-            _ => {}
-        }
-    }
+        };
+        timeout(Duration::from_secs(5), wait)
+            .await
+            .expect("timed out waiting for forked child history to include parent spawn call")
+    };
 
-    let parent_call_index =
-        parent_call_index.expect("forked child should include the parent spawn_agent call");
-    let injected_output_index = injected_output_index
-        .expect("forked child should include synthetic output for the parent spawn_agent call");
     assert!(parent_call_index < injected_output_index);
 
     let _ = harness

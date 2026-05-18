@@ -436,7 +436,7 @@ mod tests {
         let mode = CollaborationMode {
             mode: ModeKind::Default,
             settings: Settings {
-                model: "gpt-5.2-codex".to_string(),
+                model: "gpt-5.4-codex".to_string(),
                 reasoning_effort: Some(ReasoningEffort::High),
                 minion_instructions: Some("stay focused".to_string()),
             },
@@ -452,7 +452,7 @@ mod tests {
         let expected = CollaborationMode {
             mode: ModeKind::Default,
             settings: Settings {
-                model: "gpt-5.2-codex".to_string(),
+                model: "gpt-5.4-codex".to_string(),
                 reasoning_effort: None,
                 minion_instructions: None,
             },

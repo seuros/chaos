@@ -17,7 +17,7 @@ use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 
-const SERVER_MODEL: &str = "gpt-5.2";
+const SERVER_MODEL: &str = "gpt-5.4";
 const REQUESTED_MODEL: &str = "gpt-5.3-codex";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

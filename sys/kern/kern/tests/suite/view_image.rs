@@ -465,7 +465,7 @@ async fn view_image_tool_resizes_when_model_lacks_original_detail_support() -> a
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5.2");
+    let mut builder = test_chaos().with_model("gpt-5.4");
     let TestChaos {
         process: chaos,
         cwd,

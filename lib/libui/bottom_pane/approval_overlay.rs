@@ -23,6 +23,7 @@ mod tests {
     use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
     use chaos_ipc::models::NetworkPermissions;
     use chaos_ipc::models::PermissionProfile;
+    use chaos_ipc::product::OS_NAME;
     use chaos_ipc::protocol::ElicitationAction;
     use chaos_ipc::protocol::ExecPolicyAmendment;
     use chaos_ipc::protocol::NetworkApprovalContext;
@@ -68,6 +69,7 @@ mod tests {
         ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             id: "test".to_string(),
             command: vec!["echo".to_string(), "hi".to_string()],
             reason: Some("reason".to_string()),
@@ -81,6 +83,7 @@ mod tests {
         ApprovalRequest::Permissions {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             call_id: "test".to_string(),
             reason: Some("need workspace access".to_string()),
             permissions: RequestPermissionProfile {
@@ -99,6 +102,7 @@ mod tests {
         ApprovalRequest::McpElicitation {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             server_name: "calendar".to_string(),
             request_id: RequestId::Integer(7),
             message: "Open the provider login page to continue.".to_string(),
@@ -141,6 +145,7 @@ mod tests {
             ApprovalRequest::Exec {
                 process_id,
                 process_label: Some("Robie [scout]".to_string()),
+                model_name: OS_NAME.to_string(),
                 id: "test".to_string(),
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
@@ -168,6 +173,7 @@ mod tests {
             ApprovalRequest::Exec {
                 process_id: ProcessId::new(),
                 process_label: Some("Robie [scout]".to_string()),
+                model_name: OS_NAME.to_string(),
                 id: "test".to_string(),
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
@@ -239,6 +245,7 @@ mod tests {
             ApprovalRequest::Exec {
                 process_id: ProcessId::new(),
                 process_label: None,
+                model_name: OS_NAME.to_string(),
                 id: "test".to_string(),
                 command: vec!["echo".to_string()],
                 reason: None,
@@ -290,6 +297,7 @@ mod tests {
             ApprovalRequest::Exec {
                 process_id: ProcessId::new(),
                 process_label: None,
+                model_name: OS_NAME.to_string(),
                 id: "test".to_string(),
                 command: vec!["curl".to_string(), "https://example.com".to_string()],
                 reason: None,
@@ -328,6 +336,7 @@ mod tests {
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             id: "test".into(),
             command,
             reason: None,
@@ -369,6 +378,7 @@ mod tests {
             ],
             Some(&network_context),
             None,
+            OS_NAME,
         );
 
         let labels: Vec<String> = options.into_iter().map(|option| option.label).collect();
@@ -393,6 +403,7 @@ mod tests {
             ],
             None,
             None,
+            OS_NAME,
         );
 
         let labels: Vec<String> = options.into_iter().map(|option| option.label).collect();
@@ -419,6 +430,7 @@ mod tests {
             &[ReviewDecision::Approved, ReviewDecision::Abort],
             None,
             Some(&additional_permissions),
+            OS_NAME,
         );
 
         let labels: Vec<String> = options.into_iter().map(|option| option.label).collect();
@@ -479,6 +491,7 @@ mod tests {
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             id: "test".into(),
             command: vec!["cat".into(), "/tmp/readme.txt".into()],
             reason: None,
@@ -526,6 +539,7 @@ mod tests {
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             id: "test".into(),
             command: vec!["cat".into(), "/tmp/readme.txt".into()],
             reason: Some("need filesystem access".into()),
@@ -566,6 +580,7 @@ mod tests {
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             id: "test".into(),
             command: vec!["osascript".into(), "-e".into(), "tell application".into()],
             reason: Some("need macOS automation".into()),
@@ -601,6 +616,7 @@ mod tests {
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             id: "test".into(),
             command: vec!["curl".into(), "https://example.com".into()],
             reason: Some("network request blocked".into()),

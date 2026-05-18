@@ -79,6 +79,7 @@ impl ApprovalOverlay {
         header: Box<dyn Renderable>,
         _features: &Features,
     ) -> (Vec<ApprovalOption>, SelectionViewParams) {
+        let agent_label = request.model_name();
         let (options, title) = match request {
             ApprovalRequest::Exec {
                 available_decisions,
@@ -90,6 +91,7 @@ impl ApprovalOverlay {
                     available_decisions,
                     network_approval_context.as_ref(),
                     additional_permissions.as_ref(),
+                    agent_label,
                 ),
                 network_approval_context.as_ref().map_or_else(
                     || "Would you like to run the following command?".to_string(),
@@ -106,7 +108,7 @@ impl ApprovalOverlay {
                 "Would you like to grant these permissions?".to_string(),
             ),
             ApprovalRequest::ApplyPatch { .. } => (
-                patch_options(),
+                patch_options(agent_label),
                 "Would you like to make the following edits?".to_string(),
             ),
             ApprovalRequest::McpElicitation {

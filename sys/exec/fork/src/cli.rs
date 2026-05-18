@@ -260,7 +260,7 @@ mod tests {
             "--last",
             "--json",
             "--model",
-            "gpt-5.2-codex",
+            "gpt-5.4-codex",
             "--headless",
             "--skip-git-repo-check",
             "--ephemeral",

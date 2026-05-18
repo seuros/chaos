@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::mcp::RequestId;
-use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::ElicitationAction;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::NetworkApprovalContext;
@@ -33,6 +32,7 @@ pub enum ApprovalRequest {
     Exec {
         process_id: ProcessId,
         process_label: Option<String>,
+        model_name: String,
         id: String,
         command: Vec<String>,
         reason: Option<String>,
@@ -43,6 +43,7 @@ pub enum ApprovalRequest {
     Permissions {
         process_id: ProcessId,
         process_label: Option<String>,
+        model_name: String,
         call_id: String,
         reason: Option<String>,
         permissions: RequestPermissionProfile,
@@ -50,6 +51,7 @@ pub enum ApprovalRequest {
     ApplyPatch {
         process_id: ProcessId,
         process_label: Option<String>,
+        model_name: String,
         id: String,
         reason: Option<String>,
         cwd: PathBuf,
@@ -58,6 +60,7 @@ pub enum ApprovalRequest {
     McpElicitation {
         process_id: ProcessId,
         process_label: Option<String>,
+        model_name: String,
         server_name: String,
         request_id: RequestId,
         message: String,
@@ -81,6 +84,15 @@ impl ApprovalRequest {
             | ApprovalRequest::Permissions { process_label, .. }
             | ApprovalRequest::ApplyPatch { process_label, .. }
             | ApprovalRequest::McpElicitation { process_label, .. } => process_label.as_deref(),
+        }
+    }
+
+    pub(super) fn model_name(&self) -> &str {
+        match self {
+            ApprovalRequest::Exec { model_name, .. }
+            | ApprovalRequest::Permissions { model_name, .. }
+            | ApprovalRequest::ApplyPatch { model_name, .. }
+            | ApprovalRequest::McpElicitation { model_name, .. } => model_name.as_str(),
         }
     }
 }
@@ -265,6 +277,7 @@ pub(super) fn exec_options(
     available_decisions: &[ReviewDecision],
     network_approval_context: Option<&NetworkApprovalContext>,
     additional_permissions: Option<&chaos_ipc::models::PermissionProfile>,
+    agent_label: &str,
 ) -> Vec<ApprovalOption> {
     use chaos_ipc::protocol::NetworkPolicyRuleAction;
     available_decisions
@@ -343,7 +356,7 @@ pub(super) fn exec_options(
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('d'))],
             }),
             ReviewDecision::Abort => Some(ApprovalOption {
-                label: format!("No, and tell {OS_NAME} what to do differently"),
+                label: format!("No, and tell {agent_label} what to do differently"),
                 decision: ApprovalDecision::Review(ReviewDecision::Abort),
                 display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -352,7 +365,7 @@ pub(super) fn exec_options(
         .collect()
 }
 
-pub(super) fn patch_options() -> Vec<ApprovalOption> {
+pub(super) fn patch_options(agent_label: &str) -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
             label: "Yes, proceed".to_string(),
@@ -367,7 +380,7 @@ pub(super) fn patch_options() -> Vec<ApprovalOption> {
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
         },
         ApprovalOption {
-            label: format!("No, and tell {OS_NAME} what to do differently"),
+            label: format!("No, and tell {agent_label} what to do differently"),
             decision: ApprovalDecision::Review(ReviewDecision::Abort),
             display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],

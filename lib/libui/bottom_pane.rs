@@ -228,6 +228,7 @@ mod tests {
         ApprovalRequest::Exec {
             process_id: chaos_ipc::ProcessId::new(),
             process_label: None,
+            model_name: OS_NAME.to_string(),
             id: "1".to_string(),
             command: vec!["echo".into(), "ok".into()],
             reason: None,

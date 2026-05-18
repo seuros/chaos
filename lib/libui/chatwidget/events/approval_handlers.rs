@@ -22,6 +22,7 @@ impl ChatWidget {
         let request = ApprovalRequest::Exec {
             process_id: self.process_id.unwrap_or_default(),
             process_label: None,
+            model_name: self.current_model().to_string(),
             id: ev.effective_approval_id(),
             command: ev.command,
             reason: ev.reason,
@@ -40,6 +41,7 @@ impl ChatWidget {
         let request = ApprovalRequest::ApplyPatch {
             process_id: self.process_id.unwrap_or_default(),
             process_label: None,
+            model_name: self.current_model().to_string(),
             id: ev.call_id,
             reason: ev.reason,
             changes: ev.changes.clone(),
@@ -76,6 +78,7 @@ impl ChatWidget {
             let request = ApprovalRequest::McpElicitation {
                 process_id,
                 process_label: None,
+                model_name: self.current_model().to_string(),
                 server_name: ev.server_name,
                 request_id: ev.id,
                 message: ev.request.message().to_string(),
@@ -118,6 +121,7 @@ impl ChatWidget {
         let request = ApprovalRequest::Permissions {
             process_id: self.process_id.unwrap_or_default(),
             process_label: None,
+            model_name: self.current_model().to_string(),
             call_id: ev.call_id,
             reason: ev.reason,
             permissions: ev.permissions,

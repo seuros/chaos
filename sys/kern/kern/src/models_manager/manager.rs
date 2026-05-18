@@ -763,7 +763,7 @@ impl ModelsManager {
     pub(crate) fn get_model_offline_for_tests(model: Option<&str>) -> String {
         model
             .map(String::from)
-            .unwrap_or_else(|| "gpt-5.2-codex".to_string())
+            .unwrap_or_else(|| "gpt-5.4-codex".to_string())
     }
 
     /// Build `ModelInfo` without consulting remote state or cache.

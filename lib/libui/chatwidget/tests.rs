@@ -6110,8 +6110,8 @@ async fn model_picker_hides_show_in_picker_false_models_from_cache() {
 
 #[tokio::test]
 async fn server_overloaded_error_does_not_switch_models() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.2-codex")).await;
-    chat.set_model("gpt-5.2-codex");
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4-codex")).await;
+    chat.set_model("gpt-5.4-codex");
     while rx.try_recv().is_ok() {}
     while op_rx.try_recv().is_ok() {}
 
@@ -6126,7 +6126,7 @@ async fn server_overloaded_error_does_not_switch_models() {
     while let Ok(event) = rx.try_recv() {
         if let AppEvent::UpdateModel(model) = event {
             assert_eq!(
-                model, "gpt-5.2-codex",
+                model, "gpt-5.4-codex",
                 "did not expect model switch on server-overloaded error"
             );
         }

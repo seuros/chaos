@@ -1,6 +1,5 @@
 ---
 source: lib/libui/bottom_pane/approval_overlay.rs
-assertion_line: 628
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {

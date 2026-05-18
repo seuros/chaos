@@ -10,11 +10,13 @@ impl App {
         event: &Event,
     ) -> Option<ProcessInteractiveRequest> {
         let process_label = Some(self.process_label(process_id));
+        let model_name = self.chat_widget.current_model().to_string();
         match &event.msg {
             EventMsg::ExecApprovalRequest(ev) => {
                 Some(ProcessInteractiveRequest::Approval(ApprovalRequest::Exec {
                     process_id,
                     process_label,
+                    model_name: model_name.clone(),
                     id: ev.effective_approval_id(),
                     command: ev.command.clone(),
                     reason: ev.reason.clone(),
@@ -27,6 +29,7 @@ impl App {
                 ApprovalRequest::ApplyPatch {
                     process_id,
                     process_label,
+                    model_name: model_name.clone(),
                     id: ev.call_id.clone(),
                     reason: ev.reason.clone(),
                     cwd: self
@@ -52,6 +55,7 @@ impl App {
                         ApprovalRequest::McpElicitation {
                             process_id,
                             process_label,
+                            model_name: model_name.clone(),
                             server_name: ev.server_name.clone(),
                             request_id: ev.id.clone(),
                             message: ev.request.message().to_string(),
@@ -64,6 +68,7 @@ impl App {
                 ApprovalRequest::Permissions {
                     process_id,
                     process_label,
+                    model_name,
                     call_id: ev.call_id.clone(),
                     reason: ev.reason.clone(),
                     permissions: ev.permissions.clone(),

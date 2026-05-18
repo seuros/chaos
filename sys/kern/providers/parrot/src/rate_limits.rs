@@ -327,13 +327,13 @@ mod tests {
         );
         headers.insert(
             "x-chaos-bengalfox-limit-name",
-            HeaderValue::from_static("gpt-5.2-codex-sonic"),
+            HeaderValue::from_static("gpt-5.4-codex-sonic"),
         );
 
         let snapshot =
             parse_rate_limit_for_limit(&headers, Some("chaos_bengalfox")).expect("snapshot");
         assert_eq!(snapshot.limit_id.as_deref(), Some("chaos_bengalfox"));
-        assert_eq!(snapshot.limit_name.as_deref(), Some("gpt-5.2-codex-sonic"));
+        assert_eq!(snapshot.limit_name.as_deref(), Some("gpt-5.4-codex-sonic"));
     }
 
     #[test]

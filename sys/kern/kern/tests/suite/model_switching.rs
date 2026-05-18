@@ -38,7 +38,7 @@ async fn model_change_appends_model_instructions_developer_message() -> Result<(
     )
     .await;
 
-    let mut builder = test_chaos().with_model("gpt-5.2-codex");
+    let mut builder = test_chaos().with_model("gpt-5.4-codex");
     let test = builder.build(&server).await?;
     let next_model = "gpt-5.1-codex-max";
 
@@ -122,7 +122,7 @@ async fn model_and_personality_change_only_appends_model_instructions() -> Resul
     )
     .await;
 
-    let mut builder = test_chaos().with_model("gpt-5.2-codex");
+    let mut builder = test_chaos().with_model("gpt-5.4-codex");
     let test = builder.build(&server).await?;
     let next_model = "exp-codex-personality";
 

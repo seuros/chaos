@@ -21,6 +21,8 @@ use crate::CreateProcessResponse;
 use crate::ErrorPayload;
 use crate::HelloRequest;
 use crate::HelloResponse;
+use crate::InitializeProcessInput;
+use crate::InitializeProcessResult;
 use crate::JOURNAL_RPC_PATH;
 use crate::JournalRequest;
 use crate::JournalResponse;
@@ -112,6 +114,24 @@ impl JournalRpcClient {
         match response {
             JournalResponse::CreateProcess(created) => Ok(created),
             other => Err(unexpected_variant("create_process", &other)),
+        }
+    }
+
+    /// Atomic process creation + first append batch + lease acquisition.
+    ///
+    /// Either every state change persists or none does — readers cannot observe a process
+    /// row that has zero transcript entries via this path. Callers that pass an empty
+    /// `items` vector get back `JournalError::InvalidRequest` from the server.
+    pub async fn initialize_process(
+        &self,
+        input: InitializeProcessInput,
+    ) -> Result<InitializeProcessResult, JournalClientError> {
+        let response = self
+            .send_request(JournalRequest::InitializeProcess(input))
+            .await?;
+        match response {
+            JournalResponse::InitializeProcess(result) => Ok(*result),
+            other => Err(unexpected_variant("initialize_process", &other)),
         }
     }
 
@@ -332,6 +352,7 @@ fn response_variant_name(response: &JournalResponse) -> &'static str {
     match response {
         JournalResponse::Hello(_) => "hello",
         JournalResponse::CreateProcess(_) => "create_process",
+        JournalResponse::InitializeProcess(_) => "initialize_process",
         JournalResponse::GetProcess(_) => "get_process",
         JournalResponse::ListProcesses(_) => "list_processes",
         JournalResponse::AcquireLease(_) => "acquire_lease",

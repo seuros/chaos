@@ -15,6 +15,7 @@ use chaos_ipc::product::CHAOS_VERSION;
 use chaos_journald::AppendBatchInput as JournalAppendBatchInput;
 use chaos_journald::CreateProcessInput as JournalCreateProcessInput;
 use chaos_journald::ErrorCode as JournalErrorCode;
+use chaos_journald::InitializeProcessInput as JournalInitializeProcessInput;
 use chaos_journald::JournalClientError;
 use chaos_journald::JournalEntry;
 use chaos_journald::JournalRpcClient;
@@ -384,6 +385,7 @@ impl RolloutRecorder {
                         model_provider: config.model_provider_id().to_string(),
                         cli_version: CHAOS_VERSION.to_string(),
                         owner_id: Uuid::now_v7().to_string(),
+                        mode: JournalSinkMode::Create,
                     }),
                     false,
                 )
@@ -403,6 +405,7 @@ impl RolloutRecorder {
                     model_provider: config.model_provider_id().to_string(),
                     cli_version: CHAOS_VERSION.to_string(),
                     owner_id: Uuid::now_v7().to_string(),
+                    mode: JournalSinkMode::Resume,
                 }),
                 true,
             ),
@@ -638,6 +641,17 @@ const JOURNALD_BIN_ENV: &str = "CHAOS_JOURNALD_BIN";
 const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
 const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum JournalSinkMode {
+    /// New session: the process row does not exist yet. The first batch must be
+    /// persisted via the atomic `initialize_process` op so the row never appears
+    /// without its transcript.
+    Create,
+    /// Resumed session: the process row already exists, possibly with prior entries.
+    /// Attach to it via the legacy `acquire_lease` + `append_batch` path.
+    Resume,
+}
+
 #[derive(Clone)]
 struct PendingJournalConfig {
     process_id: ProcessId,
@@ -647,6 +661,7 @@ struct PendingJournalConfig {
     model_provider: String,
     cli_version: String,
     owner_id: String,
+    mode: JournalSinkMode,
 }
 
 enum JournalSink {
@@ -674,30 +689,36 @@ impl JournalSink {
             return;
         }
 
-        let pending = match std::mem::replace(self, Self::Disabled) {
+        match std::mem::replace(self, Self::Disabled) {
             Self::Disabled => {
                 *self = Self::Disabled;
-                return;
             }
-            Self::Pending(config) => match ActiveJournalWriter::connect(config).await {
-                Ok(writer) => writer,
-                Err(err) => {
-                    warn!("failed to initialize journald dual-write sink: {err}");
-                    *self = Self::Disabled;
-                    return;
+            Self::Pending(config) => {
+                let connect_result = match config.mode {
+                    JournalSinkMode::Create => ActiveJournalWriter::initialize(config, items).await,
+                    JournalSinkMode::Resume => {
+                        ActiveJournalWriter::attach_resumed(config, items).await
+                    }
+                };
+                match connect_result {
+                    Ok(writer) => {
+                        *self = Self::Active(writer);
+                    }
+                    Err(err) => {
+                        warn!("failed to initialize journald dual-write sink: {err}");
+                        *self = Self::Disabled;
+                    }
                 }
-            },
-            Self::Active(writer) => writer,
-        };
-
-        let mut writer = pending;
-        if let Err(err) = writer.append_items(items).await {
-            warn!("journald dual-write disabled after append failure: {err}");
-            *self = Self::Disabled;
-            return;
+            }
+            Self::Active(mut writer) => {
+                if let Err(err) = writer.append_items(items).await {
+                    warn!("journald dual-write disabled after append failure: {err}");
+                    *self = Self::Disabled;
+                } else {
+                    *self = Self::Active(writer);
+                }
+            }
         }
-
-        *self = Self::Active(writer);
     }
 
     async fn shutdown(&mut self) {
@@ -711,7 +732,18 @@ impl JournalSink {
 }
 
 impl ActiveJournalWriter {
-    async fn connect(config: PendingJournalConfig) -> Result<Self, String> {
+    /// Atomically create the process row, acquire the writer lease, and append the first
+    /// batch of items in one journald transaction. Used only for `JournalSinkMode::Create`
+    /// — readers will never observe a process row that lacks transcript entries via this path.
+    ///
+    /// If the process row unexpectedly exists (concurrent writer race, leftover state from a
+    /// pre-upgrade crash), this refuses rather than silently appending to it. Resumed
+    /// sessions go through `attach_resumed`, not this function.
+    async fn initialize(
+        config: PendingJournalConfig,
+        items: &[RolloutItem],
+    ) -> Result<Self, String> {
+        debug_assert!(matches!(config.mode, JournalSinkMode::Create));
         let client = journal_client_from_env_or_bootstrap().await?;
 
         let create_input = JournalCreateProcessInput {
@@ -725,6 +757,80 @@ impl ActiveJournalWriter {
             cli_version: Some(config.cli_version.clone()),
         };
 
+        let now = jiff::Timestamp::now();
+        let journal_items = items
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(offset, item)| JournalEntry {
+                seq: offset as i64,
+                recorded_at: now,
+                item,
+            })
+            .collect();
+
+        let init_input = JournalInitializeProcessInput {
+            create: create_input,
+            owner_id: config.owner_id.clone(),
+            ttl_ms: JOURNAL_LEASE_TTL.as_millis() as u64,
+            items: journal_items,
+        };
+
+        match client.initialize_process(init_input).await {
+            Ok(result) => Ok(Self {
+                client,
+                process_id: config.process_id,
+                owner_id: config.owner_id,
+                lease_token: result.lease.lease_token,
+                next_seq: result.next_seq,
+                last_lease_refresh: Instant::now(),
+            }),
+            Err(JournalClientError::Remote(payload))
+                if payload.code == JournalErrorCode::AlreadyExists =>
+            {
+                Err(format!(
+                    "initialize_process refused: process row for {} already exists \
+                     under Create mode (concurrent writer or pre-upgrade leftover); \
+                     refusing to silently append",
+                    config.process_id
+                ))
+            }
+            Err(err) => Err(format!("initialize_process failed: {err}")),
+        }
+    }
+
+    /// Attach to an existing process row for `JournalSinkMode::Resume`. The row was
+    /// created by a prior incarnation of this conversation; we tolerate redundant
+    /// `create_process` (AlreadyExists is the common case), acquire a fresh lease,
+    /// and append the current batch via the standard path.
+    async fn attach_resumed(
+        config: PendingJournalConfig,
+        items: &[RolloutItem],
+    ) -> Result<Self, String> {
+        debug_assert!(matches!(config.mode, JournalSinkMode::Resume));
+        let client = journal_client_from_env_or_bootstrap().await?;
+        let mut writer = Self::connect_existing(client, &config).await?;
+        writer.append_items(items).await?;
+        Ok(writer)
+    }
+
+    /// Acquire a lease against an existing process row and load its `next_seq`.
+    /// Tolerates the redundant `create_process` because journald is the source of
+    /// truth for whether the row exists.
+    async fn connect_existing(
+        client: JournalRpcClient,
+        config: &PendingJournalConfig,
+    ) -> Result<Self, String> {
+        let create_input = JournalCreateProcessInput {
+            process_id: config.process_id,
+            parent: None,
+            source: config.source.clone(),
+            cwd: config.cwd.clone(),
+            created_at: config.created_at,
+            title: None,
+            model_provider: Some(config.model_provider.clone()),
+            cli_version: Some(config.cli_version.clone()),
+        };
         match client.create_process(create_input).await {
             Ok(_) => {}
             Err(JournalClientError::Remote(payload))
@@ -750,7 +856,7 @@ impl ActiveJournalWriter {
         Ok(Self {
             client,
             process_id: config.process_id,
-            owner_id: config.owner_id,
+            owner_id: config.owner_id.clone(),
             lease_token: lease.lease_token,
             next_seq: loaded.next_seq,
             last_lease_refresh: Instant::now(),
@@ -849,7 +955,20 @@ async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, Stri
     if let Some(socket_path) = std::env::var_os(JOURNALD_SOCKET_ENV)
         && !socket_path.is_empty()
     {
-        return Ok(JournalRpcClient::new(PathBuf::from(socket_path)));
+        let client = JournalRpcClient::new(PathBuf::from(socket_path));
+        let hello = client
+            .hello("chaos-kern")
+            .await
+            .map_err(|err| format!("env-provided journald hello failed: {err}"))?;
+        if hello.protocol_version < chaos_journald::JOURNAL_PROTOCOL_VERSION {
+            return Err(format!(
+                "env-provided journald at {} speaks protocol {}, this client requires {}",
+                client.socket_path().display(),
+                hello.protocol_version,
+                chaos_journald::JOURNAL_PROTOCOL_VERSION,
+            ));
+        }
+        return Ok(client);
     }
 
     let binary_path = std::env::var_os(JOURNALD_BIN_ENV)
@@ -1067,28 +1186,36 @@ async fn rollout_writer(
             }
             RolloutCmd::Persist { ack } => {
                 if !persisted {
-                    if let Some(session_meta) = meta.take() {
-                        write_session_meta(
+                    // Build the opening batch as one contiguous write so the journal
+                    // never shows a process row with only a header — either the
+                    // SessionMeta plus all currently-buffered transcript lands
+                    // together via the atomic initialize_process op, or nothing does.
+                    let mut first_batch: Vec<RolloutItem> =
+                        Vec::with_capacity(buffered_items.len() + 1);
+                    let memory_mode = if let Some(session_meta) = meta.take() {
+                        let session_meta_line = build_session_meta_line(
                             session_meta,
                             &cwd,
                             runtime_db_ctx.as_ref(),
                             &mut state_builder,
-                            default_provider.as_str(),
-                            generate_memories,
-                            &mut journal_sink,
                         )
-                        .await?;
-                    }
-                    if !buffered_items.is_empty() {
-                        write_and_reconcile_items(
-                            buffered_items.as_slice(),
+                        .await;
+                        first_batch.push(RolloutItem::SessionMeta(session_meta_line));
+                        (!generate_memories).then_some("disabled")
+                    } else {
+                        None
+                    };
+                    first_batch.append(&mut buffered_items);
+                    if !first_batch.is_empty() {
+                        journal_sink.append_items(first_batch.as_slice()).await;
+                        sync_process_state_after_write(
                             runtime_db_ctx.as_ref(),
                             state_builder.as_ref(),
+                            first_batch.as_slice(),
                             default_provider.as_str(),
-                            &mut journal_sink,
+                            memory_mode,
                         )
-                        .await?;
-                        buffered_items.clear();
+                        .await;
                     }
                     persisted = true;
                 }
@@ -1108,16 +1235,16 @@ async fn rollout_writer(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn write_session_meta(
+/// Assemble the SessionMeta rollout line (with git enrichment) and seed the runtime-db
+/// state builder. The caller is responsible for actually persisting the line via the
+/// journal sink — splitting these halves lets the writer task bundle SessionMeta with
+/// any buffered transcript items into a single atomic first batch.
+async fn build_session_meta_line(
     session_meta: SessionMeta,
     cwd: &Path,
     runtime_db_ctx: Option<&RuntimeDbHandle>,
     state_builder: &mut Option<ProcessMetadataBuilder>,
-    default_provider: &str,
-    generate_memories: bool,
-    journal_sink: &mut JournalSink,
-) -> std::io::Result<()> {
+) -> SessionMetaLine {
     let git_info = collect_git_info(cwd).await;
     let session_meta_line = SessionMetaLine {
         meta: session_meta,
@@ -1126,20 +1253,7 @@ async fn write_session_meta(
     if runtime_db_ctx.is_some() {
         *state_builder = metadata::builder_from_session_meta(&session_meta_line);
     }
-
-    let rollout_item = RolloutItem::SessionMeta(session_meta_line);
-    journal_sink
-        .append_items(std::slice::from_ref(&rollout_item))
-        .await;
-    sync_process_state_after_write(
-        runtime_db_ctx,
-        state_builder.as_ref(),
-        std::slice::from_ref(&rollout_item),
-        default_provider,
-        (!generate_memories).then_some("disabled"),
-    )
-    .await;
-    Ok(())
+    session_meta_line
 }
 
 async fn write_and_reconcile_items(

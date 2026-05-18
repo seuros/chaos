@@ -7,6 +7,8 @@ use crate::error::JournalError;
 use crate::model::AppendBatchInput;
 use crate::model::AppendBatchResult;
 use crate::model::CreateProcessInput;
+use crate::model::InitializeProcessInput;
+use crate::model::InitializeProcessResult;
 use crate::model::Lease;
 use crate::model::LoadedJournal;
 use crate::model::OwnerId;
@@ -17,6 +19,16 @@ pub trait JournalStore {
         &self,
         input: CreateProcessInput,
     ) -> impl Future<Output = Result<ProcessRecord, JournalError>> + Send;
+
+    /// Atomic process creation + first-batch append + lease acquisition.
+    ///
+    /// All three steps run inside one storage transaction. On any failure the entire
+    /// transaction rolls back so readers never observe a process row without its
+    /// first journal entries.
+    fn initialize_process(
+        &self,
+        input: InitializeProcessInput,
+    ) -> impl Future<Output = Result<InitializeProcessResult, JournalError>> + Send;
 
     fn get_process(
         &self,

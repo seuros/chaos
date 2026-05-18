@@ -60,4 +60,7 @@ pub enum JournalError {
         expected_next_seq: i64,
         actual_next_seq: i64,
     },
+
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
 }

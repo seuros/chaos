@@ -82,6 +82,28 @@ pub struct LoadedJournal {
     pub next_seq: EntrySeq,
 }
 
+/// Combined input for atomic process creation + first-batch append + lease acquisition.
+///
+/// The journal store inserts the process row, the initial entries (starting at seq 0), and
+/// the writer's lease inside one SQL transaction. If any step fails the entire transaction
+/// rolls back, preserving the invariant that a process row visible to readers always has
+/// at least the first batch of journal entries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializeProcessInput {
+    pub create: CreateProcessInput,
+    pub owner_id: OwnerId,
+    pub ttl_ms: u64,
+    pub items: Vec<JournalEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializeProcessResult {
+    pub process: ProcessRecord,
+    pub lease: Lease,
+    pub next_seq: EntrySeq,
+    pub updated_at: jiff::Timestamp,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HelloRequest {
     pub client_name: String,

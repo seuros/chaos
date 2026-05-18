@@ -16,6 +16,8 @@ use crate::model::AppendBatchInput;
 use crate::model::AppendBatchResult;
 use crate::model::CreateProcessInput;
 use crate::model::EntrySeq;
+use crate::model::InitializeProcessInput;
+use crate::model::InitializeProcessResult;
 use crate::model::JournalEntry;
 use crate::model::Lease;
 use crate::model::LoadedJournal;
@@ -124,6 +126,165 @@ impl JournalStore for SqliteJournalStore {
             }
             Err(err) => Err(JournalError::Db(err)),
         }
+    }
+
+    async fn initialize_process(
+        &self,
+        input: InitializeProcessInput,
+    ) -> Result<InitializeProcessResult, JournalError> {
+        if input.items.is_empty() {
+            return Err(JournalError::InvalidRequest(format!(
+                "initialize_process for {} requires at least one journal entry; \
+                 use create_process + acquire_lease for empty-journal cases",
+                input.create.process_id
+            )));
+        }
+        for (index, entry) in input.items.iter().enumerate() {
+            let expected = index as i64;
+            if entry.seq != expected {
+                return Err(JournalError::SequenceConflict {
+                    process_id: input.create.process_id,
+                    expected_next_seq: expected,
+                    actual_next_seq: entry.seq,
+                });
+            }
+        }
+
+        let create = &input.create;
+        let source = source_label(&create.source);
+        let source_json = serialize_source(&create.source)?;
+        let title = create.title.clone().unwrap_or_default();
+        let model_provider = create
+            .model_provider
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        let cli_version = create.cli_version.clone().unwrap_or_default();
+        let agent_nickname = create.source.get_nickname();
+        let agent_role = create.source.get_agent_role();
+        let created_at_seconds = create.created_at.as_second();
+        let parent_process_id = create
+            .parent
+            .as_ref()
+            .map(|parent| parent.parent_process_id.to_string());
+        let fork_at_seq = create.parent.as_ref().map(|parent| parent.fork_at_seq);
+
+        let now = jiff::Timestamp::now();
+        let lease_ttl = Duration::from_millis(input.ttl_ms);
+        let lease_expires_at = timestamp_after(now, lease_ttl)?;
+        let lease_token = Uuid::now_v7().to_string();
+
+        let last_seq = input.items.last().map(|entry| entry.seq).unwrap_or(-1);
+        let next_seq = last_seq + 1;
+        let updated_at = input
+            .items
+            .last()
+            .map(|entry| entry.recorded_at)
+            .unwrap_or(now);
+
+        let mut tx = self.pool.begin().await?;
+
+        let insert_process = sqlx::query(
+            "INSERT INTO processes (
+                id,
+                parent_process_id,
+                fork_at_seq,
+                source,
+                source_json,
+                cwd,
+                created_at,
+                updated_at,
+                archived_at,
+                title,
+                model_provider,
+                cli_version,
+                agent_nickname,
+                agent_role
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+        )
+        .bind(create.process_id.to_string())
+        .bind(parent_process_id)
+        .bind(fork_at_seq)
+        .bind(&source)
+        .bind(&source_json)
+        .bind(create.cwd.to_string_lossy().to_string())
+        .bind(created_at_seconds)
+        .bind(updated_at.as_second())
+        .bind(&title)
+        .bind(&model_provider)
+        .bind(&cli_version)
+        .bind(&agent_nickname)
+        .bind(&agent_role)
+        .execute(&mut *tx)
+        .await;
+        if let Err(err) = insert_process {
+            return match err {
+                sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+                    Err(JournalError::ProcessAlreadyExists(create.process_id))
+                }
+                other => Err(JournalError::Db(other)),
+            };
+        }
+
+        for entry in &input.items {
+            let recorded_at = timestamp_text(entry.recorded_at);
+            let item_type = journal_item_type(&entry.item);
+            let payload_json = serialize_item(&entry.item)?;
+            sqlx::query(
+                "INSERT INTO journal_entries (
+                    process_id,
+                    seq,
+                    recorded_at,
+                    item_type,
+                    payload_json
+                 ) VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(create.process_id.to_string())
+            .bind(entry.seq)
+            .bind(recorded_at)
+            .bind(item_type)
+            .bind(payload_json)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        sqlx::query(
+            "INSERT INTO process_leases (process_id, owner_id, lease_token, expires_at, updated_at)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(create.process_id.to_string())
+        .bind(&input.owner_id)
+        .bind(&lease_token)
+        .bind(timestamp_text(lease_expires_at))
+        .bind(now.as_second())
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(InitializeProcessResult {
+            process: ProcessRecord {
+                process_id: create.process_id,
+                parent: create.parent.clone(),
+                source: create.source.clone(),
+                cwd: create.cwd.clone(),
+                created_at: create.created_at,
+                updated_at,
+                archived_at: None,
+                title,
+                model_provider,
+                cli_version: create.cli_version.clone(),
+                agent_nickname,
+                agent_role,
+            },
+            lease: Lease {
+                process_id: create.process_id,
+                owner_id: input.owner_id,
+                lease_token,
+                expires_at: lease_expires_at,
+            },
+            next_seq,
+            updated_at,
+        })
     }
 
     async fn get_process(
@@ -825,5 +986,144 @@ mod tests {
             crate::error::JournalError::SequenceConflict { .. } => {}
             other => panic!("unexpected error: {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn initialize_process_atomically_creates_row_lease_and_entries() {
+        use crate::model::InitializeProcessInput;
+
+        let temp_dir = tempdir().unwrap_or_else(|err| panic!("tempdir: {err}"));
+        let db_path = temp_dir.path().join("journal.sqlite");
+        let store = SqliteJournalStore::open(&db_path)
+            .await
+            .unwrap_or_else(|err| panic!("open: {err}"));
+
+        let process_id = ProcessId::new();
+        let created_at = jiff::Timestamp::now();
+        let recorded_at = jiff::Timestamp::now();
+        let item = RolloutItem::Compacted(CompactedItem {
+            message: "first-batch".to_string(),
+            replacement_history: None,
+        });
+
+        let result = store
+            .initialize_process(InitializeProcessInput {
+                create: CreateProcessInput {
+                    process_id,
+                    parent: None,
+                    source: SessionSource::Cli,
+                    cwd: temp_dir.path().to_path_buf(),
+                    created_at,
+                    title: Some("init-test".to_string()),
+                    model_provider: Some("openai".to_string()),
+                    cli_version: Some("47.0.0".to_string()),
+                },
+                owner_id: "owner-init".to_string(),
+                ttl_ms: 30_000,
+                items: vec![JournalEntry {
+                    seq: 0,
+                    recorded_at,
+                    item: item.clone(),
+                }],
+            })
+            .await
+            .unwrap_or_else(|err| panic!("initialize_process: {err}"));
+
+        assert_eq!(result.process.process_id, process_id);
+        assert_eq!(result.process.title, "init-test");
+        assert_eq!(result.next_seq, 1);
+        assert_eq!(result.lease.owner_id, "owner-init");
+        assert!(!result.lease.lease_token.is_empty());
+
+        // Process row visible.
+        let stored = store
+            .get_process(&process_id)
+            .await
+            .unwrap_or_else(|err| panic!("get_process: {err}"))
+            .expect("process row missing");
+        assert_eq!(stored.process_id, process_id);
+
+        // First batch durably persisted at seq 0.
+        let loaded = store
+            .load_journal(&process_id)
+            .await
+            .unwrap_or_else(|err| panic!("load_journal: {err}"));
+        assert_eq!(loaded.items.len(), 1);
+        assert_eq!(loaded.items[0].seq, 0);
+        assert_eq!(loaded.next_seq, 1);
+
+        // The returned lease must be usable for a follow-on append at seq 1.
+        store
+            .append_batch(AppendBatchInput {
+                process_id,
+                owner_id: result.lease.owner_id.clone(),
+                lease_token: result.lease.lease_token.clone(),
+                expected_next_seq: 1,
+                items: vec![JournalEntry {
+                    seq: 1,
+                    recorded_at: jiff::Timestamp::now(),
+                    item: RolloutItem::Compacted(CompactedItem {
+                        message: "second".to_string(),
+                        replacement_history: None,
+                    }),
+                }],
+            })
+            .await
+            .unwrap_or_else(|err| panic!("follow-on append_batch: {err}"));
+
+        // Calling initialize again with the same process id must surface AlreadyExists.
+        let dup_err = store
+            .initialize_process(InitializeProcessInput {
+                create: CreateProcessInput {
+                    process_id,
+                    parent: None,
+                    source: SessionSource::Cli,
+                    cwd: temp_dir.path().to_path_buf(),
+                    created_at,
+                    title: None,
+                    model_provider: None,
+                    cli_version: None,
+                },
+                owner_id: "owner-init".to_string(),
+                ttl_ms: 30_000,
+                items: vec![JournalEntry {
+                    seq: 0,
+                    recorded_at,
+                    item: item.clone(),
+                }],
+            })
+            .await
+            .expect_err("duplicate initialize_process should fail");
+        match dup_err {
+            crate::error::JournalError::ProcessAlreadyExists(returned) => {
+                assert_eq!(returned, process_id);
+            }
+            other => panic!("expected ProcessAlreadyExists, got {other}"),
+        }
+
+        // Empty initial batch must be rejected (would otherwise create the very orphan row
+        // this op exists to prevent).
+        let empty_err = store
+            .initialize_process(InitializeProcessInput {
+                create: CreateProcessInput {
+                    process_id: ProcessId::new(),
+                    parent: None,
+                    source: SessionSource::Cli,
+                    cwd: temp_dir.path().to_path_buf(),
+                    created_at,
+                    title: None,
+                    model_provider: None,
+                    cli_version: None,
+                },
+                owner_id: "owner-init".to_string(),
+                ttl_ms: 30_000,
+                items: Vec::new(),
+            })
+            .await
+            .expect_err("empty-batch initialize_process should fail");
+        assert!(matches!(
+            empty_err,
+            crate::error::JournalError::InvalidRequest(_)
+        ));
     }
 }

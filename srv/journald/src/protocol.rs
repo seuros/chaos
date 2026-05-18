@@ -7,6 +7,8 @@ use crate::model::AppendBatchResult;
 use crate::model::CreateProcessInput;
 use crate::model::HelloRequest;
 use crate::model::HelloResponse;
+use crate::model::InitializeProcessInput;
+use crate::model::InitializeProcessResult;
 use crate::model::Lease;
 use crate::model::LoadedJournal;
 use crate::model::OwnerId;
@@ -24,6 +26,7 @@ pub struct RequestEnvelope {
 pub enum JournalRequest {
     Hello(HelloRequest),
     CreateProcess(CreateProcessInput),
+    InitializeProcess(InitializeProcessInput),
     GetProcess(GetProcessRequest),
     ListProcesses(ListProcessesRequest),
     AcquireLease(AcquireLeaseRequest),
@@ -50,6 +53,7 @@ pub struct ResponseEnvelope {
 pub enum JournalResponse {
     Hello(HelloResponse),
     CreateProcess(CreateProcessResponse),
+    InitializeProcess(Box<InitializeProcessResult>),
     GetProcess(Box<GetProcessResponse>),
     ListProcesses(ListProcessesResponse),
     AcquireLease(Lease),
@@ -134,6 +138,7 @@ pub enum ErrorCode {
     LeaseExpired,
     InvalidLease,
     SequenceConflict,
+    InvalidRequest,
     Internal,
 }
 

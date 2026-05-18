@@ -579,7 +579,23 @@ impl ProcessTableState {
             .get(&process_id)
             .cloned();
         let initial_history = match RolloutRecorder::journal_contains_process(process_id).await {
-            Ok(true) => RolloutRecorder::get_rollout_history_for_process(process_id).await?,
+            Ok(true) => match RolloutRecorder::get_rollout_history_for_process(process_id).await {
+                Ok(history) => history,
+                Err(err) => match stashed_history {
+                    Some(history) => {
+                        tracing::warn!(
+                            process_id = %process_id,
+                            error = %err,
+                            "journal returned empty/unusable history; falling back to in-memory stash"
+                        );
+                        InitialHistory::Resumed(ResumedHistory {
+                            conversation_id: process_id,
+                            history,
+                        })
+                    }
+                    None => return Err(err.into()),
+                },
+            },
             Ok(false) => stashed_history
                 .map(|history| {
                     InitialHistory::Resumed(ResumedHistory {

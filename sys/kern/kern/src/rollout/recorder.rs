@@ -525,6 +525,23 @@ impl RolloutRecorder {
             }
         };
         let history: Vec<RolloutItem> = loaded.items.into_iter().map(|entry| entry.item).collect();
+        let has_transcript = history.iter().any(|item| {
+            matches!(
+                item,
+                RolloutItem::ResponseItem(_) | RolloutItem::Compacted(_)
+            )
+        });
+        if !has_transcript {
+            return Err(IoError::other(format!(
+                "journald has a process row for {process_id} but no transcript \
+                 entries ({} item(s), none of them response or compacted history). \
+                 The prior session was interrupted before its rollout flushed, or \
+                 the journald sidecar was not recording. Refusing to resume from \
+                 an empty/unusable journal — silently continuing would discard \
+                 the conversation context the model needs.",
+                history.len()
+            )));
+        }
         info!(
             process_id = %process_id,
             journal_items = history.len(),

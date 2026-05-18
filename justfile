@@ -170,6 +170,27 @@ install:
     RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
     RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo install --path srv/journald --locked --force
 
+# Build a portable release tarball: chaos + install.sh.
+# Usage: just dist [output=chaos-dist.tar.gz]
+# Produces a .tar.gz you can scp anywhere and run:
+#   tar xzf chaos-dist.tar.gz && ./install.sh
+dist output="chaos-dist.tar.gz":
+    #!/usr/bin/env sh
+    set -e
+    RUSTC_WRAPPER= cargo build --release --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+    for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
+        strip "target/release/$bin" 2>/dev/null || true
+    done
+    tmp=$(mktemp -d)
+    cp target/release/chaos "$tmp/chaos"
+    cp target/release/chaos-journald "$tmp/chaos-journald"
+    cp target/release/chaos-forkve-wrapper "$tmp/chaos-forkve-wrapper"
+    cp target/release/chaos-xclient "$tmp/chaos-xclient"
+    cp scripts/dist-install.sh "$tmp/install.sh"
+    tar czf "{{output}}" -C "$tmp" .
+    rm -rf "$tmp"
+    echo "Created {{output}} ($(du -sh "{{output}}" | cut -f1))"
+
 # Format code
 fmt:
     RUSTC_WRAPPER= cargo fmt

@@ -10,7 +10,7 @@
 | **Sandbox** | Landlock + seccomp (Linux), seatbelt (macOS) | Container-based | Landlock + seatbelt |
 | **Platforms** | Linux, macOS, FreeBSD | Linux, macOS, Windows | Linux, macOS, Windows |
 | **External contributors** | Welcome | Not accepted | Not accepted |
-| **Binary** | Single `chaos` binary | Single `claude` binary | Multiple binaries |
+| **Binary** | `chaos` + sidecar daemons | Single `claude` binary | Multiple binaries |
 | **Runtime** | Native Rust | Node.js | Native Rust |
 | **Phone home** | Never | Telemetry (opt-out) | Update checker + telemetry |
 | **Age verification** | Everyone is 47 | None | None |
@@ -26,6 +26,6 @@
 
 FreeChaOS is a fork of OpenAI's Codex CLI that broke free from provider lock-in. The core speaks a neutral ABI — the Chaos-ABI — so adding a new model provider means writing one adapter, not rewiring the entire codebase.
 
-It ships as a single native binary with no update checker, no telemetry, no phone home. It runs on Linux, macOS, and FreeBSD.
+It ships as a small set of native binaries with no update checker, no telemetry, no phone home. It runs on Linux, macOS, and FreeBSD.
 
 Claude Code is excellent but proprietary and Anthropic-only. OpenAI Codex CLI is open source but hardcoded to OpenAI's wire format. FreeChaOS takes the best of both: free software, native performance, any provider.

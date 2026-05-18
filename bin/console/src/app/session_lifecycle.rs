@@ -404,6 +404,13 @@ impl App {
 
         tui.frame_requester().schedule_frame();
 
+        // Bridge SIGTERM (and SIGHUP) into the same graceful-shutdown path that the
+        // TUI uses when the input stream closes: emit AppEvent::Exit(ShutdownFirst),
+        // which triggers Op::Shutdown so the rollout writer can drain pending journald
+        // appends before the runtime tears down. Without this, kill -TERM on the TUI
+        // can drop in-flight rollout items that hadn't yet been flushed to journald.
+        spawn_graceful_signal_listener(app.app_event_tx.clone());
+
         let mut process_created_rx = process_table.subscribe_process_created();
         let mut listen_for_threads = true;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
@@ -559,5 +566,61 @@ impl App {
         self.process_event_listener_tasks
             .insert(process_id, listener_handle);
         Ok(())
+    }
+}
+
+/// Translate process-level termination signals into `AppEvent::Exit(ShutdownFirst)`
+/// so the rollout writer drains pending journald appends instead of being abruptly
+/// torn down with the runtime.
+///
+/// The listener is best-effort: a second signal escalates to `ExitMode::Immediate`
+/// so an unresponsive shutdown can still be force-quit by the user.
+fn spawn_graceful_signal_listener(app_event_tx: AppEventSender) {
+    #[cfg(unix)]
+    {
+        use std::sync::Arc as StdArc;
+        use std::sync::atomic::Ordering;
+        use tokio::signal::unix::{SignalKind, signal};
+
+        let mut sigterm = match signal(SignalKind::terminate()) {
+            Ok(stream) => stream,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to install SIGTERM listener");
+                return;
+            }
+        };
+        let mut sighup = match signal(SignalKind::hangup()) {
+            Ok(stream) => stream,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to install SIGHUP listener");
+                return;
+            }
+        };
+        let already_requested = StdArc::new(AtomicBool::new(false));
+        tokio::spawn(async move {
+            loop {
+                // Match `Some(_)` so a closed signal stream falls through to the
+                // outer break instead of spinning the select! on a ready-but-empty arm.
+                let signal_name = tokio::select! {
+                    Some(_) = sigterm.recv() => "SIGTERM",
+                    Some(_) = sighup.recv() => "SIGHUP",
+                    else => break,
+                };
+                let already = already_requested.swap(true, Ordering::SeqCst);
+                if already {
+                    tracing::warn!(
+                        "received {signal_name} after pending shutdown; escalating to immediate exit"
+                    );
+                    app_event_tx.send(AppEvent::Exit(ExitMode::Immediate));
+                } else {
+                    tracing::info!("received {signal_name}; draining session before exit");
+                    app_event_tx.send(AppEvent::Exit(ExitMode::ShutdownFirst));
+                }
+            }
+        });
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app_event_tx;
     }
 }

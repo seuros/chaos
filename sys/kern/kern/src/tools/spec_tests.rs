@@ -8,6 +8,8 @@ use crate::tools::router::ToolRouterParams;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::protocol::ApprovalPolicy;
+use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_parrot::sanitize::AdditionalProperties;
 use chaos_parrot::sanitize::JsonSchema;
 use chaos_parrot::sanitize::ResponsesApiTool;
@@ -432,6 +434,7 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -458,7 +461,7 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
     // Build expected from the same helpers used by the builder.
     let mut expected: BTreeMap<String, ToolSpec> = BTreeMap::from([]);
     for spec in [
-        create_exec_command_tool(true, false),
+        create_exec_command_tool(true, true),
         create_write_stdin_tool(),
         PLAN_TOOL.clone(),
         create_request_user_input_tool(CollaborationModesConfig::default()),
@@ -527,7 +530,7 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
         }
     }
 
-    if config.exec_permission_approvals_enabled {
+    if config.request_permissions_tool_enabled {
         let spec = create_request_permissions_tool();
         expected.insert(tool_name(&spec).to_string(), spec);
     }
@@ -557,6 +560,7 @@ fn arsenal_tools_keep_closed_object_schemas() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -594,6 +598,7 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -639,6 +644,7 @@ fn test_build_specs_collab_tools_enabled() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -664,6 +670,7 @@ fn test_build_specs_enable_fanout_enables_minion_jobs_and_collab_tools() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -694,6 +701,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -730,6 +738,7 @@ fn test_build_specs_minion_job_worker_tools_enabled() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::SubAgent(SubAgentSource::Other(
             "minion_job:test".to_string(),
@@ -763,6 +772,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -779,15 +789,18 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
 }
 
 #[test]
-fn request_permissions_requires_feature_flag() {
+fn request_permissions_tool_visibility_follows_approval_policy() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let features = Features::with_defaults();
     let available_models = Vec::new();
+
+    // Headless never advertises the tool.
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Headless,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -796,13 +809,31 @@ fn request_permissions_requires_feature_flag() {
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_lacks_tool_name(&tools, "request_permissions");
 
-    let mut features = Features::with_defaults();
-    features.enable(Feature::RequestPermissionsTool);
-    let available_models = Vec::new();
+    // Granular with request_permissions=false also suppresses the tool.
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Granular(GranularApprovalConfig {
+            sandbox_approval: true,
+            rules: true,
+            request_permissions: false,
+            mcp_elicitations: true,
+        }),
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    });
+    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
+    assert_lacks_tool_name(&tools, "request_permissions");
+
+    // Interactive (default) advertises the tool.
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -817,21 +848,30 @@ fn request_permissions_requires_feature_flag() {
 }
 
 #[test]
-fn request_permissions_tool_is_independent_from_additional_permissions() {
+fn escalation_can_be_allowed_without_advertising_request_permissions_tool() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::ExecPermissionApprovals);
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        // Granular policy that allows sandbox escalation but suppresses the
+        // standalone request_permissions tool.
+        approval_policy: ApprovalPolicy::Granular(GranularApprovalConfig {
+            sandbox_approval: true,
+            rules: true,
+            request_permissions: false,
+            mcp_elicitations: true,
+        }),
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
+    assert!(tools_config.exec_permission_approvals_enabled);
+    assert!(!tools_config.request_permissions_tool_enabled);
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
     assert_lacks_tool_name(&tools, "request_permissions");
@@ -850,6 +890,7 @@ fn assert_model_tools(
         model_info: &model_info,
         available_models: &available_models,
         features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode,
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -905,6 +946,7 @@ fn assert_default_model_tools(
 const DEFAULT_SHELL_MODEL_TOOL_TAIL: &[&str] = &[
     "update_plan",
     "request_user_input",
+    "request_permissions",
     "read_file",
     "grep_files",
     "list_dir",
@@ -933,6 +975,7 @@ const DEFAULT_SHELL_MODEL_TOOL_TAIL: &[&str] = &[
 const CODE_EDIT_MODEL_TOOL_TAIL: &[&str] = &[
     "update_plan",
     "request_user_input",
+    "request_permissions",
     "apply_patch",
     "read_file",
     "grep_files",
@@ -1012,6 +1055,7 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1043,6 +1087,7 @@ fn web_search_mode_live_sets_external_web_access_true() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1087,6 +1132,7 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1125,6 +1171,7 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1160,6 +1207,7 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1186,6 +1234,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1215,6 +1264,7 @@ fn spawn_agent_tool_description_uses_current_role_names() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1298,6 +1348,7 @@ fn test_build_specs_default_shell_present() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1325,6 +1376,7 @@ fn test_parallel_support_flags() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1355,6 +1407,7 @@ fn test_test_model_info_includes_sync_tool() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1391,6 +1444,7 @@ fn test_build_specs_mcp_tools_converted() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1484,6 +1538,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1533,6 +1588,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1593,6 +1649,7 @@ fn test_mcp_tool_integer_normalized_to_number() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1649,6 +1706,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1708,6 +1766,7 @@ fn test_mcp_tool_anyof_defaults_to_string() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1879,6 +1938,7 @@ fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
         model_info: &model_info,
         available_models: &available_models,
         features: &features,
+        approval_policy: ApprovalPolicy::Interactive,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),

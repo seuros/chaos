@@ -1,8 +1,6 @@
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::TurnContextItem;
 
-use crate::features::Feature;
-
 use super::Session;
 use crate::chaos::TurnContext;
 
@@ -58,19 +56,16 @@ impl Session {
         {
             developer_sections.push(model_switch_message.into_text());
         }
+        let approval_policy = turn_context.approval_policy.value();
         developer_sections.push(
             crate::developer_instructions::from_policies(
                 &turn_context.vfs_policy,
                 turn_context.socket_policy,
-                turn_context.approval_policy.value(),
+                approval_policy,
                 self.services.exec_policy.current().as_ref(),
                 &turn_context.cwd,
-                turn_context
-                    .features
-                    .enabled(Feature::ExecPermissionApprovals),
-                turn_context
-                    .features
-                    .enabled(Feature::RequestPermissionsTool),
+                approval_policy.allows_escalation(),
+                approval_policy.advertises_request_permissions_tool(),
             )
             .into_text(),
         );

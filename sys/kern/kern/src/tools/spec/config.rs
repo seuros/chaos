@@ -8,6 +8,7 @@ use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::WebSearchToolType;
 use chaos_ipc::permissions::VfsPolicy;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 
@@ -50,6 +51,7 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) model_info: &'a ModelInfo,
     pub(crate) available_models: &'a Vec<ModelPreset>,
     pub(crate) features: &'a Features,
+    pub(crate) approval_policy: ApprovalPolicy,
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
     pub(crate) vfs_policy: &'a VfsPolicy,
@@ -66,6 +68,7 @@ impl ToolsConfig {
             model_info,
             available_models: available_models_ref,
             features,
+            approval_policy,
             web_search_mode,
             session_source,
             vfs_policy,
@@ -77,8 +80,9 @@ impl ToolsConfig {
         let include_default_mode_request_user_input = include_request_user_input;
         let include_original_image_detail = can_request_original_image_detail(model_info);
         let include_image_gen_tool = false;
-        let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
-        let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
+        let exec_permission_approvals_enabled = approval_policy.allows_escalation();
+        let request_permissions_tool_enabled =
+            approval_policy.advertises_request_permissions_tool();
         let unified_exec_allowed = unified_exec_allowed_in_environment(vfs_policy);
         let shell_type = if unified_exec_allowed {
             ConfigShellToolType::UnifiedExec

@@ -315,6 +315,7 @@ pub(super) async fn spawn_review_thread(
             .list_models(RefreshStrategy::OnlineIfUncached)
             .await,
         features: &review_features,
+        approval_policy: parent_turn_context.approval_policy.value(),
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
         vfs_policy: &parent_turn_context.vfs_policy,

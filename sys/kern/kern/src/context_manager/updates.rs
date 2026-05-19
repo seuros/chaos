@@ -1,7 +1,6 @@
 use crate::chaos::PreviousTurnSettings;
 use crate::chaos::TurnContext;
 use crate::environment_context::EnvironmentContext;
-use crate::features::Feature;
 use crate::shell::Shell;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::models::ContentItem;
@@ -41,14 +40,15 @@ fn build_permissions_update_item(
         return None;
     }
 
+    let approval_policy = next.approval_policy.value();
     Some(crate::developer_instructions::from_policies(
         &next.vfs_policy,
         next.socket_policy,
-        next.approval_policy.value(),
+        approval_policy,
         exec_policy,
         &next.cwd,
-        next.features.enabled(Feature::ExecPermissionApprovals),
-        next.features.enabled(Feature::RequestPermissionsTool),
+        approval_policy.allows_escalation(),
+        approval_policy.advertises_request_permissions_tool(),
     ))
 }
 

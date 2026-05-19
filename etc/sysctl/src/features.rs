@@ -13,8 +13,6 @@ use std::collections::BTreeSet;
 /// Unique features toggled via configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature {
-    ExecPermissionApprovals,
-    RequestPermissionsTool,
     SpawnCsv,
 }
 
@@ -195,23 +193,9 @@ pub struct FeatureSpec {
     pub under_development: bool,
 }
 
-pub const FEATURES: &[FeatureSpec] = &[
-    FeatureSpec {
-        id: Feature::ExecPermissionApprovals,
-        key: "exec_permission_approvals",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::RequestPermissionsTool,
-        key: "request_permissions_tool",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::SpawnCsv,
-        key: "enable_fanout",
-        default_enabled: false,
-        under_development: false,
-    },
-];
+pub const FEATURES: &[FeatureSpec] = &[FeatureSpec {
+    id: Feature::SpawnCsv,
+    key: "enable_fanout",
+    default_enabled: false,
+    under_development: false,
+}];

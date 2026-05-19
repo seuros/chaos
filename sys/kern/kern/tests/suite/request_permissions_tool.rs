@@ -16,7 +16,6 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::request_permissions::PermissionGrantScope;
 use chaos_ipc::request_permissions::RequestPermissionsResponse;
 use chaos_kern::config::Constrained;
-use chaos_kern::features::Feature;
 use core_test_support::responses::ev_apply_patch_function_call;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -47,14 +46,6 @@ async fn approved_folder_write_request_permissions_unblocks_later_apply_patch_wi
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 

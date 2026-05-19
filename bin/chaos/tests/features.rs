@@ -12,16 +12,14 @@ async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
     let mut cmd = chaos_command(chaos_home.path())?;
-    cmd.args(["features", "enable", "exec_permission_approvals"])
+    cmd.args(["features", "enable", "enable_fanout"])
         .assert()
         .success()
-        .stdout(contains(
-            "Enabled feature `exec_permission_approvals` in config.toml.",
-        ));
+        .stdout(contains("Enabled feature `enable_fanout` in config.toml."));
 
     let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
     assert!(config.contains("[features]"));
-    assert!(config.contains("exec_permission_approvals = true"));
+    assert!(config.contains("enable_fanout = true"));
 
     Ok(())
 }

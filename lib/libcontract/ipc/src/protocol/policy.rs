@@ -84,6 +84,30 @@ impl GranularApprovalConfig {
     }
 }
 
+impl ApprovalPolicy {
+    /// Returns `true` when this policy admits inline
+    /// `with_additional_permissions` and `require_escalated` requests from the
+    /// model. Mirrors the runtime gate in
+    /// `normalize_and_validate_additional_permissions`.
+    pub const fn allows_escalation(&self) -> bool {
+        match self {
+            ApprovalPolicy::Interactive => true,
+            ApprovalPolicy::Granular(config) => config.sandbox_approval,
+            ApprovalPolicy::Supervised | ApprovalPolicy::Headless => false,
+        }
+    }
+
+    /// Returns `true` when this policy advertises the `request_permissions`
+    /// tool to the model.
+    pub const fn advertises_request_permissions_tool(&self) -> bool {
+        match self {
+            ApprovalPolicy::Supervised | ApprovalPolicy::Interactive => true,
+            ApprovalPolicy::Granular(config) => config.request_permissions,
+            ApprovalPolicy::Headless => false,
+        }
+    }
+}
+
 /// Represents whether outbound network access is available to the agent.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema, TS,

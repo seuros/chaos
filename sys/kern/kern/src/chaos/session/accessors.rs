@@ -6,7 +6,6 @@ use chaos_dtrace::Hooks;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::protocol::Event;
 
-use crate::config::ManagedFeatures;
 use crate::features::Feature;
 
 use super::Session;
@@ -22,10 +21,6 @@ impl Session {
 
     pub fn enabled(&self, feature: Feature) -> bool {
         self.features.enabled(feature)
-    }
-
-    pub(crate) fn features(&self) -> ManagedFeatures {
-        self.features.clone()
     }
 
     pub(crate) async fn collaboration_mode(&self) -> CollaborationMode {

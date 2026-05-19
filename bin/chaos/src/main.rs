@@ -1142,20 +1142,15 @@ mod tests {
 
     #[test]
     fn features_enable_parses_feature_name() {
-        let cli = MultitoolCli::try_parse_from([
-            "chaos",
-            "features",
-            "enable",
-            "exec_permission_approvals",
-        ])
-        .expect("parse should succeed");
+        let cli = MultitoolCli::try_parse_from(["chaos", "features", "enable", "enable_fanout"])
+            .expect("parse should succeed");
         let Some(Subcommand::Features(FeaturesCli { sub })) = cli.subcommand else {
             panic!("expected features subcommand");
         };
         let FeaturesSubcommand::Enable(FeatureSetArgs { feature }) = sub else {
             panic!("expected features enable");
         };
-        assert_eq!(feature, "exec_permission_approvals");
+        assert_eq!(feature, "enable_fanout");
     }
 
     #[test]
@@ -1174,17 +1169,11 @@ mod tests {
     #[test]
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
-            enable: vec!["exec_permission_approvals".to_string()],
-            disable: vec!["enable_fanout".to_string()],
+            enable: vec!["enable_fanout".to_string()],
+            disable: Vec::new(),
         };
         let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(
-            overrides,
-            vec![
-                "features.exec_permission_approvals=true".to_string(),
-                "features.enable_fanout=false".to_string(),
-            ]
-        );
+        assert_eq!(overrides, vec!["features.enable_fanout=true".to_string()]);
     }
 
     #[test]

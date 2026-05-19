@@ -1,4 +1,3 @@
-use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
 use crate::internal_tasks;
 use crate::is_safe_command::is_known_safe_command;
@@ -163,8 +162,8 @@ impl ToolHandler for UnifiedExecHandler {
                     ..
                 } = args;
 
-                let exec_permission_approvals_enabled =
-                    session.features().enabled(Feature::ExecPermissionApprovals);
+                let approval_policy = context.turn.approval_policy.value();
+                let additional_permissions_allowed = approval_policy.allows_escalation();
                 let requested_additional_permissions = additional_permissions.clone();
                 let effective_additional_permissions = apply_granted_turn_permissions(
                     context.session.as_ref(),
@@ -172,9 +171,6 @@ impl ToolHandler for UnifiedExecHandler {
                     additional_permissions,
                 )
                 .await;
-                let additional_permissions_allowed = exec_permission_approvals_enabled
-                    || (session.features().enabled(Feature::RequestPermissionsTool)
-                        && effective_additional_permissions.permissions_preapproved);
 
                 // Sticky turn permissions have already been approved, so they should
                 // continue through the normal exec approval flow for the command.

@@ -149,6 +149,7 @@ impl TurnContext {
                 .list_models(RefreshStrategy::OnlineIfUncached)
                 .await,
             features: &features,
+            approval_policy: self.approval_policy.value(),
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
             vfs_policy: &self.vfs_policy,
@@ -423,6 +424,7 @@ pub(super) fn make_turn_context(
         model_info: &model_info,
         available_models: &models_manager.try_list_models().unwrap_or_default(),
         features: &per_turn_config.features,
+        approval_policy: session_configuration.approval_policy.value(),
         web_search_mode: Some(per_turn_config.web_search_mode.value()),
         session_source: session_source.clone(),
         vfs_policy: &session_configuration.vfs_policy,

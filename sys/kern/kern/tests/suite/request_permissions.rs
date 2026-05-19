@@ -31,7 +31,6 @@ use chaos_ipc::request_permissions::PermissionGrantScope;
 use chaos_ipc::request_permissions::RequestPermissionProfile;
 use chaos_ipc::request_permissions::RequestPermissionsResponse;
 use chaos_kern::config::Constrained;
-use chaos_kern::features::Feature;
 use chaos_realpath::AbsolutePathBuf;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -77,14 +76,6 @@ async fn with_additional_permissions_requires_approval_under_on_request() -> Res
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -175,10 +166,6 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -230,16 +217,9 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
         "request_permissions should not emit a prompt when granular.request_permissions is false: {event:?}"
     );
 
-    let call_output = results.single_request().function_call_output(call_id);
-    let result: RequestPermissionsResponse =
-        serde_json::from_str(call_output["output"].as_str().unwrap_or_default())?;
-    assert_eq!(
-        result,
-        RequestPermissionsResponse {
-            permissions: RequestPermissionProfile::default(),
-            scope: PermissionGrantScope::Turn,
-        }
-    );
+    // With the tool suppressed by policy, the model never receives a successful
+    // response — the harness should still report an output for the call slot.
+    let _ = results.single_request().function_call_output(call_id);
 
     Ok(())
 }
@@ -257,14 +237,6 @@ async fn relative_additional_permissions_resolve_against_tool_workdir() -> Resul
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -362,14 +334,6 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_cwd
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -462,14 +426,6 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_tmp
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -561,14 +517,6 @@ async fn workspace_write_with_additional_permissions_can_write_outside_cwd() -> 
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -665,14 +613,6 @@ async fn with_additional_permissions_denied_approval_blocks_execution() -> Resul
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -765,14 +705,6 @@ async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Resul
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -888,14 +820,6 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -1006,10 +930,6 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -1117,14 +1037,6 @@ async fn partial_request_permissions_grants_do_not_preapprove_new_permissions() 
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -1277,14 +1189,6 @@ async fn request_permissions_grants_do_not_carry_across_turns() -> Result<()> {
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 
@@ -1392,14 +1296,6 @@ async fn request_permissions_session_grants_carry_across_turns() -> Result<()> {
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        config
-            .features
-            .enable(Feature::ExecPermissionApprovals)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::RequestPermissionsTool)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
 

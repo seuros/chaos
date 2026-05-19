@@ -12,10 +12,6 @@ pub(crate) use crate::client_common::tools::ToolSpec;
 #[cfg(test)]
 pub(crate) use crate::collaboration_modes::CollaborationModesConfig;
 #[cfg(test)]
-pub(crate) use crate::features::Feature;
-#[cfg(test)]
-pub(crate) use crate::features::Features;
-#[cfg(test)]
 pub(crate) use crate::tools::handlers::PLAN_TOOL;
 #[cfg(test)]
 pub(crate) use crate::tools::handlers::apply_patch::create_apply_patch_freeform_tool;

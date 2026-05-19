@@ -179,9 +179,7 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
 
 #[tokio::test]
 async fn record_model_warning_appends_user_message() {
-    let (mut session, turn_context) = make_session_and_context().await;
-    let features = crate::features::Features::with_defaults().into();
-    session.features = features;
+    let (session, turn_context) = make_session_and_context().await;
 
     session
         .record_model_warning("too many unified exec processes", &turn_context)

@@ -34,7 +34,6 @@ mod tests {
     use chaos_ipc::protocol::ReviewDecision;
     use chaos_ipc::request_permissions::PermissionGrantScope;
     use chaos_ipc::request_permissions::RequestPermissionProfile;
-    use chaos_kern::features::Features;
     use chaos_realpath::AbsolutePathBuf;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -113,7 +112,7 @@ mod tests {
     #[test]
     fn ctrl_c_aborts_and_clears_queue() {
         let tx = crate::test_support::make_app_event_sender();
-        let mut view = ApprovalOverlay::new(make_exec_request(), tx, Features::with_defaults());
+        let mut view = ApprovalOverlay::new(make_exec_request(), tx);
         view.enqueue_request(make_exec_request());
         assert_eq!(CancellationEvent::Handled, view.on_ctrl_c());
         assert!(view.queue.is_empty());
@@ -123,7 +122,7 @@ mod tests {
     #[test]
     fn shortcut_triggers_selection() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
-        let mut view = ApprovalOverlay::new(make_exec_request(), tx, Features::with_defaults());
+        let mut view = ApprovalOverlay::new(make_exec_request(), tx);
         assert!(!view.is_complete());
         view.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
         // We expect at least one process-scoped approval op message in the queue.
@@ -154,7 +153,6 @@ mod tests {
                 additional_permissions: None,
             },
             tx,
-            Features::with_defaults(),
         );
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
@@ -182,7 +180,6 @@ mod tests {
                 additional_permissions: None,
             },
             tx,
-            Features::with_defaults(),
         );
 
         assert_snapshot!(
@@ -194,11 +191,7 @@ mod tests {
     #[test]
     fn mcp_url_elicitation_snapshot() {
         let tx = crate::test_support::make_app_event_sender();
-        let view = ApprovalOverlay::new(
-            make_url_elicitation_request(),
-            tx,
-            Features::with_defaults(),
-        );
+        let view = ApprovalOverlay::new(make_url_elicitation_request(), tx);
 
         assert_snapshot!(
             "approval_overlay_mcp_url_elicitation",
@@ -211,7 +204,7 @@ mod tests {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let request = make_url_elicitation_request();
         let process_id = request.process_id();
-        let mut view = ApprovalOverlay::new(request, tx, Features::with_defaults());
+        let mut view = ApprovalOverlay::new(request, tx);
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
 
@@ -262,7 +255,6 @@ mod tests {
                 additional_permissions: None,
             },
             tx,
-            Features::with_defaults(),
         );
         view.handle_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
         let mut saw_op = false;
@@ -319,7 +311,6 @@ mod tests {
                 additional_permissions: None,
             },
             tx,
-            Features::with_defaults(),
         );
         view.handle_key_event(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
 
@@ -345,7 +336,7 @@ mod tests {
             additional_permissions: None,
         };
 
-        let view = ApprovalOverlay::new(exec_request, tx, Features::with_defaults());
+        let view = ApprovalOverlay::new(exec_request, tx);
         let rendered: Vec<String> = render_overlay_lines(&view, 80)
             .lines()
             .map(str::to_string)
@@ -462,8 +453,7 @@ mod tests {
     #[test]
     fn permissions_session_shortcut_submits_session_scope() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
-        let mut view =
-            ApprovalOverlay::new(make_permissions_request(), tx, Features::with_defaults());
+        let mut view = ApprovalOverlay::new(make_permissions_request(), tx);
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
 
@@ -509,7 +499,7 @@ mod tests {
             }),
         };
 
-        let view = ApprovalOverlay::new(exec_request, tx, Features::with_defaults());
+        let view = ApprovalOverlay::new(exec_request, tx);
         let mut buf = Buffer::empty(Rect::new(0, 0, 120, view.desired_height(120)));
         view.render(Rect::new(0, 0, 120, view.desired_height(120)), &mut buf);
 
@@ -557,7 +547,7 @@ mod tests {
             }),
         };
 
-        let view = ApprovalOverlay::new(exec_request, tx, Features::with_defaults());
+        let view = ApprovalOverlay::new(exec_request, tx);
         assert_snapshot!(
             "approval_overlay_additional_permissions_prompt",
             normalize_snapshot_paths(render_overlay_lines(&view, 120))
@@ -567,7 +557,7 @@ mod tests {
     #[test]
     fn permissions_prompt_snapshot() {
         let tx = crate::test_support::make_app_event_sender();
-        let view = ApprovalOverlay::new(make_permissions_request(), tx, Features::with_defaults());
+        let view = ApprovalOverlay::new(make_permissions_request(), tx);
         assert_snapshot!(
             "approval_overlay_permissions_prompt",
             normalize_snapshot_paths(render_overlay_lines(&view, 120))
@@ -603,7 +593,7 @@ mod tests {
             }),
         };
 
-        let view = ApprovalOverlay::new(exec_request, tx, Features::with_defaults());
+        let view = ApprovalOverlay::new(exec_request, tx);
         assert_snapshot!(
             "approval_overlay_additional_permissions_macos_prompt",
             render_overlay_lines(&view, 120)
@@ -638,7 +628,7 @@ mod tests {
             additional_permissions: None,
         };
 
-        let view = ApprovalOverlay::new(exec_request, tx, Features::with_defaults());
+        let view = ApprovalOverlay::new(exec_request, tx);
         let mut buf = Buffer::empty(Rect::new(0, 0, 100, view.desired_height(100)));
         view.render(Rect::new(0, 0, 100, view.desired_height(100)), &mut buf);
         assert_snapshot!("network_exec_prompt", format!("{buf:?}"));
@@ -702,7 +692,7 @@ mod tests {
     #[test]
     fn enter_sets_last_selected_index_without_dismissing() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
-        let mut view = ApprovalOverlay::new(make_exec_request(), tx, Features::with_defaults());
+        let mut view = ApprovalOverlay::new(make_exec_request(), tx);
         view.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(

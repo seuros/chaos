@@ -28,7 +28,6 @@ use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::exec_policy::ExecPolicyManager;
-use crate::features::Feature;
 use crate::file_watcher::FileWatcher;
 use crate::mcp::McpManager;
 use crate::minions::AgentControl;
@@ -114,7 +113,6 @@ impl Chaos {
     }
 
     async fn spawn_internal(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {
-        use crate::features::Feature;
         use crate::models_manager::manager::RefreshStrategy;
 
         use chaos_ipc::config_types::CollaborationMode;
@@ -145,7 +143,7 @@ impl Chaos {
         if let SessionSource::SubAgent(SubAgentSource::ProcessSpawn { depth, .. }) = session_source
             && depth >= config.agent_max_depth
         {
-            let _ = config.features.disable(Feature::SpawnCsv);
+            config.minion_jobs_allowed = false;
             config.collab_enabled = false;
         }
 
@@ -372,10 +370,6 @@ impl Chaos {
 
     pub(crate) fn runtime_db(&self) -> Option<runtime_db::RuntimeDbHandle> {
         self.session.runtime_db()
-    }
-
-    pub(crate) fn enabled(&self, feature: Feature) -> bool {
-        self.session.enabled(feature)
     }
 }
 

@@ -20,7 +20,6 @@ use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::chaos_delegate::run_chaos_process_one_shot;
 use crate::config::Constrained;
-use crate::features::Feature;
 use crate::review_format::format_review_findings_block;
 use crate::review_format::render_review_output_text;
 use crate::state::TaskKind;
@@ -100,7 +99,7 @@ async fn start_review_conversation(
 ) -> Option<async_channel::Receiver<Event>> {
     let config = ctx.config.clone();
     let mut sub_agent_config = config.as_ref().clone();
-    // Carry over review-only feature restrictions so the delegate cannot
+    // Carry over review-only tool restrictions so the delegate cannot
     // re-enable blocked tools (web search, collab tools, view image).
     if let Err(err) = sub_agent_config
         .web_search_mode
@@ -108,7 +107,7 @@ async fn start_review_conversation(
     {
         panic!("by construction Constrained<WebSearchMode> must always support Disabled: {err}");
     }
-    let _ = sub_agent_config.features.disable(Feature::SpawnCsv);
+    sub_agent_config.minion_jobs_allowed = false;
     sub_agent_config.collab_enabled = false;
 
     // Set explicit review rubric for the sub-agent.  If a reviewer persona is

@@ -43,7 +43,7 @@ pub(super) enum PromptSelectionAction {
     },
 }
 
-/// Feature flags for reusing the chat composer in other bottom-pane surfaces.
+/// Behavior toggles for reusing the chat composer in other bottom-pane surfaces.
 ///
 /// The default keeps today's behavior intact. Other call sites can opt out of
 /// specific behaviors by constructing a config with those flags set to `false`.

@@ -3,7 +3,6 @@ use crate::chaos::SteerInputError;
 use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
-use crate::features::Feature;
 use crate::file_watcher::WatchRegistration;
 use crate::minions::AgentStatus;
 use crate::protocol::Event;
@@ -148,10 +147,6 @@ impl Process {
 
     pub fn halluacinate_handle(&self) -> Option<chaos_halluacinate::HalluacinateHandle> {
         self.chaos.session.services.halluacinate.clone()
-    }
-
-    pub fn enabled(&self, feature: Feature) -> bool {
-        self.chaos.enabled(feature)
     }
 
     pub async fn increment_out_of_band_elicitation_count(&self) -> ChaosResult<u64> {

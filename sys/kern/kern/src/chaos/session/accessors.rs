@@ -6,8 +6,6 @@ use chaos_dtrace::Hooks;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::protocol::Event;
 
-use crate::features::Feature;
-
 use super::Session;
 
 impl Session {
@@ -17,10 +15,6 @@ impl Session {
 
     pub(crate) fn runtime_db(&self) -> Option<crate::runtime_db::RuntimeDbHandle> {
         self.services.runtime_db.clone()
-    }
-
-    pub fn enabled(&self, feature: Feature) -> bool {
-        self.features.enabled(feature)
     }
 
     pub(crate) async fn collaboration_mode(&self) -> CollaborationMode {

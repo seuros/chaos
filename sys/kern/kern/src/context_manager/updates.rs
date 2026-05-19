@@ -40,15 +40,16 @@ fn build_permissions_update_item(
         return None;
     }
 
-    let approval_policy = next.approval_policy.value();
     Some(crate::developer_instructions::from_policies(
         &next.vfs_policy,
         next.socket_policy,
-        approval_policy,
+        next.approval_policy.value(),
         exec_policy,
         &next.cwd,
-        approval_policy.allows_escalation(),
-        approval_policy.advertises_request_permissions_tool(),
+        next.approval_policy.value().allows_escalation(),
+        next.approval_policy
+            .value()
+            .advertises_request_permissions_tool(),
     ))
 }
 

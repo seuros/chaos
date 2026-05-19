@@ -30,8 +30,7 @@ impl ChatWidget {
             network_approval_context: ev.network_approval_context,
             additional_permissions: ev.additional_permissions,
         };
-        self.bottom_pane
-            .push_approval_request(request, &self.config.features);
+        self.bottom_pane.push_approval_request(request);
         self.request_redraw();
     }
 
@@ -47,8 +46,7 @@ impl ChatWidget {
             changes: ev.changes.clone(),
             cwd: self.config.cwd.clone(),
         };
-        self.bottom_pane
-            .push_approval_request(request, &self.config.features);
+        self.bottom_pane.push_approval_request(request);
         self.request_redraw();
         self.notify(Notification::EditApprovalRequested {
             cwd: self.config.cwd.clone(),
@@ -84,15 +82,13 @@ impl ChatWidget {
                 message: ev.request.message().to_string(),
                 url,
             };
-            self.bottom_pane
-                .push_approval_request(request, &self.config.features);
+            self.bottom_pane.push_approval_request(request);
         }
         self.request_redraw();
     }
 
     pub fn push_approval_request(&mut self, request: ApprovalRequest) {
-        self.bottom_pane
-            .push_approval_request(request, &self.config.features);
+        self.bottom_pane.push_approval_request(request);
         self.request_redraw();
     }
 
@@ -126,8 +122,7 @@ impl ChatWidget {
             reason: ev.reason,
             permissions: ev.permissions,
         };
-        self.bottom_pane
-            .push_approval_request(request, &self.config.features);
+        self.bottom_pane.push_approval_request(request);
         self.request_redraw();
     }
 }

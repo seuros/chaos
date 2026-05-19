@@ -36,13 +36,7 @@ mod models_cmd;
 use crate::mcp_cmd::McpCli;
 use crate::models_cmd::ModelsCli;
 
-use chaos_kern::config::Config;
-use chaos_kern::config::ConfigOverrides;
-use chaos_kern::config::edit::ConfigEditsBuilder;
-use chaos_kern::features::is_known_feature_key;
-use chaos_kern::features::is_under_development_feature_key;
 use chaos_kern::terminal::TerminalName;
-use chaos_pwd::find_chaos_home;
 
 /// Chaos
 ///
@@ -70,9 +64,6 @@ struct MultitoolCli {
 
     #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
-
-    #[clap(flatten)]
-    pub feature_toggles: FeatureToggles,
 
     #[clap(flatten)]
     interactive: TuiCli,
@@ -115,9 +106,6 @@ enum Subcommand {
 
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
-
-    /// Inspect feature flags.
-    Features(FeaturesCli),
 
     /// Run Chaos as an HTTP trigger server.
     Serve(chaos_httpd::ServeCli),
@@ -289,62 +277,6 @@ fn run_execpolicycheck(cmd: ExecPolicyCheckCommand) -> anyhow::Result<()> {
     cmd.run()
 }
 
-#[derive(Debug, Default, Parser, Clone)]
-struct FeatureToggles {
-    /// Enable a feature (repeatable). Equivalent to `-c features.<name>=true`.
-    #[arg(long = "enable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
-    enable: Vec<String>,
-
-    /// Disable a feature (repeatable). Equivalent to `-c features.<name>=false`.
-    #[arg(long = "disable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
-    disable: Vec<String>,
-}
-
-impl FeatureToggles {
-    fn to_overrides(&self) -> anyhow::Result<Vec<String>> {
-        let mut v = Vec::new();
-        for feature in &self.enable {
-            Self::validate_feature(feature)?;
-            v.push(format!("features.{feature}=true"));
-        }
-        for feature in &self.disable {
-            Self::validate_feature(feature)?;
-            v.push(format!("features.{feature}=false"));
-        }
-        Ok(v)
-    }
-
-    fn validate_feature(feature: &str) -> anyhow::Result<()> {
-        if is_known_feature_key(feature) {
-            Ok(())
-        } else {
-            anyhow::bail!("Unknown feature flag: {feature}")
-        }
-    }
-}
-
-#[derive(Debug, Parser)]
-struct FeaturesCli {
-    #[command(subcommand)]
-    sub: FeaturesSubcommand,
-}
-
-#[derive(Debug, Parser)]
-enum FeaturesSubcommand {
-    /// List known features with their stage and effective state.
-    List,
-    /// Enable a feature in config.toml.
-    Enable(FeatureSetArgs),
-    /// Disable a feature in config.toml.
-    Disable(FeatureSetArgs),
-}
-
-#[derive(Debug, Parser)]
-struct FeatureSetArgs {
-    /// Feature key to update (for example: unified_exec).
-    feature: String,
-}
-
 fn main() -> anyhow::Result<()> {
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         // Sandbox helpers dispatch above and never reach this point, so any
@@ -375,7 +307,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         debug,
         provider,
         config_overrides: mut root_config_overrides,
-        feature_toggles,
         mut interactive,
         subcommand,
     } = MultitoolCli::parse();
@@ -393,10 +324,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             .raw_overrides
             .push(format!("model_provider={p}"));
     }
-
-    // Fold --enable/--disable into config overrides so they flow to all subcommands.
-    let toggle_overrides = feature_toggles.to_overrides()?;
-    root_config_overrides.raw_overrides.extend(toggle_overrides);
 
     match subcommand {
         None => {
@@ -535,54 +462,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         Some(Subcommand::Execpolicy(ExecpolicyCommand { sub })) => match sub {
             ExecpolicySubcommand::Check(cmd) => run_execpolicycheck(cmd)?,
         },
-        Some(Subcommand::Features(FeaturesCli { sub })) => match sub {
-            FeaturesSubcommand::List => {
-                // Respect root-level `-c` overrides plus top-level flags like `--profile`.
-                let mut cli_kv_overrides = root_config_overrides
-                    .parse_overrides()
-                    .map_err(anyhow::Error::msg)?;
-
-                // Honor `--search` via the canonical web_search mode.
-                if interactive.web_search {
-                    cli_kv_overrides.push((
-                        "web_search".to_string(),
-                        toml::Value::String("live".to_string()),
-                    ));
-                }
-
-                // Thread through relevant top-level flags (at minimum, `--profile`).
-                let overrides = ConfigOverrides {
-                    config_profile: interactive.config_profile.clone(),
-                    alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
-                    ..Default::default()
-                };
-
-                let config = Config::load_with_cli_overrides_and_harness_overrides(
-                    cli_kv_overrides,
-                    overrides,
-                )
-                .await?;
-                let mut rows = Vec::with_capacity(chaos_kern::features::FEATURES.len());
-                let mut name_width = 0;
-                for def in chaos_kern::features::FEATURES.iter() {
-                    let name = def.key;
-                    let enabled = config.features.enabled(def.id);
-                    name_width = name_width.max(name.len());
-                    rows.push((name, enabled));
-                }
-                rows.sort_unstable_by_key(|(name, _)| *name);
-
-                for (name, enabled) in rows {
-                    println!("{name:<name_width$}  {enabled}");
-                }
-            }
-            FeaturesSubcommand::Enable(FeatureSetArgs { feature }) => {
-                enable_feature_in_config(&interactive, &feature).await?;
-            }
-            FeaturesSubcommand::Disable(FeatureSetArgs { feature }) => {
-                disable_feature_in_config(&interactive, &feature).await?;
-            }
-        },
         Some(Subcommand::Models(cli)) => {
             let profile = interactive.config_profile.clone();
             models_cmd::run(cli, profile).await?;
@@ -592,33 +471,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
     }
 
-    Ok(())
-}
-
-async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {
-    FeatureToggles::validate_feature(feature)?;
-    let chaos_home = find_chaos_home()?;
-    ConfigEditsBuilder::new(&chaos_home)
-        .with_profile(interactive.config_profile.as_deref())
-        .set_feature_enabled(feature, /*enabled*/ true)
-        .apply()
-        .await?;
-    println!("Enabled feature `{feature}` in config.toml.");
-    if is_under_development_feature_key(feature) {
-        eprintln!("Under-development features enabled: {feature}.");
-    }
-    Ok(())
-}
-
-async fn disable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {
-    FeatureToggles::validate_feature(feature)?;
-    let chaos_home = find_chaos_home()?;
-    ConfigEditsBuilder::new(&chaos_home)
-        .with_profile(interactive.config_profile.as_deref())
-        .set_feature_enabled(feature, /*enabled*/ false)
-        .apply()
-        .await?;
-    println!("Disabled feature `{feature}` in config.toml.");
     Ok(())
 }
 
@@ -798,7 +650,6 @@ mod tests {
             interactive,
             config_overrides: root_overrides,
             subcommand,
-            feature_toggles: _,
             provider: _,
         } = cli;
 
@@ -829,7 +680,6 @@ mod tests {
             interactive,
             config_overrides: root_overrides,
             subcommand,
-            feature_toggles: _,
             provider: _,
         } = cli;
 
@@ -1138,54 +988,6 @@ mod tests {
         let interactive = finalize_fork_from_args(["chaos", "fork", "--all"].as_ref());
         assert!(interactive.fork_picker);
         assert!(interactive.fork_show_all);
-    }
-
-    #[test]
-    fn features_enable_parses_feature_name() {
-        let cli = MultitoolCli::try_parse_from(["chaos", "features", "enable", "enable_fanout"])
-            .expect("parse should succeed");
-        let Some(Subcommand::Features(FeaturesCli { sub })) = cli.subcommand else {
-            panic!("expected features subcommand");
-        };
-        let FeaturesSubcommand::Enable(FeatureSetArgs { feature }) = sub else {
-            panic!("expected features enable");
-        };
-        assert_eq!(feature, "enable_fanout");
-    }
-
-    #[test]
-    fn features_disable_parses_feature_name() {
-        let cli = MultitoolCli::try_parse_from(["chaos", "features", "disable", "enable_fanout"])
-            .expect("parse should succeed");
-        let Some(Subcommand::Features(FeaturesCli { sub })) = cli.subcommand else {
-            panic!("expected features subcommand");
-        };
-        let FeaturesSubcommand::Disable(FeatureSetArgs { feature }) = sub else {
-            panic!("expected features disable");
-        };
-        assert_eq!(feature, "enable_fanout");
-    }
-
-    #[test]
-    fn feature_toggles_known_features_generate_overrides() {
-        let toggles = FeatureToggles {
-            enable: vec!["enable_fanout".to_string()],
-            disable: Vec::new(),
-        };
-        let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(overrides, vec!["features.enable_fanout=true".to_string()]);
-    }
-
-    #[test]
-    fn feature_toggles_unknown_feature_errors() {
-        let toggles = FeatureToggles {
-            enable: vec!["does_not_exist".to_string()],
-            disable: Vec::new(),
-        };
-        let err = toggles
-            .to_overrides()
-            .expect_err("feature should be rejected");
-        assert_eq!(err.to_string(), "Unknown feature flag: does_not_exist");
     }
 
     #[test]

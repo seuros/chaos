@@ -16,7 +16,6 @@ use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use pretty_assertions::assert_eq;
-use std::collections::BTreeMap;
 use std::path::Path;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
@@ -169,23 +168,6 @@ async fn rejects_legacy_global_mcp_servers_in_cli_overrides() {
     assert!(err.to_string().contains("top-level `mcp_servers`"));
 }
 
-#[test]
-fn schema_error_points_to_feature_value() {
-    let tmp = tempdir().expect("tempdir");
-    let contents = "[features]\ncollaboration_modes = \"true\"";
-    let config_path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&config_path, contents).expect("write config");
-
-    let _guard = chaos_realpath::AbsolutePathBufGuard::new(tmp.path());
-    let error = chaos_sysctl::config_error_from_typed_toml::<ConfigToml>(&config_path, contents)
-        .expect("schema error");
-
-    let value_line = contents.lines().nth(1).expect("value line");
-    let value_column = value_line.find("\"true\"").expect("value") + 1;
-    assert_eq!(error.range.start.line, 2);
-    assert_eq!(error.range.start.column, value_column);
-}
-
 #[tokio::test]
 async fn returns_empty_when_all_layers_missing() {
     let tmp = tempdir().expect("tempdir");
@@ -258,9 +240,6 @@ async fn load_requirements_toml_produces_expected_constraints() -> anyhow::Resul
 allowed_approval_policies = ["headless", "interactive"]
 allowed_web_search_modes = ["cached"]
 enforce_residency = "us"
-
-[features]
-personality = true
 "#,
     )
     .await?;
@@ -281,15 +260,6 @@ personality = true
             .as_deref()
             .cloned(),
         Some(vec![crate::config_loader::WebSearchModeRequirement::Cached])
-    );
-    assert_eq!(
-        config_requirements_toml
-            .feature_requirements
-            .as_ref()
-            .map(|requirements| requirements.value.clone()),
-        Some(crate::config_loader::FeatureRequirementsToml {
-            entries: BTreeMap::from([("personality".to_string(), true)]),
-        })
     );
     let config_requirements: ConfigRequirements = config_requirements_toml.try_into()?;
     assert_eq!(
@@ -327,15 +297,6 @@ personality = true
     assert_eq!(
         config_requirements.enforce_residency.value(),
         Some(crate::config_loader::ResidencyRequirement::Us)
-    );
-    assert_eq!(
-        config_requirements
-            .feature_requirements
-            .as_ref()
-            .map(|requirements| requirements.value.clone()),
-        Some(crate::config_loader::FeatureRequirementsToml {
-            entries: BTreeMap::from([("personality".to_string(), true)]),
-        })
     );
     Ok(())
 }

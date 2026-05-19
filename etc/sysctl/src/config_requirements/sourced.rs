@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use chaos_ipc::protocol::ApprovalPolicy;
 
 use super::types::AppsRequirementsToml;
-use super::types::FeatureRequirementsToml;
 use super::types::McpServerRequirement;
 use super::types::NetworkRequirementsToml;
 use super::types::RequirementSource;
@@ -39,7 +38,6 @@ pub struct ConfigRequirementsWithSources {
     pub allowed_approval_policies: Option<Sourced<Vec<ApprovalPolicy>>>,
     pub allowed_sandbox_modes: Option<Sourced<Vec<SandboxModeRequirement>>>,
     pub allowed_web_search_modes: Option<Sourced<Vec<WebSearchModeRequirement>>>,
-    pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     pub mcp_servers: Option<Sourced<BTreeMap<String, McpServerRequirement>>>,
     pub apps: Option<Sourced<AppsRequirementsToml>>,
     pub rules: Option<Sourced<RequirementsExecPolicyToml>>,

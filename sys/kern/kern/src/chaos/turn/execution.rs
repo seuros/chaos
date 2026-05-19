@@ -67,7 +67,6 @@ pub(super) async fn try_run_sampling_request(
         ),
         effort = turn_context.reasoning_effort,
         auth_mode = sess.services.auth_manager.auth_mode(),
-        features = sess.features.enabled_features(),
     );
     let mut stream = client_session
         .stream(

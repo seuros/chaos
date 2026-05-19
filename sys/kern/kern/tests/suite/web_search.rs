@@ -102,7 +102,7 @@ async fn web_search_mode_takes_precedence_over_legacy_flags() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn web_search_mode_defaults_to_cached_when_features_disabled() {
+async fn web_search_mode_defaults_to_cached() {
     skip_if_no_network!();
 
     let server = start_mock_server().await;

@@ -25,7 +25,6 @@ use chaos_kern::config_loader::NetworkConstraints;
 use chaos_kern::config_loader::NetworkRequirementsToml;
 use chaos_kern::config_loader::RequirementSource;
 use chaos_kern::config_loader::Sourced;
-use chaos_kern::features::Feature;
 use chaos_kern::sandboxing::SandboxPermissions;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -507,7 +506,6 @@ struct ScenarioSpec {
     sandbox_policy: SandboxPolicy,
     action: ActionKind,
     sandbox_permissions: SandboxPermissions,
-    features: Vec<Feature>,
     model_override: Option<&'static str>,
     outcome: Outcome,
     expectation: Expectation,
@@ -534,7 +532,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-on-request",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::FileCreated {
@@ -551,7 +548,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-on-request",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::Auto,
             expectation: Expectation::FileCreated {
@@ -568,7 +564,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 response_body: "danger-network-ok",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::NetworkSuccess {
@@ -584,7 +579,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 response_body: "danger-network-ok",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::Auto,
             expectation: Expectation::NetworkSuccessNoExitCode {
@@ -599,7 +593,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 command: "echo trusted-unless",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccess {
@@ -614,7 +607,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 command: "echo trusted-unless",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccessNoExitCode {
@@ -629,7 +621,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 command: r#"cat < "hello" > /var/test.txt"#,
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -647,7 +638,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 command: r#"cat < "hello" > /var/test.txt"#,
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -666,7 +656,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-on-failure",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::FileCreated {
@@ -683,7 +672,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-on-failure",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::Auto,
             expectation: Expectation::FileCreatedNoExitCode {
@@ -700,7 +688,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-unless-trusted",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -720,7 +707,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-unless-trusted",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -740,7 +726,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-never",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::FileCreated {
@@ -757,7 +742,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "danger-never",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::Auto,
             expectation: Expectation::FileCreatedNoExitCode {
@@ -774,7 +758,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "read-only-approval",
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -794,7 +777,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "read-only-approval",
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -813,7 +795,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 command: "echo trusted-read-only",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccess {
@@ -828,7 +809,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 command: "echo trusted-read-only",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccessNoExitCode {
@@ -844,7 +824,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 response_body: "should-not-see",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: None,
             outcome: Outcome::Auto,
             expectation: Expectation::NetworkFailure { expect_tag: "ERR:" },
@@ -858,7 +837,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "should-not-write",
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: None,
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -878,7 +856,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 response_body: "read-only-network-ok",
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -897,7 +874,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 response_body: "read-only-network-ok",
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -916,7 +892,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "shell-apply-patch",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: None,
             outcome: Outcome::PatchApproval {
                 decision: ReviewDecision::Approved,
@@ -936,7 +911,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "shell-patch-outside",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: None,
             outcome: Outcome::PatchApproval {
                 decision: ReviewDecision::Approved,
@@ -956,7 +930,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "read-only-unless-trusted",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -976,7 +949,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "read-only-unless-trusted",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5.1"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -996,7 +968,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "read-only-never",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: None,
             outcome: Outcome::Auto,
             expectation: Expectation::FileNotCreated {
@@ -1021,7 +992,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 command: "echo trusted-never",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccess {
@@ -1037,7 +1007,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "workspace-on-request",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::FileCreated {
@@ -1054,7 +1023,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 response_body: "workspace-network-blocked",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: None,
             outcome: Outcome::Auto,
             expectation: Expectation::NetworkFailure { expect_tag: "ERR:" },
@@ -1068,7 +1036,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "workspace-on-request-outside",
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -1088,7 +1055,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 response_body: "workspace-network-ok",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::NetworkSuccess {
@@ -1104,7 +1070,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "workspace-unless-trusted",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -1124,7 +1089,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 content: "workspace-never",
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: None,
             outcome: Outcome::Auto,
             expectation: Expectation::FileNotCreated {
@@ -1150,7 +1114,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccess {
@@ -1168,7 +1131,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: Some(DEFAULT_UNIFIED_EXEC_JUSTIFICATION),
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -1187,7 +1149,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
             model_override: None,
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -1206,7 +1167,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: None,
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -1225,7 +1185,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![],
             model_override: None,
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -1254,19 +1213,12 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
     let server = start_mock_server().await;
     let approval_policy = scenario.approval_policy;
     let sandbox_policy = scenario.sandbox_policy.clone();
-    let features = scenario.features.clone();
     let model_override = scenario.model_override;
     let model = model_override.unwrap_or("gpt-5.1");
 
     let mut builder = test_chaos().with_model(model).with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
-        config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy.clone());
-        for feature in features {
-            config
-                .features
-                .enable(feature)
-                .expect("test config should allow feature update");
-        }
+        config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy);
     });
     let test = builder.build(&server).await?;
 

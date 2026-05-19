@@ -36,8 +36,7 @@ fn test_untrusted_project_gets_unless_trusted_approval_policy() -> anyhow::Resul
 }
 
 #[tokio::test]
-async fn approvals_reviewer_defaults_to_manual_only_without_guardian_feature() -> std::io::Result<()>
-{
+async fn approvals_reviewer_defaults_to_user() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
 
     let config = ConfigBuilder::default()

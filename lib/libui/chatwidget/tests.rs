@@ -135,7 +135,6 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tempfile::tempdir;
 use tokio::sync::mpsc::error::TryRecvError;
-use toml::Value as TomlValue;
 
 async fn test_config() -> Config {
     // Use base defaults to avoid depending on host state.
@@ -5197,10 +5196,6 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
     let chaos_home = tempdir().expect("tempdir");
     let cfg = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
-        .cli_overrides(vec![(
-            "features.collaboration_modes".to_string(),
-            TomlValue::Boolean(true),
-        )])
         .build()
         .await
         .expect("config");

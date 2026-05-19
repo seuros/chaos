@@ -2,8 +2,6 @@ use super::ConfigToml;
 use super::deserialize_config_toml_with_base;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
-use crate::config::managed_features::validate_explicit_feature_settings_in_config_toml;
-use crate::config::managed_features::validate_feature_requirements_in_config_toml;
 use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
@@ -333,35 +331,14 @@ impl ConfigService {
                 format!("Invalid configuration: {err}"),
             )
         })?;
-        let user_config_toml =
-            deserialize_config_toml_with_base(user_config.clone(), &self.chaos_home).map_err(
-                |err| {
-                    ConfigServiceError::write(
-                        ConfigWriteErrorCode::ConfigValidationError,
-                        format!("Invalid configuration: {err}"),
-                    )
-                },
-            )?;
-        validate_explicit_feature_settings_in_config_toml(
-            &user_config_toml,
-            layers.requirements().feature_requirements.as_ref(),
-        )
-        .map_err(|err| {
-            ConfigServiceError::write(
-                ConfigWriteErrorCode::ConfigValidationError,
-                format!("Invalid configuration: {err}"),
-            )
-        })?;
-        validate_feature_requirements_in_config_toml(
-            &user_config_toml,
-            layers.requirements().feature_requirements.as_ref(),
-        )
-        .map_err(|err| {
-            ConfigServiceError::write(
-                ConfigWriteErrorCode::ConfigValidationError,
-                format!("Invalid configuration: {err}"),
-            )
-        })?;
+        deserialize_config_toml_with_base(user_config.clone(), &self.chaos_home).map_err(
+            |err| {
+                ConfigServiceError::write(
+                    ConfigWriteErrorCode::ConfigValidationError,
+                    format!("Invalid configuration: {err}"),
+                )
+            },
+        )?;
 
         let updated_layers = layers.with_user_config(&provided_path, user_config.clone());
         let effective = updated_layers.effective_config();

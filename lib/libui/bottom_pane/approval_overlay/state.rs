@@ -3,7 +3,6 @@ use chaos_ipc::protocol::ElicitationAction;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::request_permissions::PermissionGrantScope;
-use chaos_kern::features::Features;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -42,11 +41,10 @@ pub struct ApprovalOverlay {
     options: Vec<ApprovalOption>,
     current_complete: bool,
     pub(super) done: bool,
-    features: Features,
 }
 
 impl ApprovalOverlay {
-    pub fn new(request: ApprovalRequest, app_event_tx: AppEventSender, features: Features) -> Self {
+    pub fn new(request: ApprovalRequest, app_event_tx: AppEventSender) -> Self {
         let mut view = Self {
             current_request: None,
             queue: Vec::new(),
@@ -55,7 +53,6 @@ impl ApprovalOverlay {
             options: Vec::new(),
             current_complete: false,
             done: false,
-            features,
         };
         view.set_current(request);
         view
@@ -68,7 +65,7 @@ impl ApprovalOverlay {
     fn set_current(&mut self, request: ApprovalRequest) {
         self.current_complete = false;
         let header = build_header(&request);
-        let (options, params) = Self::build_options(&request, header, &self.features);
+        let (options, params) = Self::build_options(&request, header);
         self.current_request = Some(request);
         self.options = options;
         self.list = ListSelectionView::new(params, self.app_event_tx.clone());
@@ -77,7 +74,6 @@ impl ApprovalOverlay {
     fn build_options(
         request: &ApprovalRequest,
         header: Box<dyn Renderable>,
-        _features: &Features,
     ) -> (Vec<ApprovalOption>, SelectionViewParams) {
         let agent_label = request.model_name();
         let (options, title) = match request {

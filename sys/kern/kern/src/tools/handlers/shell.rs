@@ -310,7 +310,7 @@ impl ShellHandler {
         }
 
         let approval_policy = turn.approval_policy.value();
-        let additional_permissions_allowed = approval_policy.allows_escalation();
+        let exec_permission_approvals_enabled = approval_policy.allows_escalation();
         let requested_additional_permissions = additional_permissions.clone();
         let effective_additional_permissions = apply_granted_turn_permissions(
             session.as_ref(),
@@ -318,6 +318,9 @@ impl ShellHandler {
             additional_permissions,
         )
         .await;
+        let additional_permissions_allowed = exec_permission_approvals_enabled
+            || (approval_policy.advertises_request_permissions_tool()
+                && effective_additional_permissions.permissions_preapproved);
         let normalized_additional_permissions = implicit_granted_permissions(
             exec_params.sandbox_permissions,
             requested_additional_permissions.as_ref(),

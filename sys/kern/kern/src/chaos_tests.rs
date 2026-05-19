@@ -544,7 +544,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),
-        features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),
 
         active_turn: Mutex::new(None),
@@ -625,7 +624,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),
-        features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),
 
         active_turn: Mutex::new(None),

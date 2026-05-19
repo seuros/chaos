@@ -57,7 +57,6 @@ use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConstraintResult;
 use chaos_kern::config::types::ApprovalsReviewer;
-use chaos_kern::features::Feature;
 use chaos_kern::find_process_name_by_id;
 use chaos_kern::git_info::current_branch_name;
 use chaos_kern::git_info::local_git_branches;

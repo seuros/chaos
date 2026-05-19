@@ -304,7 +304,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         model,
         review_model: None,
         config_profile,
-        // Default to never ask for approvals in headless mode. Feature flags can override.
+        // Default to never ask for approvals in headless mode.
         approval_policy: Some(ApprovalPolicy::Headless),
         approvals_reviewer: None,
         sandbox_mode,

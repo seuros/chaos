@@ -630,7 +630,7 @@ impl BottomPane {
     }
 
     /// Called when the agent requests user approval.
-    pub fn push_approval_request(&mut self, request: ApprovalRequest, features: &Features) {
+    pub fn push_approval_request(&mut self, request: ApprovalRequest) {
         let request = if let Some(view) = self.view_stack.last_mut() {
             match view.try_consume_approval_request(request) {
                 Some(request) => request,
@@ -644,7 +644,7 @@ impl BottomPane {
         };
 
         // Otherwise create a new approval modal overlay.
-        let modal = ApprovalOverlay::new(request, self.app_event_tx.clone(), features.clone());
+        let modal = ApprovalOverlay::new(request, self.app_event_tx.clone());
         self.pause_status_timer_for_modal();
         self.push_view(Box::new(modal));
     }

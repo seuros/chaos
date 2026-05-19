@@ -40,7 +40,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             allowed_approval_policies,
             allowed_sandbox_modes,
             allowed_web_search_modes,
-            feature_requirements,
             mcp_servers,
             apps: _apps,
             rules,
@@ -187,9 +186,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
                 /*source*/ None,
             ),
         };
-        let feature_requirements =
-            feature_requirements.filter(|requirements| !requirements.value.is_empty());
-
         let enforce_residency = match enforce_residency {
             Some(Sourced {
                 value: residency,
@@ -224,7 +220,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             approval_policy,
             sandbox_policy,
             web_search_mode,
-            feature_requirements,
             mcp_servers,
             exec_policy,
             enforce_residency,
@@ -272,7 +267,6 @@ mod tests {
     use super::super::types::AppRequirementToml;
     use super::super::types::AppsRequirementsToml;
     use super::super::types::ConfigRequirements;
-    use super::super::types::FeatureRequirementsToml;
     use super::super::types::McpServerIdentity;
     use super::super::types::McpServerRequirement;
     use super::super::types::RequirementSource;
@@ -310,7 +304,6 @@ mod tests {
             allowed_approval_policies,
             allowed_sandbox_modes,
             allowed_web_search_modes,
-            feature_requirements,
             mcp_servers,
             apps,
             rules,
@@ -323,8 +316,6 @@ mod tests {
             allowed_sandbox_modes: allowed_sandbox_modes
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_web_search_modes: allowed_web_search_modes
-                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            feature_requirements: feature_requirements
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             mcp_servers: mcp_servers.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             apps: apps.map(|value| Sourced::new(value, RequirementSource::Unknown)),
@@ -349,9 +340,6 @@ mod tests {
             WebSearchModeRequirement::Cached,
             WebSearchModeRequirement::Live,
         ];
-        let feature_requirements = FeatureRequirementsToml {
-            entries: BTreeMap::from([("personality".to_string(), true)]),
-        };
         let enforce_residency = ResidencyRequirement::Us;
         let enforce_source = source.clone();
 
@@ -361,7 +349,6 @@ mod tests {
             allowed_approval_policies: Some(allowed_approval_policies.clone()),
             allowed_sandbox_modes: Some(allowed_sandbox_modes.clone()),
             allowed_web_search_modes: Some(allowed_web_search_modes.clone()),
-            feature_requirements: Some(feature_requirements.clone()),
             mcp_servers: None,
             apps: None,
             rules: None,
@@ -381,10 +368,6 @@ mod tests {
                 allowed_sandbox_modes: Some(Sourced::new(allowed_sandbox_modes, source)),
                 allowed_web_search_modes: Some(Sourced::new(
                     allowed_web_search_modes,
-                    enforce_source.clone(),
-                )),
-                feature_requirements: Some(Sourced::new(
-                    feature_requirements,
                     enforce_source.clone(),
                 )),
                 mcp_servers: None,
@@ -419,7 +402,6 @@ mod tests {
                 )),
                 allowed_sandbox_modes: None,
                 allowed_web_search_modes: None,
-                feature_requirements: None,
                 mcp_servers: None,
                 apps: None,
                 rules: None,
@@ -460,7 +442,6 @@ mod tests {
                 )),
                 allowed_sandbox_modes: None,
                 allowed_web_search_modes: None,
-                feature_requirements: None,
                 mcp_servers: None,
                 apps: None,
                 rules: None,
@@ -691,8 +672,6 @@ mod tests {
                 allowed_sandbox_modes = ["read-only"]
                 allowed_web_search_modes = ["cached"]
                 enforce_residency = "us"
-                [features]
-                personality = true
             "#,
         )?;
 
@@ -711,13 +690,6 @@ mod tests {
         );
         assert_eq!(
             requirements.web_search_mode.source,
-            Some(source_location.clone())
-        );
-        assert_eq!(
-            requirements
-                .feature_requirements
-                .as_ref()
-                .map(|requirements| requirements.source.clone()),
             Some(source_location.clone())
         );
         assert_eq!(requirements.enforce_residency.source, Some(source_location));
@@ -917,32 +889,6 @@ mod tests {
                 requirement_source: RequirementSource::Unknown,
             })
         );
-        Ok(())
-    }
-
-    #[test]
-    fn deserialize_feature_requirements() -> Result<()> {
-        let toml_str = r#"
-            [features]
-            apps = false
-            personality = true
-        "#;
-        let config: ConfigRequirementsToml = from_str(toml_str)?;
-        let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
-
-        assert_eq!(
-            requirements.feature_requirements,
-            Some(Sourced::new(
-                FeatureRequirementsToml {
-                    entries: BTreeMap::from([
-                        ("apps".to_string(), false),
-                        ("personality".to_string(), true),
-                    ]),
-                },
-                RequirementSource::Unknown,
-            ))
-        );
-
         Ok(())
     }
 

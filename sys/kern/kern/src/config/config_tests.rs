@@ -36,8 +36,8 @@ mod compact_and_catalog;
 mod mcp_and_shell;
 #[path = "config_tests/mcp_servers.rs"]
 mod mcp_servers;
-#[path = "config_tests/model_and_feature_edits.rs"]
-mod model_and_feature_edits;
+#[path = "config_tests/model_edits.rs"]
+mod model_edits;
 #[path = "config_tests/oss_provider.rs"]
 mod oss_provider;
 #[path = "config_tests/permissions_profiles.rs"]
@@ -558,9 +558,8 @@ fn feedback_enabled_defaults_to_true() -> std::io::Result<()> {
 fn web_search_mode_defaults_to_none_if_unset() {
     let cfg = ConfigToml::default();
     let profile = ConfigProfile::default();
-    let features = Features::with_defaults();
 
-    assert_eq!(resolve_web_search_mode(&cfg, &profile, &features), None);
+    assert_eq!(resolve_web_search_mode(&cfg, &profile), None);
 }
 
 #[test]
@@ -570,10 +569,9 @@ fn web_search_mode_prefers_profile_over_config() {
         web_search: Some(WebSearchMode::Live),
         ..Default::default()
     };
-    let features = Features::with_defaults();
 
     assert_eq!(
-        resolve_web_search_mode(&cfg, &profile, &features),
+        resolve_web_search_mode(&cfg, &profile),
         Some(WebSearchMode::Live)
     );
 }
@@ -585,10 +583,9 @@ fn web_search_mode_disabled_from_config() {
         ..Default::default()
     };
     let profile = ConfigProfile::default();
-    let features = Features::with_defaults();
 
     assert_eq!(
-        resolve_web_search_mode(&cfg, &profile, &features),
+        resolve_web_search_mode(&cfg, &profile),
         Some(WebSearchMode::Disabled)
     );
 }
@@ -752,32 +749,6 @@ fn cli_override_takes_precedence_over_profile_sandbox_mode() -> std::io::Result<
 }
 
 #[test]
-fn responses_websocket_features_do_not_change_wire_api() -> std::io::Result<()> {
-    for feature_key in ["responses_websockets", "responses_websockets_v2"] {
-        let chaos_home = TempDir::new()?;
-        let mut entries = BTreeMap::new();
-        entries.insert(feature_key.to_string(), true);
-        let cfg = ConfigToml {
-            features: Some(crate::features::FeaturesToml { entries }),
-            ..Default::default()
-        };
-
-        let config = Config::load_from_base_config_with_overrides(
-            cfg,
-            ConfigOverrides::default(),
-            chaos_home.path().to_path_buf(),
-        )?;
-
-        assert_eq!(
-            config.model_provider.wire_api,
-            crate::model_provider_info::WireApi::Responses
-        );
-    }
-
-    Ok(())
-}
-
-#[test]
 fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let cfg = ConfigToml {
@@ -909,9 +880,9 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
         web_search_config: None,
         collab_enabled: true,
+        minion_jobs_allowed: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
-        features: Features::with_defaults().into(),
         active_profile: None,
         active_project_trust: ProjectTrust { trust_level: None },
         notices: Default::default(),
@@ -1154,7 +1125,6 @@ fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() -> any
         allowed_web_search_modes: Some(vec![
             crate::config_loader::WebSearchModeRequirement::Cached,
         ]),
-        feature_requirements: None,
         mcp_servers: None,
         apps: None,
         rules: None,

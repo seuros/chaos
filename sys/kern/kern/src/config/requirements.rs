@@ -11,7 +11,6 @@ use chaos_realpath::AbsolutePathBuf;
 use crate::config::Config;
 use crate::config::ConfigOverrides;
 use crate::config::ConfigToml;
-use crate::config::ManagedFeatures;
 use crate::config::Permissions;
 use crate::config::agent_roles;
 use crate::config::parsing;
@@ -29,7 +28,6 @@ use crate::config::validation::PermissionConfigSyntax;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::Sourced;
-use crate::features::FeatureOverrides;
 use crate::model_provider_info::built_in_model_providers;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::protocol::ApprovalPolicy;
@@ -81,15 +79,13 @@ fn add_additional_vfs_writes(
 pub(crate) fn resolve_web_search_mode(
     config_toml: &ConfigToml,
     config_profile: &crate::config::profile::ConfigProfile,
-    features: &crate::features::Features,
 ) -> Option<WebSearchMode> {
-    resolve_web_search_mode_inner(config_toml, config_profile, features)
+    resolve_web_search_mode_inner(config_toml, config_profile)
 }
 
 fn resolve_web_search_mode_inner(
     config_toml: &ConfigToml,
     config_profile: &crate::config::profile::ConfigProfile,
-    _features: &crate::features::Features,
 ) -> Option<WebSearchMode> {
     if let Some(mode) = config_profile.web_search.or(config_toml.web_search) {
         return Some(mode);
@@ -153,7 +149,6 @@ impl Config {
             approval_policy: mut constrained_approval_policy,
             sandbox_policy: mut constrained_sandbox_policy,
             web_search_mode: mut constrained_web_search_mode,
-            feature_requirements,
             mcp_servers,
             exec_policy: _,
             enforce_residency,
@@ -205,11 +200,6 @@ impl Config {
                 .clone(),
             None => crate::config::profile::ConfigProfile::default(),
         };
-        let feature_overrides = FeatureOverrides {};
-
-        let configured_features =
-            crate::features::features_from_config(&cfg, &config_profile, feature_overrides);
-        let features = ManagedFeatures::from_configured(configured_features, feature_requirements)?;
         let resolved_cwd = normalize_for_native_workdir({
             use std::env;
 
@@ -347,8 +337,8 @@ impl Config {
             .or(config_profile.approvals_reviewer)
             .or(cfg.approvals_reviewer)
             .unwrap_or(ApprovalsReviewer::User);
-        let web_search_mode = resolve_web_search_mode_inner(&cfg, &config_profile, &features)
-            .unwrap_or(WebSearchMode::Cached);
+        let web_search_mode =
+            resolve_web_search_mode_inner(&cfg, &config_profile).unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config_inner(&cfg, &config_profile);
 
         let agent_roles = agent_roles::load_agent_roles(
@@ -698,9 +688,9 @@ impl Config {
             web_search_mode: constrained_web_search_mode.value,
             web_search_config,
             collab_enabled: true,
+            minion_jobs_allowed: cfg.minion_jobs_allowed.unwrap_or(true),
             background_terminal_max_timeout,
             ghost_snapshot,
-            features,
             active_profile: active_profile_name,
             active_project_trust,
             notices: cfg.notice.unwrap_or_default(),

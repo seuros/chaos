@@ -16,7 +16,6 @@ use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::ResidencyRequirement;
 
-use crate::features::FeaturesToml;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::protocol::ApprovalPolicy;
@@ -52,7 +51,6 @@ use toml::Value as TomlValue;
 pub(crate) mod agent_roles;
 pub mod edit;
 pub mod loading;
-mod managed_features;
 mod network_proxy_spec;
 pub(crate) mod parsing;
 mod permissions;
@@ -73,8 +71,6 @@ pub(crate) use crate::config_loader::McpServerRequirement;
 #[cfg(test)]
 pub(crate) use crate::config_loader::Sourced;
 #[cfg(test)]
-pub(crate) use crate::features::Features;
-#[cfg(test)]
 pub(crate) use crate::model_provider_info::built_in_model_providers;
 #[cfg(test)]
 pub(crate) use crate::protocol::ReadOnlyAccess;
@@ -90,7 +86,6 @@ pub(crate) use validation::filter_mcp_servers_by_requirements;
 
 pub use loading::ConfigBuilder;
 pub use loading::load_config_or_exit;
-pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
 pub use permissions::FilesystemPermissionToml;
@@ -439,15 +434,17 @@ pub struct Config {
     /// for sub-agents at max depth or review/minion sub-agents.
     pub collab_enabled: bool,
 
+    /// Whether minion-job fanout tools (e.g. `spawn_minions_on_csv`) are
+    /// available. Set to `false` for sub-agents at max depth and for
+    /// review/minion sub-agents.
+    pub minion_jobs_allowed: bool,
+
     /// Maximum poll window for background terminal output (`write_stdin`), in milliseconds.
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: u64,
 
     /// Settings for ghost snapshots (used for undo).
     pub ghost_snapshot: GhostSnapshotConfig,
-
-    /// Centralized feature flags; source of truth for feature gating.
-    pub features: ManagedFeatures,
 
     /// The active profile name used to derive this `Config` (if any).
     pub active_profile: Option<String>,
@@ -690,20 +687,14 @@ pub struct ConfigToml {
     /// Controls the web search tool mode: disabled, cached, or live.
     pub web_search: Option<WebSearchMode>,
 
-    /// Nested tools section for feature toggles
+    /// Nested tool-specific configuration.
     pub tools: Option<ToolsToml>,
 
     /// Agent-related settings (thread limits, etc.).
     pub agents: Option<AgentsToml>,
 
-    /// Centralized feature flags (new). Prefer this over individual toggles.
-    #[serde(default)]
-    // Injects known feature keys into the schema and forbids unknown keys.
-    #[schemars(schema_with = "crate::config::schema::features_schema")]
-    pub features: Option<FeaturesToml>,
-
-    /// Suppress warnings about unstable (under development) features.
-    pub suppress_unstable_features_warning: Option<bool>,
+    /// Whether minion-job fanout tools are available. Defaults to `true`.
+    pub minion_jobs_allowed: Option<bool>,
 
     /// Settings for ghost snapshots (used for undo).
     #[serde(default)]
@@ -738,7 +729,7 @@ pub struct ConfigToml {
     /// See [`crate::config::types::Notices`] for more details
     pub notice: Option<Notice>,
 
-    /// Legacy, now use features
+    /// Legacy, now use `model_instructions_file`.
     /// Deprecated: ignored. Use `model_instructions_file`.
     #[schemars(skip)]
     pub experimental_instructions_file: Option<AbsolutePathBuf>,

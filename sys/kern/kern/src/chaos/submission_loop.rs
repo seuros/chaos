@@ -305,7 +305,6 @@ pub(super) async fn spawn_review_thread(
         .get_model_info(&model, &config)
         .await;
     // For reviews, disable web_search and view_image regardless of global settings.
-    let review_features = sess.features.clone();
     let review_web_search_mode = WebSearchMode::Disabled;
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &review_model_info,
@@ -314,8 +313,8 @@ pub(super) async fn spawn_review_thread(
             .models_manager
             .list_models(RefreshStrategy::OnlineIfUncached)
             .await,
-        features: &review_features,
         approval_policy: parent_turn_context.approval_policy.value(),
+        minion_jobs_allowed: config.minion_jobs_allowed,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
         vfs_policy: &parent_turn_context.vfs_policy,
@@ -333,7 +332,6 @@ pub(super) async fn spawn_review_thread(
     // Build per-turn client with the requested model/family.
     let mut per_turn_config = (*config).clone();
     per_turn_config.model = Some(model.clone());
-    per_turn_config.features = review_features.clone();
     if let Err(err) = per_turn_config.web_search_mode.set(review_web_search_mode) {
         let fallback_value = per_turn_config.web_search_mode.value();
         tracing::warn!(
@@ -408,7 +406,6 @@ pub(super) async fn spawn_review_thread(
         reasoning_summary,
         session_source,
         tools_config,
-        features: parent_turn_context.features.clone(),
         ghost_snapshot: parent_turn_context.ghost_snapshot.clone(),
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),

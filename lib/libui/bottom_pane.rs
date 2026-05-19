@@ -28,7 +28,6 @@ use crate::tui::FrameRequester;
 use bottom_pane_view::BottomPaneView;
 use chaos_ipc::request_user_input::RequestUserInputEvent;
 use chaos_ipc::user_input::TextElement;
-use chaos_kern::features::Features;
 use chaos_locate::FileMatch;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -243,9 +242,8 @@ mod tests {
 
     #[test]
     fn ctrl_c_on_modal_consumes_without_showing_quit_hint() {
-        let features = Features::with_defaults();
         let mut pane = make_test_pane();
-        pane.push_approval_request(exec_request(), &features);
+        pane.push_approval_request(exec_request());
         assert_eq!(CancellationEvent::Handled, pane.on_ctrl_c());
         assert!(!pane.quit_shortcut_hint_visible());
         assert_eq!(CancellationEvent::NotHandled, pane.on_ctrl_c());
@@ -255,11 +253,10 @@ mod tests {
 
     #[test]
     fn overlay_not_shown_above_approval_modal() {
-        let features = Features::with_defaults();
         let mut pane = make_test_pane();
 
         // Create an approval modal (active view).
-        pane.push_approval_request(exec_request(), &features);
+        pane.push_approval_request(exec_request());
 
         // Render and verify the top row does not include an overlay.
         let area = Rect::new(0, 0, 60, 6);
@@ -278,14 +275,13 @@ mod tests {
 
     #[test]
     fn composer_shown_after_denied_while_task_running() {
-        let features = Features::with_defaults();
         let mut pane = make_test_pane();
 
         // Start a running task so the status indicator is active above the composer.
         pane.set_task_running(true);
 
         // Push an approval modal (e.g., command approval) which should hide the status view.
-        pane.push_approval_request(exec_request(), &features);
+        pane.push_approval_request(exec_request());
 
         // Simulate pressing 'n' (No) on the modal.
         use crossterm::event::KeyCode;

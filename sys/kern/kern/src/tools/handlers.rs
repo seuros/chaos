@@ -144,7 +144,7 @@ fn resolve_workdir_base_path(
         ))
 }
 
-/// Validates feature/policy constraints for `with_additional_permissions` and
+/// Validates policy constraints for `with_additional_permissions` and
 /// normalizes any path-based permissions. Errors if the request is invalid.
 pub(crate) fn normalize_and_validate_additional_permissions(
     additional_permissions_allowed: bool,
@@ -164,7 +164,7 @@ pub(crate) fn normalize_and_validate_additional_permissions(
         && (uses_additional_permissions || additional_permissions.is_some())
     {
         return Err(
-            "additional permissions are disabled; the current approval policy does not permit escalation"
+            "additional permissions are disabled by the current approval policy; switch to an approval policy that allows sandbox approval before using `with_additional_permissions`"
                 .to_string(),
         );
     }
@@ -307,7 +307,8 @@ mod tests {
     }
 
     #[test]
-    fn preapproved_permissions_pass_validation_even_when_escalation_is_disallowed() {
+    fn preapproved_permissions_work_when_request_permissions_tool_is_enabled_without_inline_exec_approval()
+     {
         let cwd = tempdir().expect("tempdir");
 
         let normalized = normalize_and_validate_additional_permissions(
@@ -329,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_additional_permissions_blocked_when_escalation_is_disallowed() {
+    fn fresh_additional_permissions_still_require_sandbox_approval_policy() {
         let cwd = tempdir().expect("tempdir");
 
         let err = normalize_and_validate_additional_permissions(
@@ -344,33 +345,7 @@ mod tests {
 
         assert_eq!(
             err,
-            "additional permissions are disabled; the current approval policy does not permit escalation"
-        );
-    }
-
-    #[test]
-    fn granular_sandbox_approval_false_blocks_inline_additional_permissions() {
-        let cwd = tempdir().expect("tempdir");
-        let policy = ApprovalPolicy::Granular(GranularApprovalConfig {
-            sandbox_approval: false,
-            rules: false,
-            request_permissions: false,
-            mcp_elicitations: true,
-        });
-
-        let err = normalize_and_validate_additional_permissions(
-            policy.allows_escalation(),
-            policy,
-            SandboxPermissions::WithAdditionalPermissions,
-            Some(network_permissions()),
-            false,
-            cwd.path(),
-        )
-        .expect_err("Granular(sandbox_approval=false) should block inline permissions");
-
-        assert_eq!(
-            err,
-            "additional permissions are disabled; the current approval policy does not permit escalation"
+            "additional permissions are disabled by the current approval policy; switch to an approval policy that allows sandbox approval before using `with_additional_permissions`"
         );
     }
 

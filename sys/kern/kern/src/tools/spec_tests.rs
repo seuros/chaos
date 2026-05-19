@@ -9,7 +9,6 @@ use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_parrot::sanitize::AdditionalProperties;
 use chaos_parrot::sanitize::JsonSchema;
 use chaos_parrot::sanitize::ResponsesApiTool;
@@ -427,14 +426,13 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
     // Use gpt-5-codex as a representative codex-style model profile; this test is about the
     // tool capability mix (unified exec + apply_patch + live web search), not OpenAI branding.
     let model_info = model_info_from_models_json(REPRESENTATIVE_CODE_EDIT_MODEL_SLUG);
-    let features = Features::with_defaults();
 
     let available_models = Vec::new();
     let config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -554,13 +552,12 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
 fn arsenal_tools_keep_closed_object_schemas() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -592,13 +589,12 @@ fn arsenal_tools_keep_closed_object_schemas() {
 fn arsenal_read_file_preserves_indentation_object_schema() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -638,13 +634,12 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
 fn test_build_specs_collab_tools_enabled() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -659,18 +654,16 @@ fn test_build_specs_collab_tools_enabled() {
 }
 
 #[test]
-fn test_build_specs_enable_fanout_enables_minion_jobs_and_collab_tools() {
+fn test_build_specs_minion_jobs_allowed_enables_minion_jobs_and_collab_tools() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::SpawnCsv);
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: true,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -695,13 +688,12 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
     let mut model_info =
         ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     model_info.supports_image_detail_original = true;
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -730,15 +722,13 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
 fn test_build_specs_minion_job_worker_tools_enabled() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::SpawnCsv);
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: true,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::SubAgent(SubAgentSource::Other(
             "minion_job:test".to_string(),
@@ -766,13 +756,12 @@ fn test_build_specs_minion_job_worker_tools_enabled() {
 fn request_user_input_description_reflects_default_mode_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -789,18 +778,15 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
 }
 
 #[test]
-fn request_permissions_tool_visibility_follows_approval_policy() {
+fn request_permissions_requires_advertised_approval_policy() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
-
-    // Headless never advertises the tool.
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Headless,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -809,31 +795,12 @@ fn request_permissions_tool_visibility_follows_approval_policy() {
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_lacks_tool_name(&tools, "request_permissions");
 
-    // Granular with request_permissions=false also suppresses the tool.
+    let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
-        approval_policy: ApprovalPolicy::Granular(GranularApprovalConfig {
-            sandbox_approval: true,
-            rules: true,
-            request_permissions: false,
-            mcp_elicitations: true,
-        }),
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
-        collab_enabled: true,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    assert_lacks_tool_name(&tools, "request_permissions");
-
-    // Interactive (default) advertises the tool.
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -848,30 +815,25 @@ fn request_permissions_tool_visibility_follows_approval_policy() {
 }
 
 #[test]
-fn escalation_can_be_allowed_without_advertising_request_permissions_tool() {
+fn request_permissions_tool_is_independent_from_additional_permissions() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
-        // Granular policy that allows sandbox escalation but suppresses the
-        // standalone request_permissions tool.
-        approval_policy: ApprovalPolicy::Granular(GranularApprovalConfig {
+        approval_policy: ApprovalPolicy::Granular(chaos_ipc::protocol::GranularApprovalConfig {
             sandbox_approval: true,
             rules: true,
             request_permissions: false,
             mcp_elicitations: true,
         }),
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
-    assert!(tools_config.exec_permission_approvals_enabled);
-    assert!(!tools_config.request_permissions_tool_enabled);
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
     assert_lacks_tool_name(&tools, "request_permissions");
@@ -879,7 +841,6 @@ fn escalation_can_be_allowed_without_advertising_request_permissions_tool() {
 
 fn assert_model_tools(
     model_slug: &str,
-    features: &Features,
     web_search_mode: Option<WebSearchMode>,
     expected_tools: &[&str],
 ) {
@@ -889,8 +850,8 @@ fn assert_model_tools(
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode,
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -932,7 +893,6 @@ fn assert_model_tools(
 
 fn assert_default_model_tools(
     model_slug: &str,
-    features: &Features,
     web_search_mode: Option<WebSearchMode>,
     shell_tool: &'static str,
     expected_tail: &[&str],
@@ -940,7 +900,7 @@ fn assert_default_model_tools(
     let _ = shell_tool;
     let mut expected = vec!["exec_command", "write_stdin"];
     expected.extend(expected_tail);
-    assert_model_tools(model_slug, features, web_search_mode, &expected);
+    assert_model_tools(model_slug, web_search_mode, &expected);
 }
 
 const DEFAULT_SHELL_MODEL_TOOL_TAIL: &[&str] = &[
@@ -1010,12 +970,9 @@ struct DefaultModelToolCase {
 }
 
 fn assert_default_model_tool_cases(cases: &[DefaultModelToolCase]) {
-    let features = Features::with_defaults();
-
     for case in cases {
         assert_default_model_tools(
             case.model_slug,
-            &features,
             Some(WebSearchMode::Cached),
             case.shell_tool,
             case.expected_tail,
@@ -1030,17 +987,10 @@ struct UnifiedExecWebSearchModelToolCase {
 }
 
 fn assert_unified_exec_web_search_model_tool_cases(cases: &[UnifiedExecWebSearchModelToolCase]) {
-    let features = Features::with_defaults();
-
     for case in cases {
         let mut expected = vec!["exec_command", "write_stdin"];
         expected.extend_from_slice(case.expected_tail);
-        assert_model_tools(
-            case.model_slug,
-            &features,
-            Some(WebSearchMode::Live),
-            &expected,
-        );
+        assert_model_tools(case.model_slug, Some(WebSearchMode::Live), &expected);
     }
 }
 
@@ -1048,14 +998,13 @@ fn assert_unified_exec_web_search_model_tool_cases(cases: &[UnifiedExecWebSearch
 fn web_search_mode_cached_sets_external_web_access_false() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1080,14 +1029,13 @@ fn web_search_mode_cached_sets_external_web_access_false() {
 fn web_search_mode_live_sets_external_web_access_true() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1112,7 +1060,6 @@ fn web_search_mode_live_sets_external_web_access_true() {
 fn web_search_config_is_forwarded_to_tool_spec() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let web_search_config = WebSearchConfig {
         filters: Some(chaos_ipc::config_types::WebSearchFilters {
             allowed_domains: Some(vec!["example.com".to_string()]),
@@ -1131,8 +1078,8 @@ fn web_search_config_is_forwarded_to_tool_spec() {
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1164,14 +1111,13 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
     let mut model_info =
         ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     model_info.web_search_tool_type = WebSearchToolType::TextAndImage;
-    let features = Features::with_defaults();
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1201,13 +1147,12 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
 fn mcp_resource_tools_are_hidden_without_mcp_servers() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1228,13 +1173,12 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
 fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1258,13 +1202,12 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
 fn spawn_agent_tool_description_uses_current_role_names() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1341,14 +1284,13 @@ fn test_build_specs_unified_exec_web_search_toolsets_for_code_edit_profiles() {
 fn test_build_specs_default_shell_present() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("o3", &config);
-    let features = Features::with_defaults();
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1369,14 +1311,13 @@ fn test_build_specs_default_shell_present() {
 fn test_parallel_support_flags() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1401,13 +1342,12 @@ fn test_test_model_info_includes_sync_tool() {
         "grep_files".to_string(),
         "list_dir".to_string(),
     ];
-    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1437,14 +1377,13 @@ fn test_test_model_info_includes_sync_tool() {
 fn test_build_specs_mcp_tools_converted() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("o3", &config);
-    let features = Features::with_defaults();
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1531,14 +1470,12 @@ fn test_build_specs_mcp_tools_converted() {
 fn test_build_specs_mcp_tools_sorted_by_name() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("o3", &config);
-    let features = Features::with_defaults();
-
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1581,14 +1518,12 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
 fn test_mcp_tool_property_missing_type_defaults_to_string() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
-
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1642,14 +1577,12 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
 fn test_mcp_tool_integer_normalized_to_number() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
-
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1699,14 +1632,12 @@ fn test_mcp_tool_integer_normalized_to_number() {
 fn test_mcp_tool_array_without_items_gets_default_string_items() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
-
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1759,14 +1690,12 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
 fn test_mcp_tool_anyof_defaults_to_string() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
-
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),
@@ -1931,14 +1860,12 @@ fn test_shell_command_tool() {
 fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
-
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &available_models,
-        features: &features,
         approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         vfs_policy: &VfsPolicy::unrestricted(),

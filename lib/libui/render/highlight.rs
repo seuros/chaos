@@ -8,7 +8,7 @@
 //! When the feature is disabled, stub functions return empty/None fallbacks
 //! so callers degrade to plain unstyled text.
 
-// -- Feature-gated re-exports -------------------------------------------------
+// -- Cfg-gated re-exports -----------------------------------------------------
 
 #[cfg(feature = "syntax")]
 #[allow(unused_imports)]

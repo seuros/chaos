@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_pwd::find_chaos_home;
@@ -9,7 +8,6 @@ use super::ConfigOverrides;
 use super::ConfigToml;
 use crate::config::Config;
 use crate::config::parsing::deserialize_config_toml_with_base as _deserialize_config_toml_with_base;
-use crate::config::serialization;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::LoaderOverrides;
 use crate::config_loader::load_config_layers_state;
@@ -59,9 +57,6 @@ impl ConfigBuilder {
             fallback_cwd,
         } = self;
         let chaos_home = chaos_home.map_or_else(find_chaos_home, std::io::Result::Ok)?;
-        if let Err(err) = maybe_migrate_smart_approvals_alias(&chaos_home).await {
-            tracing::warn!(error = %err, "failed to migrate smart_approvals feature alias");
-        }
         let cli_overrides = cli_overrides.unwrap_or_default();
         let mut harness_overrides = harness_overrides.unwrap_or_default();
         let loader_overrides = loader_overrides.unwrap_or_default();
@@ -126,10 +121,6 @@ fn strip_toml_global_mcp_servers(value: &mut TomlValue) {
         return;
     };
     table.remove("mcp_servers");
-}
-
-async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Result<bool> {
-    serialization::maybe_migrate_smart_approvals_alias(chaos_home).await
 }
 
 /// Load configuration and exit the process on failure.

@@ -8,7 +8,6 @@ use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_sysctl::Constrained;
-use chaos_sysctl::features::Features;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::MemoriesConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
@@ -50,7 +49,6 @@ pub trait MementoConfig: Send + Sync {
     fn cwd(&self) -> &Path;
     fn ephemeral(&self) -> bool;
     fn memories(&self) -> &MemoriesConfig;
-    fn features(&self) -> &Features;
     fn approval_policy(&self) -> &Constrained<ApprovalPolicy>;
     fn sandbox_policy(&self) -> &Constrained<SandboxPolicy>;
     fn service_tier(&self) -> Option<ServiceTier>;
@@ -61,7 +59,6 @@ impl_config_arc_forward!(MementoConfig {
     fn cwd(&self) -> &Path;
     fn ephemeral(&self) -> bool;
     fn memories(&self) -> &MemoriesConfig;
-    fn features(&self) -> &Features;
     fn approval_policy(&self) -> &Constrained<ApprovalPolicy>;
     fn sandbox_policy(&self) -> &Constrained<SandboxPolicy>;
     fn service_tier(&self) -> Option<ServiceTier>;

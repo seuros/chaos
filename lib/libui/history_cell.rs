@@ -1612,7 +1612,7 @@ mod tests {
     #[test]
     fn deprecation_notice_renders_summary_with_details() {
         let cell = new_deprecation_notice(
-            "Feature flag `foo`".to_string(),
+            "Deprecated setting `foo`".to_string(),
             Some("Use flag `bar` instead.".to_string()),
         );
         let lines = cell.display_lines(80);
@@ -1620,7 +1620,7 @@ mod tests {
         assert_eq!(
             rendered,
             vec![
-                "⚠ Feature flag `foo`".to_string(),
+                "⚠ Deprecated setting `foo`".to_string(),
                 "Use flag `bar` instead.".to_string(),
             ]
         );

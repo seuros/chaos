@@ -162,8 +162,8 @@ impl ToolHandler for UnifiedExecHandler {
                     ..
                 } = args;
 
-                let approval_policy = context.turn.approval_policy.value();
-                let additional_permissions_allowed = approval_policy.allows_escalation();
+                let approval_policy = turn.approval_policy.value();
+                let exec_permission_approvals_enabled = approval_policy.allows_escalation();
                 let requested_additional_permissions = additional_permissions.clone();
                 let effective_additional_permissions = apply_granted_turn_permissions(
                     context.session.as_ref(),
@@ -171,6 +171,9 @@ impl ToolHandler for UnifiedExecHandler {
                     additional_permissions,
                 )
                 .await;
+                let additional_permissions_allowed = exec_permission_approvals_enabled
+                    || (approval_policy.advertises_request_permissions_tool()
+                        && effective_additional_permissions.permissions_preapproved);
 
                 // Sticky turn permissions have already been approved, so they should
                 // continue through the normal exec approval flow for the command.
@@ -183,7 +186,6 @@ impl ToolHandler for UnifiedExecHandler {
                         chaos_ipc::protocol::ApprovalPolicy::Interactive
                     )
                 {
-                    let approval_policy = context.turn.approval_policy.value();
                     manager.release_process_id(process_id).await;
                     return Err(FunctionCallError::RespondToModel(format!(
                         "approval policy is {approval_policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {approval_policy:?}"

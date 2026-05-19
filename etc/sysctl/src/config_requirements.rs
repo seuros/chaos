@@ -10,7 +10,6 @@ pub use types::AppRequirementToml;
 pub use types::AppsRequirementsToml;
 pub use types::ConfigRequirements;
 pub use types::ConstrainedWithSource;
-pub use types::FeatureRequirementsToml;
 pub use types::McpServerIdentity;
 pub use types::McpServerRequirement;
 pub use types::NetworkConstraints;

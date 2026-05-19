@@ -10,7 +10,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::features::FeaturesToml;
 use crate::types::AnalyticsConfigToml;
 use crate::types::ApprovalsReviewer;
 use crate::types::Personality;
@@ -47,10 +46,6 @@ pub struct ConfigProfile {
     pub tools: Option<ToolsToml>,
     pub web_search: Option<WebSearchMode>,
     pub analytics: Option<AnalyticsConfigToml>,
-    /// Optional feature toggles scoped to this profile.
-    #[serde(default)]
-    #[schemars(schema_with = "crate::schema::features_schema")]
-    pub features: Option<FeaturesToml>,
     pub oss_provider: Option<String>,
 }
 

@@ -313,35 +313,7 @@ fn span_for_path(contents: &str, path: &SerdePath) -> Option<std::ops::Range<usi
 }
 
 fn span_for_config_path(contents: &str, path: &SerdePath) -> Option<std::ops::Range<usize>> {
-    if is_features_table_path(path)
-        && let Some(span) = span_for_features_value(contents)
-    {
-        return Some(span);
-    }
     span_for_path(contents, path)
-}
-
-fn is_features_table_path(path: &SerdePath) -> bool {
-    let mut segments = path.iter();
-    matches!(segments.next(), Some(SerdeSegment::Map { key }) if key == "features")
-        && segments.next().is_none()
-}
-
-fn span_for_features_value(contents: &str) -> Option<std::ops::Range<usize>> {
-    let doc = contents.parse::<Document<String>>().ok()?;
-    let root = doc.as_item().as_table_like()?;
-    let features_item = root.get("features")?;
-    let features_table = features_item.as_table_like()?;
-    for (_, item) in features_table.iter() {
-        match item {
-            Item::Value(Value::Boolean(_)) => continue,
-            Item::Value(value) => return value.span(),
-            Item::Table(table) => return table.span(),
-            Item::ArrayOfTables(array) => return array.span(),
-            Item::None => continue,
-        }
-    }
-    None
 }
 
 fn node_for_path<'a>(item: &'a Item, path: &SerdePath) -> Option<TomlNode<'a>> {

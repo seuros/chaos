@@ -66,9 +66,6 @@ approval_policy = "interactive"
 [notice]
 # Preserve this comment
 hide_full_access_warning = true
-
-[features]
-unified_exec = true
 "#;
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), original)?;
 
@@ -76,7 +73,7 @@ unified_exec = true
     service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "features.personality".to_string(),
+            key_path: "notice.hide_rate_limit_model_nudge".to_string(),
             value: serde_json::json!(true),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
@@ -92,10 +89,7 @@ approval_policy = "interactive"
 [notice]
 # Preserve this comment
 hide_full_access_warning = true
-
-[features]
-unified_exec = true
-personality = true
+hide_rate_limit_model_nudge = true
 "#;
     assert_eq!(updated, expected);
     Ok(())

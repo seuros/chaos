@@ -16,17 +16,6 @@ impl ChatWidget {
         Ok(())
     }
 
-    pub fn set_feature_enabled(&mut self, feature: Feature, enabled: bool) -> bool {
-        if let Err(err) = self.config.features.set_enabled(feature, enabled) {
-            tracing::warn!(
-                error = %err,
-                feature = feature.key(),
-                "failed to update constrained chat widget feature state"
-            );
-        }
-        self.config.features.enabled(feature)
-    }
-
     pub fn set_approvals_reviewer(&mut self, policy: ApprovalsReviewer) {
         self.config.approvals_reviewer = policy;
     }

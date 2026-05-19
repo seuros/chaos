@@ -56,16 +56,18 @@ impl Session {
         {
             developer_sections.push(model_switch_message.into_text());
         }
-        let approval_policy = turn_context.approval_policy.value();
         developer_sections.push(
             crate::developer_instructions::from_policies(
                 &turn_context.vfs_policy,
                 turn_context.socket_policy,
-                approval_policy,
+                turn_context.approval_policy.value(),
                 self.services.exec_policy.current().as_ref(),
                 &turn_context.cwd,
-                approval_policy.allows_escalation(),
-                approval_policy.advertises_request_permissions_tool(),
+                turn_context.approval_policy.value().allows_escalation(),
+                turn_context
+                    .approval_policy
+                    .value()
+                    .advertises_request_permissions_tool(),
             )
             .into_text(),
         );

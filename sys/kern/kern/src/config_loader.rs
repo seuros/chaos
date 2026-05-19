@@ -29,7 +29,6 @@ pub use chaos_sysctl::ConfigLoadError;
 pub use chaos_sysctl::ConfigRequirements;
 pub use chaos_sysctl::ConfigRequirementsToml;
 pub use chaos_sysctl::ConstrainedWithSource;
-pub use chaos_sysctl::FeatureRequirementsToml;
 pub use chaos_sysctl::LoaderOverrides;
 pub use chaos_sysctl::McpServerIdentity;
 pub use chaos_sysctl::McpServerRequirement;

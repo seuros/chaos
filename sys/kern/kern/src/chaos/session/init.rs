@@ -134,7 +134,6 @@ impl Session {
                 "resolved web_search_mode is disallowed by requirements; keeping constrained value"
             );
         }
-        per_turn_config.features = config.features.clone();
         per_turn_config
     }
 
@@ -284,15 +283,6 @@ impl Session {
         .await;
         let mut post_session_configured_events = Vec::<Event>::new();
 
-        for usage in config.features.legacy_feature_usages() {
-            post_session_configured_events.push(Event {
-                id: INITIAL_SUBMIT_ID.to_owned(),
-                msg: EventMsg::DeprecationNotice(crate::protocol::DeprecationNoticeEvent {
-                    summary: usage.summary.clone(),
-                    details: usage.details.clone(),
-                }),
-            });
-        }
         if crate::config::uses_deprecated_instructions_file(&config.config_layer_stack) {
             post_session_configured_events.push(Event {
                 id: INITIAL_SUBMIT_ID.to_owned(),
@@ -347,7 +337,6 @@ impl Session {
             model: Some(session_model.clone()),
             slug: Some(session_model),
         };
-        crate::features::emit_feature_metrics(&config.features, &session_telemetry);
         session_telemetry.counter(
             THREAD_STARTED_METRIC,
             /*inc*/ 1,
@@ -547,7 +536,6 @@ impl Session {
             agent_status,
             out_of_band_elicitation_paused,
             state: Mutex::new(state),
-            features: config.features.clone(),
             pending_mcp_server_refresh_config: Mutex::new(None),
             active_turn: Mutex::new(None),
             services,

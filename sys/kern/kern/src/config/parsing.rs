@@ -119,9 +119,6 @@ pub async fn load_config_as_toml_with_cli_overrides(
     use crate::config_loader::LoaderOverrides;
     use crate::config_loader::load_config_layers_state;
 
-    if let Err(err) = super::serialization::maybe_migrate_smart_approvals_alias(chaos_home).await {
-        tracing::warn!(error = %err, "failed to migrate smart_approvals feature alias");
-    }
     let config_layer_stack = load_config_layers_state(
         chaos_home,
         Some(cwd.clone()),

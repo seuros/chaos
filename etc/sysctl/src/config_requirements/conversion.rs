@@ -6,7 +6,6 @@ use serde::Deserialize;
 use super::sourced::ConfigRequirementsWithSources;
 use super::sourced::Sourced;
 use super::types::AppsRequirementsToml;
-use super::types::FeatureRequirementsToml;
 use super::types::McpServerRequirement;
 use super::types::NetworkRequirementsToml;
 use super::types::RequirementSource;
@@ -22,8 +21,6 @@ pub struct ConfigRequirementsToml {
     pub allowed_approval_policies: Option<Vec<ApprovalPolicy>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxModeRequirement>>,
     pub allowed_web_search_modes: Option<Vec<WebSearchModeRequirement>>,
-    #[serde(rename = "features")]
-    pub feature_requirements: Option<FeatureRequirementsToml>,
     pub mcp_servers: Option<BTreeMap<String, McpServerRequirement>>,
     pub apps: Option<AppsRequirementsToml>,
     pub rules: Option<RequirementsExecPolicyToml>,
@@ -37,10 +34,6 @@ impl ConfigRequirementsToml {
         self.allowed_approval_policies.is_none()
             && self.allowed_sandbox_modes.is_none()
             && self.allowed_web_search_modes.is_none()
-            && self
-                .feature_requirements
-                .as_ref()
-                .is_none_or(FeatureRequirementsToml::is_empty)
             && self.mcp_servers.is_none()
             && self
                 .apps
@@ -74,7 +67,6 @@ impl ConfigRequirementsWithSources {
             allowed_approval_policies: _,
             allowed_sandbox_modes: _,
             allowed_web_search_modes: _,
-            feature_requirements: _,
             mcp_servers: _,
             apps: _,
             rules: _,
@@ -91,7 +83,6 @@ impl ConfigRequirementsWithSources {
                 allowed_approval_policies,
                 allowed_sandbox_modes,
                 allowed_web_search_modes,
-                feature_requirements,
                 mcp_servers,
                 rules,
                 enforce_residency,
@@ -113,7 +104,6 @@ impl ConfigRequirementsWithSources {
             allowed_approval_policies,
             allowed_sandbox_modes,
             allowed_web_search_modes,
-            feature_requirements,
             mcp_servers,
             apps,
             rules,
@@ -124,7 +114,6 @@ impl ConfigRequirementsWithSources {
             allowed_approval_policies: allowed_approval_policies.map(|sourced| sourced.value),
             allowed_sandbox_modes: allowed_sandbox_modes.map(|sourced| sourced.value),
             allowed_web_search_modes: allowed_web_search_modes.map(|sourced| sourced.value),
-            feature_requirements: feature_requirements.map(|sourced| sourced.value),
             mcp_servers: mcp_servers.map(|sourced| sourced.value),
             apps: apps.map(|sourced| sourced.value),
             rules: rules.map(|sourced| sourced.value),

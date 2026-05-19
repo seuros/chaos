@@ -62,7 +62,6 @@ pub struct ConfigRequirements {
     pub approval_policy: ConstrainedWithSource<ApprovalPolicy>,
     pub sandbox_policy: ConstrainedWithSource<SandboxPolicy>,
     pub web_search_mode: ConstrainedWithSource<WebSearchMode>,
-    pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     pub mcp_servers: Option<Sourced<BTreeMap<String, McpServerRequirement>>>,
     pub exec_policy: Option<Sourced<RequirementsExecPolicy>>,
     pub enforce_residency: ConstrainedWithSource<Option<ResidencyRequirement>>,
@@ -85,7 +84,6 @@ impl Default for ConfigRequirements {
                 Constrained::allow_any(WebSearchMode::Cached),
                 /*source*/ None,
             ),
-            feature_requirements: None,
             mcp_servers: None,
             exec_policy: None,
             enforce_residency: ConstrainedWithSource::new(
@@ -185,18 +183,6 @@ impl fmt::Display for WebSearchModeRequirement {
             WebSearchModeRequirement::Cached => write!(f, "cached"),
             WebSearchModeRequirement::Live => write!(f, "live"),
         }
-    }
-}
-
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-pub struct FeatureRequirementsToml {
-    #[serde(flatten)]
-    pub entries: BTreeMap<String, bool>,
-}
-
-impl FeatureRequirementsToml {
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 }
 

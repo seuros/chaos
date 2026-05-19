@@ -13,8 +13,6 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 
 use crate::config::AgentRoleConfig;
-use crate::features::Feature;
-use crate::features::Features;
 use crate::original_image_detail::can_request_original_image_detail;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -50,8 +48,8 @@ pub(crate) struct ToolsConfig {
 pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) model_info: &'a ModelInfo,
     pub(crate) available_models: &'a Vec<ModelPreset>,
-    pub(crate) features: &'a Features,
     pub(crate) approval_policy: ApprovalPolicy,
+    pub(crate) minion_jobs_allowed: bool,
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
     pub(crate) vfs_policy: &'a VfsPolicy,
@@ -67,15 +65,15 @@ impl ToolsConfig {
         let ToolsConfigParams {
             model_info,
             available_models: available_models_ref,
-            features,
             approval_policy,
+            minion_jobs_allowed,
             web_search_mode,
             session_source,
             vfs_policy,
             collab_enabled,
         } = params;
         let include_collab_tools = *collab_enabled;
-        let include_minion_jobs = features.enabled(Feature::SpawnCsv);
+        let include_minion_jobs = *minion_jobs_allowed;
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input = include_request_user_input;
         let include_original_image_detail = can_request_original_image_detail(model_info);

@@ -85,7 +85,6 @@ pub(crate) struct TurnContext {
     pub(crate) network: Option<NetworkProxy>,
     pub(crate) shell_environment_policy: ShellEnvironmentPolicy,
     pub(crate) tools_config: ToolsConfig,
-    pub(crate) features: crate::config::ManagedFeatures,
     pub(crate) ghost_snapshot: GhostSnapshotConfig,
     pub(crate) final_output_json_schema: Option<Value>,
     pub(crate) alcatraz_macos_exe: Option<PathBuf>,
@@ -142,14 +141,13 @@ impl TurnContext {
             Some(reasoning_effort),
             /*minion_instructions*/ None,
         );
-        let features = self.features.clone();
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
             available_models: &models_manager
                 .list_models(RefreshStrategy::OnlineIfUncached)
                 .await,
-            features: &features,
             approval_policy: self.approval_policy.value(),
+            minion_jobs_allowed: config.minion_jobs_allowed,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
             vfs_policy: &self.vfs_policy,
@@ -189,7 +187,6 @@ impl TurnContext {
             network: self.network.clone(),
             shell_environment_policy: self.shell_environment_policy.clone(),
             tools_config,
-            features,
             ghost_snapshot: self.ghost_snapshot.clone(),
             final_output_json_schema: self.final_output_json_schema.clone(),
             alcatraz_macos_exe: self.alcatraz_macos_exe.clone(),
@@ -423,8 +420,8 @@ pub(super) fn make_turn_context(
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
         available_models: &models_manager.try_list_models().unwrap_or_default(),
-        features: &per_turn_config.features,
         approval_policy: session_configuration.approval_policy.value(),
+        minion_jobs_allowed: per_turn_config.minion_jobs_allowed,
         web_search_mode: Some(per_turn_config.web_search_mode.value()),
         session_source: session_source.clone(),
         vfs_policy: &session_configuration.vfs_policy,
@@ -467,7 +464,6 @@ pub(super) fn make_turn_context(
         network,
         shell_environment_policy: per_turn_config.permissions.shell_environment_policy.clone(),
         tools_config,
-        features: per_turn_config.features.clone(),
         ghost_snapshot: per_turn_config.ghost_snapshot.clone(),
         final_output_json_schema: None,
         alcatraz_macos_exe: per_turn_config.alcatraz_macos_exe.clone(),

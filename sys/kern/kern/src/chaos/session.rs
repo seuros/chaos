@@ -15,7 +15,6 @@ use tokio::sync::watch;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
 
-use crate::config::ManagedFeatures;
 use crate::minions::AgentStatus;
 use crate::state::ActiveTurn;
 use crate::state::SessionServices;
@@ -31,9 +30,6 @@ pub(crate) struct Session {
     pub(super) agent_status: watch::Sender<AgentStatus>,
     pub(super) out_of_band_elicitation_paused: watch::Sender<bool>,
     pub(crate) state: Mutex<SessionState>,
-    /// The set of enabled features should be invariant for the lifetime of the
-    /// session.
-    pub(crate) features: ManagedFeatures,
     pub(crate) pending_mcp_server_refresh_config:
         Mutex<Option<chaos_ipc::protocol::McpServerRefreshConfig>>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,

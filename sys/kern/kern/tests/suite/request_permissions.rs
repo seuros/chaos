@@ -917,7 +917,7 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn request_permissions_grants_apply_to_later_shell_command_calls_without_inline_permission_feature()
+async fn request_permissions_grants_apply_to_later_shell_command_calls_without_inline_permission_approval()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
@@ -936,10 +936,10 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
     let outside_dir = tempfile::tempdir()?;
     let outside_write = outside_dir
         .path()
-        .join("sticky-shell-feature-independent.txt");
+        .join("sticky-shell-approval-independent.txt");
     let command = format!(
         "printf {:?} > {:?} && cat {:?}",
-        "sticky-shell-feature-independent-ok", outside_write, outside_write
+        "sticky-shell-approval-independent-ok", outside_write, outside_write
     );
     let requested_permissions = requested_directory_write_permissions(outside_dir.path());
     let normalized_requested_permissions =
@@ -972,7 +972,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
 
     submit_turn(
         &test,
-        "write outside the workspace without inline permission feature",
+        "write outside the workspace without inline permission approval",
         approval_policy,
         sandbox_policy,
     )
@@ -1015,10 +1015,10 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
         result.exit_code,
         result.stdout
     );
-    assert_eq!(result.stdout.trim(), "sticky-shell-feature-independent-ok");
+    assert_eq!(result.stdout.trim(), "sticky-shell-approval-independent-ok");
     assert_eq!(
         fs::read_to_string(&outside_write)?,
-        "sticky-shell-feature-independent-ok"
+        "sticky-shell-approval-independent-ok"
     );
 
     Ok(())

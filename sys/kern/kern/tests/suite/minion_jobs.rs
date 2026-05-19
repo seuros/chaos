@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chaos_kern::features::Feature;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
@@ -221,13 +220,7 @@ fn parse_simple_csv_line(line: &str) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn report_minion_job_result_rejects_wrong_thread() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_config(|config| {
-        config
-            .features
-            .enable(Feature::SpawnCsv)
-            .expect("test config should allow feature update");
-    });
-    let test = builder.build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let input_path = test.cwd_path().join("minion_jobs_wrong_thread.csv");
     let output_path = test.cwd_path().join("minion_jobs_wrong_process_out.csv");
@@ -285,13 +278,7 @@ async fn report_minion_job_result_rejects_wrong_thread() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_minions_on_csv_runs_and_exports() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_config(|config| {
-        config
-            .features
-            .enable(Feature::SpawnCsv)
-            .expect("test config should allow feature update");
-    });
-    let test = builder.build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let input_path = test.cwd_path().join("minion_jobs_input.csv");
     let output_path = test.cwd_path().join("minion_jobs_output.csv");
@@ -324,13 +311,7 @@ async fn spawn_minions_on_csv_runs_and_exports() -> Result<()> {
 async fn spawn_minions_on_csv_dedupes_item_ids() -> Result<()> {
     let server = start_mock_server().await;
 
-    let mut builder = test_chaos().with_config(|config| {
-        config
-            .features
-            .enable(Feature::SpawnCsv)
-            .expect("test config should allow feature update");
-    });
-    let test = builder.build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let input_path = test.cwd_path().join("minion_jobs_dupe.csv");
     let output_path = test.cwd_path().join("minion_jobs_dupe_out.csv");
@@ -378,13 +359,7 @@ async fn spawn_minions_on_csv_dedupes_item_ids() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_minions_on_csv_stop_halts_future_items() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_config(|config| {
-        config
-            .features
-            .enable(Feature::SpawnCsv)
-            .expect("test config should allow feature update");
-    });
-    let test = builder.build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let input_path = test.cwd_path().join("minion_jobs_stop.csv");
     let output_path = test.cwd_path().join("minion_jobs_stop_out.csv");

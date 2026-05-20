@@ -1,0 +1,185 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Publish as draft (un-draft manually after smoke testing)"
+        type: boolean
+        default: true
+      prerelease:
+        description: "Mark as prerelease"
+        type: boolean
+        default: false
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      build_ts: ${{ steps.meta.outputs.build_ts }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      is_github: ${{ steps.meta.outputs.is_github }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_ts=$(date -u +%s)
+          cargo_version=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
+          tag_name="v${cargo_version}.${build_ts}"
+          if [[ "${{ github.server_url }}" == "https://github.com" ]]; then
+            is_github="true"
+          else
+            is_github="false"
+          fi
+          echo "build_ts=${build_ts}"  >> "$GITHUB_OUTPUT"
+          echo "tag_name=${tag_name}"  >> "$GITHUB_OUTPUT"
+          echo "is_github=${is_github}" >> "$GITHUB_OUTPUT"
+          echo "### Release metadata" >> "$GITHUB_STEP_SUMMARY"
+          echo "- tag: \`${tag_name}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- forge: ${{ github.server_url }}" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build — ${{ matrix.os_label }}
+    needs: prepare
+    if: "!matrix.forge || (matrix.forge == 'github' && github.server_url == 'https://github.com') || (matrix.forge == 'gitea' && github.server_url != 'https://github.com')"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            os_label: linux-x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            os_label: linux-aarch64
+            forge: github
+          - runner: macos-26
+            target: aarch64-apple-darwin
+            os_label: macos-aarch64
+            forge: github
+          - runner: blackship
+            target: x86_64-unknown-freebsd
+            os_label: freebsd-x86_64
+            forge: gitea
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install protobuf llvm pkgconf
+          LLVM_PREFIX="$(brew --prefix llvm)"
+          echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
+          echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
+
+      - name: Check FreeBSD build prerequisites
+        if: matrix.os_label == 'freebsd-x86_64'
+        shell: sh
+        run: |
+          set -eu
+          missing=
+          for pkg in protobuf llvm pkgconf dbus; do
+            pkg info -e "$pkg" 2>/dev/null || missing="$missing $pkg"
+          done
+          if [ -n "$missing" ]; then
+            echo "error: missing packages:$missing"
+            echo "Run: pkg install$missing"
+            exit 1
+          fi
+          libclang_path=$(ls -d /usr/local/llvm*/lib 2>/dev/null | sort -V -r | head -1)
+          if [ -n "$libclang_path" ] && [ -f "$libclang_path/libclang.so" ]; then
+            echo "LIBCLANG_PATH=${libclang_path}" >> "$GITHUB_ENV"
+          fi
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2.9.1
+        with:
+          key: release-${{ matrix.os_label }}
+
+      - name: Build tarball
+        shell: bash
+        env:
+          CHAOS_BUILD_TS: ${{ needs.prepare.outputs.build_ts }}
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          artifact="chaos-${{ matrix.os_label }}.tar.gz"
+          cargo build --release --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
+            strip "target/release/$bin" 2>/dev/null || true
+          done
+          tmp=$(mktemp -d)
+          cp target/release/chaos target/release/chaos-journald \
+             target/release/chaos-forkve-wrapper target/release/chaos-xclient "$tmp/"
+          cp scripts/dist-install.sh "$tmp/install.sh"
+          tar czf "${artifact}" -C "$tmp" .
+          rm -rf "$tmp"
+          sha256sum "${artifact}" > "${artifact}.sha256"
+
+      - name: Upload to GitHub release
+        if: needs.prepare.outputs.is_github == 'true'
+        uses: softprops/action-gh-release@v3.0.0
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          name: ${{ needs.prepare.outputs.tag_name }}
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          fail_on_unmatched_files: true
+          files: |
+            chaos-${{ matrix.os_label }}.tar.gz
+            chaos-${{ matrix.os_label }}.tar.gz.sha256
+
+      - name: Upload to Gitea release
+        if: needs.prepare.outputs.is_github != 'true'
+        uses: akkuman/gitea-release-action@v1
+        env:
+          NODE_OPTIONS: "--experimental-fetch"
+        with:
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          name: ${{ needs.prepare.outputs.tag_name }}
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          sha256sum: true
+          files: |-
+            chaos-${{ matrix.os_label }}.tar.gz
+
+  summary:
+    name: Release summary
+    needs: [prepare, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report
+        shell: bash
+        run: |
+          echo "build: ${{ needs.build.result }}"
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "One or more build jobs failed."
+            exit 1
+          fi
+          echo "### Release complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "tag: \`${{ needs.prepare.outputs.tag_name }}\`" >> "$GITHUB_STEP_SUMMARY"

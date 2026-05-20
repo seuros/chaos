@@ -147,11 +147,14 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
             )
             .await?;
 
+        let use_openai_codex_rate_limits =
+            self.session.provider().name.eq_ignore_ascii_case("openai");
         Ok(spawn_response_stream(
             stream_response,
             self.session.provider().stream_idle_timeout,
             self.sse_telemetry.clone(),
             turn_state,
+            use_openai_codex_rate_limits,
         ))
     }
 }

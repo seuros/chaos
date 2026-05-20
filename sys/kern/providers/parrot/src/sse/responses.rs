@@ -2,6 +2,7 @@ use crate::common::ResponseEvent;
 use crate::common::ResponseStream;
 use crate::error::ApiError;
 use crate::rate_limits::parse_all_rate_limits;
+use crate::rate_limits::parse_rate_limit_event;
 use crate::telemetry::SseTelemetry;
 use chaos_abi::ResponseItem;
 use chaos_abi::TokenUsage;
@@ -65,8 +66,10 @@ pub fn spawn_response_stream(
     idle_timeout: Duration,
     telemetry: Option<Arc<dyn SseTelemetry>>,
     turn_state: Option<Arc<OnceLock<String>>>,
+    use_openai_codex_rate_limits: bool,
 ) -> ResponseStream {
-    let rate_limit_snapshots = parse_all_rate_limits(&stream_response.headers);
+    let rate_limit_snapshots =
+        parse_all_rate_limits(&stream_response.headers, use_openai_codex_rate_limits);
     let models_etag = stream_response
         .headers
         .get("X-Models-Etag")
@@ -105,7 +108,14 @@ pub fn spawn_response_stream(
                 .send(Ok(ResponseEvent::ServerReasoningIncluded(true)))
                 .await;
         }
-        process_sse(stream_response.bytes, tx_event, idle_timeout, telemetry).await;
+        process_sse_with_options(
+            stream_response.bytes,
+            tx_event,
+            idle_timeout,
+            telemetry,
+            use_openai_codex_rate_limits,
+        )
+        .await;
     });
 
     ResponseStream { rx_event }
@@ -368,6 +378,16 @@ pub async fn process_sse(
     idle_timeout: Duration,
     telemetry: Option<Arc<dyn SseTelemetry>>,
 ) {
+    process_sse_with_options(stream, tx_event, idle_timeout, telemetry, false).await;
+}
+
+async fn process_sse_with_options(
+    stream: ByteStream,
+    tx_event: mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    idle_timeout: Duration,
+    telemetry: Option<Arc<dyn SseTelemetry>>,
+    use_openai_codex_rate_limits: bool,
+) {
     let mut stream = EventStream::<_, String>::new(stream);
     let mut response_error: Option<ApiError> = None;
     let mut last_server_model: Option<String> = None;
@@ -402,6 +422,17 @@ pub async fn process_sse(
 
         let data = sse.data().map(String::as_str).unwrap_or_default();
         trace!("SSE event: {}", data);
+
+        if use_openai_codex_rate_limits && let Some(snapshot) = parse_rate_limit_event(data) {
+            if tx_event
+                .send(Ok(ResponseEvent::RateLimits(snapshot)))
+                .await
+                .is_err()
+            {
+                return;
+            }
+            continue;
+        }
 
         let event: ResponsesStreamEvent = match serde_json::from_str(data) {
             Ok(event) => event,
@@ -503,6 +534,7 @@ mod tests {
     use assert_matches::assert_matches;
     use bytes::Bytes;
     use chaos_abi::ResponseItem;
+    use chaos_ipc::account::PlanType;
     use chaos_ipc::models::MessagePhase;
     use codex_client::StreamResponse;
     use futures::stream;
@@ -534,6 +566,13 @@ mod tests {
     }
 
     async fn run_sse(events: Vec<serde_json::Value>) -> Vec<ResponseEvent> {
+        run_sse_with_options(events, false).await
+    }
+
+    async fn run_sse_with_options(
+        events: Vec<serde_json::Value>,
+        use_openai_codex_rate_limits: bool,
+    ) -> Vec<ResponseEvent> {
         let mut body = String::new();
         for e in events {
             let kind = e
@@ -550,7 +589,13 @@ mod tests {
         let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(8);
         let stream = ReaderStream::new(std::io::Cursor::new(body))
             .map_err(|err| TransportError::Network(err.to_string()));
-        tokio::spawn(process_sse(Box::pin(stream), tx, idle_timeout(), None));
+        tokio::spawn(process_sse_with_options(
+            Box::pin(stream),
+            tx,
+            idle_timeout(),
+            None,
+            use_openai_codex_rate_limits,
+        ));
 
         let mut out = Vec::new();
         while let Some(ev) = rx.recv().await {
@@ -730,6 +775,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn process_sse_emits_chaos_rate_limits_event_for_openai() {
+        let events = run_sse_with_options(
+            vec![
+                json!({
+                    "type": "chaos.rate_limits",
+                    "metered_limit_name": "chaos",
+                    "plan_type": "pro",
+                    "rate_limits": {
+                        "primary": {
+                            "used_percent": 8.0,
+                            "window_minutes": 300,
+                            "reset_at": 1778843500
+                        },
+                        "secondary": {
+                            "used_percent": 12.0,
+                            "window_minutes": 10080,
+                            "reset_at": 1779182173
+                        }
+                    },
+                    "credits": {
+                        "has_credits": false,
+                        "unlimited": false,
+                        "balance": null
+                    }
+                }),
+                json!({
+                    "type": "response.completed",
+                    "response": { "id": "resp1" }
+                }),
+            ],
+            true,
+        )
+        .await;
+
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            ResponseEvent::RateLimits(snapshot) => {
+                assert_eq!(snapshot.limit_id.as_deref(), Some("chaos"));
+                assert_eq!(snapshot.plan_type, Some(PlanType::Pro));
+                let primary = snapshot.primary.as_ref().expect("primary");
+                assert_eq!(primary.used_percent, 8.0);
+                assert_eq!(primary.window_minutes, Some(300));
+                let secondary = snapshot.secondary.as_ref().expect("secondary");
+                assert_eq!(secondary.used_percent, 12.0);
+                assert_eq!(secondary.window_minutes, Some(10080));
+            }
+            other => panic!("expected rate limits event, got {other:?}"),
+        }
+        assert_matches!(&events[1], ResponseEvent::Completed { .. });
+    }
+
+    #[tokio::test]
+    async fn process_sse_ignores_chaos_rate_limits_event_when_not_openai() {
+        let events = run_sse(vec![
+            json!({
+                "type": "chaos.rate_limits",
+                "metered_limit_name": "chaos",
+                "plan_type": "pro",
+                "rate_limits": {
+                    "primary": {
+                        "used_percent": 8.0,
+                        "window_minutes": 300,
+                        "reset_at": 1778843500
+                    }
+                }
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp1" }
+            }),
+        ])
+        .await;
+
+        assert_eq!(events.len(), 1);
+        assert_matches!(&events[0], ResponseEvent::Completed { .. });
+    }
+
+    #[tokio::test]
     async fn error_when_error_event() {
         let raw_error = r#"{"type":"response.failed","sequence_number":3,"response":{"id":"resp_689bcf18d7f08194bf3440ba62fe05d803fee0cdac429894","object":"response","created_at":1755041560,"status":"failed","background":false,"error":{"code":"rate_limit_exceeded","message":"Rate limit reached for gpt-5.1 in organization org-AAA on tokens per min (TPM): Limit 30000, Used 22999, Requested 12528. Please try again in 11.054s. Visit https://platform.openai.com/account/rate-limits to learn more."}, "usage":null,"user":null,"metadata":{}}}"#;
 
@@ -903,7 +1026,7 @@ mod tests {
             bytes: Box::pin(bytes),
         };
 
-        let mut stream = spawn_response_stream(stream_response, idle_timeout(), None, None);
+        let mut stream = spawn_response_stream(stream_response, idle_timeout(), None, None, true);
         let event = stream
             .rx_event
             .recv()

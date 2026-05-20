@@ -2277,6 +2277,43 @@ async fn rate_limit_snapshot_updates_and_retains_plan_type() {
 }
 
 #[tokio::test]
+async fn statusline_ctx_exposes_weekly_rate_limit_window() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: Some("chaos".to_string()),
+        limit_name: Some("chaos".to_string()),
+        primary: Some(RateLimitWindow {
+            used_percent: 8.0,
+            window_minutes: Some(300),
+            resets_at: Some(1_778_843_500),
+        }),
+        secondary: Some(RateLimitWindow {
+            used_percent: 12.0,
+            window_minutes: Some(10_080),
+            resets_at: Some(1_779_182_173),
+        }),
+        credits: None,
+        plan_type: Some(PlanType::Pro),
+    }));
+
+    let ctx = chat.build_statusline_ctx();
+    assert_eq!(ctx["five_hour"]["used_pct"], 8.0);
+    assert_eq!(ctx["five_hour"]["remaining_pct"], 92.0);
+    assert_eq!(ctx["five_hour"]["window_minutes"], 300);
+    assert_eq!(ctx["five_hour"]["resets_at_epoch_seconds"], 1_778_843_500);
+    assert_eq!(ctx["weekly"]["used_pct"], 12.0);
+    assert_eq!(ctx["weekly"]["remaining_pct"], 88.0);
+    assert_eq!(ctx["weekly"]["window_minutes"], 10_080);
+    assert_eq!(ctx["weekly"]["resets_at_epoch_seconds"], 1_779_182_173);
+    assert!(
+        ctx["rate_limit_captured_at_epoch_seconds"]
+            .as_i64()
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 

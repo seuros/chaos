@@ -675,9 +675,11 @@ async fn run_ratatui_app(
 
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
-    if !use_alt_screen && chaos_kern::terminal::terminal_info().name == TerminalName::WezTerm {
-        // WezTerm does not add bounded-scroll-region output (DECSTBM) to native
-        // scrollback. Only relevant in inline mode; alt-screen has no scrollback anyway.
+    if terminal_needs_unbounded_main_scrollback(chaos_kern::terminal::terminal_info().name) {
+        // The main transcript renders in the normal terminal buffer even when
+        // overlays are allowed to use alt-screen. WezTerm does not add
+        // bounded-scroll-region output (DECSTBM) to native scrollback, so keep
+        // the main transcript unbounded there.
         tui.set_top_reserved_rows(0);
     }
     let managers = boot_core(&config);
@@ -802,6 +804,10 @@ fn restore() {
     }
 }
 
+fn terminal_needs_unbounded_main_scrollback(terminal: TerminalName) -> bool {
+    matches!(terminal, TerminalName::WezTerm)
+}
+
 /// Determine whether to use the terminal's alternate screen buffer.
 ///
 /// The alternate screen buffer provides a cleaner fullscreen experience without polluting
@@ -869,6 +875,20 @@ mod tests {
             .chaos_home(temp_dir.path().to_path_buf())
             .build()
             .await
+    }
+
+    #[test]
+    fn wezterm_main_scrollback_stays_unbounded_even_when_alt_screen_is_available() {
+        assert!(terminal_needs_unbounded_main_scrollback(
+            TerminalName::WezTerm
+        ));
+    }
+
+    #[test]
+    fn non_wezterm_main_scrollback_keeps_reserved_top_row() {
+        assert!(!terminal_needs_unbounded_main_scrollback(
+            TerminalName::Unknown
+        ));
     }
 
     #[tokio::test]

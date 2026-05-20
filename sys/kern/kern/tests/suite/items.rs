@@ -1062,17 +1062,12 @@ async fn reasoning_content_delta_has_item_metadata() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn reasoning_raw_content_delta_respects_flag() -> anyhow::Result<()> {
+async fn reasoning_raw_content_delta_emitted() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
-        .with_config(|config| {
-            config.show_raw_agent_reasoning = true;
-        })
-        .build(&server)
-        .await?;
+    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
 
     let stream = sse(vec![
         ev_response_created("resp-1"),

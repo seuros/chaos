@@ -176,7 +176,6 @@ impl Config {
             minion_instructions,
             personality,
             compact_prompt,
-            show_raw_agent_reasoning,
             ephemeral,
             mcp_servers: mcp_servers_override,
             active_project_trust: active_project_trust_override,
@@ -646,10 +645,6 @@ impl Config {
             alcatraz_macos_exe,
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
-            show_raw_agent_reasoning: cfg
-                .show_raw_agent_reasoning
-                .or(show_raw_agent_reasoning)
-                .unwrap_or(false),
             model_reasoning_effort: config_profile
                 .model_reasoning_effort
                 .or(cfg.model_reasoning_effort),

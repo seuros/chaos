@@ -32,7 +32,6 @@ pub(crate) struct EventProcessorWithHumanOutput {
 
     /// Whether to include `AgentReasoning` events in the output.
     show_agent_reasoning: bool,
-    show_raw_agent_reasoning: bool,
     last_message_path: Option<PathBuf>,
     last_total_token_usage: Option<chaos_ipc::protocol::TokenUsageInfo>,
     final_message: Option<String>,
@@ -66,7 +65,6 @@ impl EventProcessorWithHumanOutput {
                 yellow: Style::new().yellow(),
                 bold_yellow: Style::new().bold().yellow(),
                 show_agent_reasoning: !config.hide_agent_reasoning,
-                show_raw_agent_reasoning: config.show_raw_agent_reasoning,
                 last_message_path,
                 last_total_token_usage: None,
                 final_message: None,
@@ -90,7 +88,6 @@ impl EventProcessorWithHumanOutput {
                 yellow: Style::new(),
                 bold_yellow: Style::new(),
                 show_agent_reasoning: !config.hide_agent_reasoning,
-                show_raw_agent_reasoning: config.show_raw_agent_reasoning,
                 last_message_path,
                 last_total_token_usage: None,
                 final_message: None,

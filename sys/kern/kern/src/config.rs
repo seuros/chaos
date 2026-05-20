@@ -201,10 +201,6 @@ pub struct Config {
     /// users are only interested in the final agent responses.
     pub hide_agent_reasoning: bool,
 
-    /// When set to `true`, `AgentReasoningRawContentEvent` events will be shown in the UI/output.
-    /// Defaults to `false`.
-    pub show_raw_agent_reasoning: bool,
-
     /// Optional user-provided instructions (currently always `None`; a
     /// schema-based replacement for the removed AGENTS.md loader will
     /// repopulate this later).
@@ -629,10 +625,6 @@ pub struct ConfigToml {
     /// UI/output. Defaults to `false`.
     pub hide_agent_reasoning: Option<bool>,
 
-    /// When set to `true`, `AgentReasoningRawContentEvent` events will be shown in the UI/output.
-    /// Defaults to `false`.
-    pub show_raw_agent_reasoning: Option<bool>,
-
     pub model_reasoning_effort: Option<ReasoningEffort>,
     pub plan_mode_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,
@@ -803,7 +795,6 @@ pub struct ConfigOverrides {
     pub minion_instructions: Option<String>,
     pub personality: Option<Personality>,
     pub compact_prompt: Option<String>,
-    pub show_raw_agent_reasoning: Option<bool>,
     pub ephemeral: Option<bool>,
     pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
     pub active_project_trust: Option<ProjectTrust>,

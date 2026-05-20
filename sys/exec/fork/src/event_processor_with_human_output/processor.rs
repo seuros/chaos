@@ -225,14 +225,15 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 eprintln!();
             }
             EventMsg::AgentReasoningRawContent(AgentReasoningRawContentEvent { text }) => {
-                if self.show_raw_agent_reasoning {
-                    ts_msg!(
-                        self,
-                        "{}\n{}",
-                        "thinking".style(self.italic).style(self.magenta),
-                        text,
-                    );
+                if !self.show_agent_reasoning {
+                    return ChaosStatus::Running;
                 }
+                ts_msg!(
+                    self,
+                    "{}\n{}",
+                    "thinking".style(self.italic).style(self.magenta),
+                    text,
+                );
             }
             EventMsg::AgentMessage(AgentMessageEvent { message, .. }) => {
                 ts_msg!(

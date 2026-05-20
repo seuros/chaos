@@ -103,7 +103,6 @@ pub async fn run_main(
         minion_instructions: None,
         personality: None,
         compact_prompt: None,
-        show_raw_agent_reasoning: None,
         ephemeral: serve_cli.ephemeral.then_some(true),
         mcp_servers: None,
         active_project_trust: None,

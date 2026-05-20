@@ -318,7 +318,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         minion_instructions: None,
         personality: None,
         compact_prompt: None,
-        show_raw_agent_reasoning: oss.then_some(true),
         ephemeral: ephemeral.then_some(true),
         mcp_servers: None,
         active_project_trust: None,

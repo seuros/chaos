@@ -856,7 +856,6 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         alcatraz_freebsd_exe: None,
         alcatraz_macos_exe: None,
         hide_agent_reasoning: false,
-        show_raw_agent_reasoning: false,
         model_reasoning_effort: None,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: None,

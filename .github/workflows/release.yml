@@ -85,10 +85,12 @@ jobs:
         run: upkg install pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
 
       - uses: dtolnay/rust-toolchain@1.95.0
+        if: matrix.os_label != 'dragonfly-x86_64'
         with:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2.9.1
+        if: matrix.os_label != 'dragonfly-x86_64'
         with:
           key: release-${{ matrix.os_label }}
 
@@ -126,21 +128,39 @@ jobs:
             chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz.sha256
 
   build-gitea:
-    name: Build — freebsd-x86_64
+    name: Build — ${{ matrix.os_label }}
     needs: prepare
     if: needs.prepare.outputs.is_github != 'true'
-    runs-on: blackship
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
-    env:
-      TARGET: x86_64-unknown-freebsd
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: blackship
+            target: x86_64-unknown-freebsd
+            os_label: freebsd-x86_64
+          - runner: linux-aarch64
+            target: aarch64-unknown-linux-gnu
+            os_label: linux-aarch64
+          - runner: dragonfly-x86_64
+            target: x86_64-unknown-dragonfly
+            os_label: dragonfly-x86_64
 
     steps:
       - uses: actions/checkout@v6
 
       - uses: seuros/setup-upkg@master
+        if: matrix.os_label != 'dragonfly-x86_64'
+
+      - name: Install Linux build dependencies
+        if: matrix.os_label == 'linux-aarch64'
+        shell: bash
+        run: upkg install pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
 
       - name: Install FreeBSD build dependencies
+        if: matrix.os_label == 'freebsd-x86_64'
         shell: sh
         run: |
           set -eu
@@ -150,13 +170,29 @@ jobs:
             echo "LIBCLANG_PATH=${libclang_path}" >> "$GITHUB_ENV"
           fi
 
+      - name: Check DragonFlyBSD build prerequisites
+        if: matrix.os_label == 'dragonfly-x86_64'
+        shell: sh
+        run: |
+          set -eu
+          export PATH=/raven/bin:$PATH
+          for cmd in protoc llvm-config pkgconf dbus-daemon rustc cargo; do
+            command -v "$cmd" || { echo "error: $cmd not found"; exit 1; }
+          done
+          echo "PATH=/raven/bin:/usr/local/bin:$PATH" >> "$GITHUB_ENV"
+          if [ -f /raven/lib/libclang.so ]; then
+            echo "LIBCLANG_PATH=/raven/lib" >> "$GITHUB_ENV"
+          fi
+
       - uses: dtolnay/rust-toolchain@1.95.0
+        if: matrix.os_label != 'dragonfly-x86_64'
         with:
-          targets: ${{ env.TARGET }}
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2.9.1
+        if: matrix.os_label != 'dragonfly-x86_64'
         with:
-          key: release-freebsd-x86_64
+          key: release-${{ matrix.os_label }}
 
       - name: Build tarball
         shell: bash
@@ -165,9 +201,9 @@ jobs:
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
-          artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${TARGET}.tar.gz"
-          cargo build --release --target "${TARGET}" --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
-          release_dir="target/${TARGET}/release"
+          artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
+          cargo build --release --target "${{ matrix.target }}" --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          release_dir="target/${{ matrix.target }}/release"
           for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
             strip "${release_dir}/$bin" 2>/dev/null || true
           done
@@ -190,7 +226,7 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           sha256sum: true
           files: |-
-            chaos-${{ needs.prepare.outputs.tag_name }}-${{ env.TARGET }}.tar.gz
+            chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
 
   summary:
     name: Release summary

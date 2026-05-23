@@ -7019,8 +7019,7 @@ dependencies = [
 [[package]]
 name = "lua-src"
 version = "550.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e836dc8ae16806c9bdcf42003a88da27d163433e3f9684c52f0301258004a4fb"
+source = "git+https://github.com/seuros/lua-src-rs.git?branch=fix%2Fdragonfly-support-v550#1c2d8f9fde5297aacc80509ca46adb10e0875ab6"
 dependencies = [
  "cc",
 ]

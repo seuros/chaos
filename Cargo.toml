@@ -483,6 +483,9 @@ split-debuginfo = "off"
 strip = "symbols"
 codegen-units = 8
 
+[patch.crates-io]
+lua-src = { git = "https://github.com/seuros/lua-src-rs.git", branch = "fix/dragonfly-support-v550" }
+
 [profile.ci-test]
 debug = 1         # Reduce debug symbol size
 inherits = "test"

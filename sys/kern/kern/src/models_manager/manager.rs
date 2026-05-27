@@ -245,6 +245,11 @@ impl ModelsManager {
         Ok(self.build_available_models(remote_models))
     }
 
+    /// Refresh the active model catalog according to the specified strategy.
+    pub async fn refresh_models(&self, refresh_strategy: RefreshStrategy) -> CoreResult<()> {
+        self.refresh_available_models(refresh_strategy).await
+    }
+
     // todo(aibrahim): should be visible to core only and sent on session_configured event
     /// Get the model identifier to use, refreshing according to the specified strategy.
     ///

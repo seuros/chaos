@@ -43,6 +43,7 @@ use chaos_ipc::user_input::TextElement;
 use chaos_kern::config::edit::ConfigEdit;
 use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::models_manager::CollaborationModesConfig;
+use chaos_kern::models_manager::manager::RefreshStrategy;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -465,6 +466,9 @@ impl App {
         }
 
         self.auth_manager.reload();
+        let models_manager = self.server.get_models_manager();
+        let models_refresh_result = models_manager.refresh_models(RefreshStrategy::Online).await;
+        let refreshed_models = models_manager.try_list_models().unwrap_or_default();
         self.chat_widget.refresh_status_line();
         self.chat_widget.submit_op(Op::ReloadUserConfig);
         if provider_changed || self.chat_widget.process_id().is_none() {
@@ -478,8 +482,16 @@ impl App {
             .unwrap_or_else(|| provider_id.to_string());
         let hint = if provider_changed {
             Some("Switched this session to the connected provider.".to_string())
+        } else if let Err(err) = models_refresh_result {
+            Some(format!(
+                "Refreshed auth-dependent state for this session, but model discovery failed: {err}"
+            ))
+        } else if refreshed_models.is_empty() {
+            Some("Refreshed auth-dependent state for this session; model discovery did not return any models yet.".to_string())
         } else {
-            Some("Refreshed auth-dependent state for this session.".to_string())
+            Some(
+                "Refreshed auth-dependent state and available models for this session.".to_string(),
+            )
         };
         self.chat_widget
             .add_info_message(format!("Connected {provider_name}."), hint);

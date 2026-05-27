@@ -340,6 +340,21 @@ mod tests {
     }
 
     #[test]
+    fn renders_inline_progress_message() {
+        let tx = make_app_event_sender();
+        let mut w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), false);
+        w.update_inline_message(Some("~1.2K tokens".to_string()));
+        w.is_paused = true;
+        w.elapsed_running = Duration::ZERO;
+
+        let rendered = render_test_backend_debug(80, 1, |f| {
+            w.render(f.area(), f.buffer_mut());
+        });
+
+        assert!(rendered.contains("~1.2K tokens"), "{rendered}");
+    }
+
+    #[test]
     fn renders_wrapped_details_panama_two_lines() {
         let tx = make_app_event_sender();
         let mut w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), false);

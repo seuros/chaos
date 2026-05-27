@@ -763,6 +763,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             EventMsg::ProcessNameUpdated(_)
             | EventMsg::ExecApprovalRequest(_)
             | EventMsg::ApplyPatchApprovalRequest(_)
+            | EventMsg::TurnProgress(_)
             | EventMsg::TerminalInteraction(_)
             | EventMsg::ExecCommandOutputDelta(_)
             | EventMsg::GetHistoryEntryResponse(_)

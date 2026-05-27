@@ -43,6 +43,22 @@ pub struct TurnStartedEvent {
     pub collaboration_mode_kind: ModeKind,
 }
 
+/// Approximate live progress for an in-flight model turn.
+///
+/// These counts are deliberately heuristic and must not be used for billing,
+/// context accounting, or rate-limit decisions. They exist only to make long
+/// running turns visibly alive in clients.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct TurnProgressEvent {
+    pub turn_id: String,
+    #[ts(type = "number")]
+    pub approx_reasoning_tokens: i64,
+    #[ts(type = "number")]
+    pub approx_output_tokens: i64,
+    #[ts(type = "number")]
+    pub approx_total_tokens: i64,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct AgentMessageEvent {
     pub message: String,

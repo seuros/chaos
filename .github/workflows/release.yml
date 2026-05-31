@@ -43,10 +43,10 @@ jobs:
           echo "- tag: \`${tag_name}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- forge: ${{ github.server_url }}" >> "$GITHUB_STEP_SUMMARY"
 
-  build:
+  build-github:
     name: Build — ${{ matrix.os_label }}
     needs: prepare
-    if: "!matrix.forge || (matrix.forge == 'github' && github.server_url == 'https://github.com') || (matrix.forge == 'gitea' && github.server_url != 'https://github.com')"
+    if: needs.prepare.outputs.is_github == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
@@ -60,56 +60,29 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             os_label: linux-aarch64
-            forge: github
           - runner: macos-26
             target: aarch64-apple-darwin
             os_label: macos-aarch64
-            forge: github
-          - runner: blackship
-            target: x86_64-unknown-freebsd
-            os_label: freebsd-x86_64
-            forge: gitea
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update -y
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
+      - uses: seuros/setup-upkg@v0.8.1
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
-          brew install protobuf llvm pkgconf
+          upkg install protobuf llvm pkgconf
           LLVM_PREFIX="$(brew --prefix llvm)"
           echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
           echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
 
-      - name: Check FreeBSD build prerequisites
-        if: matrix.os_label == 'freebsd-x86_64'
-        shell: sh
-        run: |
-          set -eu
-          missing=
-          for pkg in protobuf llvm pkgconf dbus; do
-            pkg info -e "$pkg" 2>/dev/null || missing="$missing $pkg"
-          done
-          if [ -n "$missing" ]; then
-            echo "error: missing packages:$missing"
-            echo "Run: pkg install$missing"
-            exit 1
-          fi
-          libclang_path=$(ls -d /usr/local/llvm*/lib 2>/dev/null | sort -V -r | head -1)
-          if [ -n "$libclang_path" ] && [ -f "$libclang_path/libclang.so" ]; then
-            echo "LIBCLANG_PATH=${libclang_path}" >> "$GITHUB_ENV"
-          fi
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: upkg install pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
 
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
@@ -141,7 +114,6 @@ jobs:
           sha256sum "${artifact}" > "${artifact}.sha256"
 
       - name: Upload to GitHub release
-        if: needs.prepare.outputs.is_github == 'true'
         uses: softprops/action-gh-release@v3.0.0
         with:
           tag_name: ${{ needs.prepare.outputs.tag_name }}
@@ -153,8 +125,60 @@ jobs:
             chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
             chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz.sha256
 
+  build-gitea:
+    name: Build — freebsd-x86_64
+    needs: prepare
+    if: needs.prepare.outputs.is_github != 'true'
+    runs-on: blackship
+    timeout-minutes: 60
+
+    env:
+      TARGET: x86_64-unknown-freebsd
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: seuros/setup-upkg@v0.8.1
+
+      - name: Install FreeBSD build dependencies
+        shell: sh
+        run: |
+          set -eu
+          upkg install protobuf llvm pkgconf dbus
+          libclang_path=$(ls -d /usr/local/llvm*/lib 2>/dev/null | sort -V -r | head -1)
+          if [ -n "$libclang_path" ] && [ -f "$libclang_path/libclang.so" ]; then
+            echo "LIBCLANG_PATH=${libclang_path}" >> "$GITHUB_ENV"
+          fi
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: Swatinem/rust-cache@v2.9.1
+        with:
+          key: release-freebsd-x86_64
+
+      - name: Build tarball
+        shell: bash
+        env:
+          CHAOS_BUILD_TS: ${{ needs.prepare.outputs.build_ts }}
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${TARGET}.tar.gz"
+          cargo build --release --target "${TARGET}" --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          release_dir="target/${TARGET}/release"
+          for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
+            strip "${release_dir}/$bin" 2>/dev/null || true
+          done
+          tmp=$(mktemp -d)
+          cp "${release_dir}/chaos" "${release_dir}/chaos-journald" \
+             "${release_dir}/chaos-forkve-wrapper" "${release_dir}/chaos-xclient" "$tmp/"
+          cp scripts/dist-install.sh "$tmp/install.sh"
+          tar czf "${artifact}" -C "$tmp" .
+          rm -rf "$tmp"
+
       - name: Upload to Gitea release
-        if: needs.prepare.outputs.is_github != 'true'
         uses: akkuman/gitea-release-action@v1
         env:
           NODE_OPTIONS: "--experimental-fetch"
@@ -166,19 +190,20 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           sha256sum: true
           files: |-
-            chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
+            chaos-${{ needs.prepare.outputs.tag_name }}-${{ env.TARGET }}.tar.gz
 
   summary:
     name: Release summary
-    needs: [prepare, build]
+    needs: [prepare, build-github, build-gitea]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Report
         shell: bash
         run: |
-          echo "build: ${{ needs.build.result }}"
-          if [[ "${{ needs.build.result }}" != "success" ]]; then
+          echo "build-github: ${{ needs.build-github.result }}"
+          echo "build-gitea: ${{ needs.build-gitea.result }}"
+          if [[ "${{ needs.build-github.result }}" == "failure" || "${{ needs.build-gitea.result }}" == "failure" ]]; then
             echo "One or more build jobs failed."
             exit 1
           fi

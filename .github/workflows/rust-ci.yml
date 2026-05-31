@@ -40,15 +40,13 @@ jobs:
             profile: dev
     steps:
       - uses: actions/checkout@v6
+
+      - uses: seuros/setup-upkg@v0.8.1
+
       - name: Install Linux build dependencies
         if: ${{ runner.os == 'Linux' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev libdbus-1-dev
-          fi
+        run: upkg install pkg-config libcap-dev libdbus-1-dev
+
       - name: Install DotSlash
         uses: facebook/install-dotslash@v2
 

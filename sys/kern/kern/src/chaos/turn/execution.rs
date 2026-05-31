@@ -45,7 +45,7 @@ const APPROX_CHARS_PER_TOKEN: usize = 4;
 const APPROX_SILENT_THINKING_TOKENS_PER_SECOND: u64 = 25;
 
 #[derive(Debug)]
-struct TurnProgressTracker {
+pub(super) struct TurnProgressTracker {
     output_chars: usize,
     reasoning_chars: usize,
     last_emitted_total_tokens: i64,
@@ -54,7 +54,7 @@ struct TurnProgressTracker {
 }
 
 impl TurnProgressTracker {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let now = Instant::now();
         // Allow the first non-zero observation to emit immediately.
         Self {
@@ -74,7 +74,7 @@ impl TurnProgressTracker {
         self.reasoning_chars = self.reasoning_chars.saturating_add(delta.chars().count());
     }
 
-    async fn emit_if_due(&mut self, sess: &Session, turn_context: &TurnContext) {
+    pub(super) async fn emit_if_due(&mut self, sess: &Session, turn_context: &TurnContext) {
         let now = Instant::now();
         if now.duration_since(self.last_emit_at) < TURN_PROGRESS_EMIT_INTERVAL {
             return;
@@ -131,6 +131,7 @@ pub(super) async fn try_run_sampling_request(
     client_session: &mut ModelClientSession,
     turn_metadata_header: Option<&str>,
     turn_diff_tracker: SharedTurnDiffTracker,
+    progress: &mut TurnProgressTracker,
     server_model_warning_emitted_for_turn: &mut bool,
     last_server_model: &mut Option<String>,
     prompt: &Prompt,
@@ -166,7 +167,6 @@ pub(super) async fn try_run_sampling_request(
     let mut last_agent_message: Option<String> = None;
     let mut active_item: Option<TurnItem> = None;
     let mut should_emit_turn_diff = false;
-    let mut progress = TurnProgressTracker::new();
     let plan_mode = turn_context.collaboration_mode.mode == ModeKind::Plan;
     let mut assistant_message_stream_parsers = AssistantMessageStreamParsers::new(plan_mode);
     let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));

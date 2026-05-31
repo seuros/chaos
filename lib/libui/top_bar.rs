@@ -8,6 +8,7 @@
 //! viewport) by [`crate::tui`] so that it stays pinned at screen row 0
 //! while history scrolls beneath it.
 
+use chaos_kern::PersistenceHealth;
 use chaos_sysinfo::{SandboxKind, SystemInfo, sysinfo};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -21,6 +22,15 @@ fn build_status_line(
     info: &SystemInfo,
     width: u16,
     palette: crate::theme::Palette,
+) -> Line<'static> {
+    build_status_line_with_health(info, width, palette, chaos_kern::persistence_health())
+}
+
+fn build_status_line_with_health(
+    info: &SystemInfo,
+    width: u16,
+    palette: crate::theme::Palette,
+    persistence_health: PersistenceHealth,
 ) -> Line<'static> {
     let bar_bg = palette.top_bar_bg;
     let sep = Span::styled(" │ ", Style::default().fg(palette.top_bar_dim).bg(bar_bg));
@@ -93,6 +103,16 @@ fn build_status_line(
 
     // Right side: battery + time
     let mut right_spans: Vec<Span<'static>> = Vec::new();
+
+    if persistence_health != PersistenceHealth::Healthy {
+        let color = match persistence_health {
+            PersistenceHealth::Healthy => palette.success,
+            PersistenceHealth::Degraded => palette.warning,
+            PersistenceHealth::Failing | PersistenceHealth::Failed => palette.error,
+        };
+        right_spans.push(Span::styled("⚠ log", Style::default().fg(color).bg(bar_bg)));
+        right_spans.push(sep.clone());
+    }
 
     // Battery
     if info.has_battery {
@@ -195,6 +215,28 @@ mod tests {
 
         assert_eq!(line.spans[0].style.fg, Some(palette.top_bar_fg));
         assert_eq!(line.spans[1].style.fg, Some(palette.top_bar_dim));
+    }
+
+    #[test]
+    fn top_bar_shows_log_warning_when_persistence_is_unhealthy() {
+        let mut info = sysinfo().clone();
+        info.hostname = "host".into();
+        info.os = "linux".into();
+        info.os_distro.clear();
+        info.arch = "x86_64".into();
+        info.has_battery = false;
+        info.in_container = false;
+        info.multiplexer = None;
+
+        let palette = crate::theme::palette();
+        let line = build_status_line_with_health(&info, 80, palette, PersistenceHealth::Failing);
+        let rendered = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert!(rendered.contains("⚠ log"));
     }
 
     #[test]

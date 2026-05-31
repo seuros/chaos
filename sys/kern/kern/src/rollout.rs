@@ -6,6 +6,7 @@ pub const INTERACTIVE_SESSION_SOURCES: &[SessionSource] =
     &[SessionSource::Cli, SessionSource::VSCode];
 
 pub(crate) mod error;
+pub mod health;
 pub mod list;
 pub(crate) mod metadata;
 pub(crate) mod policy;

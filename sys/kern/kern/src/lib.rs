@@ -120,6 +120,8 @@ pub use rollout::append_process_name;
 pub use rollout::find_process_id_by_name;
 pub use rollout::find_process_name_by_id;
 pub use rollout::find_process_names_by_ids;
+pub use rollout::health::PersistenceHealth;
+pub use rollout::health::persistence_health;
 pub use rollout::list::Cursor;
 pub use rollout::list::parse_cursor;
 pub use rollout::policy::EventPersistenceMode;

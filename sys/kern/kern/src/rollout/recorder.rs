@@ -30,6 +30,8 @@ use tracing::info;
 use tracing::warn;
 use uuid::Uuid;
 
+use super::health;
+use super::health::PersistenceHealth;
 use super::list::Cursor;
 use super::list::ProcessItem;
 use super::list::ProcessSortKey;
@@ -705,10 +707,12 @@ impl JournalSink {
                 };
                 match connect_result {
                     Ok(writer) => {
+                        health::set_persistence_health(PersistenceHealth::Healthy);
                         *self = Self::Active(writer);
                     }
                     Err(err) => {
                         warn!("failed to initialize journald dual-write sink: {err}");
+                        health::set_persistence_health(PersistenceHealth::Failed);
                         *self = Self::Disabled;
                     }
                 }
@@ -716,8 +720,12 @@ impl JournalSink {
             Self::Active(mut writer) => {
                 if let Err(err) = writer.append_items(items).await {
                     warn!("journald dual-write disabled after append failure: {err}");
+                    health::set_persistence_health(PersistenceHealth::Failed);
                     *self = Self::Disabled;
                 } else {
+                    if writer.pending_items.is_empty() {
+                        health::set_persistence_health(PersistenceHealth::Healthy);
+                    }
                     *self = Self::Active(writer);
                 }
             }
@@ -912,6 +920,7 @@ impl ActiveJournalWriter {
                 Err(JournalClientError::Remote(payload))
                     if payload.retryable && attempt + 1 < JOURNAL_APPEND_MAX_ATTEMPTS =>
                 {
+                    health::set_persistence_health(PersistenceHealth::Degraded);
                     attempt += 1;
                     self.reconcile_after_retryable_append_error(&payload)
                         .await?;
@@ -926,6 +935,7 @@ impl ActiveJournalWriter {
                     tokio::time::sleep(delay).await;
                 }
                 Err(JournalClientError::Remote(payload)) if payload.retryable => {
+                    health::set_persistence_health(PersistenceHealth::Failing);
                     warn!(
                         process_id = %self.process_id,
                         max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,

@@ -270,7 +270,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 .map(|reg| (reg.name, reg))
                 .collect();
         let mut catalog_tools = catalog_tools;
-        catalog_tools.sort_by(|(sa, _), (sb, _)| sa.cmp(sb));
+        catalog_tools.sort_by(|(source_a, tool_a), (source_b, tool_b)| {
+            source_a
+                .cmp(source_b)
+                .then_with(|| tool_a.name.cmp(&tool_b.name))
+        });
         for (source, tool) in catalog_tools {
             if source == "mcp_task" {
                 // These tools are wired explicitly from the `mcp_tools` block above so they only

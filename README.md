@@ -89,6 +89,15 @@ This architecture is correct usage of both providers' terms of service.
 ## Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/seuros/chaos/master/install.sh | sh
+```
+
+By default this downloads the latest prebuilt release for your OS/CPU into
+`~/.local/bin`. Override the destination with `CHAOS_INSTALL_DIR=/path/to/bin`.
+
+To build from source instead:
+
+```bash
 git clone https://github.com/seuros/chaos.git
 cd chaos
 just install

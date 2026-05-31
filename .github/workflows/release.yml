@@ -126,14 +126,15 @@ jobs:
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
-          artifact="chaos-${{ matrix.os_label }}.tar.gz"
-          cargo build --release --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
+          cargo build --release --target ${{ matrix.target }} --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          release_dir="target/${{ matrix.target }}/release"
           for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
-            strip "target/release/$bin" 2>/dev/null || true
+            strip "${release_dir}/$bin" 2>/dev/null || true
           done
           tmp=$(mktemp -d)
-          cp target/release/chaos target/release/chaos-journald \
-             target/release/chaos-forkve-wrapper target/release/chaos-xclient "$tmp/"
+          cp "${release_dir}/chaos" "${release_dir}/chaos-journald" \
+             "${release_dir}/chaos-forkve-wrapper" "${release_dir}/chaos-xclient" "$tmp/"
           cp scripts/dist-install.sh "$tmp/install.sh"
           tar czf "${artifact}" -C "$tmp" .
           rm -rf "$tmp"
@@ -149,8 +150,8 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           fail_on_unmatched_files: true
           files: |
-            chaos-${{ matrix.os_label }}.tar.gz
-            chaos-${{ matrix.os_label }}.tar.gz.sha256
+            chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
+            chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz.sha256
 
       - name: Upload to Gitea release
         if: needs.prepare.outputs.is_github != 'true'
@@ -165,7 +166,7 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           sha256sum: true
           files: |-
-            chaos-${{ matrix.os_label }}.tar.gz
+            chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
 
   summary:
     name: Release summary

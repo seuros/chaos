@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: seuros/setup-upkg@v0.8.1
+      - uses: seuros/setup-upkg@master
 
       - name: Install Linux build dependencies
         if: ${{ runner.os == 'Linux' }}

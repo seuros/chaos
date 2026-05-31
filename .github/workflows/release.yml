@@ -67,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: seuros/setup-upkg@v0.8.1
+      - uses: seuros/setup-upkg@master
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
@@ -138,7 +138,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: seuros/setup-upkg@v0.8.1
+      - uses: seuros/setup-upkg@master
 
       - name: Install FreeBSD build dependencies
         shell: sh

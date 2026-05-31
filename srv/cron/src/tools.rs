@@ -1,3 +1,1 @@
-pub mod create;
-pub mod spool_submit;
-pub mod toggle;
+mcp_host::auto_tools!(crate::CronServer, "src/tools");

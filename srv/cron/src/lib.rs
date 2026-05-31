@@ -109,9 +109,5 @@ pub type CronCtx<'a> = Ctx<'a>;
 
 /// Returns tool metadata for all cron tools.
 pub fn tool_infos() -> Vec<ToolInfo> {
-    vec![
-        tools::create::tool_info(),
-        tools::toggle::tool_info(),
-        tools::spool_submit::tool_info(),
-    ]
+    tools::router().list()
 }

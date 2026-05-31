@@ -13,7 +13,6 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use serde_json::Value;
-use unicode_width::UnicodeWidthStr;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
@@ -22,15 +21,18 @@ use crate::bottom_pane::ChatComposer;
 use crate::bottom_pane::ChatComposerConfig;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::bottom_pane_view::BottomPaneView;
+use crate::bottom_pane::footer_tips::render_footer_tip_lines;
 use crate::bottom_pane::scroll_state::NavDir;
 use crate::bottom_pane::scroll_state::ScrollState;
 use crate::bottom_pane::scroll_state::nav_key;
 use crate::bottom_pane::selection_popup_common::GenericDisplayRow;
-use crate::bottom_pane::selection_popup_common::measure_rows_height;
 use crate::bottom_pane::selection_popup_common::menu_surface_inset;
 use crate::bottom_pane::selection_popup_common::menu_surface_padding_height;
+use crate::bottom_pane::selection_popup_common::numbered_option_rows;
+use crate::bottom_pane::selection_popup_common::option_index_for_digit as option_index_for_digit_shortcut;
 use crate::bottom_pane::selection_popup_common::render_menu_surface;
 use crate::bottom_pane::selection_popup_common::render_rows;
+use crate::bottom_pane::selection_popup_common::rows_required_height_with_default_selection;
 use crate::render::renderable::Renderable;
 
 use super::domain::{
@@ -244,26 +246,12 @@ impl McpServerElicitationOverlay {
 
     fn option_rows(&self) -> Vec<GenericDisplayRow> {
         let selected_idx = self.selected_option_index();
-        self.current_options()
-            .iter()
-            .enumerate()
-            .map(|(idx, option)| {
-                let prefix = if selected_idx.is_some_and(|selected| selected == idx) {
-                    '›'
-                } else {
-                    ' '
-                };
-                let number = idx + 1;
-                let prefix_label = format!("{prefix} {number}. ");
-                let wrap_indent = UnicodeWidthStr::width(prefix_label.as_str());
-                GenericDisplayRow {
-                    name: format!("{prefix_label}{}", option.label),
-                    description: option.description.clone(),
-                    wrap_indent: Some(wrap_indent),
-                    ..Default::default()
-                }
-            })
-            .collect()
+        numbered_option_rows(
+            self.current_options()
+                .iter()
+                .map(|option| (option.label.clone(), option.description.clone())),
+            selected_idx,
+        )
     }
 
     fn wrapped_prompt_lines(&self, width: u16) -> Vec<String> {
@@ -343,17 +331,11 @@ impl McpServerElicitationOverlay {
 
     fn options_required_height(&self, width: u16) -> u16 {
         let rows = self.option_rows();
-        if rows.is_empty() {
-            return 0;
-        }
-        let mut state = self
+        let state = self
             .current_answer()
             .map(|answer| answer.selection)
             .unwrap_or_default();
-        if state.selected_idx.is_none() {
-            state.selected_idx = Some(0);
-        }
-        measure_rows_height(&rows, &state, rows.len(), width.max(1))
+        rows_required_height_with_default_selection(&rows, state, width, 0)
     }
 
     fn input_height(&self, width: u16) -> u16 {
@@ -431,12 +413,7 @@ impl McpServerElicitationOverlay {
     }
 
     fn option_index_for_digit(&self, ch: char) -> Option<usize> {
-        let digit = ch.to_digit(10)?;
-        if digit == 0 {
-            return None;
-        }
-        let idx = (digit - 1) as usize;
-        (idx < self.options_len()).then_some(idx)
+        option_index_for_digit_shortcut(ch, self.options_len())
     }
 
     pub(super) fn select_current_option(&mut self, committed: bool) {
@@ -666,29 +643,13 @@ impl McpServerElicitationOverlay {
                 tip_lines.push(tips);
             }
         }
-        for (row_idx, tips) in tip_lines.into_iter().take(area.height as usize).enumerate() {
-            let mut spans = Vec::new();
-            for (tip_idx, tip) in tips.into_iter().enumerate() {
-                if tip_idx > 0 {
-                    spans.push(FOOTER_SEPARATOR.into());
-                }
-                if tip.highlight {
-                    spans.push(tip.text.fg(crate::theme::accent_color()).bold().not_dim());
-                } else {
-                    spans.push(tip.text.into());
-                }
-            }
-            let line = Line::from(spans).dim();
-            Paragraph::new(line).render(
-                Rect {
-                    x: area.x,
-                    y: area.y.saturating_add(row_idx as u16),
-                    width: area.width,
-                    height: 1,
-                },
-                buf,
-            );
-        }
+        render_footer_tip_lines(
+            area,
+            buf,
+            tip_lines,
+            FOOTER_SEPARATOR,
+            None::<fn(Line<'static>, usize) -> Line<'static>>,
+        );
     }
 }
 

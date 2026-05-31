@@ -14,6 +14,8 @@ use crate::OwnerContext;
 use crate::job::CreateJobParams;
 use crate::spool_store::BackendSpoolStore;
 use crate::spool_submit::submit_manifest_from_provider;
+use crate::tools::owner_context_from_cron_ctx;
+use crate::tools::resolve_cron_provider;
 use chaos_abi::ContentItem;
 use chaos_abi::ResponseItem;
 use chaos_abi::TurnRequest;
@@ -79,12 +81,7 @@ impl CronServer {
         ctx: CronCtx<'_>,
         params: Parameters<SpoolSubmitParams>,
     ) -> ToolResult {
-        let owner = OwnerContext {
-            project_path: ctx
-                .environment
-                .map(|environment| environment.cwd().to_string_lossy().to_string()),
-            session_id: Some(ctx.session.id.clone()),
-        };
+        let owner = owner_context_from_cron_ctx(ctx);
         match execute(&params.0, None, &owner).await {
             Ok(text) => Ok(ToolOutput::text(text)),
             Err(msg) => Err(ToolError::Execution(msg)),
@@ -102,10 +99,7 @@ pub async fn execute(
         return Err("spool_submit requires at least one item".into());
     }
 
-    let provider = match provider {
-        Some(provider) => provider.clone(),
-        None => ChaosStorageProvider::from_env(None).await?,
-    };
+    let provider = resolve_cron_provider(provider).await?;
 
     let registry = match shared_spool_registry() {
         Some(registry) => registry,

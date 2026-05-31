@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
+use crate::bottom_pane::footer_tips::render_footer_tip_lines;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::bottom_pane::scroll_state::ScrollState;
 use crate::bottom_pane::selection_popup_common::measure_rows_height;
@@ -355,32 +356,13 @@ impl RequestUserInputOverlay {
             None
         };
         let tip_lines = self.footer_tip_lines_with_prefix(footer_area.width, option_tip);
-        for (row_idx, tips) in tip_lines
-            .into_iter()
-            .take(footer_area.height as usize)
-            .enumerate()
-        {
-            let mut spans = Vec::new();
-            for (tip_idx, tip) in tips.into_iter().enumerate() {
-                if tip_idx > 0 {
-                    spans.push(TIP_SEPARATOR.into());
-                }
-                if tip.highlight {
-                    spans.push(tip.text.fg(crate::theme::accent_color()).bold().not_dim());
-                } else {
-                    spans.push(tip.text.into());
-                }
-            }
-            let line = Line::from(spans).dim();
-            let line = truncate_line_word_boundary_with_ellipsis(line, footer_area.width as usize);
-            let row_area = Rect {
-                x: footer_area.x,
-                y: footer_area.y.saturating_add(row_idx as u16),
-                width: footer_area.width,
-                height: 1,
-            };
-            Paragraph::new(line).render(row_area, buf);
-        }
+        render_footer_tip_lines(
+            footer_area,
+            buf,
+            tip_lines,
+            TIP_SEPARATOR,
+            Some(truncate_line_word_boundary_with_ellipsis),
+        );
     }
 
     /// Return the cursor position when editing notes, if visible.

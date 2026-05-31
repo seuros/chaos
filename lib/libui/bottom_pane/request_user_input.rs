@@ -7,7 +7,6 @@
 //! - Enter advances to the next question; the last question submits all answers.
 //! - Freeform-only questions submit an empty answer list when empty.
 use std::collections::VecDeque;
-use std::path::PathBuf;
 
 mod layout;
 mod render;
@@ -19,14 +18,18 @@ mod navigation;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::ChatComposer;
 use crate::bottom_pane::ChatComposerConfig;
+use crate::bottom_pane::composer_draft::ComposerDraft;
+use crate::bottom_pane::footer_tips::FooterTip;
+use crate::bottom_pane::footer_tips::wrap_footer_tips;
 use crate::bottom_pane::scroll_state::ScrollState;
 use crate::bottom_pane::selection_popup_common::GenericDisplayRow;
-use crate::bottom_pane::selection_popup_common::measure_rows_height;
+use crate::bottom_pane::selection_popup_common::numbered_option_row;
+use crate::bottom_pane::selection_popup_common::numbered_option_rows;
+use crate::bottom_pane::selection_popup_common::option_index_for_digit as option_index_for_digit_shortcut;
+use crate::bottom_pane::selection_popup_common::rows_required_height_with_default_selection;
 use crate::render::renderable::Renderable;
 
 use chaos_ipc::request_user_input::RequestUserInputEvent;
-use chaos_ipc::user_input::TextElement;
-use unicode_width::UnicodeWidthStr;
 
 const NOTES_PLACEHOLDER: &str = "Add notes";
 const ANSWER_PLACEHOLDER: &str = "Type your answer (optional)";
@@ -50,32 +53,6 @@ enum Focus {
     Notes,
 }
 
-#[derive(Default, Clone, PartialEq)]
-struct ComposerDraft {
-    text: String,
-    text_elements: Vec<TextElement>,
-    local_image_paths: Vec<PathBuf>,
-    pending_pastes: Vec<(String, String)>,
-}
-
-impl ComposerDraft {
-    fn text_with_pending(&self) -> String {
-        if self.pending_pastes.is_empty() {
-            return self.text.clone();
-        }
-        debug_assert!(
-            !self.text_elements.is_empty(),
-            "pending pastes should always have matching text elements"
-        );
-        let (expanded, _) = ChatComposer::expand_pending_pastes(
-            &self.text,
-            self.text_elements.clone(),
-            &self.pending_pastes,
-        );
-        expanded
-    }
-}
-
 struct AnswerState {
     // Scrollable cursor state for option navigation/highlight.
     options_state: ScrollState,
@@ -85,28 +62,6 @@ struct AnswerState {
     answer_committed: bool,
     // Whether the notes UI has been explicitly opened for this question.
     notes_visible: bool,
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct FooterTip {
-    pub(super) text: String,
-    pub(super) highlight: bool,
-}
-
-impl FooterTip {
-    fn new(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            highlight: false,
-        }
-    }
-
-    fn highlighted(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            highlight: true,
-        }
-    }
 }
 
 pub struct RequestUserInputOverlay {
@@ -202,12 +157,7 @@ impl RequestUserInputOverlay {
         if !self.has_options() {
             return None;
         }
-        let digit = ch.to_digit(10)?;
-        if digit == 0 {
-            return None;
-        }
-        let idx = (digit - 1) as usize;
-        (idx < self.options_len()).then_some(idx)
+        option_index_for_digit_shortcut(ch, self.options_len())
     }
 
     fn selected_option_index(&self) -> Option<usize> {
@@ -261,38 +211,21 @@ impl RequestUserInputOverlay {
                 let selected_idx = self
                     .current_answer()
                     .and_then(|answer| answer.options_state.selected_idx);
-                let mut rows = options
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, opt)| {
-                        let selected = selected_idx.is_some_and(|sel| sel == idx);
-                        let prefix = if selected { '›' } else { ' ' };
-                        let label = opt.label.as_str();
-                        let number = idx + 1;
-                        let prefix_label = format!("{prefix} {number}. ");
-                        let wrap_indent = UnicodeWidthStr::width(prefix_label.as_str());
-                        GenericDisplayRow {
-                            name: format!("{prefix_label}{label}"),
-                            description: Some(opt.description.clone()),
-                            wrap_indent: Some(wrap_indent),
-                            ..Default::default()
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                let mut rows = numbered_option_rows(
+                    options
+                        .iter()
+                        .map(|opt| (opt.label.clone(), Some(opt.description.clone()))),
+                    selected_idx,
+                );
 
                 if Self::other_option_enabled_for_question(question) {
                     let idx = options.len();
-                    let selected = selected_idx.is_some_and(|sel| sel == idx);
-                    let prefix = if selected { '›' } else { ' ' };
-                    let number = idx + 1;
-                    let prefix_label = format!("{prefix} {number}. ");
-                    let wrap_indent = UnicodeWidthStr::width(prefix_label.as_str());
-                    rows.push(GenericDisplayRow {
-                        name: format!("{prefix_label}{OTHER_OPTION_LABEL}"),
-                        description: Some(OTHER_OPTION_DESCRIPTION.to_string()),
-                        wrap_indent: Some(wrap_indent),
-                        ..Default::default()
-                    });
+                    rows.push(numbered_option_row(
+                        idx,
+                        OTHER_OPTION_LABEL,
+                        Some(OTHER_OPTION_DESCRIPTION),
+                        selected_idx,
+                    ));
                 }
 
                 rows
@@ -306,19 +239,11 @@ impl RequestUserInputOverlay {
         }
 
         let rows = self.option_rows();
-        if rows.is_empty() {
-            return 1;
-        }
-
-        let mut state = self
+        let state = self
             .current_answer()
             .map(|answer| answer.options_state)
             .unwrap_or_default();
-        if state.selected_idx.is_none() {
-            state.selected_idx = Some(0);
-        }
-
-        measure_rows_height(&rows, &state, rows.len(), width.max(1))
+        rows_required_height_with_default_selection(&rows, state, width, 1)
     }
 
     pub(super) fn options_preferred_height(&self, width: u16) -> u16 {
@@ -327,19 +252,11 @@ impl RequestUserInputOverlay {
         }
 
         let rows = self.option_rows();
-        if rows.is_empty() {
-            return 1;
-        }
-
-        let mut state = self
+        let state = self
             .current_answer()
             .map(|answer| answer.options_state)
             .unwrap_or_default();
-        if state.selected_idx.is_none() {
-            state.selected_idx = Some(0);
-        }
-
-        measure_rows_height(&rows, &state, rows.len(), width.max(1))
+        rows_required_height_with_default_selection(&rows, state, width, 1)
     }
 
     fn capture_composer_draft(&self) -> ComposerDraft {
@@ -451,7 +368,7 @@ impl RequestUserInputOverlay {
     }
 
     pub(super) fn footer_tip_lines(&self, width: u16) -> Vec<Vec<FooterTip>> {
-        self.wrap_footer_tips(width, self.footer_tips())
+        wrap_footer_tips(width, TIP_SEPARATOR, self.footer_tips())
     }
 
     pub(super) fn footer_tip_lines_with_prefix(
@@ -464,48 +381,7 @@ impl RequestUserInputOverlay {
             tips.push(prefix);
         }
         tips.extend(self.footer_tips());
-        self.wrap_footer_tips(width, tips)
-    }
-
-    fn wrap_footer_tips(&self, width: u16, tips: Vec<FooterTip>) -> Vec<Vec<FooterTip>> {
-        let max_width = width.max(1) as usize;
-        let separator_width = UnicodeWidthStr::width(TIP_SEPARATOR);
-        if tips.is_empty() {
-            return vec![Vec::new()];
-        }
-
-        let mut lines: Vec<Vec<FooterTip>> = Vec::new();
-        let mut current: Vec<FooterTip> = Vec::new();
-        let mut used = 0usize;
-
-        for tip in tips {
-            let tip_width = UnicodeWidthStr::width(tip.text.as_str()).min(max_width);
-            let extra = if current.is_empty() {
-                tip_width
-            } else {
-                separator_width.saturating_add(tip_width)
-            };
-            if !current.is_empty() && used.saturating_add(extra) > max_width {
-                lines.push(current);
-                current = Vec::new();
-                used = 0;
-            }
-            if current.is_empty() {
-                used = tip_width;
-            } else {
-                used = used
-                    .saturating_add(separator_width)
-                    .saturating_add(tip_width);
-            }
-            current.push(tip);
-        }
-
-        if current.is_empty() {
-            lines.push(Vec::new());
-        } else {
-            lines.push(current);
-        }
-        lines
+        wrap_footer_tips(width, TIP_SEPARATOR, tips)
     }
 
     pub(super) fn footer_required_height(&self, width: u16) -> u16 {

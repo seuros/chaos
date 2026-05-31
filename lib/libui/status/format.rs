@@ -1,8 +1,10 @@
 use ratatui::prelude::*;
 use ratatui::style::Stylize;
 use std::collections::BTreeSet;
-use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
+
+pub use crate::line_truncation::line_width as line_display_width;
+pub use crate::line_truncation::truncate_line_to_width;
 
 #[derive(Debug, Clone)]
 pub struct FieldFormatter {
@@ -86,58 +88,4 @@ pub fn push_label(labels: &mut Vec<String>, seen: &mut BTreeSet<String>, label: 
     let owned = label.to_string();
     seen.insert(owned.clone());
     labels.push(owned);
-}
-
-pub fn line_display_width(line: &Line<'static>) -> usize {
-    line.iter()
-        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
-        .sum()
-}
-
-pub fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> Line<'static> {
-    if max_width == 0 {
-        return Line::from(Vec::<Span<'static>>::new());
-    }
-
-    let mut used = 0usize;
-    let mut spans_out: Vec<Span<'static>> = Vec::new();
-
-    for span in line.spans {
-        let text = span.content.into_owned();
-        let style = span.style;
-        let span_width = UnicodeWidthStr::width(text.as_str());
-
-        if span_width == 0 {
-            spans_out.push(Span::styled(text, style));
-            continue;
-        }
-
-        if used >= max_width {
-            break;
-        }
-
-        if used + span_width <= max_width {
-            used += span_width;
-            spans_out.push(Span::styled(text, style));
-            continue;
-        }
-
-        let mut truncated = String::new();
-        for ch in text.chars() {
-            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-            if used + ch_width > max_width {
-                break;
-            }
-            truncated.push(ch);
-            used += ch_width;
-        }
-
-        if !truncated.is_empty() {
-            spans_out.push(Span::styled(truncated, style));
-        }
-
-        break;
-    }
-
-    Line::from(spans_out)
 }

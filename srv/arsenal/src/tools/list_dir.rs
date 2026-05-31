@@ -14,6 +14,8 @@ use tokio::fs;
 
 use crate::ChaosCtx;
 use crate::ChaosServer;
+use crate::tools::deserialize_tool_params;
+use crate::tools::tool_text_result;
 
 const MAX_ENTRY_LENGTH: usize = 500;
 const INDENTATION_SPACES: usize = 2;
@@ -54,17 +56,13 @@ impl ChaosServer {
     /// List directory contents recursively with configurable depth, offset, and limit.
     #[mcp_tool(name = "list_dir", read_only = true, idempotent = true)]
     async fn list_dir(&self, _ctx: ChaosCtx<'_>, params: Parameters<ListDirParams>) -> ToolResult {
-        match execute_params(params.0).await {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        tool_text_result(execute_params(params.0).await)
     }
 }
 
 /// Bridge for core's thin adapter — accepts raw JSON arguments.
 pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
-    let params: ListDirParams =
-        serde_json::from_value(arguments.clone()).map_err(|e| format!("invalid arguments: {e}"))?;
+    let params: ListDirParams = deserialize_tool_params(arguments)?;
     execute_params(params).await
 }
 

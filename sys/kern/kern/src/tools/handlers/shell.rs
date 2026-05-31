@@ -17,11 +17,9 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
-use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::handlers::apply_patch::intercept_apply_patch;
-use crate::tools::handlers::implicit_granted_permissions;
-use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments_with_base_path;
+use crate::tools::handlers::prepare_effective_exec_permissions;
 use crate::tools::handlers::resolve_workdir_base_path;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::ToolHandler;
@@ -309,55 +307,23 @@ impl ShellHandler {
             }
         }
 
-        let approval_policy = turn.approval_policy.value();
-        let exec_permission_approvals_enabled = approval_policy.allows_escalation();
-        let requested_additional_permissions = additional_permissions.clone();
-        let effective_additional_permissions = apply_granted_turn_permissions(
+        let prepared_exec_permissions = prepare_effective_exec_permissions(
             session.as_ref(),
+            turn.approval_policy.value(),
             exec_params.sandbox_permissions,
             additional_permissions,
-        )
-        .await;
-        let additional_permissions_allowed = exec_permission_approvals_enabled
-            || (approval_policy.advertises_request_permissions_tool()
-                && effective_additional_permissions.permissions_preapproved);
-        let normalized_additional_permissions = implicit_granted_permissions(
-            exec_params.sandbox_permissions,
-            requested_additional_permissions.as_ref(),
-            &effective_additional_permissions,
-        )
-        .map_or_else(
-            || {
-                normalize_and_validate_additional_permissions(
-                    additional_permissions_allowed,
-                    turn.approval_policy.value(),
-                    effective_additional_permissions.sandbox_permissions,
-                    effective_additional_permissions.additional_permissions,
-                    effective_additional_permissions.permissions_preapproved,
-                    &exec_params.cwd,
+            &exec_params.cwd,
+            |approval_policy| {
+                format!(
+                    "approval policy is {approval_policy:?}; reject command — you should not ask for escalated permissions if the approval policy is {approval_policy:?}"
                 )
             },
-            |permissions| Ok(Some(permissions)),
         )
+        .await
         .map_err(FunctionCallError::RespondToModel)?;
-
-        // Approval policy guard for explicit escalation in non-Interactive modes.
-        // Sticky turn permissions have already been approved, so they should
-        // continue through the normal exec approval flow for the command.
-        if effective_additional_permissions
-            .sandbox_permissions
-            .requests_sandbox_override()
-            && !effective_additional_permissions.permissions_preapproved
-            && !matches!(
-                turn.approval_policy.value(),
-                chaos_ipc::protocol::ApprovalPolicy::Interactive
-            )
-        {
-            let approval_policy = turn.approval_policy.value();
-            return Err(FunctionCallError::RespondToModel(format!(
-                "approval policy is {approval_policy:?}; reject command — you should not ask for escalated permissions if the approval policy is {approval_policy:?}"
-            )));
-        }
+        let effective_additional_permissions = prepared_exec_permissions.effective;
+        let normalized_additional_permissions =
+            prepared_exec_permissions.normalized_additional_permissions;
 
         // Intercept apply_patch if present.
         if let Some(output) = intercept_apply_patch(

@@ -211,6 +211,61 @@ pub(super) struct EffectiveAdditionalPermissions {
     pub permissions_preapproved: bool,
 }
 
+pub(super) struct PreparedExecPermissions {
+    pub effective: EffectiveAdditionalPermissions,
+    pub normalized_additional_permissions: Option<PermissionProfile>,
+}
+
+pub(super) async fn prepare_effective_exec_permissions(
+    session: &Session,
+    approval_policy: ApprovalPolicy,
+    sandbox_permissions: SandboxPermissions,
+    additional_permissions: Option<PermissionProfile>,
+    cwd: &Path,
+    escalation_rejection_message: impl FnOnce(ApprovalPolicy) -> String,
+) -> Result<PreparedExecPermissions, String> {
+    let exec_permission_approvals_enabled = approval_policy.allows_escalation();
+    let requested_additional_permissions = additional_permissions.clone();
+    let effective =
+        apply_granted_turn_permissions(session, sandbox_permissions, additional_permissions).await;
+    let additional_permissions_allowed = exec_permission_approvals_enabled
+        || (approval_policy.advertises_request_permissions_tool()
+            && effective.permissions_preapproved);
+    let normalized_additional_permissions = implicit_granted_permissions(
+        sandbox_permissions,
+        requested_additional_permissions.as_ref(),
+        &effective,
+    )
+    .map_or_else(
+        || {
+            normalize_and_validate_additional_permissions(
+                additional_permissions_allowed,
+                approval_policy,
+                effective.sandbox_permissions,
+                effective.additional_permissions.clone(),
+                effective.permissions_preapproved,
+                cwd,
+            )
+        },
+        |permissions| Ok(Some(permissions)),
+    )?;
+
+    // Approval policy guard for explicit escalation in non-Interactive modes.
+    // Sticky turn permissions have already been approved, so they should
+    // continue through the normal exec approval flow for the command.
+    if effective.sandbox_permissions.requests_sandbox_override()
+        && !effective.permissions_preapproved
+        && !matches!(approval_policy, ApprovalPolicy::Interactive)
+    {
+        return Err(escalation_rejection_message(approval_policy));
+    }
+
+    Ok(PreparedExecPermissions {
+        effective,
+        normalized_additional_permissions,
+    })
+}
+
 pub(super) fn implicit_granted_permissions(
     sandbox_permissions: SandboxPermissions,
     additional_permissions: Option<&PermissionProfile>,

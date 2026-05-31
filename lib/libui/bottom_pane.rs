@@ -71,9 +71,11 @@ pub struct MentionBinding {
 mod chat_composer;
 mod chat_composer_history;
 mod command_popup;
+mod composer_draft;
 pub mod custom_prompt_view;
 mod file_search_popup;
 mod footer;
+mod footer_tips;
 mod list_selection_view;
 mod prompt_args;
 mod slash_commands;

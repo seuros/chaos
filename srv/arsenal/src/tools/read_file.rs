@@ -9,6 +9,8 @@ use serde::Deserialize;
 
 use crate::ChaosCtx;
 use crate::ChaosServer;
+use crate::tools::deserialize_tool_params;
+use crate::tools::tool_text_result;
 
 pub const MAX_LINE_LENGTH: usize = 500;
 const TAB_WIDTH: usize = 4;
@@ -101,10 +103,7 @@ impl ChaosServer {
         _ctx: ChaosCtx<'_>,
         params: Parameters<ReadFileParams>,
     ) -> ToolResult {
-        match execute_params(params.0).await {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        tool_text_result(execute_params(params.0).await)
     }
 }
 
@@ -112,8 +111,7 @@ impl ChaosServer {
 ///
 /// Takes raw JSON arguments, returns the formatted file content or an error message.
 pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
-    let params: ReadFileParams =
-        serde_json::from_value(arguments.clone()).map_err(|e| format!("invalid arguments: {e}"))?;
+    let params: ReadFileParams = deserialize_tool_params(arguments)?;
     execute_params(params).await
 }
 

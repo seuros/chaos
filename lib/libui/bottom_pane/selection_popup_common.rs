@@ -35,6 +35,74 @@ pub struct GenericDisplayRow {
     pub wrap_indent: Option<usize>, // optional indent for wrapped lines
 }
 
+pub fn numbered_option_rows<I, L, D>(
+    options: I,
+    selected_idx: Option<usize>,
+) -> Vec<GenericDisplayRow>
+where
+    I: IntoIterator<Item = (L, Option<D>)>,
+    L: Into<String>,
+    D: Into<String>,
+{
+    options
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (label, description))| {
+            numbered_option_row(idx, label, description, selected_idx)
+        })
+        .collect()
+}
+
+pub fn numbered_option_row<L, D>(
+    idx: usize,
+    label: L,
+    description: Option<D>,
+    selected_idx: Option<usize>,
+) -> GenericDisplayRow
+where
+    L: Into<String>,
+    D: Into<String>,
+{
+    let prefix = if selected_idx.is_some_and(|selected| selected == idx) {
+        '›'
+    } else {
+        ' '
+    };
+    let number = idx + 1;
+    let prefix_label = format!("{prefix} {number}. ");
+    let wrap_indent = UnicodeWidthStr::width(prefix_label.as_str());
+    GenericDisplayRow {
+        name: format!("{prefix_label}{}", label.into()),
+        description: description.map(Into::into),
+        wrap_indent: Some(wrap_indent),
+        ..Default::default()
+    }
+}
+
+pub fn option_index_for_digit(ch: char, options_len: usize) -> Option<usize> {
+    let digit = ch.to_digit(10)?;
+    if digit == 0 {
+        return None;
+    }
+    let idx = (digit - 1) as usize;
+    (idx < options_len).then_some(idx)
+}
+
+pub fn rows_required_height_with_default_selection(
+    rows: &[GenericDisplayRow],
+    mut state: ScrollState,
+    width: u16,
+    empty_height: u16,
+) -> u16 {
+    if rows.is_empty() {
+        return empty_height;
+    }
+    if state.selected_idx.is_none() {
+        state.selected_idx = Some(0);
+    }
+    measure_rows_height(rows, &state, rows.len(), width.max(1))
+}
+
 /// Controls how selection rows choose the split between left/right name/description columns.
 ///
 /// Callers should use the same mode for both measurement and rendering, or the

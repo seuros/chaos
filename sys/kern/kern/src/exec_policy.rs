@@ -594,15 +594,7 @@ fn try_derive_execpolicy_amendment_for_prompt_rules(
         return None;
     }
 
-    matched_rules
-        .iter()
-        .find_map(|rule_match| match rule_match {
-            RuleMatch::HeuristicsRuleMatch {
-                command,
-                decision: Decision::Prompt,
-            } => Some(ExecPolicyAmendment::from(command.clone())),
-            _ => None,
-        })
+    first_heuristics_amendment_for_decision(matched_rules, Decision::Prompt)
 }
 
 /// - Note: we only use this amendment when the command fails to run in sandbox and chaos prompts the user to run outside the sandbox
@@ -615,13 +607,21 @@ fn try_derive_execpolicy_amendment_for_allow_rules(
         return None;
     }
 
+    first_heuristics_amendment_for_decision(matched_rules, Decision::Allow)
+}
+
+fn first_heuristics_amendment_for_decision(
+    matched_rules: &[RuleMatch],
+    target_decision: Decision,
+) -> Option<ExecPolicyAmendment> {
     matched_rules
         .iter()
         .find_map(|rule_match| match rule_match {
-            RuleMatch::HeuristicsRuleMatch {
-                command,
-                decision: Decision::Allow,
-            } => Some(ExecPolicyAmendment::from(command.clone())),
+            RuleMatch::HeuristicsRuleMatch { command, decision }
+                if *decision == target_decision =>
+            {
+                Some(ExecPolicyAmendment::from(command.clone()))
+            }
             _ => None,
         })
 }
@@ -694,27 +694,13 @@ fn prefix_rule_would_approve_all_commands(
 fn derive_prompt_reason(command_args: &[String], evaluation: &Evaluation) -> Option<String> {
     let command = render_shlex_command(command_args);
 
-    let most_specific_prompt = evaluation
-        .matched_rules
-        .iter()
-        .filter_map(|rule_match| match rule_match {
-            RuleMatch::PrefixRuleMatch {
-                matched_prefix,
-                decision: Decision::Prompt,
-                justification,
-                ..
-            } => Some((matched_prefix.len(), justification.as_deref())),
-            _ => None,
-        })
-        .max_by_key(|(matched_prefix_len, _)| *matched_prefix_len);
+    let most_specific_prompt = most_specific_prefix_match(evaluation, Decision::Prompt);
 
     match most_specific_prompt {
-        Some((_matched_prefix_len, Some(justification))) => {
+        Some((_matched_prefix, Some(justification))) => {
             Some(format!("`{command}` requires approval: {justification}"))
         }
-        Some((_matched_prefix_len, None)) => {
-            Some(format!("`{command}` requires approval by policy"))
-        }
+        Some((_matched_prefix, None)) => Some(format!("`{command}` requires approval by policy")),
         None => None,
     }
 }
@@ -729,19 +715,7 @@ fn render_shlex_command(args: &[String]) -> String {
 fn derive_forbidden_reason(command_args: &[String], evaluation: &Evaluation) -> String {
     let command = render_shlex_command(command_args);
 
-    let most_specific_forbidden = evaluation
-        .matched_rules
-        .iter()
-        .filter_map(|rule_match| match rule_match {
-            RuleMatch::PrefixRuleMatch {
-                matched_prefix,
-                decision: Decision::Forbidden,
-                justification,
-                ..
-            } => Some((matched_prefix, justification.as_deref())),
-            _ => None,
-        })
-        .max_by_key(|(matched_prefix, _)| matched_prefix.len());
+    let most_specific_forbidden = most_specific_prefix_match(evaluation, Decision::Forbidden);
 
     match most_specific_forbidden {
         Some((_matched_prefix, Some(justification))) => {
@@ -753,6 +727,27 @@ fn derive_forbidden_reason(command_args: &[String], evaluation: &Evaluation) -> 
         }
         None => format!("`{command}` rejected: blocked by policy"),
     }
+}
+
+fn most_specific_prefix_match(
+    evaluation: &Evaluation,
+    target_decision: Decision,
+) -> Option<(&[String], Option<&str>)> {
+    evaluation
+        .matched_rules
+        .iter()
+        .filter_map(|rule_match| match rule_match {
+            RuleMatch::PrefixRuleMatch {
+                matched_prefix,
+                decision,
+                justification,
+                ..
+            } if *decision == target_decision => {
+                Some((matched_prefix.as_slice(), justification.as_deref()))
+            }
+            _ => None,
+        })
+        .max_by_key(|(matched_prefix, _)| matched_prefix.len())
 }
 
 async fn collect_policy_files(dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, ExecPolicyError> {

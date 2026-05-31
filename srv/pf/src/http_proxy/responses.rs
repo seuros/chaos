@@ -9,10 +9,10 @@ use crate::responses::blocked_header_value;
 use crate::responses::blocked_message_with_policy;
 use crate::responses::blocked_text_response_with_policy;
 use crate::responses::json_response;
+pub(super) use crate::responses::text_response;
 use crate::state::BlockedRequest;
 use crate::state::BlockedRequestArgs;
 use crate::state::NetworkProxyState;
-use rama::http::Body;
 use rama::http::HeaderValue;
 use rama::http::Response;
 use rama::http::StatusCode;
@@ -134,14 +134,6 @@ pub(super) async fn proxy_disabled_response(
 pub(super) fn internal_error(context: &str, err: impl std::fmt::Display) -> Response {
     error!("{context}: {err}");
     text_response(StatusCode::INTERNAL_SERVER_ERROR, "error")
-}
-
-pub(super) fn text_response(status: StatusCode, body: &str) -> Response {
-    Response::builder()
-        .status(status)
-        .header("content-type", "text/plain")
-        .body(Body::from(body.to_string()))
-        .unwrap_or_else(|_| Response::new(Body::from(body.to_string())))
 }
 
 pub(super) fn emit_http_block_decision_audit_event(

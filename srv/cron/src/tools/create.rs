@@ -4,11 +4,12 @@ use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::BackendCronStorage;
 use crate::CronCtx;
 use crate::CronServer;
 use crate::CronStorage;
 use crate::job::CreateJobParams;
+use crate::tools::cron_storage_from_optional_provider;
+use crate::tools::owner_context_from_cron_ctx;
 use chaos_storage::ChaosStorageProvider;
 
 /// Parameters for the cron_create tool.
@@ -56,12 +57,7 @@ impl CronServer {
         ctx: CronCtx<'_>,
         params: Parameters<CronCreateParams>,
     ) -> ToolResult {
-        let owner = OwnerContext {
-            project_path: ctx
-                .environment
-                .map(|environment| environment.cwd().to_string_lossy().to_string()),
-            session_id: Some(ctx.session.id.clone()),
-        };
+        let owner = owner_context_from_cron_ctx(ctx);
         match execute(&params.0, None, &owner).await {
             Ok(text) => Ok(ToolOutput::text(text)),
             Err(msg) => Err(ToolError::Execution(msg)),
@@ -81,11 +77,7 @@ pub async fn execute(
     provider: Option<&ChaosStorageProvider>,
     owner: &OwnerContext,
 ) -> Result<String, String> {
-    let provider = match provider {
-        Some(provider) => provider.clone(),
-        None => ChaosStorageProvider::from_env(None).await?,
-    };
-    let storage = BackendCronStorage::from_provider(&provider)?;
+    let (_provider, storage) = cron_storage_from_optional_provider(provider).await?;
     execute_with_storage(params, &storage, owner).await
 }
 

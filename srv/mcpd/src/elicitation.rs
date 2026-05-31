@@ -11,6 +11,7 @@ use mcp_host::protocol::types::RequestId;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
+use std::future::Future;
 use tracing::error;
 
 use crate::outgoing_message::OutgoingMessageSender;
@@ -124,6 +125,42 @@ pub(crate) async fn decode_approval_elicitation_response(
         error!("failed to deserialize {response_label}: {err}");
         ApprovalElicitationResponse::decline()
     })
+}
+
+pub(crate) async fn create_approval_elicitation_or_deny<P, F, Fut>(
+    outgoing: &OutgoingMessageSender,
+    request_id: RequestId,
+    params: &P,
+    params_label: &str,
+    on_unsupported: F,
+) -> Option<ElicitationResponseReceiver>
+where
+    P: Serialize,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = ()>,
+{
+    match create_form_elicitation_request(outgoing, request_id, params, params_label).await {
+        Ok(receiver) => Some(receiver),
+        Err(CreateFormElicitationError::InvalidParams) => None,
+        Err(CreateFormElicitationError::Unsupported) => {
+            on_unsupported().await;
+            None
+        }
+    }
+}
+
+pub(crate) fn spawn_approval_response_handler<F, Fut>(
+    receiver: ElicitationResponseReceiver,
+    response_label: &'static str,
+    submit_decision: F,
+) where
+    F: FnOnce(ReviewDecision) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let response = decode_approval_elicitation_response(receiver, response_label).await;
+        submit_decision(response.review_decision()).await;
+    });
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

@@ -14,9 +14,8 @@ use serde_json::json;
 use tracing::error;
 
 use crate::elicitation::ApprovalElicitationResponse;
-use crate::elicitation::CreateFormElicitationError;
-use crate::elicitation::create_form_elicitation_request;
-use crate::elicitation::decode_approval_elicitation_response;
+use crate::elicitation::create_approval_elicitation_or_deny;
+use crate::elicitation::spawn_approval_response_handler;
 
 /// Conforms to the MCP elicitation request params shape, so it can be used as
 /// the `params` field of an `elicitation/create` request.
@@ -79,42 +78,34 @@ pub(crate) async fn handle_exec_approval_request(
             codex_parsed_cmd,
         },
     };
-    let on_response = match create_form_elicitation_request(
+    let Some(on_response) = create_approval_elicitation_or_deny(
         outgoing.as_ref(),
         request_id.clone(),
         &params,
         "ExecApprovalElicitRequestParams",
+        {
+            let approval_id = approval_id.clone();
+            let event_id = event_id.clone();
+            let process = process.clone();
+            move || async move {
+                submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, process).await;
+            }
+        },
     )
     .await
-    {
-        Ok(receiver) => receiver,
-        Err(CreateFormElicitationError::InvalidParams) => return,
-        Err(CreateFormElicitationError::Unsupported) => {
-            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, process).await;
-            return;
-        }
+    else {
+        return;
     };
 
     // Listen for the response on a separate task so we don't block the main agent loop.
-    {
+    spawn_approval_response_handler(on_response, "ExecApprovalResponse", {
         let process = process.clone();
         let approval_id = approval_id.clone();
         let event_id = event_id.clone();
-        tokio::spawn(async move {
-            on_exec_approval_response(approval_id, event_id, on_response, process).await;
-        });
-    }
-}
-
-async fn on_exec_approval_response(
-    approval_id: String,
-    event_id: String,
-    receiver: crate::elicitation::ElicitationResponseReceiver,
-    process: Arc<Process>,
-) {
-    let response = decode_approval_elicitation_response(receiver, "ExecApprovalResponse").await;
-
-    submit_exec_approval(approval_id, event_id, response.review_decision(), process).await;
+        move |decision| async move {
+            submit_exec_approval(approval_id, event_id, decision, process).await;
+        }
+    });
 }
 
 async fn submit_exec_approval(

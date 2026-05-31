@@ -13,6 +13,8 @@ use serde::Deserialize;
 
 use crate::ChaosCtx;
 use crate::ChaosServer;
+use crate::tools::deserialize_tool_params;
+use crate::tools::tool_text_result;
 
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 2000;
@@ -49,17 +51,13 @@ impl ChaosServer {
         _ctx: ChaosCtx<'_>,
         params: Parameters<GrepFilesParams>,
     ) -> ToolResult {
-        match execute_params(params.0).await {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        tool_text_result(execute_params(params.0).await)
     }
 }
 
 /// Bridge for core's thin adapter — accepts raw JSON arguments.
 pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
-    let params: GrepFilesParams =
-        serde_json::from_value(arguments.clone()).map_err(|e| format!("invalid arguments: {e}"))?;
+    let params: GrepFilesParams = deserialize_tool_params(arguments)?;
     execute_params(params).await
 }
 

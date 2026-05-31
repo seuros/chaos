@@ -640,6 +640,8 @@ const JOURNALD_SOCKET_ENV: &str = "CHAOS_JOURNALD_SOCKET";
 const JOURNALD_BIN_ENV: &str = "CHAOS_JOURNALD_BIN";
 const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
 const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
+const JOURNAL_APPEND_MAX_ATTEMPTS: usize = 8;
+const JOURNAL_APPEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(25);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JournalSinkMode {
@@ -677,6 +679,7 @@ struct ActiveJournalWriter {
     lease_token: String,
     next_seq: i64,
     last_lease_refresh: Instant,
+    pending_items: Vec<RolloutItem>,
 }
 
 impl JournalSink {
@@ -723,10 +726,13 @@ impl JournalSink {
 
     async fn shutdown(&mut self) {
         let state = std::mem::replace(self, Self::Disabled);
-        if let Self::Active(writer) = state
-            && let Err(err) = writer.release_lease().await
-        {
-            warn!("failed to release journald lease: {err}");
+        if let Self::Active(mut writer) = state {
+            if let Err(err) = writer.flush_pending_items().await {
+                warn!("failed to flush pending journald items during shutdown: {err}");
+            }
+            if let Err(err) = writer.release_lease().await {
+                warn!("failed to release journald lease: {err}");
+            }
         }
     }
 }
@@ -784,6 +790,7 @@ impl ActiveJournalWriter {
                 lease_token: result.lease.lease_token,
                 next_seq: result.next_seq,
                 last_lease_refresh: Instant::now(),
+                pending_items: Vec::new(),
             }),
             Err(JournalClientError::Remote(payload))
                 if payload.code == JournalErrorCode::AlreadyExists =>
@@ -860,38 +867,123 @@ impl ActiveJournalWriter {
             lease_token: lease.lease_token,
             next_seq: loaded.next_seq,
             last_lease_refresh: Instant::now(),
+            pending_items: Vec::new(),
         })
     }
 
     async fn append_items(&mut self, items: &[RolloutItem]) -> Result<(), String> {
-        self.ensure_lease().await?;
+        let mut batch = std::mem::take(&mut self.pending_items);
+        batch.extend(items.iter().cloned());
+        if batch.is_empty() {
+            return Ok(());
+        }
 
-        let expected_next_seq = self.next_seq;
-        let journal_items = items
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(offset, item)| JournalEntry {
-                seq: expected_next_seq + offset as i64,
-                recorded_at: Timestamp::now(),
-                item,
-            })
-            .collect();
+        let mut attempt = 0usize;
+        loop {
+            self.ensure_lease().await?;
 
-        let result = self
-            .client
-            .append_batch(JournalAppendBatchInput {
-                process_id: self.process_id,
-                owner_id: self.owner_id.clone(),
-                lease_token: self.lease_token.clone(),
-                expected_next_seq,
-                items: journal_items,
-            })
-            .await
-            .map_err(|err| format!("append_batch failed: {err}"))?;
+            let expected_next_seq = self.next_seq;
+            let journal_items = batch
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(offset, item)| JournalEntry {
+                    seq: expected_next_seq + offset as i64,
+                    recorded_at: Timestamp::now(),
+                    item,
+                })
+                .collect();
 
-        self.next_seq = result.next_seq;
-        Ok(())
+            match self
+                .client
+                .append_batch(JournalAppendBatchInput {
+                    process_id: self.process_id,
+                    owner_id: self.owner_id.clone(),
+                    lease_token: self.lease_token.clone(),
+                    expected_next_seq,
+                    items: journal_items,
+                })
+                .await
+            {
+                Ok(result) => {
+                    self.next_seq = result.next_seq;
+                    return Ok(());
+                }
+                Err(JournalClientError::Remote(payload))
+                    if payload.retryable && attempt + 1 < JOURNAL_APPEND_MAX_ATTEMPTS =>
+                {
+                    attempt += 1;
+                    self.reconcile_after_retryable_append_error(&payload)
+                        .await?;
+                    let delay = retry_delay(attempt);
+                    warn!(
+                        process_id = %self.process_id,
+                        attempt,
+                        max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,
+                        error = ?payload,
+                        "retrying journald append after retryable failure"
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                Err(JournalClientError::Remote(payload)) if payload.retryable => {
+                    warn!(
+                        process_id = %self.process_id,
+                        max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,
+                        error = ?payload,
+                        "journald append retry budget exhausted; retaining batch for next flush"
+                    );
+                    self.pending_items = batch;
+                    return Ok(());
+                }
+                Err(err) => return Err(format!("append_batch failed: {err}")),
+            }
+        }
+    }
+
+    async fn flush_pending_items(&mut self) -> Result<(), String> {
+        self.append_items(&[]).await
+    }
+
+    async fn reconcile_after_retryable_append_error(
+        &mut self,
+        payload: &chaos_journald::ErrorPayload,
+    ) -> Result<(), String> {
+        match payload.code {
+            JournalErrorCode::SequenceConflict => {
+                let loaded = self
+                    .client
+                    .load_journal(self.process_id)
+                    .await
+                    .map_err(|err| {
+                        format!("reload_journal after sequence conflict failed: {err}")
+                    })?;
+                self.next_seq = loaded.next_seq;
+                Ok(())
+            }
+            JournalErrorCode::LeaseExpired => {
+                let lease = self
+                    .client
+                    .acquire_lease(
+                        self.process_id,
+                        self.owner_id.clone(),
+                        JOURNAL_LEASE_TTL.as_millis() as u64,
+                    )
+                    .await
+                    .map_err(|err| format!("reacquire_lease after append failure failed: {err}"))?;
+                let loaded = self
+                    .client
+                    .load_journal(self.process_id)
+                    .await
+                    .map_err(|err| {
+                        format!("reload_journal after append lease failure failed: {err}")
+                    })?;
+                self.lease_token = lease.lease_token;
+                self.next_seq = loaded.next_seq;
+                self.last_lease_refresh = Instant::now();
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     async fn ensure_lease(&mut self) -> Result<(), String> {
@@ -949,6 +1041,11 @@ impl ActiveJournalWriter {
             .await
             .map_err(|err| format!("release_lease failed: {err}"))
     }
+}
+
+fn retry_delay(attempt: usize) -> Duration {
+    let multiplier = 1u32 << attempt.saturating_sub(1).min(5);
+    JOURNAL_APPEND_RETRY_BASE_DELAY * multiplier
 }
 
 async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, String> {

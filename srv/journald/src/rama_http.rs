@@ -258,8 +258,12 @@ fn error_payload_for(error: JournalError) -> ErrorPayload {
             message: error.to_string(),
             retryable: false,
         },
-        JournalError::Db(_)
-        | JournalError::Migrate(_)
+        JournalError::Db(ref err) => ErrorPayload {
+            code: ErrorCode::Internal,
+            message: error.to_string(),
+            retryable: is_retryable_db_error(&err),
+        },
+        JournalError::Migrate(_)
         | JournalError::Io(_)
         | JournalError::Serialize { .. }
         | JournalError::Deserialize { .. }
@@ -269,6 +273,19 @@ fn error_payload_for(error: JournalError) -> ErrorPayload {
             message: error.to_string(),
             retryable: false,
         },
+    }
+}
+
+fn is_retryable_db_error(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::Database(db_error) => {
+            db_error
+                .code()
+                .as_deref()
+                .is_some_and(|code| code == "5" || code == "SQLITE_BUSY" || code == "SQLITE_LOCKED")
+                || db_error.message().contains("database is locked")
+        }
+        _ => false,
     }
 }
 

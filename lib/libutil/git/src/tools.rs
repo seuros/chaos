@@ -1,4 +1,6 @@
 use std::path::Path;
+use std::path::PathBuf;
+use std::time::Duration;
 
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
@@ -6,6 +8,27 @@ use serde::Deserialize;
 
 use crate::GitCtx;
 use crate::GitServer;
+
+const GIT_TOOL_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub(crate) async fn execute_blocking<P, F>(cwd: PathBuf, params: P, f: F) -> Result<String, String>
+where
+    P: Send + 'static,
+    F: FnOnce(&Path, P) -> Result<String, String> + Send + 'static,
+{
+    let task = tokio::task::spawn_blocking(move || f(&cwd, params));
+    tokio::time::timeout(GIT_TOOL_TIMEOUT, task)
+        .await
+        .map_err(|_| "git tool timed out".to_string())?
+        .map_err(|e| format!("git tool task failed: {e}"))?
+}
+
+fn output_from_result(result: Result<String, String>) -> ToolResult {
+    match result {
+        Ok(text) => Ok(ToolOutput::text(text)),
+        Err(msg) => Err(ToolError::Execution(msg)),
+    }
+}
 
 fn default_log_limit() -> usize {
     20
@@ -86,10 +109,7 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_diff(&self, _ctx: GitCtx<'_>, params: Parameters<GitDiffParams>) -> ToolResult {
-        match execute_git_diff(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_diff).await)
     }
 
     #[mcp_tool(
@@ -99,10 +119,7 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_log(&self, _ctx: GitCtx<'_>, params: Parameters<GitLogParams>) -> ToolResult {
-        match execute_git_log(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_log).await)
     }
 
     #[mcp_tool(
@@ -112,10 +129,7 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_show(&self, _ctx: GitCtx<'_>, params: Parameters<GitShowParams>) -> ToolResult {
-        match execute_git_show(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_show).await)
     }
 
     #[mcp_tool(
@@ -125,10 +139,7 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_blame(&self, _ctx: GitCtx<'_>, params: Parameters<GitBlameParams>) -> ToolResult {
-        match execute_git_blame(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_blame).await)
     }
 
     #[mcp_tool(
@@ -138,10 +149,7 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_repo(&self, _ctx: GitCtx<'_>, params: Parameters<GitRepoParams>) -> ToolResult {
-        match execute_git_repo(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_repo).await)
     }
 
     #[mcp_tool(
@@ -155,10 +163,7 @@ impl GitServer {
         _ctx: GitCtx<'_>,
         params: Parameters<GitStatusParams>,
     ) -> ToolResult {
-        match execute_git_status(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_status).await)
     }
 
     #[mcp_tool(
@@ -172,10 +177,9 @@ impl GitServer {
         _ctx: GitCtx<'_>,
         params: Parameters<GitBranchesParams>,
     ) -> ToolResult {
-        match execute_git_branches(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_branches).await,
+        )
     }
 
     #[mcp_tool(
@@ -189,10 +193,9 @@ impl GitServer {
         _ctx: GitCtx<'_>,
         params: Parameters<GitRemotesParams>,
     ) -> ToolResult {
-        match execute_git_remotes(Path::new("."), params.0) {
-            Ok(text) => Ok(ToolOutput::text(text)),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        output_from_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_remotes).await,
+        )
     }
 }
 

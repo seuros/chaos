@@ -2,4 +2,4 @@
 
 Fast fuzzy file search tool for Chaos.
 
-Uses <https://crates.io/crates/ignore> under the hood (which is what `ripgrep` uses) to traverse a directory (while honoring `.gitignore`, etc.) to produce the list of files to search and then uses <https://crates.io/crates/nucleo-matcher> to fuzzy-match the user supplied `PATTERN` against the corpus.
+Uses <https://crates.io/crates/fff-search> for fuzzy file search and keeps a small compatibility walk with <https://crates.io/crates/ignore> so Chaos-specific include/exclude and `.gitignore` behavior stays stable.

@@ -1,6 +1,7 @@
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CargoBinError {
@@ -42,29 +43,21 @@ pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
             });
         }
     }
-    match assert_cmd::Command::cargo_bin(name) {
-        Ok(cmd) => {
-            let mut path = PathBuf::from(cmd.get_program());
-            if !path.is_absolute() {
-                path = std::env::current_dir()
-                    .map_err(|source| CargoBinError::CurrentDir { source })?
-                    .join(path);
-            }
-            if path.exists() {
-                Ok(path)
-            } else {
-                Err(CargoBinError::ResolvedPathDoesNotExist {
-                    key: "assert_cmd::Command::cargo_bin".to_owned(),
-                    path,
-                })
-            }
-        }
-        Err(err) => Err(CargoBinError::NotFound {
-            name: name.to_owned(),
-            env_keys,
-            fallback: format!("assert_cmd fallback failed: {err}"),
-        }),
+    if let Some(path) = legacy_cargo_bin_path(name)? {
+        return Ok(path);
     }
+
+    if build_cargo_bin(name).is_ok()
+        && let Some(path) = legacy_cargo_bin_path(name)?
+    {
+        return Ok(path);
+    }
+
+    Err(CargoBinError::NotFound {
+        name: name.to_owned(),
+        env_keys,
+        fallback: "env vars were unset and target/debug fallback did not exist".to_string(),
+    })
 }
 
 fn cargo_bin_env_keys(name: &str) -> Vec<String> {
@@ -78,6 +71,43 @@ fn cargo_bin_env_keys(name: &str) -> Vec<String> {
     }
 
     keys
+}
+
+fn legacy_cargo_bin_path(name: &str) -> Result<Option<PathBuf>, CargoBinError> {
+    let bin_name = format!("{}{}", name, std::env::consts::EXE_SUFFIX);
+    let mut candidates = Vec::new();
+
+    let mut current_exe =
+        std::env::current_exe().map_err(|source| CargoBinError::CurrentExe { source })?;
+    current_exe.pop();
+    if current_exe.ends_with("deps") {
+        current_exe.pop();
+    }
+    candidates.push(current_exe.join(&bin_name));
+
+    if let Ok(root) = repo_root() {
+        candidates.push(root.join("target").join("debug").join(&bin_name));
+    }
+
+    Ok(candidates.into_iter().find(|path| path.exists()))
+}
+
+fn build_cargo_bin(name: &str) -> io::Result<()> {
+    let root = repo_root()?;
+    let status = Command::new("cargo")
+        .arg("build")
+        .arg("--quiet")
+        .arg("--bin")
+        .arg(name)
+        .current_dir(root)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "cargo build --bin {name} exited with {status}"
+        )))
+    }
 }
 
 /// Macro that derives the path to a test resource at compile time using

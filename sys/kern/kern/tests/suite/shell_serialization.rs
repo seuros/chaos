@@ -697,7 +697,7 @@ async fn shell_command_output_is_not_truncated_under_10k_bytes() -> Result<()> {
 
     let call_id = "shell-command";
     let args = json!({
-        "command": "perl -e 'print \"1\" x 10000'",
+        "command": "printf '%*s' 10000 '' | tr ' ' 1",
         "login": false,
         "timeout_ms": 1000,
     });
@@ -748,7 +748,7 @@ async fn shell_command_output_is_not_truncated_over_10k_bytes() -> Result<()> {
 
     let call_id = "shell-command";
     let args = json!({
-        "command": "perl -e 'print \"1\" x 10001'",
+        "command": "printf '%*s' 10001 '' | tr ' ' 1",
         "login": false,
         "timeout_ms": 1000,
     });

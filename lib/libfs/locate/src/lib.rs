@@ -1,19 +1,20 @@
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 use crossbeam_channel::after;
-use crossbeam_channel::never;
 use crossbeam_channel::select;
 use crossbeam_channel::unbounded;
+use fff_search::FFFMode;
+use fff_search::FilePicker;
+use fff_search::FilePickerOptions;
+use fff_search::FuzzySearchOptions;
+use fff_search::PaginationArgs;
+use fff_search::QueryParser;
+use fff_search::SharedFilePicker;
+use fff_search::SharedFrecency;
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
-use nucleo::Config;
-use nucleo::Injector;
-use nucleo::Matcher;
-use nucleo::Nucleo;
-use nucleo::Utf32String;
-use nucleo::pattern::CaseMatching;
-use nucleo::pattern::Normalization;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::num::NonZero;
 use std::path::Path;
 use std::path::PathBuf;
@@ -27,27 +28,19 @@ use std::thread;
 use std::time::Duration;
 use tokio::process::Command;
 
-#[cfg(test)]
-use nucleo::Utf32Str;
-#[cfg(test)]
-use nucleo::pattern::AtomKind;
-#[cfg(test)]
-use nucleo::pattern::Pattern;
-
 mod cli;
 
 pub use cli::Cli;
 
 /// A single match result returned from the search.
 ///
-/// * `score` – Relevance score returned by `nucleo`.
+/// * `score` – Relevance score returned by `fff-search`.
 /// * `path`  – Path to the matched file (relative to the search directory).
 /// * `indices` – Optional list of character indices that matched the query.
 ///   These are only filled when the caller of [`run`] sets
 ///   `options.compute_indices` to `true`. The indices vector follows the
-///   guidance from `nucleo::pattern::Pattern::indices`: they are
-///   unique and sorted in ascending order so that callers can use
-///   them directly for highlighting.
+///   unique and sorted in ascending order so that callers can use them directly
+///   for highlighting.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FileMatch {
     pub score: u32,
@@ -159,32 +152,54 @@ pub fn create_session(
         respect_gitignore,
     } = options;
 
-    let Some(primary_search_directory) = search_directories.first() else {
+    if search_directories.is_empty() {
         anyhow::bail!("at least one search directory is required");
     };
-    let override_matcher = build_override_matcher(primary_search_directory, &exclude)?;
     let (work_tx, work_rx) = unbounded();
-
-    let notify_tx = work_tx.clone();
-    let notify = Arc::new(move || {
-        let _ = notify_tx.send(WorkSignal::NucleoNotify);
-    });
-    let nucleo = Nucleo::new(
-        Config::DEFAULT.match_paths(),
-        notify,
-        Some(threads.get()),
-        1,
-    );
-    let injector = nucleo.injector();
-
     let cancelled = cancel_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
 
+    let pickers: Vec<_> = search_directories
+        .iter()
+        .map(|search_directory| {
+            let shared_picker = SharedFilePicker::default();
+            let manual_files = Arc::new(RwLock::new(Vec::new()));
+            let manual_walk_complete = Arc::new(AtomicBool::new(false));
+            FilePicker::new_with_shared_state(
+                shared_picker.clone(),
+                SharedFrecency::default(),
+                FilePickerOptions {
+                    base_path: search_directory.to_string_lossy().into_owned(),
+                    mode: FFFMode::Ai,
+                    watch: false,
+                    follow_symlinks: true,
+                    ..Default::default()
+                },
+            )?;
+            let walker_override_matcher = build_override_matcher(search_directory, &exclude)?;
+            spawn_compat_walker(
+                search_directory.clone(),
+                threads.get(),
+                walker_override_matcher,
+                respect_gitignore,
+                manual_files.clone(),
+                manual_walk_complete.clone(),
+                cancelled.clone(),
+            );
+            anyhow::Ok(RootPicker {
+                root: search_directory.clone(),
+                override_matcher: build_override_matcher(search_directory, &exclude)?,
+                picker: shared_picker,
+                manual_files,
+                manual_walk_complete,
+            })
+        })
+        .collect::<anyhow::Result<_>>()?;
+
     let inner = Arc::new(SessionInner {
-        search_directories,
+        pickers,
         limit: limit.get(),
         threads: threads.get(),
         compute_indices,
-        respect_gitignore,
         cancelled: cancelled.clone(),
         shutdown: Arc::new(AtomicBool::new(false)),
         reporter,
@@ -192,10 +207,7 @@ pub fn create_session(
     });
 
     let matcher_inner = inner.clone();
-    thread::spawn(move || matcher_worker(matcher_inner, work_rx, nucleo));
-
-    let walker_inner = inner.clone();
-    thread::spawn(move || walker_worker(walker_inner, override_matcher, injector));
+    thread::spawn(move || matcher_worker(matcher_inner, work_rx));
 
     Ok(FileSearchSession { inner })
 }
@@ -311,32 +323,27 @@ where
     }
 }
 
-#[cfg(test)]
-fn create_pattern(pattern: &str) -> Pattern {
-    Pattern::new(
-        pattern,
-        CaseMatching::Smart,
-        Normalization::Smart,
-        AtomKind::Fuzzy,
-    )
-}
-
 struct SessionInner {
-    search_directories: Vec<PathBuf>,
+    pickers: Vec<RootPicker>,
     limit: usize,
     threads: usize,
     compute_indices: bool,
-    respect_gitignore: bool,
     cancelled: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     reporter: Arc<dyn SessionReporter>,
     work_tx: Sender<WorkSignal>,
 }
 
+struct RootPicker {
+    root: PathBuf,
+    override_matcher: Option<ignore::overrides::Override>,
+    picker: SharedFilePicker,
+    manual_files: Arc<RwLock<Vec<String>>>,
+    manual_walk_complete: Arc<AtomicBool>,
+}
+
 enum WorkSignal {
     QueryUpdated(String),
-    NucleoNotify,
-    WalkComplete,
     Shutdown,
 }
 
@@ -356,127 +363,82 @@ fn build_override_matcher(
     Ok(Some(matcher))
 }
 
-fn get_file_path<'a>(path: &'a Path, search_directories: &[PathBuf]) -> Option<(usize, &'a str)> {
-    let mut best_match: Option<(usize, &Path)> = None;
-    for (idx, root) in search_directories.iter().enumerate() {
-        if let Ok(rel_path) = path.strip_prefix(root) {
-            let root_depth = root.components().count();
-            match best_match {
-                Some((best_idx, _))
-                    if search_directories[best_idx].components().count() >= root_depth => {}
-                _ => {
-                    best_match = Some((idx, rel_path));
-                }
-            }
-        }
-    }
-
-    let (root_idx, rel_path) = best_match?;
-    rel_path.to_str().map(|p| (root_idx, p))
-}
-
-/// Walks the search directories and feeds discovered file paths into `nucleo`
-/// via the injector.
-///
-/// The walker uses `require_git(true)` to match git's own ignore semantics:
-/// git never reads `.gitignore` files from directories above the repository
-/// root. Without this flag, the `ignore` crate reads `.gitignore` files from
-/// *all* ancestor directories—a deliberate divergence from git intended for
-/// non-git use cases—allowing a broad parent ignore (e.g. `~/.gitignore`
-/// containing `*`) to silently suppress every file in the walk.
-///
-/// When `respect_gitignore` is `false`, all git-related ignore processing is
-/// disabled regardless of this flag.
-fn walker_worker(
-    inner: Arc<SessionInner>,
+fn spawn_compat_walker(
+    search_directory: PathBuf,
+    threads: usize,
     override_matcher: Option<ignore::overrides::Override>,
-    injector: Injector<Arc<str>>,
+    respect_gitignore: bool,
+    files: Arc<RwLock<Vec<String>>>,
+    walk_complete: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
 ) {
-    let Some(first_root) = inner.search_directories.first() else {
-        let _ = inner.work_tx.send(WorkSignal::WalkComplete);
-        return;
-    };
-
-    let mut walk_builder = WalkBuilder::new(first_root);
-    for root in inner.search_directories.iter().skip(1) {
-        walk_builder.add(root);
-    }
-    walk_builder
-        .threads(inner.threads)
-        // Allow hidden entries.
-        .hidden(false)
-        // Follow symlinks to search their contents.
-        .follow_links(true)
-        // Keep ignore behavior aligned with git repositories: only apply
-        // gitignore rules when a git context exists.
-        .require_git(true);
-    if !inner.respect_gitignore {
+    thread::spawn(move || {
+        let mut walk_builder = WalkBuilder::new(&search_directory);
         walk_builder
-            .git_ignore(false)
-            .git_global(false)
-            .git_exclude(false)
-            .ignore(false)
-            .parents(false);
-    }
-    if let Some(override_matcher) = override_matcher {
-        walk_builder.overrides(override_matcher);
-    }
+            .threads(threads)
+            // Preserve the historic `chaos-locate` behavior: hidden files are
+            // valid `@` search targets.
+            .hidden(false)
+            .follow_links(true)
+            // Keep ignore behavior aligned with git repositories: only apply
+            // gitignore rules when a git context exists.
+            .require_git(true);
+        if !respect_gitignore {
+            walk_builder
+                .git_ignore(false)
+                .git_global(false)
+                .git_exclude(false)
+                .ignore(false)
+                .parents(false);
+        }
+        if let Some(override_matcher) = override_matcher {
+            walk_builder.overrides(override_matcher);
+        }
 
-    let walker = walk_builder.build_parallel();
+        let walker = walk_builder.build_parallel();
+        walker.run(|| {
+            const CHECK_INTERVAL: usize = 1024;
+            let mut n = 0;
+            let search_directory = search_directory.clone();
+            let files = files.clone();
+            let cancelled = cancelled.clone();
 
-    walker.run(|| {
-        const CHECK_INTERVAL: usize = 1024;
-        let mut n = 0;
-        let search_directories = inner.search_directories.clone();
-        let injector = injector.clone();
-        let cancelled = inner.cancelled.clone();
-        let shutdown = inner.shutdown.clone();
-
-        Box::new(move |entry| {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(_) => return ignore::WalkState::Continue,
-            };
-            if entry.file_type().is_some_and(|ft| ft.is_dir()) {
-                return ignore::WalkState::Continue;
-            }
-            let path = entry.path();
-            let Some(full_path) = path.to_str() else {
-                return ignore::WalkState::Continue;
-            };
-            if let Some((_, relative_path)) = get_file_path(path, &search_directories) {
-                injector.push(Arc::from(full_path), |_, cols| {
-                    cols[0] = Utf32String::from(relative_path);
-                });
-            }
-            n += 1;
-            if n >= CHECK_INTERVAL {
-                if cancelled.load(Ordering::Relaxed) || shutdown.load(Ordering::Relaxed) {
-                    return ignore::WalkState::Quit;
+            Box::new(move |entry| {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => return ignore::WalkState::Continue,
+                };
+                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    return ignore::WalkState::Continue;
                 }
-                n = 0;
-            }
-            ignore::WalkState::Continue
-        })
+                if let Ok(relative_path) = entry.path().strip_prefix(&search_directory)
+                    && let Some(relative_path) = relative_path.to_str()
+                    && let Ok(mut guard) = files.write()
+                {
+                    guard.push(relative_path.to_string());
+                }
+                n += 1;
+                if n >= CHECK_INTERVAL {
+                    if cancelled.load(Ordering::Relaxed) {
+                        return ignore::WalkState::Quit;
+                    }
+                    n = 0;
+                }
+                ignore::WalkState::Continue
+            })
+        });
+        walk_complete.store(true, Ordering::Relaxed);
     });
-    let _ = inner.work_tx.send(WorkSignal::WalkComplete);
 }
 
-fn matcher_worker(
-    inner: Arc<SessionInner>,
-    work_rx: Receiver<WorkSignal>,
-    mut nucleo: Nucleo<Arc<str>>,
-) -> anyhow::Result<()> {
-    const TICK_TIMEOUT_MS: u64 = 10;
-    let config = Config::DEFAULT.match_paths();
-    let mut indices_matcher = inner.compute_indices.then(|| Matcher::new(config.clone()));
+fn matcher_worker(inner: Arc<SessionInner>, work_rx: Receiver<WorkSignal>) -> anyhow::Result<()> {
+    const POLL_INTERVAL_MS: u64 = 10;
     let cancel_requested = || inner.cancelled.load(Ordering::Relaxed);
     let shutdown_requested = || inner.shutdown.load(Ordering::Relaxed);
 
     let mut last_query = String::new();
-    let mut next_notify = never();
-    let mut will_notify = false;
-    let mut walk_complete = false;
+    let mut needs_search = false;
+    let mut completed_for_query = false;
 
     loop {
         select! {
@@ -486,29 +448,12 @@ fn matcher_worker(
                 };
                 match signal {
                     WorkSignal::QueryUpdated(query) => {
-                        let append = query.starts_with(&last_query);
-                        nucleo.pattern.reparse(
-                            0,
-                            &query,
-                            CaseMatching::Smart,
-                            Normalization::Smart,
-                            append,
-                        );
                         last_query = query;
-                        will_notify = true;
-                        next_notify = after(Duration::from_millis(0));
-                    }
-                    WorkSignal::NucleoNotify => {
-                        if !will_notify {
-                            will_notify = true;
-                            next_notify = after(Duration::from_millis(TICK_TIMEOUT_MS));
-                        }
-                    }
-                    WorkSignal::WalkComplete => {
-                        walk_complete = true;
-                        if !will_notify {
-                            will_notify = true;
-                            next_notify = after(Duration::from_millis(0));
+                        needs_search = true;
+                        completed_for_query = false;
+                        if !last_query.is_empty() && !pickers_scan_complete(&inner) {
+                            let snapshot = search_with_fff(&inner, &last_query, false);
+                            inner.reporter.on_update(&snapshot);
                         }
                     }
                     WorkSignal::Shutdown => {
@@ -516,55 +461,20 @@ fn matcher_worker(
                     }
                 }
             }
-            recv(next_notify) -> _ => {
-                will_notify = false;
-                let status = nucleo.tick(TICK_TIMEOUT_MS);
-                if status.changed {
-                    let snapshot = nucleo.snapshot();
-                    let limit = inner.limit.min(snapshot.matched_item_count() as usize);
-                    let pattern = snapshot.pattern().column_pattern(0);
-                    let matches: Vec<_> = snapshot
-                        .matches()
-                        .iter()
-                        .take(limit)
-                        .filter_map(|match_| {
-                            let item = snapshot.get_item(match_.idx)?;
-                            let full_path = item.data.as_ref();
-                            let (root_idx, relative_path) = get_file_path(Path::new(full_path), &inner.search_directories)?;
-                            let indices = if let Some(indices_matcher) = indices_matcher.as_mut() {
-                                let mut idx_vec = Vec::<u32>::new();
-                                let haystack = item.matcher_columns[0].slice(..);
-                                let _ = pattern.indices(haystack, indices_matcher, &mut idx_vec);
-                                idx_vec.sort_unstable();
-                                idx_vec.dedup();
-                                Some(idx_vec)
-                            } else {
-                                None
-                            };
-                            Some(FileMatch {
-                                score: match_.score,
-                                path: PathBuf::from(relative_path),
-                                root: inner.search_directories[root_idx].clone(),
-                                indices,
-                            })
-                        })
-                        .collect();
-
-                    let snapshot = FileSearchSnapshot {
-                        query: last_query.clone(),
-                        matches,
-                        total_match_count: snapshot.matched_item_count() as usize,
-                        scanned_file_count: snapshot.item_count() as usize,
-                        walk_complete,
-                    };
+            recv(after(Duration::from_millis(POLL_INTERVAL_MS))) -> _ => {
+                if last_query.is_empty() {
+                    continue;
+                }
+                let walk_complete = pickers_scan_complete(&inner);
+                if needs_search || !walk_complete {
+                    let snapshot = search_with_fff(&inner, &last_query, walk_complete);
                     inner.reporter.on_update(&snapshot);
+                    needs_search = false;
                 }
-                if !status.running && walk_complete {
+                if walk_complete && !completed_for_query {
                     inner.reporter.on_complete();
+                    completed_for_query = true;
                 }
-            }
-            default(Duration::from_millis(100)) => {
-                // Occasionally check the cancel flag.
             }
         }
 
@@ -577,6 +487,155 @@ fn matcher_worker(
     inner.reporter.on_complete();
 
     Ok(())
+}
+
+fn pickers_scan_complete(inner: &SessionInner) -> bool {
+    inner.pickers.iter().all(|root_picker| {
+        root_picker.manual_walk_complete.load(Ordering::Relaxed)
+            && root_picker
+                .picker
+                .read()
+                .ok()
+                .and_then(|guard| guard.as_ref().map(|picker| !picker.is_scan_active()))
+                .unwrap_or(true)
+    })
+}
+
+fn search_with_fff(
+    inner: &SessionInner,
+    query_text: &str,
+    walk_complete: bool,
+) -> FileSearchSnapshot {
+    let parser = QueryParser::default();
+    let query = parser.parse(query_text);
+    let mut matches = Vec::new();
+    let mut seen = HashSet::<(PathBuf, PathBuf)>::new();
+    let mut total_match_count = 0usize;
+    let mut scanned_file_count = 0usize;
+
+    for root_picker in &inner.pickers {
+        let Ok(guard) = root_picker.picker.read() else {
+            continue;
+        };
+        let Some(picker) = guard.as_ref() else {
+            continue;
+        };
+        let progress = picker.get_scan_progress();
+        scanned_file_count = scanned_file_count.saturating_add(progress.scanned_files_count);
+        let result = picker.fuzzy_search(
+            &query,
+            None,
+            FuzzySearchOptions {
+                max_threads: inner.threads,
+                pagination: PaginationArgs {
+                    offset: 0,
+                    limit: inner.limit.saturating_mul(8).max(inner.limit),
+                },
+                ..Default::default()
+            },
+        );
+        total_match_count = total_match_count.saturating_add(result.total_matched);
+
+        for (item, score) in result.items.into_iter().zip(result.scores) {
+            let relative_path = item.relative_path(picker);
+            if is_excluded(&root_picker.override_matcher, &relative_path) {
+                continue;
+            }
+            seen.insert((root_picker.root.clone(), PathBuf::from(&relative_path)));
+            matches.push(FileMatch {
+                score: score.total.max(0) as u32,
+                path: PathBuf::from(&relative_path),
+                root: root_picker.root.clone(),
+                indices: inner
+                    .compute_indices
+                    .then(|| fuzzy_subsequence_indices(query_text, &relative_path)),
+            });
+        }
+
+        if let Ok(manual_files) = root_picker.manual_files.read() {
+            scanned_file_count = scanned_file_count.saturating_add(manual_files.len());
+            for relative_path in manual_files.iter() {
+                if is_excluded(&root_picker.override_matcher, relative_path) {
+                    continue;
+                }
+                let Some(score) = fuzzy_subsequence_score(query_text, relative_path) else {
+                    continue;
+                };
+                total_match_count = total_match_count.saturating_add(1);
+                let path = PathBuf::from(relative_path);
+                if !seen.insert((root_picker.root.clone(), path.clone())) {
+                    continue;
+                }
+                matches.push(FileMatch {
+                    score,
+                    path,
+                    root: root_picker.root.clone(),
+                    indices: inner
+                        .compute_indices
+                        .then(|| fuzzy_subsequence_indices(query_text, relative_path)),
+                });
+            }
+        }
+    }
+
+    matches.sort_by(cmp_by_score_desc_then_path_asc(
+        |file_match: &FileMatch| file_match.score,
+        |file_match| file_match.path.to_str().unwrap_or(""),
+    ));
+    matches.truncate(inner.limit);
+
+    FileSearchSnapshot {
+        query: query_text.to_string(),
+        matches,
+        total_match_count,
+        scanned_file_count,
+        walk_complete,
+    }
+}
+
+fn fuzzy_subsequence_score(query: &str, haystack: &str) -> Option<u32> {
+    let indices = fuzzy_subsequence_indices(query, haystack);
+    let query_len = query.chars().count();
+    if query_len == 0 || indices.len() != query_len {
+        return None;
+    }
+    let span = indices
+        .last()
+        .zip(indices.first())
+        .map(|(last, first)| last.saturating_sub(*first).saturating_add(1))
+        .unwrap_or(0);
+    Some(
+        10_000u32
+            .saturating_sub(span)
+            .saturating_sub(haystack.len() as u32),
+    )
+}
+
+fn is_excluded(
+    override_matcher: &Option<ignore::overrides::Override>,
+    relative_path: &str,
+) -> bool {
+    override_matcher
+        .as_ref()
+        .is_some_and(|matcher| matcher.matched(relative_path, false).is_ignore())
+}
+
+fn fuzzy_subsequence_indices(query: &str, haystack: &str) -> Vec<u32> {
+    let mut indices = Vec::new();
+    let mut query_chars = query.chars().flat_map(char::to_lowercase);
+    let Some(mut needle) = query_chars.next() else {
+        return indices;
+    };
+    for (idx, ch) in haystack.chars().enumerate() {
+        if ch.to_lowercase().any(|lower| lower == needle) {
+            indices.push(idx as u32);
+            let Some(next) = query_chars.next() else {
+                break;
+            };
+            needle = next;
+        }
+    }
+    indices
 }
 
 #[derive(Default)]
@@ -626,17 +685,6 @@ mod tests {
     use std::time::Duration;
     use std::time::Instant;
     use tempfile::TempDir;
-
-    #[test]
-    fn verify_score_is_none_for_non_match() {
-        let mut utf32buf = Vec::<char>::new();
-        let line = "hello";
-        let mut matcher = Matcher::new(Config::DEFAULT);
-        let haystack: Utf32Str<'_> = Utf32Str::new(line, &mut utf32buf);
-        let pattern = create_pattern("zzz");
-        let score = pattern.score(haystack, &mut matcher);
-        assert_eq!(score, None);
-    }
 
     #[test]
     fn tie_breakers_sort_by_path_when_scores_equal() {

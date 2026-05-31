@@ -45,7 +45,17 @@ jobs:
 
       - name: Install Linux build dependencies
         if: ${{ runner.os == 'Linux' }}
-        run: upkg install pkg-config libcap-dev libdbus-1-dev
+        run: upkg install pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
+
+      - name: Install macOS build dependencies
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          upkg install protobuf llvm pkgconf
+          LLVM_PREFIX="$(brew --prefix llvm)"
+          echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
+          echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
 
       - name: Install DotSlash
         uses: facebook/install-dotslash@v2

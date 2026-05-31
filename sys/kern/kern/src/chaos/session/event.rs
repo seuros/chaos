@@ -27,6 +27,19 @@ impl Session {
         self.send_event_raw(event).await;
     }
 
+    /// Deliver a live-only event to clients without persisting it to rollout.
+    ///
+    /// Use this for high-frequency, reconstructable UI affordances such as
+    /// progress indicators. Durable conversation state should use
+    /// [`Self::send_event`] instead.
+    pub(crate) async fn send_transient_event(&self, turn_context: &TurnContext, msg: EventMsg) {
+        let event = Event {
+            id: turn_context.sub_id.clone(),
+            msg,
+        };
+        self.deliver_event_raw(event).await;
+    }
+
     pub(crate) async fn send_event_raw(&self, event: Event) {
         let rollout_items = vec![RolloutItem::EventMsg(event.msg.clone())];
         self.persist_rollout_items(&rollout_items).await;

@@ -356,6 +356,7 @@ async fn run_event_loop(
                     | EventMsg::AgentReasoningRawContent(_)
                     | EventMsg::TurnStarted(_)
                     | EventMsg::TokenCount(_)
+                    | EventMsg::TurnProgress(_)
                     | EventMsg::AgentReasoning(_)
                     | EventMsg::AgentReasoningSectionBreak(_)
                     | EventMsg::McpToolCallBegin(_)

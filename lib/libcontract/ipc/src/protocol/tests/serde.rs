@@ -139,6 +139,29 @@ fn turn_aborted_event_deserializes_without_turn_id() -> Result<()> {
 }
 
 #[test]
+fn turn_progress_event_serializes_as_approximate_progress() -> Result<()> {
+    let event = EventMsg::TurnProgress(TurnProgressEvent {
+        turn_id: "turn-1".to_string(),
+        approx_reasoning_tokens: 1200,
+        approx_output_tokens: 300,
+        approx_total_tokens: 1500,
+    });
+
+    assert_eq!(
+        serde_json::to_value(event)?,
+        json!({
+            "type": "turn_progress",
+            "turn_id": "turn-1",
+            "approx_reasoning_tokens": 1200,
+            "approx_output_tokens": 300,
+            "approx_total_tokens": 1500,
+        })
+    );
+
+    Ok(())
+}
+
+#[test]
 fn turn_context_item_deserializes_without_network() -> Result<()> {
     let item: TurnContextItem = serde_json::from_value(json!({
         "cwd": "/tmp",

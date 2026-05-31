@@ -45,6 +45,7 @@ mod sampling;
 
 use preparation::run_auto_compact;
 use preparation::run_pre_sampling_compact;
+use execution::TurnProgressTracker;
 use sampling::run_sampling_request;
 
 #[derive(Debug)]
@@ -250,6 +251,11 @@ pub(crate) async fn run_turn(
     // which contains many turns, from the perspective of the user, it is a single turn.
     let turn_diff_tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
     let mut server_model_warning_emitted_for_turn = false;
+    // Keep the approximate live progress scoped to the whole user-visible turn,
+    // not to an individual Responses API request. Tool calls, hook continuations,
+    // and other follow-up sampling requests should advance the same counter; the
+    // UI clears it when the turn completes.
+    let mut turn_progress = TurnProgressTracker::new();
 
     // `ModelClientSession` is turn-scoped and caches WebSocket + sticky routing state, so we
     // reuse one instance across retries within this turn.
@@ -338,6 +344,7 @@ pub(crate) async fn run_turn(
             Arc::clone(&turn_context),
             Arc::clone(&turn_diff_tracker),
             &mut client_session,
+            &mut turn_progress,
             turn_metadata_header.as_deref(),
             sampling_request_input,
             &mut server_model_warning_emitted_for_turn,

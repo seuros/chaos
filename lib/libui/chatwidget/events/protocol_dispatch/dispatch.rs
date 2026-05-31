@@ -101,6 +101,7 @@ impl ChatWidget {
                 self.set_token_info(ev.info);
                 self.on_rate_limit_snapshot(ev.rate_limits);
             }
+            EventMsg::TurnProgress(ev) => self.on_turn_progress(ev),
             EventMsg::Warning(WarningEvent { message }) => self.on_warning(message),
             EventMsg::ModelReroute(_) => {}
             EventMsg::Error(ErrorEvent {

@@ -1,10 +1,13 @@
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use chaos_epoll::OrCancelExt;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::TurnProgressEvent;
 use futures::future::BoxFuture;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
@@ -37,6 +40,82 @@ use super::super::response_parsing::{
 };
 use super::SamplingRequestResult;
 
+const TURN_PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(500);
+const APPROX_CHARS_PER_TOKEN: usize = 4;
+const APPROX_SILENT_THINKING_TOKENS_PER_SECOND: u64 = 25;
+
+#[derive(Debug)]
+pub(super) struct TurnProgressTracker {
+    output_chars: usize,
+    reasoning_chars: usize,
+    last_emitted_total_tokens: i64,
+    last_emit_at: Instant,
+    started_at: Instant,
+}
+
+impl TurnProgressTracker {
+    pub(super) fn new() -> Self {
+        let now = Instant::now();
+        // Allow the first non-zero observation to emit immediately.
+        Self {
+            output_chars: 0,
+            reasoning_chars: 0,
+            last_emitted_total_tokens: 0,
+            last_emit_at: now - TURN_PROGRESS_EMIT_INTERVAL,
+            started_at: now,
+        }
+    }
+
+    fn observe_output_delta(&mut self, delta: &str) {
+        self.output_chars = self.output_chars.saturating_add(delta.chars().count());
+    }
+
+    fn observe_reasoning_delta(&mut self, delta: &str) {
+        self.reasoning_chars = self.reasoning_chars.saturating_add(delta.chars().count());
+    }
+
+    pub(super) async fn emit_if_due(&mut self, sess: &Session, turn_context: &TurnContext) {
+        let now = Instant::now();
+        if now.duration_since(self.last_emit_at) < TURN_PROGRESS_EMIT_INTERVAL {
+            return;
+        }
+
+        let observed_reasoning_tokens = approx_tokens_from_chars(self.reasoning_chars);
+        let synthetic_thinking_tokens = self.synthetic_thinking_tokens(now);
+        let approx_reasoning_tokens = observed_reasoning_tokens.max(synthetic_thinking_tokens);
+        let approx_output_tokens = approx_tokens_from_chars(self.output_chars);
+        let approx_total_tokens = approx_reasoning_tokens + approx_output_tokens;
+        if approx_total_tokens == 0 || approx_total_tokens == self.last_emitted_total_tokens {
+            return;
+        }
+
+        self.last_emit_at = now;
+        self.last_emitted_total_tokens = approx_total_tokens;
+        sess.send_transient_event(
+            turn_context,
+            EventMsg::TurnProgress(TurnProgressEvent {
+                turn_id: turn_context.sub_id.clone(),
+                approx_reasoning_tokens,
+                approx_output_tokens,
+                approx_total_tokens,
+            }),
+        )
+        .await;
+    }
+
+    fn synthetic_thinking_tokens(&self, now: Instant) -> i64 {
+        let elapsed_ms = now
+            .saturating_duration_since(self.started_at)
+            .as_millis()
+            .min(i64::MAX as u128) as i64;
+        elapsed_ms * APPROX_SILENT_THINKING_TOKENS_PER_SECOND as i64 / 1_000
+    }
+}
+
+fn approx_tokens_from_chars(chars: usize) -> i64 {
+    chars.div_ceil(APPROX_CHARS_PER_TOKEN) as i64
+}
+
 #[allow(clippy::too_many_arguments)]
 #[instrument(level = "trace",
     skip_all,
@@ -52,6 +131,7 @@ pub(super) async fn try_run_sampling_request(
     client_session: &mut ModelClientSession,
     turn_metadata_header: Option<&str>,
     turn_diff_tracker: SharedTurnDiffTracker,
+    progress: &mut TurnProgressTracker,
     server_model_warning_emitted_for_turn: &mut bool,
     last_server_model: &mut Option<String>,
     prompt: &Prompt,
@@ -100,14 +180,23 @@ pub(super) async fn try_run_sampling_request(
             from = field::Empty,
         );
 
-        let event = match stream
-            .next()
-            .instrument(trace_span!(parent: &handle_responses, "receiving"))
-            .or_cancel(&cancellation_token)
-            .await
+        let event = match tokio::time::timeout(
+            TURN_PROGRESS_EMIT_INTERVAL,
+            stream
+                .next()
+                .instrument(trace_span!(parent: &handle_responses, "receiving"))
+                .or_cancel(&cancellation_token),
+        )
+        .await
         {
-            Ok(event) => event,
-            Err(chaos_epoll::CancelErr::Cancelled) => break Err(ChaosErr::TurnAborted),
+            Ok(Ok(event)) => event,
+            Ok(Err(chaos_epoll::CancelErr::Cancelled)) => break Err(ChaosErr::TurnAborted),
+            Err(_) => {
+                progress
+                    .emit_if_due(sess.as_ref(), turn_context.as_ref())
+                    .await;
+                continue;
+            }
         };
 
         let event = match event {
@@ -296,6 +385,10 @@ pub(super) async fn try_run_sampling_request(
                 });
             }
             ResponseEvent::OutputTextDelta(delta) => {
+                progress.observe_output_delta(&delta);
+                progress
+                    .emit_if_due(sess.as_ref(), turn_context.as_ref())
+                    .await;
                 // In review child threads, suppress assistant text deltas; the
                 // UI will show a selection popup from the final ReviewOutput.
                 //
@@ -345,6 +438,10 @@ pub(super) async fn try_run_sampling_request(
                 delta,
                 summary_index,
             } => {
+                progress.observe_reasoning_delta(&delta);
+                progress
+                    .emit_if_due(sess.as_ref(), turn_context.as_ref())
+                    .await;
                 if let Some(active) = active_item.as_ref() {
                     let event = crate::protocol::ReasoningContentDeltaEvent {
                         process_id: sess.conversation_id.to_string(),
@@ -380,6 +477,10 @@ pub(super) async fn try_run_sampling_request(
                 delta,
                 content_index,
             } => {
+                progress.observe_reasoning_delta(&delta);
+                progress
+                    .emit_if_due(sess.as_ref(), turn_context.as_ref())
+                    .await;
                 if let Some(active) = active_item.as_ref() {
                     let event = crate::protocol::ReasoningRawContentDeltaEvent {
                         process_id: sess.conversation_id.to_string(),

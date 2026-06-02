@@ -469,6 +469,19 @@ impl App {
         let models_manager = self.server.get_models_manager();
         let models_refresh_result = models_manager.refresh_models(RefreshStrategy::Online).await;
         let refreshed_models = models_manager.try_list_models().unwrap_or_default();
+        // The session can start before any account exists, leaving the model
+        // slug empty. Once login surfaces the catalog, adopt the provider's
+        // default (or the first available) so the next turn isn't rejected for
+        // requesting the '' model.
+        if self.chat_widget.current_model().is_empty()
+            && let Some(default_model) = refreshed_models
+                .iter()
+                .find(|preset| preset.is_default)
+                .or_else(|| refreshed_models.first())
+        {
+            self.chat_widget.set_model(&default_model.model);
+        }
+        self.chat_widget.sync_login_required();
         self.chat_widget.refresh_status_line();
         self.chat_widget.submit_op(Op::ReloadUserConfig);
         if provider_changed || self.chat_widget.process_id().is_none() {

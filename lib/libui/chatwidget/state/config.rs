@@ -90,6 +90,7 @@ impl ChatWidget {
         }
         self.refresh_model_display();
         self.refresh_status_line();
+        self.sync_login_required();
     }
 
     pub fn current_model(&self) -> &str {
@@ -104,6 +105,19 @@ impl ChatWidget {
 
     pub(crate) fn sync_personality_command_enabled(&mut self) {
         self.bottom_pane.set_personality_command_enabled(true);
+    }
+
+    /// Lock the slash-command surface to logged-out-safe commands when no
+    /// account is connected and the active model resolves to an empty slug.
+    ///
+    /// Both conditions matter: a connected account with a transiently empty
+    /// model is recoverable (the default is selected after refresh), whereas a
+    /// logged-out session has no usable model identity at all.
+    pub fn sync_login_required(&mut self) {
+        let logged_out = self.auth_manager.auth_cached().is_none();
+        let model_unset = self.current_model().is_empty();
+        self.bottom_pane
+            .set_login_required(logged_out && model_unset);
     }
 
     pub(crate) fn current_model_supports_personality(&self) -> bool {

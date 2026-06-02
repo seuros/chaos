@@ -236,6 +236,7 @@ pub struct ChatComposer {
     pub(super) config: ChatComposerConfig,
     pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     pub(super) personality_command_enabled: bool,
+    pub(super) login_required: bool,
     pub(super) status_line_value: Option<Line<'static>>,
     pub(super) status_line_enabled: bool,
     // Agent label injected into the footer's contextual row when multi-agent mode is active.
@@ -269,6 +270,7 @@ impl ChatComposer {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
             personality_command_enabled: self.personality_command_enabled,
             allow_elevate_sandbox: false,
+            login_required: self.login_required,
         }
     }
 
@@ -341,6 +343,7 @@ impl ChatComposer {
             config,
             collaboration_mode_indicator: None,
             personality_command_enabled: false,
+            login_required: false,
             status_line_value: None,
             status_line_enabled: false,
             active_agent_label: None,
@@ -392,6 +395,11 @@ impl ChatComposer {
 
     pub fn set_personality_command_enabled(&mut self, enabled: bool) {
         self.personality_command_enabled = enabled;
+    }
+
+    /// Restrict the slash-command surface to logged-out-safe commands.
+    pub fn set_login_required(&mut self, login_required: bool) {
+        self.login_required = login_required;
     }
 
     /// Compatibility shim for tests that still toggle the removed steer mode flag.

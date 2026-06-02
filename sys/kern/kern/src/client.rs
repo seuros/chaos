@@ -12,6 +12,7 @@
 //! requests during that turn. It caches a Responses WebSocket connection (opened lazily) and stores
 //! per-turn state such as the `x-chaos-turn-state` token used for sticky routing.
 
+pub(crate) mod auth_breaker;
 pub(crate) mod state;
 pub(crate) mod streaming;
 pub(crate) mod tools;
@@ -98,6 +99,8 @@ pub(super) struct ModelClientState {
     pub(super) session: StdMutex<Weak<crate::chaos::Session>>,
     /// Wire-format representer selected at session creation based on provider identity.
     pub(super) representer: chaos_parrot::SessionRepresenter,
+    /// Fails turns fast while this provider has no usable credentials.
+    pub(super) auth_breaker: auth_breaker::AuthBreaker,
 }
 
 /// Resolved API client setup for a single request attempt.

@@ -261,7 +261,7 @@ fn error_payload_for(error: JournalError) -> ErrorPayload {
         JournalError::Db(ref err) => ErrorPayload {
             code: ErrorCode::Internal,
             message: error.to_string(),
-            retryable: is_retryable_db_error(&err),
+            retryable: is_retryable_db_error(err),
         },
         JournalError::Migrate(_)
         | JournalError::Io(_)

@@ -38,6 +38,7 @@ pub struct CommandPopup {
 pub struct CommandPopupFlags {
     pub collaboration_modes_enabled: bool,
     pub personality_command_enabled: bool,
+    pub login_required: bool,
 }
 
 impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
@@ -46,12 +47,18 @@ impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
             personality_command_enabled: value.personality_command_enabled,
             allow_elevate_sandbox: false,
+            login_required: value.login_required,
         }
     }
 }
 
 impl CommandPopup {
     pub fn new(mut prompts: Vec<CustomPrompt>, flags: CommandPopupFlags) -> Self {
+        // When logged out the surface is limited to logged-out-safe built-ins;
+        // user prompts would expand into model turns, so drop them too.
+        if flags.login_required {
+            prompts.clear();
+        }
         // Keep built-in availability in sync with the composer.
         let builtins: Vec<(&'static str, SlashCommand)> =
             slash_commands::builtins_for_input(flags.into())
@@ -459,6 +466,7 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 personality_command_enabled: true,
+                login_required: false,
             },
         );
         popup.on_composer_text_change("/collab".to_string());
@@ -476,6 +484,7 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 personality_command_enabled: true,
+                login_required: false,
             },
         );
         popup.on_composer_text_change("/plan".to_string());
@@ -493,6 +502,7 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 personality_command_enabled: false,
+                login_required: false,
             },
         );
         popup.on_composer_text_change("/pers".to_string());
@@ -518,6 +528,7 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 personality_command_enabled: true,
+                login_required: false,
             },
         );
         popup.on_composer_text_change("/personality".to_string());

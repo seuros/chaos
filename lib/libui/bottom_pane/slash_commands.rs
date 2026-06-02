@@ -15,12 +15,15 @@ pub struct BuiltinCommandFlags {
     pub collaboration_modes_enabled: bool,
     pub personality_command_enabled: bool,
     pub allow_elevate_sandbox: bool,
+    /// No account is connected, so only logged-out-safe commands are offered.
+    pub login_required: bool,
 }
 
 /// Return the built-ins that should be visible/usable for the current input.
 pub fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static str, SlashCommand)> {
     built_in_slash_commands()
         .into_iter()
+        .filter(|(_, cmd)| !flags.login_required || cmd.available_when_logged_out())
         .filter(|(_, cmd)| flags.allow_elevate_sandbox || *cmd != SlashCommand::ElevateSandbox)
         .filter(|(_, cmd)| {
             flags.collaboration_modes_enabled
@@ -56,7 +59,29 @@ mod tests {
             collaboration_modes_enabled: true,
             personality_command_enabled: true,
             allow_elevate_sandbox: true,
+            login_required: false,
         }
+    }
+
+    #[test]
+    fn login_required_hides_all_but_logged_out_safe_commands() {
+        let flags = BuiltinCommandFlags {
+            login_required: true,
+            ..all_enabled_flags()
+        };
+        let visible: Vec<SlashCommand> = builtins_for_input(flags)
+            .into_iter()
+            .map(|(_, cmd)| cmd)
+            .collect();
+        assert!(visible.contains(&SlashCommand::Accounts));
+        assert!(visible.iter().all(|cmd| cmd.available_when_logged_out()));
+        assert!(!visible.contains(&SlashCommand::Model));
+        // /accounts must still resolve when typed so the user can connect.
+        assert_eq!(
+            find_builtin_command("accounts", flags),
+            Some(SlashCommand::Accounts)
+        );
+        assert_eq!(find_builtin_command("model", flags), None);
     }
 
     #[test]

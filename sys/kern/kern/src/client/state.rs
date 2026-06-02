@@ -24,7 +24,9 @@ use tracing::warn;
 
 use crate::api_bridge::map_api_error;
 use crate::auth::ChaosAuth;
+use crate::client::auth_breaker;
 use crate::client_common::Prompt;
+use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::protocol::SubAgentSource;
@@ -54,6 +56,7 @@ impl ModelClient {
         } else {
             chaos_parrot::SessionRepresenter::wannabe()
         };
+        let auth_breaker = auth_breaker::AuthBreaker::new(&provider_id);
         Self {
             state: Arc::new(ModelClientState {
                 auth_manager,
@@ -71,8 +74,16 @@ impl ModelClient {
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),
                 session: std::sync::Mutex::new(Weak::new()),
                 representer,
+                auth_breaker,
             }),
         }
+    }
+
+    /// Force the auth breaker closed after credentials change (e.g. a login),
+    /// so the next turn probes the fresh auth state rather than waiting out the
+    /// open-circuit backoff window.
+    pub(crate) fn reset_auth_breaker(&self) {
+        self.state.auth_breaker.reset();
     }
 
     pub(crate) fn bind_session(&self, session: &Arc<crate::chaos::Session>) {
@@ -345,5 +356,33 @@ impl ModelClient {
             api_provider,
             api_auth,
         })
+    }
+
+    /// Gate a turn on the per-provider auth circuit breaker before any request
+    /// is built. When the breaker is open within its backoff window this
+    /// rejects immediately without resolving auth; otherwise it probes the live
+    /// credential state via [`current_client_setup`] (the authoritative check,
+    /// covering cached logins, env keys, and bearer tokens) and records the
+    /// outcome. A missing-credentials result surfaces `ProviderAuthMissing`,
+    /// which the client turns into a login prompt.
+    pub(super) async fn auth_preflight(&self) -> Result<()> {
+        if let auth_breaker::AuthGate::RejectFastFail = self.state.auth_breaker.check() {
+            return Err(crate::api_bridge::provider_auth_missing(
+                &self.state.provider,
+            ));
+        }
+        match self.current_client_setup().await {
+            Ok(_) => {
+                self.state.auth_breaker.record(/*authenticated*/ true);
+                Ok(())
+            }
+            Err(err @ ChaosErr::ProviderAuthMissing(_)) => {
+                self.state.auth_breaker.record(/*authenticated*/ false);
+                Err(err)
+            }
+            // Transient failures (e.g. a token refresh hiccup) aren't a signal
+            // about login state, so they must not trip the auth breaker.
+            Err(other) => Err(other),
+        }
     }
 }

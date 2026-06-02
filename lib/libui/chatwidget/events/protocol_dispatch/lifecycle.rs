@@ -79,6 +79,7 @@ impl ChatWidget {
         }
         self.refresh_model_display();
         self.sync_personality_command_enabled();
+        self.sync_login_required();
         let session_info_cell = history_cell::new_session_info(
             &self.config,
             &model_for_header,

@@ -143,8 +143,6 @@ impl SlashCommand {
             | SlashCommand::Compact
             | SlashCommand::Model
             | SlashCommand::Personality
-            | SlashCommand::Approvals
-            | SlashCommand::Permissions
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Review
@@ -154,7 +152,9 @@ impl SlashCommand {
             | SlashCommand::Login
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,
-            SlashCommand::Diff
+            SlashCommand::Approvals
+            | SlashCommand::Permissions
+            | SlashCommand::Diff
             | SlashCommand::Copy
             | SlashCommand::Rename
             | SlashCommand::Mention
@@ -173,6 +173,19 @@ impl SlashCommand {
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
             SlashCommand::Theme => false,
         }
+    }
+
+    /// Whether this command stays usable while no account is connected.
+    ///
+    /// When logged out the model has no usable identity (the active model
+    /// resolves to an empty slug), so every command that would touch the
+    /// provider is hidden. Only account management and the exits remain so the
+    /// user can connect an account or leave.
+    pub fn available_when_logged_out(self) -> bool {
+        matches!(
+            self,
+            SlashCommand::Accounts | SlashCommand::Login | SlashCommand::Quit | SlashCommand::Exit
+        )
     }
 
     fn is_visible(self) -> bool {

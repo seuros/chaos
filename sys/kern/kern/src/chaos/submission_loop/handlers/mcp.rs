@@ -27,6 +27,9 @@ pub async fn refresh_mcp_servers(sess: &Arc<Session>, refresh_config: McpServerR
 
 pub async fn reload_user_config(sess: &Arc<Session>) {
     sess.reload_user_config_layer().await;
+    // Credentials may have just changed (e.g. an account was connected), so
+    // clear any open auth circuit so the next turn probes the fresh state.
+    sess.services.model_client.reset_auth_breaker();
 }
 
 pub async fn interrupt(sess: &Arc<Session>) {

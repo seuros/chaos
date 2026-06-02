@@ -904,6 +904,15 @@ impl ModelClientSession {
                 .await;
         }
 
+        // Fail fast (and stop hammering provider auth) when no credentials are
+        // present. Clamped transport authenticates itself, so it is exempt and
+        // handled above. Offline fixture replay needs no credentials, so it
+        // bypasses the preflight (the fixture fast path lives inside
+        // stream_responses_api).
+        if crate::flags::CHAOS_RS_SSE_FIXTURE.is_none() {
+            self.client.auth_preflight().await?;
+        }
+
         if crate::model_provider_info::is_anthropic_wire(
             self.client.state.provider.base_url.as_deref(),
         ) {

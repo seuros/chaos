@@ -82,11 +82,6 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    pub fn set_personality_command_enabled(&mut self, enabled: bool) {
-        self.composer.set_personality_command_enabled(enabled);
-        self.request_redraw();
-    }
-
     /// Restrict the composer's slash commands to logged-out-safe ones.
     pub fn set_login_required(&mut self, login_required: bool) {
         self.composer.set_login_required(login_required);

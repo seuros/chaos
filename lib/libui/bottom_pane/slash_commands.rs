@@ -13,7 +13,6 @@ use crate::slash_command::built_in_slash_commands;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BuiltinCommandFlags {
     pub collaboration_modes_enabled: bool,
-    pub personality_command_enabled: bool,
     pub allow_elevate_sandbox: bool,
     /// No account is connected, so only logged-out-safe commands are offered.
     pub login_required: bool,
@@ -29,7 +28,6 @@ pub fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static str, Slas
             flags.collaboration_modes_enabled
                 || !matches!(*cmd, SlashCommand::Collab | SlashCommand::Plan)
         })
-        .filter(|(_, cmd)| flags.personality_command_enabled || *cmd != SlashCommand::Personality)
         .collect()
 }
 
@@ -57,7 +55,6 @@ mod tests {
     fn all_enabled_flags() -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: true,
-            personality_command_enabled: true,
             allow_elevate_sandbox: true,
             login_required: false,
         }

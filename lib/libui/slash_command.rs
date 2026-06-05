@@ -48,7 +48,6 @@ pub enum SlashCommand {
     #[strum(to_string = "stop", serialize = "clean")]
     Stop,
     Clear,
-    Personality,
     TestApproval,
     #[strum(serialize = "subagents")]
     MultiAgents,
@@ -86,9 +85,6 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE".into(),
             SlashCommand::MemoryUpdate => "DO NOT USE".into(),
             SlashCommand::Model => "choose what model and reasoning effort to use".into(),
-            SlashCommand::Personality => {
-                format!("choose a communication style for {OS_NAME}")
-            }
             SlashCommand::Plan => "switch to Plan mode".into(),
             SlashCommand::Collab => "change collaboration mode (experimental)".into(),
             SlashCommand::Agent | SlashCommand::MultiAgents => {
@@ -142,7 +138,6 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Compact
             | SlashCommand::Model
-            | SlashCommand::Personality
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Review

@@ -235,7 +235,6 @@ pub struct ChatComposer {
     pub(super) collaboration_modes_enabled: bool,
     pub(super) config: ChatComposerConfig,
     pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
-    pub(super) personality_command_enabled: bool,
     pub(super) login_required: bool,
     pub(super) status_line_value: Option<Line<'static>>,
     pub(super) status_line_enabled: bool,
@@ -268,7 +267,6 @@ impl ChatComposer {
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
-            personality_command_enabled: self.personality_command_enabled,
             allow_elevate_sandbox: false,
             login_required: self.login_required,
         }
@@ -342,7 +340,6 @@ impl ChatComposer {
             collaboration_modes_enabled: false,
             config,
             collaboration_mode_indicator: None,
-            personality_command_enabled: false,
             login_required: false,
             status_line_value: None,
             status_line_enabled: false,
@@ -391,10 +388,6 @@ impl ChatComposer {
         indicator: Option<CollaborationModeIndicator>,
     ) {
         self.collaboration_mode_indicator = indicator;
-    }
-
-    pub fn set_personality_command_enabled(&mut self, enabled: bool) {
-        self.personality_command_enabled = enabled;
     }
 
     /// Restrict the slash-command surface to logged-out-safe commands.

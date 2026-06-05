@@ -519,7 +519,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
-        widget.sync_personality_command_enabled();
         widget.sync_login_required();
         widget
             .bottom_pane

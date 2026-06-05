@@ -103,10 +103,6 @@ impl ChatWidget {
             .unwrap_or_else(|| self.current_collaboration_mode.model())
     }
 
-    pub(crate) fn sync_personality_command_enabled(&mut self) {
-        self.bottom_pane.set_personality_command_enabled(true);
-    }
-
     /// Lock the slash-command surface to logged-out-safe commands when no
     /// account is connected and the active model resolves to an empty slug.
     ///

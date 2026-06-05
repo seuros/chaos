@@ -37,7 +37,6 @@ pub struct CommandPopup {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CommandPopupFlags {
     pub collaboration_modes_enabled: bool,
-    pub personality_command_enabled: bool,
     pub login_required: bool,
 }
 
@@ -45,7 +44,6 @@ impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
     fn from(value: CommandPopupFlags) -> Self {
         Self {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
-            personality_command_enabled: value.personality_command_enabled,
             allow_elevate_sandbox: false,
             login_required: value.login_required,
         }
@@ -465,7 +463,6 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                personality_command_enabled: true,
                 login_required: false,
             },
         );
@@ -483,7 +480,6 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                personality_command_enabled: true,
                 login_required: false,
             },
         );
@@ -492,50 +488,6 @@ mod tests {
         match popup.selected_item() {
             Some(CommandItem::Builtin(cmd)) => assert_eq!(cmd.command(), "plan"),
             other => panic!("expected plan to be selected for exact match, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn personality_command_hidden_when_disabled() {
-        let mut popup = CommandPopup::new(
-            Vec::new(),
-            CommandPopupFlags {
-                collaboration_modes_enabled: true,
-                personality_command_enabled: false,
-                login_required: false,
-            },
-        );
-        popup.on_composer_text_change("/pers".to_string());
-
-        let cmds: Vec<&str> = popup
-            .filtered_items()
-            .into_iter()
-            .filter_map(|item| match item {
-                CommandItem::Builtin(cmd) => Some(cmd.command()),
-                CommandItem::UserPrompt(_) => None,
-            })
-            .collect();
-        assert!(
-            !cmds.contains(&"personality"),
-            "expected '/personality' to be hidden when disabled, got {cmds:?}"
-        );
-    }
-
-    #[test]
-    fn personality_command_visible_when_enabled() {
-        let mut popup = CommandPopup::new(
-            Vec::new(),
-            CommandPopupFlags {
-                collaboration_modes_enabled: true,
-                personality_command_enabled: true,
-                login_required: false,
-            },
-        );
-        popup.on_composer_text_change("/personality".to_string());
-
-        match popup.selected_item() {
-            Some(CommandItem::Builtin(cmd)) => assert_eq!(cmd.command(), "personality"),
-            other => panic!("expected personality to be selected for exact match, got {other:?}"),
         }
     }
 

@@ -17,6 +17,7 @@ impl CatalogToolDriver for ArsenalToolDriver {
             let result = match request.tool_name.as_str() {
                 "read_file" => tools::read_file::execute(&request.arguments).await,
                 "grep_files" => tools::grep_files::execute(&request.arguments).await,
+                "locate_files" => tools::locate_files::execute(&request.arguments).await,
                 "list_dir" => tools::list_dir::execute(&request.arguments).await,
                 other => Err(format!("unknown arsenal tool: {other}")),
             }?;

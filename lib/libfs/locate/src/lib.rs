@@ -14,7 +14,7 @@ use fff_search::SharedFrecency;
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::num::NonZero;
 use std::path::Path;
 use std::path::PathBuf;
@@ -85,6 +85,8 @@ pub struct FileSearchOptions {
     pub exclude: Vec<String>,
     pub threads: NonZero<usize>,
     pub compute_indices: bool,
+    /// Whether hidden files and directories should be searched.
+    pub include_hidden: bool,
     /// Toggle ignore-file processing in the walker.
     ///
     /// When enabled, `.gitignore` files are scoped by
@@ -104,6 +106,7 @@ impl Default for FileSearchOptions {
             #[expect(clippy::unwrap_used)]
             threads: NonZero::new(2).unwrap(),
             compute_indices: false,
+            include_hidden: true,
             respect_gitignore: true,
         }
     }
@@ -149,6 +152,7 @@ pub fn create_session(
         exclude,
         threads,
         compute_indices,
+        include_hidden,
         respect_gitignore,
     } = options;
 
@@ -180,6 +184,7 @@ pub fn create_session(
                 search_directory.clone(),
                 threads.get(),
                 walker_override_matcher,
+                include_hidden,
                 respect_gitignore,
                 manual_files.clone(),
                 manual_walk_complete.clone(),
@@ -260,6 +265,7 @@ pub async fn run_main<T: Reporter>(
             exclude,
             threads,
             compute_indices,
+            include_hidden: true,
             respect_gitignore: true,
         },
         /*cancel_flag*/ None,
@@ -367,6 +373,7 @@ fn spawn_compat_walker(
     search_directory: PathBuf,
     threads: usize,
     override_matcher: Option<ignore::overrides::Override>,
+    include_hidden: bool,
     respect_gitignore: bool,
     files: Arc<RwLock<Vec<String>>>,
     walk_complete: Arc<AtomicBool>,
@@ -378,7 +385,7 @@ fn spawn_compat_walker(
             .threads(threads)
             // Preserve the historic `chaos-locate` behavior: hidden files are
             // valid `@` search targets.
-            .hidden(false)
+            .hidden(!include_hidden)
             .follow_links(true)
             // Keep ignore behavior aligned with git repositories: only apply
             // gitignore rules when a git context exists.
@@ -509,7 +516,7 @@ fn search_with_fff(
     let parser = QueryParser::default();
     let query = parser.parse(query_text);
     let mut matches = Vec::new();
-    let mut seen = HashSet::<(PathBuf, PathBuf)>::new();
+    let mut seen = HashMap::<(PathBuf, PathBuf), usize>::new();
     let mut total_match_count = 0usize;
     let mut scanned_file_count = 0usize;
 
@@ -541,15 +548,16 @@ fn search_with_fff(
             if is_excluded(&root_picker.override_matcher, &relative_path) {
                 continue;
             }
-            seen.insert((root_picker.root.clone(), PathBuf::from(&relative_path)));
-            matches.push(FileMatch {
-                score: score.total.max(0) as u32,
-                path: PathBuf::from(&relative_path),
-                root: root_picker.root.clone(),
-                indices: inner
+            upsert_match(
+                &mut matches,
+                &mut seen,
+                root_picker.root.clone(),
+                PathBuf::from(&relative_path),
+                score.total.max(0) as u32,
+                inner
                     .compute_indices
                     .then(|| fuzzy_subsequence_indices(query_text, &relative_path)),
-            });
+            );
         }
 
         if let Ok(manual_files) = root_picker.manual_files.read() {
@@ -563,17 +571,16 @@ fn search_with_fff(
                 };
                 total_match_count = total_match_count.saturating_add(1);
                 let path = PathBuf::from(relative_path);
-                if !seen.insert((root_picker.root.clone(), path.clone())) {
-                    continue;
-                }
-                matches.push(FileMatch {
-                    score,
+                upsert_match(
+                    &mut matches,
+                    &mut seen,
+                    root_picker.root.clone(),
                     path,
-                    root: root_picker.root.clone(),
-                    indices: inner
+                    score,
+                    inner
                         .compute_indices
                         .then(|| fuzzy_subsequence_indices(query_text, relative_path)),
-                });
+                );
             }
         }
     }
@@ -593,9 +600,36 @@ fn search_with_fff(
     }
 }
 
+fn upsert_match(
+    matches: &mut Vec<FileMatch>,
+    seen: &mut HashMap<(PathBuf, PathBuf), usize>,
+    root: PathBuf,
+    path: PathBuf,
+    score: u32,
+    indices: Option<Vec<u32>>,
+) {
+    let key = (root.clone(), path.clone());
+    if let Some(existing_index) = seen.get(&key).copied() {
+        let existing = &mut matches[existing_index];
+        if score > existing.score {
+            existing.score = score;
+            existing.indices = indices;
+        }
+        return;
+    }
+
+    seen.insert(key, matches.len());
+    matches.push(FileMatch {
+        score,
+        path,
+        root,
+        indices,
+    });
+}
+
 fn fuzzy_subsequence_score(query: &str, haystack: &str) -> Option<u32> {
     let indices = fuzzy_subsequence_indices(query, haystack);
-    let query_len = query.chars().count();
+    let query_len = query.chars().filter(|ch| !ch.is_whitespace()).count();
     if query_len == 0 || indices.len() != query_len {
         return None;
     }
@@ -604,11 +638,25 @@ fn fuzzy_subsequence_score(query: &str, haystack: &str) -> Option<u32> {
         .zip(indices.first())
         .map(|(last, first)| last.saturating_sub(*first).saturating_add(1))
         .unwrap_or(0);
-    Some(
-        10_000u32
-            .saturating_sub(span)
-            .saturating_sub(haystack.len() as u32),
-    )
+    let normalized_query = normalize_for_path_match(query);
+    let normalized_haystack = normalize_for_path_match(haystack);
+    let normalized_basename = normalize_for_path_match(&file_name_from_path(haystack));
+    let query_lower = query.to_lowercase();
+    let haystack_lower = haystack.to_lowercase();
+
+    let mut score = 10_000u32
+        .saturating_sub(span)
+        .saturating_sub(haystack.len() as u32);
+    if haystack_lower.contains(&query_lower) {
+        score = score.saturating_add(50_000);
+    }
+    if !normalized_query.is_empty() && normalized_haystack.contains(&normalized_query) {
+        score = score.saturating_add(40_000);
+    }
+    if !normalized_query.is_empty() && normalized_basename.contains(&normalized_query) {
+        score = score.saturating_add(20_000);
+    }
+    Some(score)
 }
 
 fn is_excluded(
@@ -622,7 +670,10 @@ fn is_excluded(
 
 fn fuzzy_subsequence_indices(query: &str, haystack: &str) -> Vec<u32> {
     let mut indices = Vec::new();
-    let mut query_chars = query.chars().flat_map(char::to_lowercase);
+    let mut query_chars = query
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .flat_map(char::to_lowercase);
     let Some(mut needle) = query_chars.next() else {
         return indices;
     };
@@ -636,6 +687,13 @@ fn fuzzy_subsequence_indices(query: &str, haystack: &str) -> Vec<u32> {
         }
     }
     indices
+}
+
+fn normalize_for_path_match(text: &str) -> String {
+    text.chars()
+        .filter(|ch| ch.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 #[derive(Default)]
@@ -714,6 +772,46 @@ mod tests {
     #[test]
     fn file_name_from_path_falls_back_to_full_path() {
         assert_eq!(file_name_from_path(""), "");
+    }
+
+    #[test]
+    fn fuzzy_subsequence_ignores_query_whitespace() {
+        assert!(fuzzy_subsequence_score("libfs locate", "lib/libfs/locate/src/lib.rs").is_some());
+        assert!(
+            fuzzy_subsequence_score("chaos halluacinate", "man/chaos-halluacinate.7.md").is_some()
+        );
+    }
+
+    #[test]
+    fn exact_normalized_path_matches_are_boosted_above_loose_subsequences() {
+        let exact = fuzzy_subsequence_score("locate", "lib/libfs/locate/src/lib.rs").unwrap();
+        let loose = fuzzy_subsequence_score("locate", "lib/libcontract/traits/README.md").unwrap();
+
+        assert!(exact > loose, "exact={exact}, loose={loose}");
+    }
+
+    #[test]
+    fn run_matches_space_separated_path_query() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("lib/libfs/locate/src");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("lib.rs"), "").unwrap();
+
+        let results = run(
+            "libfs locate",
+            vec![temp.path().to_path_buf()],
+            FileSearchOptions::default(),
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            results
+                .matches
+                .iter()
+                .any(|file_match| file_match.path.ends_with("lib/libfs/locate/src/lib.rs")),
+            "results: {results:?}"
+        );
     }
 
     #[derive(Default)]
@@ -983,6 +1081,7 @@ mod tests {
             exclude: Vec::new(),
             threads: NonZero::new(2).unwrap(),
             compute_indices: false,
+            include_hidden: true,
             respect_gitignore: true,
         };
         let results =
@@ -1054,6 +1153,7 @@ mod tests {
                 exclude: Vec::new(),
                 threads: NonZero::new(2).unwrap(),
                 compute_indices: false,
+                include_hidden: true,
                 respect_gitignore: true,
             },
             None,
@@ -1074,6 +1174,7 @@ mod tests {
                 exclude: Vec::new(),
                 threads: NonZero::new(2).unwrap(),
                 compute_indices: false,
+                include_hidden: true,
                 respect_gitignore: true,
             },
             None,
@@ -1118,6 +1219,7 @@ mod tests {
                 exclude: Vec::new(),
                 threads: NonZero::new(2).unwrap(),
                 compute_indices: false,
+                include_hidden: true,
                 respect_gitignore: true,
             },
             None,
@@ -1138,6 +1240,7 @@ mod tests {
                 exclude: Vec::new(),
                 threads: NonZero::new(2).unwrap(),
                 compute_indices: false,
+                include_hidden: true,
                 respect_gitignore: true,
             },
             None,
@@ -1158,6 +1261,7 @@ mod tests {
                 exclude: Vec::new(),
                 threads: NonZero::new(2).unwrap(),
                 compute_indices: false,
+                include_hidden: true,
                 respect_gitignore: true,
             },
             None,

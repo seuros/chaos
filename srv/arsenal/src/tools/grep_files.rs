@@ -1,4 +1,4 @@
-//! MCP tool: grep_files — search file contents using ripgrep libraries.
+//! MCP tool: grep_files — regex search file contents using grep-searcher.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -44,7 +44,7 @@ pub struct GrepFilesParams {
 }
 
 impl ChaosServer {
-    /// Search file contents using ripgrep libraries and return matching file paths.
+    /// Search file contents using regex and return matching file paths. This does not require an rg binary; use locate_files to fuzzy search file names/paths.
     #[mcp_tool(name = "grep_files", read_only = true, idempotent = true)]
     async fn grep_files(
         &self,

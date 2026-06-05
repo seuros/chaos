@@ -1158,6 +1158,7 @@ name = "chaos-arsenal"
 version = "47.0.0"
 dependencies = [
  "anyhow",
+ "chaos-locate",
  "chaos-traits",
  "chaos-wchar",
  "grep-regex",

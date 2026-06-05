@@ -106,15 +106,15 @@ pub async fn process_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u3
                 let live_rollout_items = recorder.snapshot_rollout_items();
                 if live_rollout_items.is_empty() {
                     sess.send_event_raw(Event {
-                    id: turn_context.sub_id.clone(),
-                    msg: EventMsg::Error(ErrorEvent {
-                        message: format!(
+                        id: turn_context.sub_id.clone(),
+                        msg: EventMsg::Error(ErrorEvent {
+                            message: format!(
                             "failed to load persisted session history for rollback replay: {err}"
                         ),
-                        chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
-                    }),
-                })
-                .await;
+                            chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
+                        }),
+                    })
+                    .await;
                     return;
                 }
                 InitialHistory::Resumed(ResumedHistory {
@@ -195,11 +195,11 @@ pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String)
         return;
     };
 
-    let persistence_enabled = {
+    let recorder = {
         let rollout = sess.services.rollout.lock().await;
-        rollout.is_some()
+        rollout.clone()
     };
-    if !persistence_enabled {
+    let Some(recorder) = recorder else {
         let event = Event {
             id: sub_id,
             msg: EventMsg::Error(ErrorEvent {
@@ -210,6 +210,22 @@ pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String)
         sess.send_event_raw(event).await;
         return;
     };
+
+    // Newly-created sessions defer materializing their process row until the
+    // first persisted rollout batch. `/rename` can run before the first user
+    // turn, so ensure the recorder has written the SessionMeta/process row
+    // before updating the `process_name` column below.
+    if let Err(e) = recorder.persist().await {
+        let event = Event {
+            id: sub_id,
+            msg: EventMsg::Error(ErrorEvent {
+                message: format!("Failed to initialize session persistence for rename: {e}"),
+                chaos_error_info: Some(ChaosErrorInfo::Other),
+            }),
+        };
+        sess.send_event_raw(event).await;
+        return;
+    }
 
     let chaos_home = sess.chaos_home().await;
     if let Err(e) =

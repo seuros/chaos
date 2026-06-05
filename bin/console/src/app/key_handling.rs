@@ -1,6 +1,6 @@
 use super::{
-    AgentNavigationDirection, App, ExternalEditorState, HypertileEvent, KeyCode, KeyEvent,
-    KeyEventKind, PaneId, TuiEvent, keychord_from_crossterm, next_agent_shortcut_matches,
+    AgentNavigationDirection, App, ExternalEditorState, KeyCode, KeyEvent, KeyEventKind, PaneId,
+    TuiEvent, keychord_from_crossterm, next_agent_shortcut_matches,
     previous_agent_shortcut_matches, tui,
 };
 
@@ -217,9 +217,8 @@ impl App {
         {
             if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
                 && let Some(chord) = keychord_from_crossterm(key_event)
-                && let Some(plugin) = self.tile_manager.plugin_mut(focused)
             {
-                let _ = plugin.on_event(&HypertileEvent::Key(chord));
+                let _ = self.tile_manager.handle_focused_plugin_key(chord);
             }
 
             let should_close = self.tool_list_close.replace(false)

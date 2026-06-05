@@ -72,7 +72,6 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
-use ratatui_hypertile::HypertileEvent;
 use ratatui_hypertile::PaneId;
 use ratatui_hypertile_extras::keychord_from_crossterm;
 use std::cell::Cell;

@@ -15,8 +15,10 @@ use std::rc::Rc;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Direction, Rect};
-use ratatui_hypertile::{EventOutcome, HypertileAction, HypertileEvent, PaneId};
-use ratatui_hypertile_extras::{HypertilePlugin, HypertileRuntime, HypertileRuntimeBuilder};
+use ratatui_hypertile::{EventOutcome, HypertileAction, HypertileEvent, KeyChord, PaneId};
+use ratatui_hypertile_extras::{
+    HypertilePlugin, HypertileRuntime, HypertileRuntimeBuilder, InputMode,
+};
 
 // Plugin-type name constants — string keys in the runtime registry.
 const PANE_CHAT: &str = "chat";
@@ -223,7 +225,11 @@ impl TileManager {
             .find(|&id| self.kind(id) == Some(kind))
     }
 
-    pub fn plugin_mut(&mut self, id: PaneId) -> Option<&mut (dyn HypertilePlugin + 'static)> {
-        self.runtime.registry_mut().plugin_mut(id)
+    pub fn handle_focused_plugin_key(&mut self, chord: KeyChord) -> EventOutcome {
+        let previous_mode = self.runtime.mode();
+        self.runtime.set_mode(InputMode::PluginInput);
+        let outcome = self.runtime.handle_event(HypertileEvent::Key(chord));
+        self.runtime.set_mode(previous_mode);
+        outcome
     }
 }

@@ -13,6 +13,7 @@ use tracing::{Instrument, error, info_span, warn};
 
 use crate::ServerState;
 use crate::auth;
+use crate::monitor;
 use crate::protocol::{ApiErrorResponse, HealthResponse, TriggerRequest, TriggerResponse};
 use crate::runner;
 
@@ -31,9 +32,14 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     let path = request.uri().path().to_string();
 
     match (method.clone(), path.as_str()) {
+        (Method::GET, "/monitor") => monitor::page_response(),
+        (Method::GET, "/monitor/events") => monitor::events_response(state),
+        (Method::GET, "/assets/datastar.js") => monitor::datastar_script_response(),
         (Method::GET, "/api/health") => handle_health(),
         (Method::POST, "/api/trigger") => handle_trigger(state, request).await,
         // Known routes, wrong method.
+        (_, "/monitor") | (_, "/monitor/events") => method_not_allowed("GET"),
+        (_, "/assets/datastar.js") => method_not_allowed("GET"),
         (_, "/api/health") => method_not_allowed("GET"),
         (_, "/api/trigger") => method_not_allowed("POST"),
         // Unknown route.
@@ -174,6 +180,12 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
             );
         }
     };
+    state.monitor.publish(
+        monitor::MonitorEventKind::TriggerAccepted,
+        Some(conversation_id.clone()),
+        None,
+        trigger_req.requested_by.clone(),
+    );
 
     let span = info_span!(
         "trigger",
@@ -201,8 +213,10 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                     error!(error = %e, "failed to start trigger process");
                     return json_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        &ApiErrorResponse::error("internal server error")
-                            .with_caller_fields(caller_session_id, Some(conversation_id)),
+                        &ApiErrorResponse::error("internal server error").with_caller_fields(
+                            caller_session_id.clone(),
+                            Some(conversation_id.clone()),
+                        ),
                     );
                 }
                 Err(_) => {
@@ -220,6 +234,12 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                     );
                 }
             };
+        state.monitor.publish(
+            monitor::MonitorEventKind::ProcessStarted,
+            Some(conversation_id.clone()),
+            Some(started.process_id.to_string()),
+            None,
+        );
 
         tracing::Span::current().record("process_id", started.process_id.to_string());
 
@@ -232,6 +252,12 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         {
             Ok(Ok(outcome)) => {
                 if outcome.is_error {
+                    state.monitor.publish(
+                        monitor::MonitorEventKind::TriggerFailed,
+                        Some(conversation_id.clone()),
+                        Some(outcome.process_id.to_string()),
+                        Some(outcome.text.clone()),
+                    );
                     error!(
                         process_id = %outcome.process_id,
                         error = %outcome.text,
@@ -241,15 +267,24 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                         StatusCode::INTERNAL_SERVER_ERROR,
                         &ApiErrorResponse::error("internal server error")
                             .with_process_id(outcome.process_id)
-                            .with_caller_fields(caller_session_id, Some(conversation_id)),
+                            .with_caller_fields(
+                                caller_session_id.clone(),
+                                Some(conversation_id.clone()),
+                            ),
                     )
                 } else {
+                    state.monitor.publish(
+                        monitor::MonitorEventKind::TriggerCompleted,
+                        Some(conversation_id.clone()),
+                        Some(outcome.process_id.to_string()),
+                        None,
+                    );
                     json_response(
                         StatusCode::OK,
                         &TriggerResponse {
                             status: "ok",
                             caller_session_id,
-                            conversation_id: Some(conversation_id),
+                            conversation_id: Some(conversation_id.clone()),
                             process_id: outcome.process_id.to_string(),
                             result: outcome.text,
                             usage: outcome.usage,
@@ -258,15 +293,33 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                 }
             }
             Ok(Err(e)) => {
+                state.monitor.publish(
+                    monitor::MonitorEventKind::TriggerFailed,
+                    Some(conversation_id.clone()),
+                    Some(started.process_id.to_string()),
+                    Some(e.to_string()),
+                );
                 error!(error = %e, "trigger runner failed");
                 json_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     &ApiErrorResponse::error("internal server error")
                         .with_process_id(started.process_id)
-                        .with_caller_fields(caller_session_id, Some(conversation_id)),
+                        .with_caller_fields(
+                            caller_session_id.clone(),
+                            Some(conversation_id.clone()),
+                        ),
                 )
             }
             Err(_elapsed) => {
+                state.monitor.publish(
+                    monitor::MonitorEventKind::TriggerTimedOut,
+                    Some(conversation_id.clone()),
+                    Some(started.process_id.to_string()),
+                    Some(format!(
+                        "execution exceeded {}s deadline",
+                        timeout.as_secs()
+                    )),
+                );
                 warn!("trigger timed out after {}s", timeout.as_secs());
                 json_response(
                     StatusCode::GATEWAY_TIMEOUT,
@@ -275,7 +328,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                         timeout.as_secs()
                     ))
                     .with_process_id(started.process_id)
-                    .with_caller_fields(caller_session_id, Some(conversation_id)),
+                    .with_caller_fields(caller_session_id.clone(), Some(conversation_id.clone())),
                 )
             }
         };
@@ -284,6 +337,12 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         // Cleanup internally bounds the shutdown to avoid blocking forever.
         const CLEANUP_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
         runner::cleanup(&process_table, &started, CLEANUP_GRACE).await;
+        state.monitor.publish(
+            monitor::MonitorEventKind::ProcessCleanedUp,
+            Some(conversation_id),
+            Some(started.process_id.to_string()),
+            None,
+        );
 
         response
     }

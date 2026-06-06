@@ -4,6 +4,7 @@
 mod api;
 mod auth;
 pub mod cli;
+mod monitor;
 pub mod protocol;
 mod runner;
 
@@ -45,8 +46,10 @@ pub(crate) struct ServerState {
     auth_manager: Arc<AuthManager>,
     bearer_token: Arc<str>,
     semaphore: Arc<Semaphore>,
+    max_concurrent: usize,
     timeout: Duration,
     body_limit: usize,
+    monitor: monitor::MonitorState,
 }
 
 /// Entry point called from `bin/chaos` when `chaos serve` is dispatched.
@@ -166,13 +169,21 @@ pub async fn run_main(
         auth_manager: core.auth_manager,
         bearer_token,
         semaphore: Arc::new(Semaphore::new(serve_cli.max_concurrent)),
+        max_concurrent: serve_cli.max_concurrent,
         timeout: Duration::from_secs(serve_cli.timeout),
         body_limit: serve_cli.body_limit,
+        monitor: monitor::MonitorState::new(),
     });
 
     // 12. Bind and serve.
     let ip: std::net::IpAddr = serve_cli.bind.parse().context("invalid bind address")?;
     let addr = SocketAddr::new(ip, serve_cli.port);
+    state.monitor.publish(
+        monitor::MonitorEventKind::ServerStarted,
+        None,
+        None,
+        Some(addr.to_string()),
+    );
 
     let graceful = graceful::Shutdown::new(async {
         let mut signal = Box::pin(graceful::default_signal());

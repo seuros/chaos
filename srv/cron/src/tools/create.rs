@@ -3,6 +3,7 @@
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::CronCtx;
 use crate::CronServer;
@@ -58,8 +59,8 @@ impl CronServer {
         params: Parameters<CronCreateParams>,
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
-        match execute(&params.0, None, &owner).await {
-            Ok(text) => Ok(ToolOutput::text(text)),
+        match execute_structured(&params.0, None, &owner).await {
+            Ok(value) => Ok(ToolOutput::json(value)),
             Err(msg) => Err(ToolError::Execution(msg)),
         }
     }
@@ -77,15 +78,25 @@ pub async fn execute(
     provider: Option<&ChaosStorageProvider>,
     owner: &OwnerContext,
 ) -> Result<String, String> {
-    let (_provider, storage) = cron_storage_from_optional_provider(provider).await?;
-    execute_with_storage(params, &storage, owner).await
+    execute_structured(params, provider, owner)
+        .await
+        .map(|value| value.to_string())
 }
 
-async fn execute_with_storage<S: CronStorage>(
+pub async fn execute_structured(
+    params: &CronCreateParams,
+    provider: Option<&ChaosStorageProvider>,
+    owner: &OwnerContext,
+) -> Result<serde_json::Value, String> {
+    let (_provider, storage) = cron_storage_from_optional_provider(provider).await?;
+    execute_with_storage_structured(params, &storage, owner).await
+}
+
+async fn execute_with_storage_structured<S: CronStorage>(
     params: &CronCreateParams,
     storage: &S,
     owner: &OwnerContext,
-) -> Result<String, String> {
+) -> Result<serde_json::Value, String> {
     // Validate the schedule parses
     crate::Schedule::parse(&params.schedule).map_err(|e| format!("invalid schedule: {e}"))?;
 
@@ -126,16 +137,15 @@ async fn execute_with_storage<S: CronStorage>(
         .await
         .map_err(|e| format!("failed to persist cron job: {e}"))?;
 
-    Ok(format!(
-        "Cron job created (id: {}):\n  name: {}\n  schedule: {}\n  command: {}\n  scope: {}\n  next_run_at: {}",
-        job.id,
-        job.name,
-        job.schedule,
-        job.command,
-        job.scope,
-        job.next_run_at
-            .map_or("none".to_string(), |t| t.to_string()),
-    ))
+    Ok(json!({
+        "status": "created",
+        "id": job.id,
+        "name": job.name,
+        "schedule": job.schedule,
+        "command": job.command,
+        "scope": job.scope.to_string(),
+        "next_run_at": job.next_run_at.map(|t| t.to_string()),
+    }))
 }
 
 /// Returns the auto-generated `ToolInfo` for schema extraction by core.

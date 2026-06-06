@@ -579,18 +579,26 @@ impl McpConnectionManager {
             }
         };
 
-        let content = result
-            .content
-            .into_iter()
-            .map(|content| {
-                serde_json::to_value(content)
-                    .unwrap_or_else(|_| serde_json::Value::String("<content>".to_string()))
-            })
-            .collect();
+        let structured_content = result.structured_content;
+        let has_structured_content = structured_content
+            .as_ref()
+            .is_some_and(|value| !value.is_null());
+        let content = if has_structured_content {
+            Vec::new()
+        } else {
+            result
+                .content
+                .into_iter()
+                .map(|content| {
+                    serde_json::to_value(content)
+                        .unwrap_or_else(|_| serde_json::Value::String("<content>".to_string()))
+                })
+                .collect()
+        };
 
         Ok(CallToolResult {
             content,
-            structured_content: result.structured_content,
+            structured_content,
             is_error: result.is_error,
             meta: result.meta,
         })

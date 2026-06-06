@@ -68,46 +68,48 @@ impl CatalogToolDriver for GitToolDriver {
                 "git_diff" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_diff).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_diff_structured).await
                 }
                 "git_log" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_log).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_log_structured).await
                 }
                 "git_show" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_show).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_show_structured).await
                 }
                 "git_blame" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_blame).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_blame_structured).await
                 }
                 "git_repo" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_repo).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_repo_structured).await
                 }
                 "git_status" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_status).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_status_structured).await
                 }
                 "git_branches" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_branches).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_branches_structured)
+                        .await
                 }
                 "git_remotes" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_remotes).await
+                    tools::execute_blocking(cwd, params, tools::execute_git_remotes_structured)
+                        .await
                 }
                 other => Err(format!("unknown git tool: {other}")),
             };
-            let output = result?;
+            let output = result?.to_string();
             Ok(CatalogToolResult {
                 output,
                 success: Some(true),

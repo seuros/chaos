@@ -15,10 +15,18 @@ impl CatalogToolDriver for ArsenalToolDriver {
     fn call_tool(&self, request: CatalogToolRequest) -> CatalogToolDriverFuture<'_> {
         Box::pin(async move {
             let result = match request.tool_name.as_str() {
-                "read_file" => tools::read_file::execute(&request.arguments).await,
-                "grep_files" => tools::grep_files::execute(&request.arguments).await,
-                "locate_files" => tools::locate_files::execute(&request.arguments).await,
-                "list_dir" => tools::list_dir::execute(&request.arguments).await,
+                "read_file" => tools::read_file::execute_structured(&request.arguments)
+                    .await
+                    .map(|value| value.to_string()),
+                "grep_files" => tools::grep_files::execute_structured(&request.arguments)
+                    .await
+                    .map(|value| value.to_string()),
+                "locate_files" => tools::locate_files::execute_structured(&request.arguments)
+                    .await
+                    .map(|value| value.to_string()),
+                "list_dir" => tools::list_dir::execute_structured(&request.arguments)
+                    .await
+                    .map(|value| value.to_string()),
                 other => Err(format!("unknown arsenal tool: {other}")),
             }?;
             Ok(CatalogToolResult {

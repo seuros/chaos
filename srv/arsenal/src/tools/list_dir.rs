@@ -15,7 +15,7 @@ use tokio::fs;
 use crate::ChaosCtx;
 use crate::ChaosServer;
 use crate::tools::deserialize_tool_params;
-use crate::tools::tool_text_result;
+use crate::tools::tool_json_result;
 
 const MAX_ENTRY_LENGTH: usize = 500;
 const INDENTATION_SPACES: usize = 2;
@@ -56,7 +56,7 @@ impl ChaosServer {
     /// List directory contents recursively with configurable depth, offset, and limit.
     #[mcp_tool(name = "list_dir", read_only = true, idempotent = true)]
     async fn list_dir(&self, _ctx: ChaosCtx<'_>, params: Parameters<ListDirParams>) -> ToolResult {
-        tool_text_result(execute_params(params.0).await)
+        tool_json_result(execute_params_structured(params.0).await)
     }
 }
 
@@ -66,7 +66,36 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
+pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let params: ListDirParams = deserialize_tool_params(arguments)?;
+    execute_params_structured(params).await
+}
+
 async fn execute_params(params: ListDirParams) -> Result<String, String> {
+    let structured = execute_params_structured(params).await?;
+    let absolute_path = structured
+        .get("absolute_path")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let mut output = vec![format!("Absolute path: {absolute_path}")];
+    output.extend(
+        structured
+            .get("entries")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.as_str().map(ToString::to_string)),
+    );
+    if let Some(message) = structured
+        .get("truncation_message")
+        .and_then(serde_json::Value::as_str)
+    {
+        output.push(message.to_string());
+    }
+    Ok(output.join("\n"))
+}
+
+async fn execute_params_structured(params: ListDirParams) -> Result<serde_json::Value, String> {
     let ListDirParams {
         dir_path,
         offset,
@@ -89,11 +118,23 @@ async fn execute_params(params: ListDirParams) -> Result<String, String> {
         return Err("dir_path must be an absolute path".to_string());
     }
 
-    let entries = list_dir_slice(&path, offset, limit, depth).await?;
-    let mut output = Vec::with_capacity(entries.len() + 1);
-    output.push(format!("Absolute path: {}", path.display()));
-    output.extend(entries);
-    Ok(output.join("\n"))
+    let mut entries = list_dir_slice(&path, offset, limit, depth).await?;
+    let truncation_message = entries
+        .last()
+        .filter(|line| line.starts_with("More than "))
+        .cloned();
+    if truncation_message.is_some() {
+        entries.pop();
+    }
+    Ok(serde_json::json!({
+        "absolute_path": path.display().to_string(),
+        "entries": entries,
+        "offset": offset,
+        "limit": limit,
+        "depth": depth,
+        "truncated": truncation_message.is_some(),
+        "truncation_message": truncation_message,
+    }))
 }
 
 pub async fn list_dir_slice(

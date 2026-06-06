@@ -209,7 +209,7 @@ impl CatalogToolDriver for McpManageToolDriver {
             };
 
             Ok(CatalogToolResult {
-                output,
+                output: output.to_string(),
                 success: Some(true),
                 effects: vec![CatalogToolEffect::ReloadProjectMcp],
             })
@@ -400,7 +400,10 @@ pub fn build_project_mcp_refresh_config(
     })
 }
 
-fn execute_add_server(path: &Path, params: McpAddServerParams) -> Result<String, String> {
+fn execute_add_server(
+    path: &Path,
+    params: McpAddServerParams,
+) -> Result<serde_json::Value, String> {
     let server_kind = match (&params.command, &params.url) {
         (Some(_), None) => "stdio",
         (None, Some(_)) => "streamable_http",
@@ -409,13 +412,19 @@ fn execute_add_server(path: &Path, params: McpAddServerParams) -> Result<String,
     };
     let server_name = params.name.clone();
     add_server_to_dot_mcp_json(path, params)?;
-    Ok(format!(
-        "Added MCP server `{server_name}` to {} ({server_kind}) and requested a live reload.",
-        path.display(),
-    ))
+    Ok(serde_json::json!({
+        "status": "added",
+        "server": server_name,
+        "path": path.display().to_string(),
+        "transport": server_kind,
+        "reload_requested": true,
+    }))
 }
 
-fn execute_server_action(path: &Path, params: McpServerActionParams) -> Result<String, String> {
+fn execute_server_action(
+    path: &Path,
+    params: McpServerActionParams,
+) -> Result<serde_json::Value, String> {
     let mut doc = load_dot_mcp_json(path)?;
     if !doc.mcp_servers.contains_key(&params.name) {
         return Err(format!(
@@ -436,11 +445,13 @@ fn execute_server_action(path: &Path, params: McpServerActionParams) -> Result<S
             };
             server.enabled = true;
             write_dot_mcp_json(path, &doc)?;
-            Ok(format!(
-                "Marked MCP server `{}` as enabled in {} and requested a live reload.",
-                params.name,
-                path.display()
-            ))
+            Ok(serde_json::json!({
+                "status": "enabled",
+                "action": "enable",
+                "server": params.name,
+                "path": path.display().to_string(),
+                "reload_requested": true,
+            }))
         }
         "disable" => {
             let Some(server) = doc.mcp_servers.get_mut(&params.name) else {
@@ -452,26 +463,32 @@ fn execute_server_action(path: &Path, params: McpServerActionParams) -> Result<S
             };
             server.enabled = false;
             write_dot_mcp_json(path, &doc)?;
-            Ok(format!(
-                "Marked MCP server `{}` as disabled in {} and requested a live reload.",
-                params.name,
-                path.display()
-            ))
+            Ok(serde_json::json!({
+                "status": "disabled",
+                "action": "disable",
+                "server": params.name,
+                "path": path.display().to_string(),
+                "reload_requested": true,
+            }))
         }
         "remove" => {
             doc.mcp_servers.remove(&params.name);
             write_dot_mcp_json(path, &doc)?;
-            Ok(format!(
-                "Removed MCP server `{}` from {} and requested a live reload.",
-                params.name,
-                path.display()
-            ))
+            Ok(serde_json::json!({
+                "status": "removed",
+                "action": "remove",
+                "server": params.name,
+                "path": path.display().to_string(),
+                "reload_requested": true,
+            }))
         }
-        "reset" => Ok(format!(
-            "Requested a live MCP reload for `{}` from {}.",
-            params.name,
-            path.display()
-        )),
+        "reset" => Ok(serde_json::json!({
+            "status": "reset",
+            "action": "reset",
+            "server": params.name,
+            "path": path.display().to_string(),
+            "reload_requested": true,
+        })),
         other => Err(format!(
             "invalid action `{other}`; expected one of: enable, disable, reset, remove"
         )),
@@ -488,7 +505,7 @@ mod tests {
     fn add_server_creates_dot_mcp_json() {
         let temp = tempdir().expect("tempdir");
         let path = temp.path().join(".mcp.json");
-        let msg = execute_add_server(
+        let result = execute_add_server(
             &path,
             McpAddServerParams {
                 name: "docs".to_string(),
@@ -504,7 +521,8 @@ mod tests {
         )
         .expect("add server");
 
-        assert!(msg.contains("Added MCP server `docs`"));
+        assert_eq!(result["status"], "added");
+        assert_eq!(result["server"], "docs");
         let doc = load_dot_mcp_json(&path).expect("reload file");
         assert!(doc.mcp_servers.contains_key("docs"));
     }

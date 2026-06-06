@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::ChaosCtx;
 use crate::ChaosServer;
 use crate::tools::deserialize_tool_params;
-use crate::tools::tool_text_result;
+use crate::tools::tool_json_result;
 
 pub const MAX_LINE_LENGTH: usize = 500;
 const TAB_WIDTH: usize = 4;
@@ -103,7 +103,7 @@ impl ChaosServer {
         _ctx: ChaosCtx<'_>,
         params: Parameters<ReadFileParams>,
     ) -> ToolResult {
-        tool_text_result(execute_params(params.0).await)
+        tool_json_result(execute_params_structured(params.0).await)
     }
 }
 
@@ -115,8 +115,22 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
+pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let params: ReadFileParams = deserialize_tool_params(arguments)?;
+    execute_params_structured(params).await
+}
+
 /// Shared logic for both MCP handler and JSON adapter paths.
 async fn execute_params(params: ReadFileParams) -> Result<String, String> {
+    let structured = execute_params_structured(params).await?;
+    Ok(structured
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string())
+}
+
+async fn execute_params_structured(params: ReadFileParams) -> Result<serde_json::Value, String> {
     let ReadFileParams {
         file_path,
         offset,
@@ -137,6 +151,10 @@ async fn execute_params(params: ReadFileParams) -> Result<String, String> {
         return Err("file_path must be an absolute path".to_string());
     }
 
+    let mode_name = match mode {
+        ReadMode::Slice => "slice",
+        ReadMode::Indentation => "indentation",
+    };
     let collected = match mode {
         ReadMode::Slice => slice::read(&path, offset, limit).await?,
         ReadMode::Indentation => {
@@ -145,7 +163,16 @@ async fn execute_params(params: ReadFileParams) -> Result<String, String> {
         }
     };
 
-    Ok(collected.join("\n"))
+    let text = collected.join("\n");
+    Ok(serde_json::json!({
+        "file_path": path.display().to_string(),
+        "offset": offset,
+        "limit": limit,
+        "mode": mode_name,
+        "line_count": collected.len(),
+        "text": text,
+        "lines": collected,
+    }))
 }
 
 /// Returns the auto-generated `ToolInfo` for schema extraction by core.
@@ -545,7 +572,8 @@ mod tests {
         assert!(names.contains(&"read_file"));
         assert!(names.contains(&"grep_files"));
         assert!(names.contains(&"list_dir"));
-        assert_eq!(tools.len(), 3);
+        assert!(names.contains(&"locate_files"));
+        assert_eq!(tools.len(), 4);
     }
 
     #[tokio::test]

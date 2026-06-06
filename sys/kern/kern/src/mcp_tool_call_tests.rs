@@ -399,7 +399,7 @@ fn sanitize_mcp_tool_result_for_model_rewrites_image_content() {
 }
 
 #[test]
-fn sanitize_mcp_tool_result_for_model_preserves_image_when_supported() {
+fn sanitize_mcp_tool_result_for_model_uses_structured_content_only_when_present() {
     let original = CallToolResult {
         content: vec![serde_json::json!({
             "type": "image",
@@ -414,7 +414,10 @@ fn sanitize_mcp_tool_result_for_model_preserves_image_when_supported() {
     let got =
         sanitize_mcp_tool_result_for_model(true, Ok(original.clone())).expect("unsanitized result");
 
-    assert_eq!(got, original);
+    assert!(got.content.is_empty());
+    assert_eq!(got.structured_content, original.structured_content);
+    assert_eq!(got.is_error, original.is_error);
+    assert_eq!(got.meta, original.meta);
 }
 
 #[test]

@@ -61,9 +61,8 @@ fn assert_mcp_success(result_is_error: Option<bool>) {
 
 /// Validates the test echo tool's response payload.
 ///
-/// mcp-host serializes `ToolOutput::Structured` results with the JSON also
-/// embedded as a single text content block, in addition to `structuredContent`.
-/// Tests assert both surfaces so a regression in either path is caught.
+/// Structured tool results should expose only `structuredContent` to the model;
+/// any legacy text fallback emitted by lower-level MCP helpers is stripped.
 fn assert_structured_echo_content(
     result: &chaos_ipc::mcp::CallToolResult,
     expected_message: &str,
@@ -84,26 +83,11 @@ fn assert_structured_echo_content(
     };
     assert_eq!(env_value, expected_env);
 
-    assert_eq!(
-        result.content.len(),
-        1,
-        "structured tool output should also surface a text content block: {:?}",
+    assert!(
+        result.content.is_empty(),
+        "structured tool output should not include legacy content fallback: {:?}",
         result.content
     );
-    let block = &result.content[0];
-    assert_eq!(
-        block.get("type").and_then(Value::as_str),
-        Some("text"),
-        "fallback content block should be text: {block:?}"
-    );
-    let Some(text) = block.get("text").and_then(Value::as_str) else {
-        panic!("text content block should carry stringified structured payload: {block:?}");
-    };
-    let parsed: Value = match serde_json::from_str(text) {
-        Ok(value) => value,
-        Err(err) => panic!("text fallback should be JSON-encoded structured payload: {err}"),
-    };
-    assert_eq!(&parsed, structured);
 }
 
 fn streamable_http_server_bin() -> anyhow::Result<Option<PathBuf>> {

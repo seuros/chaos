@@ -11,7 +11,7 @@ use serde::Deserialize;
 use crate::ChaosCtx;
 use crate::ChaosServer;
 use crate::tools::deserialize_tool_params;
-use crate::tools::tool_text_result;
+use crate::tools::tool_json_result;
 
 const DEFAULT_LIMIT: usize = 50;
 const MAX_LIMIT: usize = 2000;
@@ -52,7 +52,7 @@ impl ChaosServer {
         _ctx: ChaosCtx<'_>,
         params: Parameters<LocateFilesParams>,
     ) -> ToolResult {
-        tool_text_result(execute_params(params.0).await)
+        tool_json_result(execute_params_structured(params.0).await)
     }
 }
 
@@ -62,7 +62,39 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
+pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let params: LocateFilesParams = deserialize_tool_params(arguments)?;
+    execute_params_structured(params).await
+}
+
 async fn execute_params(params: LocateFilesParams) -> Result<String, String> {
+    let structured = execute_params_structured(params).await?;
+    let matches = structured
+        .get("matches")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if matches.is_empty() {
+        return Ok("No matches found.".to_string());
+    }
+    let mut lines = matches
+        .into_iter()
+        .filter_map(|value| value.as_str().map(|path| format_path_for_line(path)))
+        .collect::<Vec<_>>();
+    let total_match_count = structured
+        .get("total_match_count")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(lines.len() as u64) as usize;
+    if total_match_count > lines.len() {
+        let hidden_count = total_match_count - lines.len();
+        lines.push(format!(
+            "... {hidden_count} more matches not shown. Increase limit to see more."
+        ));
+    }
+    Ok(lines.join("\n"))
+}
+
+async fn execute_params_structured(params: LocateFilesParams) -> Result<serde_json::Value, String> {
     let pattern = params.pattern.trim();
     if pattern.is_empty() {
         return Err("pattern must not be empty".to_string());
@@ -84,23 +116,15 @@ async fn execute_params(params: LocateFilesParams) -> Result<String, String> {
             .await
             .map_err(|e| format!("search task failed: {e}"))??;
 
-    if results.matches.is_empty() {
-        Ok("No matches found.".to_string())
-    } else {
-        let shown_match_count = results.matches.len();
-        let mut lines = results
-            .matches
-            .into_iter()
-            .map(|path| format_path_for_line(&path))
-            .collect::<Vec<_>>();
-        if results.total_match_count > shown_match_count {
-            let hidden_count = results.total_match_count - shown_match_count;
-            lines.push(format!(
-                "... {hidden_count} more matches not shown. Increase limit to see more."
-            ));
-        }
-        Ok(lines.join("\n"))
-    }
+    let shown_match_count = results.matches.len();
+    Ok(serde_json::json!({
+        "matches": results.matches,
+        "shown_match_count": shown_match_count,
+        "total_match_count": results.total_match_count,
+        "truncated": results.total_match_count > shown_match_count,
+        "limit": limit.get(),
+        "include_hidden": include_hidden,
+    }))
 }
 
 async fn verify_search_path(path: &Path) -> Result<(), String> {

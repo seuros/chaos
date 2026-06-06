@@ -3,6 +3,7 @@
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::CronCtx;
 use crate::CronJob;
@@ -39,8 +40,8 @@ impl CronServer {
         params: Parameters<CronToggleParams>,
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
-        match execute(&params.0, None, Some(&owner)).await {
-            Ok(text) => Ok(ToolOutput::text(text)),
+        match execute_structured(&params.0, None, Some(&owner)).await {
+            Ok(value) => Ok(ToolOutput::json(value)),
             Err(msg) => Err(ToolError::Execution(msg)),
         }
     }
@@ -52,15 +53,25 @@ pub async fn execute(
     provider: Option<&ChaosStorageProvider>,
     owner: Option<&OwnerContext>,
 ) -> Result<String, String> {
-    let (_provider, storage) = cron_storage_from_optional_provider(provider).await?;
-    execute_with_storage(params, &storage, owner).await
+    execute_structured(params, provider, owner)
+        .await
+        .map(|value| value.to_string())
 }
 
-async fn execute_with_storage<S: CronStorage>(
+pub async fn execute_structured(
+    params: &CronToggleParams,
+    provider: Option<&ChaosStorageProvider>,
+    owner: Option<&OwnerContext>,
+) -> Result<serde_json::Value, String> {
+    let (_provider, storage) = cron_storage_from_optional_provider(provider).await?;
+    execute_with_storage_structured(params, &storage, owner).await
+}
+
+async fn execute_with_storage_structured<S: CronStorage>(
     params: &CronToggleParams,
     store: &S,
     owner: Option<&OwnerContext>,
-) -> Result<String, String> {
+) -> Result<serde_json::Value, String> {
     // Verify the job exists first.
     let job = store
         .get(&params.id)
@@ -75,21 +86,21 @@ async fn execute_with_storage<S: CronStorage>(
                 .set_enabled(&params.id, true)
                 .await
                 .map_err(|e| format!("failed to enable job: {e}"))?;
-            Ok(format!("Cron job '{}' (id: {}) enabled", job.name, job.id))
+            Ok(json!({"status": "enabled", "action": "enable", "id": job.id, "name": job.name}))
         }
         "disable" => {
             store
                 .set_enabled(&params.id, false)
                 .await
                 .map_err(|e| format!("failed to disable job: {e}"))?;
-            Ok(format!("Cron job '{}' (id: {}) disabled", job.name, job.id))
+            Ok(json!({"status": "disabled", "action": "disable", "id": job.id, "name": job.name}))
         }
         "delete" => {
             store
                 .delete(&params.id)
                 .await
                 .map_err(|e| format!("failed to delete job: {e}"))?;
-            Ok(format!("Cron job '{}' (id: {}) deleted", job.name, job.id))
+            Ok(json!({"status": "deleted", "action": "delete", "id": job.id, "name": job.name}))
         }
         other => Err(format!(
             "unknown action: '{other}' — expected 'enable', 'disable', or 'delete'"

@@ -11,10 +11,11 @@ use crate::GitServer;
 
 const GIT_TOOL_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub(crate) async fn execute_blocking<P, F>(cwd: PathBuf, params: P, f: F) -> Result<String, String>
+pub(crate) async fn execute_blocking<P, F, R>(cwd: PathBuf, params: P, f: F) -> Result<R, String>
 where
     P: Send + 'static,
-    F: FnOnce(&Path, P) -> Result<String, String> + Send + 'static,
+    F: FnOnce(&Path, P) -> Result<R, String> + Send + 'static,
+    R: Send + 'static,
 {
     let task = tokio::task::spawn_blocking(move || f(&cwd, params));
     tokio::time::timeout(GIT_TOOL_TIMEOUT, task)
@@ -23,9 +24,9 @@ where
         .map_err(|e| format!("git tool task failed: {e}"))?
 }
 
-fn output_from_result(result: Result<String, String>) -> ToolResult {
+fn output_from_json_result(result: Result<serde_json::Value, String>) -> ToolResult {
     match result {
-        Ok(text) => Ok(ToolOutput::text(text)),
+        Ok(value) => Ok(ToolOutput::json(value)),
         Err(msg) => Err(ToolError::Execution(msg)),
     }
 }
@@ -109,7 +110,9 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_diff(&self, _ctx: GitCtx<'_>, params: Parameters<GitDiffParams>) -> ToolResult {
-        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_diff).await)
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_diff_structured).await,
+        )
     }
 
     #[mcp_tool(
@@ -119,7 +122,9 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_log(&self, _ctx: GitCtx<'_>, params: Parameters<GitLogParams>) -> ToolResult {
-        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_log).await)
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_log_structured).await,
+        )
     }
 
     #[mcp_tool(
@@ -129,7 +134,9 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_show(&self, _ctx: GitCtx<'_>, params: Parameters<GitShowParams>) -> ToolResult {
-        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_show).await)
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_show_structured).await,
+        )
     }
 
     #[mcp_tool(
@@ -139,7 +146,9 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_blame(&self, _ctx: GitCtx<'_>, params: Parameters<GitBlameParams>) -> ToolResult {
-        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_blame).await)
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_blame_structured).await,
+        )
     }
 
     #[mcp_tool(
@@ -149,7 +158,9 @@ impl GitServer {
         idempotent = true
     )]
     async fn git_repo(&self, _ctx: GitCtx<'_>, params: Parameters<GitRepoParams>) -> ToolResult {
-        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_repo).await)
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_repo_structured).await,
+        )
     }
 
     #[mcp_tool(
@@ -163,7 +174,9 @@ impl GitServer {
         _ctx: GitCtx<'_>,
         params: Parameters<GitStatusParams>,
     ) -> ToolResult {
-        output_from_result(execute_blocking(PathBuf::from("."), params.0, execute_git_status).await)
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_status_structured).await,
+        )
     }
 
     #[mcp_tool(
@@ -177,8 +190,13 @@ impl GitServer {
         _ctx: GitCtx<'_>,
         params: Parameters<GitBranchesParams>,
     ) -> ToolResult {
-        output_from_result(
-            execute_blocking(PathBuf::from("."), params.0, execute_git_branches).await,
+        output_from_json_result(
+            execute_blocking(
+                PathBuf::from("."),
+                params.0,
+                execute_git_branches_structured,
+            )
+            .await,
         )
     }
 
@@ -193,8 +211,8 @@ impl GitServer {
         _ctx: GitCtx<'_>,
         params: Parameters<GitRemotesParams>,
     ) -> ToolResult {
-        output_from_result(
-            execute_blocking(PathBuf::from("."), params.0, execute_git_remotes).await,
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_remotes_structured).await,
         )
     }
 }
@@ -212,26 +230,73 @@ pub fn tool_infos() -> Vec<ToolInfo> {
     ]
 }
 
+#[allow(dead_code)]
 pub fn execute_git_diff(cwd: &Path, params: GitDiffParams) -> Result<String, String> {
+    execute_git_diff_structured(cwd, params).map(|value| {
+        value
+            .get("diff")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    })
+}
+
+pub fn execute_git_diff_structured(
+    cwd: &Path,
+    params: GitDiffParams,
+) -> Result<serde_json::Value, String> {
     let GitDiffParams { base, paths } = params;
     let path_refs = paths
         .as_ref()
         .map(|items| items.iter().map(String::as_str).collect::<Vec<_>>());
-    crate::diff(cwd, base.as_deref(), path_refs.as_deref()).map_err(|e| e.to_string())
+    let diff =
+        crate::diff(cwd, base.as_deref(), path_refs.as_deref()).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "diff": diff,
+        "base": base,
+        "paths": paths,
+    }))
 }
 
+#[allow(dead_code)]
 pub fn execute_git_log(cwd: &Path, params: GitLogParams) -> Result<String, String> {
+    execute_git_log_structured(cwd, params)
+        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+}
+
+pub fn execute_git_log_structured(
+    cwd: &Path,
+    params: GitLogParams,
+) -> Result<serde_json::Value, String> {
     let entries =
         crate::log(cwd, Some(params.limit), params.branch.as_deref()).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
+    serde_json::to_value(entries).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 pub fn execute_git_show(cwd: &Path, params: GitShowParams) -> Result<String, String> {
-    let entry = crate::show(cwd, params.rev.as_deref()).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&entry).map_err(|e| e.to_string())
+    execute_git_show_structured(cwd, params)
+        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
 }
 
+pub fn execute_git_show_structured(
+    cwd: &Path,
+    params: GitShowParams,
+) -> Result<serde_json::Value, String> {
+    let entry = crate::show(cwd, params.rev.as_deref()).map_err(|e| e.to_string())?;
+    serde_json::to_value(entry).map_err(|e| e.to_string())
+}
+
+#[allow(dead_code)]
 pub fn execute_git_blame(cwd: &Path, params: GitBlameParams) -> Result<String, String> {
+    execute_git_blame_structured(cwd, params)
+        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+}
+
+pub fn execute_git_blame_structured(
+    cwd: &Path,
+    params: GitBlameParams,
+) -> Result<serde_json::Value, String> {
     let lines = match (params.start_line, params.end_line) {
         (Some(start), Some(end)) => Some((start, end)),
         (None, None) => None,
@@ -243,27 +308,63 @@ pub fn execute_git_blame(cwd: &Path, params: GitBlameParams) -> Result<String, S
         }
     };
     let blamed = crate::blame(cwd, &params.file_path, lines).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&blamed).map_err(|e| e.to_string())
+    serde_json::to_value(blamed).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 pub fn execute_git_repo(cwd: &Path, _params: GitRepoParams) -> Result<String, String> {
+    execute_git_repo_structured(cwd, _params)
+        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+}
+
+pub fn execute_git_repo_structured(
+    cwd: &Path,
+    _params: GitRepoParams,
+) -> Result<serde_json::Value, String> {
     let info = crate::repo_info(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&info).map_err(|e| e.to_string())
+    serde_json::to_value(info).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 pub fn execute_git_status(cwd: &Path, _params: GitStatusParams) -> Result<String, String> {
+    execute_git_status_structured(cwd, _params)
+        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+}
+
+pub fn execute_git_status_structured(
+    cwd: &Path,
+    _params: GitStatusParams,
+) -> Result<serde_json::Value, String> {
     let info = crate::status(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&info).map_err(|e| e.to_string())
+    serde_json::to_value(info).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 pub fn execute_git_branches(cwd: &Path, _params: GitBranchesParams) -> Result<String, String> {
-    let info = crate::branches(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&info).map_err(|e| e.to_string())
+    execute_git_branches_structured(cwd, _params)
+        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
 }
 
+pub fn execute_git_branches_structured(
+    cwd: &Path,
+    _params: GitBranchesParams,
+) -> Result<serde_json::Value, String> {
+    let info = crate::branches(cwd).map_err(|e| e.to_string())?;
+    serde_json::to_value(info).map_err(|e| e.to_string())
+}
+
+#[allow(dead_code)]
 pub fn execute_git_remotes(cwd: &Path, _params: GitRemotesParams) -> Result<String, String> {
+    execute_git_remotes_structured(cwd, _params)
+        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+}
+
+pub fn execute_git_remotes_structured(
+    cwd: &Path,
+    _params: GitRemotesParams,
+) -> Result<serde_json::Value, String> {
     let info = crate::remotes(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&info).map_err(|e| e.to_string())
+    serde_json::to_value(info).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

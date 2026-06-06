@@ -4,6 +4,7 @@
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::BackendCronStorage;
 use crate::CronCtx;
@@ -82,8 +83,8 @@ impl CronServer {
         params: Parameters<SpoolSubmitParams>,
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
-        match execute(&params.0, None, &owner).await {
-            Ok(text) => Ok(ToolOutput::text(text)),
+        match execute_structured(&params.0, None, &owner).await {
+            Ok(value) => Ok(ToolOutput::json(value)),
             Err(msg) => Err(ToolError::Execution(msg)),
         }
     }
@@ -95,6 +96,16 @@ pub async fn execute(
     provider: Option<&ChaosStorageProvider>,
     owner: &OwnerContext,
 ) -> Result<String, String> {
+    execute_structured(params, provider, owner)
+        .await
+        .map(|value| value.to_string())
+}
+
+pub async fn execute_structured(
+    params: &SpoolSubmitParams,
+    provider: Option<&ChaosStorageProvider>,
+    owner: &OwnerContext,
+) -> Result<serde_json::Value, String> {
     if params.items.is_empty() {
         return Err("spool_submit requires at least one item".into());
     }
@@ -177,17 +188,17 @@ pub async fn execute(
         .await
         .map_err(|e| format!("cleanup replaced poll cron rows: {e}"))?;
 
-    Ok(format!(
-        "Spool submitted.\n  manifest_id: {}\n  backend: {}\n  batch_id: {}\n  items: {}\n  poll_cron_id: {}\n  poll_schedule: {}\n  next_poll_at: {}\n  replaced_poll_rows: {}",
-        params.manifest_id,
-        params.backend,
-        batch_id,
-        params.items.len(),
-        job.id,
-        job.schedule,
-        job.next_run_at.map_or("none".into(), |t| t.to_string()),
-        replaced_poll_rows,
-    ))
+    Ok(json!({
+        "status": "submitted",
+        "manifest_id": params.manifest_id,
+        "backend": params.backend,
+        "batch_id": batch_id,
+        "item_count": params.items.len(),
+        "poll_cron_id": job.id,
+        "poll_schedule": job.schedule,
+        "next_poll_at": job.next_run_at.map(|t| t.to_string()),
+        "replaced_poll_rows": replaced_poll_rows,
+    }))
 }
 
 async fn persist_failed_attempt(
@@ -516,10 +527,9 @@ mod tests {
         let summary = execute(&second, Some(&provider), &owner)
             .await
             .expect("second submit");
-        assert!(
-            summary.contains("replaced_poll_rows: 1"),
-            "summary={summary}"
-        );
+        let summary_json: serde_json::Value =
+            serde_json::from_str(&summary).expect("summary should be JSON");
+        assert_eq!(summary_json["replaced_poll_rows"], 1);
 
         let row = sqlx::query(
             "SELECT COUNT(*) AS count FROM cron_jobs WHERE kind = 'spool' AND manifest_id = ?",

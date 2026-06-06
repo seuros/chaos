@@ -4,6 +4,7 @@ use mcp_host::prelude::ToolError;
 use mcp_host::prelude::ToolOutput;
 use mcp_host::prelude::ToolResult;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 /// Returns tool metadata for all arsenal tools.
 ///
@@ -14,8 +15,11 @@ pub fn tool_infos() -> Vec<mcp_host::prelude::ToolInfo> {
     router().list()
 }
 
-pub(crate) fn tool_text_result(result: Result<String, String>) -> ToolResult {
-    result.map(ToolOutput::text).map_err(ToolError::Execution)
+pub(crate) fn tool_json_result(result: Result<Value, String>) -> ToolResult {
+    match result {
+        Ok(value) => Ok(ToolOutput::json(value)),
+        Err(msg) => Err(ToolError::Execution(msg)),
+    }
 }
 
 pub(crate) fn deserialize_tool_params<T>(arguments: &serde_json::Value) -> Result<T, String>

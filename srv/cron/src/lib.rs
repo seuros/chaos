@@ -61,19 +61,25 @@ impl CatalogToolDriver for CronToolDriver {
                     let params: tools::create::CronCreateParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::create::execute(&params, Some(&provider), &owner).await
+                    tools::create::execute_structured(&params, Some(&provider), &owner)
+                        .await
+                        .map(|value| value.to_string())
                 }
                 "cron_toggle" => {
                     let params: tools::toggle::CronToggleParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::toggle::execute(&params, Some(&provider), Some(&owner)).await
+                    tools::toggle::execute_structured(&params, Some(&provider), Some(&owner))
+                        .await
+                        .map(|value| value.to_string())
                 }
                 "spool_submit" => {
                     let params: tools::spool_submit::SpoolSubmitParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::spool_submit::execute(&params, Some(&provider), &owner).await
+                    tools::spool_submit::execute_structured(&params, Some(&provider), &owner)
+                        .await
+                        .map(|value| value.to_string())
                 }
                 other => Err(format!("unknown cron tool: {other}")),
             }?;

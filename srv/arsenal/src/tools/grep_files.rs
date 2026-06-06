@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::ChaosCtx;
 use crate::ChaosServer;
 use crate::tools::deserialize_tool_params;
-use crate::tools::tool_text_result;
+use crate::tools::tool_json_result;
 
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 2000;
@@ -51,7 +51,7 @@ impl ChaosServer {
         _ctx: ChaosCtx<'_>,
         params: Parameters<GrepFilesParams>,
     ) -> ToolResult {
-        tool_text_result(execute_params(params.0).await)
+        tool_json_result(execute_params_structured(params.0).await)
     }
 }
 
@@ -61,7 +61,30 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
+pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let params: GrepFilesParams = deserialize_tool_params(arguments)?;
+    execute_params_structured(params).await
+}
+
 async fn execute_params(params: GrepFilesParams) -> Result<String, String> {
+    let structured = execute_params_structured(params).await?;
+    let matches = structured
+        .get("matches")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if matches.is_empty() {
+        Ok("No matches found.".to_string())
+    } else {
+        Ok(matches
+            .into_iter()
+            .filter_map(|value| value.as_str().map(ToString::to_string))
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+}
+
+async fn execute_params_structured(params: GrepFilesParams) -> Result<serde_json::Value, String> {
     let pattern = params.pattern.trim();
     if pattern.is_empty() {
         return Err("pattern must not be empty".to_string());
@@ -95,11 +118,12 @@ async fn execute_params(params: GrepFilesParams) -> Result<String, String> {
     .await
     .map_err(|e| format!("search task failed: {e}"))??;
 
-    if results.is_empty() {
-        Ok("No matches found.".to_string())
-    } else {
-        Ok(results.join("\n"))
-    }
+    let match_count = results.len();
+    Ok(serde_json::json!({
+        "matches": results,
+        "match_count": match_count,
+        "limit": limit,
+    }))
 }
 
 async fn verify_path_exists(path: &Path) -> Result<(), String> {

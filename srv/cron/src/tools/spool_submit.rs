@@ -74,8 +74,7 @@ impl CronServer {
     #[mcp_tool(
         name = "spool_submit",
         description = "Queue a batch of turns to a spool backend and schedule a cron job that polls until the batch completes.",
-        destructive = false,
-        open_world = false
+        destructive = false
     )]
     async fn spool_submit(
         &self,

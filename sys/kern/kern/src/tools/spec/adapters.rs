@@ -71,6 +71,31 @@ pub(crate) fn annotation_labels(annotations: &chaos_mcp_runtime::ToolAnnotations
     hints
 }
 
+/// Return whether MCP annotations describe a destructive tool after applying
+/// MCP defaults.
+///
+/// Per MCP, omitted hints have defaults:
+/// - `readOnlyHint`: false
+/// - `destructiveHint`: true
+///
+/// `destructiveHint` is only meaningful when `readOnlyHint` is false. Treat
+/// read-only tools as non-destructive even if a malformed server also supplies
+/// `destructiveHint: true`.
+pub(crate) fn annotations_are_destructive(
+    annotations: Option<&chaos_mcp_runtime::ToolAnnotations>,
+) -> bool {
+    let read_only = annotations
+        .and_then(|annotations| annotations.read_only_hint)
+        .unwrap_or(false);
+    if read_only {
+        return false;
+    }
+
+    annotations
+        .and_then(|annotations| annotations.destructive_hint)
+        .unwrap_or(true)
+}
+
 /// Append a task-support hint to a tool description so the model knows whether
 /// async invocation is required, optional, or unavailable.
 fn task_support_suffix(tool: &chaos_mcp_runtime::manager::McpToolInfo) -> &'static str {

@@ -25,7 +25,7 @@ struct EchoParams {
 struct ImageParams {}
 
 impl TestStdioServer {
-    #[mcp_tool(name = "echo")]
+    #[mcp_tool(name = "echo", read_only = true, open_world = false)]
     async fn echo(&self, _ctx: Ctx<'_>, params: Parameters<EchoParams>) -> ToolResult {
         let mut payload = serde_json::Map::new();
         payload.insert(
@@ -38,7 +38,7 @@ impl TestStdioServer {
         Ok(ToolOutput::json(serde_json::Value::Object(payload)))
     }
 
-    #[mcp_tool(name = "image")]
+    #[mcp_tool(name = "image", read_only = true, open_world = false)]
     async fn image(&self, _ctx: Ctx<'_>, _params: Parameters<ImageParams>) -> ToolResult {
         let data_url = std::env::var("MCP_TEST_IMAGE_DATA_URL").map_err(|err| {
             ToolError::Execution(format!("missing MCP_TEST_IMAGE_DATA_URL: {err}"))

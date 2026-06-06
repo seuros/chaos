@@ -80,6 +80,7 @@ impl McpManageServer {
         name = "mcp_add_server",
         description = "Add an MCP server to the project `.mcp.json` and reload the active session.",
         read_only = false,
+        destructive = false,
         open_world = false
     )]
     async fn mcp_add_server(

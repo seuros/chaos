@@ -54,7 +54,7 @@ pub struct ListDirParams {
 
 impl ChaosServer {
     /// List directory contents recursively with configurable depth, offset, and limit.
-    #[mcp_tool(name = "list_dir", read_only = true, idempotent = true)]
+    #[mcp_tool(name = "list_dir", read_only = true, open_world = false)]
     async fn list_dir(&self, _ctx: ChaosCtx<'_>, params: Parameters<ListDirParams>) -> ToolResult {
         tool_json_result(execute_params_structured(params.0).await)
     }
@@ -66,7 +66,9 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
-pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+pub async fn execute_structured(
+    arguments: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let params: ListDirParams = deserialize_tool_params(arguments)?;
     execute_params_structured(params).await
 }

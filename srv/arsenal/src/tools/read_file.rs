@@ -97,7 +97,7 @@ impl Default for IndentationParams {
 impl ChaosServer {
     /// Reads a local file with 1-indexed line numbers, supporting slice and
     /// indentation-aware block modes.
-    #[mcp_tool(name = "read_file", read_only = true, idempotent = true)]
+    #[mcp_tool(name = "read_file", read_only = true, open_world = false)]
     async fn read_file(
         &self,
         _ctx: ChaosCtx<'_>,
@@ -115,7 +115,9 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
-pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+pub async fn execute_structured(
+    arguments: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let params: ReadFileParams = deserialize_tool_params(arguments)?;
     execute_params_structured(params).await
 }

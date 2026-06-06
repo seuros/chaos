@@ -12,7 +12,10 @@ use crate::client_common::tools::ToolSpec;
 use crate::tools::registry::ToolRegistryBuilder;
 
 use super::ToolsConfig;
-use super::adapters::{annotation_suffix, dynamic_tool_to_model_tool, mcp_tool_to_model_tool};
+use super::adapters::{
+    annotation_suffix, annotations_are_destructive, dynamic_tool_to_model_tool,
+    mcp_tool_to_model_tool,
+};
 use super::tool_builders::{
     create_call_mcp_tool_async_tool, create_cancel_mcp_task_tool, create_close_agent_tool,
     create_exec_command_tool, create_list_mcp_resource_templates_tool,
@@ -281,13 +284,23 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 // appear when MCP servers are present and are not duplicated via inventory.
                 continue;
             }
+            let annotations = tool.annotations.as_ref().and_then(|v| {
+                serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone()).ok()
+            });
+            if plan_mode && annotations_are_destructive(annotations.as_ref()) {
+                tracing::debug!(
+                    tool = %tool.name,
+                    source = %source,
+                    annotations = ?annotations,
+                    "skipping catalog tool in plan mode",
+                );
+                continue;
+            }
             let input_schema = parse_tool_input_schema(&tool.input_schema)
                 .unwrap_or_else(|e| panic!("catalog tool {} has invalid schema: {e}", tool.name));
-            let description = match tool.annotations.as_ref().and_then(|v| {
-                serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone()).ok()
-            }) {
+            let description = match annotations.as_ref() {
                 Some(ann) => {
-                    let suffix = annotation_suffix(&ann);
+                    let suffix = annotation_suffix(ann);
                     if suffix.is_empty() {
                         tool.description
                     } else {
@@ -477,15 +490,10 @@ pub(crate) fn build_specs_with_discoverable_tools(
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (name, tool) in entries.into_iter() {
-            if plan_mode
-                && let Some(ref ann) = tool.annotations
-                && (ann.destructive_hint == Some(true) || ann.read_only_hint == Some(false))
-            {
+            if plan_mode && annotations_are_destructive(tool.annotations.as_ref()) {
                 tracing::debug!(
                     tool = %name,
-                    annotations = ?ann,
-                    destructive = ann.destructive_hint,
-                    read_only = ann.read_only_hint,
+                    annotations = ?tool.annotations,
                     "skipping MCP tool in plan mode",
                 );
                 continue;

@@ -46,7 +46,7 @@ pub struct LocateFilesParams {
 
 impl ChaosServer {
     /// Fuzzy search file paths using fff-search. Use this to find files by name/path; use grep_files to search file contents.
-    #[mcp_tool(name = "locate_files", read_only = true, idempotent = true)]
+    #[mcp_tool(name = "locate_files", read_only = true, open_world = false)]
     async fn locate_files(
         &self,
         _ctx: ChaosCtx<'_>,
@@ -62,7 +62,9 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
-pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+pub async fn execute_structured(
+    arguments: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let params: LocateFilesParams = deserialize_tool_params(arguments)?;
     execute_params_structured(params).await
 }
@@ -111,10 +113,11 @@ async fn execute_params_structured(params: LocateFilesParams) -> Result<serde_js
 
     let pattern = pattern.to_string();
     let include_hidden = params.include_hidden;
-    let results =
-        tokio::task::spawn_blocking(move || run_locate_search(&pattern, search_path, limit, include_hidden))
-            .await
-            .map_err(|e| format!("search task failed: {e}"))??;
+    let results = tokio::task::spawn_blocking(move || {
+        run_locate_search(&pattern, search_path, limit, include_hidden)
+    })
+    .await
+    .map_err(|e| format!("search task failed: {e}"))??;
 
     let shown_match_count = results.matches.len();
     Ok(serde_json::json!({
@@ -166,10 +169,10 @@ pub fn run_locate_search(
     Ok(LocateSearchOutput {
         total_match_count: results.total_match_count,
         matches: results
-        .matches
-        .into_iter()
-        .map(|file_match| file_match.full_path().to_string_lossy().into_owned())
-        .collect(),
+            .matches
+            .into_iter()
+            .map(|file_match| file_match.full_path().to_string_lossy().into_owned())
+            .collect(),
     })
 }
 
@@ -215,7 +218,10 @@ mod tests {
         .expect("locate search");
 
         assert!(
-            matches.matches.iter().any(|path| path.ends_with("alpha_widget.rs")),
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("alpha_widget.rs")),
             "matches: {matches:?}"
         );
     }
@@ -245,11 +251,17 @@ mod tests {
         .expect("locate search");
 
         assert!(
-            matches.matches.iter().any(|path| path.ends_with("visible.md")),
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("visible.md")),
             "matches: {matches:?}"
         );
         assert!(
-            matches.matches.iter().any(|path| path.ends_with(".hidden.md")),
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with(".hidden.md")),
             "matches: {matches:?}"
         );
     }
@@ -270,11 +282,17 @@ mod tests {
         .expect("locate search");
 
         assert!(
-            matches.matches.iter().any(|path| path.ends_with("visible.md")),
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("visible.md")),
             "matches: {matches:?}"
         );
         assert!(
-            !matches.matches.iter().any(|path| path.ends_with(".hidden.md")),
+            !matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with(".hidden.md")),
             "matches: {matches:?}"
         );
     }

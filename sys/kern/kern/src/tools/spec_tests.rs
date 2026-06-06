@@ -300,6 +300,104 @@ fn dynamic_tool_to_model_tool_keeps_output_schema_absent() {
     );
 }
 
+#[test]
+fn annotations_are_destructive_applies_mcp_defaults() {
+    assert!(super::adapters::annotations_are_destructive(None));
+
+    assert!(super::adapters::annotations_are_destructive(Some(
+        &chaos_mcp_runtime::ToolAnnotations {
+            destructive_hint: None,
+            read_only_hint: Some(false),
+            ..Default::default()
+        }
+    )));
+
+    assert!(!super::adapters::annotations_are_destructive(Some(
+        &chaos_mcp_runtime::ToolAnnotations {
+            destructive_hint: Some(false),
+            read_only_hint: None,
+            ..Default::default()
+        }
+    )));
+
+    assert!(!super::adapters::annotations_are_destructive(Some(
+        &chaos_mcp_runtime::ToolAnnotations {
+            destructive_hint: Some(true),
+            read_only_hint: Some(true),
+            ..Default::default()
+        }
+    )));
+}
+
+#[test]
+fn plan_mode_hides_destructive_mcp_tools_using_spec_defaults() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    });
+
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+    });
+    let mut mcp_tools = HashMap::new();
+    mcp_tools.insert(
+        "mcp__server__safe_read".to_string(),
+        chaos_mcp_runtime::manager::McpToolInfo {
+            name: "safe_read".to_string(),
+            title: None,
+            description: Some("Safe read".to_string()),
+            input_schema: schema.clone(),
+            output_schema: None,
+            annotations: Some(chaos_mcp_runtime::ToolAnnotations {
+                read_only_hint: Some(true),
+                ..Default::default()
+            }),
+            execution: None,
+            icons: None,
+            meta: None,
+        },
+    );
+    mcp_tools.insert(
+        "mcp__server__default_destructive".to_string(),
+        chaos_mcp_runtime::manager::McpToolInfo {
+            name: "default_destructive".to_string(),
+            title: None,
+            description: Some("No annotations means MCP defaults apply".to_string()),
+            input_schema: schema,
+            output_schema: None,
+            annotations: None,
+            execution: None,
+            icons: None,
+            meta: None,
+        },
+    );
+
+    let (tools, _) = build_specs_with_discoverable_tools(
+        &tools_config,
+        Some(mcp_tools),
+        None,
+        &[],
+        Vec::new(),
+        None,
+        /*plan_mode*/ true,
+    )
+    .build();
+
+    assert_contains_tool_names(&tools, &["mcp__server__safe_read"]);
+    assert_lacks_tool_name(&tools, "mcp__server__default_destructive");
+}
+
 fn tool_name(tool: &ToolSpec) -> &str {
     match tool {
         ToolSpec::Function(ResponsesApiTool { name, .. }) => name,

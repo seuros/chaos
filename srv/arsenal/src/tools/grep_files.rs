@@ -45,7 +45,7 @@ pub struct GrepFilesParams {
 
 impl ChaosServer {
     /// Search file contents using regex and return matching file paths. This does not require an rg binary; use locate_files to fuzzy search file names/paths.
-    #[mcp_tool(name = "grep_files", read_only = true, idempotent = true)]
+    #[mcp_tool(name = "grep_files", read_only = true, open_world = false)]
     async fn grep_files(
         &self,
         _ctx: ChaosCtx<'_>,
@@ -61,7 +61,9 @@ pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
     execute_params(params).await
 }
 
-pub async fn execute_structured(arguments: &serde_json::Value) -> Result<serde_json::Value, String> {
+pub async fn execute_structured(
+    arguments: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let params: GrepFilesParams = deserialize_tool_params(arguments)?;
     execute_params_structured(params).await
 }

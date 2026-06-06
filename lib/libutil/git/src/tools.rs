@@ -107,7 +107,7 @@ impl GitServer {
         name = "git_diff",
         description = "Show unified diff of worktree changes against a base ref (default HEAD).",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_diff(&self, _ctx: GitCtx<'_>, params: Parameters<GitDiffParams>) -> ToolResult {
         output_from_json_result(
@@ -119,7 +119,7 @@ impl GitServer {
         name = "git_log",
         description = "List recent commits with sha, author, date, and subject.",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_log(&self, _ctx: GitCtx<'_>, params: Parameters<GitLogParams>) -> ToolResult {
         output_from_json_result(
@@ -131,7 +131,7 @@ impl GitServer {
         name = "git_show",
         description = "Show full commit details including subject, body, author, and trailers.",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_show(&self, _ctx: GitCtx<'_>, params: Parameters<GitShowParams>) -> ToolResult {
         output_from_json_result(
@@ -143,7 +143,7 @@ impl GitServer {
         name = "git_blame",
         description = "Show per-line author attribution for a file, with optional line range.",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_blame(&self, _ctx: GitCtx<'_>, params: Parameters<GitBlameParams>) -> ToolResult {
         output_from_json_result(
@@ -155,7 +155,7 @@ impl GitServer {
         name = "git_repo",
         description = "Show repository identity: root path, HEAD sha, current branch, remotes, and dirty state.",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_repo(&self, _ctx: GitCtx<'_>, params: Parameters<GitRepoParams>) -> ToolResult {
         output_from_json_result(
@@ -167,7 +167,7 @@ impl GitServer {
         name = "git_status",
         description = "List staged, unstaged, and untracked files in the worktree.",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_status(
         &self,
@@ -183,7 +183,7 @@ impl GitServer {
         name = "git_branches",
         description = "List local and remote branches with current and default markers.",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_branches(
         &self,
@@ -204,7 +204,7 @@ impl GitServer {
         name = "git_remotes",
         description = "List configured remotes with their fetch and push URLs.",
         read_only = true,
-        idempotent = true
+        open_world = false
     )]
     async fn git_remotes(
         &self,

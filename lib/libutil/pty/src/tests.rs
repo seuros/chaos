@@ -643,7 +643,7 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
         write_end.as_raw_fd().to_string(),
     );
 
-    let script = "printf __preserved__ >\"/dev/fd/$PRESERVED_FD\"";
+    let script = "printf __preserved__ >&$PRESERVED_FD";
     let spawned = spawn_process_with_inherited_fds(
         "/bin/sh",
         &["-c".to_string(), script.to_string()],
@@ -801,8 +801,7 @@ async fn pty_spawn_with_inherited_fds_supports_resize() -> anyhow::Result<()> {
     let write_end = unsafe { std::fs::File::from_raw_fd(fds[1]) };
 
     let env_map: HashMap<String, String> = std::env::vars().collect();
-    let script =
-        "stty -echo; printf 'start:%s\\n' \"$(stty size)\"; IFS= read _line; printf 'after:%s\\n' \"$(stty size)\"";
+    let script = "stty -echo; printf 'start:%s\\n' \"$(stty size)\"; IFS= read _line; printf 'after:%s\\n' \"$(stty size)\"";
     let spawned = spawn_process_with_inherited_fds(
         "/bin/sh",
         &["-c".to_string(), script.to_string()],
@@ -866,7 +865,7 @@ async fn pipe_spawn_no_stdin_can_preserve_inherited_fds() -> anyhow::Result<()> 
         write_end.as_raw_fd().to_string(),
     );
 
-    let script = "printf __pipe_preserved__ >\"/dev/fd/$PRESERVED_FD\"";
+    let script = "printf __pipe_preserved__ >&$PRESERVED_FD";
     let spawned = spawn_process_no_stdin_with_inherited_fds(
         "/bin/sh",
         &["-c".to_string(), script.to_string()],

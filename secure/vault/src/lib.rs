@@ -207,7 +207,11 @@ mod tests {
 
     #[test]
     fn environment_id_fallback_has_cwd_prefix() {
-        let dir = tempfile::tempdir().expect("tempdir");
+        #[cfg(target_os = "macos")]
+        let temp_root = Path::new("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let temp_root = Path::new("/tmp");
+        let dir = tempfile::tempdir_in(temp_root).expect("tempdir");
         let env_id = environment_id_from_cwd(dir.path());
         let canonical = dir
             .path()

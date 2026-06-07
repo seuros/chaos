@@ -4,6 +4,7 @@ use std::num::NonZero;
 use std::path::Path;
 use std::path::PathBuf;
 
+use ignore::WalkBuilder;
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -81,7 +82,7 @@ async fn execute_params(params: LocateFilesParams) -> Result<String, String> {
     }
     let mut lines = matches
         .into_iter()
-        .filter_map(|value| value.as_str().map(|path| format_path_for_line(path)))
+        .filter_map(|value| value.as_str().map(format_path_for_line))
         .collect::<Vec<_>>();
     let total_match_count = structured
         .get("total_match_count")
@@ -148,31 +149,76 @@ fn format_path_for_line(path: &str) -> String {
     }
 }
 
+fn path_has_hidden_component(path: &Path) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|component| component.starts_with('.') && component != "." && component != "..")
+    })
+}
+
 pub fn run_locate_search(
     pattern: &str,
     search_path: PathBuf,
     limit: NonZero<usize>,
     include_hidden: bool,
 ) -> Result<LocateSearchOutput, String> {
-    let results = chaos_locate::run(
-        pattern,
-        vec![search_path],
-        chaos_locate::FileSearchOptions {
-            limit,
-            include_hidden,
-            ..Default::default()
-        },
-        /*cancel_flag*/ None,
-    )
-    .map_err(|err| format!("file locate failed: {err}"))?;
+    let mut scored_matches = Vec::<(u32, String)>::new();
+    let mut total_match_count = 0usize;
+    let mut walk_builder = WalkBuilder::new(&search_path);
+    walk_builder
+        // Always include hidden paths in the underlying walk. The tool's
+        // `include_hidden` contract is applied relative to `search_path`
+        // below, so a hidden temp/workspace parent does not hide everything.
+        .hidden(false)
+        .follow_links(true)
+        .require_git(true);
+
+    for entry in walk_builder.build() {
+        let entry = entry.map_err(|err| format!("file locate failed: {err}"))?;
+        if !entry.file_type().is_some_and(|file_type| file_type.is_file()) {
+            continue;
+        }
+        let full_path = entry.path();
+        let relative_path = full_path.strip_prefix(&search_path).unwrap_or(full_path);
+        if !include_hidden && path_has_hidden_component(relative_path) {
+            continue;
+        }
+        let Some(relative_path_text) = relative_path.to_str() else {
+            continue;
+        };
+        let Some(score) = chaos_locate::fuzzy_subsequence_score(pattern, relative_path_text) else {
+            continue;
+        };
+        let full_path_text = full_path.to_string_lossy().into_owned();
+        total_match_count = total_match_count.saturating_add(1);
+        if scored_matches.len() < limit.get() {
+            scored_matches.push((score, full_path_text));
+            scored_matches.sort_by(|(left_score, left_path), (right_score, right_path)| {
+                right_score
+                    .cmp(left_score)
+                    .then_with(|| left_path.cmp(right_path))
+            });
+        } else if let Some((last_score, last_path)) = scored_matches.last()
+            && (score > *last_score || (score == *last_score && full_path_text < *last_path))
+        {
+            scored_matches.pop();
+            scored_matches.push((score, full_path_text));
+            scored_matches.sort_by(|(left_score, left_path), (right_score, right_path)| {
+                right_score
+                    .cmp(left_score)
+                    .then_with(|| left_path.cmp(right_path))
+            });
+        }
+    }
 
     Ok(LocateSearchOutput {
-        total_match_count: results.total_match_count,
-        matches: results
-            .matches
+        matches: scored_matches
             .into_iter()
-            .map(|file_match| file_match.full_path().to_string_lossy().into_owned())
+            .map(|(_score, path)| path)
             .collect(),
+        total_match_count,
     })
 }
 

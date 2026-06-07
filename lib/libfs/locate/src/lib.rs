@@ -12,6 +12,8 @@ use fff_search::QueryParser;
 use fff_search::SharedFilePicker;
 use fff_search::SharedFrecency;
 use ignore::WalkBuilder;
+use ignore::gitignore::Gitignore;
+use ignore::gitignore::GitignoreBuilder;
 use ignore::overrides::OverrideBuilder;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -89,11 +91,10 @@ pub struct FileSearchOptions {
     pub include_hidden: bool,
     /// Toggle ignore-file processing in the walker.
     ///
-    /// When enabled, `.gitignore` files are scoped by
-    /// `WalkBuilder::require_git(true)`, so they are honored only when the
-    /// traversed path is inside a git repository. When disabled, the walker
-    /// turns off `.gitignore`, git-global/exclude rules, `.ignore`, and
-    /// parent-directory ignore scanning.
+    /// When enabled, ignore files below the search root are honored. Parent
+    /// ignore files are never scanned because locate treats each explicit
+    /// search root as its boundary. When disabled, the walker turns off
+    /// `.gitignore`, git-global/exclude rules, and `.ignore`.
     pub respect_gitignore: bool,
 }
 
@@ -180,19 +181,22 @@ pub fn create_session(
                 },
             )?;
             let walker_override_matcher = build_override_matcher(search_directory, &exclude)?;
-            spawn_compat_walker(
-                search_directory.clone(),
-                threads.get(),
-                walker_override_matcher,
+            let root_gitignore_matcher =
+                build_root_gitignore_matcher(search_directory, respect_gitignore)?;
+            spawn_locate_walker(LocateWalkerConfig {
+                search_directory: search_directory.clone(),
+                threads: threads.get(),
+                override_matcher: walker_override_matcher,
                 include_hidden,
                 respect_gitignore,
-                manual_files.clone(),
-                manual_walk_complete.clone(),
-                cancelled.clone(),
-            );
+                files: manual_files.clone(),
+                walk_complete: manual_walk_complete.clone(),
+                cancelled: cancelled.clone(),
+            });
             anyhow::Ok(RootPicker {
                 root: search_directory.clone(),
                 override_matcher: build_override_matcher(search_directory, &exclude)?,
+                root_gitignore_matcher,
                 picker: shared_picker,
                 manual_files,
                 manual_walk_complete,
@@ -343,6 +347,7 @@ struct SessionInner {
 struct RootPicker {
     root: PathBuf,
     override_matcher: Option<ignore::overrides::Override>,
+    root_gitignore_matcher: Option<Gitignore>,
     picker: SharedFilePicker,
     manual_files: Arc<RwLock<Vec<String>>>,
     manual_walk_complete: Arc<AtomicBool>,
@@ -369,7 +374,27 @@ fn build_override_matcher(
     Ok(Some(matcher))
 }
 
-fn spawn_compat_walker(
+fn build_root_gitignore_matcher(
+    search_directory: &Path,
+    respect_gitignore: bool,
+) -> anyhow::Result<Option<Gitignore>> {
+    if !respect_gitignore {
+        return Ok(None);
+    }
+
+    let gitignore_path = search_directory.join(".gitignore");
+    if !gitignore_path.is_file() {
+        return Ok(None);
+    }
+
+    let mut builder = GitignoreBuilder::new(search_directory);
+    if let Some(err) = builder.add(&gitignore_path) {
+        return Err(err.into());
+    }
+    Ok(Some(builder.build()?))
+}
+
+struct LocateWalkerConfig {
     search_directory: PathBuf,
     threads: usize,
     override_matcher: Option<ignore::overrides::Override>,
@@ -378,18 +403,35 @@ fn spawn_compat_walker(
     files: Arc<RwLock<Vec<String>>>,
     walk_complete: Arc<AtomicBool>,
     cancelled: Arc<AtomicBool>,
-) {
+}
+
+fn spawn_locate_walker(walker: LocateWalkerConfig) {
+    let LocateWalkerConfig {
+        search_directory,
+        threads,
+        override_matcher,
+        include_hidden,
+        respect_gitignore,
+        files,
+        walk_complete,
+        cancelled,
+    } = walker;
+
     thread::spawn(move || {
         let mut walk_builder = WalkBuilder::new(&search_directory);
         walk_builder
             .threads(threads)
-            // Preserve the historic `chaos-locate` behavior: hidden files are
-            // valid `@` search targets.
+            // Hidden files are valid `@` search targets.
             .hidden(!include_hidden)
             .follow_links(true)
-            // Keep ignore behavior aligned with git repositories: only apply
-            // gitignore rules when a git context exists.
-            .require_git(true);
+            // Walk everything under the explicit search root. Root-scoped
+            // ignore filtering is applied later in `search_with_fff`, which
+            // prevents parent ignore files from hiding requested roots.
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false)
+            .ignore(false)
+            .parents(false);
         if !respect_gitignore {
             walk_builder
                 .git_ignore(false)
@@ -418,10 +460,12 @@ fn spawn_compat_walker(
                 if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                     return ignore::WalkState::Continue;
                 }
-                if let Ok(relative_path) = entry.path().strip_prefix(&search_directory)
-                    && let Some(relative_path) = relative_path.to_str()
-                    && let Ok(mut guard) = files.write()
-                {
+                let relative_path = entry
+                    .path()
+                    .strip_prefix(&search_directory)
+                    .ok()
+                    .and_then(Path::to_str);
+                if let (Some(relative_path), Ok(mut guard)) = (relative_path, files.write()) {
                     guard.push(relative_path.to_string());
                 }
                 n += 1;
@@ -548,6 +592,9 @@ fn search_with_fff(
             if is_excluded(&root_picker.override_matcher, &relative_path) {
                 continue;
             }
+            if is_ignored_by_root_gitignore(root_picker, Path::new(&relative_path)) {
+                continue;
+            }
             upsert_match(
                 &mut matches,
                 &mut seen,
@@ -564,6 +611,9 @@ fn search_with_fff(
             scanned_file_count = scanned_file_count.saturating_add(manual_files.len());
             for relative_path in manual_files.iter() {
                 if is_excluded(&root_picker.override_matcher, relative_path) {
+                    continue;
+                }
+                if is_ignored_by_root_gitignore(root_picker, Path::new(relative_path)) {
                     continue;
                 }
                 let Some(score) = fuzzy_subsequence_score(query_text, relative_path) else {
@@ -600,6 +650,17 @@ fn search_with_fff(
     }
 }
 
+fn is_ignored_by_root_gitignore(root_picker: &RootPicker, relative_path: &Path) -> bool {
+    root_picker
+        .root_gitignore_matcher
+        .as_ref()
+        .is_some_and(|matcher| {
+            matcher
+                .matched_path_or_any_parents(root_picker.root.join(relative_path), false)
+                .is_ignore()
+        })
+}
+
 fn upsert_match(
     matches: &mut Vec<FileMatch>,
     seen: &mut HashMap<(PathBuf, PathBuf), usize>,
@@ -627,7 +688,7 @@ fn upsert_match(
     });
 }
 
-fn fuzzy_subsequence_score(query: &str, haystack: &str) -> Option<u32> {
+pub fn fuzzy_subsequence_score(query: &str, haystack: &str) -> Option<u32> {
     let indices = fuzzy_subsequence_indices(query, haystack);
     let query_len = query.chars().filter(|ch| !ch.is_whitespace()).count();
     if query_len == 0 || indices.len() != query_len {

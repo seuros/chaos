@@ -992,51 +992,40 @@ fn assert_model_tools(
 fn assert_default_model_tools(
     model_slug: &str,
     web_search_mode: Option<WebSearchMode>,
-    shell_tool: &'static str,
-    expected_tail: &[&str],
+    expected_tail: ModelToolTail,
 ) {
-    let _ = shell_tool;
-    let mut expected = vec!["exec_command", "write_stdin"];
-    expected.extend(expected_tail);
-    assert_model_tools(model_slug, web_search_mode, &expected);
+    assert_model_tools(
+        model_slug,
+        web_search_mode,
+        &expected_model_tools(expected_tail),
+    );
 }
 
-const DEFAULT_SHELL_MODEL_TOOL_TAIL: &[&str] = &[
-    "update_plan",
-    "request_user_input",
-    "request_permissions",
-    "grep_files",
-    "list_dir",
-    "read_file",
-    "cron_create",
-    "cron_toggle",
-    "spool_submit",
-    "git_blame",
-    "git_branches",
-    "git_diff",
-    "git_log",
-    "git_remotes",
-    "git_repo",
-    "git_show",
-    "git_status",
-    "mcp_add_server",
-    "mcp_server",
-    "web_search",
-    "view_image",
-    "spawn_agent",
-    "send_input",
-    "resume_agent",
-    "wait_agent",
-    "close_agent",
-];
+#[derive(Clone, Copy)]
+enum ModelToolTail {
+    DefaultShell,
+    CodeEdit,
+}
 
-const CODE_EDIT_MODEL_TOOL_TAIL: &[&str] = &[
-    "update_plan",
-    "request_user_input",
-    "request_permissions",
-    "apply_patch",
+impl ModelToolTail {
+    fn tool_names(self) -> Vec<&'static str> {
+        let mut tools = Vec::new();
+        tools.extend_from_slice(MODEL_TOOL_TAIL_PREFIX);
+        if matches!(self, Self::CodeEdit) {
+            tools.push("apply_patch");
+        }
+        tools.extend_from_slice(MODEL_TOOL_TAIL_SUFFIX);
+        tools
+    }
+}
+
+const MODEL_TOOL_TAIL_PREFIX: &[&str] =
+    &["update_plan", "request_user_input", "request_permissions"];
+
+const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "grep_files",
     "list_dir",
+    "locate_files",
     "read_file",
     "cron_create",
     "cron_toggle",
@@ -1061,34 +1050,34 @@ const CODE_EDIT_MODEL_TOOL_TAIL: &[&str] = &[
 ];
 
 #[derive(Clone, Copy)]
-struct DefaultModelToolCase {
+struct ModelToolCase {
     model_slug: &'static str,
-    shell_tool: &'static str,
-    expected_tail: &'static [&'static str],
+    expected_tail: ModelToolTail,
 }
 
-fn assert_default_model_tool_cases(cases: &[DefaultModelToolCase]) {
+fn expected_model_tools(expected_tail: ModelToolTail) -> Vec<&'static str> {
+    let mut expected = vec!["exec_command", "write_stdin"];
+    expected.extend(expected_tail.tool_names());
+    expected
+}
+
+fn assert_default_model_tool_cases(cases: &[ModelToolCase]) {
     for case in cases {
         assert_default_model_tools(
             case.model_slug,
             Some(WebSearchMode::Cached),
-            case.shell_tool,
             case.expected_tail,
         );
     }
 }
 
-#[derive(Clone, Copy)]
-struct UnifiedExecWebSearchModelToolCase {
-    model_slug: &'static str,
-    expected_tail: &'static [&'static str],
-}
-
-fn assert_unified_exec_web_search_model_tool_cases(cases: &[UnifiedExecWebSearchModelToolCase]) {
+fn assert_unified_exec_web_search_model_tool_cases(cases: &[ModelToolCase]) {
     for case in cases {
-        let mut expected = vec!["exec_command", "write_stdin"];
-        expected.extend_from_slice(case.expected_tail);
-        assert_model_tools(case.model_slug, Some(WebSearchMode::Live), &expected);
+        assert_model_tools(
+            case.model_slug,
+            Some(WebSearchMode::Live),
+            &expected_model_tools(case.expected_tail),
+        );
     }
 }
 
@@ -1327,35 +1316,29 @@ fn spawn_agent_tool_description_uses_current_role_names() {
 #[test]
 fn test_build_specs_default_toolsets_for_model_profiles() {
     assert_default_model_tool_cases(&[
-        DefaultModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5-codex",
-            shell_tool: "shell_command",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
-        DefaultModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5.1-codex",
-            shell_tool: "shell_command",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
-        DefaultModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5.1-codex-max",
-            shell_tool: "shell_command",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
-        DefaultModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5.1-codex-mini",
-            shell_tool: "shell_command",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
-        DefaultModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5",
-            shell_tool: "shell",
-            expected_tail: DEFAULT_SHELL_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::DefaultShell,
         },
-        DefaultModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5.1",
-            shell_tool: "shell_command",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
     ]);
 }
@@ -1363,17 +1346,17 @@ fn test_build_specs_default_toolsets_for_model_profiles() {
 #[test]
 fn test_build_specs_unified_exec_web_search_toolsets_for_code_edit_profiles() {
     assert_unified_exec_web_search_model_tool_cases(&[
-        UnifiedExecWebSearchModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5-codex",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
-        UnifiedExecWebSearchModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5.1-codex",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
-        UnifiedExecWebSearchModelToolCase {
+        ModelToolCase {
             model_slug: "gpt-5.1-codex-max",
-            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
+            expected_tail: ModelToolTail::CodeEdit,
         },
     ]);
 }

@@ -61,10 +61,12 @@ fn singleton_returns_same_instance() {
 #[test]
 fn uptime_is_nonzero() {
     let facts = platform::detect();
-    assert!(
-        facts.uptime_secs > 0,
-        "uptime should be > 0 on a running system"
-    );
+    if facts.sandbox_type == SandboxKind::None {
+        assert!(
+            facts.uptime_secs > 0,
+            "uptime should be > 0 on an unsandboxed running system"
+        );
+    }
 }
 
 #[test]

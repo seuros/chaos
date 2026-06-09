@@ -57,6 +57,7 @@ use super::TokenCountEvent;
 use super::TurnAbortedEvent;
 use super::TurnCompleteEvent;
 use super::TurnDiffEvent;
+use super::TurnProgressEvent;
 use super::TurnStartedEvent;
 use super::UndoCompletedEvent;
 use super::UndoStartedEvent;
@@ -131,6 +132,12 @@ pub enum EventMsg {
     /// Usage update for the current session, including totals and last turn.
     /// Optional means unknown — UIs should not display when `None`.
     TokenCount(TokenCountEvent),
+
+    /// Approximate progress for the currently running turn.
+    ///
+    /// This is intentionally separate from [`TokenCountEvent`]: values are
+    /// client-facing liveness estimates, not provider usage accounting.
+    TurnProgress(TurnProgressEvent),
 
     /// Agent text output message
     AgentMessage(AgentMessageEvent),

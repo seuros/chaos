@@ -40,6 +40,7 @@ impl BottomPane {
             pending_process_approvals: PendingProcessApprovals::new(),
             esc_backtrack_hint: false,
             animations_enabled,
+            turn_progress_message: None,
             context_window_percent: None,
             context_window_used_tokens: None,
         }
@@ -470,6 +471,7 @@ impl BottomPane {
             }
         } else {
             // Hide the status indicator when a task completes, but keep other modal views.
+            self.turn_progress_message = None;
             self.hide_status_indicator();
         }
     }
@@ -576,13 +578,31 @@ impl BottomPane {
         }
     }
 
+    /// Update the approximate live model progress shown in the active status row.
+    pub fn set_turn_progress_message(&mut self, message: Option<String>) {
+        if self.turn_progress_message == message {
+            return;
+        }
+
+        self.turn_progress_message = message;
+        self.sync_status_inline_message();
+        self.request_redraw();
+    }
+
     /// Copy unified-exec summary text into the active status row, if any.
     ///
     /// This keeps status-line inline text synchronized without forcing the
     /// standalone unified-exec footer row to be visible.
     fn sync_status_inline_message(&mut self) {
         if let Some(status) = self.status.as_mut() {
-            status.update_inline_message(self.unified_exec_footer.summary_text());
+            let mut parts = Vec::new();
+            if let Some(progress) = self.turn_progress_message.as_ref() {
+                parts.push(progress.clone());
+            }
+            if let Some(exec_summary) = self.unified_exec_footer.summary_text() {
+                parts.push(exec_summary);
+            }
+            status.update_inline_message((!parts.is_empty()).then(|| parts.join(" · ")));
         }
     }
 

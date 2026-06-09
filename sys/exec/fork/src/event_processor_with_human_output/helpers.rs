@@ -93,6 +93,7 @@ impl EventProcessorWithHumanOutput {
                 msg,
                 EventMsg::ProcessNameUpdated(_)
                     | EventMsg::TokenCount(_)
+                    | EventMsg::TurnProgress(_)
                     | EventMsg::TurnStarted(_)
                     | EventMsg::ExecApprovalRequest(_)
                     | EventMsg::ApplyPatchApprovalRequest(_)

@@ -109,6 +109,11 @@ installing, use `just chaos`. For a local release run, use
 `just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
 for system requirements and logging controls.
 
+During a running turn, the console status row may show an approximate live token
+progress counter such as `~1.2K tokens`. This is a liveness/size indicator for
+the current response, not provider usage accounting; exact usage is still shown
+from provider-reported token counts when available.
+
 ---
 
 ## Docs

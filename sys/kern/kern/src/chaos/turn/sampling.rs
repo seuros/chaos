@@ -17,6 +17,7 @@ use crate::util::backoff;
 use super::super::Session;
 use super::super::TurnContext;
 use super::SamplingRequestResult;
+use super::execution::TurnProgressTracker;
 use super::execution::try_run_sampling_request;
 
 pub(super) fn build_prompt(
@@ -65,6 +66,7 @@ pub(super) async fn run_sampling_request(
     turn_context: Arc<TurnContext>,
     turn_diff_tracker: SharedTurnDiffTracker,
     client_session: &mut ModelClientSession,
+    progress: &mut TurnProgressTracker,
     turn_metadata_header: Option<&str>,
     input: Vec<chaos_ipc::models::ResponseItem>,
     server_model_warning_emitted_for_turn: &mut bool,
@@ -102,6 +104,7 @@ pub(super) async fn run_sampling_request(
             client_session,
             turn_metadata_header,
             Arc::clone(&turn_diff_tracker),
+            progress,
             server_model_warning_emitted_for_turn,
             &mut last_server_model,
             &prompt,

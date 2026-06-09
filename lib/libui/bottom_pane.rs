@@ -166,6 +166,8 @@ pub struct BottomPane {
     pending_input_preview: PendingInputPreview,
     /// Inactive threads with pending approval requests.
     pending_process_approvals: PendingProcessApprovals,
+    /// Approximate live model-token progress for the active turn.
+    turn_progress_message: Option<String>,
     context_window_percent: Option<i64>,
     context_window_used_tokens: Option<i64>,
 }

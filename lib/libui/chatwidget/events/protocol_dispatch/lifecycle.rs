@@ -5,6 +5,7 @@ use chaos_ipc::protocol::McpStartupCompleteEvent;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
 use chaos_ipc::protocol::TurnAbortReason;
+use chaos_ipc::protocol::TurnProgressEvent;
 use chaos_kern::config::Constrained;
 
 use crate::history_cell;
@@ -138,10 +139,22 @@ impl ChatWidget {
         self.pending_status_indicator_restore = false;
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ true);
+        self.bottom_pane.set_turn_progress_message(None);
         self.set_status_header(String::from("Working"));
         self.full_reasoning_buffer.clear();
         self.reasoning_buffer.clear();
         self.request_redraw();
+    }
+
+    pub(crate) fn on_turn_progress(&mut self, event: TurnProgressEvent) {
+        if !self.agent_turn_running {
+            return;
+        }
+        let message = format!(
+            "~{} tokens",
+            crate::status::format_tokens_compact(event.approx_total_tokens)
+        );
+        self.bottom_pane.set_turn_progress_message(Some(message));
     }
 
     pub(crate) fn on_task_complete(

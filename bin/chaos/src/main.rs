@@ -585,12 +585,6 @@ fn finalize_fork_interactive(
 /// root-level flags. Only overrides fields explicitly set on the subcommand-scoped
 /// CLI. Also appends `-c key=value` overrides with highest precedence.
 fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli) {
-    if let Some(model) = subcommand_cli.model {
-        interactive.model = Some(model);
-    }
-    if subcommand_cli.oss {
-        interactive.oss = true;
-    }
     if let Some(profile) = subcommand_cli.config_profile {
         interactive.config_profile = Some(profile);
     }
@@ -611,9 +605,6 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     }
     if subcommand_cli.web_search {
         interactive.web_search = true;
-    }
-    if !subcommand_cli.images.is_empty() {
-        interactive.images = subcommand_cli.images;
     }
     if !subcommand_cli.add_dir.is_empty() {
         interactive.add_dir.extend(subcommand_cli.add_dir);
@@ -846,17 +837,6 @@ mod tests {
     }
 
     #[test]
-    fn resume_model_flag_applies_when_no_root_flags() {
-        let interactive =
-            finalize_resume_from_args(["chaos", "resume", "-m", "gpt-5.1-test"].as_ref());
-
-        assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
-        assert!(interactive.resume_picker);
-        assert!(!interactive.resume_last);
-        assert_eq!(interactive.resume_session_id, None);
-    }
-
-    #[test]
     fn resume_picker_logic_none_and_not_last() {
         let interactive = finalize_resume_from_args(["chaos", "resume"].as_ref());
         assert!(interactive.resume_picker);
@@ -897,27 +877,20 @@ mod tests {
                 "chaos",
                 "resume",
                 "sid",
-                "--oss",
                 "--full-auto",
                 "--search",
                 "--sandbox",
                 "workspace-write",
                 "--ask-for-approval",
                 "interactive",
-                "-m",
-                "gpt-5.1-test",
                 "-p",
                 "my-profile",
                 "-C",
                 "/tmp",
-                "-i",
-                "/tmp/a.png,/tmp/b.png",
             ]
             .as_ref(),
         );
 
-        assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
-        assert!(interactive.oss);
         assert_eq!(interactive.config_profile.as_deref(), Some("my-profile"));
         assert_matches!(
             interactive.sandbox_mode,
@@ -933,15 +906,6 @@ mod tests {
             Some(std::path::Path::new("/tmp"))
         );
         assert!(interactive.web_search);
-        let has_a = interactive
-            .images
-            .iter()
-            .any(|p| p == std::path::Path::new("/tmp/a.png"));
-        let has_b = interactive
-            .images
-            .iter()
-            .any(|p| p == std::path::Path::new("/tmp/b.png"));
-        assert!(has_a && has_b);
         assert!(!interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));

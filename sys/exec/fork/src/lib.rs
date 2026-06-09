@@ -30,7 +30,6 @@ use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::load_config_as_toml_with_cli_overrides;
-use chaos_kern::config::resolve_oss_provider;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::format_config_error_with_source;
 use chaos_kern::format_exec_policy_error_with_source;
@@ -124,11 +123,8 @@ struct ExecRunArgs {
     cursor_ansi: bool,
     headless: bool,
     exec_span: tracing::Span,
-    images: Vec<PathBuf>,
     json_mode: bool,
     last_message_file: Option<PathBuf>,
-    model_provider: Option<String>,
-    oss: bool,
     output_schema_path: Option<PathBuf>,
     prompt: Option<String>,
     skip_git_repo_check: bool,
@@ -151,10 +147,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
 
     let Cli {
         command,
-        images,
-        model: model_cli_arg,
-        oss,
-        oss_provider,
         config_profile,
         auto_exec,
         cwd,
@@ -246,7 +238,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     };
 
     #[allow(clippy::print_stderr)]
-    let config_toml = match load_config_as_toml_with_cli_overrides(
+    let _config_toml = match load_config_as_toml_with_cli_overrides(
         &chaos_home,
         &config_cwd,
         cli_kv_overrides.clone(),
@@ -271,37 +263,9 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         }
     };
 
-    let model_provider = if oss {
-        let resolved = resolve_oss_provider(
-            oss_provider.as_deref(),
-            &config_toml,
-            config_profile.clone(),
-        );
-
-        if let Some(provider) = resolved {
-            Some(provider)
-        } else {
-            return Err(anyhow::anyhow!(
-                "No default OSS provider configured. Use --local-provider=provider or set oss_provider in config.toml"
-            ));
-        }
-    } else {
-        None // No OSS mode enabled
-    };
-
-    // When using `--oss`, let the bootstrapper pick the model based on selected provider
-    let model = if let Some(model) = model_cli_arg {
-        Some(model)
-    } else if oss {
-        // No built-in default model for generic OSS providers; callers specify via --model.
-        None
-    } else {
-        None // No model specified, will use the default.
-    };
-
     // Load configuration and determine approval policy
     let overrides = ConfigOverrides {
-        model,
+        model: None,
         review_model: None,
         config_profile,
         // Default to never ask for approvals in headless mode.
@@ -309,7 +273,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         approvals_reviewer: None,
         sandbox_mode,
         cwd: resolved_cwd,
-        model_provider: model_provider.clone(),
         service_tier: None,
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
@@ -322,7 +285,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         mcp_servers: None,
         active_project_trust: None,
         additional_writable_roots: add_dir,
-        provider_user_override: model_provider.is_some(),
+        model_provider: None,
+        provider_user_override: false,
     };
 
     let config = ConfigBuilder::default()
@@ -407,11 +371,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         cursor_ansi,
         headless: auto_exec.headless,
         exec_span: exec_span.clone(),
-        images,
         json_mode,
         last_message_file,
-        model_provider,
-        oss,
         output_schema_path,
         prompt,
         skip_git_repo_check,
@@ -430,11 +391,8 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         cursor_ansi,
         headless,
         exec_span,
-        images,
         json_mode,
         last_message_file,
-        model_provider,
-        oss,
         output_schema_path,
         prompt,
         skip_git_repo_check,
@@ -457,23 +415,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         .filter(|(_, server)| server.enabled && server.required)
         .map(|(name, _)| name.clone())
         .collect();
-
-    if oss {
-        // We're in the oss section, so provider_id should be Some
-        // Let's handle None case gracefully though just in case
-        let provider_id = match model_provider.as_ref() {
-            Some(id) => id,
-            None => {
-                error!("OSS provider unexpectedly not set when oss flag is used");
-                return Err(anyhow::anyhow!(
-                    "OSS provider not set but oss flag was used"
-                ));
-            }
-        };
-        // OSS provider readiness checks (lmstudio/ollama) have been removed.
-        // Provider connectivity is validated lazily on the first request.
-        let _ = provider_id;
-    }
 
     let default_cwd = config.cwd.to_path_buf();
     let default_approval_policy = config.permissions.approval_policy.value();
@@ -518,13 +459,13 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     let primary_process_id_for_span = session_configured.session_id.to_string();
     exec_span.record("thread.id", primary_process_id_for_span.as_str());
 
-    let (initial_operation, prompt_summary) = match (command.as_ref(), prompt, images) {
-        (Some(ExecCommand::Review(review_cli)), _, _) => {
+    let (initial_operation, prompt_summary) = match (command.as_ref(), prompt) {
+        (Some(ExecCommand::Review(review_cli)), _) => {
             let review_request = build_review_request(review_cli)?;
             let summary = chaos_kern::review_prompts::user_facing_hint(&review_request.target);
             (InitialOperation::Review { review_request }, summary)
         }
-        (Some(ExecCommand::Resume(args)), root_prompt, imgs) => {
+        (Some(ExecCommand::Resume(args)), root_prompt) => {
             let prompt_arg = args
                 .prompt
                 .clone()
@@ -537,16 +478,11 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 })
                 .or(root_prompt);
             let prompt_text = resolve_prompt(prompt_arg);
-            let mut items: Vec<UserInput> = imgs
-                .into_iter()
-                .chain(args.images.iter().cloned())
-                .map(|path| UserInput::LocalImage { path })
-                .collect();
-            items.push(UserInput::Text {
+            let items = vec![UserInput::Text {
                 text: prompt_text.clone(),
                 // CLI input doesn't track UI element ranges, so none are available here.
                 text_elements: Vec::new(),
-            });
+            }];
             let output_schema = load_output_schema(output_schema_path.clone());
             (
                 InitialOperation::UserTurn {
@@ -556,17 +492,13 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 prompt_text,
             )
         }
-        (None, root_prompt, imgs) => {
+        (None, root_prompt) => {
             let prompt_text = resolve_prompt(root_prompt);
-            let mut items: Vec<UserInput> = imgs
-                .into_iter()
-                .map(|path| UserInput::LocalImage { path })
-                .collect();
-            items.push(UserInput::Text {
+            let items = vec![UserInput::Text {
                 text: prompt_text.clone(),
                 // CLI input doesn't track UI element ranges, so none are available here.
                 text_elements: Vec::new(),
-            });
+            }];
             let output_schema = load_output_schema(output_schema_path);
             (
                 InitialOperation::UserTurn {

@@ -23,7 +23,6 @@ use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::load_config_as_toml_with_cli_overrides;
 use chaos_kern::config::load_config_or_exit as kern_load_config_or_exit;
-use chaos_kern::config::resolve_oss_provider;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::LoaderOverrides;
 use chaos_kern::config_loader::format_config_error_with_source;
@@ -235,35 +234,14 @@ pub async fn run_main(
         .find(|(k, _)| k == "model_provider")
         .and_then(|(_, v)| v.as_str().map(ToString::to_string));
 
-    let model_provider_override = if cli.oss {
-        let resolved = resolve_oss_provider(
-            cli.oss_provider.as_deref(),
-            &config_toml,
-            cli.config_profile.clone(),
-        );
-
-        if let Some(provider) = resolved {
-            Some(provider)
-        } else {
-            return Err(std::io::Error::other(
-                "No OSS provider configured. Use --local-provider=provider or set oss_provider in config.toml",
-            ));
-        }
-    } else {
-        cli_model_provider
-    };
-
-    let model = cli.model.clone();
-
     let additional_dirs = cli.add_dir.clone();
 
     let overrides = ConfigOverrides {
-        model,
         approval_policy,
         sandbox_mode,
         cwd,
-        provider_user_override: model_provider_override.is_some(),
-        model_provider: model_provider_override.clone(),
+        provider_user_override: cli_model_provider.is_some(),
+        model_provider: cli_model_provider,
         config_profile: cli.config_profile.clone(),
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
@@ -315,23 +293,6 @@ pub async fn run_main(
             | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
     )?;
     let (debug_file_layer, _debug_log_guard) = init_optional_debug_file_layer()?;
-
-    if cli.oss && model_provider_override.is_some() {
-        // We're in the oss section, so provider_id should be Some
-        // Let's handle None case gracefully though just in case
-        let provider_id = match model_provider_override.as_ref() {
-            Some(id) => id,
-            None => {
-                error!("OSS provider unexpectedly not set when oss flag is used");
-                return Err(std::io::Error::other(
-                    "OSS provider not set but oss flag was used",
-                ));
-            }
-        };
-        // OSS provider readiness checks have been removed; connectivity is
-        // validated lazily on the first request.
-        let _ = provider_id;
-    }
 
     let otel = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         chaos_kern::otel_init::build_provider(
@@ -666,7 +627,6 @@ async fn run_ratatui_app(
     let should_show_trust_screen = should_show_trust_screen(&config);
     let Cli {
         prompt,
-        images,
         no_alt_screen,
         clamp: start_clamped,
         ..
@@ -693,7 +653,7 @@ async fn run_ratatui_app(
         overrides.clone(),
         active_profile,
         prompt,
-        images,
+        Vec::new(),
         session_selection,
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
         start_clamped,

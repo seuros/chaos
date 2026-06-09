@@ -12,29 +12,6 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// Optional image(s) to attach to the initial prompt.
-    #[arg(
-        long = "image",
-        short = 'i',
-        value_name = "FILE",
-        value_delimiter = ',',
-        num_args = 1..
-    )]
-    pub images: Vec<PathBuf>,
-
-    /// Model the agent should use.
-    #[arg(long, short = 'm', global = true)]
-    pub model: Option<String>,
-
-    /// Use open-source provider.
-    #[arg(long = "oss", default_value_t = false)]
-    pub oss: bool,
-
-    /// Specify which local provider to use (lmstudio or ollama).
-    /// If not specified with --oss, will use config default or show selection.
-    #[arg(long = "local-provider")]
-    pub oss_provider: Option<String>,
-
     /// Select the sandbox policy to use when executing model-generated shell
     /// commands.
     #[arg(long = "sandbox", short = 's', value_enum)]
@@ -128,16 +105,6 @@ struct ResumeArgsRaw {
     #[arg(long = "all", default_value_t = false)]
     all: bool,
 
-    /// Optional image(s) to attach to the prompt sent after resuming.
-    #[arg(
-        long = "image",
-        short = 'i',
-        value_name = "FILE",
-        value_delimiter = ',',
-        num_args = 1
-    )]
-    images: Vec<PathBuf>,
-
     /// Prompt to send after resuming the session. If `-` is used, read from stdin.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     prompt: Option<String>,
@@ -154,9 +121,6 @@ pub struct ResumeArgs {
 
     /// Show all sessions (disables cwd filtering).
     pub all: bool,
-
-    /// Optional image(s) to attach to the prompt sent after resuming.
-    pub images: Vec<PathBuf>,
 
     /// Prompt to send after resuming the session. If `-` is used, read from stdin.
     pub prompt: Option<String>,
@@ -175,7 +139,6 @@ impl From<ResumeArgsRaw> for ResumeArgs {
             session_id,
             last: raw.last,
             all: raw.all,
-            images: raw.images,
             prompt,
         }
     }

@@ -74,42 +74,60 @@ impl LoginFlowWorkflow {
         }
     }
 
+    /// Apply a transition that the runner sequences and that must always be
+    /// legal from the current state. A rejected transition means the runner and
+    /// the emitted `LoginFlowUpdate` stream have drifted, so fail loudly in
+    /// debug/test builds rather than silently no-op while the matching update
+    /// still goes out.
+    fn apply(&mut self, event: LoginFlowLifecycleEvent, label: &str) {
+        if self.machine.handle(event).is_err() {
+            debug_assert!(
+                false,
+                "illegal LoginFlow transition: {label} from {}",
+                self.machine.current_state()
+            );
+        }
+    }
+
     fn start_browser(&mut self) {
-        let _ = self.machine.handle(LoginFlowLifecycleEvent::StartBrowser);
+        self.apply(LoginFlowLifecycleEvent::StartBrowser, "start_browser");
     }
 
     fn browser_ready(&mut self) {
-        let _ = self.machine.handle(LoginFlowLifecycleEvent::BrowserReady);
+        self.apply(LoginFlowLifecycleEvent::BrowserReady, "browser_ready");
     }
 
     fn start_device_code(&mut self) {
-        let _ = self
-            .machine
-            .handle(LoginFlowLifecycleEvent::StartDeviceCode);
+        self.apply(
+            LoginFlowLifecycleEvent::StartDeviceCode,
+            "start_device_code",
+        );
     }
 
     fn device_code_ready(&mut self) {
-        let _ = self
-            .machine
-            .handle(LoginFlowLifecycleEvent::DeviceCodeReady);
+        self.apply(
+            LoginFlowLifecycleEvent::DeviceCodeReady,
+            "device_code_ready",
+        );
     }
 
     fn device_code_unsupported(&mut self) {
-        let _ = self
-            .machine
-            .handle(LoginFlowLifecycleEvent::DeviceCodeUnsupported);
+        self.apply(
+            LoginFlowLifecycleEvent::DeviceCodeUnsupported,
+            "device_code_unsupported",
+        );
     }
 
     fn succeed(&mut self) {
-        let _ = self.machine.handle(LoginFlowLifecycleEvent::Succeed);
+        self.apply(LoginFlowLifecycleEvent::Succeed, "succeed");
     }
 
     fn fail(&mut self) {
-        let _ = self.machine.handle(LoginFlowLifecycleEvent::Fail);
+        self.apply(LoginFlowLifecycleEvent::Fail, "fail");
     }
 
     fn cancel(&mut self) {
-        let _ = self.machine.handle(LoginFlowLifecycleEvent::Cancel);
+        self.apply(LoginFlowLifecycleEvent::Cancel, "cancel");
     }
 
     #[cfg(test)]
@@ -360,5 +378,26 @@ mod tests {
 
         wf.cancel();
         assert_eq!(wf.current_state(), "Cancelled");
+    }
+
+    #[test]
+    fn illegal_transition_is_rejected_and_state_unchanged() {
+        // Drive the raw machine so the wrapper's debug_assert does not fire:
+        // succeeding from Idle is not a declared transition.
+        let mut machine = DynamicLoginFlowLifecycle::new(());
+        assert_eq!(machine.current_state(), "Idle");
+
+        assert!(machine.handle(LoginFlowLifecycleEvent::Succeed).is_err());
+        assert_eq!(machine.current_state(), "Idle");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "illegal LoginFlow transition: succeed")]
+    fn wrapper_panics_when_transition_drifts() {
+        // The runner must never emit a Succeeded update without a legal
+        // transition; the wrapper guards that invariant in debug builds.
+        let mut wf = LoginFlowWorkflow::new();
+        wf.succeed();
     }
 }

@@ -15,8 +15,7 @@ use common::McpCliHarness;
 fn list_shows_empty_state() -> Result<()> {
     let harness = McpCliHarness::new()?;
 
-    let stdout = harness.stdout(&["mcp", "list"])?;
-    assert!(stdout.contains("No MCP servers configured yet."));
+    harness.assert_success_stdout(&["mcp", "list"], "No MCP servers configured yet.")?;
 
     Ok(())
 }

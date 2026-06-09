@@ -148,6 +148,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let Cli {
         command,
         config_profile,
+        model,
         auto_exec,
         cwd,
         skip_git_repo_check,
@@ -265,7 +266,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
 
     // Load configuration and determine approval policy
     let overrides = ConfigOverrides {
-        model: None,
+        model,
         review_model: None,
         config_profile,
         // Default to never ask for approvals in headless mode.

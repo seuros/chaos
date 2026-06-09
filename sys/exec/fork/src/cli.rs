@@ -21,6 +21,10 @@ pub struct Cli {
     #[arg(long = "profile", short = 'p')]
     pub config_profile: Option<String>,
 
+    /// Override the model used for this exec run.
+    #[arg(long = "model", short = 'm', value_name = "MODEL")]
+    pub model: Option<String>,
+
     #[clap(flatten)]
     pub auto_exec: chaos_getopt::GlobalAutoExecFlags,
 
@@ -215,6 +219,26 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
+    fn resume_rejects_model_flag_after_subcommand() {
+        const PROMPT: &str = "echo resume-with-global-flags-after-subcommand";
+        let err = Cli::try_parse_from([
+            "chaos-exec",
+            "resume",
+            "--last",
+            "--json",
+            "--model",
+            "gpt-5.4-codex",
+            "--headless",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            PROMPT,
+        ])
+        .expect_err("--model is a root exec override, not a resume flag");
+
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
     fn resume_parses_prompt_after_global_flags() {
         const PROMPT: &str = "echo resume-with-global-flags-after-subcommand";
         let cli = Cli::parse_from([
@@ -222,8 +246,6 @@ mod tests {
             "resume",
             "--last",
             "--json",
-            "--model",
-            "gpt-5.4-codex",
             "--headless",
             "--skip-git-repo-check",
             "--ephemeral",

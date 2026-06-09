@@ -17,8 +17,8 @@ use crate::util::backoff;
 use super::super::Session;
 use super::super::TurnContext;
 use super::SamplingRequestResult;
-use super::execution::TurnProgressTracker;
 use super::execution::try_run_sampling_request;
+use super::progress::TurnProgressTracker;
 
 pub(super) fn build_prompt(
     input: Vec<chaos_ipc::models::ResponseItem>,

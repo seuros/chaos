@@ -41,11 +41,12 @@ use super::TurnContext;
 
 mod execution;
 mod preparation;
+mod progress;
 mod sampling;
 
 use preparation::run_auto_compact;
 use preparation::run_pre_sampling_compact;
-use execution::TurnProgressTracker;
+use progress::TurnProgressTracker;
 use sampling::run_sampling_request;
 
 #[derive(Debug)]

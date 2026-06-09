@@ -151,10 +151,9 @@ fn format_path_for_line(path: &str) -> String {
 
 fn path_has_hidden_component(path: &Path) -> bool {
     path.components().any(|component| {
-        component
-            .as_os_str()
-            .to_str()
-            .is_some_and(|component| component.starts_with('.') && component != "." && component != "..")
+        component.as_os_str().to_str().is_some_and(|component| {
+            component.starts_with('.') && component != "." && component != ".."
+        })
     })
 }
 
@@ -166,6 +165,7 @@ pub fn run_locate_search(
 ) -> Result<LocateSearchOutput, String> {
     let mut scored_matches = Vec::<(u32, String)>::new();
     let mut total_match_count = 0usize;
+    let pattern_is_glob = is_glob_pattern(pattern);
     let mut walk_builder = WalkBuilder::new(&search_path);
     walk_builder
         // Always include hidden paths in the underlying walk. The tool's
@@ -177,7 +177,10 @@ pub fn run_locate_search(
 
     for entry in walk_builder.build() {
         let entry = entry.map_err(|err| format!("file locate failed: {err}"))?;
-        if !entry.file_type().is_some_and(|file_type| file_type.is_file()) {
+        if !entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_file())
+        {
             continue;
         }
         let full_path = entry.path();
@@ -188,7 +191,20 @@ pub fn run_locate_search(
         let Some(relative_path_text) = relative_path.to_str() else {
             continue;
         };
-        let Some(score) = chaos_locate::fuzzy_subsequence_score(pattern, relative_path_text) else {
+        let score = if pattern_is_glob {
+            let match_text = if pattern.contains('/') || pattern.contains('\\') {
+                relative_path_text
+            } else {
+                relative_path
+                    .file_name()
+                    .and_then(|file_name| file_name.to_str())
+                    .unwrap_or(relative_path_text)
+            };
+            wildcard_match(pattern, match_text).then_some(0)
+        } else {
+            chaos_locate::fuzzy_subsequence_score(pattern, relative_path_text)
+        };
+        let Some(score) = score else {
             continue;
         };
         let full_path_text = full_path.to_string_lossy().into_owned();
@@ -220,6 +236,44 @@ pub fn run_locate_search(
             .collect(),
         total_match_count,
     })
+}
+
+fn is_glob_pattern(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?')
+}
+
+fn wildcard_match(pattern: &str, text: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let text = text.as_bytes();
+    let mut pattern_index = 0usize;
+    let mut text_index = 0usize;
+    let mut star_pattern_index = None;
+    let mut star_text_index = 0usize;
+
+    while text_index < text.len() {
+        if pattern_index < pattern.len()
+            && (pattern[pattern_index] == b'?' || pattern[pattern_index] == text[text_index])
+        {
+            pattern_index += 1;
+            text_index += 1;
+        } else if pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+            star_pattern_index = Some(pattern_index);
+            pattern_index += 1;
+            star_text_index = text_index;
+        } else if let Some(star_index) = star_pattern_index {
+            pattern_index = star_index + 1;
+            star_text_index += 1;
+            text_index = star_text_index;
+        } else {
+            return false;
+        }
+    }
+
+    while pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+        pattern_index += 1;
+    }
+
+    pattern_index == pattern.len()
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -268,6 +322,74 @@ mod tests {
                 .matches
                 .iter()
                 .any(|path| path.ends_with("alpha_widget.rs")),
+            "matches: {matches:?}"
+        );
+    }
+
+    #[test]
+    fn glob_search_returns_matching_file_paths() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let dir = temp.path();
+        std::fs::create_dir_all(dir.join("sys/kern/templates")).expect("create dirs");
+        std::fs::write(dir.join("README.md"), "").expect("write readme");
+        std::fs::write(dir.join("sys/kern/templates/plan.md"), "").expect("write plan");
+        std::fs::write(dir.join("sys/kern/templates/plan.rs"), "").expect("write rust");
+
+        let matches = run_locate_search(
+            "*.md",
+            dir.to_path_buf(),
+            NonZero::new(10).expect("non-zero limit"),
+            true,
+        )
+        .expect("locate search");
+
+        assert_eq!(matches.total_match_count, 2, "matches: {matches:?}");
+        assert!(
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("README.md")),
+            "matches: {matches:?}"
+        );
+        assert!(
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("sys/kern/templates/plan.md")),
+            "matches: {matches:?}"
+        );
+        assert!(
+            !matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("sys/kern/templates/plan.rs")),
+            "matches: {matches:?}"
+        );
+    }
+
+    #[test]
+    fn path_glob_search_matches_relative_paths() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let dir = temp.path();
+        std::fs::create_dir_all(dir.join("sys/kern/templates")).expect("create dirs");
+        std::fs::create_dir_all(dir.join("docs")).expect("create docs");
+        std::fs::write(dir.join("sys/kern/templates/plan.md"), "").expect("write plan");
+        std::fs::write(dir.join("docs/plan.md"), "").expect("write docs");
+
+        let matches = run_locate_search(
+            "sys/*/templates/*.md",
+            dir.to_path_buf(),
+            NonZero::new(10).expect("non-zero limit"),
+            true,
+        )
+        .expect("locate search");
+
+        assert_eq!(matches.total_match_count, 1, "matches: {matches:?}");
+        assert!(
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("sys/kern/templates/plan.md")),
             "matches: {matches:?}"
         );
     }

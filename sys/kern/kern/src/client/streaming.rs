@@ -631,11 +631,59 @@ impl ModelClientSession {
                             return;
                         }
                     };
+
+                // Opt-in wiretap: when CHAOS_CLAMP_WIRETAP is set, route the
+                // subprocess through a loopback recording proxy. Off by default,
+                // leaving the subprocess to talk to Anthropic directly.
+                let anthropic_base_url = match clamp_wiretap_mode() {
+                    WiretapMode::Off => None,
+                    mode => {
+                        let sink: Arc<dyn chaos_clamp::WiretapSink> = match mode {
+                            WiretapMode::Db => {
+                                let upgraded = session.upgrade();
+                                let runtime_db = upgraded.as_ref().and_then(|s| s.runtime_db());
+                                match runtime_db {
+                                    Some(db) => {
+                                        let session_id = upgraded
+                                            .as_ref()
+                                            .map(|s| s.conversation_id.to_string());
+                                        Arc::new(crate::clamp_wiretap::DbWiretapSink::new(
+                                            db, session_id,
+                                        ))
+                                    }
+                                    None => {
+                                        tracing::warn!(
+                                            "clamp wiretap=db but no runtime db; logging to tracing"
+                                        );
+                                        Arc::new(chaos_clamp::FileWiretapSink::new(None))
+                                    }
+                                }
+                            }
+                            WiretapMode::File(path) => {
+                                Arc::new(chaos_clamp::FileWiretapSink::new(path))
+                            }
+                            WiretapMode::Off => unreachable!("Off handled above"),
+                        };
+                        match chaos_clamp::WiretapProxy::start(sink).await {
+                            Ok(proxy) => {
+                                let base_url = proxy.base_url();
+                                *clamp_state.clamp_wiretap.lock().await = Some(proxy);
+                                Some(base_url)
+                            }
+                            Err(err) => {
+                                tracing::warn!("clamp wiretap failed to start: {err}");
+                                None
+                            }
+                        }
+                    }
+                };
+
                 let config = ClampConfig {
                     system_prompt: Some(system_prompt),
                     permission_mode: Some(clamp_permission_mode(clamp_state.approval_policy)),
                     mcp_config: Some(build_clamp_mcp_config(&bridge_socket_path, &bridge_token)),
                     allow_claude_code_tools: false,
+                    anthropic_base_url,
                     tool_permission_handler: Some(Arc::new(
                         move |tool_name, input, tool_use_id| {
                             let session = permission_session.clone();
@@ -1198,5 +1246,33 @@ impl ModelClientSession {
             }
             Err(err) => Err(map_api_error(abi_error_to_api_error(err))),
         }
+    }
+}
+
+/// How the clamp wiretap records traffic, resolved from `CHAOS_CLAMP_WIRETAP`.
+///
+/// - unset/empty → `Off` (the default)
+/// - `db` → `Db` (persist to the runtime DB; falls back to tracing if absent)
+/// - `1` / `true` / `on` → `File` to a default JSONL in the temp dir
+/// - `trace` / `tracing` → `File(None)` (log to the `chaos_clamp::wiretap` target)
+/// - any other value → `File` treating the value as the record path
+enum WiretapMode {
+    Off,
+    Db,
+    File(Option<std::path::PathBuf>),
+}
+
+fn clamp_wiretap_mode() -> WiretapMode {
+    let Ok(value) = std::env::var("CHAOS_CLAMP_WIRETAP") else {
+        return WiretapMode::Off;
+    };
+    match value.trim() {
+        "" => WiretapMode::Off,
+        "db" | "database" => WiretapMode::Db,
+        "1" | "true" | "on" => {
+            WiretapMode::File(Some(std::env::temp_dir().join("chaos-clamp-wiretap.jsonl")))
+        }
+        "trace" | "tracing" => WiretapMode::File(None),
+        path => WiretapMode::File(Some(std::path::PathBuf::from(path))),
     }
 }

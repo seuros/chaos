@@ -9,11 +9,16 @@
 //! and handles the user interface.
 
 mod protocol;
+mod proxy;
 mod transport;
 
 pub use protocol::ControlRequest;
 pub use protocol::ControlResponse;
 pub use protocol::Message;
+pub use proxy::FileWiretapSink;
+pub use proxy::WiretapExchange;
+pub use proxy::WiretapProxy;
+pub use proxy::WiretapSink;
 pub use transport::ClampConfig;
 pub use transport::ClampError;
 pub use transport::ClampInfo;

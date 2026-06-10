@@ -71,6 +71,7 @@ impl ModelClient {
                 resolved_wire: std::sync::OnceLock::new(),
                 clamped: std::sync::atomic::AtomicBool::new(false),
                 clamp_transport: tokio::sync::Mutex::new(None),
+                clamp_wiretap: tokio::sync::Mutex::new(None),
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),
                 session: std::sync::Mutex::new(Weak::new()),
                 representer,
@@ -153,6 +154,9 @@ impl ModelClient {
                 let mut guard = self.state.clamp_mcp_bridge.lock().await;
                 guard.take()
             };
+            if let Some(wiretap) = self.state.clamp_wiretap.lock().await.take() {
+                wiretap.shutdown();
+            }
             if let Some(transport) = transport
                 && let Err(err) = transport.shutdown().await
             {
@@ -182,6 +186,9 @@ impl ModelClient {
             let mut guard = self.state.clamp_transport.lock().await;
             guard.take()
         };
+        if let Some(wiretap) = self.state.clamp_wiretap.lock().await.take() {
+            wiretap.shutdown();
+        }
         if let Some(transport) = transport
             && let Err(err) = transport.shutdown().await
         {

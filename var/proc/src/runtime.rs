@@ -67,6 +67,20 @@ const LOG_PARTITION_SIZE_LIMIT_BYTES: i64 = 10 * 1024 * 1024;
 const LOG_PARTITION_ROW_LIMIT: i64 = 1_000;
 const POSTGRES_POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// A clamp wiretap exchange to persist in the runtime DB.
+#[derive(Debug, Clone, Default)]
+pub struct ClampExchangeRecord {
+    pub session_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub method: String,
+    pub path: String,
+    pub status: Option<i64>,
+    pub headers_json: Value,
+    pub request_json: Option<Value>,
+    pub response_body: Option<String>,
+    pub response_truncated: bool,
+}
+
 #[derive(Clone)]
 pub struct StateRuntime {
     chaos_home: PathBuf,
@@ -239,6 +253,42 @@ SET config_json = excluded.config_json,
         )
         .bind(name)
         .bind(serde_json::to_string(config)?)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    async fn record_clamp_exchange(&self, rec: &ClampExchangeRecord) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO clamp_exchanges (
+    session_id,
+    turn_id,
+    created_at,
+    method,
+    path,
+    status,
+    headers_json,
+    request_json,
+    response_body,
+    response_truncated
+) VALUES (?, ?, UNIXEPOCH(), ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(rec.session_id.as_deref())
+        .bind(rec.turn_id.as_deref())
+        .bind(&rec.method)
+        .bind(&rec.path)
+        .bind(rec.status)
+        .bind(serde_json::to_string(&rec.headers_json)?)
+        .bind(
+            rec.request_json
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
+        )
+        .bind(rec.response_body.as_deref())
+        .bind(i64::from(rec.response_truncated))
         .execute(self.pool())
         .await?;
         Ok(())
@@ -480,6 +530,14 @@ impl RuntimeDbHandle {
         match self {
             Self::Postgres(runtime) => runtime.upsert_global_mcp_server(name, config).await,
             Self::Sqlite(runtime) => runtime.upsert_global_mcp_server(name, config).await,
+        }
+    }
+
+    /// Persist a clamp wiretap exchange.
+    pub async fn record_clamp_exchange(&self, rec: &ClampExchangeRecord) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.record_clamp_exchange(rec).await,
+            Self::Sqlite(runtime) => runtime.record_clamp_exchange(rec).await,
         }
     }
 
@@ -1019,6 +1077,41 @@ SET config_json = EXCLUDED.config_json,
         )
         .bind(name)
         .bind(serde_json::to_value(config)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn record_clamp_exchange(&self, rec: &ClampExchangeRecord) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO clamp_exchanges (
+    session_id,
+    turn_id,
+    created_at,
+    method,
+    path,
+    status,
+    headers_json,
+    request_json,
+    response_body,
+    response_truncated
+) VALUES (
+    $1, $2,
+    EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
+    $3, $4, $5, $6, $7, $8, $9
+)
+            "#,
+        )
+        .bind(rec.session_id.as_deref())
+        .bind(rec.turn_id.as_deref())
+        .bind(&rec.method)
+        .bind(&rec.path)
+        .bind(rec.status.map(|s| s as i32))
+        .bind(&rec.headers_json)
+        .bind(rec.request_json.as_ref())
+        .bind(rec.response_body.as_deref())
+        .bind(rec.response_truncated)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -2429,6 +2522,127 @@ mod tests {
                 .expect("stat runtime db"),
             "runtime db file should be created from sqlite url"
         );
+    }
+
+    #[tokio::test]
+    async fn clamp_exchange_persists_postgres() {
+        let Some(database_url) = std::env::var("TEST_DATABASE_URL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+        else {
+            eprintln!("skipping postgres clamp test; TEST_DATABASE_URL not set");
+            return;
+        };
+
+        let pool = open_runtime_db_postgres_url(&database_url)
+            .await
+            .expect("open postgres runtime");
+        let runtime = RuntimeDbHandle::from_postgres_pool(
+            test_support::unique_temp_dir(),
+            "test-provider".to_string(),
+            pool.clone(),
+        );
+
+        // Unique session id so repeated runs against the shared container don't collide.
+        let session_id = format!("sess-{}", uuid::Uuid::new_v4());
+        let rec = ClampExchangeRecord {
+            session_id: Some(session_id.clone()),
+            turn_id: Some("turn-pg".to_string()),
+            method: "POST".to_string(),
+            path: "/v1/messages".to_string(),
+            status: Some(200),
+            headers_json: serde_json::json!({"authorization": "<redacted>"}),
+            request_json: Some(serde_json::json!({"model": "claude-sonnet-4-6"})),
+            response_body: Some("event: message_start\n".to_string()),
+            response_truncated: true,
+        };
+        runtime
+            .record_clamp_exchange(&rec)
+            .await
+            .expect("record exchange (pg)");
+
+        let row = sqlx::query(
+            "SELECT method, status, headers_json, request_json, response_body, \
+             response_truncated FROM clamp_exchanges WHERE session_id = $1",
+        )
+        .bind(&session_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read back exchange (pg)");
+
+        let method: String = row.try_get("method").expect("method");
+        let status: i32 = row.try_get("status").expect("status");
+        let headers_json: serde_json::Value = row.try_get("headers_json").expect("headers_json");
+        let request_json: serde_json::Value = row.try_get("request_json").expect("request_json");
+        let response_body: String = row.try_get("response_body").expect("response_body");
+        let truncated: bool = row.try_get("response_truncated").expect("truncated");
+
+        assert_eq!(method, "POST");
+        assert_eq!(status, 200);
+        assert_eq!(headers_json["authorization"], "<redacted>");
+        assert_eq!(request_json["model"], "claude-sonnet-4-6");
+        assert!(response_body.contains("message_start"));
+        assert!(truncated);
+
+        // Cleanup so the container stays tidy across runs.
+        let _ = sqlx::query("DELETE FROM clamp_exchanges WHERE session_id = $1")
+            .bind(&session_id)
+            .execute(&pool)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn clamp_exchange_persists() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let runtime = RuntimeDbHandle::Sqlite(
+            StateRuntime::init(chaos_home, "test-provider".to_string())
+                .await
+                .expect("open runtime"),
+        );
+
+        let rec = ClampExchangeRecord {
+            session_id: Some("sess-1".to_string()),
+            turn_id: Some("turn-1".to_string()),
+            method: "POST".to_string(),
+            path: "/v1/messages?beta=true".to_string(),
+            status: Some(200),
+            headers_json: serde_json::json!({"authorization": "<redacted>"}),
+            request_json: Some(serde_json::json!({"model": "claude-sonnet-4-6"})),
+            response_body: Some("event: message_start\n".to_string()),
+            response_truncated: false,
+        };
+        runtime
+            .record_clamp_exchange(&rec)
+            .await
+            .expect("record exchange");
+
+        let pool = runtime.sqlite_pool_cloned().expect("sqlite pool");
+        let row = sqlx::query(
+            "SELECT session_id, method, path, status, headers_json, request_json, \
+             response_body, response_truncated FROM clamp_exchanges",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("read back exchange");
+
+        let session_id: String = row.try_get("session_id").expect("session_id");
+        let method: String = row.try_get("method").expect("method");
+        let status: i64 = row.try_get("status").expect("status");
+        let headers_json: String = row.try_get("headers_json").expect("headers_json");
+        let response_body: String = row.try_get("response_body").expect("response_body");
+        let truncated: i64 = row.try_get("response_truncated").expect("truncated");
+
+        assert_eq!(session_id, "sess-1");
+        assert_eq!(method, "POST");
+        assert_eq!(status, 200);
+        assert!(headers_json.contains("<redacted>"));
+        assert!(response_body.contains("message_start"));
+        assert_eq!(truncated, 0);
     }
 
     #[tokio::test]

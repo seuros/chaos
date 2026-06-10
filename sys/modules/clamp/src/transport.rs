@@ -74,6 +74,9 @@ pub struct ClampConfig {
     pub allowed_tools: Vec<String>,
     /// Whether Claude Code's built-in tools may execute directly.
     pub allow_claude_code_tools: bool,
+    /// When set, exported as `ANTHROPIC_BASE_URL` so the subprocess routes
+    /// through the Chaos wiretap proxy instead of talking to Anthropic directly.
+    pub anthropic_base_url: Option<String>,
     /// Optional handler for Claude Code permission requests.
     pub tool_permission_handler: Option<ToolPermissionHandler>,
     /// Optional handler for Claude Code hook callbacks.
@@ -94,6 +97,7 @@ impl std::fmt::Debug for ClampConfig {
             .field("disallowed_tools", &self.disallowed_tools)
             .field("allowed_tools", &self.allowed_tools)
             .field("allow_claude_code_tools", &self.allow_claude_code_tools)
+            .field("anthropic_base_url", &self.anthropic_base_url)
             .field(
                 "tool_permission_handler",
                 &self.tool_permission_handler.as_ref().map(|_| "<handler>"),
@@ -122,6 +126,7 @@ impl Default for ClampConfig {
             disallowed_tools: vec![],
             allowed_tools: vec![],
             allow_claude_code_tools: false,
+            anthropic_base_url: None,
             tool_permission_handler: None,
             hook_callback_handler: None,
             mcp_message_handler: None,
@@ -272,6 +277,11 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
 
     // Environment: identify ourselves as an SDK client
     cmd.env("CLAUDE_CODE_ENTRYPOINT", "sdk-chaos");
+
+    // Route the subprocess through the Chaos wiretap proxy when configured.
+    if let Some(base_url) = &config.anthropic_base_url {
+        cmd.env("ANTHROPIC_BASE_URL", base_url);
+    }
 
     cmd
 }
@@ -869,6 +879,36 @@ mod tests {
             args.windows(2)
                 .any(|w| w[0] == "--setting-sources" && w[1].is_empty())
         );
+    }
+
+    #[test]
+    fn build_command_sets_anthropic_base_url_when_configured() {
+        let config = ClampConfig {
+            anthropic_base_url: Some("http://127.0.0.1:4567".to_string()),
+            ..Default::default()
+        };
+        let command = build_command(&PathBuf::from("claude"), &config);
+        let envs: Vec<_> = command
+            .as_std()
+            .get_envs()
+            .filter_map(|(k, v)| Some((k.to_str()?, v?.to_str()?.to_owned())))
+            .collect();
+        assert!(
+            envs.iter()
+                .any(|(k, v)| *k == "ANTHROPIC_BASE_URL" && v == "http://127.0.0.1:4567"),
+            "ANTHROPIC_BASE_URL not set: {envs:?}"
+        );
+    }
+
+    #[test]
+    fn build_command_omits_anthropic_base_url_by_default() {
+        let config = ClampConfig::default();
+        let command = build_command(&PathBuf::from("claude"), &config);
+        let has_base_url = command
+            .as_std()
+            .get_envs()
+            .any(|(k, _)| k.to_str() == Some("ANTHROPIC_BASE_URL"));
+        assert!(!has_base_url, "ANTHROPIC_BASE_URL must be unset by default");
     }
 
     #[test]

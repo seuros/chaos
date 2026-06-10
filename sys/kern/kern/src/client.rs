@@ -92,6 +92,9 @@ pub(super) struct ModelClientState {
     pub(super) clamped: AtomicBool,
     /// Persistent Claude Code subprocess for clamped mode.
     pub(super) clamp_transport: tokio::sync::Mutex<Option<chaos_clamp::ClampTransport>>,
+    /// Wiretap proxy recording subprocess traffic (opt-in via env), held for the
+    /// lifetime of the clamp transport.
+    pub(super) clamp_wiretap: tokio::sync::Mutex<Option<chaos_clamp::WiretapProxy>>,
     /// Session-bound MCP bridge for clamp subprocesses.
     pub(super) clamp_mcp_bridge:
         tokio::sync::Mutex<Option<crate::clamp_bridge::ClampSessionBridge>>,

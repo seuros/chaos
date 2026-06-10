@@ -21,6 +21,7 @@ pub mod builtin_mcp_resources;
 pub(crate) mod catalog;
 pub mod chaos;
 mod clamp_bridge;
+mod clamp_wiretap;
 mod client;
 mod client_common;
 pub(crate) mod collaboration_modes;

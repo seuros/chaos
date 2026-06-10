@@ -19,6 +19,7 @@ pub use model::LogRow;
 pub use model::LogTailBatch;
 pub use model::LogTailCursor;
 /// Preferred entrypoint: owns configuration and metrics.
+pub use runtime::ClampExchangeRecord;
 pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
 

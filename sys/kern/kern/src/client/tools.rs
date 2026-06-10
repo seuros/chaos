@@ -21,6 +21,8 @@ use crate::client_common::Prompt;
 use crate::exec_policy::ExecApprovalRequest;
 
 pub(crate) const CLAMP_NATIVE_PASSTHROUGH_TOOLS: &[&str] = &["WebSearch", "WebFetch"];
+pub(crate) const CLAMP_MCP_TOOL_PREFIX: &str = "mcp__chaos__";
+pub(crate) const CLAMP_MCP_ALLOWED_TOOL_RULE: &str = "mcp__chaos__*";
 
 /// Forwarding wrapper so the streaming layer can keep its existing call shape
 /// while the canonical mapping lives in [`hook_permission_mode`]. Clamp and
@@ -29,6 +31,17 @@ pub(crate) const CLAMP_NATIVE_PASSTHROUGH_TOOLS: &[&str] = &["WebSearch", "WebFe
 /// truth.
 pub(crate) fn clamp_permission_mode(approval_policy: ApprovalPolicy) -> String {
     hook_permission_mode(approval_policy).to_string()
+}
+
+/// Whether a clamp permission decision that would otherwise prompt the user
+/// should instead be auto-allowed without surfacing an interactive request.
+///
+/// `Headless` is bypassPermissions: it must never emit a prompt that no
+/// front-end can answer. Execution remains bounded by the sandbox enforced on
+/// the routed local tool. The shell path already honors this through the exec
+/// policy; this keeps the filesystem path consistent.
+pub(crate) fn clamp_bypasses_permission_prompt(approval_policy: ApprovalPolicy) -> bool {
+    matches!(approval_policy, ApprovalPolicy::Headless)
 }
 
 pub(crate) fn build_clamp_mcp_config(socket_path: &std::path::Path, token: &str) -> Value {
@@ -49,6 +62,10 @@ pub(crate) fn build_clamp_mcp_config(socket_path: &std::path::Path, token: &str)
             }
         }
     })
+}
+
+pub(crate) fn is_clamp_mcp_tool(tool_name: &str) -> bool {
+    tool_name.starts_with(CLAMP_MCP_TOOL_PREFIX)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,6 +191,14 @@ pub(crate) fn clamp_tool_permission_decision(
     cwd: &std::path::Path,
     file_system_policy: &VfsPolicy,
 ) -> ClampToolPermissionDecision {
+    if is_clamp_mcp_tool(tool_name) {
+        // Claude Code still runs its own permission gate before calling MCP
+        // tools. The chaos bridge tools must pass that outer gate; Chaos'
+        // router enforces the actual per-tool filesystem/exec/network policy
+        // when the bridged MCP call is dispatched.
+        return ClampToolPermissionDecision::Allow;
+    }
+
     let Some(routing) = clamp_tool_routing(tool_name) else {
         return ClampToolPermissionDecision::Deny(format!(
             "Claude Code built-in tool '{tool_name}' is not supported in clamp mode; use Chaos-managed tools instead."
@@ -367,6 +392,9 @@ pub(crate) async fn handle_clamp_tool_permission(
             permissions,
             reason,
         } => {
+            if clamp_bypasses_permission_prompt(turn_context.approval_policy.value()) {
+                return Ok(clamp_permission_allow_response(input));
+            }
             let response = session
                 .request_permissions(
                     turn_context.as_ref(),
@@ -660,4 +688,67 @@ pub(crate) fn render_latest_clamp_user_message(prompt: &Prompt) -> String {
             _ => None,
         })
         .unwrap_or_else(|| render_clamp_full_prompt(prompt))
+}
+
+#[cfg(test)]
+mod clamp_permission_tests {
+    use super::ClampToolPermissionDecision;
+    use super::clamp_bypasses_permission_prompt;
+    use super::clamp_tool_permission_decision;
+    use super::is_clamp_mcp_tool;
+    use chaos_ipc::permissions::VfsPolicy;
+    use chaos_ipc::protocol::ApprovalPolicy;
+    use chaos_ipc::protocol::GranularApprovalConfig;
+    use std::path::Path;
+
+    #[test]
+    fn headless_bypasses_permission_prompt() {
+        assert!(clamp_bypasses_permission_prompt(ApprovalPolicy::Headless));
+    }
+
+    #[test]
+    fn interactive_supervised_granular_still_prompt() {
+        assert!(!clamp_bypasses_permission_prompt(
+            ApprovalPolicy::Interactive
+        ));
+        assert!(!clamp_bypasses_permission_prompt(
+            ApprovalPolicy::Supervised
+        ));
+        assert!(!clamp_bypasses_permission_prompt(ApprovalPolicy::Granular(
+            GranularApprovalConfig {
+                sandbox_approval: true,
+                rules: true,
+                request_permissions: true,
+                mcp_elicitations: true,
+            }
+        )));
+    }
+
+    #[test]
+    fn chaos_mcp_bridge_tools_are_allowed_at_claude_permission_layer() {
+        assert!(is_clamp_mcp_tool("mcp__chaos__git_repo"));
+        assert_eq!(
+            clamp_tool_permission_decision(
+                "mcp__chaos__git_repo",
+                &serde_json::json!({}),
+                Path::new("/tmp"),
+                &VfsPolicy::default(),
+            ),
+            ClampToolPermissionDecision::Allow
+        );
+    }
+
+    #[test]
+    fn non_bridge_mcp_tools_are_not_implicitly_allowed() {
+        assert!(!is_clamp_mcp_tool("mcp__other__git_repo"));
+        assert!(matches!(
+            clamp_tool_permission_decision(
+                "mcp__other__git_repo",
+                &serde_json::json!({}),
+                Path::new("/tmp"),
+                &VfsPolicy::default(),
+            ),
+            ClampToolPermissionDecision::Deny(_)
+        ));
+    }
 }

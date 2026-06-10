@@ -56,9 +56,9 @@ use crate::tools::spec::create_tools_json_for_responses_api;
 use crate::util::emit_feedback_auth_recovery_tags;
 
 use super::tools::{
-    build_clamp_mcp_config, clamp_permission_mode, handle_clamp_hook_callback,
-    handle_clamp_mcp_message, handle_clamp_tool_permission, render_clamp_full_prompt,
-    render_latest_clamp_user_message,
+    CLAMP_MCP_ALLOWED_TOOL_RULE, build_clamp_mcp_config, clamp_permission_mode,
+    handle_clamp_hook_callback, handle_clamp_mcp_message, handle_clamp_tool_permission,
+    render_clamp_full_prompt, render_latest_clamp_user_message,
 };
 use super::{
     ApiTelemetry, AuthRequestTelemetryContext, HttpTurnRequestConfig, ModelClientSession,
@@ -683,6 +683,7 @@ impl ModelClientSession {
                     permission_mode: Some(clamp_permission_mode(clamp_state.approval_policy)),
                     mcp_config: Some(build_clamp_mcp_config(&bridge_socket_path, &bridge_token)),
                     allow_claude_code_tools: false,
+                    allowed_tools: vec![CLAMP_MCP_ALLOWED_TOOL_RULE.to_string()],
                     anthropic_base_url,
                     tool_permission_handler: Some(Arc::new(
                         move |tool_name, input, tool_use_id| {

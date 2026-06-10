@@ -253,16 +253,19 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
 
     // Tool exposure: when allow_claude_code_tools is false (the default),
     // disable all built-in tools so Claude Code only sees the MCP bridge.
-    // When true, leave the tool set unrestricted for direct use.
+    // When true, leave the tool set unrestricted for direct use. Permission
+    // allow-rules are independent: MCP bridge rules must still be passed when
+    // built-ins are disabled, otherwise Claude Code sees the MCP tools but
+    // rejects every call at its own permission layer.
     if !config.allow_claude_code_tools {
         cmd.args(["--tools", ""]);
     } else {
         if !config.disallowed_tools.is_empty() {
             cmd.args(["--disallowedTools", &config.disallowed_tools.join(",")]);
         }
-        if !config.allowed_tools.is_empty() {
-            cmd.args(["--allowedTools", &config.allowed_tools.join(",")]);
-        }
+    }
+    if !config.allowed_tools.is_empty() {
+        cmd.args(["--allowedTools", &config.allowed_tools.join(",")]);
     }
 
     // Working directory
@@ -928,6 +931,31 @@ mod tests {
         assert!(
             args.windows(2)
                 .any(|window| { window[0] == "--disallowedTools" && window[1] == "Bash,Read" })
+        );
+    }
+
+    #[test]
+    fn build_command_includes_allowed_tools_when_builtin_tools_disabled() {
+        let config = ClampConfig {
+            allowed_tools: vec!["mcp__chaos__*".to_string()],
+            ..Default::default()
+        };
+        let command = build_command(&PathBuf::from("claude"), &config);
+        let args: Vec<_> = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            args.windows(2)
+                .any(|window| { window[0] == "--tools" && window[1].is_empty() }),
+            "built-in tools must stay disabled: {args:?}"
+        );
+        assert!(
+            args.windows(2)
+                .any(|window| { window[0] == "--allowedTools" && window[1] == "mcp__chaos__*" }),
+            "MCP bridge allow rule must be passed through: {args:?}"
         );
     }
 }

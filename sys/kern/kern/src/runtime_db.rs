@@ -1,5 +1,7 @@
 use crate::config::Config;
 use crate::path_utils::normalize_for_path_comparison;
+use crate::rollout::health::RuntimeStorageBackend;
+use crate::rollout::health::set_runtime_storage_backend;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ProcessSortKey;
 use crate::rollout::metadata;
@@ -14,6 +16,7 @@ pub use chaos_proc::LogEntry;
 use chaos_proc::ProcessMetadataBuilder;
 pub use chaos_proc::RuntimeDbHandle;
 use chaos_storage::ChaosStorageProvider;
+use chaos_storage::StorageConfig;
 use jiff::Timestamp;
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -27,7 +30,12 @@ use uuid::Uuid;
 /// Initialize the runtime DB for thread persistence. To only be used
 /// inside `core`. The initialization should not be done anywhere else.
 pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
-    let provider = match resolve_runtime_storage_provider(None, config.sqlite_home.as_path()).await
+    let provider = match resolve_runtime_storage_provider_with_config(
+        None,
+        config.storage_url.as_deref(),
+        config.sqlite_home.as_path(),
+    )
+    .await
     {
         Ok(provider) => provider,
         Err(err) => {
@@ -151,6 +159,7 @@ async fn runtime_handle_from_provider(
     chaos_home: PathBuf,
     default_provider: String,
 ) -> anyhow::Result<RuntimeDbHandle> {
+    set_runtime_storage_backend(RuntimeStorageBackend::from(provider.kind()));
     if let Some(pool) = provider.sqlite_pool_cloned() {
         return Ok(RuntimeDbHandle::from_sqlite_pool(
             chaos_home,
@@ -174,7 +183,17 @@ pub async fn open_or_create_runtime_db(
     sqlite_home: &Path,
     default_provider: &str,
 ) -> anyhow::Result<RuntimeDbHandle> {
-    let provider = resolve_runtime_storage_provider(None, sqlite_home)
+    open_or_create_runtime_db_with_config(None, sqlite_home, default_provider).await
+}
+
+/// Open or create the runtime DB handle, preferring an explicit config-backed
+/// storage URL before falling back to the shared environment/default rules.
+pub async fn open_or_create_runtime_db_with_config(
+    storage_url: Option<&str>,
+    sqlite_home: &Path,
+    default_provider: &str,
+) -> anyhow::Result<RuntimeDbHandle> {
+    let provider = resolve_runtime_storage_provider_with_config(None, storage_url, sqlite_home)
         .await
         .map_err(anyhow::Error::msg)?;
     runtime_handle_from_provider(
@@ -183,6 +202,34 @@ pub async fn open_or_create_runtime_db(
         default_provider.to_string(),
     )
     .await
+}
+
+fn storage_config_from_configured_url(
+    storage_url: Option<&str>,
+) -> Result<Option<StorageConfig>, String> {
+    let Some(storage_url) = storage_url
+        .map(str::trim)
+        .filter(|storage_url| !storage_url.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    StorageConfig::from_url(storage_url).map(Some)
+}
+
+/// Resolve the shared runtime storage provider, preferring an explicit
+/// config-backed storage URL, then environment configuration, and otherwise
+/// falling back to the configured SQLite home.
+pub async fn resolve_runtime_storage_provider_with_config(
+    existing_pool: Option<&SqlitePool>,
+    storage_url: Option<&str>,
+    sqlite_home: &Path,
+) -> Result<ChaosStorageProvider, String> {
+    if let Some(config) = storage_config_from_configured_url(storage_url)? {
+        return ChaosStorageProvider::from_config(config).await;
+    }
+
+    resolve_runtime_storage_provider(existing_pool, sqlite_home).await
 }
 
 /// Resolve the shared runtime storage provider, preferring explicit environment
@@ -201,7 +248,38 @@ pub async fn resolve_runtime_storage_provider(
 
 /// Get the DB if the feature is enabled and the DB exists.
 pub async fn get_runtime_db(config: &Config) -> Option<RuntimeDbHandle> {
-    get_runtime_db_for(config.sqlite_home.as_path(), &config.model_provider_id).await
+    get_runtime_db_for_config(
+        config.storage_url.as_deref(),
+        config.sqlite_home.as_path(),
+        &config.model_provider_id,
+    )
+    .await
+}
+
+/// Trait-friendly variant with an optional explicit storage URL.
+pub async fn get_runtime_db_for_config(
+    storage_url: Option<&str>,
+    sqlite_home: &Path,
+    model_provider_id: &str,
+) -> Option<RuntimeDbHandle> {
+    if storage_config_from_configured_url(storage_url)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        let provider = resolve_runtime_storage_provider_with_config(None, storage_url, sqlite_home)
+            .await
+            .ok()?;
+        return runtime_handle_from_provider(
+            &provider,
+            sqlite_home.to_path_buf(),
+            model_provider_id.to_string(),
+        )
+        .await
+        .ok();
+    }
+
+    get_runtime_db_for(sqlite_home, model_provider_id).await
 }
 
 /// Trait-friendly variant: accepts only the fields needed to open the runtime DB.

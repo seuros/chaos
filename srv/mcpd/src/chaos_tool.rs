@@ -33,7 +33,9 @@ pub(crate) struct ChaosMcpServer {
     pub(crate) process_table: Arc<ProcessTable>,
     pub(crate) outgoing: Arc<OutgoingMessageSender>,
     pub(crate) arg0_paths: Arg0DispatchPaths,
-    /// SQLite home used to reopen chaos.sqlite on demand.
+    /// Optional storage URL used to reopen runtime storage on demand.
+    pub(crate) storage_url: Option<String>,
+    /// SQLite home used as the runtime-storage fallback.
     pub(crate) sqlite_home: PathBuf,
     /// Maps active MCP request IDs → active process IDs for cancellation.
     pub(crate) running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,

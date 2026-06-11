@@ -171,26 +171,31 @@ pub async fn load_config_layers_state(
                 return Err(err);
             }
         };
-        let sqlite_home = sqlite_home_from_merged_config(&merged_so_far, chaos_home);
-        let project_trust_context =
-            match project_trust_context(&cwd, &project_root_markers, &sqlite_home).await {
-                Ok(context) => context,
-                Err(err) => {
-                    let source = err
-                        .get_ref()
-                        .and_then(|err| err.downcast_ref::<toml::de::Error>())
-                        .cloned();
-                    if let Some(config_error) = first_layer_config_error_from_entries(&layers).await
-                    {
-                        return Err(io_error_from_config_error(
-                            io::ErrorKind::InvalidData,
-                            config_error,
-                            source,
-                        ));
-                    }
-                    return Err(err);
+        let storage_config = storage_config_from_merged_config(&merged_so_far, chaos_home);
+        let project_trust_context = match project_trust_context(
+            &cwd,
+            &project_root_markers,
+            storage_config.storage_url.as_deref(),
+            &storage_config.sqlite_home,
+        )
+        .await
+        {
+            Ok(context) => context,
+            Err(err) => {
+                let source = err
+                    .get_ref()
+                    .and_then(|err| err.downcast_ref::<toml::de::Error>())
+                    .cloned();
+                if let Some(config_error) = first_layer_config_error_from_entries(&layers).await {
+                    return Err(io_error_from_config_error(
+                        io::ErrorKind::InvalidData,
+                        config_error,
+                        source,
+                    ));
                 }
-            };
+                return Err(err);
+            }
+        };
         let project_layers = load_project_layers(
             &cwd,
             &project_trust_context.project_root,
@@ -392,13 +397,15 @@ pub(crate) fn project_root_markers_from_stack(
 }
 
 pub(crate) async fn resolve_active_project_trust(
+    storage_url: Option<&str>,
     sqlite_home: &Path,
     cwd: &Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> io::Result<crate::config::ProjectTrust> {
     let cwd = normalize_absolute_path_for_trust(cwd)?;
     let project_root_markers = project_root_markers_from_stack(config_layer_stack);
-    let trust_context = project_trust_context(&cwd, &project_root_markers, sqlite_home).await?;
+    let trust_context =
+        project_trust_context(&cwd, &project_root_markers, storage_url, sqlite_home).await?;
     Ok(crate::config::ProjectTrust {
         trust_level: trust_context.decision_for_dir(&cwd).trust_level,
     })
@@ -468,7 +475,13 @@ struct ProjectTrustContext {
 
 #[derive(Deserialize)]
 struct TrustStorageConfigToml {
+    storage_url: Option<String>,
     sqlite_home: Option<AbsolutePathBuf>,
+}
+
+struct TrustStorageConfig {
+    storage_url: Option<String>,
+    sqlite_home: PathBuf,
 }
 
 struct ProjectTrustDecision {
@@ -577,6 +590,7 @@ fn project_mcp_layer_entry(
 async fn project_trust_context(
     cwd: &AbsolutePathBuf,
     project_root_markers: &[String],
+    storage_url: Option<&str>,
     sqlite_home: &Path,
 ) -> io::Result<ProjectTrustContext> {
     let project_root = find_project_root(cwd, project_root_markers).await?;
@@ -599,9 +613,13 @@ async fn project_trust_context(
         trust_candidates.insert(repo_root.as_path().to_path_buf());
     }
 
-    let runtime = crate::runtime_db::open_or_create_runtime_db(sqlite_home, "unknown")
-        .await
-        .map_err(|err| io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+        storage_url,
+        sqlite_home,
+        "unknown",
+    )
+    .await
+    .map_err(|err| io::Error::other(format!("failed to open runtime storage: {err}")))?;
     let mut trust_levels_by_path = std::collections::HashMap::new();
     for candidate in trust_candidates {
         if let Some(trust_level) = runtime
@@ -625,13 +643,25 @@ fn normalize_absolute_path_for_trust(path: &Path) -> io::Result<AbsolutePathBuf>
     AbsolutePathBuf::from_absolute_path(crate::runtime_db::normalize_cwd_for_runtime_db(path))
 }
 
-fn sqlite_home_from_merged_config(merged_config: &TomlValue, chaos_home: &Path) -> PathBuf {
-    merged_config
+fn storage_config_from_merged_config(
+    merged_config: &TomlValue,
+    chaos_home: &Path,
+) -> TrustStorageConfig {
+    let config = merged_config
         .clone()
         .try_into::<TrustStorageConfigToml>()
-        .ok()
-        .and_then(|config| config.sqlite_home.map(|path| path.to_path_buf()))
-        .unwrap_or_else(|| chaos_home.to_path_buf())
+        .ok();
+    TrustStorageConfig {
+        storage_url: config
+            .as_ref()
+            .and_then(|config| config.storage_url.as_deref())
+            .map(str::trim)
+            .filter(|storage_url| !storage_url.is_empty())
+            .map(ToOwned::to_owned),
+        sqlite_home: config
+            .and_then(|config| config.sqlite_home.map(|path| path.to_path_buf()))
+            .unwrap_or_else(|| chaos_home.to_path_buf()),
+    }
 }
 
 fn strip_global_mcp_servers(value: &mut TomlValue) {

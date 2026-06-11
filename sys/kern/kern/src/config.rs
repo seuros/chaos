@@ -322,6 +322,9 @@ pub struct Config {
     /// Directory where Chaos stores the SQLite runtime DB.
     pub sqlite_home: PathBuf,
 
+    /// Optional database URL for ChaOS runtime storage.
+    pub storage_url: Option<String>,
+
     /// Directory where Chaos writes log files (defaults to `${CHAOS_HOME}/log`).
     pub log_dir: PathBuf,
 
@@ -609,6 +612,11 @@ pub struct ConfigToml {
     /// Directory where Chaos stores the SQLite runtime DB.
     /// Defaults to `$CHAOS_SQLITE_HOME` when set. Otherwise uses `$CHAOS_HOME`.
     pub sqlite_home: Option<AbsolutePathBuf>,
+
+    /// Optional database URL for ChaOS runtime storage.
+    /// Supports `sqlite:`, `sqlite://`, `postgres://`, and `postgresql://`.
+    /// When set, this takes precedence over `CHAOS_STORAGE_URL`.
+    pub storage_url: Option<String>,
 
     /// Directory where Chaos writes log files, for example `chaos-tui.log`.
     /// Defaults to `$CHAOS_HOME/log`.
@@ -905,30 +913,52 @@ pub(crate) fn deserialize_config_toml_with_base(
     parsing::deserialize_config_toml_with_base(root_value, config_base_dir)
 }
 
+pub(crate) fn normalize_storage_url(storage_url: Option<&str>) -> anyhow::Result<Option<String>> {
+    let Some(storage_url) = storage_url
+        .map(str::trim)
+        .filter(|storage_url| !storage_url.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    chaos_storage::StorageConfig::from_url(storage_url).map_err(anyhow::Error::msg)?;
+    Ok(Some(storage_url.to_string()))
+}
+
 pub async fn load_global_mcp_servers(
     chaos_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let sqlite_home = runtime_storage_sqlite_home(chaos_home).map_err(|err| {
+    let storage_config = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_servers_from_runtime_db(&sqlite_home).await
+    load_global_mcp_servers_from_runtime_db(
+        storage_config.storage_url.as_deref(),
+        &storage_config.sqlite_home,
+    )
+    .await
 }
 
 pub async fn load_global_mcp_server(
     chaos_home: &std::path::Path,
     name: &str,
 ) -> std::io::Result<Option<McpServerConfig>> {
-    let sqlite_home = runtime_storage_sqlite_home(chaos_home).map_err(|err| {
+    let storage_config = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_server_from_runtime_db(&sqlite_home, name).await
+    load_global_mcp_server_from_runtime_db(
+        storage_config.storage_url.as_deref(),
+        &storage_config.sqlite_home,
+        name,
+    )
+    .await
 }
 
 pub(crate) async fn load_effective_mcp_servers(
+    storage_url: Option<&str>,
     sqlite_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> std::io::Result<HashMap<String, McpServerConfig>> {
-    let mut effective = load_global_mcp_servers_from_runtime_db(sqlite_home)
+    let mut effective = load_global_mcp_servers_from_runtime_db(storage_url, sqlite_home)
         .await?
         .into_iter()
         .collect::<HashMap<_, _>>();
@@ -957,11 +987,16 @@ pub(crate) async fn load_effective_mcp_servers(
 }
 
 async fn load_global_mcp_servers_from_runtime_db(
+    storage_url: Option<&str>,
     sqlite_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db(sqlite_home, "unknown")
-        .await
-        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+        storage_url,
+        sqlite_home,
+        "unknown",
+    )
+    .await
+    .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
     runtime
         .list_global_mcp_servers()
         .await
@@ -969,12 +1004,17 @@ async fn load_global_mcp_servers_from_runtime_db(
 }
 
 async fn load_global_mcp_server_from_runtime_db(
+    storage_url: Option<&str>,
     sqlite_home: &std::path::Path,
     name: &str,
 ) -> std::io::Result<Option<McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db(sqlite_home, "unknown")
-        .await
-        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+        storage_url,
+        sqlite_home,
+        "unknown",
+    )
+    .await
+    .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
     runtime
         .get_global_mcp_server(name)
         .await
@@ -986,8 +1026,13 @@ pub async fn upsert_global_mcp_server(
     name: &str,
     config: &McpServerConfig,
 ) -> anyhow::Result<()> {
-    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
-    let runtime = crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+    let storage_config = runtime_storage_config(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+        storage_config.storage_url.as_deref(),
+        &storage_config.sqlite_home,
+        "unknown",
+    )
+    .await?;
     runtime.upsert_global_mcp_server(name, config).await
 }
 
@@ -995,8 +1040,13 @@ pub async fn delete_global_mcp_server(
     chaos_home: &std::path::Path,
     name: &str,
 ) -> anyhow::Result<bool> {
-    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
-    let runtime = crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+    let storage_config = runtime_storage_config(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+        storage_config.storage_url.as_deref(),
+        &storage_config.sqlite_home,
+        "unknown",
+    )
+    .await?;
     runtime.delete_global_mcp_server(name).await
 }
 
@@ -1004,15 +1054,19 @@ pub fn replace_global_mcp_servers(
     chaos_home: &std::path::Path,
     servers: &BTreeMap<String, McpServerConfig>,
 ) -> anyhow::Result<()> {
-    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
+    let storage_config = runtime_storage_config(chaos_home)?;
     let servers = servers.clone();
     std::thread::spawn(move || -> anyhow::Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async move {
-                let runtime =
-                    crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+                let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+                    storage_config.storage_url.as_deref(),
+                    &storage_config.sqlite_home,
+                    "unknown",
+                )
+                .await?;
                 runtime.replace_global_mcp_servers(&servers).await
             })
     })
@@ -1025,24 +1079,36 @@ pub(crate) use requirements::resolve_web_search_mode;
 
 #[derive(Deserialize)]
 struct RuntimeStorageConfigToml {
+    storage_url: Option<String>,
     sqlite_home: Option<AbsolutePathBuf>,
 }
 
-fn runtime_storage_sqlite_home(chaos_home: &std::path::Path) -> anyhow::Result<PathBuf> {
+struct RuntimeStorageConfig {
+    storage_url: Option<String>,
+    sqlite_home: PathBuf,
+}
+
+fn runtime_storage_config(chaos_home: &std::path::Path) -> anyhow::Result<RuntimeStorageConfig> {
     let config_path = chaos_home.join(CONFIG_TOML_FILE);
     let contents = match std::fs::read_to_string(&config_path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(chaos_home.to_path_buf());
+            return Ok(RuntimeStorageConfig {
+                storage_url: None,
+                sqlite_home: chaos_home.to_path_buf(),
+            });
         }
         Err(err) => return Err(err.into()),
     };
     let _guard = AbsolutePathBufGuard::new(chaos_home);
     let parsed: RuntimeStorageConfigToml = toml::from_str(&contents)?;
-    Ok(parsed
-        .sqlite_home
-        .map(|path| path.to_path_buf())
-        .unwrap_or_else(|| chaos_home.to_path_buf()))
+    Ok(RuntimeStorageConfig {
+        storage_url: normalize_storage_url(parsed.storage_url.as_deref())?,
+        sqlite_home: parsed
+            .sqlite_home
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| chaos_home.to_path_buf()),
+    })
 }
 
 /// Persist project trust state in the runtime DB.
@@ -1051,15 +1117,19 @@ pub fn set_project_trust_level(
     project_path: &std::path::Path,
     trust_level: TrustLevel,
 ) -> anyhow::Result<()> {
-    let sqlite_home = runtime_storage_sqlite_home(chaos_home)?;
+    let storage_config = runtime_storage_config(chaos_home)?;
     let project_path = crate::runtime_db::normalize_cwd_for_runtime_db(project_path);
     std::thread::spawn(move || -> anyhow::Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async move {
-                let runtime =
-                    crate::runtime_db::open_or_create_runtime_db(&sqlite_home, "unknown").await?;
+                let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+                    storage_config.storage_url.as_deref(),
+                    &storage_config.sqlite_home,
+                    "unknown",
+                )
+                .await?;
                 runtime
                     .set_project_trust(project_path.as_path(), trust_level)
                     .await

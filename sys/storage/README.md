@@ -16,6 +16,20 @@ individual parallel tests.
 
 ## Local Postgres validation
 
+ChaOS runtime storage can be pointed at Postgres directly from
+`~/.chaos/config.toml`:
+
+```toml
+storage_url = "postgres://USER:PASSWORD@HOST:5432/DBNAME"
+```
+
+Runtime resolution order is:
+
+1. `storage_url` in config
+2. `CHAOS_STORAGE_URL`
+3. `$CHAOS_SQLITE_HOME`
+4. the configured SQLite home / `$CHAOS_HOME`
+
 The bounded Postgres validation path is env-gated so the normal test suite stays
 cheap:
 

@@ -1,14 +1,16 @@
 //! Top status bar showing system information at a glance.
 //!
 //! Renders a single-line bar at the top of the terminal with hostname,
-//! OS/distro, battery status, current time, and timezone.  All data
-//! comes from the [`chaos_sysinfo`] crate.
+//! OS/distro, runtime-storage backend, battery status, current time, and
+//! timezone. System data comes from the [`chaos_sysinfo`] crate; persistence
+//! status comes from `chaos_kern`.
 //!
 //! The bar is rendered directly to the terminal (outside the ratatui
 //! viewport) by [`crate::tui`] so that it stays pinned at screen row 0
 //! while history scrolls beneath it.
 
 use chaos_kern::PersistenceHealth;
+use chaos_kern::RuntimeStorageBackend;
 use chaos_sysinfo::{SandboxKind, SystemInfo, sysinfo};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -31,6 +33,22 @@ fn build_status_line_with_health(
     width: u16,
     palette: crate::theme::Palette,
     persistence_health: PersistenceHealth,
+) -> Line<'static> {
+    build_status_line_with_health_and_backend(
+        info,
+        width,
+        palette,
+        persistence_health,
+        chaos_kern::runtime_storage_backend(),
+    )
+}
+
+fn build_status_line_with_health_and_backend(
+    info: &SystemInfo,
+    width: u16,
+    palette: crate::theme::Palette,
+    persistence_health: PersistenceHealth,
+    storage_backend: RuntimeStorageBackend,
 ) -> Line<'static> {
     let bar_bg = palette.top_bar_bg;
     let sep = Span::styled(" │ ", Style::default().fg(palette.top_bar_dim).bg(bar_bg));
@@ -103,6 +121,16 @@ fn build_status_line_with_health(
 
     // Right side: battery + time
     let mut right_spans: Vec<Span<'static>> = Vec::new();
+
+    let (storage_label, storage_color) = match storage_backend {
+        RuntimeStorageBackend::Sqlite => ("SQLITE", palette.top_bar_fg),
+        RuntimeStorageBackend::Postgres => ("🐘", palette.accent),
+    };
+    right_spans.push(Span::styled(
+        storage_label,
+        Style::default().fg(storage_color).bg(bar_bg),
+    ));
+    right_spans.push(sep.clone());
 
     if persistence_health != PersistenceHealth::Healthy {
         let color = match persistence_health {
@@ -244,7 +272,50 @@ pub(crate) mod tests {
         assert!(rendered.contains("⚠ log"));
     }
 
-    #[cfg(test)]
+    #[test]
+    fn top_bar_shows_runtime_storage_backend() {
+        let mut info = sysinfo().clone();
+        info.hostname = "host".into();
+        info.os = "linux".into();
+        info.os_distro.clear();
+        info.arch = "x86_64".into();
+        info.has_battery = false;
+        info.in_container = false;
+        info.multiplexer = None;
+
+        let palette = crate::theme::palette();
+        let sqlite_line = build_status_line_with_health_and_backend(
+            &info,
+            80,
+            palette,
+            PersistenceHealth::Healthy,
+            RuntimeStorageBackend::Sqlite,
+        );
+        let sqlite_rendered = sqlite_line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert!(sqlite_rendered.contains("SQLITE"));
+
+        let postgres_line = build_status_line_with_health_and_backend(
+            &info,
+            80,
+            palette,
+            PersistenceHealth::Healthy,
+            RuntimeStorageBackend::Postgres,
+        );
+        let postgres_rendered = postgres_line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert!(postgres_rendered.contains("🐘"));
+    }
+
+    #[test]
     fn top_bar_tint_changes_with_collaboration_mode() {
         let default_palette =
             crate::theme::palette_for_mode(ModeKind::Default, /*clamped*/ false);

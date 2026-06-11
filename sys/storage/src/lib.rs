@@ -39,6 +39,34 @@ impl StorageConfig {
         Self::PostgresUrl(url.into())
     }
 
+    pub fn from_url(url: impl Into<String>) -> Result<Self, String> {
+        let url = url.into().trim().to_string();
+        if url.is_empty() {
+            return Err(
+                "empty storage URL; expected sqlite:, sqlite://, postgres://, or postgresql://"
+                    .to_string(),
+            );
+        }
+
+        if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+            return Ok(Self::postgres_url(url));
+        }
+
+        if url.starts_with("sqlite://") || url.starts_with("sqlite:") {
+            return Ok(Self::sqlite_url(url));
+        }
+
+        if url.starts_with("sqlite3://") || url.starts_with("sqlite3:") {
+            let normalized = url.replacen("sqlite3:", "sqlite:", 1);
+            return Ok(Self::sqlite_url(normalized));
+        }
+
+        Err(
+            "unsupported storage URL scheme; expected sqlite:, sqlite://, postgres://, or postgresql://"
+                .to_string(),
+        )
+    }
+
     pub fn kind(&self) -> StorageKind {
         match self {
             Self::SqliteHome(_) | Self::SqliteUrl(_) => StorageKind::Sqlite,
@@ -188,22 +216,9 @@ fn resolve_storage_config_from_env() -> Result<Option<StorageConfig>, String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        if url.starts_with("postgres://") || url.starts_with("postgresql://") {
-            return Ok(Some(StorageConfig::postgres_url(url)));
-        }
-
-        if url.starts_with("sqlite://") || url.starts_with("sqlite:") {
-            return Ok(Some(StorageConfig::sqlite_url(url)));
-        }
-
-        if url.starts_with("sqlite3://") || url.starts_with("sqlite3:") {
-            let normalized = url.replacen("sqlite3:", "sqlite:", 1);
-            return Ok(Some(StorageConfig::sqlite_url(normalized)));
-        }
-
-        return Err(format!(
-            "unsupported {CHAOS_STORAGE_URL_ENV} scheme; expected sqlite:, sqlite://, postgres://, or postgresql://"
-        ));
+        return StorageConfig::from_url(url)
+            .map(Some)
+            .map_err(|err| format!("{CHAOS_STORAGE_URL_ENV}: {err}"));
     }
 
     Ok(resolve_sqlite_home_from_env().map(StorageConfig::sqlite_home))
@@ -329,6 +344,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn storage_config_from_url_parses_supported_schemes() {
+        assert_eq!(
+            StorageConfig::from_url("postgresql://ubuntu:ubuntu@localhost/chaos")
+                .expect("postgresql URL"),
+            StorageConfig::postgres_url("postgresql://ubuntu:ubuntu@localhost/chaos")
+        );
+        assert_eq!(
+            StorageConfig::from_url(" sqlite3:///tmp/chaos.sqlite ").expect("sqlite3 URL"),
+            StorageConfig::sqlite_url("sqlite:///tmp/chaos.sqlite")
+        );
+    }
+
+    #[tokio::test]
     async fn postgres_from_env_opens_postgres_runtime_schema_when_configured() {
         let Some(database_url) = postgres_test_url() else {
             eprintln!("skipping postgres storage validation; {TEST_DATABASE_URL_ENV} is not set");

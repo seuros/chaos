@@ -117,6 +117,7 @@ fn resolve_web_search_config_inner(
 impl Config {
     pub(crate) async fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
         let effective = crate::config::load_effective_mcp_servers(
+            self.storage_url.as_deref(),
             self.sqlite_home.as_path(),
             &self.config_layer_stack,
         )
@@ -529,6 +530,8 @@ impl Config {
             .map(AbsolutePathBuf::to_path_buf)
             .or_else(|| resolve_sqlite_home_env(&resolved_cwd))
             .unwrap_or_else(|| chaos_home.to_path_buf());
+        let storage_url = crate::config::normalize_storage_url(cfg.storage_url.as_deref())
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
         let original_sandbox_policy = sandbox_policy.clone();
 
         validation::apply_requirement_constrained_value(
@@ -635,6 +638,7 @@ impl Config {
             minion_job_max_runtime_seconds,
             chaos_home,
             sqlite_home,
+            storage_url,
             log_dir,
             config_layer_stack,
             history,

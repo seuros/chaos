@@ -276,8 +276,9 @@ async fn resolve_chaos_storage_provider(
     turn: &TurnContext,
 ) -> Result<chaos_storage::ChaosStorageProvider, String> {
     let existing_pool = session.runtime_db().and_then(|db| db.sqlite_pool_cloned());
-    crate::runtime_db::resolve_runtime_storage_provider(
+    crate::runtime_db::resolve_runtime_storage_provider_with_config(
         existing_pool.as_ref(),
+        turn.config.storage_url.as_deref(),
         turn.config.sqlite_home.as_path(),
     )
     .await

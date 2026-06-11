@@ -97,10 +97,16 @@ impl ConfigBuilder {
             .map(|path| path.to_path_buf())
             .unwrap_or_else(|| chaos_home.clone());
         harness_overrides.mcp_servers = Some(
-            crate::config::load_effective_mcp_servers(&sqlite_home, &config_layer_stack).await?,
+            crate::config::load_effective_mcp_servers(
+                config_toml.storage_url.as_deref(),
+                &sqlite_home,
+                &config_layer_stack,
+            )
+            .await?,
         );
         harness_overrides.active_project_trust = Some(
             crate::config_loader::resolve_active_project_trust(
+                config_toml.storage_url.as_deref(),
                 &sqlite_home,
                 cwd.as_path(),
                 &config_layer_stack,

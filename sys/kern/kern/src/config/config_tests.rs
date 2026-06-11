@@ -437,6 +437,48 @@ fn sqlite_home_defaults_to_codex_home_for_workspace_write() -> std::io::Result<(
 }
 
 #[test]
+fn storage_url_is_loaded_from_config() -> std::io::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            storage_url: Some(" postgresql://user:pass@localhost/chaos ".to_string()),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        chaos_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(
+        config.storage_url.as_deref(),
+        Some("postgresql://user:pass@localhost/chaos")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn storage_url_rejects_unsupported_scheme() -> std::io::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let err = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            storage_url: Some("mysql://localhost/chaos".to_string()),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        chaos_home.path().to_path_buf(),
+    )
+    .expect_err("unsupported storage_url should fail config loading");
+
+    assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    assert!(
+        err.to_string().contains("unsupported storage URL scheme"),
+        "unexpected error: {err}"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn workspace_write_includes_explicit_writable_root_once() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let extra_root = chaos_home.path().join("extra");
@@ -846,6 +888,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         minion_job_max_runtime_seconds: DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
         chaos_home: fixture.chaos_home(),
         sqlite_home: fixture.chaos_home(),
+        storage_url: None,
         log_dir: fixture.chaos_home().join("log"),
         config_layer_stack: Default::default(),
         startup_warnings: Vec::new(),

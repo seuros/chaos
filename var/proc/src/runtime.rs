@@ -2244,7 +2244,7 @@ async fn prune_message_history_after_insert_postgres(
 
     let max_bytes = i64::try_from(max_bytes).unwrap_or(i64::MAX);
     let total_bytes: i64 =
-        sqlx::query_scalar("SELECT COALESCE(SUM(estimated_bytes), 0) FROM message_history")
+        sqlx::query_scalar("SELECT COALESCE(SUM(estimated_bytes), 0)::BIGINT FROM message_history")
             .fetch_one(&mut *tx)
             .await?;
 
@@ -2261,7 +2261,7 @@ WHERE id IN (
     FROM (
         SELECT
             id,
-            SUM(estimated_bytes) OVER (ORDER BY id DESC) AS cumulative_bytes
+            (SUM(estimated_bytes) OVER (ORDER BY id DESC))::BIGINT AS cumulative_bytes
         FROM message_history
     ) ranked
     WHERE cumulative_bytes > $1

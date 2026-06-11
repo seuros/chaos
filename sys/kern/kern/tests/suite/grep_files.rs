@@ -4,6 +4,7 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
+use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command as StdCommand;
@@ -67,7 +68,11 @@ async fn grep_files_tool_collects_matches() -> Result<()> {
         "expected success for matches, got content={content}"
     );
 
-    let entries = collect_file_names(&content);
+    let output = parse_grep_output(&content)?;
+    assert_eq!(output["match_count"], 2, "content: {content}");
+    assert_eq!(output["limit"], 100, "content: {content}");
+
+    let entries = collect_file_names(&output)?;
     assert_eq!(entries.len(), 2, "content: {content}");
     assert!(
         entries.contains("alpha.rs"),
@@ -115,9 +120,15 @@ async fn grep_files_tool_reports_empty_results() -> Result<()> {
         .expect("tool output present");
     let content = content_opt.expect("content present");
     if let Some(success) = success_opt {
-        assert!(!success, "expected success=false content={content}");
+        assert!(
+            success,
+            "expected successful empty search content={content}"
+        );
     }
-    assert_eq!(content, "No matches found.");
+    let output = parse_grep_output(&content)?;
+    assert_eq!(output["matches"], serde_json::json!([]));
+    assert_eq!(output["match_count"], 0);
+    assert_eq!(output["limit"], 5);
 
     Ok(())
 }
@@ -128,9 +139,16 @@ async fn build_test_chaos(server: &wiremock::MockServer) -> Result<TestChaos> {
     builder.build(server).await
 }
 
-fn collect_file_names(content: &str) -> HashSet<String> {
-    content
-        .lines()
+fn parse_grep_output(content: &str) -> Result<Value> {
+    Ok(serde_json::from_str(content)?)
+}
+
+fn collect_file_names(output: &Value) -> Result<HashSet<String>> {
+    Ok(output["matches"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("missing matches array in grep_files output"))?
+        .iter()
+        .filter_map(Value::as_str)
         .filter_map(|line| {
             if line.trim().is_empty() {
                 return None;
@@ -139,5 +157,5 @@ fn collect_file_names(content: &str) -> HashSet<String> {
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
         })
-        .collect()
+        .collect())
 }

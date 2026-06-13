@@ -5,6 +5,24 @@ use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 use pretty_assertions::assert_eq;
 
+struct DummyApprovableTool;
+
+impl Approvable<()> for DummyApprovableTool {
+    type ApprovalKey = ();
+
+    fn approval_keys(&self, _req: &()) -> Vec<Self::ApprovalKey> {
+        vec![()]
+    }
+
+    fn start_approval_async<'a>(
+        &'a mut self,
+        _req: &'a (),
+        _ctx: ApprovalCtx<'a>,
+    ) -> futures::future::BoxFuture<'a, ReviewDecision> {
+        Box::pin(async { ReviewDecision::Approved })
+    }
+}
+
 #[test]
 fn external_sandbox_skips_exec_approval_on_request() {
     let sandbox_policy = SandboxPolicy::ExternalSandbox {
@@ -104,4 +122,11 @@ fn explicit_escalation_bypasses_sandbox_on_first_attempt() {
         ),
         SandboxOverride::BypassSandboxFirstAttempt
     );
+}
+
+#[test]
+fn interactive_policy_prompts_for_no_sandbox_retry_after_denial() {
+    let tool = DummyApprovableTool;
+
+    assert!(tool.wants_no_sandbox_approval(ApprovalPolicy::Interactive));
 }

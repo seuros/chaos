@@ -262,7 +262,7 @@ pub(crate) trait Approvable<Req> {
         match policy {
             ApprovalPolicy::Supervised => true,
             ApprovalPolicy::Headless => false,
-            ApprovalPolicy::Interactive => false,
+            ApprovalPolicy::Interactive => true,
             ApprovalPolicy::Granular(granular_config) => granular_config.sandbox_approval,
         }
     }

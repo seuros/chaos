@@ -357,7 +357,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn postgres_from_env_opens_postgres_runtime_schema_when_configured() {
         let Some(database_url) = postgres_test_url() else {
             eprintln!("skipping postgres storage validation; {TEST_DATABASE_URL_ENV} is not set");

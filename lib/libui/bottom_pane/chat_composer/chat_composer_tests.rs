@@ -3774,13 +3774,10 @@ fn numeric_prompt_auto_submit_prunes_unused_image_attachments() {
         argument_hint: None,
     }]);
 
-    type_chars_humanlike(
-        &mut composer,
-        &[
-            '/', 'p', 'r', 'o', 'm', 'p', 't', 's', ':', 'm', 'y', '-', 'p', 'r', 'o', 'm', 'p',
-            't', ' ', 'f', 'o', 'o', ' ',
-        ],
-    );
+    composer
+        .textarea
+        .set_text_clearing_elements("/prompts:my-prompt foo ");
+    composer.textarea.set_cursor(composer.textarea.text().len());
     composer.attach_image(PathBuf::from("/tmp/unused.png"));
 
     let (result, _needs_redraw) =

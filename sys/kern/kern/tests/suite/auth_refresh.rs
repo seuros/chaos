@@ -152,6 +152,70 @@ async fn refresh_token_skips_refresh_when_auth_changed() -> Result<()> {
 
 #[serial_test::serial(process_env)]
 #[tokio::test]
+async fn stale_refresh_reloads_rotated_tokens_before_using_cached_refresh_token() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({
+            "error": {
+                "code": "refresh_token_reused"
+            }
+        })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let ctx = RefreshTokenTestContext::new(&server)?;
+    let stale_refresh = timestamp_hours_ago(216)?;
+    let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(stale_refresh),
+    );
+    ctx.write_auth(&initial_auth)?;
+
+    let disk_tokens = build_tokens("disk-access-token", "disk-refresh-token");
+    let disk_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(disk_tokens.clone()),
+        Some(Timestamp::now()),
+    );
+    save_auth(
+        ctx.chaos_home.path(),
+        &disk_auth,
+        AuthCredentialsStoreMode::File,
+    )?;
+
+    let cached_auth = ctx
+        .auth_manager
+        .auth()
+        .await
+        .context("auth should remain cached")?;
+    let cached_tokens = cached_auth
+        .get_token_data()
+        .context("token data should reload from disk")?;
+    assert_eq!(cached_tokens, disk_tokens);
+
+    let stored = ctx.load_auth()?;
+    assert_eq!(stored, disk_auth);
+
+    let requests = server.received_requests().await.unwrap_or_default();
+    assert!(
+        requests.is_empty(),
+        "expected no refresh request with the consumed cached token"
+    );
+    server.verify().await;
+
+    Ok(())
+}
+
+#[serial_test::serial(process_env)]
+#[tokio::test]
 async fn refresh_token_errors_on_account_mismatch() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

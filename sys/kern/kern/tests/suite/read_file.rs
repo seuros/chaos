@@ -6,7 +6,6 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "disabled until we enable read_file tool"]
 async fn read_file_tool_returns_requested_lines() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -19,7 +18,7 @@ async fn read_file_tool_returns_requested_lines() -> anyhow::Result<()> {
 
     let call_id = "read-file-call";
     let arguments = json!({
-        "file_path": file_path,
+        "file_path": file_path.clone(),
         "offset": 2,
         "limit": 2,
     })
@@ -34,7 +33,14 @@ async fn read_file_tool_returns_requested_lines() -> anyhow::Result<()> {
         .function_call_output_content_and_success(call_id)
         .expect("output present");
     let output_text = output_text_opt.expect("output text present");
-    assert_eq!(output_text, "L2: second\nL3: third");
+    let output: serde_json::Value = serde_json::from_str(&output_text)?;
+    assert_eq!(output["file_path"], json!(file_path));
+    assert_eq!(output["mode"], json!("slice"));
+    assert_eq!(output["offset"], json!(2));
+    assert_eq!(output["limit"], json!(2));
+    assert_eq!(output["line_count"], json!(2));
+    assert_eq!(output["lines"], json!(["L2: second", "L3: third"]));
+    assert_eq!(output["text"], json!("L2: second\nL3: third"));
 
     Ok(())
 }

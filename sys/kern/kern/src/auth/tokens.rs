@@ -585,7 +585,27 @@ impl AuthManager {
         {
             return Ok(false);
         }
-        self.refresh_and_persist_chatgpt_token(chatgpt_auth, tokens.refresh_token)
+        let expected_account_id = tokens.account_id.clone();
+        let refresh_token = tokens.refresh_token;
+        if let Some(expected_account_id) = expected_account_id.as_deref() {
+            match self.reload_if_account_id_matches(Some(expected_account_id)) {
+                ReloadOutcome::ReloadedChanged => {
+                    tracing::info!(
+                        "Skipping stale token refresh because auth changed after guarded reload."
+                    );
+                    return Ok(true);
+                }
+                ReloadOutcome::ReloadedNoChange => {}
+                ReloadOutcome::Skipped => {
+                    return Err(RefreshTokenError::Permanent(RefreshTokenFailedError::new(
+                        RefreshTokenFailedReason::Other,
+                        REFRESH_TOKEN_ACCOUNT_MISMATCH_MESSAGE.to_string(),
+                    )));
+                }
+            }
+        }
+
+        self.refresh_and_persist_chatgpt_token(chatgpt_auth, refresh_token)
             .await?;
         Ok(true)
     }

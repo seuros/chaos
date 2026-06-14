@@ -35,17 +35,20 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    #[test]
+    pub(crate) fn exec_command_suite() {
+        test_escape_command();
+        test_strip_bash_lc_and_escape();
+    }
+
     fn test_escape_command() {
         let args = vec!["foo".into(), "bar baz".into(), "weird&stuff".into()];
         let cmdline = escape_command(&args);
         assert_eq!(cmdline, "foo 'bar baz' 'weird&stuff'");
     }
 
-    #[test]
     fn test_strip_bash_lc_and_escape() {
         // Test bash
         let args = vec!["bash".into(), "-lc".into(), "echo hello".into()];

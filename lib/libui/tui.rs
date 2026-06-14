@@ -54,6 +54,25 @@ mod frame_rate_limiter;
 mod frame_requester;
 mod job_control;
 
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::future::Future;
+
+    fn run_async(future: impl Future<Output = ()>) {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build tui test runtime")
+            .block_on(future);
+    }
+
+    pub(crate) fn tui_suite() {
+        run_async(super::event_stream::tests::event_stream_suite());
+        super::frame_rate_limiter::tests::frame_rate_limiter_suite();
+        super::frame_requester::tests::frame_requester_suite();
+    }
+}
+
 /// Target frame interval for UI redraw scheduling.
 pub const TARGET_FRAME_INTERVAL: Duration = frame_rate_limiter::MIN_FRAME_INTERVAL;
 

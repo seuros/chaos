@@ -366,7 +366,7 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::render_debug_config_lines;
     use super::session_all_proxy_url;
     use chaos_ipc::api::ConfigLayerSource;
@@ -413,7 +413,15 @@ mod tests {
             .join("\n")
     }
 
-    #[test]
+    pub(crate) fn debug_config_suite() {
+        debug_config_output_lists_all_layers_including_disabled();
+        debug_config_output_lists_requirement_sources();
+        debug_config_output_lists_session_flag_key_value_pairs();
+        debug_config_output_normalizes_empty_web_search_mode_list();
+        session_all_proxy_url_uses_socks_when_enabled();
+        session_all_proxy_url_uses_http_when_socks_disabled();
+    }
+    #[cfg(test)]
     fn debug_config_output_lists_all_layers_including_disabled() {
         let system_file = absolute_path("/etc/chaos/config.toml");
         let project_folder = absolute_path("/repo/.chaos");
@@ -446,7 +454,7 @@ mod tests {
         assert!(rendered.contains("  <none>"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn debug_config_output_lists_requirement_sources() {
         let requirements_file = absolute_path("/etc/chaos/requirements.toml");
 
@@ -543,7 +551,7 @@ mod tests {
         ));
         assert!(!rendered.contains("  - rules:"));
     }
-    #[test]
+    #[cfg(test)]
     fn debug_config_output_lists_session_flag_key_value_pairs() {
         let session_flags = toml::from_str::<TomlValue>(
             r#"
@@ -573,7 +581,7 @@ writable_roots = ["/tmp"]
         assert!(rendered.contains("/tmp"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn debug_config_output_normalizes_empty_web_search_mode_list() {
         let requirements = ConfigRequirements {
             web_search_mode: ConstrainedWithSource::new(
@@ -601,7 +609,7 @@ writable_roots = ["/tmp"]
         assert!(rendered.contains("allowed_web_search_modes: disabled (source: <unspecified>)"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn session_all_proxy_url_uses_socks_when_enabled() {
         assert_eq!(
             session_all_proxy_url("127.0.0.1:3128", "127.0.0.1:8081", true),
@@ -609,7 +617,7 @@ writable_roots = ["/tmp"]
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn session_all_proxy_url_uses_http_when_socks_disabled() {
         assert_eq!(
             session_all_proxy_url("127.0.0.1:3128", "127.0.0.1:8081", false),

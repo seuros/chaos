@@ -12,7 +12,7 @@ pub use types::popup_content_width;
 pub use types::side_by_side_layout_widths;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::bottom_pane::popup_consts::standard_popup_hint_line;
@@ -168,7 +168,33 @@ mod tests {
     use crossterm::event::KeyEvent;
     use ratatui::style::Stylize;
 
-    #[test]
+    pub(crate) fn list_selection_view_suite() {
+        renders_blank_line_between_title_and_items_without_subtitle();
+        renders_blank_line_between_subtitle_and_items();
+        theme_picker_subtitle_uses_fallback_text_in_94x35_terminal();
+        theme_picker_enables_side_content_background_preservation();
+        preserve_side_content_bg_keeps_rendered_background_colors();
+        snapshot_footer_note_wraps();
+        renders_search_query_line_when_enabled();
+        enter_with_no_matches_triggers_cancel_callback();
+        move_down_without_selection_change_does_not_fire_callback();
+        wraps_long_option_without_overflowing_columns();
+        width_changes_do_not_hide_rows();
+        narrow_width_keeps_all_rows_visible();
+        snapshot_model_picker_width_80();
+        snapshot_narrow_width_preserves_third_option();
+        snapshot_auto_visible_col_width_mode_scroll_behavior();
+        snapshot_auto_all_rows_col_width_mode_scroll_behavior();
+        snapshot_fixed_col_width_mode_scroll_behavior();
+        auto_all_rows_col_width_does_not_shift_when_scrolling();
+        fixed_col_width_is_30_70_and_does_not_shift_when_scrolling();
+        side_layout_width_half_uses_exact_split();
+        side_layout_width_half_falls_back_when_list_would_be_too_narrow();
+        stacked_side_content_is_used_when_side_by_side_does_not_fit();
+        side_content_clearing_resets_symbols_and_style();
+        side_content_clearing_handles_non_zero_buffer_origin();
+    }
+
     fn renders_blank_line_between_title_and_items_without_subtitle() {
         let view = make_selection_view(None);
         assert_snapshot!(
@@ -177,13 +203,11 @@ mod tests {
         );
     }
 
-    #[test]
     fn renders_blank_line_between_subtitle_and_items() {
         let view = make_selection_view(Some(&format!("Switch between {OS_NAME} approval presets")));
         assert_snapshot!("list_selection_spacing_with_subtitle", render_lines(&view));
     }
 
-    #[test]
     fn theme_picker_subtitle_uses_fallback_text_in_94x35_terminal() {
         let tx = make_app_event_sender();
         let home = dirs::home_dir().expect("home directory should be available");
@@ -196,7 +220,6 @@ mod tests {
         assert!(rendered.contains("Move up/down to live preview themes"));
     }
 
-    #[test]
     fn theme_picker_enables_side_content_background_preservation() {
         let params = crate::theme_picker::build_theme_picker_params(None, None, Some(120));
         assert!(
@@ -205,7 +228,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn preserve_side_content_bg_keeps_rendered_background_colors() {
         let tx = make_app_event_sender();
         let view = ListSelectionView::new(
@@ -247,7 +269,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn snapshot_footer_note_wraps() {
         let tx = make_app_event_sender();
         let items = vec![SelectionItem {
@@ -278,7 +299,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn renders_search_query_line_when_enabled() {
         let tx = make_app_event_sender();
         let items = vec![SelectionItem {
@@ -308,7 +328,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn enter_with_no_matches_triggers_cancel_callback() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ListSelectionView::new(
@@ -338,7 +357,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn move_down_without_selection_change_does_not_fire_callback() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ListSelectionView::new(
@@ -366,7 +384,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn wraps_long_option_without_overflowing_columns() {
         let tx = make_app_event_sender();
         let items = vec![
@@ -406,7 +423,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn width_changes_do_not_hide_rows() {
         let tx = make_app_event_sender();
         let items = vec![
@@ -459,7 +475,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn narrow_width_keeps_all_rows_visible() {
         let tx = make_app_event_sender();
         let desc = "x".repeat(10);
@@ -486,7 +501,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn snapshot_model_picker_width_80() {
         let tx = make_app_event_sender();
         let items = vec![
@@ -532,7 +546,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn snapshot_narrow_width_preserves_third_option() {
         let tx = make_app_event_sender();
         let desc = "x".repeat(10);
@@ -558,7 +571,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn snapshot_auto_visible_col_width_mode_scroll_behavior() {
         assert_snapshot!(
             "list_selection_col_width_mode_auto_visible_scroll",
@@ -566,7 +578,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn snapshot_auto_all_rows_col_width_mode_scroll_behavior() {
         assert_snapshot!(
             "list_selection_col_width_mode_auto_all_rows_scroll",
@@ -574,7 +585,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn snapshot_fixed_col_width_mode_scroll_behavior() {
         assert_snapshot!(
             "list_selection_col_width_mode_fixed_scroll",
@@ -582,7 +592,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn auto_all_rows_col_width_does_not_shift_when_scrolling() {
         let tx = make_app_event_sender();
 
@@ -615,7 +624,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn fixed_col_width_is_30_70_and_does_not_shift_when_scrolling() {
         let tx = make_app_event_sender();
         let width = 96;
@@ -648,7 +656,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn side_layout_width_half_uses_exact_split() {
         let tx = make_app_event_sender();
         let view = ListSelectionView::new(
@@ -674,7 +681,6 @@ mod tests {
         assert_eq!(view.side_layout_width(content_width), Some(expected));
     }
 
-    #[test]
     fn side_layout_width_half_falls_back_when_list_would_be_too_narrow() {
         let tx = make_app_event_sender();
         let view = ListSelectionView::new(
@@ -698,7 +704,6 @@ mod tests {
         assert_eq!(view.side_layout_width(80), None);
     }
 
-    #[test]
     fn stacked_side_content_is_used_when_side_by_side_does_not_fit() {
         let tx = make_app_event_sender();
         let view = ListSelectionView::new(
@@ -735,7 +740,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn side_content_clearing_resets_symbols_and_style() {
         let tx = make_app_event_sender();
         let view = ListSelectionView::new(
@@ -793,7 +797,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn side_content_clearing_handles_non_zero_buffer_origin() {
         let tx = make_app_event_sender();
         let view = ListSelectionView::new(

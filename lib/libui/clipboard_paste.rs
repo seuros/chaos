@@ -210,38 +210,45 @@ pub fn pasted_image_format(path: &Path) -> EncodedImageFormat {
 }
 
 #[cfg(test)]
-mod pasted_paths_tests {
+pub(crate) mod pasted_paths_tests {
     use super::*;
 
-    #[test]
     fn normalize_file_url() {
         let input = "file:///tmp/example.png";
         let result = normalize_pasted_path(input).expect("should parse file URL");
         assert_eq!(result, PathBuf::from("/tmp/example.png"));
     }
 
-    #[test]
+    pub(crate) fn clipboard_paste_suite() {
+        normalize_file_url();
+        normalize_shell_escaped_single_path();
+        normalize_simple_quoted_path_fallback();
+        normalize_single_quoted_unix_path();
+        normalize_multiple_tokens_returns_none();
+        pasted_image_format_png_jpeg_unknown();
+    }
+    #[cfg(test)]
     fn normalize_shell_escaped_single_path() {
         let input = "/home/user/My\\ File.png";
         let result = normalize_pasted_path(input).expect("should unescape shell-escaped path");
         assert_eq!(result, PathBuf::from("/home/user/My File.png"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn normalize_simple_quoted_path_fallback() {
         let input = "\"/home/user/My File.png\"";
         let result = normalize_pasted_path(input).expect("should trim simple quotes");
         assert_eq!(result, PathBuf::from("/home/user/My File.png"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn normalize_single_quoted_unix_path() {
         let input = "'/home/user/My File.png'";
         let result = normalize_pasted_path(input).expect("should trim single quotes via shlex");
         assert_eq!(result, PathBuf::from("/home/user/My File.png"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn normalize_multiple_tokens_returns_none() {
         // Two tokens after shell splitting → not a single path
         let input = "/home/user/a\\ b.png /home/user/c.png";
@@ -249,7 +256,7 @@ mod pasted_paths_tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[cfg(test)]
     fn pasted_image_format_png_jpeg_unknown() {
         assert_eq!(
             pasted_image_format(Path::new("/a/b/c.PNG")),

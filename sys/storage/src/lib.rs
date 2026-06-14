@@ -241,6 +241,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lib_suite() {
+        from_optional_sqlite_opens_shared_db().await;
+        from_config_reports_connection_errors_for_postgres_url().await;
+        postgres_from_config_opens_postgres_runtime_schema_when_configured().await;
+        from_env_prefers_postgres_storage_url_when_present().await;
+        postgres_from_env_opens_postgres_runtime_schema_when_configured().await;
+        from_env_accepts_sqlite_storage_url().await;
+        from_env_accepts_sqlite_in_memory_storage_url().await;
+        from_env_normalizes_sqlite3_alias();
+        from_env_rejects_unsupported_storage_url_scheme();
+    }
+
     async fn from_optional_sqlite_opens_shared_db() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
 
@@ -261,7 +273,6 @@ mod tests {
         assert_eq!(provider.kind(), StorageKind::Sqlite);
     }
 
-    #[tokio::test]
     async fn from_config_reports_connection_errors_for_postgres_url() {
         let err = ChaosStorageProvider::from_config(StorageConfig::postgres_url(
             unreachable_postgres_url(),
@@ -275,7 +286,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn postgres_from_config_opens_postgres_runtime_schema_when_configured() {
         let Some(database_url) = postgres_test_url() else {
             eprintln!("skipping postgres storage validation; {TEST_DATABASE_URL_ENV} is not set");
@@ -303,7 +313,6 @@ mod tests {
         assert_eq!(cron_jobs_table.as_deref(), Some("cron_jobs"));
     }
 
-    #[tokio::test]
     async fn from_env_prefers_postgres_storage_url_when_present() {
         let _guard = EnvGuard::set(
             CHAOS_STORAGE_URL_ENV,
@@ -320,7 +329,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn postgres_from_env_opens_postgres_runtime_schema_when_configured() {
         let Some(database_url) = postgres_test_url() else {
             eprintln!("skipping postgres storage validation; {TEST_DATABASE_URL_ENV} is not set");
@@ -339,7 +347,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn from_env_accepts_sqlite_storage_url() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let db_path = chaos_proc::runtime_db_path(temp_dir.path());
@@ -363,7 +370,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn from_env_accepts_sqlite_in_memory_storage_url() {
         let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some("sqlite::memory:"));
 
@@ -383,7 +389,6 @@ mod tests {
         assert_eq!(table_exists.as_deref(), Some("processes"));
     }
 
-    #[test]
     fn from_env_normalizes_sqlite3_alias() {
         let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some("sqlite3:///tmp/chaos.sqlite"));
 
@@ -397,7 +402,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn from_env_rejects_unsupported_storage_url_scheme() {
         let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some("mysql://localhost/chaos"));
 

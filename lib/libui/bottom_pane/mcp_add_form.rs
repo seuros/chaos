@@ -657,7 +657,7 @@ fn looks_like_mixed_http_auth_input(input: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::test_support::make_app_event_sender;
     use chaos_kern::config_loader::ConfigLayerStack;
@@ -674,20 +674,34 @@ mod tests {
         )
     }
 
-    #[test]
+    pub(crate) fn mcp_add_form_suite() {
+        initial_field_is_name();
+        tab_advances_field();
+        shift_tab_goes_back();
+        esc_marks_complete();
+        submit_without_name_shows_error();
+        args_parsing_uses_shell_style_quoting();
+        args_parsing_rejects_unmatched_quotes();
+        env_parsing_splits_key_value();
+        http_field_parses_bearer_env_var_name();
+        http_field_parses_headers();
+        http_field_preserves_commas_inside_header_values();
+        http_field_preserves_commas_before_embedded_equals_in_header_values();
+        http_field_rejects_mixing_headers_and_env_var_name();
+        submit_without_active_process_does_not_write_mcp_json();
+    }
+
     fn initial_field_is_name() {
         let form = make_form();
         assert_eq!(form.focused, FIELD_NAME);
     }
 
-    #[test]
     fn tab_advances_field() {
         let mut form = make_form();
         form.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(form.focused, FIELD_COMMAND);
     }
 
-    #[test]
     fn shift_tab_goes_back() {
         let mut form = make_form();
         form.focused = FIELD_COMMAND;
@@ -695,14 +709,12 @@ mod tests {
         assert_eq!(form.focused, FIELD_NAME);
     }
 
-    #[test]
     fn esc_marks_complete() {
         let mut form = make_form();
         form.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(form.is_complete());
     }
 
-    #[test]
     fn submit_without_name_shows_error() {
         let mut form = make_form();
         // Jump straight to submit path by sitting on final field and pressing Enter
@@ -712,7 +724,6 @@ mod tests {
         assert!(!form.is_complete());
     }
 
-    #[test]
     fn args_parsing_uses_shell_style_quoting() {
         let args = parse_stdio_args(r#"--root "/Users/Alice/My Project" --json '{"k":"v"}'"#)
             .expect("parse shell-style args");
@@ -727,13 +738,11 @@ mod tests {
         );
     }
 
-    #[test]
     fn args_parsing_rejects_unmatched_quotes() {
         let err = parse_stdio_args(r#""unterminated"#).expect_err("should reject bad quoting");
         assert!(err.contains("unmatched quotes"));
     }
 
-    #[test]
     fn env_parsing_splits_key_value() {
         let env: HashMap<String, String> = "FOO=bar,BAZ=qux"
             .split(',')
@@ -752,7 +761,6 @@ mod tests {
         assert_eq!(env.get("BAZ").map(String::as_str), Some("qux"));
     }
 
-    #[test]
     fn http_field_parses_bearer_env_var_name() {
         assert_eq!(
             parse_http_auth_or_headers("MCP_TOKEN").expect("parse bearer env var"),
@@ -763,7 +771,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn http_field_parses_headers() {
         assert_eq!(
             parse_http_auth_or_headers("Authorization=Bearer abc,X-Foo=bar")
@@ -778,7 +785,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn http_field_preserves_commas_inside_header_values() {
         assert_eq!(
             parse_http_auth_or_headers("Accept=text/html, application/json")
@@ -793,7 +799,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn http_field_preserves_commas_before_embedded_equals_in_header_values() {
         assert_eq!(
             parse_http_auth_or_headers("Cookie=a=1,b=2").expect("parse cookie header value"),
@@ -807,14 +812,12 @@ mod tests {
         );
     }
 
-    #[test]
     fn http_field_rejects_mixing_headers_and_env_var_name() {
         let err = parse_http_auth_or_headers("MCP_TOKEN,Authorization=Bearer abc")
             .expect_err("mixed http auth syntax should fail");
         assert!(err.contains("either KEY=VALUE headers or a single bearer token env var"));
     }
 
-    #[test]
     fn submit_without_active_process_does_not_write_mcp_json() {
         let tmp = tempdir().expect("tempdir");
         let sender = crate::test_support::make_app_event_sender();

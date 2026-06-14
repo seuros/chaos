@@ -51,12 +51,12 @@ pub fn render_markdown_text_with_width_and_cwd(
 }
 
 #[cfg(test)]
-mod markdown_render_tests {
+pub(crate) mod markdown_render_tests {
     include!("markdown_render_tests.rs");
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use ratatui::text::Text;
@@ -73,7 +73,22 @@ mod tests {
             .collect()
     }
 
-    #[test]
+    pub(crate) fn markdown_render_suite() {
+        super::markdown_render_tests::markdown_render_suite();
+
+        wraps_plain_text_when_width_provided();
+        wraps_list_items_preserving_indent();
+        wraps_nested_lists();
+        wraps_ordered_lists();
+        wraps_blockquotes();
+        wraps_blockquotes_inside_lists();
+        wraps_list_items_containing_blockquotes();
+        does_not_wrap_code_blocks();
+        does_not_split_long_url_like_token_without_scheme();
+        fenced_code_info_string_with_metadata_highlights();
+        crlf_code_block_no_extra_blank_lines();
+    }
+    #[cfg(test)]
     fn wraps_plain_text_when_width_provided() {
         let markdown = "This is a simple sentence that should wrap.";
         let rendered = render_markdown_text_with_width(markdown, Some(16));
@@ -88,7 +103,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn wraps_list_items_preserving_indent() {
         let markdown = "- first second third fourth";
         let rendered = render_markdown_text_with_width(markdown, Some(14));
@@ -99,7 +114,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn wraps_nested_lists() {
         let markdown =
             "- outer item with several words to wrap\n  - inner item that also needs wrapping";
@@ -118,7 +133,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn wraps_ordered_lists() {
         let markdown = "1. ordered item contains many words for wrapping";
         let rendered = render_markdown_text_with_width(markdown, Some(18));
@@ -134,7 +149,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn wraps_blockquotes() {
         let markdown = "> block quote with content that should wrap nicely";
         let rendered = render_markdown_text_with_width(markdown, Some(22));
@@ -149,7 +164,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn wraps_blockquotes_inside_lists() {
         let markdown = "- list item\n  > block quote inside list that wraps";
         let rendered = render_markdown_text_with_width(markdown, Some(24));
@@ -164,7 +179,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn wraps_list_items_containing_blockquotes() {
         let markdown = "1. item with quote\n   > quoted text that should wrap";
         let rendered = render_markdown_text_with_width(markdown, Some(24));
@@ -179,7 +194,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn does_not_wrap_code_blocks() {
         let markdown = "````\nfn main() { println!(\"hi from a long line\"); }\n````";
         let rendered = render_markdown_text_with_width(markdown, Some(10));
@@ -190,7 +205,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn does_not_split_long_url_like_token_without_scheme() {
         let url_like =
             "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890";
@@ -204,7 +219,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn fenced_code_info_string_with_metadata_highlights() {
         for info in &["rust,no_run", "rust no_run", "rust title=\"demo\""] {
             let markdown = format!("```{info}\nfn main() {{}}\n```\n");
@@ -221,7 +236,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[cfg(test)]
     fn crlf_code_block_no_extra_blank_lines() {
         let markdown = "```rust\r\nfn main() {}\r\n    line2\r\n```\r\n";
         let rendered = render_markdown_text(markdown);

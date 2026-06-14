@@ -142,6 +142,10 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
 }
 
 impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRuntime<'a> {
+    fn allows_no_sandbox_retry(&self, req: &UnifiedExecRequest) -> bool {
+        !req.sandbox_permissions.uses_additional_permissions()
+    }
+
     fn network_approval_spec(
         &self,
         req: &UnifiedExecRequest,

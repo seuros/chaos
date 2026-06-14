@@ -207,11 +207,10 @@ pub fn take_prefix_by_width(text: &str, max_cols: usize) -> (String, &str, usize
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
     fn rows_do_not_exceed_width_ascii() {
         let mut rb = RowBuilder::new(10);
         rb.push_fragment("hello whirl this is a test");
@@ -231,7 +230,14 @@ mod tests {
         );
     }
 
-    #[test]
+    pub(crate) fn live_wrap_suite() {
+        rows_do_not_exceed_width_ascii();
+        rows_do_not_exceed_width_emoji_cjk();
+        fragmentation_invariance_long_token();
+        newline_splits_rows();
+        rewrap_on_width_change();
+    }
+    #[cfg(test)]
     fn rows_do_not_exceed_width_emoji_cjk() {
         // 😀 is width 2; 你/好 are width 2.
         let mut rb = RowBuilder::new(6);
@@ -249,7 +255,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn fragmentation_invariance_long_token() {
         let s = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"; // 26 chars
         let mut rb_all = RowBuilder::new(7);
@@ -266,7 +272,7 @@ mod tests {
         assert_eq!(all_rows, chunk_rows);
     }
 
-    #[test]
+    #[cfg(test)]
     fn newline_splits_rows() {
         let mut rb = RowBuilder::new(10);
         rb.push_fragment("hello\nworld");
@@ -277,7 +283,7 @@ mod tests {
         assert!(rows.iter().any(|r| r.text.starts_with("world")));
     }
 
-    #[test]
+    #[cfg(test)]
     fn rewrap_on_width_change() {
         let mut rb = RowBuilder::new(10);
         rb.push_fragment("abcdefghijK");

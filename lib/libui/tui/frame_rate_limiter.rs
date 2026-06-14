@@ -37,18 +37,21 @@ impl FrameRateLimiter {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
+    pub(crate) fn frame_rate_limiter_suite() {
+        default_does_not_clamp();
+        clamps_to_min_interval_since_last_emit();
+    }
+
     fn default_does_not_clamp() {
         let t0 = Instant::now();
         let limiter = FrameRateLimiter::default();
         assert_eq!(limiter.clamp_deadline(t0), t0);
     }
 
-    #[test]
     fn clamps_to_min_interval_since_last_emit() {
         let t0 = Instant::now();
         let mut limiter = FrameRateLimiter::default();

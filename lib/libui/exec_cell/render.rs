@@ -685,12 +685,11 @@ const EXEC_DISPLAY_LAYOUT: ExecDisplayLayout = ExecDisplayLayout::new(
 );
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use chaos_ipc::protocol::ExecCommandSource;
     use pretty_assertions::assert_eq;
 
-    #[test]
     fn user_shell_output_is_limited_by_screen_lines() {
         let long_url_like = format!(
             "https://example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/{}",
@@ -785,7 +784,16 @@ mod tests {
         );
     }
 
-    #[test]
+    pub(crate) fn exec_cell_render_suite() {
+        user_shell_output_is_limited_by_screen_lines();
+        truncate_lines_middle_keeps_omitted_count_in_line_units();
+        truncate_lines_middle_does_not_truncate_blank_prefixed_output_lines();
+        command_display_does_not_split_long_url_token();
+        exploring_display_does_not_split_long_url_like_search_query();
+        output_display_does_not_split_long_url_like_token_without_scheme();
+        desired_transcript_height_accounts_for_wrapped_url_like_rows();
+    }
+    #[cfg(test)]
     fn truncate_lines_middle_keeps_omitted_count_in_line_units() {
         let lines = vec![
             Line::from("  └ short"),
@@ -812,7 +820,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn truncate_lines_middle_does_not_truncate_blank_prefixed_output_lines() {
         let mut lines = vec![Line::from("  └ start")];
         lines.extend(std::iter::repeat_n(Line::from("    "), 26));
@@ -823,7 +831,7 @@ mod tests {
         assert_eq!(truncated, lines);
     }
 
-    #[test]
+    #[cfg(test)]
     fn command_display_does_not_split_long_url_token() {
         let url = "http://example.com/long-url-with-dashes-wider-than-terminal-window/blah-blah-blah-text/more-gibberish-text";
 
@@ -857,7 +865,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn exploring_display_does_not_split_long_url_like_search_query() {
         let url_like = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path";
         let call = ExecCall {
@@ -897,7 +905,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn output_display_does_not_split_long_url_like_token_without_scheme() {
         let url = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/session_id=abc123def456ghi789jkl012mno345pqr678";
 
@@ -935,7 +943,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn desired_transcript_height_accounts_for_wrapped_url_like_rows() {
         let url = "https://example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path/that/keeps/going/for/testing/purposes";
         let call = ExecCall {

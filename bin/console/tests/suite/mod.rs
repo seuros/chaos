@@ -1,9 +1,9 @@
 // Aggregates all former standalone integration tests as modules.
-#[path = "suite/no_panic_on_startup.rs"]
+#[path = "no_panic_on_startup.rs"]
 mod no_panic_on_startup;
-#[path = "suite/status_indicator.rs"]
+#[path = "status_indicator.rs"]
 mod status_indicator;
-#[path = "suite/vt100_history.rs"]
+#[path = "vt100_history.rs"]
 mod vt100_history;
-#[path = "suite/vt100_live_commit.rs"]
+#[path = "vt100_live_commit.rs"]
 mod vt100_live_commit;

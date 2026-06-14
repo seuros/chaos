@@ -405,7 +405,7 @@ pub fn build_theme_picker_params(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::test_support::buffer_lines;
     use crate::test_support::renderable_buffer_with_size;
@@ -454,7 +454,19 @@ mod tests {
         chars.next()
     }
 
-    #[test]
+    pub(crate) fn theme_picker_suite() {
+        theme_picker_uses_half_width_with_stacked_fallback_preview();
+        theme_picker_items_include_search_values_for_preview_mapping();
+        wide_preview_renders_all_lines_with_vertical_center_and_left_inset();
+        narrow_preview_renders_single_add_and_single_remove_in_four_lines();
+        deleted_preview_code_uses_dim_overlay_like_real_diff_renderer();
+        subtitle_uses_tilde_path_when_codex_home_under_home_directory();
+        subtitle_falls_back_when_tilde_path_subtitle_is_too_wide();
+        subtitle_falls_back_to_preview_instructions_without_tilde_path();
+        subtitle_falls_back_for_94_column_terminal_side_by_side_layout();
+        unavailable_configured_theme_falls_back_to_configured_or_default_selection();
+    }
+    #[cfg(test)]
     fn theme_picker_uses_half_width_with_stacked_fallback_preview() {
         let params = build_theme_picker_params(None, None, None);
         assert_eq!(params.side_content_width, SideContentWidth::Half);
@@ -462,7 +474,7 @@ mod tests {
         assert!(params.stacked_side_content.is_some());
     }
 
-    #[test]
+    #[cfg(test)]
     fn theme_picker_items_include_search_values_for_preview_mapping() {
         let params = build_theme_picker_params(None, None, None);
         assert!(
@@ -471,7 +483,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn wide_preview_renders_all_lines_with_vertical_center_and_left_inset() {
         let lines = render_lines(&ThemePreviewWideRenderable, 80, 20);
         let numbered_rows: Vec<usize> = lines
@@ -517,7 +529,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn narrow_preview_renders_single_add_and_single_remove_in_four_lines() {
         let lines = render_lines(&ThemePreviewNarrowRenderable, 80, 6);
         let numbered_lines: Vec<usize> = lines
@@ -543,7 +555,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn deleted_preview_code_uses_dim_overlay_like_real_diff_renderer() {
         let width = 80;
         let height = 6;
@@ -562,7 +574,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn subtitle_uses_tilde_path_when_codex_home_under_home_directory() {
         let home = dirs::home_dir().expect("home directory should be available");
         let chaos_home = home.join(".chaos");
@@ -573,7 +585,7 @@ mod tests {
         assert!(subtitle.contains("directory"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn subtitle_falls_back_when_tilde_path_subtitle_is_too_wide() {
         let home = dirs::home_dir().expect("home directory should be available");
         let long_segment = "a".repeat(120);
@@ -584,13 +596,13 @@ mod tests {
         assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
     }
 
-    #[test]
+    #[cfg(test)]
     fn subtitle_falls_back_to_preview_instructions_without_tilde_path() {
         let subtitle = theme_picker_subtitle(None, None);
         assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
     }
 
-    #[test]
+    #[cfg(test)]
     fn subtitle_falls_back_for_94_column_terminal_side_by_side_layout() {
         let home = dirs::home_dir().expect("home directory should be available");
         let chaos_home = home.join(".chaos");
@@ -600,7 +612,7 @@ mod tests {
         assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
     }
 
-    #[test]
+    #[cfg(test)]
     fn unavailable_configured_theme_falls_back_to_configured_or_default_selection() {
         let configured_or_default_theme = highlight::configured_theme_name();
         let params = build_theme_picker_params(Some("not-a-real-theme"), None, Some(120));

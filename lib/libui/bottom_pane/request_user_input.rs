@@ -437,7 +437,7 @@ impl RequestUserInputOverlay {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::bottom_pane::bottom_pane_view::BottomPaneView;
@@ -629,7 +629,61 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn request_user_input_suite() {
+        queued_requests_are_fifo();
+        interrupt_discards_queued_requests_and_emits_interrupt();
+        options_can_submit_empty_when_unanswered();
+        enter_commits_default_selection_on_last_option_question();
+        enter_commits_default_selection_on_non_last_option_question();
+        number_keys_select_and_submit_options();
+        vim_keys_move_option_selection();
+        typing_in_options_does_not_open_notes();
+        h_l_move_between_questions_in_options();
+        left_right_move_between_questions_in_options();
+        options_notes_focus_hides_question_navigation_tip();
+        freeform_shows_ctrl_p_and_ctrl_n_question_navigation_tip();
+        tab_opens_notes_when_option_selected();
+        switching_to_options_resets_notes_focus_when_notes_hidden();
+        switching_from_freeform_with_text_resets_focus_and_keeps_last_option_empty();
+        esc_in_notes_mode_without_options_interrupts();
+        esc_in_options_mode_interrupts();
+        esc_in_notes_mode_clears_notes_and_hides_ui();
+        esc_in_notes_mode_with_text_clears_notes_and_hides_ui();
+        esc_drops_committed_answers();
+        backspace_in_options_clears_selection();
+        backspace_on_empty_notes_closes_notes_ui();
+        tab_in_notes_clears_notes_and_hides_ui();
+        skipped_option_questions_count_as_unanswered();
+        highlighted_option_questions_are_unanswered();
+        freeform_requires_enter_with_text_to_mark_answered();
+        freeform_enter_with_empty_text_is_unanswered();
+        freeform_questions_submit_empty_when_empty();
+        freeform_draft_is_not_submitted_without_enter();
+        freeform_commit_resets_when_draft_changes();
+        notes_are_captured_for_selected_option();
+        notes_submission_commits_selected_option();
+        is_other_adds_none_of_the_above_and_submits_it();
+        large_paste_is_preserved_when_switching_questions();
+        pending_paste_placeholder_survives_submission_and_back_navigation();
+        request_user_input_options_snapshot();
+        request_user_input_options_notes_visible_snapshot();
+        request_user_input_tight_height_snapshot();
+        layout_allocates_all_wrapped_options_when_space_allows();
+        desired_height_keeps_spacers_and_preferred_options_visible();
+        footer_wraps_tips_without_splitting_individual_tips();
+        request_user_input_wrapped_options_snapshot();
+        request_user_input_long_option_text_snapshot();
+        selected_long_wrapped_option_stays_visible();
+        request_user_input_footer_wrap_snapshot();
+        request_user_input_scroll_options_snapshot();
+        request_user_input_hidden_options_footer_snapshot();
+        request_user_input_freeform_snapshot();
+        request_user_input_multi_question_first_snapshot();
+        request_user_input_multi_question_last_snapshot();
+        request_user_input_unanswered_confirmation_snapshot();
+        options_scroll_while_editing_notes();
+    }
+
     fn queued_requests_are_fifo() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -655,7 +709,6 @@ mod tests {
         assert_eq!(overlay.request.turn_id, "turn-3");
     }
 
-    #[test]
     fn interrupt_discards_queued_requests_and_emits_interrupt() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -682,7 +735,6 @@ mod tests {
         expect_interrupt_only(&mut rx);
     }
 
-    #[test]
     fn options_can_submit_empty_when_unanswered() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -704,7 +756,6 @@ mod tests {
         assert_eq!(answer.answers, Vec::<String>::new());
     }
 
-    #[test]
     fn enter_commits_default_selection_on_last_option_question() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -725,7 +776,6 @@ mod tests {
         assert_eq!(answer.answers, vec!["Option 1".to_string()]);
     }
 
-    #[test]
     fn enter_commits_default_selection_on_non_last_option_question() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -773,7 +823,6 @@ mod tests {
         assert_eq!(response.answers, expected);
     }
 
-    #[test]
     fn number_keys_select_and_submit_options() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -794,7 +843,6 @@ mod tests {
         assert_eq!(answer.answers, vec!["Option 2".to_string()]);
     }
 
-    #[test]
     fn vim_keys_move_option_selection() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -816,7 +864,6 @@ mod tests {
         assert_eq!(answer.options_state.selected_idx, Some(0));
     }
 
-    #[test]
     fn typing_in_options_does_not_open_notes() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -842,7 +889,6 @@ mod tests {
         assert_eq!(overlay.composer.current_text_with_pending(), "");
     }
 
-    #[test]
     fn h_l_move_between_questions_in_options() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -866,7 +912,6 @@ mod tests {
         assert_eq!(overlay.current_index(), 0);
     }
 
-    #[test]
     fn left_right_move_between_questions_in_options() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -890,7 +935,6 @@ mod tests {
         assert_eq!(overlay.current_index(), 0);
     }
 
-    #[test]
     fn options_notes_focus_hides_question_navigation_tip() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -927,7 +971,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn freeform_shows_ctrl_p_and_ctrl_n_question_navigation_tip() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -957,7 +1000,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn tab_opens_notes_when_option_selected() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -976,7 +1018,6 @@ mod tests {
         assert!(matches!(overlay.focus, Focus::Notes));
     }
 
-    #[test]
     fn switching_to_options_resets_notes_focus_when_notes_hidden() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1000,7 +1041,6 @@ mod tests {
         assert_eq!(overlay.notes_ui_visible(), false);
     }
 
-    #[test]
     fn switching_from_freeform_with_text_resets_focus_and_keeps_last_option_empty() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1046,7 +1086,6 @@ mod tests {
         assert_eq!(answer.answers, vec!["Option 1".to_string()]);
     }
 
-    #[test]
     fn esc_in_notes_mode_without_options_interrupts() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1063,7 +1102,6 @@ mod tests {
         expect_interrupt_only(&mut rx);
     }
 
-    #[test]
     fn esc_in_options_mode_interrupts() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1080,7 +1118,6 @@ mod tests {
         expect_interrupt_only(&mut rx);
     }
 
-    #[test]
     fn esc_in_notes_mode_clears_notes_and_hides_ui() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1108,7 +1145,6 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[test]
     fn esc_in_notes_mode_with_text_clears_notes_and_hides_ui() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1137,7 +1173,6 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[test]
     fn esc_drops_committed_answers() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1165,7 +1200,6 @@ mod tests {
         expect_interrupt_only(&mut rx);
     }
 
-    #[test]
     fn backspace_in_options_clears_selection() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1186,7 +1220,6 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[test]
     fn backspace_on_empty_notes_closes_notes_ui() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1212,7 +1245,6 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[test]
     fn tab_in_notes_clears_notes_and_hides_ui() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1241,7 +1273,6 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[test]
     fn skipped_option_questions_count_as_unanswered() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1255,7 +1286,6 @@ mod tests {
         assert_eq!(overlay.unanswered_count(), 1);
     }
 
-    #[test]
     fn highlighted_option_questions_are_unanswered() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1271,7 +1301,6 @@ mod tests {
         assert_eq!(overlay.unanswered_count(), 1);
     }
 
-    #[test]
     fn freeform_requires_enter_with_text_to_mark_answered() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1300,7 +1329,6 @@ mod tests {
         assert_eq!(overlay.unanswered_count(), 1);
     }
 
-    #[test]
     fn freeform_enter_with_empty_text_is_unanswered() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1323,7 +1351,6 @@ mod tests {
         assert_eq!(overlay.unanswered_count(), 2);
     }
 
-    #[test]
     fn freeform_questions_submit_empty_when_empty() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1344,7 +1371,6 @@ mod tests {
         assert_eq!(answer.answers, Vec::<String>::new());
     }
 
-    #[test]
     fn freeform_draft_is_not_submitted_without_enter() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1369,7 +1395,6 @@ mod tests {
         assert_eq!(answer.answers, Vec::<String>::new());
     }
 
-    #[test]
     fn freeform_commit_resets_when_draft_changes() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1412,7 +1437,6 @@ mod tests {
         assert_eq!(answer.answers, Vec::<String>::new());
     }
 
-    #[test]
     fn notes_are_captured_for_selected_option() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1454,7 +1478,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn notes_submission_commits_selected_option() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1486,7 +1509,6 @@ mod tests {
         assert!(answer.answer_committed);
     }
 
-    #[test]
     fn is_other_adds_none_of_the_above_and_submits_it() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1539,7 +1561,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn large_paste_is_preserved_when_switching_questions() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1567,7 +1588,6 @@ mod tests {
         assert_eq!(draft.text_with_pending(), large);
     }
 
-    #[test]
     fn pending_paste_placeholder_survives_submission_and_back_navigation() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1598,7 +1618,6 @@ mod tests {
         assert_eq!(draft.text_with_pending(), large);
     }
 
-    #[test]
     fn request_user_input_options_snapshot() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1614,7 +1633,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_options_notes_visible_snapshot() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1636,7 +1654,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_tight_height_snapshot() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1652,7 +1669,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn layout_allocates_all_wrapped_options_when_space_allows() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1680,7 +1696,6 @@ mod tests {
         assert_eq!(sections.options_area.height, options_height);
     }
 
-    #[test]
     fn desired_height_keeps_spacers_and_preferred_options_visible() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1709,7 +1724,6 @@ mod tests {
         assert_eq!(spacer_after_options, 1);
     }
 
-    #[test]
     fn footer_wraps_tips_without_splitting_individual_tips() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1746,7 +1760,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn request_user_input_wrapped_options_snapshot() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1778,7 +1791,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_long_option_text_snapshot() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1797,7 +1809,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn selected_long_wrapped_option_stays_visible() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1820,7 +1831,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_footer_wrap_snapshot() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1847,7 +1857,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_scroll_options_snapshot() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1898,7 +1907,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_hidden_options_footer_snapshot() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -1949,7 +1957,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_freeform_snapshot() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1965,7 +1972,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_multi_question_first_snapshot() {
         let (tx, _rx) = test_sender();
         let overlay = RequestUserInputOverlay::new(
@@ -1987,7 +1993,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_multi_question_last_snapshot() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -2010,7 +2015,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn request_user_input_unanswered_confirmation_snapshot() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
@@ -2035,7 +2039,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn options_scroll_while_editing_notes() {
         let (tx, _rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(

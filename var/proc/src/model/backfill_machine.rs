@@ -66,7 +66,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn backfill_happy_path() {
+    fn backfill_workflow_transitions_and_persisted_status_replay() {
         let mut wf = BackfillWorkflow::new();
         assert_eq!(wf.current_state(), "Pending");
 
@@ -75,32 +75,23 @@ mod tests {
 
         assert!(wf.complete());
         assert_eq!(wf.current_state(), "Complete");
-    }
 
-    #[test]
-    fn backfill_cannot_complete_from_pending() {
         let mut wf = BackfillWorkflow::new();
         assert!(!wf.complete());
         assert_eq!(wf.current_state(), "Pending");
-    }
 
-    #[test]
-    fn backfill_cannot_start_from_running() {
         let mut wf = BackfillWorkflow::new();
         wf.start();
         assert!(!wf.start());
         assert_eq!(wf.current_state(), "Running");
-    }
 
-    #[test]
-    fn from_status_roundtrip() {
-        let pending = BackfillWorkflow::from_status(BackfillStatus::Pending);
-        assert_eq!(pending.current_state(), "Pending");
-
-        let running = BackfillWorkflow::from_status(BackfillStatus::Running);
-        assert_eq!(running.current_state(), "Running");
-
-        let complete = BackfillWorkflow::from_status(BackfillStatus::Complete);
-        assert_eq!(complete.current_state(), "Complete");
+        for (status, expected) in [
+            (BackfillStatus::Pending, "Pending"),
+            (BackfillStatus::Running, "Running"),
+            (BackfillStatus::Complete, "Complete"),
+        ] {
+            let wf = BackfillWorkflow::from_status(status);
+            assert_eq!(wf.current_state(), expected);
+        }
     }
 }

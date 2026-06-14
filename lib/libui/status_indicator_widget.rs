@@ -289,7 +289,7 @@ impl Renderable for StatusIndicatorWidget {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::test_support::make_app_event_sender;
     use crate::test_support::render_test_backend_debug;
@@ -299,7 +299,17 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    #[test]
+    pub(crate) fn status_indicator_widget_suite() {
+        fmt_elapsed_compact_formats_seconds_minutes_hours();
+        renders_with_working_header();
+        renders_truncated();
+        renders_inline_progress_message();
+        renders_wrapped_details_panama_two_lines();
+        timer_pauses_when_requested();
+        details_overflow_adds_ellipsis();
+        details_args_can_disable_capitalization_and_limit_lines();
+    }
+    #[cfg(test)]
     fn fmt_elapsed_compact_formats_seconds_minutes_hours() {
         assert_eq!(fmt_elapsed_compact(0), "0s");
         assert_eq!(fmt_elapsed_compact(1), "1s");
@@ -313,7 +323,7 @@ mod tests {
         assert_eq!(fmt_elapsed_compact(25 * 3600 + 2 * 60 + 3), "25h 02m 03s");
     }
 
-    #[test]
+    #[cfg(test)]
     fn renders_with_working_header() {
         let tx = make_app_event_sender();
         let w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), true);
@@ -326,7 +336,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn renders_truncated() {
         let tx = make_app_event_sender();
         let w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), true);
@@ -339,7 +349,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn renders_inline_progress_message() {
         let tx = make_app_event_sender();
         let mut w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), false);
@@ -354,7 +364,7 @@ mod tests {
         assert!(rendered.contains("~1.2K tokens"), "{rendered}");
     }
 
-    #[test]
+    #[cfg(test)]
     fn renders_wrapped_details_panama_two_lines() {
         let tx = make_app_event_sender();
         let mut w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), false);
@@ -379,7 +389,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn timer_pauses_when_requested() {
         let tx = make_app_event_sender();
         let mut widget =
@@ -400,7 +410,7 @@ mod tests {
         assert_eq!(after_resume, before_pause + 3);
     }
 
-    #[test]
+    #[cfg(test)]
     fn details_overflow_adds_ellipsis() {
         let tx = make_app_event_sender();
         let mut w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), true);
@@ -419,7 +429,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn details_args_can_disable_capitalization_and_limit_lines() {
         let tx = make_app_event_sender();
         let mut w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), true);

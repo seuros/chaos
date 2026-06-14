@@ -456,13 +456,20 @@ pub fn retro_start_index(before: &str, retro_chars: usize) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
     /// Behavior: for ASCII input we "hold" the first fast char briefly. If no burst follows,
     /// that held char should eventually flush as normal typed input (not as a paste).
-    #[test]
+    pub(crate) fn paste_burst_suite() {
+        ascii_first_char_is_held_then_flushes_as_typed();
+        ascii_two_fast_chars_start_buffer_from_pending_and_flush_as_paste();
+        flush_before_modified_input_includes_pending_first_char();
+        decide_begin_buffer_only_triggers_for_pastey_prefixes();
+        newline_suppression_window_outlives_buffer_flush();
+    }
+
     fn ascii_first_char_is_held_then_flushes_as_typed() {
         let mut burst = PasteBurst::default();
         let t0 = Instant::now();
@@ -478,7 +485,6 @@ mod tests {
 
     /// Behavior: if two ASCII chars arrive quickly, we should start buffering without ever
     /// rendering the first one, then flush the whole buffered payload as a paste.
-    #[test]
     fn ascii_two_fast_chars_start_buffer_from_pending_and_flush_as_paste() {
         let mut burst = PasteBurst::default();
         let t0 = Instant::now();
@@ -503,7 +509,6 @@ mod tests {
 
     /// Behavior: when non-char input is about to be applied, we flush any transient burst state
     /// immediately (including a single pending ASCII char) so state doesn't leak across inputs.
-    #[test]
     fn flush_before_modified_input_includes_pending_first_char() {
         let mut burst = PasteBurst::default();
         let t0 = Instant::now();
@@ -518,7 +523,6 @@ mod tests {
 
     /// Behavior: retro-grab buffering is only enabled when the already-inserted prefix looks
     /// paste-like (whitespace or "long enough") so short IME bursts don't get misclassified.
-    #[test]
     fn decide_begin_buffer_only_triggers_for_pastey_prefixes() {
         let mut burst = PasteBurst::default();
         let now = Instant::now();
@@ -536,7 +540,6 @@ mod tests {
 
     /// Behavior: after a paste-like burst, we keep an "enter suppression window" alive briefly so
     /// a slightly-late Enter still inserts a newline instead of submitting.
-    #[test]
     fn newline_suppression_window_outlives_buffer_flush() {
         let mut burst = PasteBurst::default();
         let t0 = Instant::now();

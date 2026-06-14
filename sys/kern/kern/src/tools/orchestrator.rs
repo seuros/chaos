@@ -227,6 +227,12 @@ impl ToolOrchestrator {
                         network_policy_decision,
                     })));
                 }
+                if !tool.allows_no_sandbox_retry(req) {
+                    return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
+                        output,
+                        network_policy_decision,
+                    })));
+                }
                 // Under `Headless` or `Interactive`, do not retry without sandbox;
                 // surface a concise sandbox denial that preserves the
                 // original output.

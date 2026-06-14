@@ -103,6 +103,11 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn discovery_suite() {
+        discovers_project_scripts();
+        missing_dir_returns_empty();
+    }
+
     fn discovers_project_scripts() {
         let tmp = tempfile::tempdir().unwrap();
         let scripts_dir = tmp.path().join(".chaos").join("scripts");
@@ -124,7 +129,6 @@ mod tests {
         assert_eq!(names, vec!["a_first.lua", "b_second.lua"]);
     }
 
-    #[test]
     fn missing_dir_returns_empty() {
         let tmp = tempfile::tempdir().unwrap();
         let found = discover_scripts(tmp.path(), Some(&tmp.path().join("no_user_scripts")));

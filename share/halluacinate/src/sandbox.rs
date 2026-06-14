@@ -173,6 +173,16 @@ mod tests {
     }
 
     #[test]
+    fn sandbox_suite() {
+        dangerous_globals_are_removed();
+        safe_globals_survive();
+        stdlib_tables_are_isolated();
+        os_execute_blocked();
+        io_open_blocked();
+        memory_limit_enforced();
+        instruction_limit_enforced();
+    }
+
     fn dangerous_globals_are_removed() {
         let (lua, _dl) = sandboxed_lua();
         for name in DANGEROUS_GLOBALS {
@@ -181,7 +191,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn safe_globals_survive() {
         let (lua, _dl) = sandboxed_lua();
         let env = new_script_env(&lua).unwrap();
@@ -191,7 +200,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn stdlib_tables_are_isolated() {
         let (lua, _dl) = sandboxed_lua();
         let env1 = new_script_env(&lua).unwrap();
@@ -212,7 +220,6 @@ mod tests {
         assert!(result.is_nil(), "expected nil, got {result:?}");
     }
 
-    #[test]
     fn os_execute_blocked() {
         let (lua, _dl) = sandboxed_lua();
         let env = new_script_env(&lua).unwrap();
@@ -223,7 +230,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
     fn io_open_blocked() {
         let (lua, _dl) = sandboxed_lua();
         let env = new_script_env(&lua).unwrap();
@@ -234,7 +240,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
     fn memory_limit_enforced() {
         let (lua, _dl) = sandboxed_lua();
         let env = new_script_env(&lua).unwrap();
@@ -245,7 +250,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
     fn instruction_limit_enforced() {
         let lua = Lua::new();
         let deadline = apply(&lua).unwrap();

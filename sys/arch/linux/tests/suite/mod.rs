@@ -1,5 +1,5 @@
 // Aggregates all former standalone integration tests as modules.
-#[path = "suite/landlock.rs"]
+#[path = "landlock.rs"]
 mod landlock;
-#[path = "suite/managed_proxy.rs"]
+#[path = "managed_proxy.rs"]
 mod managed_proxy;

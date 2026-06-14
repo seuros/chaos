@@ -342,7 +342,7 @@ fn format_credit_balance(raw: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::CreditsSnapshotDisplay;
     use super::RateLimitSnapshotDisplay;
     use super::RateLimitWindowDisplay;
@@ -360,7 +360,11 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn status_rate_limits_suite() {
+        non_codex_single_limit_renders_combined_row();
+        non_codex_multi_limit_keeps_group_row();
+    }
+    #[cfg(test)]
     fn non_codex_single_limit_renders_combined_row() {
         let now = Timestamp::now();
         let chaos = RateLimitSnapshotDisplay {
@@ -404,7 +408,7 @@ mod tests {
         assert_eq!(rows.iter().filter(|row| row.label == "Credits").count(), 2);
     }
 
-    #[test]
+    #[cfg(test)]
     fn non_codex_multi_limit_keeps_group_row() {
         let now = Timestamp::now();
         let other = RateLimitSnapshotDisplay {

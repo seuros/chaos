@@ -46,7 +46,7 @@ pub use utils::{
 };
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::test_support::render_test_backend_debug;
     use insta::assert_snapshot;
@@ -199,7 +199,51 @@ mod tests {
     use chaos_ipc::protocol::FileChange;
     use unicode_width::UnicodeWidthChar;
 
-    #[test]
+    pub(crate) fn diff_render_suite() {
+        ansi16_add_style_uses_foreground_only();
+        ansi16_del_style_uses_foreground_only();
+        ansi16_sign_styles_use_foreground_only();
+        display_path_prefers_cwd_without_git_repo();
+        ui_snapshot_wrap_behavior_insert();
+        ui_snapshot_apply_update_block();
+        ui_snapshot_apply_update_with_rename_block();
+        ui_snapshot_apply_multiple_files_block();
+        ui_snapshot_apply_add_block();
+        ui_snapshot_apply_delete_block();
+        ui_snapshot_apply_update_block_wraps_long_lines();
+        ui_snapshot_apply_update_block_wraps_long_lines_text();
+        ui_snapshot_apply_update_block_line_numbers_three_digits_text();
+        ui_snapshot_apply_update_block_relativizes_path();
+        ui_snapshot_syntax_highlighted_insert_wraps();
+        ui_snapshot_syntax_highlighted_insert_wraps_text();
+        ui_snapshot_diff_gallery_80x24();
+        ui_snapshot_diff_gallery_94x35();
+        ui_snapshot_diff_gallery_120x40();
+        ui_snapshot_ansi16_insert_delete_no_background();
+        truecolor_dark_theme_uses_configured_backgrounds();
+        ansi256_dark_theme_uses_distinct_add_and_delete_backgrounds();
+        theme_scope_backgrounds_override_truecolor_fallback_when_available();
+        theme_scope_backgrounds_quantize_to_ansi256();
+        ui_snapshot_theme_scope_background_resolution();
+        ansi16_disables_line_and_gutter_backgrounds();
+        light_truecolor_theme_uses_readable_gutter_and_line_backgrounds();
+        light_theme_wrapped_lines_keep_number_gutter_contrast();
+        ansi16_maps_to_ansi16_diff_palette();
+        add_diff_uses_path_extension_for_highlighting();
+        delete_diff_uses_path_extension_for_highlighting();
+        detect_lang_for_common_paths();
+        wrap_styled_spans_single_line();
+        wrap_styled_spans_splits_long_content();
+        wrap_styled_spans_flushes_at_span_boundary();
+        wrap_styled_spans_preserves_styles();
+        wrap_styled_spans_tabs_have_visible_width();
+        wrap_styled_spans_wraps_before_first_overflowing_char();
+        fallback_wrapping_uses_display_width_for_tabs_and_wide_chars();
+        large_update_diff_skips_highlighting();
+        rename_diff_uses_destination_extension_for_highlighting();
+        update_diff_preserves_multiline_highlight_state_within_hunk();
+    }
+
     fn ansi16_add_style_uses_foreground_only() {
         let style = style_add(
             DiffTheme::Dark,
@@ -210,7 +254,6 @@ mod tests {
         assert_eq!(style.bg, None);
     }
 
-    #[test]
     fn ansi16_del_style_uses_foreground_only() {
         let style = style_del(
             DiffTheme::Dark,
@@ -221,7 +264,6 @@ mod tests {
         assert_eq!(style.bg, None);
     }
 
-    #[test]
     fn ansi16_sign_styles_use_foreground_only() {
         let add_sign = style_sign_add(
             DiffTheme::Dark,
@@ -240,7 +282,6 @@ mod tests {
         assert_eq!(del_sign.bg, None);
     }
 
-    #[test]
     fn display_path_prefers_cwd_without_git_repo() {
         let cwd = PathBuf::from("/workspace/chaos");
         let path = cwd.join("tui").join("example.png");
@@ -256,7 +297,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn ui_snapshot_wrap_behavior_insert() {
         let long_line = "this is a very long line that should wrap across multiple terminal columns and continue";
 
@@ -272,7 +312,6 @@ mod tests {
         snapshot_lines("wrap_behavior_insert", lines, 90, 8);
     }
 
-    #[test]
     fn ui_snapshot_apply_update_block() {
         let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
         let original = "line one\nline two\nline three\n";
@@ -292,7 +331,6 @@ mod tests {
         snapshot_lines("apply_update_block", lines, 80, 12);
     }
 
-    #[test]
     fn ui_snapshot_apply_update_with_rename_block() {
         let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
         let original = "A\nB\nC\n";
@@ -312,7 +350,6 @@ mod tests {
         snapshot_lines("apply_update_with_rename_block", lines, 80, 12);
     }
 
-    #[test]
     fn ui_snapshot_apply_multiple_files_block() {
         let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
 
@@ -337,7 +374,6 @@ mod tests {
         snapshot_lines("apply_multiple_files_block", lines, 80, 14);
     }
 
-    #[test]
     fn ui_snapshot_apply_add_block() {
         let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
         changes.insert(
@@ -352,7 +388,6 @@ mod tests {
         snapshot_lines("apply_add_block", lines, 80, 10);
     }
 
-    #[test]
     fn ui_snapshot_apply_delete_block() {
         let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
         changes.insert(
@@ -366,7 +401,6 @@ mod tests {
         snapshot_lines("apply_delete_block", lines, 80, 12);
     }
 
-    #[test]
     fn ui_snapshot_apply_update_block_wraps_long_lines() {
         let original = "line 1\nshort\nline 3\n";
         let modified = "line 1\nshort this_is_a_very_long_modified_line_that_should_wrap_across_multiple_terminal_columns_and_continue_even_further_beyond_eighty_columns_to_force_multiple_wraps\nline 3\n";
@@ -386,7 +420,6 @@ mod tests {
         snapshot_lines("apply_update_block_wraps_long_lines", lines, 80, 12);
     }
 
-    #[test]
     fn ui_snapshot_apply_update_block_wraps_long_lines_text() {
         let original = "1\n2\n3\n4\n";
         let modified = "1\nadded long line which wraps and_if_there_is_a_long_token_it_will_be_broken\n3\n4 context line which also wraps across\n";
@@ -405,7 +438,6 @@ mod tests {
         snapshot_lines_text("apply_update_block_wraps_long_lines_text", &lines);
     }
 
-    #[test]
     fn ui_snapshot_apply_update_block_line_numbers_three_digits_text() {
         let original = (1..=110).map(|i| format!("line {i}\n")).collect::<String>();
         let modified = (1..=110)
@@ -432,7 +464,6 @@ mod tests {
         snapshot_lines_text("apply_update_block_line_numbers_three_digits_text", &lines);
     }
 
-    #[test]
     fn ui_snapshot_apply_update_block_relativizes_path() {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         let abs_old = cwd.join("abs_old.rs");
@@ -456,7 +487,6 @@ mod tests {
         snapshot_lines("apply_update_block_relativizes_path", lines, 80, 10);
     }
 
-    #[test]
     fn ui_snapshot_syntax_highlighted_insert_wraps() {
         let long_rust = "fn very_long_function_name(arg_one: String, arg_two: String, arg_three: String, arg_four: String) -> Result<String, Box<dyn std::error::Error>> { Ok(arg_one) }";
 
@@ -483,7 +513,6 @@ mod tests {
         snapshot_lines("syntax_highlighted_insert_wraps", lines, 90, 10);
     }
 
-    #[test]
     fn ui_snapshot_syntax_highlighted_insert_wraps_text() {
         let long_rust = "fn very_long_function_name(arg_one: String, arg_two: String, arg_three: String, arg_four: String) -> Result<String, Box<dyn std::error::Error>> { Ok(arg_one) }";
 
@@ -504,22 +533,18 @@ mod tests {
         snapshot_lines_text("syntax_highlighted_insert_wraps_text", &lines);
     }
 
-    #[test]
     fn ui_snapshot_diff_gallery_80x24() {
         snapshot_diff_gallery("diff_gallery_80x24", 80, 24);
     }
 
-    #[test]
     fn ui_snapshot_diff_gallery_94x35() {
         snapshot_diff_gallery("diff_gallery_94x35", 94, 35);
     }
 
-    #[test]
     fn ui_snapshot_diff_gallery_120x40() {
         snapshot_diff_gallery("diff_gallery_120x40", 120, 40);
     }
 
-    #[test]
     fn ui_snapshot_ansi16_insert_delete_no_background() {
         let mut lines = push_wrapped_diff_line_inner_with_theme_and_color_level(
             1,
@@ -547,7 +572,6 @@ mod tests {
         snapshot_lines("ansi16_insert_delete_no_background", lines, 40, 4);
     }
 
-    #[test]
     fn truecolor_dark_theme_uses_configured_backgrounds() {
         assert_eq!(
             style_line_bg_for(
@@ -581,7 +605,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn ansi256_dark_theme_uses_distinct_add_and_delete_backgrounds() {
         assert_eq!(
             style_line_bg_for(
@@ -610,7 +633,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn theme_scope_backgrounds_override_truecolor_fallback_when_available() {
         let backgrounds = resolve_diff_backgrounds_for(
             DiffTheme::Dark,
@@ -630,7 +652,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn theme_scope_backgrounds_quantize_to_ansi256() {
         let backgrounds = resolve_diff_backgrounds_for(
             DiffTheme::Dark,
@@ -650,7 +671,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn ui_snapshot_theme_scope_background_resolution() {
         let backgrounds = resolve_diff_backgrounds_for(
             DiffTheme::Dark,
@@ -668,7 +688,6 @@ mod tests {
         assert_snapshot!("theme_scope_background_resolution", snapshot);
     }
 
-    #[test]
     fn ansi16_disables_line_and_gutter_backgrounds() {
         assert_eq!(
             style_line_bg_for(
@@ -718,7 +737,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn light_truecolor_theme_uses_readable_gutter_and_line_backgrounds() {
         assert_eq!(
             style_line_bg_for(
@@ -756,7 +774,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn light_theme_wrapped_lines_keep_number_gutter_contrast() {
         let lines = push_wrapped_diff_line_inner_with_theme_and_color_level(
             12,
@@ -790,7 +807,6 @@ mod tests {
         assert_eq!(lines[1].style.bg, Some(rgb_color(LIGHT_TC_ADD_LINE_BG_RGB)));
     }
 
-    #[test]
     fn ansi16_maps_to_ansi16_diff_palette() {
         assert_eq!(
             diff_color_level_for_terminal(StdoutColorLevel::Ansi16),
@@ -798,7 +814,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn add_diff_uses_path_extension_for_highlighting() {
         let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
         changes.insert(
@@ -820,7 +835,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn delete_diff_uses_path_extension_for_highlighting() {
         let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
         changes.insert(
@@ -842,7 +856,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn detect_lang_for_common_paths() {
         assert!(detect_lang_for_path(Path::new("foo.rs")).is_some());
         assert!(detect_lang_for_path(Path::new("bar.py")).is_some());
@@ -852,14 +865,12 @@ mod tests {
         assert!(detect_lang_for_path(Path::new("randomfile")).is_none());
     }
 
-    #[test]
     fn wrap_styled_spans_single_line() {
         let spans = vec![ratatui::text::Span::raw("short")];
         let result = wrap_styled_spans(&spans, 80);
         assert_eq!(result.len(), 1);
     }
 
-    #[test]
     fn wrap_styled_spans_splits_long_content() {
         let long_text = "a".repeat(100);
         let spans = vec![ratatui::text::Span::raw(long_text)];
@@ -871,7 +882,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn wrap_styled_spans_flushes_at_span_boundary() {
         let style_a = Style::default().fg(Color::Red);
         let style_b = Style::default().fg(Color::Blue);
@@ -892,7 +902,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn wrap_styled_spans_preserves_styles() {
         let style = Style::default().fg(Color::Green);
         let text = "x".repeat(50);
@@ -905,7 +914,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn wrap_styled_spans_tabs_have_visible_width() {
         let spans = vec![ratatui::text::Span::raw("\tabcde")];
         let result = wrap_styled_spans(&spans, 8);
@@ -916,7 +924,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn wrap_styled_spans_wraps_before_first_overflowing_char() {
         let spans = vec![ratatui::text::Span::raw("abcd\t界")];
         let result = wrap_styled_spans(&spans, 5);
@@ -945,7 +952,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn fallback_wrapping_uses_display_width_for_tabs_and_wide_chars() {
         let width = 8;
         let lines = push_wrapped_diff_line_with_style_context(
@@ -966,7 +972,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn large_update_diff_skips_highlighting() {
         let line_count = 10_500;
         let original: String = (0..line_count).map(|i| format!("line {i}\n")).collect();
@@ -1011,7 +1016,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn rename_diff_uses_destination_extension_for_highlighting() {
         let original = "fn main() {}\n";
         let modified = "fn main() { println!(\"hi\"); }\n";
@@ -1038,7 +1042,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn update_diff_preserves_multiline_highlight_state_within_hunk() {
         let original = "fn demo() {\n    let s = \"hello\";\n}\n";
         let modified = "fn demo() {\n    let s = \"hello\nworld\";\n}\n";

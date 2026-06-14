@@ -163,7 +163,7 @@ impl TrustDirectoryWidget {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
 
@@ -178,7 +178,11 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    #[test]
+    pub(crate) fn trust_directory_suite() {
+        release_event_does_not_change_selection();
+        renders_snapshot_for_git_repo();
+    }
+
     fn release_event_does_not_change_selection() {
         let chaos_home = TempDir::new().expect("temp home");
         let mut widget = TrustDirectoryWidget {
@@ -204,7 +208,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn renders_snapshot_for_git_repo() {
         let chaos_home = TempDir::new().expect("temp home");
         let widget = TrustDirectoryWidget {

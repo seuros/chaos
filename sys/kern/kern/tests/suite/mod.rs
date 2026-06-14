@@ -54,108 +54,108 @@ pub static CHAOS_ALIASES_TEMP_DIR: TestChaosAliasesGuard = unsafe {
     }
 };
 
-#[path = "suite/abort_tasks.rs"]
+#[path = "abort_tasks.rs"]
 mod abort_tasks;
-#[path = "suite/apply_patch_cli.rs"]
+#[path = "apply_patch_cli.rs"]
 mod apply_patch_cli;
-#[path = "suite/approvals.rs"]
+#[path = "approvals.rs"]
 mod approvals;
-#[path = "suite/auth_refresh.rs"]
+#[path = "auth_refresh.rs"]
 mod auth_refresh;
-#[path = "suite/chaos_delegate.rs"]
+#[path = "chaos_delegate.rs"]
 mod chaos_delegate;
-#[path = "suite/deprecation_notice.rs"]
+#[path = "deprecation_notice.rs"]
 mod deprecation_notice;
-#[path = "suite/exec.rs"]
+#[path = "exec.rs"]
 mod exec;
-#[path = "suite/exec_policy.rs"]
+#[path = "exec_policy.rs"]
 mod exec_policy;
-#[path = "suite/grep_files.rs"]
+#[path = "grep_files.rs"]
 mod grep_files;
-#[path = "suite/items.rs"]
+#[path = "items.rs"]
 mod items;
-#[path = "suite/json_result.rs"]
+#[path = "json_result.rs"]
 mod json_result;
-#[path = "suite/list_dir.rs"]
+#[path = "list_dir.rs"]
 mod list_dir;
-#[path = "suite/live_cli.rs"]
+#[path = "live_cli.rs"]
 mod live_cli;
-#[path = "suite/mcp_client.rs"]
+#[path = "mcp_client.rs"]
 mod mcp_client;
-#[path = "suite/minion_jobs.rs"]
+#[path = "minion_jobs.rs"]
 mod minion_jobs;
-#[path = "suite/model_info_overrides.rs"]
+#[path = "model_info_overrides.rs"]
 mod model_info_overrides;
-#[path = "suite/model_overrides.rs"]
+#[path = "model_overrides.rs"]
 mod model_overrides;
-#[path = "suite/model_switching.rs"]
+#[path = "model_switching.rs"]
 mod model_switching;
-#[path = "suite/models_cache_ttl.rs"]
+#[path = "models_cache_ttl.rs"]
 mod models_cache_ttl;
-#[path = "suite/models_etag_responses.rs"]
+#[path = "models_etag_responses.rs"]
 mod models_etag_responses;
-#[path = "suite/otel.rs"]
+#[path = "otel.rs"]
 mod otel;
-#[path = "suite/pending_input.rs"]
+#[path = "pending_input.rs"]
 mod pending_input;
-#[path = "suite/personality.rs"]
+#[path = "personality.rs"]
 mod personality;
-#[path = "suite/prompt_caching.rs"]
+#[path = "prompt_caching.rs"]
 mod prompt_caching;
-#[path = "suite/quota_exceeded.rs"]
+#[path = "quota_exceeded.rs"]
 mod quota_exceeded;
-#[path = "suite/read_file.rs"]
+#[path = "read_file.rs"]
 mod read_file;
-#[path = "suite/remote_models.rs"]
+#[path = "remote_models.rs"]
 mod remote_models;
-#[path = "suite/request_compression.rs"]
+#[path = "request_compression.rs"]
 mod request_compression;
-#[path = "suite/request_permissions.rs"]
+#[path = "request_permissions.rs"]
 mod request_permissions;
-#[path = "suite/request_permissions_test_support.rs"]
+#[path = "request_permissions_test_support.rs"]
 mod request_permissions_test_support;
-#[path = "suite/request_permissions_tool.rs"]
+#[path = "request_permissions_tool.rs"]
 mod request_permissions_tool;
-#[path = "suite/request_user_input.rs"]
+#[path = "request_user_input.rs"]
 mod request_user_input;
-#[path = "suite/safety_check_downgrade.rs"]
+#[path = "safety_check_downgrade.rs"]
 mod safety_check_downgrade;
-#[path = "suite/seatbelt.rs"]
+#[path = "seatbelt.rs"]
 mod seatbelt;
-#[path = "suite/shell_command.rs"]
+#[path = "shell_command.rs"]
 mod shell_command;
-#[path = "suite/shell_serialization.rs"]
+#[path = "shell_serialization.rs"]
 mod shell_serialization;
-#[path = "suite/shell_snapshot.rs"]
+#[path = "shell_snapshot.rs"]
 mod shell_snapshot;
-#[path = "suite/spawn_agent_description.rs"]
+#[path = "spawn_agent_description.rs"]
 mod spawn_agent_description;
-#[path = "suite/stream_error_allows_next_turn.rs"]
+#[path = "stream_error_allows_next_turn.rs"]
 mod stream_error_allows_next_turn;
-#[path = "suite/stream_no_completed.rs"]
+#[path = "stream_no_completed.rs"]
 mod stream_no_completed;
-#[path = "suite/text_encoding_fix.rs"]
+#[path = "text_encoding_fix.rs"]
 mod text_encoding_fix;
-#[path = "suite/tool_harness.rs"]
+#[path = "tool_harness.rs"]
 mod tool_harness;
-#[path = "suite/tool_parallelism.rs"]
+#[path = "tool_parallelism.rs"]
 mod tool_parallelism;
-#[path = "suite/tools.rs"]
+#[path = "tools.rs"]
 mod tools;
-#[path = "suite/truncation.rs"]
+#[path = "truncation.rs"]
 mod truncation;
-#[path = "suite/turn_state.rs"]
+#[path = "turn_state.rs"]
 mod turn_state;
-#[path = "suite/undo.rs"]
+#[path = "undo.rs"]
 mod undo;
-#[path = "suite/unified_exec.rs"]
+#[path = "unified_exec.rs"]
 mod unified_exec;
 
-#[path = "suite/user_notification.rs"]
+#[path = "user_notification.rs"]
 mod user_notification;
-#[path = "suite/user_shell_cmd.rs"]
+#[path = "user_shell_cmd.rs"]
 mod user_shell_cmd;
-#[path = "suite/view_image.rs"]
+#[path = "view_image.rs"]
 mod view_image;
-#[path = "suite/web_search.rs"]
+#[path = "web_search.rs"]
 mod web_search;

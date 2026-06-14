@@ -138,11 +138,10 @@ impl ScrollState {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::ScrollState;
 
-    #[test]
-    fn wrap_navigation_and_visibility() {
+    pub(crate) fn wrap_navigation_and_visibility() {
         let mut s = ScrollState::new();
         let len = 10;
         let vis = 5;

@@ -362,7 +362,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use itertools::Itertools as _;
     use pretty_assertions::assert_eq;
@@ -398,7 +398,48 @@ mod tests {
             .collect::<String>()
     }
 
-    #[test]
+    pub(crate) fn wrapping_suite() {
+        trivial_unstyled_no_indents_wide_width();
+        simple_unstyled_wrap_narrow_width();
+        simple_styled_wrap_preserves_styles();
+        with_initial_and_subsequent_indents();
+        empty_initial_indent_subsequent_spaces();
+        empty_input_yields_single_empty_line();
+        leading_spaces_preserved_on_first_line();
+        multiple_spaces_between_words_dont_start_next_line_with_spaces();
+        break_words_false_allows_overflow_for_long_word();
+        hyphen_splitter_breaks_at_hyphen();
+        indent_consumes_width_leaving_one_char_space();
+        wide_unicode_wraps_by_display_width();
+        styled_split_within_span_preserves_style();
+        wrap_lines_applies_initial_indent_only_once();
+        wrap_lines_without_indents_is_concat_of_single_wraps();
+        wrap_lines_borrowed_applies_initial_indent_only_once();
+        wrap_lines_borrowed_without_indents_is_concat_of_single_wraps();
+        wrap_lines_accepts_borrowed_iterators();
+        wrap_lines_accepts_str_slices();
+        line_height_counts_double_width_emoji();
+        word_wrap_does_not_split_words_simple_english();
+        ascii_space_separator_with_no_hyphenation_keeps_url_intact();
+        text_contains_url_like_matches_expected_tokens();
+        text_contains_url_like_rejects_non_urls();
+        line_contains_url_like_checks_across_spans();
+        line_has_mixed_url_and_non_url_tokens_detects_prose_plus_url();
+        line_has_mixed_url_and_non_url_tokens_ignores_pipe_prefix();
+        line_has_mixed_url_and_non_url_tokens_ignores_ordered_list_marker();
+        text_contains_url_like_accepts_custom_scheme_with_separator();
+        text_contains_url_like_rejects_invalid_ports();
+        adaptive_wrap_line_keeps_long_url_like_token_intact();
+        adaptive_wrap_line_preserves_default_behavior_for_non_url_tokens();
+        adaptive_wrap_line_mixed_line_wraps_long_non_url_token();
+        map_owned_wrapped_line_to_range_recovers_on_non_prefix_mismatch();
+        map_owned_wrapped_line_to_range_indent_coincides_with_source();
+        wrap_ranges_indent_prefix_coincides_with_source_char();
+        map_owned_wrapped_line_to_range_repro_overconsumes_repeated_prefix_patterns();
+        wrap_ranges_recovers_with_non_space_indents();
+        wrap_ranges_trim_handles_owned_lines_with_penalty_char();
+    }
+
     fn trivial_unstyled_no_indents_wide_width() {
         let line = Line::from("hello");
         let out = word_wrap_line(&line, 10);
@@ -406,7 +447,6 @@ mod tests {
         assert_eq!(concat_line(&out[0]), "hello");
     }
 
-    #[test]
     fn simple_unstyled_wrap_narrow_width() {
         let line = Line::from("hello world");
         let out = word_wrap_line(&line, 5);
@@ -415,7 +455,6 @@ mod tests {
         assert_eq!(concat_line(&out[1]), "world");
     }
 
-    #[test]
     fn simple_styled_wrap_preserves_styles() {
         let line = Line::from(vec![
             "hello ".fg(crate::theme::error_color()),
@@ -431,7 +470,6 @@ mod tests {
         assert_eq!(out[1].spans[0].style.fg, None);
     }
 
-    #[test]
     fn with_initial_and_subsequent_indents() {
         let opts = RtOptions::new(8)
             .initial_indent(Line::from("- "))
@@ -446,7 +484,6 @@ mod tests {
         assert_eq!(concat_line(&out[2]), "  foo");
     }
 
-    #[test]
     fn empty_initial_indent_subsequent_spaces() {
         let opts = RtOptions::new(8)
             .initial_indent(Line::from(""))
@@ -459,7 +496,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn empty_input_yields_single_empty_line() {
         let line = Line::from("");
         let out = word_wrap_line(&line, 10);
@@ -467,7 +503,6 @@ mod tests {
         assert_eq!(concat_line(&out[0]), "");
     }
 
-    #[test]
     fn leading_spaces_preserved_on_first_line() {
         let line = Line::from("   hello");
         let out = word_wrap_line(&line, 8);
@@ -475,7 +510,6 @@ mod tests {
         assert_eq!(concat_line(&out[0]), "   hello");
     }
 
-    #[test]
     fn multiple_spaces_between_words_dont_start_next_line_with_spaces() {
         let line = Line::from("hello   world");
         let out = word_wrap_line(&line, 8);
@@ -484,7 +518,6 @@ mod tests {
         assert_eq!(concat_line(&out[1]), "world");
     }
 
-    #[test]
     fn break_words_false_allows_overflow_for_long_word() {
         let opts = RtOptions::new(5).break_words(false);
         let line = Line::from("supercalifragilistic");
@@ -493,7 +526,6 @@ mod tests {
         assert_eq!(concat_line(&out[0]), "supercalifragilistic");
     }
 
-    #[test]
     fn hyphen_splitter_breaks_at_hyphen() {
         let line = Line::from("hello-world");
         let out = word_wrap_line(&line, 7);
@@ -502,7 +534,6 @@ mod tests {
         assert_eq!(concat_line(&out[1]), "world");
     }
 
-    #[test]
     fn indent_consumes_width_leaving_one_char_space() {
         let opts = RtOptions::new(4)
             .initial_indent(Line::from(">>>>"))
@@ -515,7 +546,6 @@ mod tests {
         assert_eq!(concat_line(&out[2]), "--lo");
     }
 
-    #[test]
     fn wide_unicode_wraps_by_display_width() {
         let line = Line::from("😀😀😀");
         let out = word_wrap_line(&line, 4);
@@ -524,7 +554,6 @@ mod tests {
         assert_eq!(concat_line(&out[1]), "😀");
     }
 
-    #[test]
     fn styled_split_within_span_preserves_style() {
         use ratatui::style::Stylize;
         let line = Line::from(vec!["abcd".fg(crate::theme::error_color())]);
@@ -538,7 +567,6 @@ mod tests {
         assert_eq!(concat_line(&out[1]), "cd");
     }
 
-    #[test]
     fn wrap_lines_applies_initial_indent_only_once() {
         let opts = RtOptions::new(8)
             .initial_indent(Line::from("- "))
@@ -554,7 +582,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn wrap_lines_without_indents_is_concat_of_single_wraps() {
         let lines = vec![Line::from("hello"), Line::from("world!")];
         let out = word_wrap_lines(lines, 10);
@@ -562,7 +589,6 @@ mod tests {
         assert_eq!(rendered, vec!["hello", "world!"]);
     }
 
-    #[test]
     fn wrap_lines_borrowed_applies_initial_indent_only_once() {
         let opts = RtOptions::new(8)
             .initial_indent(Line::from("- "))
@@ -578,7 +604,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn wrap_lines_borrowed_without_indents_is_concat_of_single_wraps() {
         let lines = [Line::from("hello"), Line::from("world!")];
         let out = word_wrap_lines_borrowed(lines.iter(), 10);
@@ -586,7 +611,6 @@ mod tests {
         assert_eq!(rendered, vec!["hello", "world!"]);
     }
 
-    #[test]
     fn wrap_lines_accepts_borrowed_iterators() {
         let lines = [Line::from("hello world"), Line::from("foo bar baz")];
         let out = word_wrap_lines(lines, 10);
@@ -594,7 +618,6 @@ mod tests {
         assert_eq!(rendered, vec!["hello", "world", "foo bar", "baz"]);
     }
 
-    #[test]
     fn wrap_lines_accepts_str_slices() {
         let lines = ["hello world", "goodnight moon"];
         let out = word_wrap_lines(lines, 12);
@@ -602,7 +625,6 @@ mod tests {
         assert_eq!(rendered, vec!["hello world", "goodnight", "moon"]);
     }
 
-    #[test]
     fn line_height_counts_double_width_emoji() {
         let line = "😀😀😀".into();
         assert_eq!(word_wrap_line(&line, 4).len(), 2);
@@ -610,7 +632,6 @@ mod tests {
         assert_eq!(word_wrap_line(&line, 6).len(), 1);
     }
 
-    #[test]
     fn word_wrap_does_not_split_words_simple_english() {
         let sample = "Years passed, and Willowmere thrived in peace and friendship. Mira's herb garden flourished with both ordinary and enchanted plants, and travelers spoke of the kindness of the woman who tended them.";
         let line = Line::from(sample);
@@ -628,7 +649,6 @@ them."#
         );
     }
 
-    #[test]
     fn ascii_space_separator_with_no_hyphenation_keeps_url_intact() {
         let line = Line::from(
             "http://example.com/long-url-with-dashes-wider-than-terminal-window/blah-blah-blah-text/more-gibberish-text",
@@ -647,7 +667,6 @@ them."#
         );
     }
 
-    #[test]
     fn text_contains_url_like_matches_expected_tokens() {
         let positives = [
             "https://example.com/a/b",
@@ -667,7 +686,6 @@ them."#
         }
     }
 
-    #[test]
     fn text_contains_url_like_rejects_non_urls() {
         let negatives = [
             "src/main.rs",
@@ -685,7 +703,6 @@ them."#
         }
     }
 
-    #[test]
     fn line_contains_url_like_checks_across_spans() {
         let line = Line::from(vec![
             "see ".into(),
@@ -696,36 +713,30 @@ them."#
         assert!(line_contains_url_like(&line));
     }
 
-    #[test]
     fn line_has_mixed_url_and_non_url_tokens_detects_prose_plus_url() {
         let line = Line::from("see https://example.com/path for details");
         assert!(line_has_mixed_url_and_non_url_tokens(&line));
     }
 
-    #[test]
     fn line_has_mixed_url_and_non_url_tokens_ignores_pipe_prefix() {
         let line = Line::from(vec!["  │ ".into(), "https://example.com/path".into()]);
         assert!(!line_has_mixed_url_and_non_url_tokens(&line));
     }
 
-    #[test]
     fn line_has_mixed_url_and_non_url_tokens_ignores_ordered_list_marker() {
         let line = Line::from("1. https://example.com/path");
         assert!(!line_has_mixed_url_and_non_url_tokens(&line));
     }
 
-    #[test]
     fn text_contains_url_like_accepts_custom_scheme_with_separator() {
         assert!(text_contains_url_like("myapp://open/some/path"));
     }
 
-    #[test]
     fn text_contains_url_like_rejects_invalid_ports() {
         assert!(!text_contains_url_like("localhost:99999/path"));
         assert!(!text_contains_url_like("example.com:abc/path"));
     }
 
-    #[test]
     fn adaptive_wrap_line_keeps_long_url_like_token_intact() {
         let line = Line::from("example.test/a-very-long-path-with-many-segments-and-query?x=1&y=2");
         let out = adaptive_wrap_line(&line, RtOptions::new(20));
@@ -736,7 +747,6 @@ them."#
         );
     }
 
-    #[test]
     fn adaptive_wrap_line_preserves_default_behavior_for_non_url_tokens() {
         let line = Line::from("a_very_long_token_without_spaces_to_force_wrapping");
         let out = adaptive_wrap_line(&line, RtOptions::new(20));
@@ -746,7 +756,6 @@ them."#
         );
     }
 
-    #[test]
     fn adaptive_wrap_line_mixed_line_wraps_long_non_url_token() {
         let long_non_url = "a_very_long_token_without_spaces_to_force_wrapping";
         let line = Line::from(format!("see https://ex.com {long_non_url}"));
@@ -764,20 +773,17 @@ them."#
         );
     }
 
-    #[test]
     fn map_owned_wrapped_line_to_range_recovers_on_non_prefix_mismatch() {
         let range = range_mapping::map_owned_wrapped_line_to_range("hello world", 0, "helloX", "");
         assert_eq!(range, 0..5);
     }
 
-    #[test]
     fn map_owned_wrapped_line_to_range_indent_coincides_with_source() {
         let text = "- item one and some more words";
         let range = range_mapping::map_owned_wrapped_line_to_range(text, 0, "- - item one", "- ");
         assert_eq!(range, 0..10);
     }
 
-    #[test]
     fn wrap_ranges_indent_prefix_coincides_with_source_char() {
         let text = "- first item is long enough to wrap around";
         let opts = || {
@@ -801,7 +807,6 @@ them."#
         assert_eq!(rebuilt, text);
     }
 
-    #[test]
     fn map_owned_wrapped_line_to_range_repro_overconsumes_repeated_prefix_patterns() {
         let text = "- - foo";
         let opts = textwrap::Options::new(3)
@@ -827,7 +832,6 @@ them."#
         );
     }
 
-    #[test]
     fn wrap_ranges_recovers_with_non_space_indents() {
         let text = "The quick brown fox jumps over the lazy dog";
         let wrapped = textwrap::wrap(
@@ -865,7 +869,6 @@ them."#
         assert_eq!(rebuilt, text);
     }
 
-    #[test]
     fn wrap_ranges_trim_handles_owned_lines_with_penalty_char() {
         fn split_every_char(word: &str) -> Vec<usize> {
             word.char_indices().skip(1).map(|(idx, _)| idx).collect()

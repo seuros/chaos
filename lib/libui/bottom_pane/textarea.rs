@@ -20,7 +20,7 @@ mod rendering;
 pub use core::{TextArea, TextAreaState};
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -78,7 +78,40 @@ mod tests {
         t
     }
 
-    #[test]
+    pub(crate) fn textarea_suite() {
+        insert_and_replace_update_cursor_and_text();
+        insert_str_at_clamps_to_char_boundary();
+        set_text_clamps_cursor_to_char_boundary();
+        delete_backward_and_forward_edges();
+        delete_forward_deletes_element_at_left_edge();
+        delete_backward_word_and_kill_line_variants();
+        delete_forward_word_variants();
+        delete_forward_word_handles_atomic_elements();
+        delete_backward_word_respects_word_separators();
+        delete_forward_word_respects_word_separators();
+        yank_restores_last_kill();
+        kill_buffer_persists_across_set_text();
+        cursor_left_and_right_handle_graphemes();
+        control_b_and_f_move_cursor();
+        control_b_f_fallback_control_chars_move_cursor();
+        delete_backward_word_alt_keys();
+        delete_backward_word_handles_narrow_no_break_space();
+        delete_forward_word_with_without_alt_modifier();
+        delete_forward_word_alt_d();
+        control_h_backspace();
+        cursor_vertical_movement_across_lines_and_bounds();
+        home_end_and_emacs_style_home_end();
+        end_of_line_or_down_at_end_of_text();
+        word_navigation_helpers();
+        wrapping_and_cursor_positions();
+        cursor_pos_with_state_basic_and_scroll_behaviors();
+        wrapped_navigation_across_visual_lines();
+        cursor_pos_with_state_after_movements();
+        wrapped_navigation_with_newlines_and_spaces();
+        wrapped_navigation_with_wide_graphemes();
+        fuzz_textarea_randomized();
+    }
+
     fn insert_and_replace_update_cursor_and_text() {
         // insert helpers
         let mut t = ta_with("hello");
@@ -121,7 +154,6 @@ mod tests {
         assert_eq!(t.cursor(), 5);
     }
 
-    #[test]
     fn insert_str_at_clamps_to_char_boundary() {
         let mut t = TextArea::new();
         t.insert_str("你");
@@ -131,7 +163,6 @@ mod tests {
         assert_eq!(t.cursor(), 1);
     }
 
-    #[test]
     fn set_text_clamps_cursor_to_char_boundary() {
         let mut t = TextArea::new();
         t.insert_str("abcd");
@@ -142,7 +173,6 @@ mod tests {
         assert_eq!(t.text(), "a你");
     }
 
-    #[test]
     fn delete_backward_and_forward_edges() {
         let mut t = ta_with("abc");
         t.set_cursor(1);
@@ -168,7 +198,6 @@ mod tests {
         assert_eq!(t.text(), "b");
     }
 
-    #[test]
     fn delete_forward_deletes_element_at_left_edge() {
         let mut t = TextArea::new();
         t.insert_str("a");
@@ -183,7 +212,6 @@ mod tests {
         assert_eq!(t.cursor(), elem_start);
     }
 
-    #[test]
     fn delete_backward_word_and_kill_line_variants() {
         // delete backward word at end removes the whole previous word
         let mut t = ta_with("hello   world  ");
@@ -234,7 +262,6 @@ mod tests {
         assert_eq!(t.cursor(), 3);
     }
 
-    #[test]
     fn delete_forward_word_variants() {
         let mut t = ta_with("hello   world ");
         t.set_cursor(0);
@@ -273,7 +300,6 @@ mod tests {
         assert_eq!(t.cursor(), t.text().len());
     }
 
-    #[test]
     fn delete_forward_word_handles_atomic_elements() {
         let mut t = TextArea::new();
         t.insert_element("<element>");
@@ -307,7 +333,6 @@ mod tests {
         assert_eq!(t.cursor(), elem_range.start);
     }
 
-    #[test]
     fn delete_backward_word_respects_word_separators() {
         let mut t = ta_with("path/to/file");
         t.set_cursor(t.text().len());
@@ -332,7 +357,6 @@ mod tests {
         assert_eq!(t.cursor(), 4);
     }
 
-    #[test]
     fn delete_forward_word_respects_word_separators() {
         let mut t = ta_with("path/to/file");
         t.set_cursor(0);
@@ -357,7 +381,6 @@ mod tests {
         assert_eq!(t.cursor(), 0);
     }
 
-    #[test]
     fn yank_restores_last_kill() {
         let mut t = ta_with("hello");
         t.set_cursor(0);
@@ -390,7 +413,6 @@ mod tests {
         assert_eq!(t.cursor(), 5);
     }
 
-    #[test]
     fn kill_buffer_persists_across_set_text() {
         let mut t = ta_with("restore me");
         t.set_cursor(0);
@@ -405,7 +427,6 @@ mod tests {
         assert_eq!(t.cursor(), "restore me".len());
     }
 
-    #[test]
     fn cursor_left_and_right_handle_graphemes() {
         let mut t = ta_with("a👍b");
         t.set_cursor(t.text().len());
@@ -428,7 +449,6 @@ mod tests {
         assert_eq!(t.cursor(), t.text().len());
     }
 
-    #[test]
     fn control_b_and_f_move_cursor() {
         let mut t = ta_with("abcd");
         t.set_cursor(1);
@@ -440,7 +460,6 @@ mod tests {
         assert_eq!(t.cursor(), 1);
     }
 
-    #[test]
     fn control_b_f_fallback_control_chars_move_cursor() {
         let mut t = ta_with("abcd");
         t.set_cursor(2);
@@ -455,7 +474,6 @@ mod tests {
         assert_eq!(t.cursor(), 2);
     }
 
-    #[test]
     fn delete_backward_word_alt_keys() {
         // Test the custom Alt+Ctrl+h binding
         let mut t = ta_with("hello world");
@@ -475,7 +493,6 @@ mod tests {
         assert_eq!(t.cursor(), 6);
     }
 
-    #[test]
     fn delete_backward_word_handles_narrow_no_break_space() {
         let mut t = ta_with("32\u{202F}AM");
         t.set_cursor(t.text().len());
@@ -484,7 +501,6 @@ mod tests {
         pretty_assertions::assert_eq!(t.cursor(), t.text().len());
     }
 
-    #[test]
     fn delete_forward_word_with_without_alt_modifier() {
         let mut t = ta_with("hello world");
         t.set_cursor(0);
@@ -499,7 +515,6 @@ mod tests {
         assert_eq!(t.cursor(), 0);
     }
 
-    #[test]
     fn delete_forward_word_alt_d() {
         let mut t = ta_with("hello world");
         t.set_cursor(6);
@@ -508,7 +523,6 @@ mod tests {
         pretty_assertions::assert_eq!(t.cursor(), 6);
     }
 
-    #[test]
     fn control_h_backspace() {
         // Test Ctrl+H as backspace
         let mut t = ta_with("12345");
@@ -530,7 +544,6 @@ mod tests {
         assert_eq!(t.cursor(), 3);
     }
 
-    #[test]
     fn cursor_vertical_movement_across_lines_and_bounds() {
         let mut t = ta_with("short\nloooooooooong\nmid");
         // Place cursor on second line, column 5
@@ -562,7 +575,6 @@ mod tests {
         assert_eq!(t.cursor(), t.text().len());
     }
 
-    #[test]
     fn home_end_and_emacs_style_home_end() {
         let mut t = ta_with("one\ntwo\nthree");
         // Position at middle of second line
@@ -587,7 +599,6 @@ mod tests {
         assert_eq!(t.cursor(), end_second_nl);
     }
 
-    #[test]
     fn end_of_line_or_down_at_end_of_text() {
         let mut t = ta_with("one\ntwo");
         // Place cursor at absolute end of the text
@@ -603,7 +614,6 @@ mod tests {
         assert_eq!(t.cursor(), t.text().len()); // moves to end of next (last) line
     }
 
-    #[test]
     fn word_navigation_helpers() {
         let t = ta_with("  alpha  beta   gamma");
         let mut t = t; // make mutable for set_cursor
@@ -622,7 +632,6 @@ mod tests {
         assert_eq!(t.end_of_next_word(), t.text().len());
     }
 
-    #[test]
     fn wrapping_and_cursor_positions() {
         let mut t = ta_with("hello world here");
         let area = Rect::new(0, 0, 6, 10); // width 6 -> wraps words
@@ -650,7 +659,6 @@ mod tests {
         assert!(state.scroll < effective_lines);
     }
 
-    #[test]
     fn cursor_pos_with_state_basic_and_scroll_behaviors() {
         // Case 1: No wrapping needed, height fits — scroll ignored, y maps directly.
         let mut t = ta_with("hello world");
@@ -691,7 +699,6 @@ mod tests {
         assert_eq!(y, area.y);
     }
 
-    #[test]
     fn wrapped_navigation_across_visual_lines() {
         let mut t = ta_with("abcdefghij");
         // Force wrapping at width 4: lines -> ["abcd", "efgh", "ij"]
@@ -729,7 +736,6 @@ mod tests {
         assert_eq!(t.cursor(), t.text().len());
     }
 
-    #[test]
     fn cursor_pos_with_state_after_movements() {
         let mut t = ta_with("abcdefghij");
         // Wrap width 4 -> visual lines: abcd | efgh | ij
@@ -773,7 +779,6 @@ mod tests {
         assert_eq!((x1, y1), (2, 1));
     }
 
-    #[test]
     fn wrapped_navigation_with_newlines_and_spaces() {
         // Include spaces and an explicit newline to exercise boundaries
         let mut t = ta_with("word1  word2\nword3");
@@ -798,7 +803,6 @@ mod tests {
         assert!(t.cursor() >= start_word3 && t.cursor() <= start_word3 + "word3".len());
     }
 
-    #[test]
     fn wrapped_navigation_with_wide_graphemes() {
         // Four thumbs up, each of display width 2, with width 3 to force wrapping inside grapheme boundaries
         let mut t = ta_with("👍👍👍👍");
@@ -818,7 +822,6 @@ mod tests {
         assert_eq!(t.cursor(), "👍👍".len());
     }
 
-    #[test]
     fn fuzz_textarea_randomized() {
         // Deterministic seed for reproducibility
         // Seed the RNG based on the current day in Pacific Time (PST/PDT). This

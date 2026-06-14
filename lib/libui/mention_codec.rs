@@ -208,11 +208,10 @@ fn is_tool_path(path: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
     fn decode_history_mentions_restores_visible_tokens() {
         let decoded = decode_history_mentions(
             "Use [$figma](app://figma-1) and [$figma](/tmp/figma/SKILL.md).",
@@ -233,7 +232,12 @@ mod tests {
         );
     }
 
-    #[test]
+    pub(crate) fn mention_codec_suite() {
+        decode_history_mentions_restores_visible_tokens();
+        decode_history_mentions_ignores_at_sigil_links();
+        encode_history_mentions_links_bound_mentions_in_order();
+    }
+    #[cfg(test)]
     fn decode_history_mentions_ignores_at_sigil_links() {
         let decoded = decode_history_mentions("Use [@figma](app://figma-1).");
 
@@ -241,7 +245,7 @@ mod tests {
         assert_eq!(decoded.mentions, Vec::<LinkedMention>::new());
     }
 
-    #[test]
+    #[cfg(test)]
     fn encode_history_mentions_links_bound_mentions_in_order() {
         let text = "$figma then $sample then $figma then $other";
         let encoded = encode_history_mentions(

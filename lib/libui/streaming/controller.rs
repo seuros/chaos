@@ -246,7 +246,7 @@ impl PlanStreamController {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::path::PathBuf;
 
@@ -269,8 +269,7 @@ mod tests {
             .collect()
     }
 
-    #[tokio::test]
-    async fn controller_loose_vs_tight_with_commit_ticks_matches_full() {
+    pub(crate) async fn controller_loose_vs_tight_with_commit_ticks_matches_full() {
         let mut ctrl = StreamController::new(None, &test_cwd());
         let mut lines = Vec::new();
 

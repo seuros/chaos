@@ -289,13 +289,19 @@ impl ChatComposerHistory {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::test_support::make_app_event_sender_with_rx;
     use chaos_ipc::protocol::Op;
     use pretty_assertions::assert_eq;
 
-    #[test]
+    pub(crate) fn chat_composer_history_suite() {
+        duplicate_submissions_are_not_recorded();
+        navigation_with_async_fetch();
+        reset_navigation_resets_cursor();
+        should_handle_navigation_when_cursor_is_at_line_boundaries();
+    }
+
     fn duplicate_submissions_are_not_recorded() {
         let mut history = ChatComposerHistory::new();
 
@@ -324,7 +330,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn navigation_with_async_fetch() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
 
@@ -377,7 +382,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn reset_navigation_resets_cursor() {
         let tx = crate::test_support::make_app_event_sender();
 
@@ -409,7 +413,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn should_handle_navigation_when_cursor_is_at_line_boundaries() {
         let mut history = ChatComposerHistory::new();
         history.record_local_submission(HistoryEntry::new("hello".to_string()));

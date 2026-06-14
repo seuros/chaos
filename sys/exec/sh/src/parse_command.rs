@@ -64,6 +64,86 @@ mod tests {
     }
 
     #[test]
+    fn parse_command_suite() -> anyhow::Result<()> {
+        git_status_is_unknown();
+        supports_git_grep_and_ls_files();
+        handles_git_pipe_wc();
+        bash_lc_redirect_not_quoted();
+        handles_complex_bash_command_head();
+        supports_searching_for_navigate_to_route()?;
+        handles_complex_bash_command();
+        supports_rg_files_with_path_and_pipe();
+        supports_rg_files_then_head();
+        keeps_mutating_xargs_pipeline();
+        collapses_plain_pipeline_when_any_stage_is_unknown();
+        collapses_pipeline_with_helper_when_later_stage_is_unknown();
+        rg_files_with_matches_flags_are_search();
+        supports_cat();
+        zsh_lc_supports_cat();
+        supports_bat();
+        supports_batcat();
+        supports_less();
+        supports_more();
+        cd_then_cat_is_single_read();
+        cd_with_double_dash_then_cat_is_read();
+        cd_with_multiple_operands_uses_last();
+        bash_cd_then_bar_is_same_as_bar();
+        bash_cd_then_cat_is_read();
+        supports_ls_with_pipe();
+        supports_eza_exa_tree_du();
+        supports_head_n();
+        supports_head_file_only();
+        supports_cat_sed_n();
+        supports_tail_n_plus();
+        supports_tail_n_last_lines();
+        supports_tail_file_only();
+        supports_npm_run_build_is_unknown();
+        supports_grep_recursive_current_dir();
+        supports_grep_recursive_specific_file();
+        supports_egrep_and_fgrep();
+        grep_files_with_matches_flags_are_search();
+        supports_grep_query_with_slashes_not_shortened();
+        supports_grep_weird_backtick_in_query();
+        supports_cd_and_rg_files();
+        supports_single_string_script_with_cd_and_pipe();
+        supports_python_walks_files();
+        supports_python3_walks_files();
+        python_without_file_walk_is_unknown();
+        small_formatting_always_true_commands();
+        awk_behavior();
+        head_behavior();
+        tail_behavior();
+        sed_behavior();
+        empty_tokens_is_not_small();
+        supports_nl_then_sed_reading();
+        supports_sed_n();
+        supports_awk_with_file();
+        filters_out_printf();
+        drops_yes_in_pipelines();
+        supports_sed_n_then_nl_as_search();
+        preserves_rg_with_spaces();
+        ls_with_glob();
+        strips_true_in_sequence();
+        strips_true_inside_bash_lc();
+        shorten_path_on_windows();
+        head_with_no_space();
+        bash_dash_c_pipeline_parsing();
+        tail_with_no_space();
+        grep_with_query_and_path();
+        supports_ag_ack_pt_rga();
+        ag_ack_pt_files_with_matches_flags_are_search();
+        rg_with_equals_style_flags();
+        cat_with_double_dash_and_sed_ranges();
+        drop_trailing_nl_in_pipeline();
+        ls_with_time_style_and_path();
+        fd_file_finder_variants();
+        find_basic_name_filter();
+        find_type_only_path();
+        bin_bash_lc_sed();
+        bin_zsh_lc_sed();
+        Ok(())
+    }
+
     fn git_status_is_unknown() {
         assert_parsed(
             &vec_str(&["git", "status"]),
@@ -73,7 +153,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_git_grep_and_ls_files() {
         assert_parsed(
             &shlex_split_safe("git grep TODO src"),
@@ -114,7 +193,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn handles_git_pipe_wc() {
         let inner = "git status | wc -l";
         assert_parsed(
@@ -125,7 +203,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn bash_lc_redirect_not_quoted() {
         let inner = "echo foo > bar";
         assert_parsed(
@@ -136,7 +213,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn handles_complex_bash_command_head() {
         let inner =
             "rg --version && node -v && pnpm -v && rg --files | wc -l && rg --files | head -n 40";
@@ -148,7 +224,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_searching_for_navigate_to_route() -> anyhow::Result<()> {
         let inner = "rg -n \"navigate-to-route\" -S";
         assert_parsed(
@@ -162,7 +237,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
     fn handles_complex_bash_command() {
         let inner = "rg -n \"BUG|FIXME|TODO|XXX|HACK\" -S | head -n 200";
         assert_parsed(
@@ -175,7 +249,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_rg_files_with_path_and_pipe() {
         let inner = "rg --files webview/src | sed -n";
         assert_parsed(
@@ -187,7 +260,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_rg_files_then_head() {
         let inner = "rg --files | head -n 50";
         assert_parsed(
@@ -199,7 +271,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn keeps_mutating_xargs_pipeline() {
         let inner = r#"rg -l QkBindingController presentation/src/main/java | xargs perl -pi -e 's/QkBindingController/QkController/g'"#;
         assert_parsed(
@@ -210,7 +281,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn collapses_plain_pipeline_when_any_stage_is_unknown() {
         let command = shlex_split_safe(
             "rg -l QkBindingController presentation/src/main/java | xargs perl -pi -e 's/QkBindingController/QkController/g'",
@@ -223,7 +293,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn collapses_pipeline_with_helper_when_later_stage_is_unknown() {
         let command = shlex_split_safe("rg --files | nl -ba | foo");
         assert_parsed(
@@ -234,7 +303,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn rg_files_with_matches_flags_are_search() {
         assert_parsed(
             &shlex_split_safe("rg -l TODO src"),
@@ -278,7 +346,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_cat() {
         let inner = "cat webview/README.md";
         assert_parsed(
@@ -291,7 +358,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn zsh_lc_supports_cat() {
         let inner = "cat README.md";
         assert_parsed(
@@ -304,7 +370,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_bat() {
         let inner = "bat --theme TwoDark README.md";
         assert_parsed(
@@ -317,7 +382,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_batcat() {
         let inner = "batcat README.md";
         assert_parsed(
@@ -330,7 +394,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_less() {
         let inner = "less -p TODO README.md";
         assert_parsed(
@@ -343,7 +406,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_more() {
         let inner = "more README.md";
         assert_parsed(
@@ -356,7 +418,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn cd_then_cat_is_single_read() {
         assert_parsed(
             &shlex_split_safe("cd foo && cat foo.txt"),
@@ -368,7 +429,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn cd_with_double_dash_then_cat_is_read() {
         assert_parsed(
             &shlex_split_safe("cd -- -weird && cat foo.txt"),
@@ -380,7 +440,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn cd_with_multiple_operands_uses_last() {
         assert_parsed(
             &shlex_split_safe("cd dir1 dir2 && cat foo.txt"),
@@ -392,7 +451,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn bash_cd_then_bar_is_same_as_bar() {
         // Ensure a leading `cd` inside bash -lc is dropped when followed by another command.
         assert_parsed(
@@ -403,7 +461,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn bash_cd_then_cat_is_read() {
         assert_parsed(
             &shlex_split_safe("bash -lc 'cd foo && cat foo.txt'"),
@@ -415,7 +472,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_ls_with_pipe() {
         let inner = "ls -la | sed -n '1,120p'";
         assert_parsed(
@@ -427,7 +483,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_eza_exa_tree_du() {
         assert_parsed(
             &shlex_split_safe("eza --color=always src"),
@@ -459,7 +514,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_head_n() {
         let inner = "head -n 50 Cargo.toml";
         assert_parsed(
@@ -472,7 +526,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_head_file_only() {
         let inner = "head Cargo.toml";
         assert_parsed(
@@ -485,7 +538,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_cat_sed_n() {
         let inner = "cat tui/Cargo.toml | sed -n '1,200p'";
         assert_parsed(
@@ -498,7 +550,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_tail_n_plus() {
         let inner = "tail -n +522 README.md";
         assert_parsed(
@@ -511,7 +562,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_tail_n_last_lines() {
         let inner = "tail -n 30 README.md";
         let out = parse_command(&vec_str(&["bash", "-lc", inner]));
@@ -525,7 +575,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_tail_file_only() {
         let inner = "tail README.md";
         assert_parsed(
@@ -538,7 +587,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_npm_run_build_is_unknown() {
         assert_parsed(
             &vec_str(&["npm", "run", "build"]),
@@ -548,7 +596,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_grep_recursive_current_dir() {
         assert_parsed(
             &vec_str(&["grep", "-R", "CHAOS_SANDBOX_ENV_VAR", "-n", "."]),
@@ -560,7 +607,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_grep_recursive_specific_file() {
         assert_parsed(
             &vec_str(&[
@@ -578,7 +624,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_egrep_and_fgrep() {
         assert_parsed(
             &shlex_split_safe("egrep -R TODO src"),
@@ -598,7 +643,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn grep_files_with_matches_flags_are_search() {
         assert_parsed(
             &shlex_split_safe("grep -l TODO src"),
@@ -634,7 +678,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_grep_query_with_slashes_not_shortened() {
         // Query strings may contain slashes and should not be shortened to the basename.
         // Previously, grep queries were passed through short_display_path, which is incorrect.
@@ -648,7 +691,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_grep_weird_backtick_in_query() {
         assert_parsed(
             &shlex_split_safe("grep -R COD`EX_SANDBOX -n"),
@@ -660,7 +702,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_cd_and_rg_files() {
         assert_parsed(
             &shlex_split_safe("cd chaos && rg --files"),
@@ -671,7 +712,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_single_string_script_with_cd_and_pipe() {
         let inner = r#"cd /Users/pakrym/code/chaos && rg -n "chaos_api" chaos -S | head -n 50"#;
         assert_parsed(
@@ -684,7 +724,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_python_walks_files() {
         let inner = r#"python -c "import os; print(os.listdir('.'))""#;
         assert_parsed(
@@ -696,7 +735,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_python3_walks_files() {
         let inner = r#"python3 -c "import glob; print(glob.glob('*.rs'))""#;
         assert_parsed(
@@ -708,7 +746,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn python_without_file_walk_is_unknown() {
         let inner = r#"python -c "print('hello')""#;
         assert_parsed(
@@ -720,7 +757,6 @@ mod tests {
     }
 
     // ---- is_small_formatting_command unit tests ----
-    #[test]
     fn small_formatting_always_true_commands() {
         for cmd in ["wc", "tr", "cut", "sort", "uniq", "xargs", "tee", "column"] {
             assert!(is_small_formatting_command(&shlex_split_safe(cmd)));
@@ -730,7 +766,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn awk_behavior() {
         assert!(is_small_formatting_command(&shlex_split_safe(
             "awk '{print $1}'"
@@ -743,7 +778,6 @@ mod tests {
         )));
     }
 
-    #[test]
     fn head_behavior() {
         // No args -> small formatting
         assert!(is_small_formatting_command(&vec_str(&["head"])));
@@ -759,7 +793,6 @@ mod tests {
         ])));
     }
 
-    #[test]
     fn tail_behavior() {
         // No args -> small formatting
         assert!(is_small_formatting_command(&vec_str(&["tail"])));
@@ -786,7 +819,6 @@ mod tests {
         ])));
     }
 
-    #[test]
     fn sed_behavior() {
         // Plain sed -> small formatting
         assert!(is_small_formatting_command(&vec_str(&["sed"])));
@@ -814,13 +846,11 @@ mod tests {
         )));
     }
 
-    #[test]
     fn empty_tokens_is_not_small() {
         let empty: Vec<String> = Vec::new();
         assert!(!is_small_formatting_command(&empty));
     }
 
-    #[test]
     fn supports_nl_then_sed_reading() {
         let inner = "nl -ba core/src/parse_command.rs | sed -n '1200,1720p'";
         assert_parsed(
@@ -833,7 +863,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_sed_n() {
         let inner = "sed -n '2000,2200p' tui/src/history_cell.rs";
         assert_parsed(
@@ -846,7 +875,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_awk_with_file() {
         let inner = "awk '{print $1}' Cargo.toml";
         assert_parsed(
@@ -859,7 +887,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn filters_out_printf() {
         let inner =
             r#"printf "\n===== ansi-escape/Cargo.toml =====\n"; cat -- ansi-escape/Cargo.toml"#;
@@ -873,7 +900,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn drops_yes_in_pipelines() {
         // Inside bash -lc, `yes | rg --files` should focus on the primary command.
         let inner = "yes | rg --files";
@@ -886,7 +912,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_sed_n_then_nl_as_search() {
         // Ensure `sed -n '<range>' <file> | nl -ba` is summarized as a search for that file.
         let args = shlex_split_safe(
@@ -902,7 +927,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn preserves_rg_with_spaces() {
         assert_parsed(
             &shlex_split_safe("yes | rg -n 'foo bar' -S"),
@@ -914,7 +938,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn ls_with_glob() {
         assert_parsed(
             &shlex_split_safe("ls -I '*.test.js'"),
@@ -925,7 +948,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn strips_true_in_sequence() {
         // `true` should be dropped from parsed sequences
         assert_parsed(
@@ -945,7 +967,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn strips_true_inside_bash_lc() {
         let inner = "true && rg --files";
         assert_parsed(
@@ -966,7 +987,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn shorten_path_on_windows() {
         assert_parsed(
             &shlex_split_safe(r#"cat "pkg\src\main.rs""#),
@@ -978,7 +998,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn head_with_no_space() {
         assert_parsed(
             &shlex_split_safe("bash -lc 'head -n50 Cargo.toml'"),
@@ -990,7 +1009,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn bash_dash_c_pipeline_parsing() {
         // Ensure -c is handled similarly to -lc by shell parsing
         let inner = "rg --files | head -n 1";
@@ -1003,7 +1021,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn tail_with_no_space() {
         assert_parsed(
             &shlex_split_safe("bash -lc 'tail -n+10 README.md'"),
@@ -1015,7 +1032,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn grep_with_query_and_path() {
         assert_parsed(
             &shlex_split_safe("grep -R TODO src"),
@@ -1027,7 +1043,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn supports_ag_ack_pt_rga() {
         assert_parsed(
             &shlex_split_safe("ag TODO src"),
@@ -1063,7 +1078,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn ag_ack_pt_files_with_matches_flags_are_search() {
         assert_parsed(
             &shlex_split_safe("ag -l TODO src"),
@@ -1091,7 +1105,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn rg_with_equals_style_flags() {
         assert_parsed(
             &shlex_split_safe("rg --colors=never -n foo src"),
@@ -1103,7 +1116,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn cat_with_double_dash_and_sed_ranges() {
         // cat -- <file> should be treated as a read of that file
         assert_parsed(
@@ -1126,7 +1138,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn drop_trailing_nl_in_pipeline() {
         // When an `nl` stage has only flags, it should be dropped from the summary
         assert_parsed(
@@ -1138,7 +1149,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn ls_with_time_style_and_path() {
         assert_parsed(
             &shlex_split_safe("ls --time-style=long-iso ./dist"),
@@ -1150,7 +1160,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn fd_file_finder_variants() {
         assert_parsed(
             &shlex_split_safe("fd -t f src/"),
@@ -1171,7 +1180,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn find_basic_name_filter() {
         assert_parsed(
             &shlex_split_safe("find . -name '*.rs'"),
@@ -1183,7 +1191,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn find_type_only_path() {
         assert_parsed(
             &shlex_split_safe("find src -type f"),
@@ -1194,7 +1201,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn bin_bash_lc_sed() {
         assert_parsed(
             &shlex_split_safe("/bin/bash -lc 'sed -n '1,10p' Cargo.toml'"),
@@ -1205,7 +1211,6 @@ mod tests {
             }],
         );
     }
-    #[test]
     fn bin_zsh_lc_sed() {
         assert_parsed(
             &shlex_split_safe("/bin/zsh -lc 'sed -n '1,10p' Cargo.toml'"),

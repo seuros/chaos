@@ -521,7 +521,7 @@ impl crate::render::renderable::Renderable for AppLinkView {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::render::renderable::Renderable;
@@ -539,33 +539,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn installed_app_has_toggle_action() {
-        let tx = crate::test_support::make_app_event_sender();
-        let view = AppLinkView::new(
-            AppLinkViewParams {
-                app_id: "connector_1".to_string(),
-                title: "Notion".to_string(),
-                description: None,
-                instructions: "Manage app".to_string(),
-                url: "https://example.test/notion".to_string(),
-                is_installed: true,
-                is_enabled: true,
-                suggest_reason: None,
-                suggestion_type: None,
-                elicitation_target: None,
-            },
-            tx,
-        );
-
-        assert_eq!(
-            view.action_labels(),
-            vec!["Manage on ChatGPT", "Disable app", "Back"]
-        );
+    pub(crate) fn app_link_view_suite() {
+        installed_app_toggle_action_updates_labels();
+        install_confirmation_keeps_url_like_tokens_and_long_url_tail_visible();
+        tool_suggestions_resolve_install_decline_and_enable_paths();
+        suggestion_with_reason_snapshots();
     }
 
-    #[test]
-    fn toggle_action_updates_label() {
+    fn installed_app_toggle_action_updates_labels() {
         let (tx, _rx) = make_app_event_sender_with_rx();
         let mut view = AppLinkView::new(
             AppLinkViewParams {
@@ -582,6 +563,10 @@ mod tests {
             },
             tx,
         );
+        assert_eq!(
+            view.action_labels(),
+            vec!["Manage on ChatGPT", "Disable app", "Back"]
+        );
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
 
@@ -591,8 +576,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn install_confirmation_does_not_split_long_url_like_token_without_scheme() {
+    fn install_confirmation_keeps_url_like_tokens_and_long_url_tail_visible() {
         let tx = crate::test_support::make_app_event_sender();
         let url_like =
             "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890";
@@ -632,10 +616,7 @@ mod tests {
             1,
             "expected full URL-like token in one rendered line, got: {rendered:?}"
         );
-    }
 
-    #[test]
-    fn install_confirmation_render_keeps_url_tail_visible_when_narrow() {
         let tx = crate::test_support::make_app_event_sender();
         let url = "https://example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path/tail42";
         let mut view = AppLinkView::new(
@@ -665,8 +646,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn install_tool_suggestion_resolves_elicitation_after_confirmation() {
+    fn tool_suggestions_resolve_install_decline_and_enable_paths() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = AppLinkView::new(
             AppLinkViewParams {
@@ -713,10 +693,7 @@ mod tests {
             Err(err) => panic!("missing app event: {err}"),
         }
         assert!(view.is_complete());
-    }
 
-    #[test]
-    fn declined_tool_suggestion_resolves_elicitation_decline() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = AppLinkView::new(
             AppLinkViewParams {
@@ -754,10 +731,7 @@ mod tests {
             Err(err) => panic!("missing app event: {err}"),
         }
         assert!(view.is_complete());
-    }
 
-    #[test]
-    fn enable_tool_suggestion_resolves_elicitation_after_enable() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = AppLinkView::new(
             AppLinkViewParams {
@@ -797,8 +771,7 @@ mod tests {
         assert!(view.is_complete());
     }
 
-    #[test]
-    fn install_suggestion_with_reason_snapshot() {
+    fn suggestion_with_reason_snapshots() {
         let tx = crate::test_support::make_app_event_sender();
         let view = AppLinkView::new(
             AppLinkViewParams {
@@ -820,10 +793,7 @@ mod tests {
             "app_link_view_install_suggestion_with_reason",
             renderable_trim_end_string_at_desired_height(&view, 72)
         );
-    }
 
-    #[test]
-    fn enable_suggestion_with_reason_snapshot() {
         let tx = crate::test_support::make_app_event_sender();
         let view = AppLinkView::new(
             AppLinkViewParams {

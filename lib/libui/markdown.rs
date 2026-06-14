@@ -20,7 +20,7 @@ pub fn append_markdown(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use ratatui::text::Line;
@@ -37,7 +37,14 @@ mod tests {
             .collect()
     }
 
-    #[test]
+    pub(crate) fn markdown_suite() {
+        citations_render_as_plain_text();
+        indented_code_blocks_preserve_leading_whitespace();
+        append_markdown_preserves_full_text_line();
+        append_markdown_matches_tui_markdown_for_ordered_item();
+        append_markdown_keeps_ordered_list_line_unsplit_in_context();
+    }
+    #[cfg(test)]
     fn citations_render_as_plain_text() {
         let src = "Before 【F:/x.rs†L1】\nAfter 【F:/x.rs†L3】\n";
         let mut out = Vec::new();
@@ -52,7 +59,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn indented_code_blocks_preserve_leading_whitespace() {
         // Basic sanity: indented code with surrounding blank lines should produce the indented line.
         let src = "Before\n\n    code 1\n\nAfter\n";
@@ -62,7 +69,7 @@ mod tests {
         assert_eq!(lines, vec!["Before", "", "    code 1", "", "After"]);
     }
 
-    #[test]
+    #[cfg(test)]
     fn append_markdown_preserves_full_text_line() {
         let src = "Hi! How can I help with FreeChaOS today? Want me to explore the repo, run tests, or work on a specific change?\n";
         let mut out = Vec::new();
@@ -84,7 +91,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn append_markdown_matches_tui_markdown_for_ordered_item() {
         let mut out = Vec::new();
         append_markdown("1. Tight item\n", None, None, &mut out);
@@ -92,7 +99,7 @@ mod tests {
         assert_eq!(lines, vec!["1. Tight item".to_string()]);
     }
 
-    #[test]
+    #[cfg(test)]
     fn append_markdown_keeps_ordered_list_line_unsplit_in_context() {
         let src = "Loose vs. tight list items:\n1. Tight item\n";
         let mut out = Vec::new();

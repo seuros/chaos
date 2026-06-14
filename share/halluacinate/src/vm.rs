@@ -379,7 +379,13 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[tokio::test]
+    async fn vm_suite() {
+        parses_plain_string_statusline_result();
+        statusline_renderer_receives_context_and_returns_spans().await;
+        default_statusline_renderer_is_available_without_user_scripts().await;
+    }
+
     fn parses_plain_string_statusline_result() {
         let lua = Lua::new();
         let value = Value::String(lua.create_string("ready").unwrap());
@@ -397,7 +403,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn statusline_renderer_receives_context_and_returns_spans() {
         let temp = tempfile::tempdir().unwrap();
         let scripts_dir = temp.path().join(".chaos").join("scripts");
@@ -451,7 +456,6 @@ end)
         );
     }
 
-    #[tokio::test]
     async fn default_statusline_renderer_is_available_without_user_scripts() {
         let temp = tempfile::tempdir().unwrap();
         let handle = crate::spawn(SessionInfo {

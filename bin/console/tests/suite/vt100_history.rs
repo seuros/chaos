@@ -42,6 +42,16 @@ impl TestScenario {
 }
 
 #[test]
+fn vt100_history_suite() {
+    basic_insertion_no_wrap();
+    long_token_wraps();
+    emoji_and_cjk();
+    mixed_ansi_spans();
+    cursor_restoration();
+    word_wrap_no_mid_word_split();
+    em_dash_and_space_word_wrap();
+}
+
 fn basic_insertion_no_wrap() {
     // Screen of 20x6; viewport is the last row (height=1 at y=5)
     let area = Rect::new(0, 5, 20, 1);
@@ -54,7 +64,6 @@ fn basic_insertion_no_wrap() {
     assert_contains!(rows, String::from("second"));
 }
 
-#[test]
 fn long_token_wraps() {
     let area = Rect::new(0, 5, 20, 1);
     let mut scenario = TestScenario::new(20, 6, area);
@@ -83,7 +92,6 @@ fn long_token_wraps() {
     );
 }
 
-#[test]
 fn emoji_and_cjk() {
     let area = Rect::new(0, 5, 20, 1);
     let mut scenario = TestScenario::new(20, 6, area);
@@ -100,7 +108,6 @@ fn emoji_and_cjk() {
     }
 }
 
-#[test]
 fn mixed_ansi_spans() {
     let area = Rect::new(0, 5, 20, 1);
     let mut scenario = TestScenario::new(20, 6, area);
@@ -111,7 +118,6 @@ fn mixed_ansi_spans() {
     assert_contains!(rows, String::from("red+plain"));
 }
 
-#[test]
 fn cursor_restoration() {
     let area = Rect::new(0, 5, 20, 1);
     let mut scenario = TestScenario::new(20, 6, area);
@@ -121,7 +127,6 @@ fn cursor_restoration() {
     assert_eq!(scenario.term.last_known_cursor_pos, (0, 0).into());
 }
 
-#[test]
 fn word_wrap_no_mid_word_split() {
     // Screen of 40x10; viewport is the last row
     let area = Rect::new(0, 9, 40, 1);
@@ -136,7 +141,6 @@ fn word_wrap_no_mid_word_split() {
     );
 }
 
-#[test]
 fn em_dash_and_space_word_wrap() {
     // Repro from report: ensure we break before "inside", not mid-word.
     let area = Rect::new(0, 9, 40, 1);

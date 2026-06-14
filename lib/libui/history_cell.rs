@@ -63,7 +63,7 @@ pub use state::new_warning_event;
 pub use state::new_web_search_call;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::exec_cell::CommandOutput;
     use crate::exec_cell::ExecCall;
@@ -160,7 +160,68 @@ mod tests {
         .expect("resource link content should serialize")
     }
 
-    #[test]
+    pub(crate) async fn history_cell_suite() {
+        unified_exec_interaction_cell_renders_input();
+        unified_exec_interaction_cell_renders_wait();
+        final_message_separator_hides_short_worked_label_and_includes_runtime_metrics();
+        final_message_separator_includes_worked_label_after_one_minute();
+        ps_output_empty_snapshot();
+        ps_output_multiline_snapshot();
+        ps_output_long_command_snapshot();
+        ps_output_many_sessions_snapshot();
+        ps_output_chunk_leading_whitespace_snapshot();
+        error_event_oversized_input_snapshot();
+        mcp_tools_output_masks_sensitive_values().await;
+        empty_agent_message_cell_transcript();
+        prefixed_wrapped_history_cell_indents_wrapped_lines();
+        prefixed_wrapped_history_cell_does_not_split_url_like_token();
+        unified_exec_interaction_cell_does_not_split_url_like_stdin_token();
+        prefixed_wrapped_history_cell_height_matches_wrapped_rendering();
+        unified_exec_interaction_cell_height_matches_wrapped_rendering();
+        web_search_history_cell_snapshot();
+        web_search_history_cell_wraps_with_indented_continuation();
+        web_search_history_cell_short_query_does_not_wrap();
+        web_search_history_cell_transcript_snapshot();
+        active_mcp_tool_call_snapshot();
+        completed_mcp_tool_call_success_snapshot();
+        completed_mcp_tool_call_image_after_text_returns_extra_cell();
+        completed_mcp_tool_call_accepts_data_url_image_blocks();
+        completed_mcp_tool_call_skips_invalid_image_blocks();
+        completed_mcp_tool_call_error_snapshot();
+        completed_mcp_tool_call_multiple_outputs_snapshot();
+        completed_mcp_tool_call_wrapped_outputs_snapshot();
+        completed_mcp_tool_call_multiple_outputs_inline_snapshot();
+        coalesces_sequential_reads_within_one_call();
+        coalesces_reads_across_multiple_calls();
+        coalesced_reads_dedupe_names();
+        multiline_command_wraps_with_extra_indent_on_subsequent_lines();
+        single_line_command_compact_when_fits();
+        single_line_command_wraps_with_four_space_continuation();
+        multiline_command_without_wrap_uses_branch_then_eight_spaces();
+        multiline_command_both_lines_wrap_with_correct_prefixes();
+        stderr_tail_more_than_five_lines_snapshot();
+        ran_cell_multiline_with_stderr_snapshot();
+        user_history_cell_wraps_and_prefixes_each_line_snapshot();
+        user_history_cell_renders_remote_image_urls();
+        user_history_cell_summarizes_inline_data_urls();
+        user_history_cell_numbers_multiple_remote_images();
+        user_history_cell_height_matches_rendered_lines_with_remote_images();
+        user_history_cell_trims_trailing_blank_message_lines();
+        user_history_cell_trims_trailing_blank_message_lines_with_text_elements();
+        render_uses_wrapping_for_long_url_like_line();
+        plan_update_with_note_and_wrapping_snapshot();
+        plan_update_without_note_snapshot();
+        plan_update_does_not_split_url_like_tokens_in_note_or_step();
+        reasoning_summary_block();
+        reasoning_summary_height_matches_wrapped_rendering_for_url_like_content();
+        reasoning_summary_block_returns_reasoning_cell_when_feature_disabled();
+        reasoning_summary_block_respects_config_overrides().await;
+        reasoning_summary_block_falls_back_when_header_is_missing();
+        reasoning_summary_block_falls_back_when_summary_is_missing();
+        reasoning_summary_block_splits_header_and_summary_when_present();
+        deprecation_notice_renders_summary_with_details();
+    }
+
     fn unified_exec_interaction_cell_renders_input() {
         let cell =
             new_unified_exec_interaction(Some("echo hello".to_string()), "ls\npwd".to_string());
@@ -175,14 +236,12 @@ mod tests {
         );
     }
 
-    #[test]
     fn unified_exec_interaction_cell_renders_wait() {
         let cell = new_unified_exec_interaction(None, String::new());
         let lines = render_transcript(&cell);
         assert_eq!(lines, vec!["• Waited for background terminal"]);
     }
 
-    #[test]
     fn final_message_separator_hides_short_worked_label_and_includes_runtime_metrics() {
         let summary = RuntimeMetricsSummary {
             tool_calls: RuntimeMetricTotals {
@@ -220,7 +279,6 @@ mod tests {
         assert!(rendered[0].contains("TBT: 1.2s (iapi) 1.2s (service)"));
     }
 
-    #[test]
     fn final_message_separator_includes_worked_label_after_one_minute() {
         let cell = FinalMessageSeparator::new(Some(61), None);
         let rendered = render_lines(&cell.display_lines(200));
@@ -229,14 +287,12 @@ mod tests {
         assert!(rendered[0].contains("Worked for"));
     }
 
-    #[test]
     fn ps_output_empty_snapshot() {
         let cell = new_unified_exec_processes_output(Vec::new());
         let rendered = render_lines(&cell.display_lines(60)).join("\n");
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn ps_output_multiline_snapshot() {
         let cell = new_unified_exec_processes_output(vec![
             UnifiedExecProcessDetails {
@@ -252,7 +308,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn ps_output_long_command_snapshot() {
         let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
             command_display: String::from(
@@ -264,7 +319,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn ps_output_many_sessions_snapshot() {
         let cell = new_unified_exec_processes_output(
             (0..20)
@@ -278,7 +332,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn ps_output_chunk_leading_whitespace_snapshot() {
         let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
             command_display: "just fix".to_string(),
@@ -291,7 +344,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn error_event_oversized_input_snapshot() {
         let cell = new_error_event(
             "Message exceeds the maximum length of 1048576 characters (1048577 provided)."
@@ -301,7 +353,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[tokio::test]
     async fn mcp_tools_output_masks_sensitive_values() {
         let (_chaos_home, mut config) = test_config().await;
         let mut env = HashMap::new();
@@ -400,14 +451,12 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn empty_agent_message_cell_transcript() {
         let cell = AgentMessageCell::new(vec![Line::default()], false);
         assert_eq!(cell.transcript_lines(80), vec![Line::from("  ")]);
         assert_eq!(cell.desired_transcript_height(80), 1);
     }
 
-    #[test]
     fn prefixed_wrapped_history_cell_indents_wrapped_lines() {
         let summary = Line::from(vec![
             "You ".into(),
@@ -431,7 +480,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn prefixed_wrapped_history_cell_does_not_split_url_like_token() {
         let url_like =
             "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890";
@@ -452,7 +500,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn unified_exec_interaction_cell_does_not_split_url_like_stdin_token() {
         let url_like =
             "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890";
@@ -469,7 +516,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn prefixed_wrapped_history_cell_height_matches_wrapped_rendering() {
         let url_like = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path";
         let cell: Box<dyn HistoryCell> = Box::new(PrefixedWrappedHistoryCell::new(
@@ -506,7 +552,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn unified_exec_interaction_cell_height_matches_wrapped_rendering() {
         let url_like = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path";
         let cell: Box<dyn HistoryCell> = Box::new(UnifiedExecInteractionCell::new(
@@ -542,7 +587,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn web_search_history_cell_snapshot() {
         let query =
             "example search query with several generic words to exercise wrapping".to_string();
@@ -559,7 +603,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn web_search_history_cell_wraps_with_indented_continuation() {
         let query =
             "example search query with several generic words to exercise wrapping".to_string();
@@ -582,7 +625,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn web_search_history_cell_short_query_does_not_wrap() {
         let query = "short query".to_string();
         let cell = new_web_search_call(
@@ -598,7 +640,6 @@ mod tests {
         assert_eq!(rendered, vec!["• Searched short query".to_string()]);
     }
 
-    #[test]
     fn web_search_history_cell_transcript_snapshot() {
         let query =
             "example search query with several generic words to exercise wrapping".to_string();
@@ -615,7 +656,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn active_mcp_tool_call_snapshot() {
         let invocation = McpInvocation {
             server: "search".into(),
@@ -632,7 +672,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn completed_mcp_tool_call_success_snapshot() {
         let invocation = McpInvocation {
             server: "search".into(),
@@ -661,7 +700,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn completed_mcp_tool_call_image_after_text_returns_extra_cell() {
         let invocation = McpInvocation {
             server: "image".into(),
@@ -690,7 +728,6 @@ mod tests {
         assert_eq!(rendered, vec!["tool result (image output)"]);
     }
 
-    #[test]
     fn completed_mcp_tool_call_accepts_data_url_image_blocks() {
         let invocation = McpInvocation {
             server: "image".into(),
@@ -717,7 +754,6 @@ mod tests {
         assert_eq!(rendered, vec!["tool result (image output)"]);
     }
 
-    #[test]
     fn completed_mcp_tool_call_skips_invalid_image_blocks() {
         let invocation = McpInvocation {
             server: "image".into(),
@@ -743,7 +779,6 @@ mod tests {
         assert_eq!(rendered, vec!["tool result (image output)"]);
     }
 
-    #[test]
     fn completed_mcp_tool_call_error_snapshot() {
         let invocation = McpInvocation {
             server: "search".into(),
@@ -765,7 +800,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn completed_mcp_tool_call_multiple_outputs_snapshot() {
         let invocation = McpInvocation {
             server: "search".into(),
@@ -804,7 +838,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn completed_mcp_tool_call_wrapped_outputs_snapshot() {
         let invocation = McpInvocation {
             server: "metrics".into(),
@@ -835,7 +868,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn completed_mcp_tool_call_multiple_outputs_inline_snapshot() {
         let invocation = McpInvocation {
             server: "metrics".into(),
@@ -867,7 +899,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn coalesces_sequential_reads_within_one_call() {
         let call_id = "c1".to_string();
         let mut cell = ExecCell::new(
@@ -906,7 +937,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn coalesces_reads_across_multiple_calls() {
         let mut cell = ExecCell::new(
             ExecCall {
@@ -960,7 +990,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn coalesced_reads_dedupe_names() {
         let mut cell = ExecCell::new(
             ExecCall {
@@ -997,7 +1026,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn multiline_command_wraps_with_extra_indent_on_subsequent_lines() {
         let cmd = "set -o pipefail\ncargo test --all-features --quiet".to_string();
         let call_id = "c1".to_string();
@@ -1022,7 +1050,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn single_line_command_compact_when_fits() {
         let call_id = "c1".to_string();
         let mut cell = ExecCell::new(
@@ -1044,7 +1071,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn single_line_command_wraps_with_four_space_continuation() {
         let call_id = "c1".to_string();
         let long = "a_very_long_token_without_spaces_to_force_wrapping".to_string();
@@ -1067,7 +1093,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn multiline_command_without_wrap_uses_branch_then_eight_spaces() {
         let call_id = "c1".to_string();
         let cmd = "echo one\necho two".to_string();
@@ -1090,7 +1115,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn multiline_command_both_lines_wrap_with_correct_prefixes() {
         let call_id = "c1".to_string();
         let cmd = "first_token_is_long_enough_to_wrap\nsecond_token_is_also_long_enough_to_wrap"
@@ -1114,7 +1138,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn stderr_tail_more_than_five_lines_snapshot() {
         let call_id = "c_err".to_string();
         let mut cell = ExecCell::new(
@@ -1158,7 +1181,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn ran_cell_multiline_with_stderr_snapshot() {
         let call_id = "c_wrap_err".to_string();
         let long_cmd =
@@ -1203,7 +1225,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn user_history_cell_wraps_and_prefixes_each_line_snapshot() {
         let msg = "one two three four five six seven";
         let cell = UserHistoryCell {
@@ -1220,7 +1241,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn user_history_cell_renders_remote_image_urls() {
         let cell = UserHistoryCell {
             message: "describe these".to_string(),
@@ -1236,7 +1256,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn user_history_cell_summarizes_inline_data_urls() {
         let cell = UserHistoryCell {
             message: "describe inline image".to_string(),
@@ -1251,7 +1270,6 @@ mod tests {
         assert!(rendered.contains("describe inline image"));
     }
 
-    #[test]
     fn user_history_cell_numbers_multiple_remote_images() {
         let cell = UserHistoryCell {
             message: "describe both".to_string(),
@@ -1270,7 +1288,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn user_history_cell_height_matches_rendered_lines_with_remote_images() {
         let cell = UserHistoryCell {
             message: "line one\nline two".to_string(),
@@ -1292,7 +1309,6 @@ mod tests {
         assert_eq!(cell.desired_transcript_height(width), rendered_len);
     }
 
-    #[test]
     fn user_history_cell_trims_trailing_blank_message_lines() {
         let cell = UserHistoryCell {
             message: "line one\n\n   \n\t \n".to_string(),
@@ -1311,7 +1327,6 @@ mod tests {
         assert!(rendered.iter().any(|line| line.contains("line one")));
     }
 
-    #[test]
     fn user_history_cell_trims_trailing_blank_message_lines_with_text_elements() {
         use chaos_ipc::user_input::TextElement;
         let message = "tokenized\n\n\n".to_string();
@@ -1335,7 +1350,6 @@ mod tests {
         assert!(rendered.iter().any(|line| line.contains("tokenized")));
     }
 
-    #[test]
     fn render_uses_wrapping_for_long_url_like_line() {
         let url = "https://example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path/that/keeps/going/for/testing/purposes-only-and-does/not/need/to/resolve/index.html?session_id=abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
         let cell: Box<dyn HistoryCell> = Box::new(UserHistoryCell {
@@ -1384,7 +1398,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn plan_update_with_note_and_wrapping_snapshot() {
         use chaos_ipc::plan_tool::PlanItemArg;
         use chaos_ipc::plan_tool::StepStatus;
@@ -1417,7 +1430,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn plan_update_without_note_snapshot() {
         use chaos_ipc::plan_tool::PlanItemArg;
         use chaos_ipc::plan_tool::StepStatus;
@@ -1443,7 +1455,6 @@ mod tests {
         insta::assert_snapshot!(rendered);
     }
 
-    #[test]
     fn plan_update_does_not_split_url_like_tokens_in_note_or_step() {
         use chaos_ipc::plan_tool::PlanItemArg;
         use chaos_ipc::plan_tool::StepStatus;
@@ -1483,7 +1494,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn reasoning_summary_block() {
         let cell = new_reasoning_summary_block(
             "**High level reasoning**\n\nDetailed reasoning goes here.".to_string(),
@@ -1497,7 +1507,6 @@ mod tests {
         assert_eq!(rendered_transcript, vec!["• Detailed reasoning goes here."]);
     }
 
-    #[test]
     fn reasoning_summary_height_matches_wrapped_rendering_for_url_like_content() {
         let summary = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path/that/keeps/going";
         let cell: Box<dyn HistoryCell> = Box::new(ReasoningSummaryCell::new(
@@ -1542,7 +1551,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn reasoning_summary_block_returns_reasoning_cell_when_feature_disabled() {
         let cell =
             new_reasoning_summary_block("Detailed reasoning goes here.".to_string(), &test_cwd());
@@ -1551,7 +1559,6 @@ mod tests {
         assert_eq!(rendered, vec!["• Detailed reasoning goes here."]);
     }
 
-    #[tokio::test]
     async fn reasoning_summary_block_respects_config_overrides() {
         let (_chaos_home, mut config) = test_config().await;
         config.model = Some("gpt-3.5-turbo".to_string());
@@ -1565,7 +1572,6 @@ mod tests {
         assert_eq!(rendered_display, vec!["• Detailed reasoning goes here."]);
     }
 
-    #[test]
     fn reasoning_summary_block_falls_back_when_header_is_missing() {
         let cell = new_reasoning_summary_block(
             "**High level reasoning without closing".to_string(),
@@ -1576,7 +1582,6 @@ mod tests {
         assert_eq!(rendered, vec!["• **High level reasoning without closing"]);
     }
 
-    #[test]
     fn reasoning_summary_block_falls_back_when_summary_is_missing() {
         let cell = new_reasoning_summary_block(
             "**High level reasoning without closing**".to_string(),
@@ -1595,7 +1600,6 @@ mod tests {
         assert_eq!(rendered, vec!["• High level reasoning without closing"]);
     }
 
-    #[test]
     fn reasoning_summary_block_splits_header_and_summary_when_present() {
         let cell = new_reasoning_summary_block(
             "**High level plan**\n\nWe should fix the bug next.".to_string(),
@@ -1609,7 +1613,6 @@ mod tests {
         assert_eq!(rendered_transcript, vec!["• We should fix the bug next."]);
     }
 
-    #[test]
     fn deprecation_notice_renders_summary_with_details() {
         let cell = new_deprecation_notice(
             "Deprecated setting `foo`".to_string(),

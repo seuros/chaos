@@ -278,7 +278,17 @@ mod tests {
     /// AgentMessage lands in the transcript, TurnComplete releases the
     /// composer, and Interrupt is gated off (Idle state). One dense test
     /// per the "fewer dense tests" guidance.
-    #[test]
+    #[tokio::test]
+    async fn xclient_suite() {
+        full_turn_roundtrip();
+        interrupt_error_and_disconnect_paths();
+        rich_event_rendering();
+        finalize_reconciliation_and_call_leaks();
+        terminal_error_cleans_bookkeeping_and_failed_submit_keeps_draft();
+        theme_palette_and_view_smoke();
+        kernel_event_stream_pumps_then_emits_sentinel().await;
+    }
+
     fn full_turn_roundtrip() {
         let (mut app, mut op_rx) = mk_window();
 
@@ -344,7 +354,6 @@ mod tests {
     /// `TurnAborted` before releasing InFlight, `Error` releases InFlight on
     /// its own, `KernelDisconnected` marks the session dead even without a
     /// `ShutdownComplete`, and submission after death is a no-op.
-    #[test]
     fn interrupt_error_and_disconnect_paths() {
         let (mut app, mut op_rx) = mk_window();
         app.update(kernel_event(EventMsg::SessionConfigured(
@@ -437,7 +446,6 @@ mod tests {
     /// level, and `TokenCount` feeds the header without cluttering the
     /// transcript. Terminal events still drain pending-stream state so the
     /// next turn starts clean.
-    #[test]
     fn rich_event_rendering() {
         let (mut app, _op_rx) = mk_window();
         app.update(kernel_event(EventMsg::SessionConfigured(
@@ -657,7 +665,6 @@ mod tests {
     ///    structured tag, never the Debug fallback.
     /// 5. `StreamError` stays `InFlight` (kernel is retrying) and renders
     ///    as a `Warn` notice, distinct from a terminal `Error`.
-    #[test]
     fn finalize_reconciliation_and_call_leaks() {
         use chaos_ipc::protocol::ExecCommandBeginEvent;
         use chaos_ipc::protocol::ExecCommandEndEvent;
@@ -854,7 +861,6 @@ mod tests {
     ///    `TurnComplete` / `TurnAborted`.
     /// 2. If the kernel disappears before `op_tx.send(op)` succeeds, the
     ///    draft was never submitted and must stay in the composer.
-    #[test]
     fn terminal_error_cleans_bookkeeping_and_failed_submit_keeps_draft() {
         use chaos_ipc::protocol::ExecCommandBeginEvent;
         use chaos_ipc::protocol::ExecCommandEndEvent;
@@ -990,7 +996,6 @@ mod tests {
     /// `ChatEntry` kind (the real regression class — the render pass
     /// reaches into every arm, and iced will assert on inconsistent Length
     /// / Style at build time).
-    #[test]
     fn theme_palette_and_view_smoke() {
         use chaos_ipc::protocol::ExecCommandBeginEvent;
         use chaos_ipc::protocol::ExecCommandEndEvent;
@@ -1198,7 +1203,6 @@ mod tests {
     /// point of the sentinel — when the senders drop, the stream emits one
     /// final `KernelDisconnected` before terminating. Without that terminal
     /// message a silent kernel death would leave the GUI wedged.
-    #[tokio::test]
     async fn kernel_event_stream_pumps_then_emits_sentinel() {
         use chaos_ipc::protocol::EventMsg;
 

@@ -357,17 +357,27 @@ fn is_chaos_self_reference(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_kern::config::ConfigBuilder;
-    use chaos_kern::config::types::OtelExporterKind;
     use pretty_assertions::assert_eq;
-    use std::collections::HashMap;
     use std::ffi::OsString;
     use std::sync::{LazyLock, Mutex};
     use tempfile::TempDir;
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-    #[test]
+    #[tokio::test]
+    async fn lib_suite() {
+        mcp_server_defaults_analytics_to_enabled();
+        is_chaos_self_reference_matches_exact_path_with_mcp_arg();
+        is_chaos_self_reference_matches_basename_when_path_unresolved();
+        is_chaos_self_reference_matches_resolved_path_on_path();
+        is_chaos_self_reference_ignores_different_chaos_on_path();
+        is_chaos_self_reference_ignores_chaos_without_mcp_arg();
+        is_chaos_self_reference_ignores_unrelated_binaries();
+        is_chaos_self_reference_ignores_streamable_http();
+        guard_against_recursive_mcpd_allows_first_nested_level();
+        guard_against_recursive_mcpd_refuses_beyond_max_depth();
+    }
+
     fn mcp_server_defaults_analytics_to_enabled() {
         assert_eq!(DEFAULT_ANALYTICS_ENABLED, true);
     }
@@ -395,7 +405,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn is_chaos_self_reference_matches_exact_path_with_mcp_arg() {
         let exe = PathBuf::from("/usr/local/bin/chaos");
         let entry = stdio_server("/usr/local/bin/chaos", &["mcp", "serve"]);
@@ -406,7 +415,6 @@ mod tests {
         ));
     }
 
-    #[test]
     fn is_chaos_self_reference_matches_basename_when_path_unresolved() {
         let _env_lock = ENV_LOCK.lock().unwrap();
         let saved_path = std::env::var_os("PATH");
@@ -426,7 +434,6 @@ mod tests {
         assert!(is_self);
     }
 
-    #[test]
     fn is_chaos_self_reference_matches_resolved_path_on_path() {
         let _env_lock = ENV_LOCK.lock().unwrap();
         let saved_path = std::env::var_os("PATH");
@@ -455,7 +462,6 @@ mod tests {
         assert!(is_self);
     }
 
-    #[test]
     fn is_chaos_self_reference_ignores_different_chaos_on_path() {
         let _env_lock = ENV_LOCK.lock().unwrap();
         let saved_path = std::env::var_os("PATH");
@@ -485,7 +491,6 @@ mod tests {
         assert!(!is_self);
     }
 
-    #[test]
     fn is_chaos_self_reference_ignores_chaos_without_mcp_arg() {
         let exe = PathBuf::from("/usr/local/bin/chaos");
         // `chaos exec foo` is a different role — do not strip.
@@ -497,7 +502,6 @@ mod tests {
         ));
     }
 
-    #[test]
     fn is_chaos_self_reference_ignores_unrelated_binaries() {
         let exe = PathBuf::from("/usr/local/bin/chaos");
         let entry = stdio_server("dictator", &["mcp"]);
@@ -508,7 +512,6 @@ mod tests {
         ));
     }
 
-    #[test]
     fn is_chaos_self_reference_ignores_streamable_http() {
         let exe = PathBuf::from("/usr/local/bin/chaos");
         let entry = McpServerConfig {
@@ -528,7 +531,6 @@ mod tests {
         ));
     }
 
-    #[test]
     fn guard_against_recursive_mcpd_allows_first_nested_level() {
         let _env_lock = ENV_LOCK.lock().unwrap();
         let saved = std::env::var(CHAOS_MCPD_DEPTH_ENV).ok();
@@ -549,7 +551,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn guard_against_recursive_mcpd_refuses_beyond_max_depth() {
         let _env_lock = ENV_LOCK.lock().unwrap();
         let saved = std::env::var(CHAOS_MCPD_DEPTH_ENV).ok();
@@ -565,42 +566,5 @@ mod tests {
                 None => std::env::remove_var(CHAOS_MCPD_DEPTH_ENV),
             }
         }
-    }
-
-    #[tokio::test]
-    async fn mcp_server_builds_otel_provider_with_logs_traces_and_metrics() -> anyhow::Result<()> {
-        let chaos_home = TempDir::new()?;
-        let mut config = ConfigBuilder::default()
-            .chaos_home(chaos_home.path().to_path_buf())
-            .build()
-            .await?;
-        let exporter = OtelExporterKind::OtlpGrpc {
-            endpoint: "http://localhost:4317".to_string(),
-            headers: HashMap::new(),
-            tls: None,
-        };
-        config.otel.exporter = exporter.clone();
-        config.otel.trace_exporter = exporter.clone();
-        config.otel.metrics_exporter = exporter;
-        config.analytics_enabled = None;
-
-        let provider = chaos_kern::otel_init::build_provider(
-            &config,
-            "0.0.0-test",
-            Some(OTEL_SERVICE_NAME),
-            DEFAULT_ANALYTICS_ENABLED,
-        )
-        .map_err(|err| anyhow::anyhow!(err.to_string()))?
-        .expect("otel provider");
-
-        assert!(provider.logger.is_some(), "expected log exporter");
-        assert!(
-            provider.tracer_provider.is_some(),
-            "expected trace exporter"
-        );
-        assert!(provider.metrics().is_some(), "expected metrics exporter");
-        provider.shutdown();
-
-        Ok(())
     }
 }

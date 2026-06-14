@@ -24,7 +24,120 @@ use crate::bottom_pane::textarea::TextArea;
 use crate::render::renderable::Renderable;
 use crate::test_support::render_test_backend_debug;
 
-#[test]
+pub(crate) fn chat_composer_suite() {
+    footer_hint_row_is_separated_from_composer();
+    footer_flash_overrides_footer_hint_override();
+    footer_flash_expires_and_falls_back_to_hint_override();
+    footer_mode_snapshots();
+    footer_collapse_snapshots();
+    esc_hint_stays_hidden_with_draft_content();
+    base_footer_mode_tracks_empty_state_after_quit_hint_expires();
+    clear_for_ctrl_c_records_cleared_draft();
+    clear_for_ctrl_c_preserves_pending_paste_history_entry();
+    clear_for_ctrl_c_preserves_image_draft_state();
+    clear_for_ctrl_c_preserves_remote_offset_image_labels();
+    apply_history_entry_preserves_local_placeholders_after_remote_prefix();
+    question_mark_only_toggles_on_first_char();
+    question_mark_does_not_toggle_during_paste_burst();
+    shortcut_overlay_persists_while_task_running();
+    current_at_token_covers_unicode_boundaries_cursor_positions_and_embedded_at();
+    enter_submits_when_file_popup_has_no_selection();
+    paste_burst_handles_non_ascii_immediate_input_and_buffered_unicode_payloads();
+    ascii_burst_treats_enter_as_newline();
+    slash_context_enter_ignores_paste_burst_enter_suppression();
+    non_char_key_flushes_active_burst_before_input();
+    disable_paste_burst_flushes_pending_first_char_and_inserts_immediately();
+    handle_paste_small_inserts_text();
+    empty_enter_returns_none();
+    handle_paste_large_uses_placeholder_and_replaces_on_submit();
+    submit_at_character_limit_succeeds();
+    oversized_submit_reports_error_and_restores_draft();
+    oversized_queued_submission_reports_error_and_restores_draft();
+    edit_clears_pending_paste();
+    ui_snapshots();
+    image_placeholder_snapshots();
+    remote_image_rows_snapshots();
+    slash_popup_model_first_for_mo_ui();
+    slash_popup_model_first_for_mo_logic();
+    slash_popup_resume_for_res_ui();
+    slash_popup_resume_for_res_logic();
+    slash_command_dispatches_and_does_not_submit_literal_text();
+    kill_buffer_persists_after_submit();
+    kill_buffer_persists_after_slash_command_dispatch();
+    slash_command_disabled_while_task_running_keeps_text();
+    extract_args_supports_quoted_paths_single_arg();
+    extract_args_supports_mixed_quoted_and_unquoted();
+    slash_tab_completion_moves_cursor_to_end();
+    slash_tab_then_enter_dispatches_builtin_command();
+    slash_command_elementizes_on_space();
+    slash_command_elementizes_only_known_commands();
+    slash_command_element_removed_when_not_at_start();
+    tab_submits_when_no_task_running();
+    tab_does_not_submit_for_bang_shell_command();
+    slash_mention_dispatches_command_and_inserts_at();
+    slash_plan_args_preserve_text_elements();
+    file_completion_preserves_large_paste_placeholder_elements();
+    test_multiple_pastes_submission();
+    test_placeholder_deletion();
+    deleting_duplicate_length_pastes_removes_only_target();
+    large_paste_numbering_does_not_reuse_after_deletion();
+    test_partial_placeholder_deletion();
+    attach_image_and_submit_includes_local_image_paths();
+    submit_captures_recent_mention_bindings_before_clearing_textarea();
+    history_navigation_restores_remote_and_local_image_attachments();
+    history_navigation_restores_remote_only_submissions();
+    history_navigation_leaves_cursor_at_end_of_line();
+    set_text_content_reattaches_images_without_placeholder_metadata();
+    large_paste_preserves_image_text_elements_on_submit();
+    large_paste_with_leading_whitespace_trims_and_shifts_elements();
+    pasted_crlf_normalizes_newlines_for_elements();
+    suppressed_submission_restores_pending_paste_payload();
+    attach_image_without_text_submits_empty_text_and_images();
+    duplicate_image_placeholders_get_suffix();
+    image_placeholder_backspace_behaves_like_text_placeholder();
+    backspace_with_multibyte_text_before_placeholder_does_not_panic();
+    deleting_one_of_duplicate_image_placeholders_removes_one_entry();
+    deleting_reordered_image_one_renumbers_text_in_place();
+    deleting_first_text_element_renumbers_following_text_element();
+    pasting_filepath_attaches_image();
+    selecting_custom_prompt_without_args_submits_content();
+    custom_prompt_submission_expands_arguments();
+    custom_prompt_submission_accepts_quoted_values();
+    custom_prompt_submission_preserves_image_placeholder_unquoted();
+    custom_prompt_submission_preserves_image_placeholder_quoted();
+    custom_prompt_submission_drops_unused_image_arg();
+    custom_prompt_with_large_paste_expands_correctly();
+    custom_prompt_with_large_paste_and_image_preserves_elements();
+    slash_path_input_submits_without_command_error();
+    slash_with_leading_space_submits_as_text();
+    custom_prompt_invalid_args_reports_error();
+    custom_prompt_missing_required_args_reports_error();
+    selecting_custom_prompt_with_args_expands_placeholders();
+    popup_prompt_submission_prunes_unused_image_attachments();
+    numeric_prompt_auto_submit_prunes_unused_image_attachments();
+    numeric_prompt_auto_submit_expands_pending_pastes();
+    queued_prompt_submission_prunes_unused_image_attachments();
+    prompt_expansion_over_character_limit_reports_error_and_restores_draft();
+    selecting_custom_prompt_with_positional_args_submits_numeric_expansion();
+    numeric_prompt_positional_args_does_not_error();
+    selecting_custom_prompt_with_no_args_inserts_template();
+    selecting_custom_prompt_preserves_literal_dollar_dollar();
+    selecting_custom_prompt_reuses_cached_arguments_join();
+    pending_first_ascii_char_flushes_as_typed();
+    burst_paste_fast_small_buffers_and_flushes_on_stop();
+    burst_paste_fast_large_inserts_placeholder_on_flush();
+    humanlike_typing_1000_chars_appears_live_no_placeholder();
+    slash_popup_not_activated_for_slash_space_text_history_like_input();
+    slash_popup_activated_for_bare_slash_and_valid_prefixes();
+    external_edit_rebuilds_attachments_and_pending_placeholder_state();
+    remote_images_do_not_modify_textarea_text_or_elements();
+    attach_image_after_remote_prefix_uses_offset_label();
+    prepare_submission_keeps_remote_offset_local_placeholder_numbering();
+    prepare_submission_with_only_remote_images_returns_empty_text();
+    delete_selected_remote_image_relabels_local_placeholders();
+    input_disabled_ignores_keypresses_and_hides_cursor();
+}
+
 fn footer_hint_row_is_separated_from_composer() {
     let sender = make_app_event_sender();
     let composer = ChatComposer::new(
@@ -68,7 +181,6 @@ fn footer_hint_row_is_separated_from_composer() {
     );
 }
 
-#[test]
 fn footer_flash_overrides_footer_hint_override() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -94,7 +206,6 @@ fn footer_flash_overrides_footer_hint_override() {
     );
 }
 
-#[test]
 fn footer_flash_expires_and_falls_back_to_hint_override() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -157,7 +268,6 @@ where
     snapshot_composer_state_with_width(name, 100, enhanced_keys_supported, setup);
 }
 
-#[test]
 fn footer_mode_snapshots() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -207,7 +317,6 @@ fn footer_mode_snapshots() {
     });
 }
 
-#[test]
 fn footer_collapse_snapshots() {
     fn badge(kind: chaos_ipc::config_types::ModeKind) -> CollaborationModeIndicator {
         CollaborationModeIndicator::new(kind, "gpt-5.4".to_string(), Some("high".to_string()))
@@ -438,7 +547,6 @@ fn footer_collapse_snapshots() {
     );
 }
 
-#[test]
 fn esc_hint_stays_hidden_with_draft_content() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -466,7 +574,6 @@ fn esc_hint_stays_hidden_with_draft_content() {
     assert!(!composer.esc_backtrack_hint);
 }
 
-#[test]
 fn base_footer_mode_tracks_empty_state_after_quit_hint_expires() {
     use crossterm::event::KeyCode;
 
@@ -489,7 +596,6 @@ fn base_footer_mode_tracks_empty_state_after_quit_hint_expires() {
     assert_eq!(composer.footer_mode(), FooterMode::ComposerEmpty);
 }
 
-#[test]
 fn clear_for_ctrl_c_records_cleared_draft() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -510,7 +616,6 @@ fn clear_for_ctrl_c_records_cleared_draft() {
     );
 }
 
-#[test]
 fn clear_for_ctrl_c_preserves_pending_paste_history_entry() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -575,7 +680,6 @@ fn clear_for_ctrl_c_preserves_pending_paste_history_entry() {
     }
 }
 
-#[test]
 fn clear_for_ctrl_c_preserves_image_draft_state() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -617,7 +721,6 @@ fn clear_for_ctrl_c_preserves_image_draft_state() {
     assert_eq!(composer.textarea.element_payloads(), vec![placeholder]);
 }
 
-#[test]
 fn clear_for_ctrl_c_preserves_remote_offset_image_labels() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -658,7 +761,6 @@ fn clear_for_ctrl_c_preserves_remote_offset_image_labels() {
     );
 }
 
-#[test]
 fn apply_history_entry_preserves_local_placeholders_after_remote_prefix() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -696,7 +798,6 @@ fn apply_history_entry_preserves_local_placeholders_after_remote_prefix() {
 
 /// Behavior: `?` toggles the shortcut overlay only when the composer is otherwise empty. After
 /// any typing has occurred, `?` should be inserted as a literal character.
-#[test]
 fn question_mark_only_toggles_on_first_char() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -737,7 +838,6 @@ fn question_mark_only_toggles_on_first_char() {
 
 /// Behavior: while a paste-like burst is being captured, `?` must not toggle the shortcut
 /// overlay; it should be treated as part of the pasted content.
-#[test]
 fn question_mark_does_not_toggle_during_paste_burst() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -769,7 +869,6 @@ fn question_mark_does_not_toggle_during_paste_burst() {
     assert_ne!(composer.footer_mode, FooterMode::ShortcutOverlay);
 }
 
-#[test]
 fn shortcut_overlay_persists_while_task_running() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -793,139 +892,116 @@ fn shortcut_overlay_persists_while_task_running() {
     assert_eq!(composer.footer_mode(), FooterMode::ShortcutOverlay);
 }
 
-#[test]
-fn test_current_at_token_basic_cases() {
+fn current_at_token_covers_unicode_boundaries_cursor_positions_and_embedded_at() {
+    let npm_input = "npx -y @kaeawc/auto-mobile@latest";
+    let npm_token_start = npm_input
+        .find("@kaeawc")
+        .expect("scoped npm package present");
+    let npm_version_at = npm_input
+        .rfind("@latest")
+        .expect("version suffix present in scoped npm package");
+    let file_input = "@icons/icon@2x.png";
+    let file_version_at = file_input
+        .rfind("@2x")
+        .expect("second @ in file token should be present");
+    let mid_word_input = "foo@bar";
+    let mid_word_at = mid_word_input.find('@').expect("@ present");
+
     let test_cases = vec![
-        // Valid @ tokens
-        ("@hello", 3, Some("hello".to_string()), "Basic ASCII token"),
-        (
-            "@file.txt",
-            4,
-            Some("file.txt".to_string()),
-            "ASCII with extension",
-        ),
-        (
-            "hello @world test",
-            8,
-            Some("world".to_string()),
-            "ASCII token in middle",
-        ),
-        (
-            "@test123",
-            5,
-            Some("test123".to_string()),
-            "ASCII with numbers",
-        ),
-        // Unicode examples
-        ("@İstanbul", 3, Some("İstanbul".to_string()), "Turkish text"),
-        (
-            "@testЙЦУ.rs",
-            8,
-            Some("testЙЦУ.rs".to_string()),
-            "Mixed ASCII and Cyrillic",
-        ),
-        ("@诶", 2, Some("诶".to_string()), "Chinese character"),
-        ("@👍", 2, Some("👍".to_string()), "Emoji token"),
-        // Invalid cases (should return None)
-        ("hello", 2, None, "No @ symbol"),
-        (
-            "@",
-            1,
-            Some("".to_string()),
-            "Only @ symbol triggers empty query",
-        ),
+        // Basic ASCII, Unicode, and invalid forms.
+        ("@hello", 3, Some("hello"), "basic ASCII token"),
+        ("@file.txt", 4, Some("file.txt"), "ASCII with extension"),
+        ("hello @world test", 8, Some("world"), "token in middle"),
+        ("@test123", 5, Some("test123"), "ASCII with numbers"),
+        ("@İstanbul", 3, Some("İstanbul"), "Turkish text"),
+        ("@testЙЦУ.rs", 8, Some("testЙЦУ.rs"), "mixed Cyrillic"),
+        ("@诶", 2, Some("诶"), "Chinese character"),
+        ("@👍", 2, Some("👍"), "emoji token"),
+        ("hello", 2, None, "no @ symbol"),
+        ("@", 1, Some(""), "only @ after cursor"),
         ("@ hello", 2, None, "@ followed by space"),
         ("test @ world", 6, None, "@ with spaces around"),
-    ];
-
-    for (input, cursor_pos, expected, description) in test_cases {
-        let mut textarea = TextArea::new();
-        textarea.insert_str(input);
-        textarea.set_cursor(cursor_pos);
-
-        let result = ChatComposer::current_at_token(&textarea);
-        assert_eq!(
-            result, expected,
-            "Failed for case: {description} - input: '{input}', cursor: {cursor_pos}"
-        );
-    }
-}
-
-#[test]
-fn test_current_at_token_cursor_positions() {
-    let test_cases = vec![
-        // Different cursor positions within a token
-        ("@test", 0, Some("test".to_string()), "Cursor at @"),
-        ("@test", 1, Some("test".to_string()), "Cursor after @"),
-        ("@test", 5, Some("test".to_string()), "Cursor at end"),
-        // Multiple tokens - cursor determines which token
-        ("@file1 @file2", 0, Some("file1".to_string()), "First token"),
-        (
-            "@file1 @file2",
-            8,
-            Some("file2".to_string()),
-            "Second token",
-        ),
-        // Edge cases
-        ("@", 0, Some("".to_string()), "Only @ symbol"),
-        ("@a", 2, Some("a".to_string()), "Single character after @"),
-        ("", 0, None, "Empty input"),
-    ];
-
-    for (input, cursor_pos, expected, description) in test_cases {
-        let mut textarea = TextArea::new();
-        textarea.insert_str(input);
-        textarea.set_cursor(cursor_pos);
-
-        let result = ChatComposer::current_at_token(&textarea);
-        assert_eq!(
-            result, expected,
-            "Failed for cursor position case: {description} - input: '{input}', cursor: {cursor_pos}",
-        );
-    }
-}
-
-#[test]
-fn test_current_at_token_whitespace_boundaries() {
-    let test_cases = vec![
-        // Space boundaries
-        (
-            "aaa@aaa",
-            4,
-            None,
-            "Connected @ token - no completion by design",
-        ),
-        (
-            "aaa @aaa",
-            5,
-            Some("aaa".to_string()),
-            "@ token after space",
-        ),
-        (
-            "test @file.txt",
-            7,
-            Some("file.txt".to_string()),
-            "@ token after space",
-        ),
-        // Full-width space boundaries
+        // Cursor position and token selection.
+        ("@test", 0, Some("test"), "cursor at @"),
+        ("@test", 1, Some("test"), "cursor after @"),
+        ("@test", 5, Some("test"), "cursor at end"),
+        ("@file1 @file2", 0, Some("file1"), "first token"),
+        ("@file1 @file2", 8, Some("file2"), "second token"),
+        ("@", 0, Some(""), "only @ at cursor"),
+        ("@a", 2, Some("a"), "single character after @"),
+        ("", 0, None, "empty input"),
+        // Whitespace boundaries.
+        ("aaa@aaa", 4, None, "connected @ token is not completion"),
+        ("aaa @aaa", 5, Some("aaa"), "@ token after space"),
+        ("test @file.txt", 7, Some("file.txt"), "@ token after space"),
         (
             "test　@İstanbul",
             8,
-            Some("İstanbul".to_string()),
+            Some("İstanbul"),
             "@ token after full-width space",
         ),
         (
             "@ЙЦУ　@诶",
             10,
-            Some("诶".to_string()),
-            "Full-width space between Unicode tokens",
+            Some("诶"),
+            "full-width space between Unicode tokens",
         ),
-        // Tab and newline boundaries
+        ("test\t@file", 6, Some("file"), "@ token after tab"),
+        // Embedded @ tokens are accepted only when the leading @ starts a token.
         (
-            "test\t@file",
-            6,
-            Some("file".to_string()),
-            "@ token after tab",
+            npm_input,
+            npm_token_start,
+            Some("kaeawc/auto-mobile@latest"),
+            "scoped package at leading @",
+        ),
+        (
+            npm_input,
+            npm_token_start + 8,
+            Some("kaeawc/auto-mobile@latest"),
+            "cursor inside scoped package",
+        ),
+        (
+            npm_input,
+            npm_version_at,
+            Some("kaeawc/auto-mobile@latest"),
+            "cursor at version @",
+        ),
+        (
+            npm_input,
+            npm_input.len(),
+            Some("kaeawc/auto-mobile@latest"),
+            "cursor at end of scoped package",
+        ),
+        (
+            file_input,
+            0,
+            Some("icons/icon@2x.png"),
+            "file token at leading @",
+        ),
+        (
+            file_input,
+            8,
+            Some("icons/icon@2x.png"),
+            "file token before second @",
+        ),
+        (
+            file_input,
+            file_version_at,
+            Some("icons/icon@2x.png"),
+            "file token at second @",
+        ),
+        (
+            file_input,
+            file_input.len(),
+            Some("icons/icon@2x.png"),
+            "file token at end",
+        ),
+        (mid_word_input, mid_word_at, None, "cursor at mid-word @"),
+        (
+            mid_word_input,
+            mid_word_input.len(),
+            None,
+            "cursor at end of word containing @",
         ),
     ];
 
@@ -934,91 +1010,14 @@ fn test_current_at_token_whitespace_boundaries() {
         textarea.insert_str(input);
         textarea.set_cursor(cursor_pos);
 
-        let result = ChatComposer::current_at_token(&textarea);
         assert_eq!(
-            result, expected,
-            "Failed for whitespace boundary case: {description} - input: '{input}', cursor: {cursor_pos}",
+            ChatComposer::current_at_token(&textarea),
+            expected.map(str::to_string),
+            "failed for case: {description} - input: '{input}', cursor: {cursor_pos}"
         );
     }
 }
 
-#[test]
-fn test_current_at_token_tracks_tokens_with_second_at() {
-    let input = "npx -y @kaeawc/auto-mobile@latest";
-    let token_start = input.find("@kaeawc").expect("scoped npm package present");
-    let version_at = input
-        .rfind("@latest")
-        .expect("version suffix present in scoped npm package");
-    let test_cases = vec![
-        (token_start, "Cursor at leading @"),
-        (token_start + 8, "Cursor inside scoped package name"),
-        (version_at, "Cursor at version @"),
-        (input.len(), "Cursor at end of token"),
-    ];
-
-    for (cursor_pos, description) in test_cases {
-        let mut textarea = TextArea::new();
-        textarea.insert_str(input);
-        textarea.set_cursor(cursor_pos);
-
-        let result = ChatComposer::current_at_token(&textarea);
-        assert_eq!(
-            result,
-            Some("kaeawc/auto-mobile@latest".to_string()),
-            "Failed for case: {description} - input: '{input}', cursor: {cursor_pos}"
-        );
-    }
-}
-
-#[test]
-fn test_current_at_token_allows_file_queries_with_second_at() {
-    let input = "@icons/icon@2x.png";
-    let version_at = input
-        .rfind("@2x")
-        .expect("second @ in file token should be present");
-    let test_cases = vec![
-        (0, "Cursor at leading @"),
-        (8, "Cursor before second @"),
-        (version_at, "Cursor at second @"),
-        (input.len(), "Cursor at end of token"),
-    ];
-
-    for (cursor_pos, description) in test_cases {
-        let mut textarea = TextArea::new();
-        textarea.insert_str(input);
-        textarea.set_cursor(cursor_pos);
-
-        let result = ChatComposer::current_at_token(&textarea);
-        assert!(
-            result.is_some(),
-            "Failed for case: {description} - input: '{input}', cursor: {cursor_pos}"
-        );
-    }
-}
-
-#[test]
-fn test_current_at_token_ignores_mid_word_at() {
-    let input = "foo@bar";
-    let at_pos = input.find('@').expect("@ present");
-    let test_cases = vec![
-        (at_pos, "Cursor at mid-word @"),
-        (input.len(), "Cursor at end of word containing @"),
-    ];
-
-    for (cursor_pos, description) in test_cases {
-        let mut textarea = TextArea::new();
-        textarea.insert_str(input);
-        textarea.set_cursor(cursor_pos);
-
-        let result = ChatComposer::current_at_token(&textarea);
-        assert_eq!(
-            result, None,
-            "Failed for case: {description} - input: '{input}', cursor: {cursor_pos}"
-        );
-    }
-}
-
-#[test]
 fn enter_submits_when_file_popup_has_no_selection() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1049,130 +1048,7 @@ fn enter_submits_when_file_popup_has_no_selection() {
     }
 }
 
-/// Behavior: if the ASCII path has a pending first char (flicker suppression) and a non-ASCII
-/// char arrives next, the pending ASCII char should still be preserved and the overall input
-/// should submit normally (i.e. we should not misclassify this as a paste burst).
-#[test]
-fn ascii_prefix_survives_non_ascii_followup() {
-    use crossterm::event::KeyCode;
-    use crossterm::event::KeyEvent;
-    use crossterm::event::KeyModifiers;
-
-    let sender = make_app_event_sender();
-    let mut composer = ChatComposer::new(
-        true,
-        sender,
-        false,
-        "Ask FreeChaOS to do anything".to_string(),
-        false,
-    );
-
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
-    assert!(composer.is_in_paste_burst());
-
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('あ'), KeyModifiers::NONE));
-
-    let (result, _) = composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    match result {
-        InputResult::Submitted { text, .. } => assert_eq!(text, "1あ"),
-        _ => panic!("expected Submitted"),
-    }
-}
-
-/// Behavior: a single non-ASCII char should be inserted immediately (IME-friendly) and should
-/// not create any paste-burst state.
-#[test]
-fn non_ascii_char_inserts_immediately_without_burst_state() {
-    use crossterm::event::KeyCode;
-    use crossterm::event::KeyEvent;
-    use crossterm::event::KeyModifiers;
-
-    let sender = make_app_event_sender();
-    let mut composer = ChatComposer::new(
-        true,
-        sender,
-        false,
-        "Ask FreeChaOS to do anything".to_string(),
-        false,
-    );
-
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('あ'), KeyModifiers::NONE));
-
-    assert_eq!(composer.textarea.text(), "あ");
-    assert!(!composer.is_in_paste_burst());
-}
-
-/// Behavior: while we're capturing a paste-like burst, Enter should be treated as a newline
-/// within the burst (not as "submit"), and the whole payload should flush as one paste.
-#[test]
-fn non_ascii_burst_buffers_enter_and_flushes_multiline() {
-    use crossterm::event::KeyCode;
-    use crossterm::event::KeyEvent;
-    use crossterm::event::KeyModifiers;
-
-    let sender = make_app_event_sender();
-    let mut composer = ChatComposer::new(
-        true,
-        sender,
-        false,
-        "Ask FreeChaOS to do anything".to_string(),
-        false,
-    );
-
-    composer
-        .paste_burst
-        .begin_with_retro_grabbed(String::new(), Instant::now());
-
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('你'), KeyModifiers::NONE));
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('好'), KeyModifiers::NONE));
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
-
-    assert!(composer.textarea.text().is_empty());
-    let _ = flush_after_paste_burst(&mut composer);
-    assert_eq!(composer.textarea.text(), "你好\nhi");
-}
-
-/// Behavior: a paste-like burst may include a full-width/ideographic space (U+3000). It should
-/// still be captured as a single paste payload and preserve the exact Unicode content.
-#[test]
-fn non_ascii_burst_preserves_ideographic_space_and_ascii() {
-    use crossterm::event::KeyCode;
-    use crossterm::event::KeyEvent;
-    use crossterm::event::KeyModifiers;
-
-    let sender = make_app_event_sender();
-    let mut composer = ChatComposer::new(
-        true,
-        sender,
-        false,
-        "Ask FreeChaOS to do anything".to_string(),
-        false,
-    );
-
-    composer
-        .paste_burst
-        .begin_with_retro_grabbed(String::new(), Instant::now());
-
-    for ch in ['你', '　', '好'] {
-        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
-    }
-    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    for ch in ['h', 'i'] {
-        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
-    }
-
-    assert!(composer.textarea.text().is_empty());
-    let _ = flush_after_paste_burst(&mut composer);
-    assert_eq!(composer.textarea.text(), "你　好\nhi");
-}
-
-/// Behavior: a large multi-line payload containing both non-ASCII and ASCII (e.g. "UTF-8",
-/// "Unicode") should be captured as a single paste-like burst, and Enter key events should
-/// become `\n` within the buffered content.
-#[test]
-fn non_ascii_burst_buffers_large_multiline_mixed_ascii_and_unicode() {
+fn paste_burst_handles_non_ascii_immediate_input_and_buffered_unicode_payloads() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
@@ -1189,16 +1065,67 @@ fn non_ascii_burst_buffers_large_multiline_mixed_ascii_and_unicode() {
 白云千载 青山依旧\n\
 程序员 与 Unicode 同行";
 
-    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
-        sender,
+        make_app_event_sender(),
         false,
         "Ask FreeChaOS to do anything".to_string(),
         false,
     );
+    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
+    assert!(composer.is_in_paste_burst());
+    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('あ'), KeyModifiers::NONE));
+    let (result, _) = composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    match result {
+        InputResult::Submitted { text, .. } => assert_eq!(text, "1あ"),
+        _ => panic!("expected Submitted"),
+    }
 
-    // Force an active burst so the test doesn't depend on timing heuristics.
+    let mut composer = ChatComposer::new(
+        true,
+        make_app_event_sender(),
+        false,
+        "Ask FreeChaOS to do anything".to_string(),
+        false,
+    );
+    let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('あ'), KeyModifiers::NONE));
+    assert_eq!(composer.textarea.text(), "あ");
+    assert!(!composer.is_in_paste_burst());
+
+    for (chars, expected) in [
+        (&['你', '好', '\n', 'h', 'i'][..], "你好\nhi"),
+        (&['你', '　', '好', '\n', 'h', 'i'][..], "你　好\nhi"),
+    ] {
+        let mut composer = ChatComposer::new(
+            true,
+            make_app_event_sender(),
+            false,
+            "Ask FreeChaOS to do anything".to_string(),
+            false,
+        );
+        composer
+            .paste_burst
+            .begin_with_retro_grabbed(String::new(), Instant::now());
+        for ch in chars {
+            let code = if *ch == '\n' {
+                KeyCode::Enter
+            } else {
+                KeyCode::Char(*ch)
+            };
+            let _ = composer.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE));
+        }
+        assert!(composer.textarea.text().is_empty());
+        let _ = flush_after_paste_burst(&mut composer);
+        assert_eq!(composer.textarea.text(), expected);
+    }
+
+    let mut composer = ChatComposer::new(
+        true,
+        make_app_event_sender(),
+        false,
+        "Ask FreeChaOS to do anything".to_string(),
+        false,
+    );
     composer
         .paste_burst
         .begin_with_retro_grabbed(String::new(), Instant::now());
@@ -1219,7 +1146,6 @@ fn non_ascii_burst_buffers_large_multiline_mixed_ascii_and_unicode() {
 
 /// Behavior: while a paste-like burst is active, Enter should not submit; it should insert a
 /// newline into the buffered payload and flush as a single paste later.
-#[test]
 fn ascii_burst_treats_enter_as_newline() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1267,7 +1193,6 @@ fn ascii_burst_treats_enter_as_newline() {
 
 /// Behavior: even if Enter suppression would normally be active for a burst, Enter should
 /// still dispatch a built-in slash command when the first line begins with `/`.
-#[test]
 fn slash_context_enter_ignores_paste_burst_enter_suppression() {
     use crate::slash_command::SlashCommand;
     use crossterm::event::KeyCode;
@@ -1295,7 +1220,6 @@ fn slash_context_enter_ignores_paste_burst_enter_suppression() {
 
 /// Behavior: if a burst is buffering text and the user presses a non-char key, flush the
 /// buffered burst *before* applying that key so the buffer cannot get stuck.
-#[test]
 fn non_char_key_flushes_active_burst_before_input() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1329,7 +1253,6 @@ fn non_char_key_flushes_active_burst_before_input() {
 
 /// Behavior: enabling `disable_paste_burst` flushes any held first character (flicker
 /// suppression) and then inserts subsequent chars immediately without creating burst state.
-#[test]
 fn disable_paste_burst_flushes_pending_first_char_and_inserts_immediately() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1361,7 +1284,6 @@ fn disable_paste_burst_flushes_pending_first_char_and_inserts_immediately() {
 
 /// Behavior: a small explicit paste inserts text directly (no placeholder), and the submitted
 /// text matches what is visible in the textarea.
-#[test]
 fn handle_paste_small_inserts_text() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1388,7 +1310,6 @@ fn handle_paste_small_inserts_text() {
     }
 }
 
-#[test]
 fn empty_enter_returns_none() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1416,7 +1337,6 @@ fn empty_enter_returns_none() {
 
 /// Behavior: a large explicit paste inserts a placeholder into the textarea, stores the full
 /// content in `pending_pastes`, and expands the placeholder to the full content on submit.
-#[test]
 fn handle_paste_large_uses_placeholder_and_replaces_on_submit() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1448,7 +1368,6 @@ fn handle_paste_large_uses_placeholder_and_replaces_on_submit() {
     assert!(composer.pending_pastes.is_empty());
 }
 
-#[test]
 fn submit_at_character_limit_succeeds() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1475,7 +1394,6 @@ fn submit_at_character_limit_succeeds() {
     ));
 }
 
-#[test]
 fn oversized_submit_reports_error_and_restores_draft() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1516,7 +1434,6 @@ fn oversized_submit_reports_error_and_restores_draft() {
     assert!(found_error, "expected oversized-input error history cell");
 }
 
-#[test]
 fn oversized_queued_submission_reports_error_and_restores_draft() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1559,7 +1476,6 @@ fn oversized_queued_submission_reports_error_and_restores_draft() {
 
 /// Behavior: editing that removes a paste placeholder should also clear the associated
 /// `pending_pastes` entry so it cannot be submitted accidentally.
-#[test]
 fn edit_clears_pending_paste() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1583,7 +1499,6 @@ fn edit_clears_pending_paste() {
     assert!(composer.pending_pastes.is_empty());
 }
 
-#[test]
 fn ui_snapshots() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1642,7 +1557,6 @@ fn ui_snapshots() {
     }
 }
 
-#[test]
 fn image_placeholder_snapshots() {
     snapshot_composer_state("image_placeholder_single", false, |composer| {
         composer.attach_image(PathBuf::from("/tmp/image1.png"));
@@ -1654,7 +1568,6 @@ fn image_placeholder_snapshots() {
     });
 }
 
-#[test]
 fn remote_image_rows_snapshots() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1691,7 +1604,6 @@ fn remote_image_rows_snapshots() {
     });
 }
 
-#[test]
 fn slash_popup_model_first_for_mo_ui() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1721,7 +1633,6 @@ fn slash_popup_model_first_for_mo_ui() {
     insta::assert_snapshot!("slash_popup_mo", terminal.backend());
 }
 
-#[test]
 fn slash_popup_model_first_for_mo_logic() {
     use super::super::command_popup::CommandItem;
     let sender = make_app_event_sender();
@@ -1748,7 +1659,6 @@ fn slash_popup_model_first_for_mo_logic() {
     }
 }
 
-#[test]
 fn slash_popup_resume_for_res_ui() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1775,7 +1685,6 @@ fn slash_popup_resume_for_res_ui() {
     insta::assert_snapshot!("slash_popup_res", terminal.backend());
 }
 
-#[test]
 fn slash_popup_resume_for_res_logic() {
     use super::super::command_popup::CommandItem;
     let sender = make_app_event_sender();
@@ -1803,8 +1712,7 @@ fn slash_popup_resume_for_res_logic() {
 }
 
 fn flush_after_paste_burst(composer: &mut ChatComposer) -> bool {
-    std::thread::sleep(PasteBurst::recommended_active_flush_delay());
-    composer.flush_paste_burst_if_due()
+    composer.handle_paste_burst_flush(Instant::now() + PasteBurst::recommended_active_flush_delay())
 }
 
 // Test helper: simulate human typing with a brief delay and flush the paste-burst buffer
@@ -1815,8 +1723,9 @@ fn type_chars_humanlike(composer: &mut ChatComposer, chars: &[char]) {
     use crossterm::event::KeyModifiers;
     for &ch in chars {
         let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
-        std::thread::sleep(ChatComposer::recommended_paste_flush_delay());
-        let _ = composer.flush_paste_burst_if_due();
+        let _ = composer.handle_paste_burst_flush(
+            Instant::now() + ChatComposer::recommended_paste_flush_delay(),
+        );
         if ch == ' ' {
             let _ = composer.handle_key_event(KeyEvent::new_with_kind(
                 KeyCode::Char(' '),
@@ -1827,7 +1736,6 @@ fn type_chars_humanlike(composer: &mut ChatComposer, chars: &[char]) {
     }
 }
 
-#[test]
 fn slash_command_dispatches_and_does_not_submit_literal_text() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1871,7 +1779,6 @@ fn slash_command_dispatches_and_does_not_submit_literal_text() {
     assert!(composer.textarea.is_empty(), "composer should be cleared");
 }
 
-#[test]
 fn kill_buffer_persists_after_submit() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1904,7 +1811,6 @@ fn kill_buffer_persists_after_submit() {
     assert_eq!(composer.textarea.text(), "restore me");
 }
 
-#[test]
 fn kill_buffer_persists_after_slash_command_dispatch() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1941,7 +1847,6 @@ fn kill_buffer_persists_after_slash_command_dispatch() {
     assert_eq!(composer.textarea.text(), "restore me");
 }
 
-#[test]
 fn slash_command_disabled_while_task_running_keeps_text() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1983,7 +1888,6 @@ fn slash_command_disabled_while_task_running_keeps_text() {
     assert!(found_error, "expected error history cell to be sent");
 }
 
-#[test]
 fn extract_args_supports_quoted_paths_single_arg() {
     let args = extract_positional_args_for_prompt_line(
         "/prompts:review \"docs/My File.md\"",
@@ -1999,7 +1903,6 @@ fn extract_args_supports_quoted_paths_single_arg() {
     );
 }
 
-#[test]
 fn extract_args_supports_mixed_quoted_and_unquoted() {
     let args =
         extract_positional_args_for_prompt_line("/prompts:cmd \"with spaces\" simple", "cmd", &[]);
@@ -2018,7 +1921,6 @@ fn extract_args_supports_mixed_quoted_and_unquoted() {
     );
 }
 
-#[test]
 fn slash_tab_completion_moves_cursor_to_end() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2042,7 +1944,6 @@ fn slash_tab_completion_moves_cursor_to_end() {
     assert_eq!(composer.textarea.cursor(), composer.textarea.text().len());
 }
 
-#[test]
 fn slash_tab_then_enter_dispatches_builtin_command() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2079,7 +1980,6 @@ fn slash_tab_then_enter_dispatches_builtin_command() {
     assert!(composer.textarea.is_empty());
 }
 
-#[test]
 fn slash_command_elementizes_on_space() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2100,7 +2000,6 @@ fn slash_command_elementizes_on_space() {
     assert_eq!(elements[0].placeholder(&text), Some("/plan"));
 }
 
-#[test]
 fn slash_command_elementizes_only_known_commands() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2120,7 +2019,6 @@ fn slash_command_elementizes_only_known_commands() {
     assert!(elements.is_empty());
 }
 
-#[test]
 fn slash_command_element_removed_when_not_at_start() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2147,7 +2045,6 @@ fn slash_command_element_removed_when_not_at_start() {
     assert!(elements.is_empty());
 }
 
-#[test]
 fn tab_submits_when_no_task_running() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2174,7 +2071,6 @@ fn tab_submits_when_no_task_running() {
     assert!(composer.textarea.is_empty());
 }
 
-#[test]
 fn tab_does_not_submit_for_bang_shell_command() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2202,7 +2098,6 @@ fn tab_does_not_submit_for_bang_shell_command() {
     );
 }
 
-#[test]
 fn slash_mention_dispatches_command_and_inserts_at() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2242,7 +2137,6 @@ fn slash_mention_dispatches_command_and_inserts_at() {
     assert_eq!(composer.textarea.text(), "@");
 }
 
-#[test]
 fn slash_plan_args_preserve_text_elements() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2279,7 +2173,6 @@ fn slash_plan_args_preserve_text_elements() {
     }
 }
 
-#[test]
 fn file_completion_preserves_large_paste_placeholder_elements() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2335,7 +2228,6 @@ fn file_completion_preserves_large_paste_placeholder_elements() {
 
 /// Behavior: multiple paste operations can coexist; placeholders should be expanded to their
 /// original content on submission.
-#[test]
 fn test_multiple_pastes_submission() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2412,7 +2304,6 @@ fn test_multiple_pastes_submission() {
     }
 }
 
-#[test]
 fn test_placeholder_deletion() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2485,7 +2376,6 @@ fn test_placeholder_deletion() {
 
 /// Behavior: if multiple large pastes share the same placeholder label (same char count),
 /// deleting one placeholder removes only its corresponding `pending_pastes` entry.
-#[test]
 fn deleting_duplicate_length_pastes_removes_only_target() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2523,7 +2413,6 @@ fn deleting_duplicate_length_pastes_removes_only_target() {
 
 /// Behavior: large-paste placeholder numbering does not get reused after deletion, so a new
 /// paste of the same length gets a new unique placeholder label.
-#[test]
 fn large_paste_numbering_does_not_reuse_after_deletion() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2562,7 +2451,6 @@ fn large_paste_numbering_does_not_reuse_after_deletion() {
     assert_eq!(composer.pending_pastes[1].0, third);
 }
 
-#[test]
 fn test_partial_placeholder_deletion() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -2613,7 +2501,6 @@ fn test_partial_placeholder_deletion() {
 }
 
 // --- Image attachment tests ---
-#[test]
 fn attach_image_and_submit_includes_local_image_paths() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2649,7 +2536,6 @@ fn attach_image_and_submit_includes_local_image_paths() {
     assert_eq!(vec![path], imgs);
 }
 
-#[test]
 fn submit_captures_recent_mention_bindings_before_clearing_textarea() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2680,7 +2566,6 @@ fn submit_captures_recent_mention_bindings_before_clearing_textarea() {
     assert!(composer.take_mention_bindings().is_empty());
 }
 
-#[test]
 fn history_navigation_restores_remote_and_local_image_attachments() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2713,7 +2598,6 @@ fn history_navigation_restores_remote_and_local_image_attachments() {
     assert_eq!(composer.remote_image_urls(), vec![remote_image_url]);
 }
 
-#[test]
 fn history_navigation_restores_remote_only_submissions() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2744,7 +2628,6 @@ fn history_navigation_restores_remote_only_submissions() {
     assert_eq!(composer.remote_image_urls(), remote_image_urls);
 }
 
-#[test]
 fn history_navigation_leaves_cursor_at_end_of_line() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2786,7 +2669,6 @@ fn history_navigation_leaves_cursor_at_end_of_line() {
     assert_eq!(composer.textarea.cursor(), composer.textarea.text().len());
 }
 
-#[test]
 fn set_text_content_reattaches_images_without_placeholder_metadata() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2807,7 +2689,6 @@ fn set_text_content_reattaches_images_without_placeholder_metadata() {
     assert_eq!(composer.local_image_paths(), vec![path]);
 }
 
-#[test]
 fn large_paste_preserves_image_text_elements_on_submit() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2848,7 +2729,6 @@ fn large_paste_preserves_image_text_elements_on_submit() {
     assert_eq!(vec![path], imgs);
 }
 
-#[test]
 fn large_paste_with_leading_whitespace_trims_and_shifts_elements() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2889,7 +2769,6 @@ fn large_paste_with_leading_whitespace_trims_and_shifts_elements() {
     assert_eq!(vec![path], imgs);
 }
 
-#[test]
 fn pasted_crlf_normalizes_newlines_for_elements() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2930,7 +2809,6 @@ fn pasted_crlf_normalizes_newlines_for_elements() {
     assert_eq!(vec![path], imgs);
 }
 
-#[test]
 fn suppressed_submission_restores_pending_paste_payload() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -2973,7 +2851,6 @@ fn suppressed_submission_restores_pending_paste_payload() {
     assert!(composer.pending_pastes.is_empty());
 }
 
-#[test]
 fn attach_image_without_text_submits_empty_text_and_images() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3010,7 +2887,6 @@ fn attach_image_without_text_submits_empty_text_and_images() {
     assert!(composer.attached_images.is_empty());
 }
 
-#[test]
 fn duplicate_image_placeholders_get_suffix() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3032,7 +2908,6 @@ fn duplicate_image_placeholders_get_suffix() {
     assert_eq!(composer.attached_images[1].placeholder, "[Image #2]");
 }
 
-#[test]
 fn image_placeholder_backspace_behaves_like_text_placeholder() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3067,7 +2942,6 @@ fn image_placeholder_backspace_behaves_like_text_placeholder() {
     }
 }
 
-#[test]
 fn backspace_with_multibyte_text_before_placeholder_does_not_panic() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3096,7 +2970,6 @@ fn backspace_with_multibyte_text_before_placeholder_does_not_panic() {
     assert!(composer.textarea.text().starts_with("[Image #1]"));
 }
 
-#[test]
 fn deleting_one_of_duplicate_image_placeholders_removes_one_entry() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3151,7 +3024,6 @@ fn deleting_one_of_duplicate_image_placeholders_removes_one_entry() {
     );
 }
 
-#[test]
 fn deleting_reordered_image_one_renumbers_text_in_place() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3213,7 +3085,6 @@ fn deleting_reordered_image_one_renumbers_text_in_place() {
     );
 }
 
-#[test]
 fn deleting_first_text_element_renumbers_following_text_element() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3248,7 +3119,6 @@ fn deleting_first_text_element_renumbers_following_text_element() {
     assert_eq!(composer.textarea.text(), "[Image #1]");
 }
 
-#[test]
 fn pasting_filepath_attaches_image() {
     let tmp = tempdir().expect("create TempDir");
     let tmp_path: PathBuf = tmp.path().join("chaos_console_test_paste_image.png");
@@ -3273,7 +3143,6 @@ fn pasting_filepath_attaches_image() {
     assert_eq!(imgs, vec![tmp_path]);
 }
 
-#[test]
 fn selecting_custom_prompt_without_args_submits_content() {
     let prompt_text = "Hello from saved prompt";
 
@@ -3313,7 +3182,6 @@ fn selecting_custom_prompt_without_args_submits_content() {
     assert!(composer.textarea.is_empty());
 }
 
-#[test]
 fn custom_prompt_submission_expands_arguments() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3347,7 +3215,6 @@ fn custom_prompt_submission_expands_arguments() {
     assert!(composer.textarea.is_empty());
 }
 
-#[test]
 fn custom_prompt_submission_accepts_quoted_values() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3381,7 +3248,6 @@ fn custom_prompt_submission_accepts_quoted_values() {
     assert!(composer.textarea.is_empty());
 }
 
-#[test]
 fn custom_prompt_submission_preserves_image_placeholder_unquoted() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3435,7 +3301,6 @@ fn custom_prompt_submission_preserves_image_placeholder_unquoted() {
     }
 }
 
-#[test]
 fn custom_prompt_submission_preserves_image_placeholder_quoted() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3490,7 +3355,6 @@ fn custom_prompt_submission_preserves_image_placeholder_quoted() {
     }
 }
 
-#[test]
 fn custom_prompt_submission_drops_unused_image_arg() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3537,7 +3401,6 @@ fn custom_prompt_submission_drops_unused_image_arg() {
 
 /// Behavior: selecting a custom prompt that includes a large paste placeholder should expand
 /// to the full pasted content before submission.
-#[test]
 fn custom_prompt_with_large_paste_expands_correctly() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3600,7 +3463,6 @@ fn custom_prompt_with_large_paste_expands_correctly() {
     assert!(composer.pending_pastes.is_empty());
 }
 
-#[test]
 fn custom_prompt_with_large_paste_and_image_preserves_elements() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3657,7 +3519,6 @@ fn custom_prompt_with_large_paste_and_image_preserves_elements() {
     }
 }
 
-#[test]
 fn slash_path_input_submits_without_command_error() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3692,7 +3553,6 @@ fn slash_path_input_submits_without_command_error() {
     }
 }
 
-#[test]
 fn slash_with_leading_space_submits_as_text() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -3727,7 +3587,6 @@ fn slash_with_leading_space_submits_as_text() {
     }
 }
 
-#[test]
 fn custom_prompt_invalid_args_reports_error() {
     let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
@@ -3776,7 +3635,6 @@ fn custom_prompt_invalid_args_reports_error() {
     assert!(found_error, "expected error history cell to be sent");
 }
 
-#[test]
 fn custom_prompt_missing_required_args_reports_error() {
     let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
@@ -3827,7 +3685,6 @@ fn custom_prompt_missing_required_args_reports_error() {
     );
 }
 
-#[test]
 fn selecting_custom_prompt_with_args_expands_placeholders() {
     // Support $1..$9 and $ARGUMENTS in prompt content.
     let prompt_text = "Header: $1\nArgs: $ARGUMENTS\nNinth: $9\n";
@@ -3867,7 +3724,6 @@ fn selecting_custom_prompt_with_args_expands_placeholders() {
     ));
 }
 
-#[test]
 fn popup_prompt_submission_prunes_unused_image_attachments() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3904,7 +3760,6 @@ fn popup_prompt_submission_prunes_unused_image_attachments() {
     );
 }
 
-#[test]
 fn numeric_prompt_auto_submit_prunes_unused_image_attachments() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3946,7 +3801,6 @@ fn numeric_prompt_auto_submit_prunes_unused_image_attachments() {
     );
 }
 
-#[test]
 fn numeric_prompt_auto_submit_expands_pending_pastes() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -3985,7 +3839,6 @@ fn numeric_prompt_auto_submit_expands_pending_pastes() {
     assert!(composer.pending_pastes.is_empty());
 }
 
-#[test]
 fn queued_prompt_submission_prunes_unused_image_attachments() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4025,7 +3878,6 @@ fn queued_prompt_submission_prunes_unused_image_attachments() {
     );
 }
 
-#[test]
 fn prompt_expansion_over_character_limit_reports_error_and_restores_draft() {
     let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
@@ -4075,7 +3927,6 @@ fn prompt_expansion_over_character_limit_reports_error_and_restores_draft() {
     assert!(found_error, "expected oversized-input error history cell");
 }
 
-#[test]
 fn selecting_custom_prompt_with_positional_args_submits_numeric_expansion() {
     let prompt_text = "Header: $1\nArgs: $ARGUMENTS\n";
 
@@ -4105,7 +3956,6 @@ fn selecting_custom_prompt_with_positional_args_submits_numeric_expansion() {
     }
 }
 
-#[test]
 fn numeric_prompt_positional_args_does_not_error() {
     // Ensure that a prompt with only numeric placeholders does not trigger
     // key=value parsing errors when given positional arguments.
@@ -4140,7 +3990,6 @@ fn numeric_prompt_positional_args_does_not_error() {
     assert!(composer.textarea.is_empty());
 }
 
-#[test]
 fn selecting_custom_prompt_with_no_args_inserts_template() {
     let prompt_text = "X:$1 Y:$2 All:[$ARGUMENTS]";
 
@@ -4174,7 +4023,6 @@ fn selecting_custom_prompt_with_no_args_inserts_template() {
     assert_eq!("/prompts:p ", composer.textarea.text());
 }
 
-#[test]
 fn selecting_custom_prompt_preserves_literal_dollar_dollar() {
     // '$$' should remain untouched.
     let prompt_text = "Cost: $$ and first: $1";
@@ -4212,7 +4060,6 @@ fn selecting_custom_prompt_preserves_literal_dollar_dollar() {
     ));
 }
 
-#[test]
 fn selecting_custom_prompt_reuses_cached_arguments_join() {
     let prompt_text = "First: $ARGUMENTS\nSecond: $ARGUMENTS";
 
@@ -4252,7 +4099,6 @@ fn selecting_custom_prompt_reuses_cached_arguments_join() {
 
 /// Behavior: the first fast ASCII character is held briefly to avoid flicker; if no burst
 /// follows, it should eventually flush as normal typed input (not as a paste).
-#[test]
 fn pending_first_ascii_char_flushes_as_typed() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -4271,8 +4117,8 @@ fn pending_first_ascii_char_flushes_as_typed() {
     assert!(composer.is_in_paste_burst());
     assert!(composer.textarea.text().is_empty());
 
-    std::thread::sleep(ChatComposer::recommended_paste_flush_delay());
-    let flushed = composer.flush_paste_burst_if_due();
+    let flushed = composer
+        .handle_paste_burst_flush(Instant::now() + ChatComposer::recommended_paste_flush_delay());
     assert!(flushed, "expected pending first char to flush");
     assert_eq!(composer.textarea.text(), "h");
     assert!(!composer.is_in_paste_burst());
@@ -4280,7 +4126,6 @@ fn pending_first_ascii_char_flushes_as_typed() {
 
 /// Behavior: fast "paste-like" ASCII input should buffer and then flush as a single paste. If
 /// the payload is small, it should insert directly (no placeholder).
-#[test]
 fn burst_paste_fast_small_buffers_and_flushes_on_stop() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -4330,7 +4175,6 @@ fn burst_paste_fast_small_buffers_and_flushes_on_stop() {
 
 /// Behavior: fast "paste-like" ASCII input should buffer and then flush as a single paste. If
 /// the payload is large, it should insert a placeholder and defer the full text until submit.
-#[test]
 fn burst_paste_fast_large_inserts_placeholder_on_flush() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4368,7 +4212,6 @@ fn burst_paste_fast_large_inserts_placeholder_on_flush() {
 
 /// Behavior: human-like typing (with delays between chars) should not be classified as a paste
 /// burst. Characters should appear immediately and should not trigger a paste placeholder.
-#[test]
 fn humanlike_typing_1000_chars_appears_live_no_placeholder() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4387,7 +4230,6 @@ fn humanlike_typing_1000_chars_appears_live_no_placeholder() {
     assert!(composer.pending_pastes.is_empty());
 }
 
-#[test]
 fn slash_popup_not_activated_for_slash_space_text_history_like_input() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -4417,7 +4259,6 @@ fn slash_popup_not_activated_for_slash_space_text_history_like_input() {
     assert_eq!(result, InputResult::None);
 }
 
-#[test]
 fn slash_popup_activated_for_bare_slash_and_valid_prefixes() {
     // use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -4461,17 +4302,14 @@ fn slash_popup_activated_for_bare_slash_and_valid_prefixes() {
     );
 }
 
-#[test]
-fn apply_external_edit_rebuilds_text_and_attachments() {
-    let sender = make_app_event_sender();
+fn external_edit_rebuilds_attachments_and_pending_placeholder_state() {
     let mut composer = ChatComposer::new(
         true,
-        sender,
+        make_app_event_sender(),
         false,
         "Ask FreeChaOS to do anything".to_string(),
         false,
     );
-
     let placeholder = local_image_label_text(1);
     composer.textarea.insert_element(&placeholder);
     composer.attached_images.push(AttachedImage {
@@ -4492,103 +4330,76 @@ fn apply_external_edit_rebuilds_text_and_attachments() {
     assert_eq!(composer.attached_images.len(), 1);
     assert_eq!(composer.attached_images[0].placeholder, placeholder);
     assert_eq!(composer.textarea.cursor(), composer.current_text().len());
-}
 
-#[test]
-fn apply_external_edit_drops_missing_attachments() {
-    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
-        sender,
+        make_app_event_sender(),
         false,
         "Ask FreeChaOS to do anything".to_string(),
         false,
     );
-
     let placeholder = local_image_label_text(1);
     composer.textarea.insert_element(&placeholder);
     composer.attached_images.push(AttachedImage {
         placeholder: placeholder.clone(),
         path: PathBuf::from("img.png"),
     });
-
     composer.apply_external_edit("No images here".to_string());
-
     assert_eq!(composer.current_text(), "No images here".to_string());
     assert!(composer.attached_images.is_empty());
-}
 
-#[test]
-fn apply_external_edit_renumbers_image_placeholders() {
-    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
-        sender,
+        make_app_event_sender(),
         false,
         "Ask FreeChaOS to do anything".to_string(),
         false,
     );
-
     let first_path = PathBuf::from("img1.png");
     let second_path = PathBuf::from("img2.png");
     composer.attach_image(first_path);
     composer.attach_image(second_path.clone());
-
     let placeholder2 = local_image_label_text(2);
     composer.apply_external_edit(format!("Keep {placeholder2}"));
-
     let placeholder1 = local_image_label_text(1);
     assert_eq!(composer.current_text(), format!("Keep {placeholder1}"));
     assert_eq!(composer.attached_images.len(), 1);
     assert_eq!(composer.attached_images[0].placeholder, placeholder1);
     assert_eq!(composer.local_image_paths(), vec![second_path]);
     assert_eq!(composer.textarea.element_payloads(), vec![placeholder1]);
-}
 
-#[test]
-fn current_text_with_pending_expands_placeholders() {
-    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
-        sender,
+        make_app_event_sender(),
         false,
         "Ask FreeChaOS to do anything".to_string(),
         false,
     );
-
     let placeholder = "[Pasted Content 5 chars]".to_string();
     composer.textarea.insert_element(&placeholder);
     composer
         .pending_pastes
         .push((placeholder.clone(), "hello".to_string()));
-
     assert_eq!(
         composer.current_text_with_pending(),
         "hello".to_string(),
         "placeholder should expand to actual text"
     );
-}
 
-#[test]
-fn apply_external_edit_limits_duplicates_to_occurrences() {
-    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
-        sender,
+        make_app_event_sender(),
         false,
         "Ask FreeChaOS to do anything".to_string(),
         false,
     );
-
     let placeholder = local_image_label_text(1);
     composer.textarea.insert_element(&placeholder);
     composer.attached_images.push(AttachedImage {
         placeholder: placeholder.clone(),
         path: PathBuf::from("img.png"),
     });
-
     composer.apply_external_edit(format!("{placeholder} extra {placeholder}"));
-
     assert_eq!(
         composer.current_text(),
         format!("{placeholder} extra {placeholder}")
@@ -4596,7 +4407,6 @@ fn apply_external_edit_limits_duplicates_to_occurrences() {
     assert_eq!(composer.attached_images.len(), 1);
 }
 
-#[test]
 fn remote_images_do_not_modify_textarea_text_or_elements() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4616,7 +4426,6 @@ fn remote_images_do_not_modify_textarea_text_or_elements() {
     assert_eq!(composer.text_elements(), Vec::<TextElement>::new());
 }
 
-#[test]
 fn attach_image_after_remote_prefix_uses_offset_label() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4637,7 +4446,6 @@ fn attach_image_after_remote_prefix_uses_offset_label() {
     assert_eq!(composer.current_text(), "[Image #3]");
 }
 
-#[test]
 fn prepare_submission_keeps_remote_offset_local_placeholder_numbering() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4673,7 +4481,6 @@ fn prepare_submission_keeps_remote_offset_local_placeholder_numbering() {
     );
 }
 
-#[test]
 fn prepare_submission_with_only_remote_images_returns_empty_text() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4692,7 +4499,6 @@ fn prepare_submission_with_only_remote_images_returns_empty_text() {
     assert!(submitted_elements.is_empty());
 }
 
-#[test]
 fn delete_selected_remote_image_relabels_local_placeholders() {
     let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
@@ -4726,7 +4532,6 @@ fn delete_selected_remote_image_relabels_local_placeholders() {
     assert_eq!(composer.attached_images[0].placeholder, "[Image #1]");
 }
 
-#[test]
 fn input_disabled_ignores_keypresses_and_hides_cursor() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;

@@ -837,20 +837,61 @@ mod tests {
     }
 
     #[test]
+    fn lib_suite() {
+        std::thread::Builder::new()
+            .name("console-lib-suite".to_string())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build console test runtime")
+                    .block_on(run_lib_suite());
+            })
+            .expect("spawn console lib suite thread")
+            .join()
+            .expect("console lib suite panicked");
+    }
+
+    async fn run_lib_suite() {
+        super::additional_dirs::tests::add_dir_warning_message_only_warns_for_read_only_sandbox_with_dirs();
+        super::app::tests::app_tests_suite().await;
+        super::app_backtrack::tests::app_backtrack_suite();
+        #[cfg(feature = "vt100-tests")]
+        super::cwd_prompt::tests::cwd_prompt_suite();
+        super::external_editor::tests::run_editor_returns_updated_content().await;
+        super::onboarding::tests::onboarding_suite();
+        super::pager_overlay::tests::pager_overlay_suite();
+        super::resume_picker::tests::resume_picker_suite().await;
+
+        wezterm_main_scrollback_stays_unbounded_even_when_alt_screen_is_available();
+        non_wezterm_main_scrollback_keeps_reserved_top_row();
+        boot_core_returns_valid_managers()
+            .await
+            .expect("boot_core_returns_valid_managers");
+        untrusted_project_skips_trust_prompt()
+            .await
+            .expect("untrusted_project_skips_trust_prompt");
+        config_rebuild_changes_trust_defaults_with_cwd()
+            .await
+            .expect("config_rebuild_changes_trust_defaults_with_cwd");
+        theme_warning_uses_final_config()
+            .await
+            .expect("theme_warning_uses_final_config");
+    }
+
     fn wezterm_main_scrollback_stays_unbounded_even_when_alt_screen_is_available() {
         assert!(terminal_needs_unbounded_main_scrollback(
             TerminalName::WezTerm
         ));
     }
 
-    #[test]
     fn non_wezterm_main_scrollback_keeps_reserved_top_row() {
         assert!(!terminal_needs_unbounded_main_scrollback(
             TerminalName::Unknown
         ));
     }
 
-    #[tokio::test]
     async fn boot_core_returns_valid_managers() -> std::io::Result<()> {
         let temp_dir = TempDir::new()?;
         let config = build_config(&temp_dir).await?;
@@ -866,7 +907,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
     async fn untrusted_project_skips_trust_prompt() -> std::io::Result<()> {
         use chaos_ipc::config_types::TrustLevel;
         let temp_dir = TempDir::new()?;
@@ -883,7 +923,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
     async fn config_rebuild_changes_trust_defaults_with_cwd() -> std::io::Result<()> {
         use chaos_ipc::config_types::TrustLevel;
         use chaos_kern::config::set_project_trust_level;
@@ -941,7 +980,6 @@ mod tests {
     /// pure validation core of `set_theme_override`) must be called with
     /// the *final* config's theme, and its warning must land in the
     /// final config's `startup_warnings`.
-    #[tokio::test]
     async fn theme_warning_uses_final_config() -> std::io::Result<()> {
         use crate::render::highlight::validate_theme_name;
 

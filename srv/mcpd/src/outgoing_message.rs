@@ -238,7 +238,21 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    #[test]
+    #[tokio::test]
+    async fn outgoing_message_suite() {
+        outgoing_notification_serializes_as_jsonrpc_notification();
+        test_send_event_as_notification()
+            .await
+            .expect("test_send_event_as_notification");
+        test_send_event_as_notification_with_meta()
+            .await
+            .expect("test_send_event_as_notification_with_meta");
+        test_send_event_as_notification_with_meta_and_process_id()
+            .await
+            .expect("test_send_event_as_notification_with_meta_and_process_id");
+        empty_elicitation_capability_defaults_to_form_support();
+    }
+
     fn outgoing_notification_serializes_as_jsonrpc_notification() {
         let msg: OutgoingJsonRpcMessage = OutgoingMessage::Notification(OutgoingNotification {
             method: "notifications/initialized".to_string(),
@@ -257,7 +271,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn test_send_event_as_notification() -> Result<()> {
         let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
@@ -306,7 +319,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
     async fn test_send_event_as_notification_with_meta() -> Result<()> {
         let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
@@ -374,7 +386,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
     async fn test_send_event_as_notification_with_meta_and_process_id() -> Result<()> {
         let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
@@ -443,7 +454,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
     fn empty_elicitation_capability_defaults_to_form_support() {
         let (outgoing_tx, _outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);

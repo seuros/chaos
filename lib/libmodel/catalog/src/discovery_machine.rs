@@ -132,32 +132,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn offline_refresh_starts_with_cache_lookup() {
+    fn discovery_workflow_covers_cache_and_fetch_paths() {
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(RefreshStrategy::Offline);
         assert_eq!(workflow.state(), ModelDiscoveryState::CheckingCache);
-    }
 
-    #[test]
-    fn online_uncached_cache_hit_stops_at_cached_catalog() {
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(RefreshStrategy::OnlineIfUncached);
         workflow.record_cache_hit();
         assert_eq!(workflow.state(), ModelDiscoveryState::CachedCatalog);
-    }
 
-    #[test]
-    fn online_uncached_cache_miss_flows_into_live_catalog() {
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(RefreshStrategy::OnlineIfUncached);
         workflow.record_cache_miss();
         workflow.record_fetch_started();
         workflow.record_live_catalog();
         assert_eq!(workflow.state(), ModelDiscoveryState::LiveCatalog);
-    }
 
-    #[test]
-    fn online_fetch_can_land_in_unsupported_catalog() {
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(RefreshStrategy::Online);
         workflow.record_unsupported_catalog();

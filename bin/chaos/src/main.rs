@@ -688,25 +688,29 @@ mod tests {
     }
 
     #[test]
-    fn exec_resume_last_accepts_prompt_positional() {
+    fn cli_parser_and_exit_format_suite() {
+        exec_resume_cli_parses_positionals_and_subcommand_flags();
+        auto_exec_flags_do_not_leak_to_unrelated_subcommands();
+        format_exit_messages_handles_zero_usage_resume_color_and_thread_names();
+        resume_and_fork_picker_logic_cover_default_last_session_and_all_modes();
+        resume_merges_subcommand_scoped_flags_with_highest_precedence();
+        debug_flag_is_global_and_defaults_false();
+    }
+
+    fn exec_resume_cli_parses_positionals_and_subcommand_flags() {
         let cli =
             MultitoolCli::try_parse_from(["chaos", "exec", "--json", "resume", "--last", "2+2"])
                 .expect("parse should succeed");
-
         let Some(Subcommand::Exec(exec)) = cli.subcommand else {
             panic!("expected exec subcommand");
         };
         let Some(chaos_fork::Command::Resume(args)) = exec.command else {
             panic!("expected exec resume");
         };
-
         assert!(args.last);
         assert_eq!(args.session_id, None);
         assert_eq!(args.prompt.as_deref(), Some("2+2"));
-    }
 
-    #[test]
-    fn exec_resume_accepts_output_last_message_flag_after_subcommand() {
         let cli = MultitoolCli::try_parse_from([
             "chaos",
             "exec",
@@ -717,24 +721,19 @@ mod tests {
             "re-review",
         ])
         .expect("parse should succeed");
-
         let Some(Subcommand::Exec(exec)) = cli.subcommand else {
             panic!("expected exec subcommand");
         };
         let Some(chaos_fork::Command::Resume(args)) = exec.command else {
             panic!("expected exec resume");
         };
-
         assert_eq!(
             exec.last_message_file,
             Some(std::path::PathBuf::from("/tmp/resume-output.md"))
         );
         assert_eq!(args.session_id.as_deref(), Some("session-123"));
         assert_eq!(args.prompt.as_deref(), Some("re-review"));
-    }
 
-    #[test]
-    fn exec_resume_accepts_auto_exec_flag_after_subcommand() {
         let cli = MultitoolCli::try_parse_from([
             "chaos",
             "exec",
@@ -744,20 +743,17 @@ mod tests {
             "continue",
         ])
         .expect("parse should succeed");
-
         let Some(Subcommand::Exec(exec)) = cli.subcommand else {
             panic!("expected exec subcommand");
         };
         let Some(chaos_fork::Command::Resume(args)) = exec.command else {
             panic!("expected exec resume");
         };
-
         assert!(exec.auto_exec.headless);
         assert!(args.last);
         assert_eq!(args.prompt.as_deref(), Some("continue"));
     }
 
-    #[test]
     fn auto_exec_flags_do_not_leak_to_unrelated_subcommands() {
         for args in [
             &["chaos", "accounts", "--headless"][..],
@@ -786,8 +782,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn format_exit_messages_skips_zero_usage() {
+    fn format_exit_messages_handles_zero_usage_resume_color_and_thread_names() {
         let exit_info = AppExitInfo {
             token_usage: TokenUsage::default(),
             process_id: None,
@@ -796,10 +791,7 @@ mod tests {
         };
         let lines = format_exit_messages(exit_info, false);
         assert!(lines.is_empty());
-    }
 
-    #[test]
-    fn format_exit_messages_includes_resume_hint_without_color() {
         let exit_info = sample_exit_info(Some("123e4567-e89b-12d3-a456-426614174000"), None);
         let lines = format_exit_messages(exit_info, false);
         assert_eq!(
@@ -810,18 +802,12 @@ mod tests {
                     .to_string(),
             ]
         );
-    }
 
-    #[test]
-    fn format_exit_messages_applies_color_when_enabled() {
         let exit_info = sample_exit_info(Some("123e4567-e89b-12d3-a456-426614174000"), None);
         let lines = format_exit_messages(exit_info, true);
         assert_eq!(lines.len(), 2);
         assert!(lines[1].contains("\u{1b}[36m"));
-    }
 
-    #[test]
-    fn format_exit_messages_prefers_process_name() {
         let exit_info = sample_exit_info(
             Some("123e4567-e89b-12d3-a456-426614174000"),
             Some("my-thread"),
@@ -836,42 +822,53 @@ mod tests {
         );
     }
 
-    #[test]
-    fn resume_picker_logic_none_and_not_last() {
+    fn resume_and_fork_picker_logic_cover_default_last_session_and_all_modes() {
         let interactive = finalize_resume_from_args(["chaos", "resume"].as_ref());
         assert!(interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);
         assert!(!interactive.resume_show_all);
-    }
 
-    #[test]
-    fn resume_picker_logic_last() {
         let interactive = finalize_resume_from_args(["chaos", "resume", "--last"].as_ref());
         assert!(!interactive.resume_picker);
         assert!(interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);
         assert!(!interactive.resume_show_all);
-    }
 
-    #[test]
-    fn resume_picker_logic_with_session_id() {
         let interactive = finalize_resume_from_args(["chaos", "resume", "1234"].as_ref());
         assert!(!interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("1234"));
         assert!(!interactive.resume_show_all);
-    }
 
-    #[test]
-    fn resume_all_flag_sets_show_all() {
         let interactive = finalize_resume_from_args(["chaos", "resume", "--all"].as_ref());
         assert!(interactive.resume_picker);
         assert!(interactive.resume_show_all);
+
+        let interactive = finalize_fork_from_args(["chaos", "fork"].as_ref());
+        assert!(interactive.fork_picker);
+        assert!(!interactive.fork_last);
+        assert_eq!(interactive.fork_session_id, None);
+        assert!(!interactive.fork_show_all);
+
+        let interactive = finalize_fork_from_args(["chaos", "fork", "--last"].as_ref());
+        assert!(!interactive.fork_picker);
+        assert!(interactive.fork_last);
+        assert_eq!(interactive.fork_session_id, None);
+        assert!(!interactive.fork_show_all);
+
+        let interactive = finalize_fork_from_args(["chaos", "fork", "1234"].as_ref());
+        assert!(!interactive.fork_picker);
+        assert!(!interactive.fork_last);
+        assert_eq!(interactive.fork_session_id.as_deref(), Some("1234"));
+        assert!(!interactive.fork_show_all);
+
+        let interactive = finalize_fork_from_args(["chaos", "fork", "--all"].as_ref());
+        assert!(interactive.fork_picker);
+        assert!(interactive.fork_show_all);
     }
 
-    #[test]
-    fn resume_merges_option_flags_and_full_auto() {
+    fn resume_merges_subcommand_scoped_flags_with_highest_precedence() {
         let interactive = finalize_resume_from_args(
             [
                 "chaos",
@@ -909,10 +906,7 @@ mod tests {
         assert!(!interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));
-    }
 
-    #[test]
-    fn resume_merges_headless_flag() {
         let interactive = finalize_resume_from_args(["chaos", "resume", "--headless"].as_ref());
         assert!(interactive.auto_exec.headless);
         assert!(interactive.resume_picker);
@@ -920,69 +914,17 @@ mod tests {
         assert_eq!(interactive.resume_session_id, None);
     }
 
-    #[test]
-    fn fork_picker_logic_none_and_not_last() {
-        let interactive = finalize_fork_from_args(["chaos", "fork"].as_ref());
-        assert!(interactive.fork_picker);
-        assert!(!interactive.fork_last);
-        assert_eq!(interactive.fork_session_id, None);
-        assert!(!interactive.fork_show_all);
-    }
+    fn debug_flag_is_global_and_defaults_false() {
+        for args in [
+            &["chaos", "--debug"][..],
+            &["chaos", "-d"][..],
+            &["chaos", "--debug", "exec", "say hi"][..],
+            &["chaos", "exec", "--debug", "say hi"][..],
+        ] {
+            let cli = MultitoolCli::try_parse_from(args).expect("parse");
+            assert!(cli.debug, "debug should be enabled for {args:?}");
+        }
 
-    #[test]
-    fn fork_picker_logic_last() {
-        let interactive = finalize_fork_from_args(["chaos", "fork", "--last"].as_ref());
-        assert!(!interactive.fork_picker);
-        assert!(interactive.fork_last);
-        assert_eq!(interactive.fork_session_id, None);
-        assert!(!interactive.fork_show_all);
-    }
-
-    #[test]
-    fn fork_picker_logic_with_session_id() {
-        let interactive = finalize_fork_from_args(["chaos", "fork", "1234"].as_ref());
-        assert!(!interactive.fork_picker);
-        assert!(!interactive.fork_last);
-        assert_eq!(interactive.fork_session_id.as_deref(), Some("1234"));
-        assert!(!interactive.fork_show_all);
-    }
-
-    #[test]
-    fn fork_all_flag_sets_show_all() {
-        let interactive = finalize_fork_from_args(["chaos", "fork", "--all"].as_ref());
-        assert!(interactive.fork_picker);
-        assert!(interactive.fork_show_all);
-    }
-
-    #[test]
-    fn debug_flag_accepted_at_root() {
-        let cli = MultitoolCli::try_parse_from(["chaos", "--debug"]).expect("parse");
-        assert!(cli.debug);
-    }
-
-    #[test]
-    fn debug_short_flag_accepted() {
-        let cli = MultitoolCli::try_parse_from(["chaos", "-d"]).expect("parse");
-        assert!(cli.debug);
-    }
-
-    #[test]
-    fn debug_flag_accepted_with_exec() {
-        let cli =
-            MultitoolCli::try_parse_from(["chaos", "--debug", "exec", "say hi"]).expect("parse");
-        assert!(cli.debug);
-        assert!(matches!(cli.subcommand, Some(Subcommand::Exec(_))));
-    }
-
-    #[test]
-    fn debug_flag_accepted_after_subcommand() {
-        let cli =
-            MultitoolCli::try_parse_from(["chaos", "exec", "--debug", "say hi"]).expect("parse");
-        assert!(cli.debug);
-    }
-
-    #[test]
-    fn debug_flag_defaults_to_false() {
         let cli = MultitoolCli::try_parse_from(["chaos"]).expect("parse");
         assert!(!cli.debug);
     }

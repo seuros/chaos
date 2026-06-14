@@ -842,9 +842,14 @@ async fn wait_agent_times_out_when_status_is_not_final() {
             "timeout_ms": MIN_WAIT_TIMEOUT_MS
         })),
     );
-    let output = WaitAgentHandler
-        .handle(invocation)
+    tokio::time::pause();
+    let wait_task = tokio::spawn(WaitAgentHandler.handle(invocation));
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_millis(MIN_WAIT_TIMEOUT_MS as u64)).await;
+
+    let output = wait_task
         .await
+        .expect("wait task should not panic")
         .expect("wait_agent should succeed");
     let (content, success) = expect_text_output(output);
     let result: wait::WaitAgentResult =
@@ -883,15 +888,16 @@ async fn wait_agent_clamps_short_timeouts_to_minimum() {
         })),
     );
 
-    let early = timeout(
-        Duration::from_millis(50),
-        WaitAgentHandler.handle(invocation),
-    )
-    .await;
+    tokio::time::pause();
+    let wait_task = tokio::spawn(WaitAgentHandler.handle(invocation));
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_millis(50)).await;
     assert!(
-        early.is_err(),
+        !wait_task.is_finished(),
         "wait_agent should not return before the minimum timeout clamp"
     );
+    wait_task.abort();
+    let _ = wait_task.await;
 
     let _ = thread
         .process

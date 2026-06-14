@@ -144,16 +144,27 @@ pub fn maybe_build_rustls_client_config_with_custom_ca()
 fn maybe_build_rustls_client_config_with_env(
     env_source: &dyn EnvSource,
 ) -> Result<Option<Arc<ClientConfig>>, BuildCustomCaTransportError> {
+    maybe_build_rustls_client_config_with_env_and_native_roots(
+        env_source,
+        rustls_native_certs::load_native_certs,
+    )
+}
+
+fn maybe_build_rustls_client_config_with_env_and_native_roots(
+    env_source: &dyn EnvSource,
+    load_native_certs: impl FnOnce() -> rustls_native_certs::CertificateResult,
+) -> Result<Option<Arc<ClientConfig>>, BuildCustomCaTransportError> {
     let Some(bundle) = env_source.configured_ca_bundle() else {
         return Ok(None);
     };
+
+    let certificates = bundle.load_certificates()?;
 
     // Start from the platform roots so websocket callers keep the same baseline trust behavior
     // they would get from tungstenite's default rustls connector, then layer in the Chaos custom
     // CA bundle on top when configured.
     let mut root_store = RootCertStore::empty();
-    let rustls_native_certs::CertificateResult { certs, errors, .. } =
-        rustls_native_certs::load_native_certs();
+    let rustls_native_certs::CertificateResult { certs, errors, .. } = load_native_certs();
     if !errors.is_empty() {
         warn!(
             native_root_error_count = errors.len(),
@@ -162,7 +173,6 @@ fn maybe_build_rustls_client_config_with_env(
     }
     let _ = root_store.add_parsable_certificates(certs);
 
-    let certificates = bundle.load_certificates()?;
     for (idx, cert) in certificates.into_iter().enumerate() {
         if let Err(source) = root_store.add(cert) {
             warn!(
@@ -534,7 +544,7 @@ mod tests {
     use super::BuildCustomCaTransportError;
     use super::EnvSource;
     use super::SSL_CERT_FILE_ENV;
-    use super::maybe_build_rustls_client_config_with_env;
+    use super::maybe_build_rustls_client_config_with_env_and_native_roots;
 
     const TEST_CERT: &str = include_str!("../tests/fixtures/test-ca.pem");
 
@@ -566,6 +576,13 @@ mod tests {
     }
 
     #[test]
+    fn custom_ca_suite() {
+        ca_path_uses_ssl_cert_file();
+        ca_path_ignores_empty_values();
+        rustls_config_uses_custom_ca_bundle_when_configured();
+        rustls_config_reports_invalid_ca_file();
+    }
+
     fn ca_path_uses_ssl_cert_file() {
         let env = map_env(&[(SSL_CERT_FILE_ENV, "/tmp/fallback.pem")]);
 
@@ -575,33 +592,37 @@ mod tests {
         );
     }
 
-    #[test]
     fn ca_path_ignores_empty_values() {
         let env = map_env(&[(SSL_CERT_FILE_ENV, "")]);
 
         assert_eq!(env.configured_ca_bundle().map(|bundle| bundle.path), None);
     }
 
-    #[test]
     fn rustls_config_uses_custom_ca_bundle_when_configured() {
         let temp_dir = TempDir::new().expect("tempdir");
         let cert_path = write_cert_file(&temp_dir, "ca.pem", TEST_CERT);
         let env = map_env(&[(SSL_CERT_FILE_ENV, cert_path.to_string_lossy().as_ref())]);
 
-        let config = maybe_build_rustls_client_config_with_env(&env)
-            .expect("rustls config")
-            .expect("custom CA config should be present");
+        let config = maybe_build_rustls_client_config_with_env_and_native_roots(
+            &env,
+            rustls_native_certs::CertificateResult::default,
+        )
+        .expect("rustls config")
+        .expect("custom CA config should be present");
 
         assert!(config.enable_sni);
     }
 
-    #[test]
     fn rustls_config_reports_invalid_ca_file() {
         let temp_dir = TempDir::new().expect("tempdir");
         let cert_path = write_cert_file(&temp_dir, "empty.pem", "");
         let env = map_env(&[(SSL_CERT_FILE_ENV, cert_path.to_string_lossy().as_ref())]);
 
-        let error = maybe_build_rustls_client_config_with_env(&env).expect_err("invalid CA");
+        let error = maybe_build_rustls_client_config_with_env_and_native_roots(
+            &env,
+            rustls_native_certs::CertificateResult::default,
+        )
+        .expect_err("invalid CA");
 
         assert!(matches!(
             error,

@@ -44,7 +44,101 @@ use std::sync::atomic::AtomicBool;
 use tempfile::tempdir;
 use tokio::time;
 
-#[test]
+pub(crate) async fn app_tests_suite() {
+    super::agent_navigation::tests::agent_navigation_state_preserves_order_wraps_and_formats_labels(
+    );
+    super::pending_interactive_replay::tests::pending_interactive_replay_suite();
+
+    normalize_harness_overrides_resolves_relative_add_dirs()
+        .expect("normalize_harness_overrides_resolves_relative_add_dirs");
+    startup_waiting_gate_is_only_for_fresh_or_exit_session_selection();
+    startup_waiting_gate_holds_active_process_events_until_primary_process_configured();
+    startup_waiting_gate_not_applied_for_resume_or_fork_session_selection();
+    enqueue_primary_event_delivers_session_configured_before_buffered_approval()
+        .await
+        .expect("enqueue_primary_event_delivers_session_configured_before_buffered_approval");
+    routed_thread_event_does_not_recreate_channel_after_reset()
+        .await
+        .expect("routed_thread_event_does_not_recreate_channel_after_reset");
+    reset_process_event_state_aborts_listener_tasks().await;
+    enqueue_thread_event_does_not_block_when_channel_full()
+        .await
+        .expect("enqueue_thread_event_does_not_block_when_channel_full");
+    replay_process_snapshot_restores_draft_and_queued_input().await;
+    replayed_turn_complete_submits_restored_queued_follow_up().await;
+    replay_only_thread_keeps_restored_queue_visible().await;
+    replay_process_snapshot_keeps_queue_when_running_state_only_comes_from_snapshot().await;
+    replay_process_snapshot_does_not_submit_queue_before_replay_catches_up().await;
+    replay_process_snapshot_restores_pending_pastes_for_submit().await;
+    replay_process_snapshot_restores_collaboration_mode_for_draft_submit().await;
+    replay_process_snapshot_restores_collaboration_mode_without_input().await;
+    replayed_interrupted_turn_restores_queued_input_to_composer().await;
+    live_turn_started_updates_lua_statusline_context_window().await;
+    open_agent_picker_keeps_missing_threads_for_replay()
+        .await
+        .expect("open_agent_picker_keeps_missing_threads_for_replay");
+    open_agent_picker_keeps_cached_closed_processes()
+        .await
+        .expect("open_agent_picker_keeps_cached_closed_processes");
+    open_agent_picker_selects_existing_agent_process()
+        .await
+        .expect("open_agent_picker_selects_existing_agent_process");
+    refresh_pending_process_approvals_only_lists_inactive_processes().await;
+    inactive_process_approval_bubbles_into_active_view()
+        .await
+        .expect("inactive_process_approval_bubbles_into_active_view");
+    agent_picker_item_name_snapshot();
+    active_non_primary_shutdown_target_returns_none_for_non_shutdown_event()
+        .await
+        .expect("active_non_primary_shutdown_target_returns_none_for_non_shutdown_event");
+    active_non_primary_shutdown_target_returns_none_for_primary_thread_shutdown()
+        .await
+        .expect("active_non_primary_shutdown_target_returns_none_for_primary_thread_shutdown");
+    active_non_primary_shutdown_target_returns_ids_for_non_primary_shutdown()
+        .await
+        .expect("active_non_primary_shutdown_target_returns_ids_for_non_primary_shutdown");
+    active_non_primary_shutdown_target_returns_none_when_shutdown_exit_is_pending()
+        .await
+        .expect("active_non_primary_shutdown_target_returns_none_when_shutdown_exit_is_pending");
+    active_non_primary_shutdown_target_still_switches_for_other_pending_exit_thread()
+        .await
+        .expect("active_non_primary_shutdown_target_still_switches_for_other_pending_exit_thread");
+    clear_ui_after_long_transcript_snapshots_fresh_header_only().await;
+    ctrl_l_clear_ui_after_long_transcript_reuses_clear_header_snapshot().await;
+    update_reasoning_effort_updates_collaboration_mode().await;
+    refresh_in_memory_config_from_disk_loads_latest_apps_state()
+        .await
+        .expect("refresh_in_memory_config_from_disk_loads_latest_apps_state");
+    refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error()
+        .await
+        .expect("refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error");
+    refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd()
+        .await
+        .expect("refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd");
+    rebuild_config_for_resume_or_fallback_uses_current_config_on_same_cwd_error()
+        .await
+        .expect("rebuild_config_for_resume_or_fallback_uses_current_config_on_same_cwd_error");
+    rebuild_config_for_resume_or_fallback_errors_when_cwd_changes()
+        .await
+        .expect("rebuild_config_for_resume_or_fallback_errors_when_cwd_changes");
+    sync_tui_theme_selection_updates_chat_widget_config_copy().await;
+    backtrack_selection_with_duplicate_history_targets_unique_turn().await;
+    backtrack_remote_image_only_selection_clears_existing_composer_draft().await;
+    backtrack_resubmit_preserves_data_image_urls_in_user_turn().await;
+    replayed_initial_messages_apply_rollback_in_queue_order().await;
+    live_rollback_during_replay_is_applied_in_app_event_order().await;
+    queued_rollback_syncs_overlay_and_clears_deferred_history().await;
+    page_up_opens_transcript_overlay_from_main_view().await;
+    page_up_keeps_log_panel_priority_when_visible().await;
+    new_session_requests_shutdown_for_previous_conversation().await;
+    shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails().await;
+    shutdown_first_exit_waits_for_shutdown_when_submit_succeeds().await;
+    clear_only_ui_reset_preserves_chat_session_state().await;
+    session_summary_skip_zero_usage().await;
+    session_summary_includes_resume_hint().await;
+    session_summary_prefers_name_over_id().await;
+}
+
 fn normalize_harness_overrides_resolves_relative_add_dirs() -> Result<()> {
     let temp_dir = tempdir()?;
     let base_cwd = temp_dir.path().join("base");
@@ -63,7 +157,6 @@ fn normalize_harness_overrides_resolves_relative_add_dirs() -> Result<()> {
     Ok(())
 }
 
-#[test]
 fn startup_waiting_gate_is_only_for_fresh_or_exit_session_selection() {
     assert_eq!(
         App::should_wait_for_initial_session(&SessionSelection::StartFresh),
@@ -91,7 +184,6 @@ fn startup_waiting_gate_is_only_for_fresh_or_exit_session_selection() {
     );
 }
 
-#[test]
 fn startup_waiting_gate_holds_active_process_events_until_primary_process_configured() {
     let mut wait_for_initial_session =
         App::should_wait_for_initial_session(&SessionSelection::StartFresh);
@@ -119,7 +211,6 @@ fn startup_waiting_gate_holds_active_process_events_until_primary_process_config
     );
 }
 
-#[test]
 fn startup_waiting_gate_not_applied_for_resume_or_fork_session_selection() {
     let wait_for_resume = App::should_wait_for_initial_session(&SessionSelection::Resume(
         crate::resume_picker::SessionTarget {
@@ -141,7 +232,6 @@ fn startup_waiting_gate_not_applied_for_resume_or_fork_session_selection() {
     );
 }
 
-#[tokio::test]
 async fn enqueue_primary_event_delivers_session_configured_before_buffered_approval() -> Result<()>
 {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -226,7 +316,6 @@ async fn enqueue_primary_event_delivers_session_configured_before_buffered_appro
     panic!("expected approval action to submit a process-scoped op");
 }
 
-#[tokio::test]
 async fn routed_thread_event_does_not_recreate_channel_after_reset() -> Result<()> {
     let mut app = make_test_app().await;
     let process_id = ProcessId::new();
@@ -254,7 +343,6 @@ async fn routed_thread_event_does_not_recreate_channel_after_reset() -> Result<(
     Ok(())
 }
 
-#[tokio::test]
 async fn reset_process_event_state_aborts_listener_tasks() {
     struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
 
@@ -289,7 +377,6 @@ async fn reset_process_event_state_aborts_listener_tasks() {
         .expect("listener task drop notification should succeed");
 }
 
-#[tokio::test]
 async fn enqueue_thread_event_does_not_block_when_channel_full() -> Result<()> {
     let mut app = make_test_app().await;
     let process_id = ProcessId::new();
@@ -330,7 +417,6 @@ async fn enqueue_thread_event_does_not_block_when_channel_full() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
 async fn replay_process_snapshot_restores_draft_and_queued_input() {
     let mut app = make_test_app().await;
     let process_id = ProcessId::new();
@@ -416,7 +502,6 @@ async fn replay_process_snapshot_restores_draft_and_queued_input() {
     }
 }
 
-#[tokio::test]
 async fn replayed_turn_complete_submits_restored_queued_follow_up() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -503,7 +588,6 @@ async fn replayed_turn_complete_submits_restored_queued_follow_up() {
     }
 }
 
-#[tokio::test]
 async fn replay_only_thread_keeps_restored_queue_visible() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -589,7 +673,6 @@ async fn replay_only_thread_keeps_restored_queue_visible() {
     );
 }
 
-#[tokio::test]
 async fn replay_process_snapshot_keeps_queue_when_running_state_only_comes_from_snapshot() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -669,7 +752,6 @@ async fn replay_process_snapshot_keeps_queue_when_running_state_only_comes_from_
     );
 }
 
-#[tokio::test]
 async fn replay_process_snapshot_does_not_submit_queue_before_replay_catches_up() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -784,7 +866,6 @@ async fn replay_process_snapshot_does_not_submit_queue_before_replay_catches_up(
     }
 }
 
-#[tokio::test]
 async fn replay_process_snapshot_restores_pending_pastes_for_submit() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -862,7 +943,6 @@ async fn replay_process_snapshot_restores_pending_pastes_for_submit() {
     }
 }
 
-#[tokio::test]
 async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -968,7 +1048,6 @@ async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() 
     }
 }
 
-#[tokio::test]
 async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -1046,7 +1125,6 @@ async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
     );
 }
 
-#[tokio::test]
 async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -1133,7 +1211,6 @@ async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
     );
 }
 
-#[tokio::test]
 async fn live_turn_started_updates_lua_statusline_context_window() {
     let mut app = make_test_app().await;
 
@@ -1152,7 +1229,6 @@ async fn live_turn_started_updates_lua_statusline_context_window() {
     );
 }
 
-#[tokio::test]
 async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
     let mut app = make_test_app().await;
     let process_id = ProcessId::new();
@@ -1174,7 +1250,6 @@ async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
 async fn open_agent_picker_keeps_cached_closed_processes() -> Result<()> {
     let mut app = make_test_app().await;
     let process_id = ProcessId::new();
@@ -1201,7 +1276,6 @@ async fn open_agent_picker_keeps_cached_closed_processes() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
 async fn open_agent_picker_selects_existing_agent_process() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -1219,7 +1293,6 @@ async fn open_agent_picker_selects_existing_agent_process() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
 async fn refresh_pending_process_approvals_only_lists_inactive_processes() {
     let mut app = make_test_app().await;
     let main_process_id =
@@ -1273,7 +1346,6 @@ async fn refresh_pending_process_approvals_only_lists_inactive_processes() {
     assert!(app.chat_widget.pending_process_approvals().is_empty());
 }
 
-#[tokio::test]
 async fn inactive_process_approval_bubbles_into_active_view() -> Result<()> {
     let mut app = make_test_app().await;
     let main_process_id =
@@ -1354,7 +1426,6 @@ async fn inactive_process_approval_bubbles_into_active_view() -> Result<()> {
     Ok(())
 }
 
-#[test]
 fn agent_picker_item_name_snapshot() {
     let process_id =
         ProcessId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
@@ -1389,7 +1460,6 @@ fn agent_picker_item_name_snapshot() {
     assert_snapshot!("agent_picker_item_name", snapshot);
 }
 
-#[tokio::test]
 async fn active_non_primary_shutdown_target_returns_none_for_non_shutdown_event() -> Result<()> {
     let mut app = make_test_app().await;
     app.active_process_id = Some(ProcessId::new());
@@ -1406,7 +1476,6 @@ async fn active_non_primary_shutdown_target_returns_none_for_non_shutdown_event(
     Ok(())
 }
 
-#[tokio::test]
 async fn active_non_primary_shutdown_target_returns_none_for_primary_thread_shutdown() -> Result<()>
 {
     let mut app = make_test_app().await;
@@ -1421,7 +1490,6 @@ async fn active_non_primary_shutdown_target_returns_none_for_primary_thread_shut
     Ok(())
 }
 
-#[tokio::test]
 async fn active_non_primary_shutdown_target_returns_ids_for_non_primary_shutdown() -> Result<()> {
     let mut app = make_test_app().await;
     let active_process_id = ProcessId::new();
@@ -1436,7 +1504,6 @@ async fn active_non_primary_shutdown_target_returns_ids_for_non_primary_shutdown
     Ok(())
 }
 
-#[tokio::test]
 async fn active_non_primary_shutdown_target_returns_none_when_shutdown_exit_is_pending()
 -> Result<()> {
     let mut app = make_test_app().await;
@@ -1453,7 +1520,6 @@ async fn active_non_primary_shutdown_target_returns_none_when_shutdown_exit_is_p
     Ok(())
 }
 
-#[tokio::test]
 async fn active_non_primary_shutdown_target_still_switches_for_other_pending_exit_thread()
 -> Result<()> {
     let mut app = make_test_app().await;
@@ -1581,13 +1647,11 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
     rendered
 }
 
-#[tokio::test]
 async fn clear_ui_after_long_transcript_snapshots_fresh_header_only() {
     let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
     assert_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
 }
 
-#[tokio::test]
 async fn ctrl_l_clear_ui_after_long_transcript_reuses_clear_header_snapshot() {
     let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
     assert_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
@@ -1765,7 +1829,6 @@ fn app_enabled_in_effective_config(config: &Config, app_id: &str) -> Option<bool
         .and_then(TomlValue::as_bool)
 }
 
-#[tokio::test]
 async fn update_reasoning_effort_updates_collaboration_mode() {
     let mut app = make_test_app().await;
     app.chat_widget
@@ -1783,7 +1846,6 @@ async fn update_reasoning_effort_updates_collaboration_mode() {
     );
 }
 
-#[tokio::test]
 async fn refresh_in_memory_config_from_disk_loads_latest_apps_state() -> Result<()> {
     let mut app = make_test_app().await;
     let chaos_home = tempdir()?;
@@ -1822,7 +1884,6 @@ async fn refresh_in_memory_config_from_disk_loads_latest_apps_state() -> Result<
     Ok(())
 }
 
-#[tokio::test]
 async fn refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error() -> Result<()>
 {
     let mut app = make_test_app().await;
@@ -1838,7 +1899,6 @@ async fn refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_
     Ok(())
 }
 
-#[tokio::test]
 async fn refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd() -> Result<()> {
     let mut app = make_test_app().await;
     let original_cwd = app.config.cwd.clone();
@@ -1880,7 +1940,6 @@ async fn refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd() -> Res
     Ok(())
 }
 
-#[tokio::test]
 async fn rebuild_config_for_resume_or_fallback_uses_current_config_on_same_cwd_error() -> Result<()>
 {
     let mut app = make_test_app().await;
@@ -1898,7 +1957,6 @@ async fn rebuild_config_for_resume_or_fallback_uses_current_config_on_same_cwd_e
     Ok(())
 }
 
-#[tokio::test]
 async fn rebuild_config_for_resume_or_fallback_errors_when_cwd_changes() -> Result<()> {
     let mut app = make_test_app().await;
     let chaos_home = tempdir()?;
@@ -1916,7 +1974,6 @@ async fn rebuild_config_for_resume_or_fallback_errors_when_cwd_changes() -> Resu
     Ok(())
 }
 
-#[tokio::test]
 async fn sync_tui_theme_selection_updates_chat_widget_config_copy() {
     let mut app = make_test_app().await;
 
@@ -1929,7 +1986,6 @@ async fn sync_tui_theme_selection_updates_chat_widget_config_copy() {
     );
 }
 
-#[tokio::test]
 async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
@@ -2068,7 +2124,6 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
     assert_eq!(rollback_turns, Some(1));
 }
 
-#[tokio::test]
 async fn backtrack_remote_image_only_selection_clears_existing_composer_draft() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
@@ -2102,7 +2157,6 @@ async fn backtrack_remote_image_only_selection_clears_existing_composer_draft() 
     assert_eq!(rollback_turns, Some(1));
 }
 
-#[tokio::test]
 async fn backtrack_resubmit_preserves_data_image_urls_in_user_turn() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
@@ -2172,7 +2226,6 @@ async fn backtrack_resubmit_preserves_data_image_urls_in_user_turn() {
     }));
 }
 
-#[tokio::test]
 async fn replayed_initial_messages_apply_rollback_in_queue_order() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
 
@@ -2257,7 +2310,6 @@ async fn replayed_initial_messages_apply_rollback_in_queue_order() {
     );
 }
 
-#[tokio::test]
 async fn live_rollback_during_replay_is_applied_in_app_event_order() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
 
@@ -2338,7 +2390,6 @@ async fn live_rollback_during_replay_is_applied_in_app_event_order() {
     assert_eq!(user_messages, vec!["first prompt".to_string()]);
 }
 
-#[tokio::test]
 async fn queued_rollback_syncs_overlay_and_clears_deferred_history() {
     let mut app = make_test_app().await;
     app.transcript_cells = vec![
@@ -2392,7 +2443,6 @@ async fn queued_rollback_syncs_overlay_and_clears_deferred_history() {
 }
 
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn page_up_opens_transcript_overlay_from_main_view() {
     let mut app = make_test_app().await;
     let mut tui = make_test_tui();
@@ -2413,7 +2463,6 @@ async fn page_up_opens_transcript_overlay_from_main_view() {
 }
 
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn page_up_keeps_log_panel_priority_when_visible() {
     let mut app = make_test_app().await;
     let mut tui = make_test_tui();
@@ -2432,7 +2481,6 @@ async fn page_up_keeps_log_panel_priority_when_visible() {
     );
 }
 
-#[tokio::test]
 async fn new_session_requests_shutdown_for_previous_conversation() {
     let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
@@ -2475,7 +2523,6 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
     }
 }
 
-#[tokio::test]
 async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails() {
     let mut app = make_test_app().await;
     let process_id = ProcessId::new();
@@ -2490,7 +2537,6 @@ async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails()
     ));
 }
 
-#[tokio::test]
 async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
@@ -2504,7 +2550,6 @@ async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
 }
 
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn clear_only_ui_reset_preserves_chat_session_state() {
     let mut app = make_test_app().await;
     let process_id = ProcessId::new();
@@ -2564,12 +2609,10 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
     assert_eq!(app.chat_widget.composer_text_with_pending(), "draft prompt");
 }
 
-#[tokio::test]
 async fn session_summary_skip_zero_usage() {
     assert!(session_summary(TokenUsage::default(), None, None).is_none());
 }
 
-#[tokio::test]
 async fn session_summary_includes_resume_hint() {
     let usage = TokenUsage {
         input_tokens: 10,
@@ -2590,7 +2633,6 @@ async fn session_summary_includes_resume_hint() {
     );
 }
 
-#[tokio::test]
 async fn session_summary_prefers_name_over_id() {
     let usage = TokenUsage {
         input_tokens: 10,

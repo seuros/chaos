@@ -188,7 +188,7 @@ pub(crate) fn render_offset_content(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use chaos_ipc::protocol::ExecCommandSource;
     use chaos_ipc::protocol::ReviewDecision;
@@ -243,7 +243,27 @@ mod tests {
         Box::new(ratatui::widgets::Paragraph::new(text)) as Box<dyn Renderable>
     }
 
-    #[test]
+    pub(crate) fn pager_overlay_suite() {
+        edit_prev_hint_is_visible();
+        edit_next_hint_is_visible_when_highlighted();
+        transcript_overlay_snapshot_basic();
+        transcript_overlay_renders_live_tail();
+        transcript_overlay_sync_live_tail_is_noop_for_identical_key();
+        transcript_overlay_apply_patch_scroll_vt100_clears_previous_page();
+        transcript_overlay_keeps_scroll_pinned_at_bottom();
+        transcript_overlay_preserves_manual_scroll_position();
+        static_overlay_snapshot_basic();
+        transcript_overlay_paging_is_continuous_and_round_trips();
+        static_overlay_wraps_long_lines();
+        pager_view_content_height_counts_renderables();
+        pager_view_ensure_chunk_visible_scrolls_down_when_needed();
+        pager_view_ensure_chunk_visible_scrolls_up_when_needed();
+        pager_view_is_scrolled_to_bottom_accounts_for_wrapped_height();
+        pager_view_resolves_bottom_sentinel_to_max_scroll();
+        pager_view_mouse_scroll_moves_relative_to_current_position();
+        pager_view_mouse_scroll_resolves_bottom_sentinel_before_scrolling_up();
+    }
+
     fn edit_prev_hint_is_visible() {
         let mut overlay = TranscriptOverlay::new(vec![Arc::new(TestCell {
             lines: vec![Line::from("hello")],
@@ -260,7 +280,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn edit_next_hint_is_visible_when_highlighted() {
         let mut overlay = TranscriptOverlay::new(vec![Arc::new(TestCell {
             lines: vec![Line::from("hello")],
@@ -278,7 +297,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn transcript_overlay_snapshot_basic() {
         let mut overlay = TranscriptOverlay::new(vec![
             Arc::new(TestCell {
@@ -297,7 +315,6 @@ mod tests {
         assert_snapshot!(term.backend());
     }
 
-    #[test]
     fn transcript_overlay_renders_live_tail() {
         let mut overlay = TranscriptOverlay::new(vec![Arc::new(TestCell {
             lines: vec![Line::from("alpha")],
@@ -318,7 +335,6 @@ mod tests {
         assert_snapshot!(term.backend());
     }
 
-    #[test]
     fn transcript_overlay_sync_live_tail_is_noop_for_identical_key() {
         let mut overlay = TranscriptOverlay::new(vec![Arc::new(TestCell {
             lines: vec![Line::from("alpha")],
@@ -362,7 +378,6 @@ mod tests {
         out
     }
 
-    #[test]
     fn transcript_overlay_apply_patch_scroll_vt100_clears_previous_page() {
         let cwd = PathBuf::from("/repo");
         let mut cells: Vec<Arc<dyn HistoryCell>> = Vec::new();
@@ -427,7 +442,6 @@ mod tests {
         assert_snapshot!("transcript_overlay_apply_patch_scroll_vt100", snapshot);
     }
 
-    #[test]
     fn transcript_overlay_keeps_scroll_pinned_at_bottom() {
         let mut overlay = TranscriptOverlay::new(
             (0..20)
@@ -454,7 +468,6 @@ mod tests {
         assert_eq!(overlay.view.scroll_offset, usize::MAX);
     }
 
-    #[test]
     fn transcript_overlay_preserves_manual_scroll_position() {
         let mut overlay = TranscriptOverlay::new(
             (0..20)
@@ -478,7 +491,6 @@ mod tests {
         assert_eq!(overlay.view.scroll_offset, 0);
     }
 
-    #[test]
     fn static_overlay_snapshot_basic() {
         let mut overlay = StaticOverlay::with_title(
             vec!["one".into(), "two".into(), "three".into()],
@@ -516,7 +528,6 @@ mod tests {
         nums
     }
 
-    #[test]
     fn transcript_overlay_paging_is_continuous_and_round_trips() {
         let mut overlay = TranscriptOverlay::new(
             (0..50)
@@ -580,7 +591,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn static_overlay_wraps_long_lines() {
         let mut overlay = StaticOverlay::with_title(
             vec!["a very long line that should wrap when rendered within a narrow pager overlay width".into()],
@@ -592,7 +602,6 @@ mod tests {
         assert_snapshot!(term.backend());
     }
 
-    #[test]
     fn pager_view_content_height_counts_renderables() {
         use pager_view::PagerView;
         let pv = PagerView::new(
@@ -604,7 +613,6 @@ mod tests {
         assert_eq!(pv.content_height(80), 5);
     }
 
-    #[test]
     fn pager_view_ensure_chunk_visible_scrolls_down_when_needed() {
         use pager_view::PagerView;
         let mut pv = PagerView::new(
@@ -640,7 +648,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn pager_view_ensure_chunk_visible_scrolls_up_when_needed() {
         use pager_view::PagerView;
         let mut pv = PagerView::new(
@@ -660,7 +667,6 @@ mod tests {
         assert_eq!(pv.scroll_offset, 0);
     }
 
-    #[test]
     fn pager_view_is_scrolled_to_bottom_accounts_for_wrapped_height() {
         use pager_view::PagerView;
         let mut pv = PagerView::new(vec![paragraph_block("a", 10)], "T".to_string(), 0);
@@ -683,7 +689,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn pager_view_resolves_bottom_sentinel_to_max_scroll() {
         use pager_view::PagerView;
         let pv = PagerView::new(vec![paragraph_block("a", 10)], "T".to_string(), usize::MAX);
@@ -698,7 +703,6 @@ mod tests {
         assert_ne!(resolved, usize::MAX);
     }
 
-    #[test]
     fn pager_view_mouse_scroll_moves_relative_to_current_position() {
         use crossterm::event::MouseEventKind;
         use pager_view::PagerView;
@@ -712,7 +716,6 @@ mod tests {
         assert_eq!(pv.scroll_offset, 9);
     }
 
-    #[test]
     fn pager_view_mouse_scroll_resolves_bottom_sentinel_before_scrolling_up() {
         use crossterm::event::MouseEventKind;
         use pager_view::PagerView;

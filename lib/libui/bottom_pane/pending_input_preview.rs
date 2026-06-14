@@ -147,25 +147,36 @@ impl Renderable for PendingInputPreview {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
 
-    #[test]
+    pub(crate) fn pending_input_preview_suite() {
+        desired_height_empty();
+        desired_height_one_message();
+        render_one_message();
+        render_two_messages();
+        render_more_than_three_messages();
+        render_wrapped_message();
+        render_many_line_message();
+        long_url_like_message_does_not_expand_into_wrapped_ellipsis_rows();
+        render_one_pending_steer();
+        render_pending_steers_above_queued_messages();
+        render_multiline_pending_steer_uses_single_prefix_and_truncates();
+    }
+
     fn desired_height_empty() {
         let queue = PendingInputPreview::new();
         assert_eq!(queue.desired_height(40), 0);
     }
 
-    #[test]
     fn desired_height_one_message() {
         let mut queue = PendingInputPreview::new();
         queue.queued_messages.push("Hello, world!".to_string());
         assert_eq!(queue.desired_height(40), 3);
     }
 
-    #[test]
     fn render_one_message() {
         let mut queue = PendingInputPreview::new();
         queue.queued_messages.push("Hello, world!".to_string());
@@ -176,7 +187,6 @@ mod tests {
         assert_snapshot!("render_one_message", format!("{buf:?}"));
     }
 
-    #[test]
     fn render_two_messages() {
         let mut queue = PendingInputPreview::new();
         queue.queued_messages.push("Hello, world!".to_string());
@@ -190,7 +200,6 @@ mod tests {
         assert_snapshot!("render_two_messages", format!("{buf:?}"));
     }
 
-    #[test]
     fn render_more_than_three_messages() {
         let mut queue = PendingInputPreview::new();
         queue.queued_messages.push("Hello, world!".to_string());
@@ -210,7 +219,6 @@ mod tests {
         assert_snapshot!("render_more_than_three_messages", format!("{buf:?}"));
     }
 
-    #[test]
     fn render_wrapped_message() {
         let mut queue = PendingInputPreview::new();
         queue
@@ -226,7 +234,6 @@ mod tests {
         assert_snapshot!("render_wrapped_message", format!("{buf:?}"));
     }
 
-    #[test]
     fn render_many_line_message() {
         let mut queue = PendingInputPreview::new();
         queue
@@ -239,7 +246,6 @@ mod tests {
         assert_snapshot!("render_many_line_message", format!("{buf:?}"));
     }
 
-    #[test]
     fn long_url_like_message_does_not_expand_into_wrapped_ellipsis_rows() {
         let mut queue = PendingInputPreview::new();
         queue.queued_messages.push(
@@ -271,7 +277,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn render_one_pending_steer() {
         let mut queue = PendingInputPreview::new();
         queue.pending_steers.push("Please continue.".to_string());
@@ -282,7 +287,6 @@ mod tests {
         assert_snapshot!("render_one_pending_steer", format!("{buf:?}"));
     }
 
-    #[test]
     fn render_pending_steers_above_queued_messages() {
         let mut queue = PendingInputPreview::new();
         queue.pending_steers.push("Please continue.".to_string());
@@ -302,7 +306,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn render_multiline_pending_steer_uses_single_prefix_and_truncates() {
         let mut queue = PendingInputPreview::new();
         queue

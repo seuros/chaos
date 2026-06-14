@@ -48,7 +48,7 @@ pub fn has_builtin_prefix(name: &str, flags: BuiltinCommandFlags) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
@@ -60,7 +60,14 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn slash_commands_suite() {
+        login_required_hides_all_but_logged_out_safe_commands();
+        debug_command_still_resolves_for_dispatch();
+        clear_command_resolves_for_dispatch();
+        stop_command_resolves_for_dispatch();
+        clean_command_alias_resolves_for_dispatch();
+    }
+
     fn login_required_hides_all_but_logged_out_safe_commands() {
         let flags = BuiltinCommandFlags {
             login_required: true,
@@ -81,13 +88,11 @@ mod tests {
         assert_eq!(find_builtin_command("model", flags), None);
     }
 
-    #[test]
     fn debug_command_still_resolves_for_dispatch() {
         let cmd = find_builtin_command("debug-config", all_enabled_flags());
         assert_eq!(cmd, Some(SlashCommand::DebugConfig));
     }
 
-    #[test]
     fn clear_command_resolves_for_dispatch() {
         assert_eq!(
             find_builtin_command("clear", all_enabled_flags()),
@@ -95,7 +100,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn stop_command_resolves_for_dispatch() {
         assert_eq!(
             find_builtin_command("stop", all_enabled_flags()),
@@ -103,7 +107,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn clean_command_alias_resolves_for_dispatch() {
         assert_eq!(
             find_builtin_command("clean", all_enabled_flags()),

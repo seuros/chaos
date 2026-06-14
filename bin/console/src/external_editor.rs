@@ -62,7 +62,7 @@ pub(crate) async fn run_editor(seed: &str, editor_cmd: &[String]) -> Result<Stri
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn resolve_editor_prefers_visual() {
+    fn resolve_editor_prefers_visual_and_errors_when_unset() {
         let _guard = EnvGuard::new();
         unsafe {
             env::set_var("VISUAL", "vis");
@@ -106,12 +106,7 @@ mod tests {
         }
         let cmd = resolve_editor_command().unwrap();
         assert_eq!(cmd, vec!["vis".to_string()]);
-    }
 
-    #[test]
-    #[serial]
-    fn resolve_editor_errors_when_unset() {
-        let _guard = EnvGuard::new();
         unsafe {
             env::remove_var("VISUAL");
             env::remove_var("EDITOR");
@@ -122,8 +117,7 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn run_editor_returns_updated_content() {
+    pub(crate) async fn run_editor_returns_updated_content() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempdir().unwrap();

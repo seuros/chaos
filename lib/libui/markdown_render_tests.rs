@@ -67,12 +67,111 @@ fn plain_lines(text: &Text<'_>) -> Vec<String> {
         .collect()
 }
 
-#[test]
+pub(crate) fn markdown_render_suite() {
+    empty();
+    paragraph_single();
+    paragraph_soft_break();
+    paragraph_multiple();
+    headings();
+    blockquote_single();
+    blockquote_soft_break();
+    blockquote_multiple_with_break();
+    blockquote_three_paragraphs_short_lines();
+    blockquote_nested_two_levels();
+    blockquote_with_list_items();
+    blockquote_with_ordered_list();
+    blockquote_list_then_nested_blockquote();
+    list_item_with_inline_blockquote_on_same_line();
+    blockquote_surrounded_by_blank_lines();
+    blockquote_in_ordered_list_on_next_line();
+    blockquote_in_unordered_list_on_next_line();
+    blockquote_two_paragraphs_inside_ordered_list_has_blank_line();
+    blockquote_inside_nested_list();
+    list_item_text_then_blockquote();
+    list_item_blockquote_then_text();
+    list_item_text_blockquote_text();
+    blockquote_with_heading_and_paragraph();
+    blockquote_heading_inherits_heading_style();
+    blockquote_with_code_block();
+    blockquote_with_multiline_code_block();
+    nested_blockquote_with_inline_and_fenced_code();
+    list_unordered_single();
+    list_unordered_multiple();
+    list_ordered();
+    list_nested();
+    list_ordered_custom_start();
+    nested_unordered_in_ordered();
+    nested_ordered_in_unordered();
+    loose_list_item_multiple_paragraphs();
+    tight_item_with_soft_break();
+    deeply_nested_mixed_three_levels();
+    loose_items_due_to_blank_line_between_items();
+    task_list_variants();
+    task_list_wrapped_continuation_aligns_under_content();
+    mixed_tight_then_loose_in_one_list();
+    ordered_item_with_indented_continuation_is_tight();
+    inline_code();
+    strong();
+    emphasis();
+    strikethrough();
+    strong_emphasis();
+    link();
+    load_location_suffix_regexes();
+    file_link_hides_destination();
+    file_link_appends_line_number_when_label_lacks_it();
+    file_link_keeps_absolute_paths_outside_cwd();
+    file_link_appends_hash_anchor_when_label_lacks_it();
+    file_link_uses_target_path_for_hash_anchor();
+    file_link_appends_range_when_label_lacks_it();
+    file_link_uses_target_path_for_range();
+    file_link_appends_hash_range_when_label_lacks_it();
+    multiline_file_link_label_after_styled_prefix_does_not_panic();
+    file_link_uses_target_path_for_hash_range();
+    file_url_for_local_link_preserves_percent_encoding();
+    file_url_for_local_link_rejects_windows_drive_paths();
+    file_url_for_local_link_rejects_unc_paths();
+    url_link_shows_destination();
+    bare_url_autolink_does_not_duplicate_destination();
+    bare_email_autolink_does_not_duplicate_destination();
+    pipe_table_text_stays_verbatim();
+    alert_blockquote_has_no_blank_line_after_header();
+    markdown_render_file_link_snapshot();
+    unordered_list_local_file_link_stays_inline_with_following_text();
+    unordered_list_local_file_link_soft_break_before_colon_stays_inline();
+    consecutive_unordered_list_local_file_links_do_not_detach_paths();
+    code_block_known_lang_has_syntax_colors();
+    code_block_unknown_lang_plain();
+    code_block_no_lang_plain();
+    code_block_multiple_lines_root();
+    code_block_indented();
+    horizontal_rule_renders_em_dashes();
+    code_block_with_inner_triple_backticks_outer_four();
+    code_block_inside_unordered_list_item_is_indented();
+    code_block_multiple_lines_inside_unordered_list();
+    code_block_inside_unordered_list_item_multiple_lines();
+    markdown_render_complex_snapshot();
+    ordered_item_with_code_block_and_nested_bullet();
+    nested_five_levels_mixed_lists();
+    html_inline_is_verbatim();
+    html_block_is_verbatim_multiline();
+    html_in_tight_ordered_item_soft_breaks_with_space();
+    html_continuation_paragraph_in_unordered_item_indented();
+    unordered_item_continuation_paragraph_is_indented();
+    ordered_item_continuation_paragraph_is_indented();
+    nested_item_continuation_paragraph_is_indented();
+    gfm_alerts_emit_styled_header_line_per_kind();
+    inline_math_rewrites_latex_to_unicode();
+    display_math_rewrites_and_frames_on_own_lines();
+    inline_math_with_embedded_newline_splits_across_rendered_lines();
+    display_math_with_embedded_newline_renders_each_line_once();
+    unknown_math_command_passes_through_unchanged();
+    code_block_preserves_trailing_blank_lines();
+}
+
 fn empty() {
     assert_eq!(render_markdown_text(""), Text::default());
 }
 
-#[test]
 fn paragraph_single() {
     assert_eq!(
         render_markdown_text("Hello, world!"),
@@ -80,7 +179,6 @@ fn paragraph_single() {
     );
 }
 
-#[test]
 fn paragraph_soft_break() {
     assert_eq!(
         render_markdown_text("Hello\nWorld"),
@@ -88,7 +186,6 @@ fn paragraph_soft_break() {
     );
 }
 
-#[test]
 fn paragraph_multiple() {
     assert_eq!(
         render_markdown_text("Paragraph 1\n\nParagraph 2"),
@@ -96,7 +193,6 @@ fn paragraph_multiple() {
     );
 }
 
-#[test]
 fn headings() {
     let md = "# Heading 1\n## Heading 2\n### Heading 3\n#### Heading 4\n##### Heading 5\n###### Heading 6\n";
     let text = render_markdown_text(md);
@@ -116,7 +212,6 @@ fn headings() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn blockquote_single() {
     let text = render_markdown_text("> Blockquote");
     let expected =
@@ -124,7 +219,6 @@ fn blockquote_single() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn blockquote_soft_break() {
     // Soft break via lazy continuation should render as a new line in blockquotes.
     let text = render_markdown_text("> This is a blockquote\nwith a soft break\n");
@@ -147,7 +241,6 @@ fn blockquote_soft_break() {
     );
 }
 
-#[test]
 fn blockquote_multiple_with_break() {
     let text = render_markdown_text("> Blockquote 1\n\n> Blockquote 2\n");
     let expected = Text::from_iter([
@@ -158,7 +251,6 @@ fn blockquote_multiple_with_break() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn blockquote_three_paragraphs_short_lines() {
     let md = "> one\n>\n> two\n>\n> three\n";
     let text = render_markdown_text(md);
@@ -172,7 +264,6 @@ fn blockquote_three_paragraphs_short_lines() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn blockquote_nested_two_levels() {
     let md = "> Level 1\n>> Level 2\n";
     let text = render_markdown_text(md);
@@ -184,7 +275,6 @@ fn blockquote_nested_two_levels() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn blockquote_with_list_items() {
     let md = "> - item 1\n> - item 2\n";
     let text = render_markdown_text(md);
@@ -195,7 +285,6 @@ fn blockquote_with_list_items() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn blockquote_with_ordered_list() {
     let md = "> 1. first\n> 2. second\n";
     let text = render_markdown_text(md);
@@ -216,7 +305,6 @@ fn blockquote_with_ordered_list() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn blockquote_list_then_nested_blockquote() {
     let md = "> - parent\n>   > child\n";
     let text = render_markdown_text(md);
@@ -227,7 +315,6 @@ fn blockquote_list_then_nested_blockquote() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn list_item_with_inline_blockquote_on_same_line() {
     let md = "1. > quoted\n";
     let text = render_markdown_text(md);
@@ -238,7 +325,6 @@ fn list_item_with_inline_blockquote_on_same_line() {
     assert_eq!(s, "1. > quoted");
 }
 
-#[test]
 fn blockquote_surrounded_by_blank_lines() {
     let md = "foo\n\n> bar\n\nbaz\n";
     let text = render_markdown_text(md);
@@ -264,7 +350,6 @@ fn blockquote_surrounded_by_blank_lines() {
     );
 }
 
-#[test]
 fn blockquote_in_ordered_list_on_next_line() {
     // Blockquote begins on a new line within an ordered list item; it should
     // render inline on the same marker line.
@@ -283,7 +368,6 @@ fn blockquote_in_ordered_list_on_next_line() {
     assert_eq!(lines, vec!["1. > quoted".to_string()]);
 }
 
-#[test]
 fn blockquote_in_unordered_list_on_next_line() {
     // Blockquote begins on a new line within an unordered list item; it should
     // render inline on the same marker line.
@@ -302,7 +386,6 @@ fn blockquote_in_unordered_list_on_next_line() {
     assert_eq!(lines, vec!["- > quoted".to_string()]);
 }
 
-#[test]
 fn blockquote_two_paragraphs_inside_ordered_list_has_blank_line() {
     // Two blockquote paragraphs inside a list item should be separated by a blank line.
     let md = "1.\n   > para 1\n   >\n   > para 2\n";
@@ -328,7 +411,6 @@ fn blockquote_two_paragraphs_inside_ordered_list_has_blank_line() {
     );
 }
 
-#[test]
 fn blockquote_inside_nested_list() {
     let md = "1. A\n    - B\n      > inner\n";
     let text = render_markdown_text(md);
@@ -345,7 +427,6 @@ fn blockquote_inside_nested_list() {
     assert_eq!(lines, vec!["1. A", "    - B", "      > inner"]);
 }
 
-#[test]
 fn list_item_text_then_blockquote() {
     let md = "1. before\n   > quoted\n";
     let text = render_markdown_text(md);
@@ -362,7 +443,6 @@ fn list_item_text_then_blockquote() {
     assert_eq!(lines, vec!["1. before", "   > quoted"]);
 }
 
-#[test]
 fn list_item_blockquote_then_text() {
     let md = "1.\n   > quoted\n   after\n";
     let text = render_markdown_text(md);
@@ -379,7 +459,6 @@ fn list_item_blockquote_then_text() {
     assert_eq!(lines, vec!["1. > quoted", "   > after"]);
 }
 
-#[test]
 fn list_item_text_blockquote_text() {
     let md = "1. before\n   > quoted\n   after\n";
     let text = render_markdown_text(md);
@@ -396,7 +475,6 @@ fn list_item_text_blockquote_text() {
     assert_eq!(lines, vec!["1. before", "   > quoted", "   > after"]);
 }
 
-#[test]
 fn blockquote_with_heading_and_paragraph() {
     let md = "> # Heading\n> paragraph text\n";
     let text = render_markdown_text(md);
@@ -421,7 +499,6 @@ fn blockquote_with_heading_and_paragraph() {
     );
 }
 
-#[test]
 fn blockquote_heading_inherits_heading_style() {
     let text = render_markdown_text("> # test header\n> in blockquote\n");
     assert_eq!(
@@ -439,7 +516,6 @@ fn blockquote_heading_inherits_heading_style() {
     );
 }
 
-#[test]
 fn blockquote_with_code_block() {
     let md = "> ```\n> code\n> ```\n";
     let text = render_markdown_text(md);
@@ -456,7 +532,6 @@ fn blockquote_with_code_block() {
     assert_eq!(lines, vec!["> code".to_string()]);
 }
 
-#[test]
 fn blockquote_with_multiline_code_block() {
     let md = "> ```\n> first\n> second\n> ```\n";
     let text = render_markdown_text(md);
@@ -473,7 +548,6 @@ fn blockquote_with_multiline_code_block() {
     assert_eq!(lines, vec!["> first", "> second"]);
 }
 
-#[test]
 fn nested_blockquote_with_inline_and_fenced_code() {
     /*
     let md = \"> Nested quote with code:\n\
@@ -516,14 +590,12 @@ fn nested_blockquote_with_inline_and_fenced_code() {
     );
 }
 
-#[test]
 fn list_unordered_single() {
     let text = render_markdown_text("- List item 1\n");
     let expected = Text::from_iter([Line::from_iter(["- ", "List item 1"])]);
     assert_eq!(text, expected);
 }
 
-#[test]
 fn list_unordered_multiple() {
     let text = render_markdown_text("- List item 1\n- List item 2\n");
     let expected = Text::from_iter([
@@ -533,7 +605,6 @@ fn list_unordered_multiple() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn list_ordered() {
     let text = render_markdown_text("1. List item 1\n2. List item 2\n");
     let expected = Text::from_iter([
@@ -543,7 +614,6 @@ fn list_ordered() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn list_nested() {
     let text = render_markdown_text("- List item 1\n  - Nested list item 1\n");
     let expected = Text::from_iter([
@@ -553,7 +623,6 @@ fn list_nested() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn list_ordered_custom_start() {
     let text = render_markdown_text("3. First\n4. Second\n");
     let expected = Text::from_iter([
@@ -563,7 +632,6 @@ fn list_ordered_custom_start() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn nested_unordered_in_ordered() {
     let md = "1. Outer\n    - Inner A\n    - Inner B\n2. Next\n";
     let text = render_markdown_text(md);
@@ -576,7 +644,6 @@ fn nested_unordered_in_ordered() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn nested_ordered_in_unordered() {
     let md = "- Outer\n    1. One\n    2. Two\n- Last\n";
     let text = render_markdown_text(md);
@@ -589,7 +656,6 @@ fn nested_ordered_in_unordered() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn loose_list_item_multiple_paragraphs() {
     let md = "1. First paragraph\n\n   Second paragraph of same item\n\n2. Next item\n";
     let text = render_markdown_text(md);
@@ -602,7 +668,6 @@ fn loose_list_item_multiple_paragraphs() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn tight_item_with_soft_break() {
     let md = "- item line1\n  item line2\n";
     let text = render_markdown_text(md);
@@ -613,7 +678,6 @@ fn tight_item_with_soft_break() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn deeply_nested_mixed_three_levels() {
     let md = "1. A\n    - B\n        1. C\n2. D\n";
     let text = render_markdown_text(md);
@@ -626,7 +690,6 @@ fn deeply_nested_mixed_three_levels() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn loose_items_due_to_blank_line_between_items() {
     let md = "1. First\n\n2. Second\n";
     let text = render_markdown_text(md);
@@ -637,7 +700,6 @@ fn loose_items_due_to_blank_line_between_items() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn task_list_variants() {
     // One realistic checklist covering in a single pass:
     //   - checked state `[x]`
@@ -676,7 +738,6 @@ fn task_list_variants() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn task_list_wrapped_continuation_aligns_under_content() {
     // Width-constrained loose-list path: wrapped continuation must indent 6
     // cols so text sits flush under the item content (past `- [ ] `), not
@@ -709,7 +770,6 @@ fn task_list_wrapped_continuation_aligns_under_content() {
     );
 }
 
-#[test]
 fn mixed_tight_then_loose_in_one_list() {
     let md = "1. Tight\n\n2.\n   Loose\n";
     let text = render_markdown_text(md);
@@ -720,7 +780,6 @@ fn mixed_tight_then_loose_in_one_list() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn ordered_item_with_indented_continuation_is_tight() {
     let md = "1. Foo\n   Bar\n";
     let text = render_markdown_text(md);
@@ -731,14 +790,12 @@ fn ordered_item_with_indented_continuation_is_tight() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn inline_code() {
     let text = render_markdown_text("Example of `Inline code`");
     let expected = Line::from_iter(["Example of ".into(), accent("Inline code")]).into();
     assert_eq!(text, expected);
 }
 
-#[test]
 fn strong() {
     assert_eq!(
         render_markdown_text("**Strong**"),
@@ -746,7 +803,6 @@ fn strong() {
     );
 }
 
-#[test]
 fn emphasis() {
     assert_eq!(
         render_markdown_text("*Emphasis*"),
@@ -754,7 +810,6 @@ fn emphasis() {
     );
 }
 
-#[test]
 fn strikethrough() {
     assert_eq!(
         render_markdown_text("~~Strikethrough~~"),
@@ -762,7 +817,6 @@ fn strikethrough() {
     );
 }
 
-#[test]
 fn strong_emphasis() {
     let text = render_markdown_text("**Strong *emphasis***");
     let expected = Text::from(Line::from_iter([
@@ -772,7 +826,6 @@ fn strong_emphasis() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn link() {
     let text = render_markdown_text("[Link](https://example.com)");
     let url = "https://example.com";
@@ -788,13 +841,11 @@ fn link() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn load_location_suffix_regexes() {
     let _colon = &*COLON_LOCATION_SUFFIX_RE;
     let _hash = &*HASH_LOCATION_SUFFIX_RE;
 }
 
-#[test]
 fn file_link_hides_destination() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs";
@@ -808,7 +859,6 @@ fn file_link_hides_destination() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_appends_line_number_when_label_lacks_it() {
     let cwd = Path::new("/Users/example/code/chaos");
     // The display suffix `:74` is stripped when building the clickable URL —
@@ -823,7 +873,6 @@ fn file_link_appends_line_number_when_label_lacks_it() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_keeps_absolute_paths_outside_cwd() {
     let cwd = Path::new("/Users/example/code/chaos/chaos/tui");
     let dest = "/Users/example/code/chaos/README.md:74";
@@ -836,7 +885,6 @@ fn file_link_keeps_absolute_paths_outside_cwd() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_appends_hash_anchor_when_label_lacks_it() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3";
@@ -849,7 +897,6 @@ fn file_link_appends_hash_anchor_when_label_lacks_it() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_uses_target_path_for_hash_anchor() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3";
@@ -862,7 +909,6 @@ fn file_link_uses_target_path_for_hash_anchor() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_appends_range_when_label_lacks_it() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9";
@@ -875,7 +921,6 @@ fn file_link_appends_range_when_label_lacks_it() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_uses_target_path_for_range() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9";
@@ -889,7 +934,6 @@ fn file_link_uses_target_path_for_range() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_appends_hash_range_when_label_lacks_it() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9";
@@ -902,7 +946,6 @@ fn file_link_appends_hash_range_when_label_lacks_it() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3";
@@ -916,7 +959,6 @@ fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_link_uses_target_path_for_hash_range() {
     let cwd = Path::new("/Users/example/code/chaos");
     let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9";
@@ -930,25 +972,21 @@ fn file_link_uses_target_path_for_hash_range() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn file_url_for_local_link_preserves_percent_encoding() {
     let url = file_url_for_local_link("file:///tmp/My%20File.rs", None).unwrap();
     assert_eq!(url, "file:///tmp/My%20File.rs");
 }
 
-#[test]
 fn file_url_for_local_link_rejects_windows_drive_paths() {
     let url = file_url_for_local_link(r"C:\tmp\My File.rs", None);
     assert_eq!(url, None);
 }
 
-#[test]
 fn file_url_for_local_link_rejects_unc_paths() {
     let url = file_url_for_local_link(r"\\server\share\My File.rs", None);
     assert_eq!(url, None);
 }
 
-#[test]
 fn url_link_shows_destination() {
     let text = render_markdown_text("[docs](https://example.com/docs)");
     let url = "https://example.com/docs";
@@ -961,7 +999,6 @@ fn url_link_shows_destination() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn bare_url_autolink_does_not_duplicate_destination() {
     let text = render_markdown_text("Visit https://example.com/docs for details.");
     assert_eq!(
@@ -970,7 +1007,6 @@ fn bare_url_autolink_does_not_duplicate_destination() {
     );
 }
 
-#[test]
 fn bare_email_autolink_does_not_duplicate_destination() {
     let text = render_markdown_text("Email test@example.com for details.");
     assert_eq!(
@@ -979,7 +1015,6 @@ fn bare_email_autolink_does_not_duplicate_destination() {
     );
 }
 
-#[test]
 fn pipe_table_text_stays_verbatim() {
     let text = render_markdown_text(
         "| Left | Center | Right |\n|:-----|:------:|------:|\n| a | b | c |\n",
@@ -994,7 +1029,6 @@ fn pipe_table_text_stays_verbatim() {
     );
 }
 
-#[test]
 fn alert_blockquote_has_no_blank_line_after_header() {
     let text = render_markdown_text("> [!NOTE]\n> body\n");
     assert_eq!(
@@ -1003,7 +1037,6 @@ fn alert_blockquote_has_no_blank_line_after_header() {
     );
 }
 
-#[test]
 fn markdown_render_file_link_snapshot() {
     let text = render_markdown_text_for_cwd(
         "See [markdown_render.rs:74](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74).",
@@ -1024,7 +1057,6 @@ fn markdown_render_file_link_snapshot() {
     assert_snapshot!(rendered);
 }
 
-#[test]
 fn unordered_list_local_file_link_stays_inline_with_following_text() {
     let text = render_markdown_text_with_width_and_cwd(
         "- [binary](/Users/example/code/chaos/chaos/README.md:93): core is the agent/business logic, tui is the terminal UI, exec is the headless automation surface, and cli is the top-level multitool binary.",
@@ -1051,7 +1083,6 @@ fn unordered_list_local_file_link_stays_inline_with_following_text() {
     );
 }
 
-#[test]
 fn unordered_list_local_file_link_soft_break_before_colon_stays_inline() {
     let text = render_markdown_text_with_width_and_cwd(
         "- [binary](/Users/example/code/chaos/chaos/README.md:93)\n  : core is the agent/business logic.",
@@ -1074,7 +1105,6 @@ fn unordered_list_local_file_link_soft_break_before_colon_stays_inline() {
     );
 }
 
-#[test]
 fn consecutive_unordered_list_local_file_links_do_not_detach_paths() {
     let text = render_markdown_text_with_width_and_cwd(
         "- [binary](/Users/example/code/chaos/chaos/README.md:93)\n  : cli is the top-level multitool binary.\n- [expectations](/Users/example/code/chaos/chaos/core/README.md:1)\n  : chaos-kern owns the real runtime behavior.",
@@ -1100,7 +1130,6 @@ fn consecutive_unordered_list_local_file_links_do_not_detach_paths() {
     );
 }
 
-#[test]
 fn code_block_known_lang_has_syntax_colors() {
     let text = render_markdown_text("```rust\nfn main() {}\n```\n");
     let content: Vec<String> = text
@@ -1133,7 +1162,6 @@ fn code_block_known_lang_has_syntax_colors() {
     );
 }
 
-#[test]
 fn code_block_unknown_lang_plain() {
     let text = render_markdown_text("```xyzlang\nhello world\n```\n");
     let content: Vec<String> = text
@@ -1165,7 +1193,6 @@ fn code_block_unknown_lang_plain() {
     );
 }
 
-#[test]
 fn code_block_no_lang_plain() {
     let text = render_markdown_text("```\nno lang specified\n```\n");
     let content: Vec<String> = text
@@ -1186,7 +1213,6 @@ fn code_block_no_lang_plain() {
     assert_eq!(content, vec!["no lang specified"]);
 }
 
-#[test]
 fn code_block_multiple_lines_root() {
     let md = "```\nfirst\nsecond\n```\n";
     let text = render_markdown_text(md);
@@ -1197,7 +1223,6 @@ fn code_block_multiple_lines_root() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn code_block_indented() {
     let md = "    function greet() {\n      console.log(\"Hi\");\n    }\n";
     let text = render_markdown_text(md);
@@ -1209,7 +1234,6 @@ fn code_block_indented() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn horizontal_rule_renders_em_dashes() {
     let md = "Before\n\n---\n\nAfter\n";
     let text = render_markdown_text(md);
@@ -1226,7 +1250,6 @@ fn horizontal_rule_renders_em_dashes() {
     assert_eq!(lines, vec!["Before", "", "———", "", "After"]);
 }
 
-#[test]
 fn code_block_with_inner_triple_backticks_outer_four() {
     let md = r#"````text
 Here is a code block that shows another fenced block:
@@ -1272,7 +1295,6 @@ Here is a code block that shows another fenced block:
     );
 }
 
-#[test]
 fn code_block_inside_unordered_list_item_is_indented() {
     let md = "- Item\n\n  ```\n  code line\n  ```\n";
     let text = render_markdown_text(md);
@@ -1289,7 +1311,6 @@ fn code_block_inside_unordered_list_item_is_indented() {
     assert_eq!(lines, vec!["- Item", "", "  code line"]);
 }
 
-#[test]
 fn code_block_multiple_lines_inside_unordered_list() {
     let md = "- Item\n\n  ```\n  first\n  second\n  ```\n";
     let text = render_markdown_text(md);
@@ -1306,7 +1327,6 @@ fn code_block_multiple_lines_inside_unordered_list() {
     assert_eq!(lines, vec!["- Item", "", "  first", "  second"]);
 }
 
-#[test]
 fn code_block_inside_unordered_list_item_multiple_lines() {
     let md = "- Item\n\n  ```\n  first\n  second\n  ```\n";
     let text = render_markdown_text(md);
@@ -1323,7 +1343,6 @@ fn code_block_inside_unordered_list_item_multiple_lines() {
     assert_eq!(lines, vec!["- Item", "", "  first", "  second"]);
 }
 
-#[test]
 fn markdown_render_complex_snapshot() {
     let md = r#"# H1: Markdown Streaming Test
 Intro paragraph with bold **text**, italic *text*, and inline code `x=1`.
@@ -1394,7 +1413,6 @@ URL with parentheses: [link](https://example.com/path_(with)_parens).
     assert_snapshot!(rendered);
 }
 
-#[test]
 fn ordered_item_with_code_block_and_nested_bullet() {
     let md = "1. **item 1**\n\n2. **item 2**\n   ```\n   code\n   ```\n   - `PROCESS_START` (a `OnceLock<Instant>`) keeps the start time for the entire process.\n";
     let text = render_markdown_text(md);
@@ -1420,7 +1438,6 @@ fn ordered_item_with_code_block_and_nested_bullet() {
     );
 }
 
-#[test]
 fn nested_five_levels_mixed_lists() {
     let md = "1. First\n   - Second level\n     1. Third level (ordered)\n        - Fourth level (bullet)\n          - Fifth level to test indent consistency\n";
     let text = render_markdown_text(md);
@@ -1437,7 +1454,6 @@ fn nested_five_levels_mixed_lists() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn html_inline_is_verbatim() {
     let md = "Hello <span>world</span>!";
     let text = render_markdown_text(md);
@@ -1445,7 +1461,6 @@ fn html_inline_is_verbatim() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn html_block_is_verbatim_multiline() {
     let md = "<div>\n  <span>hi</span>\n</div>\n";
     let text = render_markdown_text(md);
@@ -1457,7 +1472,6 @@ fn html_block_is_verbatim_multiline() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn html_in_tight_ordered_item_soft_breaks_with_space() {
     let md = "1. Foo\n   <i>Bar</i>\n";
     let text = render_markdown_text(md);
@@ -1468,7 +1482,6 @@ fn html_in_tight_ordered_item_soft_breaks_with_space() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn html_continuation_paragraph_in_unordered_item_indented() {
     let md = "- Item\n\n  <em>continued</em>\n";
     let text = render_markdown_text(md);
@@ -1480,7 +1493,6 @@ fn html_continuation_paragraph_in_unordered_item_indented() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn unordered_item_continuation_paragraph_is_indented() {
     let md = "- Intro\n\n  Continuation paragraph line 1\n  Continuation paragraph line 2\n";
     let text = render_markdown_text(md);
@@ -1505,7 +1517,6 @@ fn unordered_item_continuation_paragraph_is_indented() {
     );
 }
 
-#[test]
 fn ordered_item_continuation_paragraph_is_indented() {
     let md = "1. Intro\n\n   More details about intro\n";
     let text = render_markdown_text(md);
@@ -1517,7 +1528,6 @@ fn ordered_item_continuation_paragraph_is_indented() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn nested_item_continuation_paragraph_is_indented() {
     let md = "1. A\n    - B\n\n      Continuation for B\n2. C\n";
     let text = render_markdown_text(md);
@@ -1531,7 +1541,6 @@ fn nested_item_continuation_paragraph_is_indented() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn gfm_alerts_emit_styled_header_line_per_kind() {
     // One realistic document covering all five alert kinds so the test also
     // exercises the transitions between alerts.
@@ -1596,7 +1605,6 @@ fn gfm_alerts_emit_styled_header_line_per_kind() {
     }
 }
 
-#[test]
 fn inline_math_rewrites_latex_to_unicode() {
     // Inline math covers the real-world LLM payload: greek letters, operators,
     // set theory, blackboard bold, and the `^`/`_` superscript/subscript
@@ -1628,7 +1636,6 @@ fn inline_math_rewrites_latex_to_unicode() {
     );
 }
 
-#[test]
 fn display_math_rewrites_and_frames_on_own_lines() {
     // Display math ($$...$$) should rewrite glyphs and keep the normal single
     // paragraph gap before and after it.
@@ -1673,7 +1680,6 @@ fn display_math_rewrites_and_frames_on_own_lines() {
     );
 }
 
-#[test]
 fn inline_math_with_embedded_newline_splits_across_rendered_lines() {
     let text = render_markdown_text("Before $a\nb$ after.\n");
     let expected = Text::from_iter([
@@ -1683,7 +1689,6 @@ fn inline_math_with_embedded_newline_splits_across_rendered_lines() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn display_math_with_embedded_newline_renders_each_line_once() {
     let text = render_markdown_text("Before.\n\n$$a\nb$$\n\nAfter.\n");
     let expected = Text::from_iter([
@@ -1697,7 +1702,6 @@ fn display_math_with_embedded_newline_renders_each_line_once() {
     assert_eq!(text, expected);
 }
 
-#[test]
 fn unknown_math_command_passes_through_unchanged() {
     // unicodeit leaves unknown commands intact rather than dropping them, so
     // math stays legible when a glyph mapping is missing.
@@ -1714,7 +1718,6 @@ fn unknown_math_command_passes_through_unchanged() {
     );
 }
 
-#[test]
 fn code_block_preserves_trailing_blank_lines() {
     // A fenced code block with an intentional trailing blank line must keep it.
     let md = "```rust\nfn main() {}\n\n```\n";

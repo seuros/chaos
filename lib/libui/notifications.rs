@@ -72,10 +72,9 @@ fn supports_osc9() -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::detect_backend;
     use chaos_kern::config::types::NotificationMethod;
-    use serial_test::serial;
     use std::ffi::OsString;
 
     struct EnvVarGuard {
@@ -112,7 +111,13 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn notifications_suite() {
+        selects_osc9_method();
+        selects_bel_method();
+        auto_prefers_bel_without_hints();
+        auto_uses_osc9_for_iterm();
+    }
+    #[cfg(test)]
     fn selects_osc9_method() {
         assert!(matches!(
             detect_backend(NotificationMethod::Osc9),
@@ -120,7 +125,7 @@ mod tests {
         ));
     }
 
-    #[test]
+    #[cfg(test)]
     fn selects_bel_method() {
         assert!(matches!(
             detect_backend(NotificationMethod::Bel),
@@ -128,8 +133,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    #[serial]
     fn auto_prefers_bel_without_hints() {
         let _term = EnvVarGuard::remove("TERM");
         let _term_program = EnvVarGuard::remove("TERM_PROGRAM");
@@ -141,8 +144,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    #[serial]
     fn auto_uses_osc9_for_iterm() {
         let _term = EnvVarGuard::remove("TERM");
         let _term_program = EnvVarGuard::remove("TERM_PROGRAM");

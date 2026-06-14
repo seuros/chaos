@@ -7,7 +7,7 @@ pub use request::ApprovalRequest;
 pub use state::ApprovalOverlay;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::super::CancellationEvent;
     use super::*;
     use crate::app_event::AppEvent;
@@ -109,7 +109,27 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn approval_overlay_suite() {
+        ctrl_c_aborts_and_clears_queue();
+        shortcut_triggers_selection();
+        o_opens_source_process_for_cross_process_approval();
+        cross_process_footer_hint_mentions_o_shortcut();
+        mcp_url_elicitation_snapshot();
+        accepting_url_elicitation_opens_browser_and_resolves_on_success();
+        exec_prefix_option_emits_execpolicy_amendment();
+        network_deny_forever_shortcut_is_not_bound();
+        header_includes_command_snippet();
+        exec_options_cover_network_generic_and_additional_permission_labels();
+        permissions_options_labels_and_session_shortcut_scope();
+        additional_permissions_prompt_shows_permission_rule_line();
+        additional_permissions_prompt_snapshot();
+        permissions_prompt_snapshot();
+        additional_permissions_macos_prompt_snapshot();
+        network_exec_prompt_title_includes_host();
+        exec_history_cell_wraps_with_two_space_indent();
+        enter_sets_last_selected_index_without_dismissing();
+    }
+
     fn ctrl_c_aborts_and_clears_queue() {
         let tx = crate::test_support::make_app_event_sender();
         let mut view = ApprovalOverlay::new(make_exec_request(), tx);
@@ -119,7 +139,6 @@ mod tests {
         assert!(view.is_complete());
     }
 
-    #[test]
     fn shortcut_triggers_selection() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(make_exec_request(), tx);
@@ -136,7 +155,6 @@ mod tests {
         assert!(saw_op, "expected approval decision to emit an op");
     }
 
-    #[test]
     fn o_opens_source_process_for_cross_process_approval() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let process_id = ProcessId::new();
@@ -164,7 +182,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn cross_process_footer_hint_mentions_o_shortcut() {
         let tx = crate::test_support::make_app_event_sender();
         let view = ApprovalOverlay::new(
@@ -188,7 +205,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn mcp_url_elicitation_snapshot() {
         let tx = crate::test_support::make_app_event_sender();
         let view = ApprovalOverlay::new(make_url_elicitation_request(), tx);
@@ -199,7 +215,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn accepting_url_elicitation_opens_browser_and_resolves_on_success() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let request = make_url_elicitation_request();
@@ -231,7 +246,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn exec_prefix_option_emits_execpolicy_amendment() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(
@@ -282,7 +296,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn network_deny_forever_shortcut_is_not_bound() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(
@@ -320,7 +333,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn header_includes_command_snippet() {
         let tx = crate::test_support::make_app_event_sender();
         let command = vec!["echo".into(), "hello".into(), "world".into()];
@@ -349,8 +361,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn network_exec_options_use_expected_labels_and_hide_execpolicy_amendment() {
+    fn exec_options_cover_network_generic_and_additional_permission_labels() {
         let network_context = NetworkApprovalContext {
             host: "example.com".to_string(),
             protocol: NetworkApprovalProtocol::Https,
@@ -382,10 +393,7 @@ mod tests {
                 "No, and tell FreeChaOS what to do differently".to_string(),
             ]
         );
-    }
 
-    #[test]
-    fn generic_exec_options_can_offer_allow_for_session() {
         let options = exec_options(
             &[
                 ReviewDecision::Approved,
@@ -406,10 +414,7 @@ mod tests {
                 "No, and tell FreeChaOS what to do differently".to_string(),
             ]
         );
-    }
 
-    #[test]
-    fn additional_permissions_exec_options_hide_execpolicy_amendment() {
         let additional_permissions = PermissionProfile {
             file_system: Some(FileSystemPermissions {
                 read: Some(vec![absolute_path("/tmp/readme.txt")]),
@@ -434,8 +439,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn permissions_options_use_expected_labels() {
+    fn permissions_options_labels_and_session_shortcut_scope() {
         let labels: Vec<String> = permissions_options()
             .into_iter()
             .map(|option| option.label)
@@ -448,10 +452,7 @@ mod tests {
                 "No, continue without permissions".to_string(),
             ]
         );
-    }
 
-    #[test]
-    fn permissions_session_shortcut_submits_session_scope() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(make_permissions_request(), tx);
 
@@ -475,7 +476,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn additional_permissions_prompt_shows_permission_rule_line() {
         let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
@@ -523,7 +523,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn additional_permissions_prompt_snapshot() {
         let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
@@ -554,7 +553,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn permissions_prompt_snapshot() {
         let tx = crate::test_support::make_app_event_sender();
         let view = ApprovalOverlay::new(make_permissions_request(), tx);
@@ -564,7 +562,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn additional_permissions_macos_prompt_snapshot() {
         let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
@@ -600,7 +597,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn network_exec_prompt_title_includes_host() {
         let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
@@ -657,7 +653,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn exec_history_cell_wraps_with_two_space_indent() {
         use crate::history_cell;
         let command = vec![
@@ -689,7 +684,6 @@ mod tests {
         assert_eq!(rendered, expected);
     }
 
-    #[test]
     fn enter_sets_last_selected_index_without_dismissing() {
         let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(make_exec_request(), tx);

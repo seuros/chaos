@@ -114,6 +114,8 @@ use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::Constrained;
 #[cfg(feature = "vt100-tests")]
 use chaos_kern::config::ConstraintError;
+#[cfg(any(test, feature = "vt100-tests"))]
+use chaos_kern::config::ConstraintResult;
 #[cfg(feature = "vt100-tests")]
 use chaos_kern::config_loader::RequirementSource;
 
@@ -173,7 +175,264 @@ fn snapshot(percent: f64) -> RateLimitSnapshot {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
+pub(crate) async fn chatwidget_suite() {
+    Box::pin(resumed_initial_messages_render_history()).await;
+    Box::pin(process_snapshot_replay_does_not_duplicate_agent_message_history()).await;
+    Box::pin(replayed_item_completed_user_message_renders_history_cell()).await;
+    Box::pin(replayed_user_message_preserves_text_elements_and_local_images()).await;
+    Box::pin(replayed_user_message_preserves_remote_image_urls()).await;
+    Box::pin(session_configured_syncs_widget_config_permissions_and_cwd()).await;
+    Box::pin(replayed_user_message_with_only_remote_images_renders_history_cell()).await;
+    Box::pin(replayed_user_message_with_only_local_images_does_not_render_history_cell()).await;
+    Box::pin(forked_process_history_line_without_name_shows_id_once_snapshot()).await;
+    Box::pin(submission_preserves_text_elements_and_local_images()).await;
+    Box::pin(submission_with_remote_and_local_images_keeps_local_placeholder_numbering()).await;
+    Box::pin(enter_with_only_remote_images_submits_user_turn()).await;
+    Box::pin(shift_enter_with_only_remote_images_does_not_submit_user_turn()).await;
+    Box::pin(enter_with_only_remote_images_does_not_submit_when_modal_is_active()).await;
+    Box::pin(enter_with_only_remote_images_does_not_submit_when_input_disabled()).await;
+    Box::pin(submission_preserves_selected_skill_path_binding()).await;
+    Box::pin(blocked_image_restore_preserves_mention_bindings()).await;
+    Box::pin(blocked_image_restore_with_remote_images_keeps_local_placeholder_mapping()).await;
+    Box::pin(queued_restore_with_remote_images_keeps_local_placeholder_mapping()).await;
+    Box::pin(interrupted_turn_restores_queued_messages_with_images_and_elements()).await;
+    Box::pin(interrupted_turn_restore_keeps_active_mode_for_resubmission()).await;
+    Box::pin(remap_placeholders_uses_attachment_labels()).await;
+    Box::pin(remap_placeholders_uses_byte_ranges_when_placeholder_missing()).await;
+    Box::pin(entered_review_mode_uses_request_hint()).await;
+    Box::pin(entered_review_mode_defaults_to_current_changes_banner()).await;
+    Box::pin(live_agent_message_renders_during_review_mode()).await;
+    Box::pin(process_snapshot_replay_preserves_agent_message_during_review_mode()).await;
+    Box::pin(review_restores_context_window_indicator()).await;
+    Box::pin(token_count_none_resets_context_indicator()).await;
+    Box::pin(context_indicator_shows_used_tokens_when_window_unknown()).await;
+    Box::pin(turn_started_uses_runtime_context_window_before_first_token_count()).await;
+    Box::pin(statusline_ctx_exposes_effective_and_last_turn_token_fields()).await;
+    Box::pin(worked_elapsed_from_resets_when_timer_restarts()).await;
+    Box::pin(collab_spawn_end_shows_requested_model_and_effort()).await;
+    Box::pin(rate_limit_warnings_emit_thresholds()).await;
+    Box::pin(test_rate_limit_warnings_monthly()).await;
+    Box::pin(rate_limit_snapshot_keeps_prior_credits_when_missing_from_headers()).await;
+    Box::pin(rate_limit_snapshot_updates_and_retains_plan_type()).await;
+    Box::pin(statusline_ctx_exposes_weekly_rate_limit_window()).await;
+    Box::pin(rate_limit_snapshots_keep_separate_entries_per_limit_id()).await;
+    Box::pin(rate_limit_switch_prompt_skips_when_on_lower_cost_model()).await;
+    Box::pin(rate_limit_switch_prompt_skips_non_codex_limit()).await;
+    Box::pin(rate_limit_switch_prompt_respects_hidden_notice()).await;
+    Box::pin(plan_implementation_popup_snapshot()).await;
+    Box::pin(plan_implementation_popup_no_selected_snapshot()).await;
+    Box::pin(plan_implementation_popup_yes_emits_submit_message_event()).await;
+    Box::pin(submit_user_message_with_mode_sets_coding_collaboration_mode()).await;
+    Box::pin(plan_reasoning_scope_popup_all_modes_persists_global_and_plan_override()).await;
+    queue_persist_model_selection_skips_clamped_writes();
+    queue_persist_model_selection_emits_when_unclamped();
+    Box::pin(restore_pre_clamp_selection_replays_model_and_reasoning_state()).await;
+    plan_mode_prompt_notification_uses_dedicated_type_name();
+    user_input_requested_notification_uses_dedicated_type_name();
+    Box::pin(open_plan_implementation_prompt_sets_pending_notification()).await;
+    Box::pin(open_plan_reasoning_scope_prompt_sets_pending_notification()).await;
+    Box::pin(agent_turn_complete_does_not_override_pending_plan_mode_prompt_notification()).await;
+    Box::pin(user_input_notification_overrides_pending_agent_turn_complete_notification()).await;
+    Box::pin(handle_request_user_input_sets_pending_notification()).await;
+    Box::pin(plan_reasoning_scope_popup_mentions_selected_reasoning()).await;
+    Box::pin(plan_reasoning_scope_popup_mentions_built_in_plan_default_when_no_override()).await;
+    Box::pin(plan_reasoning_scope_popup_plan_only_does_not_update_all_modes_reasoning()).await;
+    Box::pin(submit_user_message_with_mode_errors_when_mode_changes_during_running_turn()).await;
+    Box::pin(submit_user_message_with_mode_allows_same_mode_during_running_turn()).await;
+    Box::pin(submit_user_message_with_mode_submits_when_plan_stream_is_not_active()).await;
+    Box::pin(plan_implementation_popup_skips_replayed_turn_complete()).await;
+    Box::pin(plan_implementation_popup_shows_once_when_replay_precedes_live_turn_complete()).await;
+    Box::pin(replayed_process_rollback_emits_ordered_app_event()).await;
+    Box::pin(plan_implementation_popup_skips_when_messages_queued()).await;
+    Box::pin(plan_implementation_popup_skips_without_proposed_plan()).await;
+    Box::pin(plan_implementation_popup_shows_after_proposed_plan_output()).await;
+    Box::pin(plan_implementation_popup_skips_when_steer_follows_proposed_plan()).await;
+    Box::pin(plan_implementation_popup_shows_after_new_plan_follows_steer()).await;
+    Box::pin(exec_approval_emits_proposed_command_and_decision_history()).await;
+    Box::pin(exec_approval_uses_approval_id_when_present()).await;
+    Box::pin(exec_approval_decision_truncates_multiline_and_long_commands()).await;
+    Box::pin(empty_enter_during_task_does_not_queue()).await;
+    Box::pin(restore_process_input_state_syncs_sleep_inhibitor_state()).await;
+    Box::pin(alt_up_edits_most_recent_queued_message()).await;
+    Box::pin(shift_left_edits_most_recent_queued_message_in_apple_terminal()).await;
+    Box::pin(shift_left_edits_most_recent_queued_message_in_warp_terminal()).await;
+    Box::pin(shift_left_edits_most_recent_queued_message_in_vscode_terminal()).await;
+    queued_message_edit_binding_mapping_covers_special_terminals();
+    Box::pin(enqueueing_history_prompt_multiple_times_is_stable()).await;
+    Box::pin(streaming_final_answer_ctrl_c_interrupt_preserves_background_shells()).await;
+    Box::pin(idle_commit_ticks_do_not_restore_status_without_commentary_completion()).await;
+    Box::pin(commentary_completion_restores_status_indicator_before_exec_begin()).await;
+    Box::pin(plan_completion_restores_status_indicator_after_streaming_plan_output()).await;
+    Box::pin(preamble_keeps_working_status_snapshot()).await;
+    Box::pin(unified_exec_begin_restores_status_indicator_after_preamble()).await;
+    Box::pin(unified_exec_begin_restores_working_status_snapshot()).await;
+    Box::pin(steer_enter_queues_while_plan_stream_is_active()).await;
+    Box::pin(steer_enter_uses_pending_steers_while_turn_is_running_without_streaming()).await;
+    Box::pin(steer_enter_uses_pending_steers_while_final_answer_stream_is_active()).await;
+    Box::pin(failed_pending_steer_submit_does_not_add_pending_preview()).await;
+    Box::pin(live_legacy_agent_message_after_item_completed_does_not_duplicate_assistant_message())
+        .await;
+    rendered_user_message_event_from_inputs_matches_flattened_user_message_shape();
+    Box::pin(item_completed_only_pops_front_pending_steer()).await;
+    Box::pin(steer_enter_during_final_stream_preserves_follow_up_prompts_in_order()).await;
+    Box::pin(manual_interrupt_restores_pending_steers_to_composer()).await;
+    Box::pin(esc_interrupt_sends_all_pending_steers_immediately_and_keeps_existing_draft()).await;
+    Box::pin(esc_with_pending_steers_overrides_agent_command_interrupt_behavior()).await;
+    Box::pin(manual_interrupt_restores_pending_steer_mention_bindings_to_composer()).await;
+    Box::pin(manual_interrupt_restores_pending_steers_before_queued_messages()).await;
+    Box::pin(replaced_turn_clears_pending_steers_but_keeps_queued_drafts()).await;
+    Box::pin(ctrl_c_shutdown_works_with_caps_lock()).await;
+    Box::pin(ctrl_d_quits_without_prompt()).await;
+    Box::pin(ctrl_d_with_modal_open_does_not_quit()).await;
+    Box::pin(ctrl_c_cleared_prompt_is_recoverable_via_history()).await;
+    Box::pin(exec_history_cell_shows_working_then_completed()).await;
+    Box::pin(exec_history_cell_shows_working_then_failed()).await;
+    Box::pin(exec_end_without_begin_uses_event_command()).await;
+    Box::pin(exec_end_without_begin_does_not_flush_unrelated_running_exploring_cell()).await;
+    Box::pin(exec_end_without_begin_flushes_completed_unrelated_exploring_cell()).await;
+    Box::pin(overlapping_exploring_exec_end_is_not_misclassified_as_orphan()).await;
+    Box::pin(exec_history_shows_unified_exec_startup_commands()).await;
+    Box::pin(exec_history_shows_unified_exec_tool_calls()).await;
+    Box::pin(unified_exec_unknown_end_with_active_exploring_cell_snapshot()).await;
+    Box::pin(unified_exec_end_after_task_complete_is_suppressed()).await;
+    Box::pin(unified_exec_interaction_after_task_complete_is_suppressed()).await;
+    Box::pin(unified_exec_wait_after_final_agent_message_snapshot()).await;
+    Box::pin(unified_exec_wait_before_streamed_agent_message_snapshot()).await;
+    Box::pin(unified_exec_wait_status_header_updates_on_late_command_display()).await;
+    Box::pin(unified_exec_waiting_multiple_empty_snapshots()).await;
+    Box::pin(unified_exec_wait_status_renders_command_in_single_details_row_snapshot()).await;
+    Box::pin(unified_exec_empty_then_non_empty_snapshot()).await;
+    Box::pin(unified_exec_non_empty_then_empty_snapshots()).await;
+    Box::pin(review_popup_custom_prompt_action_sends_event()).await;
+    Box::pin(collab_mode_shift_tab_cycles_only_when_idle()).await;
+    Box::pin(mode_switch_does_not_emit_model_change_notification()).await;
+    Box::pin(plan_slash_command_switches_to_plan_mode()).await;
+    Box::pin(plan_slash_command_with_args_submits_prompt_in_plan_mode()).await;
+    Box::pin(collaboration_modes_defaults_to_code_on_startup()).await;
+    Box::pin(set_model_updates_active_collaboration_mask()).await;
+    Box::pin(set_reasoning_effort_updates_active_collaboration_mask()).await;
+    Box::pin(backtab_mode_switch_refreshes_wpn_statusline_effort()).await;
+    Box::pin(set_reasoning_effort_does_not_override_active_plan_override()).await;
+    Box::pin(slash_quit_requests_exit()).await;
+    Box::pin(slash_copy_state_tracks_turn_complete_final_reply()).await;
+    Box::pin(slash_copy_state_tracks_plan_item_completion()).await;
+    Box::pin(slash_copy_reports_when_no_copyable_output_exists()).await;
+    Box::pin(slash_copy_state_is_preserved_during_running_task()).await;
+    Box::pin(slash_copy_state_clears_on_process_rollback()).await;
+    Box::pin(
+        slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_turn_complete(),
+    )
+    .await;
+    Box::pin(
+        slash_copy_is_unavailable_when_legacy_agent_message_item_is_not_repeated_on_turn_complete(),
+    )
+    .await;
+    Box::pin(slash_copy_does_not_return_stale_output_after_process_rollback()).await;
+    Box::pin(slash_exit_requests_exit()).await;
+    Box::pin(slash_stop_submits_background_terminal_cleanup()).await;
+    Box::pin(slash_clear_requests_ui_clear_when_idle()).await;
+    Box::pin(slash_clear_is_disabled_while_task_running()).await;
+    Box::pin(slash_memory_drop_submits_drop_memories_op()).await;
+    Box::pin(slash_memory_update_submits_update_memories_op()).await;
+    Box::pin(slash_resume_opens_picker()).await;
+    Box::pin(slash_fork_requests_current_fork()).await;
+    Box::pin(undo_success_events_render_info_messages()).await;
+    Box::pin(undo_failure_events_render_error_message()).await;
+    Box::pin(undo_started_hides_interrupt_hint()).await;
+    Box::pin(review_commit_picker_shows_subjects_without_timestamps()).await;
+    Box::pin(custom_prompt_submit_sends_review_op()).await;
+    Box::pin(custom_prompt_enter_empty_does_not_send()).await;
+    Box::pin(view_image_tool_call_adds_history_cell()).await;
+    Box::pin(image_generation_call_adds_history_cell()).await;
+    Box::pin(interrupt_exec_marks_failed_snapshot()).await;
+    Box::pin(interrupted_turn_error_message_snapshot()).await;
+    Box::pin(interrupted_turn_pending_steers_message_snapshot()).await;
+    Box::pin(review_custom_prompt_escape_navigates_back_then_dismisses()).await;
+    Box::pin(review_branch_picker_escape_navigates_back_then_dismisses()).await;
+    Box::pin(model_picker_hides_show_in_picker_false_models_from_cache()).await;
+    Box::pin(server_overloaded_error_does_not_switch_models()).await;
+    Box::pin(provider_auth_missing_error_opens_login_popup()).await;
+    Box::pin(approvals_selection_popup_snapshot()).await;
+    Box::pin(preset_matching_accepts_workspace_write_with_extra_roots()).await;
+    approval_preset_actions_emit_ui_refresh_after_permission_updates();
+    Box::pin(full_access_confirmation_popup_snapshot()).await;
+    Box::pin(single_reasoning_option_skips_selection()).await;
+    Box::pin(exec_history_extends_previous_when_consecutive()).await;
+    Box::pin(user_shell_command_renders_output_not_exploring()).await;
+    Box::pin(disabled_slash_command_while_task_running_snapshot()).await;
+    Box::pin(permissions_selection_emits_history_cell_when_selection_changes()).await;
+    Box::pin(permissions_selection_history_snapshot_after_mode_switch()).await;
+    Box::pin(permissions_selection_history_snapshot_full_access_to_default()).await;
+    Box::pin(permissions_selection_emits_history_cell_when_current_is_selected()).await;
+    Box::pin(permissions_full_access_history_cell_emitted_only_after_confirmation()).await;
+    Box::pin(interrupt_restores_queued_messages_into_composer()).await;
+    Box::pin(interrupt_prepends_queued_messages_before_existing_composer_text()).await;
+    Box::pin(interrupt_keeps_unified_exec_processes()).await;
+    Box::pin(review_ended_keeps_unified_exec_processes()).await;
+    Box::pin(interrupt_preserves_unified_exec_wait_streak_snapshot()).await;
+    Box::pin(turn_complete_keeps_unified_exec_processes()).await;
+    Box::pin(ui_snapshots_small_heights_idle()).await;
+    Box::pin(ui_snapshots_small_heights_task_running()).await;
+    Box::pin(status_widget_and_approval_modal_snapshot()).await;
+    Box::pin(apply_patch_events_emit_history_cells()).await;
+    Box::pin(apply_patch_manual_approval_adjusts_header()).await;
+    Box::pin(apply_patch_manual_flow_snapshot()).await;
+    Box::pin(apply_patch_approval_sends_op_with_call_id()).await;
+    Box::pin(apply_patch_full_flow_integration_like()).await;
+    Box::pin(apply_patch_untrusted_shows_approval_modal())
+        .await
+        .expect("apply_patch_untrusted_shows_approval_modal");
+    Box::pin(apply_patch_request_shows_diff_summary())
+        .await
+        .expect("apply_patch_request_shows_diff_summary");
+    Box::pin(plan_update_renders_history_cell()).await;
+    Box::pin(stream_error_updates_status_indicator()).await;
+    Box::pin(replayed_turn_started_does_not_mark_task_running()).await;
+    Box::pin(process_snapshot_replayed_turn_started_marks_task_running()).await;
+    Box::pin(replayed_stream_error_does_not_set_retry_status_or_status_indicator()).await;
+    Box::pin(process_snapshot_replayed_stream_recovery_restores_previous_status_header()).await;
+    Box::pin(resume_replay_interrupted_reconnect_does_not_leave_stale_working_state()).await;
+    Box::pin(replayed_interrupted_reconnect_footer_row_snapshot()).await;
+    Box::pin(stream_error_restores_hidden_status_indicator()).await;
+    Box::pin(warning_event_adds_warning_history_cell()).await;
+    Box::pin(default_halluacinate_status_line_renderer_renders_default_line()).await;
+    Box::pin(status_line_script_render_ignores_stale_generation_or_process()).await;
+    Box::pin(missing_status_line_script_renderer_clears_line_without_rust_fallback()).await;
+    Box::pin(status_line_branch_refreshes_after_turn_complete()).await;
+    Box::pin(status_line_branch_refreshes_after_interrupt()).await;
+    Box::pin(stream_recovery_restores_previous_status_header()).await;
+    Box::pin(runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals()).await;
+    Box::pin(multiple_agent_messages_in_single_turn_emit_multiple_headers()).await;
+    Box::pin(final_reasoning_then_message_without_deltas_are_rendered()).await;
+    Box::pin(deltas_then_same_final_message_are_rendered_snapshot()).await;
+    Box::pin(hook_events_render_snapshot()).await;
+    Box::pin(enter_queues_user_messages_while_review_is_running()).await;
+    Box::pin(item_completed_pops_pending_steer_with_local_image_and_text_elements()).await;
+    #[cfg(feature = "vt100-tests")]
+    {
+        Box::pin(approvals_popup_shows_disabled_presets()).await;
+        Box::pin(approvals_popup_navigation_skips_disabled()).await;
+        Box::pin(approval_modal_exec_snapshot())
+            .await
+            .expect("approval_modal_exec_snapshot");
+        Box::pin(approval_modal_exec_without_reason_snapshot())
+            .await
+            .expect("approval_modal_exec_without_reason_snapshot");
+        Box::pin(approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot())
+            .await
+            .expect("approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot");
+        Box::pin(approval_modal_patch_snapshot())
+            .await
+            .expect("approval_modal_patch_snapshot");
+        Box::pin(chatwidget_exec_and_status_layout_vt100_snapshot()).await;
+        Box::pin(chatwidget_markdown_code_blocks_vt100_snapshot()).await;
+        Box::pin(chatwidget_tall()).await;
+        Box::pin(review_queues_user_messages_snapshot()).await;
+    }
+}
+
+#[cfg(test)]
 async fn resumed_initial_messages_render_history() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -237,7 +496,7 @@ async fn resumed_initial_messages_render_history() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn process_snapshot_replay_does_not_duplicate_agent_message_history() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -276,7 +535,7 @@ async fn process_snapshot_replay_does_not_duplicate_agent_message_history() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_item_completed_user_message_renders_history_cell() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -347,7 +606,7 @@ async fn replayed_item_completed_user_message_renders_history_cell() {
     assert_eq!(stored_images, local_images);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_user_message_preserves_text_elements_and_local_images() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -414,7 +673,7 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
     assert!(stored_remote_image_urls.is_empty());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_user_message_preserves_remote_image_urls() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -474,7 +733,7 @@ async fn replayed_user_message_preserves_remote_image_urls() {
     assert_eq!(stored_remote_image_urls, remote_image_urls);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn session_configured_syncs_widget_config_permissions_and_cwd() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -527,7 +786,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
     assert_eq!(&chat.config_ref().cwd, &expected_cwd);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -581,7 +840,7 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
     assert_eq!(stored_remote_image_urls, remote_image_urls);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_user_message_with_only_local_images_does_not_render_history_cell() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -632,7 +891,7 @@ async fn replayed_user_message_with_only_local_images_does_not_render_history_ce
     assert!(!found_user_history_cell);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn forked_process_history_line_without_name_shows_id_once_snapshot() {
     let (chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let mut chat = chat;
@@ -661,7 +920,7 @@ async fn forked_process_history_line_without_name_shows_id_once_snapshot() {
     assert_snapshot!("forked_process_history_line_without_name", combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn submission_preserves_text_elements_and_local_images() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -746,7 +1005,7 @@ async fn submission_preserves_text_elements_and_local_images() {
     assert!(stored_remote_image_urls.is_empty());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn submission_with_remote_and_local_images_keeps_local_placeholder_numbering() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -842,7 +1101,7 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
     assert_eq!(stored_remote_image_urls, vec![remote_url]);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn enter_with_only_remote_images_submits_user_turn() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -908,7 +1167,7 @@ async fn enter_with_only_remote_images_submits_user_turn() {
     assert_eq!(stored_remote_image_urls, vec![remote_url]);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -949,7 +1208,7 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
     assert_eq!(chat.remote_image_urls(), vec![remote_url]);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -990,7 +1249,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
     assert_no_submit_op(&mut op_rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -1032,7 +1291,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
     assert_no_submit_op(&mut op_rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn submission_preserves_selected_skill_path_binding() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -1073,7 +1332,7 @@ async fn submission_preserves_selected_skill_path_binding() {
     assert_ne!(restored_bindings[0].path, repo_skill_path.to_string_lossy());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn blocked_image_restore_preserves_mention_bindings() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -1127,7 +1386,7 @@ async fn blocked_image_restore_preserves_mention_bindings() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn blocked_image_restore_with_remote_images_keeps_local_placeholder_mapping() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -1171,7 +1430,7 @@ async fn blocked_image_restore_with_remote_images_keeps_local_placeholder_mappin
     assert_eq!(chat.remote_image_urls(), remote_image_urls);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn queued_restore_with_remote_images_keeps_local_placeholder_mapping() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -1215,7 +1474,7 @@ async fn queued_restore_with_remote_images_keeps_local_placeholder_mapping() {
     assert_eq!(chat.remote_image_urls(), remote_image_urls);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn interrupted_turn_restores_queued_messages_with_images_and_elements() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -1312,7 +1571,7 @@ async fn interrupted_turn_restores_queued_messages_with_images_and_elements() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn interrupted_turn_restore_keeps_active_mode_for_resubmission() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.process_id = Some(ProcessId::new());
@@ -1361,7 +1620,7 @@ async fn interrupted_turn_restore_keeps_active_mode_for_resubmission() {
     assert_eq!(chat.active_collaboration_mode_kind(), expected_mode);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn remap_placeholders_uses_attachment_labels() {
     let placeholder_one = "[Image #1]";
     let placeholder_two = "[Image #2]";
@@ -1430,7 +1689,7 @@ async fn remap_placeholders_uses_attachment_labels() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn remap_placeholders_uses_byte_ranges_when_placeholder_missing() {
     let placeholder_one = "[Image #1]";
     let placeholder_two = "[Image #2]";
@@ -1493,7 +1752,7 @@ async fn remap_placeholders_uses_byte_ranges_when_placeholder_missing() {
 }
 
 /// Entering review mode uses the hint provided by the review request.
-#[tokio::test]
+#[cfg(test)]
 async fn entered_review_mode_uses_request_hint() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -1515,7 +1774,7 @@ async fn entered_review_mode_uses_request_hint() {
 }
 
 /// Entering review mode renders the current changes banner when requested.
-#[tokio::test]
+#[cfg(test)]
 async fn entered_review_mode_defaults_to_current_changes_banner() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -1534,7 +1793,7 @@ async fn entered_review_mode_defaults_to_current_changes_banner() {
     assert!(chat.is_review_mode);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn live_agent_message_renders_during_review_mode() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -1561,7 +1820,7 @@ async fn live_agent_message_renders_during_review_mode() {
     assert!(lines_to_single_string(&inserted[0]).contains("Review progress update"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn process_snapshot_replay_preserves_agent_message_during_review_mode() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -1589,7 +1848,7 @@ async fn process_snapshot_replay_preserves_agent_message_during_review_mode() {
 }
 
 /// Exiting review restores the pre-review context window indicator.
-#[tokio::test]
+#[cfg(test)]
 async fn review_restores_context_window_indicator() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -1639,7 +1898,7 @@ async fn review_restores_context_window_indicator() {
 }
 
 /// Receiving a TokenCount event without usage clears the context indicator.
-#[tokio::test]
+#[cfg(test)]
 async fn token_count_none_resets_context_indicator() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -1665,7 +1924,7 @@ async fn token_count_none_resets_context_indicator() {
     assert_eq!(chat.bottom_pane.context_window_percent(), None);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn context_indicator_shows_used_tokens_when_window_unknown() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(Some("unknown-model")).await;
 
@@ -1700,7 +1959,7 @@ async fn context_indicator_shows_used_tokens_when_window_unknown() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn turn_started_uses_runtime_context_window_before_first_token_count() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -1747,7 +2006,7 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn statusline_ctx_exposes_effective_and_last_turn_token_fields() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -2001,7 +2260,7 @@ fn assert_no_submit_op(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn worked_elapsed_from_resets_when_timer_restarts() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     assert_eq!(chat.worked_elapsed_from(5), 5);
@@ -2056,7 +2315,7 @@ fn line_to_single_string(line: &ratatui::text::Line<'static>) -> String {
         .collect()
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn collab_spawn_end_shows_requested_model_and_effort() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
     let sender_process_id = ProcessId::new();
@@ -2117,7 +2376,7 @@ fn make_token_info(total_tokens: i64, context_window: i64) -> TokenUsageInfo {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn rate_limit_warnings_emit_thresholds() {
     let mut state = RateLimitWarningState::default();
     let mut warnings: Vec<String> = Vec::new();
@@ -2149,7 +2408,7 @@ async fn rate_limit_warnings_emit_thresholds() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn test_rate_limit_warnings_monthly() {
     let mut state = RateLimitWarningState::default();
     let mut warnings: Vec<String> = Vec::new();
@@ -2164,7 +2423,7 @@ async fn test_rate_limit_warnings_monthly() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn rate_limit_snapshot_keeps_prior_credits_when_missing_from_headers() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -2217,7 +2476,7 @@ async fn rate_limit_snapshot_keeps_prior_credits_when_missing_from_headers() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn rate_limit_snapshot_updates_and_retains_plan_type() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -2276,7 +2535,7 @@ async fn rate_limit_snapshot_updates_and_retains_plan_type() {
     assert_eq!(chat.plan_type, Some(PlanType::Pro));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn statusline_ctx_exposes_weekly_rate_limit_window() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -2313,7 +2572,7 @@ async fn statusline_ctx_exposes_weekly_rate_limit_window() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -2368,7 +2627,7 @@ async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
     assert!(other.credits.is_none());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn rate_limit_switch_prompt_skips_when_on_lower_cost_model() {
     let (mut chat, _, _) = make_chatwidget_manual(Some(NUDGE_MODEL_SLUG)).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
@@ -2383,7 +2642,7 @@ async fn rate_limit_switch_prompt_skips_when_on_lower_cost_model() {
     ));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn rate_limit_switch_prompt_skips_non_codex_limit() {
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
@@ -2408,7 +2667,7 @@ async fn rate_limit_switch_prompt_skips_non_codex_limit() {
     ));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn rate_limit_switch_prompt_respects_hidden_notice() {
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
@@ -2423,7 +2682,7 @@ async fn rate_limit_switch_prompt_respects_hidden_notice() {
     ));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.open_plan_implementation_prompt();
@@ -2432,7 +2691,7 @@ async fn plan_implementation_popup_snapshot() {
     assert_snapshot!("plan_implementation_popup", popup);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_no_selected_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.open_plan_implementation_prompt();
@@ -2442,7 +2701,7 @@ async fn plan_implementation_popup_no_selected_snapshot() {
     assert_snapshot!("plan_implementation_popup_no_selected", popup);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_yes_emits_submit_message_event() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.open_plan_implementation_prompt();
@@ -2461,7 +2720,7 @@ async fn plan_implementation_popup_yes_emits_submit_message_event() {
     assert_eq!(collaboration_mode.mode, Some(ModeKind::Default));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn submit_user_message_with_mode_sets_coding_collaboration_mode() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.process_id = Some(ProcessId::new());
@@ -2486,7 +2745,7 @@ async fn submit_user_message_with_mode_sets_coding_collaboration_mode() {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_reasoning_scope_popup_all_modes_persists_global_and_plan_override() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
     chat.open_plan_reasoning_scope_prompt(
@@ -2522,7 +2781,7 @@ async fn plan_reasoning_scope_popup_all_modes_persists_global_and_plan_override(
     );
 }
 
-#[test]
+#[cfg(test)]
 fn queue_persist_model_selection_skips_clamped_writes() {
     let (tx, mut rx) = make_app_event_sender_with_rx();
 
@@ -2536,7 +2795,7 @@ fn queue_persist_model_selection_skips_clamped_writes() {
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
-#[test]
+#[cfg(test)]
 fn queue_persist_model_selection_emits_when_unclamped() {
     let (tx, mut rx) = make_app_event_sender_with_rx();
 
@@ -2556,7 +2815,7 @@ fn queue_persist_model_selection_emits_when_unclamped() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn restore_pre_clamp_selection_replays_model_and_reasoning_state() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::Low));
@@ -2595,7 +2854,7 @@ async fn restore_pre_clamp_selection_replays_model_and_reasoning_state() {
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
-#[test]
+#[cfg(test)]
 fn plan_mode_prompt_notification_uses_dedicated_type_name() {
     let notification = Notification::PlanModePrompt {
         title: PLAN_IMPLEMENTATION_TITLE.to_string(),
@@ -2613,7 +2872,7 @@ fn plan_mode_prompt_notification_uses_dedicated_type_name() {
     );
 }
 
-#[test]
+#[cfg(test)]
 fn user_input_requested_notification_uses_dedicated_type_name() {
     let notification = Notification::UserInputRequested {
         question_count: 1,
@@ -2632,7 +2891,7 @@ fn user_input_requested_notification_uses_dedicated_type_name() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn open_plan_implementation_prompt_sets_pending_notification() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
     chat.config.tui_notifications = Notifications::Custom(vec!["plan-mode-prompt".to_string()]);
@@ -2645,7 +2904,7 @@ async fn open_plan_implementation_prompt_sets_pending_notification() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn open_plan_reasoning_scope_prompt_sets_pending_notification() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
     chat.config.tui_notifications = Notifications::Custom(vec!["plan-mode-prompt".to_string()]);
@@ -2661,7 +2920,7 @@ async fn open_plan_reasoning_scope_prompt_sets_pending_notification() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn agent_turn_complete_does_not_override_pending_plan_mode_prompt_notification() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
 
@@ -2676,7 +2935,7 @@ async fn agent_turn_complete_does_not_override_pending_plan_mode_prompt_notifica
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn user_input_notification_overrides_pending_agent_turn_complete_notification() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
 
@@ -2708,7 +2967,7 @@ async fn user_input_notification_overrides_pending_agent_turn_complete_notificat
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn handle_request_user_input_sets_pending_notification() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
     chat.config.tui_notifications = Notifications::Custom(vec!["user-input-requested".to_string()]);
@@ -2738,7 +2997,7 @@ async fn handle_request_user_input_sets_pending_notification() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_reasoning_scope_popup_mentions_selected_reasoning() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
     chat.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::Low));
@@ -2755,7 +3014,7 @@ async fn plan_reasoning_scope_popup_mentions_selected_reasoning() {
     assert!(popup.contains("user-chosen Plan override (low)"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_reasoning_scope_popup_mentions_built_in_plan_default_when_no_override() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
     chat.open_plan_reasoning_scope_prompt(
@@ -2767,7 +3026,7 @@ async fn plan_reasoning_scope_popup_mentions_built_in_plan_default_when_no_overr
     assert!(popup.contains("built-in Plan default (medium)"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_reasoning_scope_popup_plan_only_does_not_update_all_modes_reasoning() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
     chat.open_plan_reasoning_scope_prompt(
@@ -2793,7 +3052,7 @@ async fn plan_reasoning_scope_popup_plan_only_does_not_update_all_modes_reasonin
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn submit_user_message_with_mode_errors_when_mode_changes_during_running_turn() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.process_id = Some(ProcessId::new());
@@ -2821,7 +3080,7 @@ async fn submit_user_message_with_mode_errors_when_mode_changes_during_running_t
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn submit_user_message_with_mode_allows_same_mode_during_running_turn() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.process_id = Some(ProcessId::new());
@@ -2851,7 +3110,7 @@ async fn submit_user_message_with_mode_allows_same_mode_during_running_turn() {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn submit_user_message_with_mode_submits_when_plan_stream_is_not_active() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.process_id = Some(ProcessId::new());
@@ -2881,7 +3140,7 @@ async fn submit_user_message_with_mode_submits_when_plan_stream_is_not_active() 
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_skips_replayed_turn_complete() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_mask =
@@ -2901,7 +3160,7 @@ async fn plan_implementation_popup_skips_replayed_turn_complete() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_shows_once_when_replay_precedes_live_turn_complete() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_mask =
@@ -2958,7 +3217,7 @@ async fn plan_implementation_popup_shows_once_when_replay_precedes_live_turn_com
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_process_rollback_emits_ordered_app_event() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
 
@@ -2978,7 +3237,7 @@ async fn replayed_process_rollback_emits_ordered_app_event() {
     assert!(saw, "expected replay rollback app event");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_skips_when_messages_queued() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_mask =
@@ -2997,7 +3256,7 @@ async fn plan_implementation_popup_skips_when_messages_queued() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_skips_without_proposed_plan() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_mask =
@@ -3022,7 +3281,7 @@ async fn plan_implementation_popup_skips_without_proposed_plan() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_shows_after_proposed_plan_output() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_mask =
@@ -3042,7 +3301,7 @@ async fn plan_implementation_popup_shows_after_proposed_plan_output() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_skips_when_steer_follows_proposed_plan() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_mask =
@@ -3083,7 +3342,7 @@ async fn plan_implementation_popup_skips_when_steer_follows_proposed_plan() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_implementation_popup_shows_after_new_plan_follows_steer() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     let plan_mask =
@@ -3128,7 +3387,7 @@ async fn plan_implementation_popup_shows_after_new_plan_follows_steer() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_approval_emits_proposed_command_and_decision_history() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3177,7 +3436,7 @@ async fn exec_approval_emits_proposed_command_and_decision_history() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_approval_uses_approval_id_when_present() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3219,7 +3478,7 @@ async fn exec_approval_uses_approval_id_when_present() {
     assert!(found, "expected ExecApproval op to be sent");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_approval_decision_truncates_multiline_and_long_commands() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3498,7 +3757,7 @@ fn active_blob(chat: &ChatWidget) -> String {
     lines_to_single_string(&lines)
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn empty_enter_during_task_does_not_queue() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3512,7 +3771,7 @@ async fn empty_enter_during_task_does_not_queue() {
     assert!(chat.queued_user_messages.is_empty());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn restore_process_input_state_syncs_sleep_inhibitor_state() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.restore_process_input_state(Some(ProcessInputState {
@@ -3535,7 +3794,7 @@ async fn restore_process_input_state_syncs_sleep_inhibitor_state() {
     assert!(!chat.bottom_pane.is_task_running());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn alt_up_edits_most_recent_queued_message() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.queued_message_edit_binding = crate::key_hint::alt(KeyCode::Up);
@@ -3602,24 +3861,24 @@ async fn assert_shift_left_edits_most_recent_queued_message_for_terminal(
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn shift_left_edits_most_recent_queued_message_in_apple_terminal() {
     assert_shift_left_edits_most_recent_queued_message_for_terminal(TerminalName::AppleTerminal)
         .await;
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn shift_left_edits_most_recent_queued_message_in_warp_terminal() {
     assert_shift_left_edits_most_recent_queued_message_for_terminal(TerminalName::WarpTerminal)
         .await;
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn shift_left_edits_most_recent_queued_message_in_vscode_terminal() {
     assert_shift_left_edits_most_recent_queued_message_for_terminal(TerminalName::VsCode).await;
 }
 
-#[test]
+#[cfg(test)]
 fn queued_message_edit_binding_mapping_covers_special_terminals() {
     assert_eq!(
         queued_message_edit_binding_for_terminal(TerminalName::AppleTerminal),
@@ -3642,7 +3901,7 @@ fn queued_message_edit_binding_mapping_covers_special_terminals() {
 /// Pressing Up to recall the most recent history entry and immediately queuing
 /// it while a task is running should always enqueue the same text, even when it
 /// is queued repeatedly.
-#[tokio::test]
+#[cfg(test)]
 async fn enqueueing_history_prompt_multiple_times_is_stable() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -3670,7 +3929,7 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn streaming_final_answer_ctrl_c_interrupt_preserves_background_shells() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -3706,7 +3965,7 @@ async fn streaming_final_answer_ctrl_c_interrupt_preserves_background_shells() {
     assert_eq!(chat.unified_exec_processes.len(), 1);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn idle_commit_ticks_do_not_restore_status_without_commentary_completion() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3725,7 +3984,7 @@ async fn idle_commit_ticks_do_not_restore_status_without_commentary_completion()
     assert_eq!(chat.bottom_pane.status_indicator_visible(), false);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn commentary_completion_restores_status_indicator_before_exec_begin() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3752,7 +4011,7 @@ async fn commentary_completion_restores_status_indicator_before_exec_begin() {
     assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_completion_restores_status_indicator_after_streaming_plan_output() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let plan_mask =
@@ -3776,7 +4035,7 @@ async fn plan_completion_restores_status_indicator_after_streaming_plan_output()
     assert_eq!(chat.bottom_pane.is_task_running(), true);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn preamble_keeps_working_status_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -3803,7 +4062,7 @@ async fn preamble_keeps_working_status_snapshot() {
     assert_snapshot!("preamble_keeps_working_status", terminal.backend());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_begin_restores_status_indicator_after_preamble() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3820,7 +4079,7 @@ async fn unified_exec_begin_restores_status_indicator_after_preamble() {
     assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_begin_restores_working_status_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3844,7 +4103,7 @@ async fn unified_exec_begin_restores_working_status_snapshot() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn steer_enter_queues_while_plan_stream_is_active() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -3871,7 +4130,7 @@ async fn steer_enter_queues_while_plan_stream_is_active() {
     assert!(drain_insert_history(&mut rx).is_empty());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn steer_enter_uses_pending_steers_while_turn_is_running_without_streaming() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -3901,7 +4160,7 @@ async fn steer_enter_uses_pending_steers_while_turn_is_running_without_streaming
     assert!(lines_to_single_string(&inserted[0]).contains("queued while running"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn steer_enter_uses_pending_steers_while_final_answer_stream_is_active() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -3937,7 +4196,7 @@ async fn steer_enter_uses_pending_steers_while_final_answer_stream_is_active() {
     assert!(lines_to_single_string(&inserted[0]).contains("queued while streaming"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn failed_pending_steer_submit_does_not_add_pending_preview() {
     let (mut chat, mut rx, op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -3956,7 +4215,7 @@ async fn failed_pending_steer_submit_does_not_add_pending_preview() {
     assert!(drain_insert_history(&mut rx).is_empty());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn live_legacy_agent_message_after_item_completed_does_not_duplicate_assistant_message() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3981,7 +4240,7 @@ async fn live_legacy_agent_message_after_item_completed_does_not_duplicate_assis
     assert!(drain_insert_history(&mut rx).is_empty());
 }
 
-#[test]
+#[cfg(test)]
 fn rendered_user_message_event_from_inputs_matches_flattened_user_message_shape() {
     let local_image = PathBuf::from("/tmp/local.png");
     let rendered = ChatWidget::rendered_user_message_event_from_inputs(&[
@@ -4019,7 +4278,7 @@ fn rendered_user_message_event_from_inputs_matches_flattened_user_message_shape(
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn item_completed_only_pops_front_pending_steer() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.pending_steers.push_back(pending_steer("first"));
@@ -4049,7 +4308,7 @@ async fn item_completed_only_pops_front_pending_steer() {
     assert!(lines_to_single_string(&inserted[0]).contains("first"));
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[cfg(test)]
 async fn item_completed_pops_pending_steer_with_local_image_and_text_elements() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4132,7 +4391,7 @@ async fn item_completed_pops_pending_steer_with_local_image_and_text_elements() 
     assert!(stored_remote_image_urls.is_empty());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn steer_enter_during_final_stream_preserves_follow_up_prompts_in_order() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4202,7 +4461,7 @@ async fn steer_enter_during_final_stream_preserves_follow_up_prompts_in_order() 
     assert!(lines_to_single_string(&second_insert[0]).contains("second follow-up"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn manual_interrupt_restores_pending_steers_to_composer() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4247,7 +4506,7 @@ async fn manual_interrupt_restores_pending_steers_to_composer() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn esc_interrupt_sends_all_pending_steers_immediately_and_keeps_existing_draft() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4326,7 +4585,7 @@ async fn esc_interrupt_sends_all_pending_steers_immediately_and_keeps_existing_d
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn esc_with_pending_steers_overrides_agent_command_interrupt_behavior() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4348,7 +4607,7 @@ async fn esc_with_pending_steers_overrides_agent_command_interrupt_behavior() {
     assert_eq!(chat.bottom_pane.composer_text(), "/agent ");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn manual_interrupt_restores_pending_steer_mention_bindings_to_composer() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4391,7 +4650,7 @@ async fn manual_interrupt_restores_pending_steer_mention_bindings_to_composer() 
     assert_no_submit_op(&mut op_rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn manual_interrupt_restores_pending_steers_before_queued_messages() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4433,7 +4692,7 @@ queued draft"
     assert_no_submit_op(&mut op_rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replaced_turn_clears_pending_steers_but_keeps_queued_drafts() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -4486,7 +4745,7 @@ async fn replaced_turn_clears_pending_steers_but_keeps_queued_drafts() {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn ctrl_c_shutdown_works_with_caps_lock() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -4495,7 +4754,7 @@ async fn ctrl_c_shutdown_works_with_caps_lock() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::ShutdownFirst)));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn ctrl_d_quits_without_prompt() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -4503,7 +4762,7 @@ async fn ctrl_d_quits_without_prompt() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::ShutdownFirst)));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn ctrl_d_with_modal_open_does_not_quit() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -4513,7 +4772,7 @@ async fn ctrl_d_with_modal_open_does_not_quit() {
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn ctrl_c_cleared_prompt_is_recoverable_via_history() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -4544,7 +4803,7 @@ async fn ctrl_c_cleared_prompt_is_recoverable_via_history() {
     assert_eq!(vec![PathBuf::from("/tmp/preview.png")], images);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_history_cell_shows_working_then_completed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -4574,7 +4833,7 @@ async fn exec_history_cell_shows_working_then_completed() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_history_cell_shows_working_then_failed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -4598,7 +4857,7 @@ async fn exec_history_cell_shows_working_then_failed() {
     assert!(blob.to_lowercase().contains("bloop"), "expected error text");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_end_without_begin_uses_event_command() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let command = vec![
@@ -4642,7 +4901,7 @@ async fn exec_end_without_begin_uses_event_command() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_end_without_begin_does_not_flush_unrelated_running_exploring_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4679,7 +4938,7 @@ async fn exec_end_without_begin_does_not_flush_unrelated_running_exploring_cell(
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_end_without_begin_flushes_completed_unrelated_exploring_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4718,7 +4977,7 @@ async fn exec_end_without_begin_flushes_completed_unrelated_exploring_cell() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn overlapping_exploring_exec_end_is_not_misclassified_as_orphan() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -4750,7 +5009,7 @@ async fn overlapping_exploring_exec_end_is_not_misclassified_as_orphan() {
     end_exec(&mut chat, begin_cat, "hello\n", "", 0);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_history_shows_unified_exec_startup_commands() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4777,7 +5036,7 @@ async fn exec_history_shows_unified_exec_startup_commands() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_history_shows_unified_exec_tool_calls() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4794,7 +5053,7 @@ async fn exec_history_shows_unified_exec_tool_calls() {
     assert_eq!(blob, "• Explored\n  └ List ls\n");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_unknown_end_with_active_exploring_cell_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4817,7 +5076,7 @@ async fn unified_exec_unknown_end_with_active_exploring_cell_snapshot() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_end_after_task_complete_is_suppressed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4840,7 +5099,7 @@ async fn unified_exec_end_after_task_complete_is_suppressed() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_interaction_after_task_complete_is_suppressed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4862,7 +5121,7 @@ async fn unified_exec_interaction_after_task_complete_is_suppressed() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_wait_after_final_agent_message_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {
@@ -4894,7 +5153,7 @@ async fn unified_exec_wait_after_final_agent_message_snapshot() {
     assert_snapshot!("unified_exec_wait_after_final_agent_message", combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_wait_before_streamed_agent_message_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {
@@ -4939,7 +5198,7 @@ async fn unified_exec_wait_before_streamed_agent_message_snapshot() {
     assert_snapshot!("unified_exec_wait_before_streamed_agent_message", combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_wait_status_header_updates_on_late_command_display() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -4969,7 +5228,7 @@ async fn unified_exec_wait_status_header_updates_on_late_command_display() {
     assert_eq!(status.details(), Some("sleep 5"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_waiting_multiple_empty_snapshots() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -5004,7 +5263,7 @@ async fn unified_exec_waiting_multiple_empty_snapshots() {
     assert_snapshot!("unified_exec_waiting_multiple_empty_after", combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_wait_status_renders_command_in_single_details_row_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -5024,7 +5283,7 @@ async fn unified_exec_wait_status_renders_command_in_single_details_row_snapshot
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_empty_then_non_empty_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -5041,7 +5300,7 @@ async fn unified_exec_empty_then_non_empty_snapshot() {
     assert_snapshot!("unified_exec_empty_then_non_empty_after", combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn unified_exec_non_empty_then_empty_snapshots() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -5092,7 +5351,7 @@ async fn unified_exec_non_empty_then_empty_snapshots() {
 
 /// Selecting the custom prompt option from the review popup sends
 /// OpenReviewCustomPrompt to the app event channel.
-#[tokio::test]
+#[cfg(test)]
 async fn review_popup_custom_prompt_action_sends_event() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5119,7 +5378,7 @@ async fn review_popup_custom_prompt_action_sends_event() {
     assert!(found, "expected OpenReviewCustomPrompt event to be sent");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn collab_mode_shift_tab_cycles_only_when_idle() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5138,7 +5397,7 @@ async fn collab_mode_shift_tab_cycles_only_when_idle() {
     assert_eq!(chat.active_collaboration_mode_kind(), before);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn mode_switch_does_not_emit_model_change_notification() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
 
@@ -5163,7 +5422,7 @@ async fn mode_switch_does_not_emit_model_change_notification() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_slash_command_switches_to_plan_mode() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let initial = chat.current_collaboration_mode().clone();
@@ -5180,7 +5439,7 @@ async fn plan_slash_command_switches_to_plan_mode() {
     assert_eq!(chat.current_collaboration_mode(), &initial);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -5228,7 +5487,7 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn collaboration_modes_defaults_to_code_on_startup() {
     let chaos_home = tempdir().expect("tempdir");
     let cfg = ConfigBuilder::default()
@@ -5266,7 +5525,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
     assert_eq!(chat.current_model(), resolved_model);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn set_model_updates_active_collaboration_mask() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1")).await;
     let plan_mask =
@@ -5280,7 +5539,7 @@ async fn set_model_updates_active_collaboration_mask() {
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn set_reasoning_effort_updates_active_collaboration_mask() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1")).await;
     let plan_mask =
@@ -5297,7 +5556,7 @@ async fn set_reasoning_effort_updates_active_collaboration_mask() {
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn backtab_mode_switch_refreshes_wpn_statusline_effort() {
     let (mut chat, _app_event_tx, mut rx, _op_rx) = make_chatwidget_manual_with_sender().await;
     chat.set_model("gpt-5.4");
@@ -5354,7 +5613,7 @@ async fn backtab_mode_switch_refreshes_wpn_statusline_effort() {
     handle.shutdown().await;
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn set_reasoning_effort_does_not_override_active_plan_override() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1")).await;
     chat.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
@@ -5372,7 +5631,7 @@ async fn set_reasoning_effort_does_not_override_active_plan_override() {
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_quit_requests_exit() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5381,7 +5640,7 @@ async fn slash_quit_requests_exit() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::ShutdownFirst)));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_state_tracks_turn_complete_final_reply() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5399,7 +5658,7 @@ async fn slash_copy_state_tracks_turn_complete_final_reply() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_state_tracks_plan_item_completion() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     let plan_text = "## Plan\n\n1. Build it\n2. Test it".to_string();
@@ -5426,7 +5685,7 @@ async fn slash_copy_state_tracks_plan_item_completion() {
     assert_eq!(chat.last_copyable_output, Some(plan_text));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_reports_when_no_copyable_output_exists() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5444,7 +5703,7 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_state_is_preserved_during_running_task() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5463,7 +5722,7 @@ async fn slash_copy_state_is_preserved_during_running_task() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_state_clears_on_process_rollback() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5482,7 +5741,7 @@ async fn slash_copy_state_clears_on_process_rollback() {
     assert_eq!(chat.last_copyable_output, None);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_turn_complete() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5516,7 +5775,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_is_unavailable_when_legacy_agent_message_item_is_not_repeated_on_turn_complete()
 {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -5545,7 +5804,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_item_is_not_repeate
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_copy_does_not_return_stale_output_after_process_rollback() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5577,7 +5836,7 @@ async fn slash_copy_does_not_return_stale_output_after_process_rollback() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_exit_requests_exit() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5586,7 +5845,7 @@ async fn slash_exit_requests_exit() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::ShutdownFirst)));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_stop_submits_background_terminal_cleanup() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -5602,7 +5861,7 @@ async fn slash_stop_submits_background_terminal_cleanup() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_clear_requests_ui_clear_when_idle() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5611,7 +5870,7 @@ async fn slash_clear_requests_ui_clear_when_idle() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::ClearUi));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_clear_is_disabled_while_task_running() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.bottom_pane.set_task_running(true);
@@ -5632,7 +5891,7 @@ async fn slash_clear_is_disabled_while_task_running() {
     assert!(rx.try_recv().is_err(), "expected no follow-up events");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_memory_drop_submits_drop_memories_op() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -5641,7 +5900,7 @@ async fn slash_memory_drop_submits_drop_memories_op() {
     assert_matches!(op_rx.try_recv(), Ok(Op::DropMemories));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_memory_update_submits_update_memories_op() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -5650,7 +5909,7 @@ async fn slash_memory_update_submits_update_memories_op() {
     assert_matches!(op_rx.try_recv(), Ok(Op::UpdateMemories));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_resume_opens_picker() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5659,7 +5918,7 @@ async fn slash_resume_opens_picker() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::OpenResumePicker));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn slash_fork_requests_current_fork() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5668,7 +5927,7 @@ async fn slash_fork_requests_current_fork() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::ForkCurrentSession));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn undo_success_events_render_info_messages() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5705,7 +5964,7 @@ async fn undo_success_events_render_info_messages() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn undo_failure_events_render_error_message() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5740,7 +5999,7 @@ async fn undo_failure_events_render_error_message() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn undo_started_hides_interrupt_hint() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5760,7 +6019,7 @@ async fn undo_started_hides_interrupt_hint() {
 }
 
 /// The commit picker shows only commit subjects (no timestamps).
-#[tokio::test]
+#[cfg(test)]
 async fn review_commit_picker_shows_subjects_without_timestamps() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5822,7 +6081,7 @@ async fn review_commit_picker_shows_subjects_without_timestamps() {
 
 /// Submitting the custom prompt view sends Op::Review with the typed prompt
 /// and uses the same text for the user-facing hint.
-#[tokio::test]
+#[cfg(test)]
 async fn custom_prompt_submit_sends_review_op() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5851,7 +6110,7 @@ async fn custom_prompt_submit_sends_review_op() {
 }
 
 /// Hitting Enter on an empty custom prompt view does not submit.
-#[tokio::test]
+#[cfg(test)]
 async fn custom_prompt_enter_empty_does_not_send() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5863,7 +6122,7 @@ async fn custom_prompt_enter_empty_does_not_send() {
     assert!(rx.try_recv().is_err(), "no app event should be sent");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn view_image_tool_call_adds_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let image_path = chat.config.cwd.join("example.png");
@@ -5882,7 +6141,7 @@ async fn view_image_tool_call_adds_history_cell() {
     assert_snapshot!("local_image_attachment_history_snapshot", combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn image_generation_call_adds_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5905,7 +6164,7 @@ async fn image_generation_call_adds_history_cell() {
 
 // Snapshot test: interrupting a running exec finalizes the active cell with a red ✗
 // marker (replacing the spinner) and flushes it into history.
-#[tokio::test]
+#[cfg(test)]
 async fn interrupt_exec_marks_failed_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5935,7 +6194,7 @@ async fn interrupt_exec_marks_failed_snapshot() {
 
 // Snapshot test: after an interrupted turn, a gentle error message is inserted
 // suggesting the user to tell the model what to do differently.
-#[tokio::test]
+#[cfg(test)]
 async fn interrupted_turn_error_message_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5970,7 +6229,7 @@ async fn interrupted_turn_error_message_snapshot() {
 // Snapshot test: interrupting specifically to submit pending steers shows an
 // informational banner instead of the generic "tell the model what to do
 // differently" error prompt.
-#[tokio::test]
+#[cfg(test)]
 async fn interrupted_turn_pending_steers_message_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -6005,7 +6264,7 @@ async fn interrupted_turn_pending_steers_message_snapshot() {
 
 /// Opening custom prompt from the review popup, pressing Esc returns to the
 /// parent popup, pressing Esc again dismisses all panels (back to normal mode).
-#[tokio::test]
+#[cfg(test)]
 async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6040,7 +6299,7 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
 
 /// Opening base-branch picker from the review popup, pressing Esc returns to the
 /// parent popup, pressing Esc again dismisses all panels (back to normal mode).
-#[tokio::test]
+#[cfg(test)]
 async fn review_branch_picker_escape_navigates_back_then_dismisses() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6102,7 +6361,7 @@ fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
     render_to_trimmed_string(chat, area)
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn model_picker_hides_show_in_picker_false_models_from_cache() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("test-visible-model")).await;
     chat.process_id = Some(ProcessId::new());
@@ -6140,7 +6399,7 @@ async fn model_picker_hides_show_in_picker_false_models_from_cache() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn server_overloaded_error_does_not_switch_models() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4-codex")).await;
     chat.set_model("gpt-5.4-codex");
@@ -6174,7 +6433,7 @@ async fn server_overloaded_error_does_not_switch_models() {
     }
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn provider_auth_missing_error_opens_login_popup() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     while rx.try_recv().is_ok() {}
@@ -6205,7 +6464,7 @@ async fn provider_auth_missing_error_opens_login_popup() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn approvals_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6216,7 +6475,7 @@ async fn approvals_selection_popup_snapshot() {
     assert_snapshot!("approvals_selection_popup", popup);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn preset_matching_accepts_workspace_write_with_extra_roots() {
     let preset = builtin_approval_presets()
         .into_iter()
@@ -6240,7 +6499,7 @@ async fn preset_matching_accepts_workspace_write_with_extra_roots() {
     );
 }
 
-#[test]
+#[cfg(test)]
 fn approval_preset_actions_emit_ui_refresh_after_permission_updates() {
     let (tx, mut rx) = make_app_event_sender_with_rx();
     let sandbox = SandboxPolicy::new_workspace_write_policy();
@@ -6287,7 +6546,7 @@ fn approval_preset_actions_emit_ui_refresh_after_permission_updates() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn full_access_confirmation_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6301,7 +6560,7 @@ async fn full_access_confirmation_popup_snapshot() {
     assert_snapshot!("full_access_confirmation_popup", popup);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn single_reasoning_option_skips_selection() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6344,7 +6603,7 @@ async fn single_reasoning_option_skips_selection() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn exec_history_extends_previous_when_consecutive() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6375,7 +6634,7 @@ async fn exec_history_extends_previous_when_consecutive() {
     assert_snapshot!("exploring_step6_finish_cat_bar", active_blob(&chat));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn user_shell_command_renders_output_not_exploring() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6397,7 +6656,7 @@ async fn user_shell_command_renders_output_not_exploring() {
     assert_snapshot!("user_shell_ls_output", blob);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn disabled_slash_command_while_task_running_snapshot() {
     // Build a chat widget and simulate an active task
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -6417,7 +6676,6 @@ async fn disabled_slash_command_while_task_running_snapshot() {
 }
 
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn approvals_popup_shows_disabled_presets() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6453,7 +6711,6 @@ async fn approvals_popup_shows_disabled_presets() {
 }
 
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn approvals_popup_navigation_skips_disabled() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -6523,7 +6780,7 @@ async fn approvals_popup_navigation_skips_disabled() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn permissions_selection_emits_history_cell_when_selection_changes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.notices.hide_full_access_warning = Some(true);
@@ -6545,7 +6802,7 @@ async fn permissions_selection_emits_history_cell_when_selection_changes() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn permissions_selection_history_snapshot_after_mode_switch() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.notices.hide_full_access_warning = Some(true);
@@ -6562,7 +6819,7 @@ async fn permissions_selection_history_snapshot_after_mode_switch() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn permissions_selection_history_snapshot_full_access_to_default() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.notices.hide_full_access_warning = Some(true);
@@ -6591,7 +6848,7 @@ async fn permissions_selection_history_snapshot_full_access_to_default() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn permissions_selection_emits_history_cell_when_current_is_selected() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config
@@ -6621,7 +6878,7 @@ async fn permissions_selection_emits_history_cell_when_current_is_selected() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn permissions_full_access_history_cell_emitted_only_after_confirmation() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.notices.hide_full_access_warning = None;
@@ -6684,8 +6941,7 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
 // Synthesizes a Chaos ExecApprovalRequest event to trigger the approval modal
 // and snapshots the visual output using the ratatui TestBackend.
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
-async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
+async fn approval_modal_exec_snapshot() -> ConstraintResult<()> {
     // Build a chat widget with manual channels to avoid spawning the agent.
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     // Ensure policy allows surfacing approvals explicitly (not strictly required for direct event).
@@ -6749,8 +7005,7 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
 // Snapshot test: command approval modal without a reason
 // Ensures spacing looks correct when no reason text is provided.
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
-async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
+async fn approval_modal_exec_without_reason_snapshot() -> ConstraintResult<()> {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config
         .permissions
@@ -6798,9 +7053,8 @@ async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
 // Snapshot test: approval modal with a proposed execpolicy prefix that is multi-line;
 // we should not offer adding it to execpolicy.
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
--> anyhow::Result<()> {
+-> ConstraintResult<()> {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config
         .permissions
@@ -6847,8 +7101,7 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
 
 // Snapshot test: patch approval modal
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
-async fn approval_modal_patch_snapshot() -> anyhow::Result<()> {
+async fn approval_modal_patch_snapshot() -> ConstraintResult<()> {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config
         .permissions
@@ -6890,7 +7143,7 @@ async fn approval_modal_patch_snapshot() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn interrupt_restores_queued_messages_into_composer() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -6930,7 +7183,7 @@ async fn interrupt_restores_queued_messages_into_composer() {
     let _ = drain_insert_history(&mut rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn interrupt_prepends_queued_messages_before_existing_composer_text() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -6965,7 +7218,7 @@ async fn interrupt_prepends_queued_messages_before_existing_composer_text() {
     let _ = drain_insert_history(&mut rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn interrupt_keeps_unified_exec_processes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6986,7 +7239,7 @@ async fn interrupt_keeps_unified_exec_processes() {
     let _ = drain_insert_history(&mut rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn review_ended_keeps_unified_exec_processes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7023,7 +7276,7 @@ async fn review_ended_keeps_unified_exec_processes() {
     let _ = drain_insert_history(&mut rx);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn interrupt_preserves_unified_exec_wait_streak_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7058,7 +7311,7 @@ async fn interrupt_preserves_unified_exec_wait_streak_snapshot() {
     assert_snapshot!("interrupt_preserves_unified_exec_wait_streak", snapshot);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn turn_complete_keeps_unified_exec_processes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7097,7 +7350,7 @@ async fn turn_complete_keeps_unified_exec_processes() {
 
 // Snapshot test: ChatWidget at very small heights (idle)
 // Ensures overall layout behaves when terminal height is extremely constrained.
-#[tokio::test]
+#[cfg(test)]
 async fn ui_snapshots_small_heights_idle() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -7114,7 +7367,7 @@ async fn ui_snapshots_small_heights_idle() {
 
 // Snapshot test: ChatWidget at very small heights (task running)
 // Validates how status + composer are presented within tight space.
-#[tokio::test]
+#[cfg(test)]
 async fn ui_snapshots_small_heights_task_running() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -7151,7 +7404,7 @@ async fn ui_snapshots_small_heights_task_running() {
 // Snapshot test: status widget + approval modal active together
 // The modal takes precedence visually; this captures the layout with a running
 // task (status indicator active) while an approval request is shown.
-#[tokio::test]
+#[cfg(test)]
 async fn status_widget_and_approval_modal_snapshot() {
     use chaos_ipc::protocol::ExecApprovalRequestEvent;
 
@@ -7213,7 +7466,7 @@ async fn status_widget_and_approval_modal_snapshot() {
     assert_snapshot!("status_widget_and_approval_modal", terminal.backend());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn apply_patch_events_emit_history_cells() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7312,7 +7565,7 @@ async fn apply_patch_events_emit_history_cells() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn apply_patch_manual_approval_adjusts_header() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7361,7 +7614,7 @@ async fn apply_patch_manual_approval_adjusts_header() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn apply_patch_manual_flow_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7414,7 +7667,7 @@ async fn apply_patch_manual_flow_snapshot() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn apply_patch_approval_sends_op_with_call_id() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     // Simulate receiving an approval request with a distinct event id and call id.
@@ -7457,7 +7710,7 @@ async fn apply_patch_approval_sends_op_with_call_id() {
     assert!(found, "expected PatchApproval op to be sent");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn apply_patch_full_flow_integration_like() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
@@ -7536,8 +7789,8 @@ async fn apply_patch_full_flow_integration_like() {
     });
 }
 
-#[tokio::test]
-async fn apply_patch_untrusted_shows_approval_modal() -> anyhow::Result<()> {
+#[cfg(test)]
+async fn apply_patch_untrusted_shows_approval_modal() -> ConstraintResult<()> {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     // Ensure approval policy is Interactive
     chat.config
@@ -7586,8 +7839,8 @@ async fn apply_patch_untrusted_shows_approval_modal() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn apply_patch_request_shows_diff_summary() -> anyhow::Result<()> {
+#[cfg(test)]
+async fn apply_patch_request_shows_diff_summary() -> ConstraintResult<()> {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
     // Ensure we are in Interactive so an approval is surfaced
@@ -7657,7 +7910,7 @@ async fn apply_patch_request_shows_diff_summary() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn plan_update_renders_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let update = UpdatePlanArgs {
@@ -7693,7 +7946,7 @@ async fn plan_update_renders_history_cell() {
     assert!(blob.contains("Write tests"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn stream_error_updates_status_indicator() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.bottom_pane.set_task_running(true);
@@ -7721,7 +7974,7 @@ async fn stream_error_updates_status_indicator() {
     assert_eq!(status.details(), Some(details));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_turn_started_does_not_mark_task_running() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7735,7 +7988,7 @@ async fn replayed_turn_started_does_not_mark_task_running() {
     assert!(chat.bottom_pane.status_widget().is_none());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn process_snapshot_replayed_turn_started_marks_task_running() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7757,7 +8010,7 @@ async fn process_snapshot_replayed_turn_started_marks_task_running() {
     assert_eq!(status.header(), "Working");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_stream_error_does_not_set_retry_status_or_status_indicator() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.set_status_header("Idle".to_string());
@@ -7778,7 +8031,7 @@ async fn replayed_stream_error_does_not_set_retry_status_or_status_indicator() {
     assert!(chat.bottom_pane.status_widget().is_none());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn process_snapshot_replayed_stream_recovery_restores_previous_status_header() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7821,7 +8074,7 @@ async fn process_snapshot_replayed_stream_recovery_restores_previous_status_head
     assert!(chat.retry_status_header.is_none());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn resume_replay_interrupted_reconnect_does_not_leave_stale_working_state() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.set_status_header("Idle".to_string());
@@ -7856,7 +8109,7 @@ async fn resume_replay_interrupted_reconnect_does_not_leave_stale_working_state(
     assert!(chat.retry_status_header.is_none());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn replayed_interrupted_reconnect_footer_row_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7881,7 +8134,7 @@ async fn replayed_interrupted_reconnect_footer_row_snapshot() {
     assert_snapshot!("replayed_interrupted_reconnect_footer_row", header);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn stream_error_restores_hidden_status_indicator() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
@@ -7909,7 +8162,7 @@ async fn stream_error_restores_hidden_status_indicator() {
     assert_eq!(status.details(), Some(details));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn warning_event_adds_warning_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {
@@ -7928,7 +8181,7 @@ async fn warning_event_adds_warning_history_cell() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn default_halluacinate_status_line_renderer_renders_default_line() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
     chat.current_cwd = Some(PathBuf::from("/work/repo"));
@@ -7964,7 +8217,7 @@ async fn default_halluacinate_status_line_renderer_renders_default_line() {
     assert!(rendered.contains("/work/repo"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_line_script_render_ignores_stale_generation_or_process() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
     let process_id = ProcessId::new();
@@ -7998,7 +8251,7 @@ async fn status_line_script_render_ignores_stale_generation_or_process() {
     assert_eq!(chat.status_line_text(), Some("fresh".to_string()));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn missing_status_line_script_renderer_clears_line_without_rust_fallback() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
     let process_id = ProcessId::new();
@@ -8012,7 +8265,7 @@ async fn missing_status_line_script_renderer_clears_line_without_rust_fallback()
     assert_eq!(chat.status_line_text(), None);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_line_branch_refreshes_after_turn_complete() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.status_line_branch_lookup_complete = true;
@@ -8029,7 +8282,7 @@ async fn status_line_branch_refreshes_after_turn_complete() {
     assert!(chat.status_line_branch_pending);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_line_branch_refreshes_after_interrupt() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.status_line_branch_lookup_complete = true;
@@ -8046,7 +8299,7 @@ async fn status_line_branch_refreshes_after_interrupt() {
     assert!(chat.status_line_branch_pending);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn stream_recovery_restores_previous_status_header() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {
@@ -8086,7 +8339,7 @@ async fn stream_recovery_restores_previous_status_header() {
     assert!(chat.retry_status_header.is_none());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -8129,7 +8382,7 @@ async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals()
     assert!(final_separator.contains("TBT: 50ms (service)"));
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn multiple_agent_messages_in_single_turn_emit_multiple_headers() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -8176,7 +8429,7 @@ async fn multiple_agent_messages_in_single_turn_emit_multiple_headers() {
     assert!(first_idx < second_idx, "messages out of order: {combined}");
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn final_reasoning_then_message_without_deltas_are_rendered() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -8198,7 +8451,7 @@ async fn final_reasoning_then_message_without_deltas_are_rendered() {
     assert_snapshot!(combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn deltas_then_same_final_message_are_rendered_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -8278,7 +8531,7 @@ async fn deltas_then_same_final_message_are_rendered_snapshot() {
     assert_snapshot!(combined);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn hook_events_render_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -8347,7 +8600,6 @@ async fn hook_events_render_snapshot() {
 // This renders the final visual as seen in a terminal: history above, then a blank line,
 // then the exec block, another blank line, the status line, a blank line, and the composer.
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     complete_assistant_message(
@@ -8451,7 +8703,6 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
 
 // E2E vt100 snapshot for complex markdown with indented and nested fenced code blocks
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn chatwidget_markdown_code_blocks_vt100_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -8550,7 +8801,6 @@ printf 'fenced within fenced\n'
 }
 
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn chatwidget_tall() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -8577,7 +8827,7 @@ async fn chatwidget_tall() {
     assert_snapshot!(term.backend().vt100().screen().contents());
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn enter_queues_user_messages_while_review_is_running() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());
@@ -8610,7 +8860,6 @@ async fn enter_queues_user_messages_while_review_is_running() {
 }
 
 #[cfg(feature = "vt100-tests")]
-#[tokio::test]
 async fn review_queues_user_messages_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.process_id = Some(ProcessId::new());

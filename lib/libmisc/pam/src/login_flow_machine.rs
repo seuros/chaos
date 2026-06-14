@@ -342,7 +342,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn browser_flow_happy_path_states() {
+    fn workflow_covers_browser_device_fallback_and_cancel_paths() {
         let mut wf = LoginFlowWorkflow::new();
         assert_eq!(wf.current_state(), "Idle");
 
@@ -354,10 +354,7 @@ mod tests {
 
         wf.succeed();
         assert_eq!(wf.current_state(), "Succeeded");
-    }
 
-    #[test]
-    fn device_code_can_fallback_to_browser() {
         let mut wf = LoginFlowWorkflow::new();
         wf.start_device_code();
         assert_eq!(wf.current_state(), "RequestingDeviceCode");
@@ -367,10 +364,7 @@ mod tests {
 
         wf.browser_ready();
         assert_eq!(wf.current_state(), "WaitingForBrowser");
-    }
 
-    #[test]
-    fn device_code_can_be_cancelled_while_waiting() {
         let mut wf = LoginFlowWorkflow::new();
         wf.start_device_code();
         wf.device_code_ready();

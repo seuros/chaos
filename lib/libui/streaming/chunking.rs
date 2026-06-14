@@ -294,7 +294,7 @@ fn is_severe_backlog(snapshot: QueueSnapshot) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
@@ -305,7 +305,18 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn streaming_chunking_suite() {
+        smooth_mode_is_default();
+        enters_catch_up_on_depth_threshold();
+        enters_catch_up_on_age_threshold();
+        severe_backlog_uses_faster_paced_batches();
+        catch_up_batch_drains_current_backlog();
+        exits_catch_up_after_hysteresis_hold();
+        drops_back_to_smooth_when_idle();
+        holds_reentry_after_catch_up_exit();
+        severe_backlog_can_reenter_during_hold();
+    }
+    #[cfg(test)]
     fn smooth_mode_is_default() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let now = Instant::now();
@@ -316,7 +327,7 @@ mod tests {
         assert_eq!(decision.drain_plan, DrainPlan::Single);
     }
 
-    #[test]
+    #[cfg(test)]
     fn enters_catch_up_on_depth_threshold() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let now = Instant::now();
@@ -327,7 +338,7 @@ mod tests {
         assert_eq!(decision.drain_plan, DrainPlan::Batch(8));
     }
 
-    #[test]
+    #[cfg(test)]
     fn enters_catch_up_on_age_threshold() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let now = Instant::now();
@@ -338,7 +349,7 @@ mod tests {
         assert_eq!(decision.drain_plan, DrainPlan::Batch(2));
     }
 
-    #[test]
+    #[cfg(test)]
     fn severe_backlog_uses_faster_paced_batches() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let now = Instant::now();
@@ -349,7 +360,7 @@ mod tests {
         assert_eq!(decision.drain_plan, DrainPlan::Batch(64));
     }
 
-    #[test]
+    #[cfg(test)]
     fn catch_up_batch_drains_current_backlog() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let now = Instant::now();
@@ -358,7 +369,7 @@ mod tests {
         assert_eq!(decision.drain_plan, DrainPlan::Batch(512));
     }
 
-    #[test]
+    #[cfg(test)]
     fn exits_catch_up_after_hysteresis_hold() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let t0 = Instant::now();
@@ -374,7 +385,7 @@ mod tests {
         assert_eq!(post_hold.drain_plan, DrainPlan::Single);
     }
 
-    #[test]
+    #[cfg(test)]
     fn drops_back_to_smooth_when_idle() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let now = Instant::now();
@@ -392,7 +403,7 @@ mod tests {
         assert_eq!(decision.drain_plan, DrainPlan::Single);
     }
 
-    #[test]
+    #[cfg(test)]
     fn holds_reentry_after_catch_up_exit() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let t0 = Instant::now();
@@ -418,7 +429,7 @@ mod tests {
         assert_eq!(reentered.drain_plan, DrainPlan::Batch(8));
     }
 
-    #[test]
+    #[cfg(test)]
     fn severe_backlog_can_reenter_during_hold() {
         let mut policy = AdaptiveChunkingPolicy::default();
         let t0 = Instant::now();

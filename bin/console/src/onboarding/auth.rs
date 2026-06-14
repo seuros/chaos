@@ -1241,7 +1241,7 @@ impl WidgetRef for AccountsWidget {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -1302,7 +1302,17 @@ mod tests {
         (widget, chaos_home)
     }
 
-    #[test]
+    pub(crate) fn auth_suite() {
+        api_key_flow_disabled_when_chatgpt_forced();
+        saving_api_key_is_blocked_when_chatgpt_forced();
+        escape_from_provider_mode_returns_to_provider_picker();
+        escape_from_single_option_provider_returns_to_provider_picker();
+        provider_picker_renders_highlighted_zai_provider_when_scrolled();
+        continue_in_browser_renders_osc8_hyperlink();
+        mark_url_hyperlink_wraps_cyan_underlined_cells();
+        mark_url_hyperlink_sanitizes_control_chars();
+    }
+
     fn api_key_flow_disabled_when_chatgpt_forced() {
         let (mut widget, _tmp) = widget_forced_chatgpt();
 
@@ -1318,7 +1328,6 @@ mod tests {
         ));
     }
 
-    #[test]
     fn saving_api_key_is_blocked_when_chatgpt_forced() {
         let (mut widget, _tmp) = widget_forced_chatgpt();
 
@@ -1334,7 +1343,6 @@ mod tests {
         ));
     }
 
-    #[test]
     fn escape_from_provider_mode_returns_to_provider_picker() {
         let (mut widget, _tmp) = widget_forced_chatgpt();
 
@@ -1347,7 +1355,6 @@ mod tests {
         assert!(matches!(widget.sign_in_state(), SignInState::PickProvider));
     }
 
-    #[test]
     fn escape_from_single_option_provider_returns_to_provider_picker() {
         let mut minimax = chaos_kern::create_oss_provider_with_base_url(
             "https://api.minimax.chat/v1",
@@ -1402,7 +1409,6 @@ mod tests {
         out
     }
 
-    #[test]
     fn provider_picker_renders_highlighted_zai_provider_when_scrolled() {
         let (mut widget, _tmp) = widget_with_model_providers(built_in_model_providers());
         let zai_index = widget
@@ -1427,7 +1433,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn continue_in_browser_renders_osc8_hyperlink() {
         let (widget, _tmp) = widget_forced_chatgpt();
         let url = "https://auth.example.com/login?state=abc123";
@@ -1447,7 +1452,6 @@ mod tests {
         assert_eq!(found, url, "OSC 8 hyperlink should cover the full URL");
     }
 
-    #[test]
     fn mark_url_hyperlink_wraps_cyan_underlined_cells() {
         let url = "https://example.com";
         let area = Rect::new(0, 0, 20, 1);
@@ -1473,7 +1477,6 @@ mod tests {
         assert_eq!(buf[(7, 0)].symbol(), "X");
     }
 
-    #[test]
     fn mark_url_hyperlink_sanitizes_control_chars() {
         let area = Rect::new(0, 0, 10, 1);
         let mut buf = Buffer::empty(area);

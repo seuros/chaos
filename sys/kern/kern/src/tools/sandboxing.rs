@@ -257,12 +257,13 @@ pub(crate) trait Approvable<Req> {
         None
     }
 
-    /// Decide we can request an approval for no-sandbox execution.
+    /// Decide whether policy allows a sandbox-denial retry to ask for
+    /// no-sandbox execution.
     fn wants_no_sandbox_approval(&self, policy: ApprovalPolicy) -> bool {
         match policy {
             ApprovalPolicy::Supervised => true,
             ApprovalPolicy::Headless => false,
-            ApprovalPolicy::Interactive => true,
+            ApprovalPolicy::Interactive => false,
             ApprovalPolicy::Granular(granular_config) => granular_config.sandbox_approval,
         }
     }
@@ -306,6 +307,10 @@ pub(crate) enum ToolError {
 pub(crate) trait ToolRuntime<Req, Out>: Approvable<Req> + Sandboxable {
     fn network_approval_spec(&self, _req: &Req, _ctx: &ToolCtx) -> Option<NetworkApprovalSpec> {
         None
+    }
+
+    fn allows_no_sandbox_retry(&self, _req: &Req) -> bool {
+        true
     }
 
     async fn run(

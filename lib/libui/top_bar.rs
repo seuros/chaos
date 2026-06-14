@@ -170,11 +170,10 @@ fn chrono_now() -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use chaos_ipc::config_types::ModeKind;
 
-    #[test]
     fn top_bar_uses_dedicated_top_bar_background() {
         let mut info = sysinfo().clone();
         info.hostname = "host".into();
@@ -199,7 +198,13 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn top_bar_suite() {
+        top_bar_uses_dedicated_top_bar_background();
+        top_bar_uses_white_text_and_gray_separator_tokens();
+        top_bar_shows_log_warning_when_persistence_is_unhealthy();
+        top_bar_tint_changes_with_collaboration_mode();
+    }
+    #[cfg(test)]
     fn top_bar_uses_white_text_and_gray_separator_tokens() {
         let mut info = sysinfo().clone();
         info.hostname = "host".into();
@@ -217,7 +222,7 @@ mod tests {
         assert_eq!(line.spans[1].style.fg, Some(palette.top_bar_dim));
     }
 
-    #[test]
+    #[cfg(test)]
     fn top_bar_shows_log_warning_when_persistence_is_unhealthy() {
         let mut info = sysinfo().clone();
         info.hostname = "host".into();
@@ -239,7 +244,7 @@ mod tests {
         assert!(rendered.contains("⚠ log"));
     }
 
-    #[test]
+    #[cfg(test)]
     fn top_bar_tint_changes_with_collaboration_mode() {
         let default_palette =
             crate::theme::palette_for_mode(ModeKind::Default, /*clamped*/ false);

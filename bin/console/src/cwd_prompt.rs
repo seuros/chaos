@@ -248,7 +248,7 @@ impl Widget for &CwdPromptScreen {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
@@ -268,7 +268,12 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
+    pub(crate) fn cwd_prompt_suite() {
+        cwd_prompt_snapshot();
+        cwd_prompt_fork_snapshot();
+        cwd_prompt_key_handling_selects_default_current_and_exit();
+    }
+
     fn cwd_prompt_snapshot() {
         let screen = new_prompt();
         let mut terminal = Terminal::new(VT100Backend::new(80, 14)).expect("terminal");
@@ -279,7 +284,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn cwd_prompt_fork_snapshot() {
         let screen = CwdPromptScreen::new(
             FrameRequester::test_dummy(),
@@ -294,23 +298,16 @@ mod tests {
         insta::assert_snapshot!("cwd_prompt_fork_modal", terminal.backend());
     }
 
-    #[test]
-    fn cwd_prompt_selects_session_by_default() {
+    fn cwd_prompt_key_handling_selects_default_current_and_exit() {
         let mut screen = new_prompt();
         screen.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(screen.selection(), Some(CwdSelection::Session));
-    }
 
-    #[test]
-    fn cwd_prompt_can_select_current() {
         let mut screen = new_prompt();
         screen.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         screen.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(screen.selection(), Some(CwdSelection::Current));
-    }
 
-    #[test]
-    fn cwd_prompt_ctrl_c_exits_instead_of_selecting() {
         let mut screen = new_prompt();
         screen.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert_eq!(screen.selection(), None);

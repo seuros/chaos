@@ -598,7 +598,7 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::history_cell::HistoryCell;
     #[cfg(target_os = "macos")]
@@ -609,7 +609,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::style::Modifier;
 
-    #[test]
     fn collab_events_snapshot() {
         let sender_process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000001")
             .expect("valid sender thread id");
@@ -701,7 +700,6 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    #[test]
     fn agent_shortcut_matches_option_arrow_word_motion_fallbacks_only_when_allowed() {
         assert!(previous_agent_shortcut_matches(
             KeyEvent::new(KeyCode::Left, KeyModifiers::ALT),
@@ -730,7 +728,6 @@ mod tests {
     }
 
     #[cfg(not(target_os = "macos"))]
-    #[test]
     fn agent_shortcut_matches_option_arrows_only() {
         assert!(previous_agent_shortcut_matches(
             KeyEvent::new(KeyCode::Left, crossterm::event::KeyModifiers::ALT,),
@@ -750,7 +747,16 @@ mod tests {
         ));
     }
 
-    #[test]
+    pub(crate) fn multi_agents_suite() {
+        collab_events_snapshot();
+        #[cfg(target_os = "macos")]
+        agent_shortcut_matches_option_arrow_word_motion_fallbacks_only_when_allowed();
+        #[cfg(not(target_os = "macos"))]
+        agent_shortcut_matches_option_arrows_only();
+        title_styles_nickname_and_role();
+        collab_resume_interrupted_snapshot();
+    }
+    #[cfg(test)]
     fn title_styles_nickname_and_role() {
         let sender_process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000001")
             .expect("valid sender thread id");
@@ -789,7 +795,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[cfg(test)]
     fn collab_resume_interrupted_snapshot() {
         let sender_process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000001")
             .expect("valid sender thread id");

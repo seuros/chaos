@@ -828,12 +828,11 @@ fn measure_rows_height_inner(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn one_cell_width_falls_back_without_panic_for_wrapped_two_column_rows() {
+    pub(crate) fn one_cell_width_falls_back_without_panic_for_wrapped_two_column_rows() {
         let row = GenericDisplayRow {
             name: "1. Very long option label".to_string(),
             description: Some("Very long description".to_string()),

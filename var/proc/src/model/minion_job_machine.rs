@@ -91,7 +91,7 @@ pub(crate) mod job {
         use super::*;
 
         #[test]
-        fn happy_path_pending_to_completed() {
+        fn workflow_transitions_and_persisted_status_replay() {
             let mut wf = MinionJobWorkflow::new();
             assert_eq!(wf.current_state(), "Pending");
 
@@ -100,41 +100,25 @@ pub(crate) mod job {
 
             assert!(wf.complete());
             assert_eq!(wf.current_state(), "Completed");
-        }
 
-        #[test]
-        fn can_fail_from_running() {
             let mut wf = MinionJobWorkflow::new();
             wf.start();
-
             assert!(wf.fail());
             assert_eq!(wf.current_state(), "Failed");
-        }
 
-        #[test]
-        fn cancel_from_pending() {
             let mut wf = MinionJobWorkflow::new();
             assert!(wf.cancel());
             assert_eq!(wf.current_state(), "Cancelled");
-        }
 
-        #[test]
-        fn cancel_from_running() {
             let mut wf = MinionJobWorkflow::new();
             wf.start();
             assert!(wf.cancel());
             assert_eq!(wf.current_state(), "Cancelled");
-        }
 
-        #[test]
-        fn cannot_complete_from_pending() {
             let mut wf = MinionJobWorkflow::new();
             assert!(!wf.complete());
             assert_eq!(wf.current_state(), "Pending");
-        }
 
-        #[test]
-        fn from_status_roundtrip() {
             let cases = [
                 (MinionJobStatus::Pending, "Pending"),
                 (MinionJobStatus::Running, "Running"),
@@ -244,7 +228,7 @@ pub(crate) mod item {
         use super::*;
 
         #[test]
-        fn happy_path() {
+        fn workflow_transitions_retry_and_persisted_status_replay() {
             let mut wf = MinionJobItemWorkflow::new();
             assert_eq!(wf.current_state(), "Pending");
 
@@ -253,25 +237,29 @@ pub(crate) mod item {
 
             assert!(wf.complete());
             assert_eq!(wf.current_state(), "Completed");
-        }
 
-        #[test]
-        fn retry_returns_to_pending() {
             let mut wf = MinionJobItemWorkflow::new();
             wf.start();
-
             assert!(wf.retry());
             assert_eq!(wf.current_state(), "Pending");
 
             assert!(wf.start());
             assert_eq!(wf.current_state(), "Running");
-        }
 
-        #[test]
-        fn cannot_retry_from_pending() {
             let mut wf = MinionJobItemWorkflow::new();
             assert!(!wf.retry());
             assert_eq!(wf.current_state(), "Pending");
+
+            let cases = [
+                (MinionJobItemStatus::Pending, "Pending"),
+                (MinionJobItemStatus::Running, "Running"),
+                (MinionJobItemStatus::Completed, "Completed"),
+                (MinionJobItemStatus::Failed, "Failed"),
+            ];
+            for (status, expected) in cases {
+                let wf = MinionJobItemWorkflow::from_status(status);
+                assert_eq!(wf.current_state(), expected);
+            }
         }
     }
 }

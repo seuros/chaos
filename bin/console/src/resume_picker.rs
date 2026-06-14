@@ -286,7 +286,7 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::rendering::ColumnVisibility;
     #[cfg(feature = "vt100-tests")]
     use super::rendering::calculate_column_metrics;
@@ -359,7 +359,23 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) async fn resume_picker_suite() {
+        head_to_row_uses_first_user_message();
+        rows_from_items_preserves_backend_order();
+        row_uses_tail_timestamp_for_updated_at();
+        row_display_preview_prefers_process_name();
+        resume_table_snapshot();
+        resume_search_error_snapshot();
+        pageless_scrolling_deduplicates_and_keeps_order();
+        ensure_minimum_rows_prefetches_when_underfilled();
+        column_visibility_hides_extra_date_column_when_narrow();
+        toggle_sort_key_reloads_with_new_sort().await;
+        page_navigation_uses_view_rows().await;
+        enter_on_row_selects_process_id().await;
+        up_at_bottom_does_not_scroll_when_visible().await;
+        set_query_loads_until_match_and_respects_scan_cap().await;
+    }
+
     fn head_to_row_uses_first_user_message() {
         let item = ProcessItem {
             process_id: Some(ProcessId::new()),
@@ -372,7 +388,6 @@ mod tests {
         assert_eq!(row.preview, "real question");
     }
 
-    #[test]
     fn rows_from_items_preserves_backend_order() {
         let a = ProcessItem {
             process_id: Some(ProcessId::new()),
@@ -394,7 +409,6 @@ mod tests {
         assert!(rows[1].preview.contains('B'));
     }
 
-    #[test]
     fn row_uses_tail_timestamp_for_updated_at() {
         let item = ProcessItem {
             process_id: Some(ProcessId::new()),
@@ -412,7 +426,6 @@ mod tests {
         assert_eq!(row.updated_at, Some(expected_updated));
     }
 
-    #[test]
     fn row_display_preview_prefers_process_name() {
         let row = Row {
             preview: String::from("first message"),
@@ -428,7 +441,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn resume_table_snapshot() {
         use crate::custom_terminal::Terminal;
         use crate::test_backend::VT100Backend;
@@ -506,7 +518,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn resume_search_error_snapshot() {
         use crate::custom_terminal::Terminal;
         use crate::test_backend::VT100Backend;
@@ -542,7 +553,6 @@ mod tests {
         assert_snapshot!("resume_picker_search_error", snapshot);
     }
 
-    #[test]
     fn pageless_scrolling_deduplicates_and_keeps_order() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
@@ -603,7 +613,6 @@ mod tests {
         assert_eq!(unique_process_ids.len(), 4);
     }
 
-    #[test]
     fn ensure_minimum_rows_prefetches_when_underfilled() {
         let recorded_requests: Arc<Mutex<Vec<PageLoadRequest>>> = Arc::new(Mutex::new(Vec::new()));
         let request_sink = recorded_requests.clone();
@@ -640,7 +649,6 @@ mod tests {
         assert!(guard[0].search_token.is_none());
     }
 
-    #[test]
     fn column_visibility_hides_extra_date_column_when_narrow() {
         let metrics = rendering::ColumnMetrics {
             max_created_width: 8,
@@ -684,7 +692,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     async fn toggle_sort_key_reloads_with_new_sort() {
         let recorded_requests: Arc<Mutex<Vec<PageLoadRequest>>> = Arc::new(Mutex::new(Vec::new()));
         let request_sink = recorded_requests.clone();
@@ -719,7 +726,6 @@ mod tests {
         assert_eq!(guard[1].sort_key, ProcessSortKey::CreatedAt);
     }
 
-    #[tokio::test]
     async fn page_navigation_uses_view_rows() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
@@ -763,7 +769,6 @@ mod tests {
         assert_eq!(state.selected, 5);
     }
 
-    #[tokio::test]
     async fn enter_on_row_selects_process_id() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
@@ -802,7 +807,6 @@ mod tests {
         assert_eq!(state.inline_error, None);
     }
 
-    #[tokio::test]
     async fn up_at_bottom_does_not_scroll_when_visible() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
@@ -841,7 +845,6 @@ mod tests {
         assert_eq!(state.selected, state.filtered_rows.len().saturating_sub(2));
     }
 
-    #[tokio::test]
     async fn set_query_loads_until_match_and_respects_scan_cap() {
         let recorded_requests: Arc<Mutex<Vec<PageLoadRequest>>> = Arc::new(Mutex::new(Vec::new()));
         let request_sink = recorded_requests.clone();

@@ -70,7 +70,7 @@ pub use types::FooterProps;
 pub use types::SummaryLeft;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::key_hint;
     use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
@@ -291,7 +291,12 @@ mod tests {
         terminal.backend().vt100().screen().contents()
     }
 
-    #[test]
+    pub(crate) fn footer_suite() {
+        footer_snapshots();
+        footer_status_line_truncates_to_keep_mode_indicator();
+        paste_image_shortcut_is_ctrl_v();
+    }
+
     fn footer_snapshots() {
         snapshot_footer(
             "footer_shortcuts_default",
@@ -681,7 +686,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn footer_status_line_truncates_to_keep_mode_indicator() {
         let props = FooterProps {
             mode: FooterMode::ComposerEmpty,
@@ -720,7 +724,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn paste_image_shortcut_is_ctrl_v() {
         let descriptor = SHORTCUTS
             .iter()

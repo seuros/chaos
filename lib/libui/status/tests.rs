@@ -89,7 +89,27 @@ fn local_ts(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> 
         .timestamp()
 }
 
-#[tokio::test]
+pub(crate) async fn status_tests_suite() {
+    super::rate_limits::tests::status_rate_limits_suite();
+
+    Box::pin(status_snapshot_includes_reasoning_details()).await;
+    Box::pin(status_permissions_non_default_workspace_write_is_custom()).await;
+    Box::pin(status_snapshot_includes_forked_from()).await;
+    Box::pin(status_snapshot_includes_monthly_limit()).await;
+    Box::pin(status_snapshot_shows_unlimited_credits()).await;
+    Box::pin(status_snapshot_shows_positive_credits()).await;
+    Box::pin(status_snapshot_hides_zero_credits()).await;
+    Box::pin(status_snapshot_hides_when_has_no_credits_flag()).await;
+    Box::pin(status_card_token_usage_excludes_cached_tokens()).await;
+    Box::pin(status_snapshot_truncates_in_narrow_terminal()).await;
+    Box::pin(status_snapshot_shows_missing_limits_message()).await;
+    Box::pin(status_snapshot_includes_credits_and_limits()).await;
+    Box::pin(status_snapshot_shows_empty_limits_message()).await;
+    Box::pin(status_snapshot_shows_stale_limits_message()).await;
+    Box::pin(status_snapshot_cached_limits_hide_credits_without_flag()).await;
+    Box::pin(status_context_window_uses_last_usage()).await;
+}
+#[cfg(test)]
 async fn status_snapshot_includes_reasoning_details() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -162,7 +182,7 @@ async fn status_snapshot_includes_reasoning_details() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_permissions_non_default_workspace_write_is_custom() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -224,7 +244,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_includes_forked_from() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -270,7 +290,7 @@ async fn status_snapshot_includes_forked_from() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_includes_monthly_limit() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -324,7 +344,7 @@ async fn status_snapshot_includes_monthly_limit() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_shows_unlimited_credits() {
     let temp_home = TempDir::new().expect("temp home");
     let config = test_config(&temp_home).await;
@@ -370,7 +390,7 @@ async fn status_snapshot_shows_unlimited_credits() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_shows_positive_credits() {
     let temp_home = TempDir::new().expect("temp home");
     let config = test_config(&temp_home).await;
@@ -416,7 +436,7 @@ async fn status_snapshot_shows_positive_credits() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_hides_zero_credits() {
     let temp_home = TempDir::new().expect("temp home");
     let config = test_config(&temp_home).await;
@@ -460,7 +480,7 @@ async fn status_snapshot_hides_zero_credits() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_hides_when_has_no_credits_flag() {
     let temp_home = TempDir::new().expect("temp home");
     let config = test_config(&temp_home).await;
@@ -504,7 +524,7 @@ async fn status_snapshot_hides_when_has_no_credits_flag() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_card_token_usage_excludes_cached_tokens() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -547,7 +567,7 @@ async fn status_card_token_usage_excludes_cached_tokens() {
     );
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_truncates_in_narrow_terminal() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -604,7 +624,7 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_shows_missing_limits_message() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -644,7 +664,7 @@ async fn status_snapshot_shows_missing_limits_message() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_includes_credits_and_limits() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -705,7 +725,7 @@ async fn status_snapshot_includes_credits_and_limits() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_shows_empty_limits_message() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -754,7 +774,7 @@ async fn status_snapshot_shows_empty_limits_message() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_shows_stale_limits_message() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -812,7 +832,7 @@ async fn status_snapshot_shows_stale_limits_message() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_snapshot_cached_limits_hide_credits_without_flag() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
@@ -874,7 +894,7 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
     assert_snapshot!(sanitized);
 }
 
-#[tokio::test]
+#[cfg(test)]
 async fn status_context_window_uses_last_usage() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;

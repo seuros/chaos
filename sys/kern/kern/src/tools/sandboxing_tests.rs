@@ -125,8 +125,8 @@ fn explicit_escalation_bypasses_sandbox_on_first_attempt() {
 }
 
 #[test]
-fn interactive_policy_prompts_for_no_sandbox_retry_after_denial() {
+fn interactive_policy_does_not_prompt_for_no_sandbox_retry_after_denial() {
     let tool = DummyApprovableTool;
 
-    assert!(tool.wants_no_sandbox_approval(ApprovalPolicy::Interactive));
+    assert!(!tool.wants_no_sandbox_approval(ApprovalPolicy::Interactive));
 }

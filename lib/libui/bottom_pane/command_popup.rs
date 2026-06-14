@@ -277,11 +277,25 @@ impl WidgetRef for CommandPopup {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
+    pub(crate) fn command_popup_suite() {
+        model_is_first_suggestion_for_mo();
+        filtered_commands_keep_presentation_order_for_prefix();
+        prompt_discovery_lists_custom_prompts();
+        prompt_name_collision_with_builtin_is_ignored();
+        prompt_description_uses_frontmatter_metadata();
+        prompt_description_falls_back_when_missing();
+        prefix_filter_limits_matches_for_ac();
+        quit_hidden_in_empty_filter_but_shown_for_prefix();
+        collab_command_hidden_when_collaboration_modes_disabled();
+        collab_command_visible_when_collaboration_modes_enabled();
+        plan_command_visible_when_collaboration_modes_enabled();
+        debug_commands_are_hidden_from_popup();
+    }
+
     fn model_is_first_suggestion_for_mo() {
         let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
         popup.on_composer_text_change("/mo".to_string());
@@ -295,7 +309,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn filtered_commands_keep_presentation_order_for_prefix() {
         let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
         popup.on_composer_text_change("/m".to_string());
@@ -311,7 +324,6 @@ mod tests {
         assert_eq!(cmds, vec!["model", "mention", "mcp", "mcp-add"]);
     }
 
-    #[test]
     fn prompt_discovery_lists_custom_prompts() {
         let prompts = vec![
             CustomPrompt {
@@ -342,7 +354,6 @@ mod tests {
         assert_eq!(prompt_names, vec!["bar".to_string(), "foo".to_string()]);
     }
 
-    #[test]
     fn prompt_name_collision_with_builtin_is_ignored() {
         // Create a prompt named like a builtin (e.g. "model").
         let popup = CommandPopup::new(
@@ -366,7 +377,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn prompt_description_uses_frontmatter_metadata() {
         let popup = CommandPopup::new(
             vec![CustomPrompt {
@@ -386,7 +396,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn prompt_description_falls_back_when_missing() {
         let popup = CommandPopup::new(
             vec![CustomPrompt {
@@ -403,7 +412,6 @@ mod tests {
         assert_eq!(description, Some("send saved prompt"));
     }
 
-    #[test]
     fn prefix_filter_limits_matches_for_ac() {
         let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
         popup.on_composer_text_change("/ac".to_string());
@@ -422,7 +430,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn quit_hidden_in_empty_filter_but_shown_for_prefix() {
         let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
         popup.on_composer_text_change("/".to_string());
@@ -434,7 +441,6 @@ mod tests {
         assert!(items.contains(&CommandItem::Builtin(SlashCommand::Quit)));
     }
 
-    #[test]
     fn collab_command_hidden_when_collaboration_modes_disabled() {
         let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
         popup.on_composer_text_change("/".to_string());
@@ -457,7 +463,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn collab_command_visible_when_collaboration_modes_enabled() {
         let mut popup = CommandPopup::new(
             Vec::new(),
@@ -474,7 +479,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn plan_command_visible_when_collaboration_modes_enabled() {
         let mut popup = CommandPopup::new(
             Vec::new(),
@@ -491,7 +495,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn debug_commands_are_hidden_from_popup() {
         let popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
         let cmds: Vec<&str> = popup

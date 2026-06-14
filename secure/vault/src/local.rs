@@ -317,6 +317,12 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
+    fn local_suite() {
+        load_file_rejects_newer_schema_versions().expect("load_file_rejects_newer_schema_versions");
+        set_fails_when_keyring_is_unavailable().expect("set_fails_when_keyring_is_unavailable");
+        save_file_does_not_leave_temp_files().expect("save_file_does_not_leave_temp_files");
+    }
+
     fn load_file_rejects_newer_schema_versions() -> Result<()> {
         let chaos_home = tempfile::tempdir().expect("tempdir");
         let keyring = Arc::new(MockKeyringStore::default());
@@ -338,7 +344,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
     fn set_fails_when_keyring_is_unavailable() -> Result<()> {
         let chaos_home = tempfile::tempdir().expect("tempdir");
         let keyring = Arc::new(MockKeyringStore::default());
@@ -363,7 +368,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
     fn save_file_does_not_leave_temp_files() -> Result<()> {
         let chaos_home = tempfile::tempdir().expect("tempdir");
         let keyring = Arc::new(MockKeyringStore::default());

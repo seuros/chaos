@@ -206,6 +206,11 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
+    fn lib_suite() {
+        environment_id_fallback_has_cwd_prefix();
+        manager_round_trips_local_backend().expect("manager_round_trips_local_backend");
+    }
+
     fn environment_id_fallback_has_cwd_prefix() {
         #[cfg(target_os = "macos")]
         let temp_root = Path::new("/private/tmp");
@@ -227,7 +232,6 @@ mod tests {
         assert_eq!(env_id, format!("cwd-{short}"));
     }
 
-    #[test]
     fn manager_round_trips_local_backend() -> Result<()> {
         let chaos_home = tempfile::tempdir().expect("tempdir");
         let keyring = Arc::new(MockKeyringStore::default());

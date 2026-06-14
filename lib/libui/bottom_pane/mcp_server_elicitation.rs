@@ -9,7 +9,7 @@ pub use domain::ToolSuggestionType;
 pub use ui::McpServerElicitationOverlay;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::test_support::make_app_event_sender_with_rx;
@@ -108,7 +108,25 @@ mod tests {
         Some(Value::Object(meta))
     }
 
-    #[test]
+    pub(crate) fn mcp_server_elicitation_suite() {
+        parses_boolean_form_request();
+        unsupported_numeric_form_falls_back();
+        missing_schema_uses_approval_actions();
+        empty_tool_approval_schema_uses_approval_actions();
+        tool_suggestion_meta_is_parsed_into_request_payload();
+        empty_unmarked_schema_falls_back();
+        tool_approval_display_params_prefer_explicit_display_order();
+        submit_sends_accept_with_typed_content();
+        empty_tool_approval_schema_session_choice_sets_persist_meta();
+        empty_tool_approval_schema_always_allow_sets_persist_meta();
+        ctrl_c_cancels_elicitation();
+        queues_requests_fifo();
+        boolean_form_snapshot();
+        approval_form_tool_approval_snapshot();
+        approval_form_tool_approval_with_persist_options_snapshot();
+        approval_form_tool_approval_with_param_summary_snapshot();
+    }
+
     fn parses_boolean_form_request() {
         let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
@@ -166,7 +184,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn unsupported_numeric_form_falls_back() {
         let request = McpServerElicitationFormRequest::from_event(
             ProcessId::default(),
@@ -188,7 +205,6 @@ mod tests {
         assert_eq!(request, None);
     }
 
-    #[test]
     fn missing_schema_uses_approval_actions() {
         let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
@@ -239,7 +255,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn empty_tool_approval_schema_uses_approval_actions() {
         let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
@@ -287,7 +302,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn tool_suggestion_meta_is_parsed_into_request_payload() {
         let request = McpServerElicitationFormRequest::from_event(
             ProcessId::default(),
@@ -320,7 +334,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn empty_unmarked_schema_falls_back() {
         let request = McpServerElicitationFormRequest::from_event(
             ProcessId::default(),
@@ -330,7 +343,6 @@ mod tests {
         assert_eq!(request, None);
     }
 
-    #[test]
     fn tool_approval_display_params_prefer_explicit_display_order() {
         let request = McpServerElicitationFormRequest::from_event(
             ProcessId::default(),
@@ -377,7 +389,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn submit_sends_accept_with_typed_content() {
         let (tx, mut rx) = test_sender();
         let process_id = ProcessId::default();
@@ -428,7 +439,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn empty_tool_approval_schema_session_choice_sets_persist_meta() {
         let (tx, mut rx) = test_sender();
         let process_id = ProcessId::default();
@@ -479,7 +489,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn empty_tool_approval_schema_always_allow_sets_persist_meta() {
         let (tx, mut rx) = test_sender();
         let process_id = ProcessId::default();
@@ -530,7 +539,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn ctrl_c_cancels_elicitation() {
         use crate::bottom_pane::bottom_pane_view::BottomPaneView;
         let (tx, mut rx) = test_sender();
@@ -582,7 +590,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn queues_requests_fifo() {
         use crate::bottom_pane::bottom_pane_view::BottomPaneView;
         let (tx, _rx) = test_sender();
@@ -652,7 +659,6 @@ mod tests {
         assert_eq!(overlay.request.message, "Third");
     }
 
-    #[test]
     fn boolean_form_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(
@@ -682,7 +688,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn approval_form_tool_approval_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(
@@ -702,7 +707,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn approval_form_tool_approval_with_persist_options_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(
@@ -729,7 +733,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn approval_form_tool_approval_with_param_summary_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(

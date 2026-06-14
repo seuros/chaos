@@ -453,6 +453,9 @@ fn spawn_locate_walker(walker: LocateWalkerConfig) {
             let cancelled = cancelled.clone();
 
             Box::new(move |entry| {
+                if cancelled.load(Ordering::Relaxed) {
+                    return ignore::WalkState::Quit;
+                }
                 let entry = match entry {
                     Ok(entry) => entry,
                     Err(_) => return ignore::WalkState::Continue,
@@ -557,6 +560,16 @@ fn search_with_fff(
     query_text: &str,
     walk_complete: bool,
 ) -> FileSearchSnapshot {
+    if inner.cancelled.load(Ordering::Relaxed) {
+        return FileSearchSnapshot {
+            query: query_text.to_string(),
+            matches: Vec::new(),
+            total_match_count: 0,
+            scanned_file_count: 0,
+            walk_complete,
+        };
+    }
+
     let parser = QueryParser::default();
     let query = parser.parse(query_text);
     let mut matches = Vec::new();

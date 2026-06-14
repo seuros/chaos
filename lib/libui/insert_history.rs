@@ -360,7 +360,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     #[cfg(feature = "vt100-tests")]
     use crate::markdown_render::render_markdown_text;
@@ -369,7 +369,6 @@ mod tests {
     #[cfg(feature = "vt100-tests")]
     use ratatui::layout::Rect;
 
-    #[test]
     fn writes_bold_then_regular_spans() {
         use ratatui::style::Stylize;
 
@@ -397,7 +396,24 @@ mod tests {
         );
     }
 
-    #[test]
+    pub(crate) fn insert_history_suite() {
+        writes_bold_then_regular_spans();
+        write_spans_emits_osc8_envelope_for_linked_spans();
+        write_spans_skips_osc8_when_disabled();
+        #[cfg(feature = "vt100-tests")]
+        {
+            vt100_blockquote_line_emits_green_fg();
+            vt100_blockquote_wrap_preserves_color_on_all_wrapped_lines();
+            vt100_colored_prefix_then_plain_text_resets_color();
+            vt100_deep_nested_mixed_list_third_level_marker_is_colored();
+            vt100_prefixed_url_keeps_prefix_and_url_on_same_row();
+            vt100_prefixed_url_like_without_scheme_keeps_prefix_and_token_on_same_row();
+            vt100_prefixed_mixed_url_line_wraps_suffix_words_together();
+            vt100_unwrapped_url_like_clears_continuation_rows();
+            vt100_long_unwrapped_url_does_not_insert_extra_blank_gap_before_content();
+        }
+    }
+    #[cfg(test)]
     fn write_spans_emits_osc8_envelope_for_linked_spans() {
         use ratatui::style::Style;
 
@@ -449,7 +465,7 @@ mod tests {
         assert_eq!(actual.matches(close).count(), 2);
     }
 
-    #[test]
+    #[cfg(test)]
     fn write_spans_skips_osc8_when_disabled() {
         use ratatui::style::Style;
 
@@ -470,7 +486,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_blockquote_line_emits_green_fg() {
         // Set up a small off-screen terminal
         let width: u16 = 40;
@@ -506,7 +521,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_blockquote_wrap_preserves_color_on_all_wrapped_lines() {
         // Force wrapping by using a narrow viewport width and a long blockquote line.
         let width: u16 = 20;
@@ -573,7 +587,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_colored_prefix_then_plain_text_resets_color() {
         let width: u16 = 40;
         let height: u16 = 6;
@@ -635,7 +648,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_deep_nested_mixed_list_third_level_marker_is_colored() {
         // Markdown with five levels (ordered → unordered → ordered → unordered → unordered).
         let md = "1. First\n   - Second level\n     1. Third level (ordered)\n        - Fourth level (bullet)\n          - Fifth level to test indent consistency\n";
@@ -687,7 +699,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_prefixed_url_keeps_prefix_and_url_on_same_row() {
         let width: u16 = 48;
         let height: u16 = 8;
@@ -714,7 +725,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_prefixed_url_like_without_scheme_keeps_prefix_and_token_on_same_row() {
         let width: u16 = 48;
         let height: u16 = 8;
@@ -743,7 +753,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_prefixed_mixed_url_line_wraps_suffix_words_together() {
         let width: u16 = 24;
         let height: u16 = 10;
@@ -774,7 +783,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_unwrapped_url_like_clears_continuation_rows() {
         let width: u16 = 20;
         let height: u16 = 10;
@@ -815,7 +823,6 @@ mod tests {
     }
 
     #[cfg(feature = "vt100-tests")]
-    #[test]
     fn vt100_long_unwrapped_url_does_not_insert_extra_blank_gap_before_content() {
         let width: u16 = 56;
         let height: u16 = 24;

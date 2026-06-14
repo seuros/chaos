@@ -209,18 +209,22 @@ pub fn built_in_slash_commands() -> Vec<(&'static str, SlashCommand)> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use pretty_assertions::assert_eq;
     use std::str::FromStr;
 
     use super::SlashCommand;
 
-    #[test]
+    pub(crate) fn slash_command_suite() {
+        stop_command_is_canonical_name();
+        clean_alias_parses_to_stop_command();
+    }
+    #[cfg(test)]
     fn stop_command_is_canonical_name() {
         assert_eq!(SlashCommand::Stop.command(), "stop");
     }
 
-    #[test]
+    #[cfg(test)]
     fn clean_alias_parses_to_stop_command() {
         assert_eq!(SlashCommand::from_str("clean"), Ok(SlashCommand::Stop));
     }

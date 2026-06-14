@@ -69,7 +69,7 @@ impl StepStateProvider for WelcomeWidget {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
@@ -84,8 +84,7 @@ mod tests {
         })
     }
 
-    #[test]
-    fn welcome_renders_text_at_top() {
+    pub(crate) fn welcome_renders_text_at_top() {
         let widget = WelcomeWidget::new(false);
         let area = Rect::new(0, 0, 80, 20);
         let mut buf = Buffer::empty(area);

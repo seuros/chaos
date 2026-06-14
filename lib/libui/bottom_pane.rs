@@ -185,7 +185,7 @@ pub struct BottomPaneParams {
 mod state;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use chaos_ipc::product::OS_NAME;
@@ -244,7 +244,47 @@ mod tests {
         }
     }
 
-    #[test]
+    pub(crate) fn bottom_pane_suite() {
+        super::app_link_view::tests::app_link_view_suite();
+        super::approval_overlay::tests::approval_overlay_suite();
+        super::chat_composer::tests::chat_composer_suite();
+        super::chat_composer_history::tests::chat_composer_history_suite();
+        super::command_popup::tests::command_popup_suite();
+        super::footer::tests::footer_suite();
+        super::list_selection_view::tests::list_selection_view_suite();
+        super::mcp_add_form::tests::mcp_add_form_suite();
+        super::mcp_server_elicitation::tests::mcp_server_elicitation_suite();
+        super::paste_burst::tests::paste_burst_suite();
+        super::pending_input_preview::tests::pending_input_preview_suite();
+        super::pending_process_approvals::tests::pending_process_approvals_suite();
+        super::prompt_args::tests::prompt_args_suite();
+        super::request_user_input::tests::request_user_input_suite();
+        super::scroll_state::tests::wrap_navigation_and_visibility();
+        super::selection_popup_common::tests::one_cell_width_falls_back_without_panic_for_wrapped_two_column_rows();
+        super::slash_commands::tests::slash_commands_suite();
+        super::textarea::tests::textarea_suite();
+        super::unified_exec_footer::tests::unified_exec_footer_suite();
+
+        ctrl_c_on_modal_consumes_without_showing_quit_hint();
+        overlay_not_shown_above_approval_modal();
+        composer_shown_after_denied_while_task_running();
+        status_indicator_visible_during_command_execution();
+        status_and_composer_fill_height_without_bottom_padding();
+        status_only_snapshot();
+        unified_exec_summary_does_not_increase_height_when_status_visible();
+        status_with_details_and_queued_messages_snapshot();
+        queued_messages_visible_when_status_hidden_snapshot();
+        status_and_queued_messages_snapshot();
+        remote_images_render_above_composer_text();
+        drain_pending_submission_state_clears_remote_image_urls();
+        esc_with_slash_command_popup_does_not_interrupt_task();
+        esc_with_agent_command_without_popup_does_not_interrupt_task();
+        esc_release_after_dismissing_agent_picker_does_not_interrupt_task();
+        esc_interrupts_running_task_when_no_popup();
+        esc_routes_to_handle_key_event_when_requested();
+        release_events_are_ignored_for_active_view();
+    }
+
     fn ctrl_c_on_modal_consumes_without_showing_quit_hint() {
         let mut pane = make_test_pane();
         pane.push_approval_request(exec_request());
@@ -255,7 +295,6 @@ mod tests {
 
     // live ring removed; related tests deleted.
 
-    #[test]
     fn overlay_not_shown_above_approval_modal() {
         let mut pane = make_test_pane();
 
@@ -277,7 +316,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn composer_shown_after_denied_while_task_running() {
         let mut pane = make_test_pane();
 
@@ -333,7 +371,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn status_indicator_visible_during_command_execution() {
         let mut pane = make_test_pane();
 
@@ -349,7 +386,6 @@ mod tests {
         assert!(bufs.contains("• Working"), "expected Working header");
     }
 
-    #[test]
     fn status_and_composer_fill_height_without_bottom_padding() {
         let mut pane = make_test_pane();
 
@@ -369,7 +405,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn status_only_snapshot() {
         let mut pane = make_test_pane();
 
@@ -384,7 +419,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn unified_exec_summary_does_not_increase_height_when_status_visible() {
         let mut pane = make_test_pane();
 
@@ -402,7 +436,6 @@ mod tests {
         assert!(rendered.contains("background terminal running · /ps to view"));
     }
 
-    #[test]
     fn status_with_details_and_queued_messages_snapshot() {
         let mut pane = make_test_pane();
 
@@ -424,7 +457,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn queued_messages_visible_when_status_hidden_snapshot() {
         let mut pane = make_test_pane();
 
@@ -441,7 +473,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn status_and_queued_messages_snapshot() {
         let mut pane = make_test_pane();
 
@@ -457,7 +488,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn remote_images_render_above_composer_text() {
         let mut pane = make_test_pane();
 
@@ -475,7 +505,6 @@ mod tests {
         assert!(snapshot.contains("[Image #2]"));
     }
 
-    #[test]
     fn drain_pending_submission_state_clears_remote_image_urls() {
         let mut pane = make_test_pane();
 
@@ -487,7 +516,6 @@ mod tests {
         assert!(pane.remote_image_urls().is_empty());
     }
 
-    #[test]
     fn esc_with_slash_command_popup_does_not_interrupt_task() {
         let (mut pane, mut rx) = make_test_pane_with_rx();
 
@@ -511,7 +539,6 @@ mod tests {
         assert_eq!(pane.composer_text(), "/");
     }
 
-    #[test]
     fn esc_with_agent_command_without_popup_does_not_interrupt_task() {
         let (mut pane, mut rx) = make_test_pane_with_rx();
 
@@ -536,7 +563,6 @@ mod tests {
         assert_eq!(pane.composer_text(), "/agent ");
     }
 
-    #[test]
     fn esc_release_after_dismissing_agent_picker_does_not_interrupt_task() {
         let (mut pane, mut rx) = make_test_pane_with_rx();
 
@@ -573,7 +599,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn esc_interrupts_running_task_when_no_popup() {
         let (mut pane, mut rx) = make_test_pane_with_rx();
 
@@ -587,7 +612,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn esc_routes_to_handle_key_event_when_requested() {
         #[derive(Default)]
         struct EscRoutingView {
@@ -635,7 +659,6 @@ mod tests {
         assert_eq!(handle_calls.get(), 1);
     }
 
-    #[test]
     fn release_events_are_ignored_for_active_view() {
         #[derive(Default)]
         struct CountingView {

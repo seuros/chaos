@@ -351,67 +351,86 @@ pub fn proper_join<T: AsRef<str>>(items: &[T]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
+    pub(crate) fn text_formatting_suite() {
+        test_truncate_text();
+        test_truncate_empty_string();
+        test_truncate_max_graphemes_zero();
+        test_truncate_max_graphemes_one();
+        test_truncate_max_graphemes_two();
+        test_truncate_max_graphemes_three_boundary();
+        test_truncate_text_shorter_than_limit();
+        test_truncate_text_exact_length();
+        test_truncate_emoji();
+        test_truncate_unicode_combining_characters();
+        test_truncate_very_long_text();
+        test_format_json_compact_simple_object();
+        test_format_json_compact_nested_object();
+        test_center_truncate_doesnt_truncate_short_path();
+        test_center_truncate_truncates_long_path();
+        test_center_truncate_truncates_long_windows_path();
+        test_center_truncate_handles_long_segment();
+        test_format_json_compact_array();
+        test_format_json_compact_already_compact();
+        test_format_json_compact_with_whitespace();
+        test_format_json_compact_invalid_json();
+        test_format_json_compact_empty_object();
+        test_format_json_compact_empty_array();
+        test_format_json_compact_primitive_values();
+        test_proper_join();
+    }
+
     fn test_truncate_text() {
         let text = "Hello, world!";
         let truncated = truncate_text(text, 8);
         assert_eq!(truncated, "Hello...");
     }
 
-    #[test]
     fn test_truncate_empty_string() {
         let text = "";
         let truncated = truncate_text(text, 5);
         assert_eq!(truncated, "");
     }
 
-    #[test]
     fn test_truncate_max_graphemes_zero() {
         let text = "Hello";
         let truncated = truncate_text(text, 0);
         assert_eq!(truncated, "");
     }
 
-    #[test]
     fn test_truncate_max_graphemes_one() {
         let text = "Hello";
         let truncated = truncate_text(text, 1);
         assert_eq!(truncated, "H");
     }
 
-    #[test]
     fn test_truncate_max_graphemes_two() {
         let text = "Hello";
         let truncated = truncate_text(text, 2);
         assert_eq!(truncated, "He");
     }
 
-    #[test]
     fn test_truncate_max_graphemes_three_boundary() {
         let text = "Hello";
         let truncated = truncate_text(text, 3);
         assert_eq!(truncated, "...");
     }
 
-    #[test]
     fn test_truncate_text_shorter_than_limit() {
         let text = "Hi";
         let truncated = truncate_text(text, 10);
         assert_eq!(truncated, "Hi");
     }
 
-    #[test]
     fn test_truncate_text_exact_length() {
         let text = "Hello";
         let truncated = truncate_text(text, 5);
         assert_eq!(truncated, "Hello");
     }
 
-    #[test]
     fn test_truncate_emoji() {
         let text = "👋🌍🚀✨💫";
         let truncated = truncate_text(text, 3);
@@ -421,14 +440,12 @@ mod tests {
         assert_eq!(truncated_longer, "👋...");
     }
 
-    #[test]
     fn test_truncate_unicode_combining_characters() {
         let text = "é́ñ̃"; // Characters with combining marks
         let truncated = truncate_text(text, 2);
         assert_eq!(truncated, "é́ñ̃");
     }
 
-    #[test]
     fn test_truncate_very_long_text() {
         let text = "a".repeat(1000);
         let truncated = truncate_text(&text, 10);
@@ -436,14 +453,12 @@ mod tests {
         assert_eq!(truncated.len(), 10); // 7 'a's + 3 dots
     }
 
-    #[test]
     fn test_format_json_compact_simple_object() {
         let json = r#"{ "name": "John", "age": 30 }"#;
         let result = format_json_compact(json).unwrap();
         assert_eq!(result, r#"{"name": "John", "age": 30}"#);
     }
 
-    #[test]
     fn test_format_json_compact_nested_object() {
         let json = r#"{ "user": { "name": "John", "details": { "age": 30, "city": "NYC" } } }"#;
         let result = format_json_compact(json).unwrap();
@@ -453,7 +468,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn test_center_truncate_doesnt_truncate_short_path() {
         let sep = std::path::MAIN_SEPARATOR;
         let path = format!("{sep}Users{sep}chaos{sep}Public");
@@ -462,7 +476,6 @@ mod tests {
         assert_eq!(truncated, path);
     }
 
-    #[test]
     fn test_center_truncate_truncates_long_path() {
         let sep = std::path::MAIN_SEPARATOR;
         let path = format!("~{sep}hello{sep}the{sep}fox{sep}is{sep}very{sep}fast");
@@ -474,7 +487,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn test_center_truncate_truncates_long_windows_path() {
         let sep = std::path::MAIN_SEPARATOR;
         let path = format!(
@@ -487,7 +499,6 @@ mod tests {
         assert_eq!(truncated, expected);
     }
 
-    #[test]
     fn test_center_truncate_handles_long_segment() {
         let sep = std::path::MAIN_SEPARATOR;
         let path = format!("~{sep}supercalifragilisticexpialidocious");
@@ -496,21 +507,18 @@ mod tests {
         assert_eq!(truncated, format!("~{sep}…cexpialidocious"));
     }
 
-    #[test]
     fn test_format_json_compact_array() {
         let json = r#"[ 1, 2, { "key": "value" }, "string" ]"#;
         let result = format_json_compact(json).unwrap();
         assert_eq!(result, r#"[1, 2, {"key": "value"}, "string"]"#);
     }
 
-    #[test]
     fn test_format_json_compact_already_compact() {
         let json = r#"{"compact":true}"#;
         let result = format_json_compact(json).unwrap();
         assert_eq!(result, r#"{"compact": true}"#);
     }
 
-    #[test]
     fn test_format_json_compact_with_whitespace() {
         let json = r#"
         {
@@ -528,28 +536,24 @@ mod tests {
         );
     }
 
-    #[test]
     fn test_format_json_compact_invalid_json() {
         let invalid_json = r#"{"invalid": json syntax}"#;
         let result = format_json_compact(invalid_json);
         assert!(result.is_none());
     }
 
-    #[test]
     fn test_format_json_compact_empty_object() {
         let json = r#"{}"#;
         let result = format_json_compact(json).unwrap();
         assert_eq!(result, "{}");
     }
 
-    #[test]
     fn test_format_json_compact_empty_array() {
         let json = r#"[]"#;
         let result = format_json_compact(json).unwrap();
         assert_eq!(result, "[]");
     }
 
-    #[test]
     fn test_format_json_compact_primitive_values() {
         assert_eq!(format_json_compact("42").unwrap(), "42");
         assert_eq!(format_json_compact("true").unwrap(), "true");
@@ -558,7 +562,6 @@ mod tests {
         assert_eq!(format_json_compact(r#""string""#).unwrap(), r#""string""#);
     }
 
-    #[test]
     fn test_proper_join() {
         let empty: Vec<String> = vec![];
         assert_eq!(proper_join(&empty), "");

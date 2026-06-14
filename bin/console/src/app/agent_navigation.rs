@@ -233,7 +233,7 @@ impl AgentNavigationState {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
@@ -263,8 +263,7 @@ mod tests {
         (state, main_process_id, first_agent_id, second_agent_id)
     }
 
-    #[test]
-    fn upsert_preserves_first_seen_order() {
+    pub(crate) fn agent_navigation_state_preserves_order_wraps_and_formats_labels() {
         let (mut state, main_process_id, first_agent_id, second_agent_id) = populated_state();
 
         state.upsert(
@@ -278,11 +277,6 @@ mod tests {
             state.ordered_process_ids(),
             vec![main_process_id, first_agent_id, second_agent_id]
         );
-    }
-
-    #[test]
-    fn adjacent_process_id_wraps_in_spawn_order() {
-        let (state, main_process_id, first_agent_id, second_agent_id) = populated_state();
 
         assert_eq!(
             state.adjacent_process_id(Some(second_agent_id), AgentNavigationDirection::Next),
@@ -296,25 +290,17 @@ mod tests {
             state.adjacent_process_id(Some(main_process_id), AgentNavigationDirection::Previous),
             Some(second_agent_id)
         );
-    }
 
-    #[test]
-    fn picker_subtitle_mentions_shortcuts() {
         let previous: Span<'static> = previous_agent_shortcut().into();
         let next: Span<'static> = next_agent_shortcut().into();
         let subtitle = AgentNavigationState::picker_subtitle();
 
         assert!(subtitle.contains(previous.content.as_ref()));
         assert!(subtitle.contains(next.content.as_ref()));
-    }
-
-    #[test]
-    fn active_agent_label_tracks_current_thread() {
-        let (state, main_process_id, first_agent_id, _) = populated_state();
 
         assert_eq!(
             state.active_agent_label(Some(first_agent_id), Some(main_process_id)),
-            Some("Robie [scout]".to_string())
+            Some("Robie [task]".to_string())
         );
         assert_eq!(
             state.active_agent_label(Some(main_process_id), Some(main_process_id)),

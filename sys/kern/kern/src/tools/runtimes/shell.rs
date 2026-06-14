@@ -163,6 +163,10 @@ impl Approvable<ShellRequest> for ShellRuntime {
 }
 
 impl ToolRuntime<ShellRequest, ExecToolCallOutput> for ShellRuntime {
+    fn allows_no_sandbox_retry(&self, req: &ShellRequest) -> bool {
+        !req.sandbox_permissions.uses_additional_permissions()
+    }
+
     fn network_approval_spec(
         &self,
         req: &ShellRequest,

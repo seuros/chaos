@@ -355,7 +355,14 @@ mod tests {
     use super::*;
     use crate::outgoing_message::OutgoingMessage;
 
-    #[test]
+    #[tokio::test]
+    async fn elicitation_suite() {
+        approval_elicitation_response_maps_to_core_action_and_review_decision();
+        forwarded_elicitation_preserves_request_fields();
+        url_elicitation_support_requires_declared_url_capability();
+        forwarded_url_elicitation_completion_sends_notification().await;
+    }
+
     fn approval_elicitation_response_maps_to_core_action_and_review_decision() {
         let response = ApprovalElicitationResponse {
             action: ApprovalElicitationAction::Cancel,
@@ -367,7 +374,6 @@ mod tests {
         assert_eq!(response.review_decision(), ReviewDecision::Denied);
     }
 
-    #[test]
     fn forwarded_elicitation_preserves_request_fields() {
         for (request, expected) in [
             (
@@ -414,7 +420,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn url_elicitation_support_requires_declared_url_capability() {
         let (outgoing_tx, _outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing = OutgoingMessageSender::new(outgoing_tx);
@@ -433,7 +438,6 @@ mod tests {
         assert!(request.is_supported_by(&outgoing));
     }
 
-    #[tokio::test]
     async fn forwarded_url_elicitation_completion_sends_notification() {
         let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));

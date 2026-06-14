@@ -727,13 +727,17 @@ impl ModifierDiff {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
 
-    #[test]
+    pub(crate) fn custom_terminal_suite() {
+        diff_buffers_does_not_emit_clear_to_end_for_full_width_row();
+        diff_buffers_clear_to_end_starts_after_wide_char();
+    }
+
     fn diff_buffers_does_not_emit_clear_to_end_for_full_width_row() {
         let area = Rect::new(0, 0, 3, 2);
         let previous = Buffer::empty(area);
@@ -761,7 +765,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn diff_buffers_clear_to_end_starts_after_wide_char() {
         let area = Rect::new(0, 0, 10, 1);
         let mut previous = Buffer::empty(area);

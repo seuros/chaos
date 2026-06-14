@@ -101,10 +101,7 @@ fn resolve_journald_executable(binary_path: Option<&Path>) -> Result<PathBuf> {
     }
 
     // Check CARGO_BIN_EXE_* env vars set by cargo test / nextest.
-    for key in [
-        "CARGO_BIN_EXE_chaos-journald",
-        "CARGO_BIN_EXE_chaos_journald",
-    ] {
+    for key in ["CARGO_BIN_EXE_chaos_journald"] {
         if let Some(value) = std::env::var_os(key) {
             let path = PathBuf::from(value);
             if path.exists() {
@@ -115,22 +112,22 @@ fn resolve_journald_executable(binary_path: Option<&Path>) -> Result<PathBuf> {
 
     let current_exe = std::env::current_exe().context("resolve current executable")?;
     if let Some(parent) = current_exe.parent() {
-        let sibling = parent.join("chaos-journald");
+        let sibling = parent.join("chaos_journald");
         if sibling.exists() {
             return Ok(sibling);
         }
         // cargo test / nextest place test binaries in target/<profile>/deps/
         // while standalone binaries live in target/<profile>/. Walk one more
-        // level up so we find chaos-journald next to the deps directory.
+        // level up so we find chaos_journald next to the deps directory.
         if let Some(grandparent) = parent.parent() {
-            let ancestor_sibling = grandparent.join("chaos-journald");
+            let ancestor_sibling = grandparent.join("chaos_journald");
             if ancestor_sibling.exists() {
                 return Ok(ancestor_sibling);
             }
         }
     }
 
-    Ok(PathBuf::from("chaos-journald"))
+    Ok(PathBuf::from("chaos_journald"))
 }
 
 fn spawn_detached_journald(binary_path: &Path, paths: &BootstrapPaths) -> Result<()> {

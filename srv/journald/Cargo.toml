@@ -1,5 +1,5 @@
 [package]
-name = "chaos-journald"
+name = "chaos_journald"
 description = "Session journal service — canonical append-only process history with SQLite default"
 version.workspace = true
 edition.workspace = true

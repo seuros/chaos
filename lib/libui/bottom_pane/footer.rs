@@ -293,6 +293,7 @@ pub(crate) mod tests {
 
     pub(crate) fn footer_suite() {
         footer_snapshots();
+        #[cfg(feature = "vt100-tests")]
         footer_status_line_truncates_to_keep_mode_indicator();
         paste_image_shortcut_is_ctrl_v();
     }

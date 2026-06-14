@@ -135,7 +135,7 @@ jobs:
 
       - name: Build and export runtime binaries for tests
         run: |
-          PKGS="-p chaos-journald -p chaos-cli"
+          PKGS="-p chaos_journald -p chaos-cli"
           case "${{ runner.os }}" in
             macOS)  PKGS="$PKGS -p alcatraz-macos" ;;
             Linux)  PKGS="$PKGS -p alcatraz-linux" ;;
@@ -143,7 +143,7 @@ jobs:
           cargo build --target ${{ matrix.target }} --profile ci-test $PKGS
           TARGET_DIR="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/ci-test"
           {
-            echo "CARGO_BIN_EXE_chaos-journald=${TARGET_DIR}/chaos-journald"
+            echo "CARGO_BIN_EXE_chaos_journald=${TARGET_DIR}/chaos_journald"
             echo "CARGO_BIN_EXE_chaos=${TARGET_DIR}/chaos"
           } >> "$GITHUB_ENV"
           case "${{ runner.os }}" in

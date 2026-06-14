@@ -49,6 +49,18 @@ fn split_stdout_stderr_command() -> String {
     "printf 'split-out\\n'; printf 'split-err\\n' >&2".to_string()
 }
 
+fn set_cloexec_for_test(fd: std::os::fd::RawFd) -> std::io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let result = unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) };
+    if result == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 async fn collect_split_output(mut output_rx: tokio::sync::mpsc::Receiver<Vec<u8>>) -> Vec<u8> {
     let mut collected = Vec::new();
     while let Some(chunk) = output_rx.recv().await {
@@ -636,6 +648,7 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
 
     let mut read_end = unsafe { std::fs::File::from_raw_fd(fds[0]) };
     let write_end = unsafe { std::fs::File::from_raw_fd(fds[1]) };
+    set_cloexec_for_test(write_end.as_raw_fd())?;
 
     let mut env_map: HashMap<String, String> = std::env::vars().collect();
     env_map.insert(
@@ -643,7 +656,7 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
         write_end.as_raw_fd().to_string(),
     );
 
-    let script = "printf __preserved__ >&$PRESERVED_FD";
+    let script = "printf __preserved__ >\"/dev/fd/$PRESERVED_FD\"";
     let spawned = spawn_process_with_inherited_fds(
         "/bin/sh",
         &["-c".to_string(), script.to_string()],
@@ -858,6 +871,7 @@ async fn pipe_spawn_no_stdin_can_preserve_inherited_fds() -> anyhow::Result<()> 
 
     let mut read_end = unsafe { std::fs::File::from_raw_fd(fds[0]) };
     let write_end = unsafe { std::fs::File::from_raw_fd(fds[1]) };
+    set_cloexec_for_test(write_end.as_raw_fd())?;
 
     let mut env_map: HashMap<String, String> = std::env::vars().collect();
     env_map.insert(
@@ -865,7 +879,7 @@ async fn pipe_spawn_no_stdin_can_preserve_inherited_fds() -> anyhow::Result<()> 
         write_end.as_raw_fd().to_string(),
     );
 
-    let script = "printf __pipe_preserved__ >&$PRESERVED_FD";
+    let script = "printf __pipe_preserved__ >\"/dev/fd/$PRESERVED_FD\"";
     let spawned = spawn_process_no_stdin_with_inherited_fds(
         "/bin/sh",
         &["-c".to_string(), script.to_string()],

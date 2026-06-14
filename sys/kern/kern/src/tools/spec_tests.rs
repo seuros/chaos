@@ -1388,7 +1388,6 @@ fn test_build_specs_default_shell_present() {
 }
 
 #[test]
-#[ignore]
 fn test_parallel_support_flags() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);

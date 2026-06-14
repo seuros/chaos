@@ -3706,14 +3706,10 @@ fn selecting_custom_prompt_with_args_expands_placeholders() {
         argument_hint: None,
     }]);
 
-    // Type the slash command with two args and hit Enter to submit.
-    type_chars_humanlike(
-        &mut composer,
-        &[
-            '/', 'p', 'r', 'o', 'm', 'p', 't', 's', ':', 'm', 'y', '-', 'p', 'r', 'o', 'm', 'p',
-            't', ' ', 'f', 'o', 'o', ' ', 'b', 'a', 'r',
-        ],
-    );
+    composer
+        .textarea
+        .set_text_clearing_elements("/prompts:my-prompt foo bar");
+    composer.textarea.set_cursor(composer.textarea.text().len());
     let (result, _needs_redraw) =
         composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 

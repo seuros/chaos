@@ -118,7 +118,7 @@ where
         let request_id = envelope.id;
         let outcome = match envelope.request {
             JournalRequest::Hello(_request) => Ok(JournalResponse::Hello(HelloResponse {
-                server_name: "chaos-journald".to_string(),
+                server_name: "chaos_journald".to_string(),
                 protocol_version: PROTOCOL_VERSION,
                 backend: self.backend.to_string(),
             })),
@@ -371,7 +371,7 @@ mod tests {
         assert!(envelope.ok);
         match envelope.result {
             Some(JournalResponse::Hello(hello)) => {
-                assert_eq!(hello.server_name, "chaos-journald");
+                assert_eq!(hello.server_name, "chaos_journald");
                 assert_eq!(hello.backend, "sqlite");
             }
             other => panic!("unexpected result: {other:?}"),

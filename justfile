@@ -177,13 +177,13 @@ install:
 dist output="chaos-dist.tar.gz":
     #!/usr/bin/env sh
     set -e
-    RUSTC_WRAPPER= cargo build --release --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
-    for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
+    RUSTC_WRAPPER= cargo build --release --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
+    for bin in chaos chaos_journald chaos-forkve-wrapper chaos-xclient; do
         strip "target/release/$bin" 2>/dev/null || true
     done
     tmp=$(mktemp -d)
     cp target/release/chaos "$tmp/chaos"
-    cp target/release/chaos-journald "$tmp/chaos-journald"
+    cp target/release/chaos_journald "$tmp/chaos_journald"
     cp target/release/chaos-forkve-wrapper "$tmp/chaos-forkve-wrapper"
     cp target/release/chaos-xclient "$tmp/chaos-xclient"
     cp scripts/dist-install.sh "$tmp/install.sh"

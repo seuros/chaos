@@ -64,7 +64,7 @@ main() {
 
     mkdir -p "$INSTALL_DIR"
     install_bin "$tmpdir/chaos" "chaos"
-    install_bin "$tmpdir/chaos-journald" "chaos-journald"
+    install_bin "$tmpdir/chaos_journald" "chaos_journald"
     install_bin "$tmpdir/chaos-forkve-wrapper" "chaos-forkve-wrapper"
     install_bin "$tmpdir/chaos-xclient" "chaos-xclient"
 

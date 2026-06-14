@@ -244,6 +244,7 @@ async fn spawn_process_preserving_fds(
                     return Err(std::io::Error::last_os_error());
                 }
 
+                clear_cloexec_on_preserved_fds(&inherited_fds)?;
                 close_inherited_fds_except(&inherited_fds);
                 Ok(())
             });
@@ -339,6 +340,23 @@ fn set_cloexec(fd: RawFd) -> std::io::Result<()> {
     let result = unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) };
     if result == -1 {
         return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+pub(crate) fn clear_cloexec_on_preserved_fds(preserved_fds: &[RawFd]) -> std::io::Result<()> {
+    for &fd in preserved_fds {
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        if flags == -1 {
+            return Err(std::io::Error::last_os_error());
+        }
+        if flags & libc::FD_CLOEXEC == 0 {
+            continue;
+        }
+        let result = unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) };
+        if result == -1 {
+            return Err(std::io::Error::last_os_error());
+        }
     }
     Ok(())
 }

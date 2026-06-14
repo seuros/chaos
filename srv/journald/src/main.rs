@@ -14,7 +14,7 @@ use chaos_journald::run_sqlite_journal_server;
 use chaos_journald::sqlite_db_path;
 
 #[derive(Debug, Parser)]
-#[command(name = "chaos-journald")]
+#[command(name = "chaos_journald")]
 struct Cli {
     /// Unix domain socket path to bind.
     #[arg(long = "socket", value_name = "PATH")]

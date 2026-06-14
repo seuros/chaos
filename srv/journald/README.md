@@ -1,4 +1,4 @@
-# chaos-journald
+# chaos_journald
 
 Append-only session journal service. Receives rollout items from the kernel over
 a Unix socket and persists them to SQLite. The authoritative record of what

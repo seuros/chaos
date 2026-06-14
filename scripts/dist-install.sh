@@ -13,7 +13,7 @@ install_bin() {
 }
 
 install_bin chaos
-install_bin chaos-journald
+install_bin chaos_journald
 install_bin chaos-forkve-wrapper
 install_bin chaos-xclient
 

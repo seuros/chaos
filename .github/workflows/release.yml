@@ -102,13 +102,13 @@ jobs:
         run: |
           set -euo pipefail
           artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
-          cargo build --release --target ${{ matrix.target }} --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          cargo build --release --target ${{ matrix.target }} --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
           release_dir="target/${{ matrix.target }}/release"
-          for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
+          for bin in chaos chaos_journald chaos-forkve-wrapper chaos-xclient; do
             strip "${release_dir}/$bin" 2>/dev/null || true
           done
           tmp=$(mktemp -d)
-          cp "${release_dir}/chaos" "${release_dir}/chaos-journald" \
+          cp "${release_dir}/chaos" "${release_dir}/chaos_journald" \
              "${release_dir}/chaos-forkve-wrapper" "${release_dir}/chaos-xclient" "$tmp/"
           cp scripts/dist-install.sh "$tmp/install.sh"
           tar czf "${artifact}" -C "$tmp" .
@@ -202,13 +202,13 @@ jobs:
         run: |
           set -euo pipefail
           artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
-          cargo build --release --target "${{ matrix.target }}" --bin chaos --bin chaos-journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          cargo build --release --target "${{ matrix.target }}" --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
           release_dir="target/${{ matrix.target }}/release"
-          for bin in chaos chaos-journald chaos-forkve-wrapper chaos-xclient; do
+          for bin in chaos chaos_journald chaos-forkve-wrapper chaos-xclient; do
             strip "${release_dir}/$bin" 2>/dev/null || true
           done
           tmp=$(mktemp -d)
-          cp "${release_dir}/chaos" "${release_dir}/chaos-journald" \
+          cp "${release_dir}/chaos" "${release_dir}/chaos_journald" \
              "${release_dir}/chaos-forkve-wrapper" "${release_dir}/chaos-xclient" "$tmp/"
           cp scripts/dist-install.sh "$tmp/install.sh"
           tar czf "${artifact}" -C "$tmp" .

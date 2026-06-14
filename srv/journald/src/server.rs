@@ -98,7 +98,7 @@ pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()
             socket_path = %socket_path.display(),
             db_path = %config.sqlite_db_path.display(),
             rpc_path = crate::JOURNAL_RPC_PATH,
-            "chaos-journald listening"
+            "chaos_journald listening"
         );
 
         HttpServer::new_http1(exec)
@@ -118,7 +118,7 @@ pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()
             info!(
                 socket_path = %socket_guard.path().display(),
                 shutdown_delay_ms = shutdown_delay.as_millis(),
-                "chaos-journald shutting down"
+                "chaos_journald shutting down"
             );
         }
     }

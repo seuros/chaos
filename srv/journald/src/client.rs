@@ -415,7 +415,7 @@ mod tests {
             .hello("journal-client-test")
             .await
             .unwrap_or_else(|err| panic!("hello: {err}"));
-        assert_eq!(hello.server_name, "chaos-journald");
+        assert_eq!(hello.server_name, "chaos_journald");
 
         let process_id = ProcessId::new();
         let created = client

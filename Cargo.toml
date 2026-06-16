@@ -297,10 +297,10 @@ multimap = "0.10.1"
 notify = "8.2.0"
 nucleo = { git = "https://github.com/helix-editor/nucleo.git", rev = "4253de9faabb4e5c6d81d946a5e35a90f87347ee" }
 openssl-sys = "*"
-opentelemetry-appender-tracing = "0.31.1"
-opentelemetry-http = { version = "0.31.0", default-features = false }
-opentelemetry-otlp = { version = "0.31.1", default-features = false }
-opentelemetry_sdk = { version = "0.31.0", default-features = false }
+opentelemetry-appender-tracing = "0.32.0"
+opentelemetry-http = { version = "0.32.0", default-features = false }
+opentelemetry-otlp = { version = "0.32.0", default-features = false }
+opentelemetry_sdk = { version = "0.32.1", default-features = false }
 os_info = "3.14.0"
 owo-colors = "4.3.0"
 path-absolutize = "3.1.1"
@@ -377,7 +377,7 @@ toml = "1.1.0"
 toml_edit = "0.25.8"
 tracing = "0.1.44"
 tracing-appender = "0.2.4"
-tracing-opentelemetry = "0.32.1"
+tracing-opentelemetry = "0.33.0"
 tracing-subscriber = "0.3.23"
 tracing-test = "0.2.6"
 tree-sitter = "0.26.7"

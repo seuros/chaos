@@ -35,8 +35,8 @@ pub(super) fn validate_absolute_form_host_header(
         return Err("Host header does not match request target");
     }
 
-    if let Some(host_port) = host_header.0.port {
-        if Some(host_port) != request_ctx.authority.port {
+    if let Some(host_port) = host_header.0.port.as_u16() {
+        if Some(host_port) != request_ctx.authority.port.as_u16() {
             return Err("Host header does not match request target");
         }
         return Ok(());

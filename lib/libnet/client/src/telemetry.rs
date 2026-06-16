@@ -5,9 +5,9 @@ use rama::http::HeaderValue;
 use rama::http::StatusCode;
 use rama::telemetry::opentelemetry::global;
 use rama::telemetry::opentelemetry::propagation::Injector;
+use rama::telemetry::tracing::OpenTelemetrySpanExt;
+use rama::telemetry::tracing::Span;
 use std::time::Duration;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Inject the active OpenTelemetry span context into outgoing HTTP headers.
 ///

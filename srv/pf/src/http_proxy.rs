@@ -158,10 +158,10 @@ mod tests {
             .unwrap();
         req.extensions().insert_arc(state);
 
-        let (response, _request) = request_handler::http_connect_accept(None, req)
+        let upgrade = request_handler::http_connect_accept(None, req)
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(upgrade.response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

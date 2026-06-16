@@ -24,11 +24,11 @@ use rama::net::client::ConnectorService;
 use rama::net::client::EstablishedClientConnection;
 use rama::net::proxy::IoForwardService;
 use rama::net::proxy::ProxyTarget;
+use rama::net::tls::client::TlsClientConfig;
 use rama::rt::Executor;
 use rama::tcp::client::Request as TcpRequest;
 use rama::tcp::client::service::TcpConnector;
 use rama::tcp::proxy::IoToProxyBridgeIoLayer;
-use rama::tls::rustls::client::TlsConnectorDataBuilder;
 use rama::tls::rustls::client::TlsConnectorLayer;
 use std::convert::Infallible;
 use tracing::error;
@@ -118,18 +118,16 @@ pub(super) async fn forward_connect_tunnel(
         .ok_or_else(|| BoxError::from("missing forward authority"))?;
 
     let proxy_connector = HttpProxyConnector::optional(TcpConnector::new(Executor::default()));
-    let tls_config = TlsConnectorDataBuilder::new()
-        .with_alpn_protocols_http_auto()
-        .build();
+    let tls_config = TlsClientConfig::new().with_alpn_http_auto();
     let connector = TlsConnectorLayer::tunnel(None)
-        .with_connector_data(tls_config)
+        .with_base_config(tls_config)
         .into_layer(proxy_connector);
     let connector = HttpsTunnelConnector { inner: connector };
     if let Some(proxy) = proxy {
         upgraded.extensions().insert(proxy);
     }
     IoToProxyBridgeIoLayer::extension_proxy_target_with_connector(connector)
-        .into_layer(IoForwardService::new())
+        .into_layer(IoForwardService::new(Executor::default()))
         .serve(upgraded)
         .await
         .map_err(|err| err.with_context(|| format!("forward CONNECT tunnel to {authority}")))

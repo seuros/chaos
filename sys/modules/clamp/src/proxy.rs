@@ -29,10 +29,10 @@ use rama::{
         server::HttpServer,
         uri::{Authority, Scheme, Uri},
     },
+    net::tls::client::TlsClientConfig,
     rt::Executor,
     service::service_fn,
     tcp::server::TcpListener,
-    tls::rustls::client::TlsConnectorDataBuilder,
 };
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -338,14 +338,12 @@ async fn forward(
 
     let upstream_req = Request::from_parts(parts, Body::from(bytes));
 
-    let tls = TlsConnectorDataBuilder::new()
-        .with_alpn_protocols_http_auto()
-        .build();
+    let tls = TlsClientConfig::new().with_alpn_http_auto();
     let client = EasyHttpWebClient::connector_builder()
         .with_default_transport_connector()
         .with_tls_proxy_support_using_rustls()
         .with_proxy_support()
-        .with_tls_support_using_rustls_and_default_http_version(Some(tls), Version::HTTP_11)
+        .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
         .with_default_http_connector(Executor::default())
         .build_client();
     let client = (
@@ -625,15 +623,13 @@ mod tests {
     }
 
     async fn post(port: u16, path: &str, body: &'static str) -> (u16, String) {
-        let tls = TlsConnectorDataBuilder::new()
-            .with_alpn_protocols_http_auto()
-            .build();
+        let tls = TlsClientConfig::new().with_alpn_http_auto();
         let client = (MapResponseBodyLayer::new_boxed_streaming_body(),).into_layer(
             EasyHttpWebClient::connector_builder()
                 .with_default_transport_connector()
                 .with_tls_proxy_support_using_rustls()
                 .with_proxy_support()
-                .with_tls_support_using_rustls_and_default_http_version(Some(tls), Version::HTTP_11)
+                .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
                 .with_default_http_connector(Executor::default())
                 .build_client(),
         );

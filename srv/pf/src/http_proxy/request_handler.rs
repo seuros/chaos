@@ -37,6 +37,7 @@ use rama::http::Response;
 use rama::http::StatusCode;
 use rama::http::header;
 use rama::http::layer::upgrade::DefaultHttpProxyConnectReplyService;
+use rama::http::layer::upgrade::UpgradeResponse;
 use rama::net::http::RequestContext;
 use rama::net::proxy::ProxyTarget;
 use std::convert::Infallible;
@@ -48,7 +49,7 @@ use tracing::warn;
 pub(super) async fn http_connect_accept(
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
     req: Request,
-) -> Result<(Response, Request), Response> {
+) -> Result<UpgradeResponse<Request, Response>, Response> {
     let app_state = req
         .extensions()
         .get_arc::<NetworkProxyState>()

@@ -89,68 +89,16 @@ pub struct CreateMessageRequest {
     pub task: Option<TaskMetadata>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMessageResult {
     pub role: Role,
     pub content: super::OneOrMany<SamplingMessageContentBlock>,
     pub model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<String>,
-    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<Meta>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CurrentCreateMessageResult {
-    role: Role,
-    content: super::OneOrMany<SamplingMessageContentBlock>,
-    model: String,
-    #[serde(default)]
-    stop_reason: Option<String>,
-    #[serde(rename = "_meta", default)]
-    meta: Option<Meta>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LegacyCreateMessageResult {
-    message: SamplingMessage,
-    model: String,
-    #[serde(default)]
-    stop_reason: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for CreateMessageResult {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum WireCreateMessageResult {
-            Current(CurrentCreateMessageResult),
-            Legacy(LegacyCreateMessageResult),
-        }
-
-        match WireCreateMessageResult::deserialize(deserializer)? {
-            WireCreateMessageResult::Current(current) => Ok(CreateMessageResult {
-                role: current.role,
-                content: current.content,
-                model: current.model,
-                stop_reason: current.stop_reason,
-                meta: current.meta,
-            }),
-            WireCreateMessageResult::Legacy(legacy) => Ok(CreateMessageResult {
-                role: legacy.message.role,
-                content: legacy.message.content,
-                model: legacy.model,
-                stop_reason: legacy.stop_reason,
-                meta: legacy.message.meta,
-            }),
-        }
-    }
 }
 
 impl CreateMessageResult {

@@ -351,25 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_message_result_accepts_legacy_shape() {
-        let result: CreateMessageResult = serde_json::from_value(serde_json::json!({
-            "message": {
-                "role": "assistant",
-                "content": {
-                    "type": "text",
-                    "text": "hello"
-                }
-            },
-            "model": "test-model",
-            "stopReason": "endTurn"
-        }))
-        .unwrap();
-
-        assert_eq!(result.role, Role::Assistant);
-        assert_eq!(result.stop_reason.as_deref(), Some("endTurn"));
-    }
-
-    #[test]
     fn test_url_elicitation_request_deserializes() {
         let request: CreateElicitationRequest = serde_json::from_value(serde_json::json!({
             "mode": "url",

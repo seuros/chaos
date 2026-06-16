@@ -231,7 +231,7 @@ chaos-auth-test-fixtures = { path = "lib/libutil/auth-test-fixtures" }
 chaos-check = { path = "tests/check" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.1.31", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.1.40", default-features = false, features = ["stdio", "macros"] }
 
 # External
 age = "0.11.2"

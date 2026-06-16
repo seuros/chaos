@@ -1,6 +1,5 @@
 mod engine;
 pub mod events;
-mod legacy_notify;
 mod registry;
 mod schema;
 mod types;
@@ -12,8 +11,6 @@ pub use events::session_start::SessionStartRequest;
 pub use events::session_start::SessionStartSource;
 pub use events::stop::StopOutcome;
 pub use events::stop::StopRequest;
-pub use legacy_notify::legacy_notify_json;
-pub use legacy_notify::notify_hook;
 pub use registry::Hooks;
 pub use registry::HooksConfig;
 pub use registry::command_from_argv;

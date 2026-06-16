@@ -2,15 +2,6 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn use_legacy_landlock_flag_is_no_longer_emitted() {
-    let command = vec!["/bin/true".to_string()];
-    let cwd = Path::new("/tmp");
-
-    let args = create_linux_sandbox_command_args(command, cwd, false);
-    assert_eq!(args.contains(&"--use-legacy-landlock".to_string()), false);
-}
-
-#[test]
 fn proxy_flag_is_included_when_requested() {
     let command = vec!["/bin/true".to_string()];
     let cwd = Path::new("/tmp");

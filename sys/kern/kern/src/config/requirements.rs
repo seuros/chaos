@@ -619,7 +619,6 @@ impl Config {
             },
             approvals_reviewer,
             enforce_residency: enforce_residency.value,
-            notify: cfg.notify,
             user_instructions,
             base_instructions,
             personality,

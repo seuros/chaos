@@ -215,28 +215,6 @@ pub struct Config {
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
-    /// Optional external notifier command. When set, ChaOS will spawn this
-    /// program after each completed *turn* (i.e. when the agent finishes
-    /// processing a user submission). The value must be the full command
-    /// broken into argv tokens **without** the trailing JSON argument - Chaos
-    /// appends one extra argument containing a JSON payload describing the
-    /// event.
-    ///
-    /// Example `~/.chaos/config.toml` snippet:
-    ///
-    /// ```toml
-    /// notify = ["notify-send", "Chaos"]
-    /// ```
-    ///
-    /// which will be invoked as:
-    ///
-    /// ```shell
-    /// notify-send Chaos '{"type":"agent-turn-complete","turn-id":"12345"}'
-    /// ```
-    ///
-    /// If unset the feature is disabled.
-    pub notify: Option<Vec<String>>,
-
     /// TUI notifications preference. When set, the TUI will send terminal notifications on
     /// approvals and turn completions when not focused.
     pub tui_notifications: Notifications,
@@ -533,10 +511,6 @@ pub struct ConfigToml {
     #[serde(default)]
     pub permissions: Option<PermissionsToml>,
 
-    /// Optional external command to spawn for end-user notifications.
-    #[serde(default)]
-    pub notify: Option<Vec<String>>,
-
     /// System instructions.
     pub instructions: Option<String>,
 
@@ -729,10 +703,6 @@ pub struct ConfigToml {
     /// See [`crate::config::types::Notices`] for more details
     pub notice: Option<Notice>,
 
-    /// Legacy, now use `model_instructions_file`.
-    /// Deprecated: ignored. Use `model_instructions_file`.
-    #[schemars(skip)]
-    pub experimental_instructions_file: Option<AbsolutePathBuf>,
     pub experimental_compact_prompt_file: Option<AbsolutePathBuf>,
     /// Preferred OSS provider for local models, e.g. "lmstudio" or "ollama".
     pub oss_provider: Option<String>,
@@ -1145,10 +1115,6 @@ pub fn set_default_oss_provider(
     provider: &str,
 ) -> std::io::Result<()> {
     serialization::set_default_oss_provider(chaos_home, provider)
-}
-
-pub(crate) fn uses_deprecated_instructions_file(config_layer_stack: &ConfigLayerStack) -> bool {
-    serialization::uses_deprecated_instructions_file(config_layer_stack)
 }
 
 /// Returns the path to the folder where Chaos logs are stored. Does not verify

@@ -70,22 +70,6 @@ pub struct LandlockCommand {
     #[arg(long = "allow-network-for-proxy", hide = true, default_value_t = false)]
     pub allow_network_for_proxy: bool,
 
-    /// Accepted for backward compatibility but ignored.
-    #[arg(long = "use-legacy-landlock", hide = true, default_value_t = false)]
-    pub _use_legacy_landlock: bool,
-
-    /// Accepted for backward compatibility but ignored.
-    #[arg(long = "apply-seccomp-then-exec", hide = true, default_value_t = false)]
-    pub _apply_seccomp_then_exec: bool,
-
-    /// Accepted for backward compatibility but ignored.
-    #[arg(long = "no-proc", hide = true, default_value_t = false)]
-    pub _no_proc: bool,
-
-    /// Accepted for backward compatibility but ignored.
-    #[arg(long = "proxy-route-spec", hide = true)]
-    pub _proxy_route_spec: Option<String>,
-
     /// Full command args to run under the Linux sandbox helper.
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,

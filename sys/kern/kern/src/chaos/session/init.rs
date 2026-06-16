@@ -283,19 +283,6 @@ impl Session {
         .await;
         let mut post_session_configured_events = Vec::<Event>::new();
 
-        if crate::config::uses_deprecated_instructions_file(&config.config_layer_stack) {
-            post_session_configured_events.push(Event {
-                id: INITIAL_SUBMIT_ID.to_owned(),
-                msg: EventMsg::DeprecationNotice(crate::protocol::DeprecationNoticeEvent {
-                    summary: "`experimental_instructions_file` is deprecated and ignored. Use `model_instructions_file` instead."
-                        .to_string(),
-                    details: Some(
-                        "Move the setting to `model_instructions_file` in config.toml (or under a profile) to load instructions from a file."
-                            .to_string(),
-                    ),
-                }),
-            });
-        }
         for message in &config.startup_warnings {
             post_session_configured_events.push(Event {
                 id: "".to_owned(),
@@ -453,7 +440,6 @@ impl Session {
         let hook_shell_program = hook_shell_argv.remove(0);
         let _ = hook_shell_argv.pop();
         let hooks = Hooks::new(HooksConfig {
-            legacy_notify_argv: config.notify.clone(),
             config_layer_stack: Some(config.config_layer_stack.clone()),
             shell_program: Some(hook_shell_program),
             shell_args: hook_shell_argv,

@@ -441,10 +441,7 @@ fn make_test_session_services(
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
         ),
-        hooks: Hooks::new(HooksConfig {
-            legacy_notify_argv: config.notify.clone(),
-            ..HooksConfig::default()
-        }),
+        hooks: Hooks::new(HooksConfig::default()),
         rollout: Mutex::new(None),
         user_shell: Arc::new(default_user_shell()),
         shell_snapshot_tx: watch::channel(None).0,

@@ -872,7 +872,6 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(None),
         user_instructions: None,
-        notify: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),
         mcp_servers: Constrained::allow_any(HashMap::new()),

@@ -64,8 +64,6 @@ mod approvals;
 mod auth_refresh;
 #[path = "chaos_delegate.rs"]
 mod chaos_delegate;
-#[path = "deprecation_notice.rs"]
-mod deprecation_notice;
 #[path = "exec.rs"]
 mod exec;
 #[path = "exec_policy.rs"]
@@ -151,8 +149,6 @@ mod undo;
 #[path = "unified_exec.rs"]
 mod unified_exec;
 
-#[path = "user_notification.rs"]
-mod user_notification;
 #[path = "user_shell_cmd.rs"]
 mod user_shell_cmd;
 #[path = "view_image.rs"]

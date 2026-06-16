@@ -5,13 +5,13 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
-use std::borrow::Cow;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 use crate::bottom_pane::footer_tips::render_footer_tip_lines;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::bottom_pane::scroll_state::ScrollState;
+use crate::bottom_pane::selection_popup_common::line_to_owned;
 use crate::bottom_pane::selection_popup_common::measure_rows_height;
 use crate::bottom_pane::selection_popup_common::menu_surface_inset;
 use crate::bottom_pane::selection_popup_common::menu_surface_padding_height;
@@ -42,21 +42,6 @@ struct UnansweredConfirmationLayout {
     hint_lines: Vec<Line<'static>>,
     rows: Vec<crate::bottom_pane::selection_popup_common::GenericDisplayRow>,
     state: ScrollState,
-}
-
-fn line_to_owned(line: Line<'_>) -> Line<'static> {
-    Line {
-        style: line.style,
-        alignment: line.alignment,
-        spans: line
-            .spans
-            .into_iter()
-            .map(|span| Span {
-                style: span.style,
-                content: Cow::Owned(span.content.into_owned()),
-            })
-            .collect(),
-    }
 }
 
 impl Renderable for RequestUserInputOverlay {

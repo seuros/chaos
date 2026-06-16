@@ -23,6 +23,7 @@ pub mod markdown;
 pub mod markdown_render;
 pub mod markdown_stream;
 pub mod mention_codec;
+mod modifier_diff;
 pub mod multi_agents;
 pub mod notifications;
 pub mod osc8;

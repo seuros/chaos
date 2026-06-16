@@ -360,19 +360,7 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => {
-                let content_text = match &output.body {
-                    chaos_ipc::models::FunctionCallOutputBody::Text(text) => text.clone(),
-                    chaos_ipc::models::FunctionCallOutputBody::ContentItems(items) => items
-                        .iter()
-                        .filter_map(|c| match c {
-                            chaos_ipc::models::FunctionCallOutputContentItem::InputText {
-                                text,
-                            } => Some(text.as_str()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                };
+                let content_text = crate::common::function_output_text(&output.body);
                 messages.push(AnthropicMessage {
                     role: "user".to_string(),
                     content: serde_json::json!([{

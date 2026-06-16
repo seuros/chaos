@@ -334,19 +334,7 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<TzMessage> {
                 tool_name,
                 ..
             } => {
-                let content_text = match &output.body {
-                    chaos_ipc::models::FunctionCallOutputBody::Text(text) => text.clone(),
-                    chaos_ipc::models::FunctionCallOutputBody::ContentItems(items) => items
-                        .iter()
-                        .filter_map(|c| match c {
-                            chaos_ipc::models::FunctionCallOutputContentItem::InputText {
-                                text,
-                            } => Some(text.as_str()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                };
+                let content_text = crate::common::function_output_text(&output.body);
                 messages.push(TzMessage {
                     role: "user".to_string(),
                     content: vec![serde_json::json!({

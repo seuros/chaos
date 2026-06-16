@@ -3,9 +3,6 @@ use std::path::PathBuf;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::HookCompletedEvent;
 use chaos_ipc::protocol::HookEventName;
-use chaos_ipc::protocol::HookOutputEntry;
-use chaos_ipc::protocol::HookOutputEntryKind;
-use chaos_ipc::protocol::HookRunStatus;
 use chaos_ipc::protocol::HookRunSummary;
 
 use crate::engine::CommandShell;
@@ -123,96 +120,31 @@ fn parse_completed(
     run_result: CommandRunResult,
     turn_id: Option<String>,
 ) -> dispatcher::ParsedHandler<BeforeTurnHandlerData> {
-    let mut entries = Vec::new();
-    let mut status = HookRunStatus::Completed;
-    let mut should_stop = false;
-    let mut stop_reason = None;
-    let mut additional_context_for_model = None;
-
-    match run_result.error.as_deref() {
-        Some(error) => {
-            status = HookRunStatus::Failed;
-            entries.push(HookOutputEntry {
-                kind: HookOutputEntryKind::Error,
-                text: error.to_string(),
-            });
-        }
-        None => match run_result.exit_code {
-            Some(0) => {
-                let trimmed_stdout = run_result.stdout.trim();
-                if trimmed_stdout.is_empty() {
-                } else if let Some(parsed) = output_parser::parse_before_turn(&run_result.stdout) {
-                    if let Some(system_message) = parsed.universal.system_message {
-                        entries.push(HookOutputEntry {
-                            kind: HookOutputEntryKind::Warning,
-                            text: system_message,
-                        });
-                    }
-                    if let Some(additional_context) = parsed.additional_context {
-                        entries.push(HookOutputEntry {
-                            kind: HookOutputEntryKind::Context,
-                            text: additional_context.clone(),
-                        });
-                        if parsed.universal.continue_processing {
-                            additional_context_for_model = Some(additional_context);
-                        }
-                    }
-                    let _ = parsed.universal.suppress_output;
-                    if !parsed.universal.continue_processing {
-                        status = HookRunStatus::Stopped;
-                        should_stop = true;
-                        stop_reason = parsed.universal.stop_reason.clone();
-                        if let Some(stop_reason_text) = parsed.universal.stop_reason {
-                            entries.push(HookOutputEntry {
-                                kind: HookOutputEntryKind::Stop,
-                                text: stop_reason_text,
-                            });
-                        }
-                    }
-                // Preserve plain-text context support without treating malformed JSON as context.
-                } else if trimmed_stdout.starts_with('{') || trimmed_stdout.starts_with('[') {
-                    status = HookRunStatus::Failed;
-                    entries.push(HookOutputEntry {
-                        kind: HookOutputEntryKind::Error,
-                        text: "hook returned invalid before turn JSON output".to_string(),
-                    });
-                } else {
-                    let additional_context = trimmed_stdout.to_string();
-                    entries.push(HookOutputEntry {
-                        kind: HookOutputEntryKind::Context,
-                        text: additional_context.clone(),
-                    });
-                    additional_context_for_model = Some(additional_context);
-                }
-            }
-            Some(exit_code) => {
-                status = HookRunStatus::Failed;
-                entries.push(HookOutputEntry {
-                    kind: HookOutputEntryKind::Error,
-                    text: format!("hook exited with code {exit_code}"),
-                });
-            }
-            None => {
-                status = HookRunStatus::Failed;
-                entries.push(HookOutputEntry {
-                    kind: HookOutputEntryKind::Error,
-                    text: "hook exited without a status code".to_string(),
-                });
-            }
+    let completion = crate::events::classify_universal_completion(
+        &run_result,
+        "hook returned invalid before turn JSON output",
+        |stdout| {
+            output_parser::parse_before_turn(stdout)
+                .map(|parsed| (parsed.universal, parsed.additional_context))
         },
-    }
+    );
 
     let completed = HookCompletedEvent {
         turn_id,
-        run: dispatcher::completed_summary(handler, &run_result, status, entries),
+        run: dispatcher::completed_summary(
+            handler,
+            &run_result,
+            completion.status,
+            completion.entries,
+        ),
     };
 
     dispatcher::ParsedHandler {
         completed,
         data: BeforeTurnHandlerData {
-            should_stop,
-            stop_reason,
-            additional_context_for_model,
+            should_stop: completion.should_stop,
+            stop_reason: completion.stop_reason,
+            additional_context_for_model: completion.additional_context_for_model,
         },
     }
 }
@@ -234,26 +166,8 @@ fn serialization_failure_outcome(
     turn_id: Option<String>,
     error_message: String,
 ) -> BeforeTurnOutcome {
-    let hook_events = handlers
-        .into_iter()
-        .map(|handler| {
-            let mut run = dispatcher::running_summary(&handler);
-            run.status = HookRunStatus::Failed;
-            run.completed_at = Some(run.started_at);
-            run.duration_ms = Some(0);
-            run.entries = vec![HookOutputEntry {
-                kind: HookOutputEntryKind::Error,
-                text: error_message.clone(),
-            }];
-            HookCompletedEvent {
-                turn_id: turn_id.clone(),
-                run,
-            }
-        })
-        .collect();
-
     BeforeTurnOutcome {
-        hook_events,
+        hook_events: crate::events::failed_hook_events(handlers, turn_id, error_message),
         should_stop: false,
         stop_reason: None,
         additional_context: None,

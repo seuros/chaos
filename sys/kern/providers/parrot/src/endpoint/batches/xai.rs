@@ -18,11 +18,11 @@ use chaos_abi::turn_result::TurnError;
 use chaos_abi::turn_result::TurnOutput;
 use codex_client::ChaosHttpClient;
 use rama::http::HeaderValue;
-use rama::http::StatusCode;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 
+use super::classify_status;
 use crate::chat_completions::build_request_body;
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
@@ -275,21 +275,6 @@ impl SpoolBackend for XaiSpoolBackend {
             Ok(())
         })
     }
-}
-
-fn classify_status(status: StatusCode, body: &str) -> Result<(), SpoolError> {
-    if status.is_success() {
-        return Ok(());
-    }
-    let code = status.as_u16();
-    Err(match code {
-        401 | 403 => SpoolError::Auth,
-        429 => SpoolError::RateLimit { retry_after: None },
-        _ => SpoolError::ProviderError {
-            status: code,
-            message: body.to_string(),
-        },
-    })
 }
 
 fn decode_entry(entry: &ResultEntry) -> Result<TurnResult, SpoolError> {

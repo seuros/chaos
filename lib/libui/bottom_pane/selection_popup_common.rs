@@ -170,7 +170,7 @@ pub fn wrap_styled_line<'a>(line: &'a Line<'a>, width: u16) -> Vec<Line<'a>> {
     word_wrap_line(line, opts)
 }
 
-fn line_to_owned(line: Line<'_>) -> Line<'static> {
+pub(crate) fn line_to_owned(line: Line<'_>) -> Line<'static> {
     Line {
         style: line.style,
         alignment: line.alignment,

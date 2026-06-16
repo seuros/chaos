@@ -305,26 +305,8 @@ fn serialization_failure_outcome(
     turn_id: Option<String>,
     error_message: String,
 ) -> StopOutcome {
-    let hook_events = handlers
-        .into_iter()
-        .map(|handler| {
-            let mut run = dispatcher::running_summary(&handler);
-            run.status = HookRunStatus::Failed;
-            run.completed_at = Some(run.started_at);
-            run.duration_ms = Some(0);
-            run.entries = vec![HookOutputEntry {
-                kind: HookOutputEntryKind::Error,
-                text: error_message.clone(),
-            }];
-            HookCompletedEvent {
-                turn_id: turn_id.clone(),
-                run,
-            }
-        })
-        .collect();
-
     StopOutcome {
-        hook_events,
+        hook_events: crate::events::failed_hook_events(handlers, turn_id, error_message),
         should_stop: false,
         stop_reason: None,
         should_block: false,

@@ -434,53 +434,15 @@ async fn handle_list_resources(
     }
     .await;
 
-    match payload_result {
-        Ok(payload) => match serialize_function_output(payload) {
-            Ok(output) => {
-                let content =
-                    function_call_output_content_items_to_text(&output.body).unwrap_or_default();
-                let duration = start.elapsed();
-                emit_tool_call_end(
-                    &session,
-                    turn.as_ref(),
-                    &call_id,
-                    invocation,
-                    duration,
-                    Ok(call_tool_result_from_content(&content, output.success)),
-                )
-                .await;
-                Ok(output)
-            }
-            Err(err) => {
-                let duration = start.elapsed();
-                let message = err.to_string();
-                emit_tool_call_end(
-                    &session,
-                    turn.as_ref(),
-                    &call_id,
-                    invocation,
-                    duration,
-                    Err(message.clone()),
-                )
-                .await;
-                Err(err)
-            }
-        },
-        Err(err) => {
-            let duration = start.elapsed();
-            let message = err.to_string();
-            emit_tool_call_end(
-                &session,
-                turn.as_ref(),
-                &call_id,
-                invocation,
-                duration,
-                Err(message.clone()),
-            )
-            .await;
-            Err(err)
-        }
-    }
+    finish_resource_call(
+        &session,
+        turn.as_ref(),
+        &call_id,
+        invocation,
+        start,
+        payload_result,
+    )
+    .await
 }
 
 async fn handle_list_resource_templates(
@@ -549,53 +511,15 @@ async fn handle_list_resource_templates(
     }
     .await;
 
-    match payload_result {
-        Ok(payload) => match serialize_function_output(payload) {
-            Ok(output) => {
-                let content =
-                    function_call_output_content_items_to_text(&output.body).unwrap_or_default();
-                let duration = start.elapsed();
-                emit_tool_call_end(
-                    &session,
-                    turn.as_ref(),
-                    &call_id,
-                    invocation,
-                    duration,
-                    Ok(call_tool_result_from_content(&content, output.success)),
-                )
-                .await;
-                Ok(output)
-            }
-            Err(err) => {
-                let duration = start.elapsed();
-                let message = err.to_string();
-                emit_tool_call_end(
-                    &session,
-                    turn.as_ref(),
-                    &call_id,
-                    invocation,
-                    duration,
-                    Err(message.clone()),
-                )
-                .await;
-                Err(err)
-            }
-        },
-        Err(err) => {
-            let duration = start.elapsed();
-            let message = err.to_string();
-            emit_tool_call_end(
-                &session,
-                turn.as_ref(),
-                &call_id,
-                invocation,
-                duration,
-                Err(message.clone()),
-            )
-            .await;
-            Err(err)
-        }
-    }
+    finish_resource_call(
+        &session,
+        turn.as_ref(),
+        &call_id,
+        invocation,
+        start,
+        payload_result,
+    )
+    .await
 }
 
 enum TaskUri<'a> {
@@ -746,53 +670,15 @@ async fn handle_read_resource(
     }
     .await;
 
-    match payload_result {
-        Ok(payload) => match serialize_function_output(payload) {
-            Ok(output) => {
-                let content =
-                    function_call_output_content_items_to_text(&output.body).unwrap_or_default();
-                let duration = start.elapsed();
-                emit_tool_call_end(
-                    &session,
-                    turn.as_ref(),
-                    &call_id,
-                    invocation,
-                    duration,
-                    Ok(call_tool_result_from_content(&content, output.success)),
-                )
-                .await;
-                Ok(output)
-            }
-            Err(err) => {
-                let duration = start.elapsed();
-                let message = err.to_string();
-                emit_tool_call_end(
-                    &session,
-                    turn.as_ref(),
-                    &call_id,
-                    invocation,
-                    duration,
-                    Err(message.clone()),
-                )
-                .await;
-                Err(err)
-            }
-        },
-        Err(err) => {
-            let duration = start.elapsed();
-            let message = err.to_string();
-            emit_tool_call_end(
-                &session,
-                turn.as_ref(),
-                &call_id,
-                invocation,
-                duration,
-                Err(message.clone()),
-            )
-            .await;
-            Err(err)
-        }
-    }
+    finish_resource_call(
+        &session,
+        turn.as_ref(),
+        &call_id,
+        invocation,
+        start,
+        payload_result,
+    )
+    .await
 }
 
 fn call_tool_result_from_content(content: &str, success: Option<bool>) -> CallToolResult {
@@ -840,6 +726,58 @@ async fn emit_tool_call_end(
             }),
         )
         .await;
+}
+
+async fn finish_resource_call<T: Serialize>(
+    session: &Arc<Session>,
+    turn: &TurnContext,
+    call_id: &str,
+    invocation: McpInvocation,
+    start: Instant,
+    payload_result: Result<T, FunctionCallError>,
+) -> Result<FunctionToolOutput, FunctionCallError> {
+    match payload_result {
+        Ok(payload) => match serialize_function_output(payload) {
+            Ok(output) => {
+                let content =
+                    function_call_output_content_items_to_text(&output.body).unwrap_or_default();
+                emit_tool_call_end(
+                    session,
+                    turn,
+                    call_id,
+                    invocation,
+                    start.elapsed(),
+                    Ok(call_tool_result_from_content(&content, output.success)),
+                )
+                .await;
+                Ok(output)
+            }
+            Err(err) => {
+                emit_tool_call_end(
+                    session,
+                    turn,
+                    call_id,
+                    invocation,
+                    start.elapsed(),
+                    Err(err.to_string()),
+                )
+                .await;
+                Err(err)
+            }
+        },
+        Err(err) => {
+            emit_tool_call_end(
+                session,
+                turn,
+                call_id,
+                invocation,
+                start.elapsed(),
+                Err(err.to_string()),
+            )
+            .await;
+            Err(err)
+        }
+    }
 }
 
 fn normalize_optional_string(input: Option<String>) -> Option<String> {

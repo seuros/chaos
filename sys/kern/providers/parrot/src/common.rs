@@ -21,6 +21,24 @@ use std::task::Context;
 use std::task::Poll;
 use tokio::sync::mpsc;
 
+/// Flattens a tool-call output body into the plain text that the chat-style
+/// wire formats (Anthropic, chat completions, TensorZero) expect.
+pub(crate) fn function_output_text(body: &chaos_ipc::models::FunctionCallOutputBody) -> String {
+    match body {
+        chaos_ipc::models::FunctionCallOutputBody::Text(text) => text.clone(),
+        chaos_ipc::models::FunctionCallOutputBody::ContentItems(items) => items
+            .iter()
+            .filter_map(|c| match c {
+                chaos_ipc::models::FunctionCallOutputContentItem::InputText { text } => {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
+}
+
 /// Canonical input payload for the compaction endpoint.
 #[derive(Debug, Clone, Serialize)]
 pub struct CompactionInput<'a> {

@@ -37,11 +37,6 @@ pub struct OtelTlsConfig {
 #[derive(Clone, Debug)]
 pub enum OtelExporter {
     None,
-    OtlpGrpc {
-        endpoint: String,
-        headers: HashMap<String, String>,
-        tls: Option<OtelTlsConfig>,
-    },
     OtlpHttp {
         endpoint: String,
         headers: HashMap<String, String>,

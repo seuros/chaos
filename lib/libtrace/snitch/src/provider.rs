@@ -15,9 +15,6 @@ use opentelemetry_otlp::Protocol;
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_otlp::WithHttpConfig;
-use opentelemetry_otlp::WithTonicConfig;
-use opentelemetry_otlp::tonic_types::metadata::MetadataMap;
-use opentelemetry_otlp::tonic_types::transport::ClientTlsConfig;
 use rama::telemetry::opentelemetry::KeyValue;
 use rama::telemetry::opentelemetry::global;
 use rama::telemetry::opentelemetry::sdk::Resource;
@@ -225,33 +222,6 @@ fn build_logger(
 
     match crate::config::resolve_exporter(exporter) {
         OtelExporter::None => return Ok(builder.build()),
-        OtelExporter::OtlpGrpc {
-            endpoint,
-            headers,
-            tls,
-        } => {
-            debug!("Using OTLP Grpc exporter: {endpoint}");
-
-            let header_map = crate::otlp::build_header_map(&headers);
-
-            let base_tls_config = ClientTlsConfig::new()
-                .with_enabled_roots()
-                .assume_http2(true);
-
-            let tls_config = match tls.as_ref() {
-                Some(tls) => crate::otlp::build_grpc_tls_config(&endpoint, base_tls_config, tls)?,
-                None => base_tls_config,
-            };
-
-            let exporter = LogExporter::builder()
-                .with_tonic()
-                .with_endpoint(endpoint)
-                .with_metadata(MetadataMap::from_headers(header_map))
-                .with_tls_config(tls_config)
-                .build()?;
-
-            builder = builder.with_batch_exporter(exporter);
-        }
         OtelExporter::OtlpHttp {
             endpoint,
             headers,
@@ -294,31 +264,6 @@ fn build_tracer_provider(
 ) -> Result<SdkTracerProvider, Box<dyn Error>> {
     let span_exporter = match crate::config::resolve_exporter(exporter) {
         OtelExporter::None => return Ok(SdkTracerProvider::builder().build()),
-        OtelExporter::OtlpGrpc {
-            endpoint,
-            headers,
-            tls,
-        } => {
-            debug!("Using OTLP Grpc exporter for traces: {endpoint}");
-
-            let header_map = crate::otlp::build_header_map(&headers);
-
-            let base_tls_config = ClientTlsConfig::new()
-                .with_enabled_roots()
-                .assume_http2(true);
-
-            let tls_config = match tls.as_ref() {
-                Some(tls) => crate::otlp::build_grpc_tls_config(&endpoint, base_tls_config, tls)?,
-                None => base_tls_config,
-            };
-
-            SpanExporter::builder()
-                .with_tonic()
-                .with_endpoint(endpoint)
-                .with_metadata(MetadataMap::from_headers(header_map))
-                .with_tls_config(tls_config)
-                .build()?
-        }
         OtelExporter::OtlpHttp {
             endpoint,
             headers,

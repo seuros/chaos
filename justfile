@@ -48,44 +48,37 @@ install:
         esac
     }
     # Package name mapping by OS / package manager.
-    #   protobuf -> protoc binary (rama-grpc build script).
     #   clang    -> libclang + resource headers (rama-dns via bindgen).
     #   pkgconf  -> pkg-config binary (libdbus-sys build script).
     #   dbus     -> libdbus-1 headers + shared library (libdbus-sys link).
     case "$os" in
         Linux)
             if command -v apt >/dev/null 2>&1; then
-                protobuf_pkg=protobuf-compiler
                 clang_pkg=libclang-dev
                 pkgconf_pkg=pkg-config
                 dbus_pkg=libdbus-1-dev
             elif command -v dnf >/dev/null 2>&1; then
-                protobuf_pkg=protobuf-compiler
                 clang_pkg=clang-devel
                 pkgconf_pkg=pkgconf-pkg-config
                 dbus_pkg=dbus-devel
             else
-                protobuf_pkg=protobuf
                 clang_pkg=clang
                 pkgconf_pkg=pkgconf
                 dbus_pkg=dbus
             fi
             ;;
         FreeBSD)
-            protobuf_pkg=protobuf
             clang_pkg=$(pkg rquery -x '%n' '^llvm[0-9]+$' 2>/dev/null | sort -V | tail -1)
             [ -z "$clang_pkg" ] && clang_pkg=llvm
             pkgconf_pkg=pkgconf
             dbus_pkg=dbus
             ;;
         Darwin)
-            protobuf_pkg=protobuf
             clang_pkg=llvm
             pkgconf_pkg=pkgconf
             dbus_pkg=dbus
             ;;
         *)
-            protobuf_pkg=protobuf
             clang_pkg=clang
             pkgconf_pkg=pkgconf
             dbus_pkg=dbus
@@ -109,14 +102,9 @@ install:
         done
     fi
     missing=
-    need_protobuf_pkg=
     need_clang_pkg=
     need_pkgconf_pkg=
     need_dbus_pkg=
-    if ! command -v protoc >/dev/null 2>&1 && [ -z "${PROTOC:-}" ]; then
-        missing="${missing}protoc "
-        need_protobuf_pkg=$protobuf_pkg
-    fi
     clang_ok=1
     if command -v clang >/dev/null 2>&1; then
         resource_dir=$(clang -print-resource-dir 2>/dev/null || true)
@@ -149,19 +137,17 @@ install:
     if [ -n "$missing" ]; then
         echo "error: missing build prerequisites: $missing" >&2
         echo "" >&2
-        echo "chaos pulls in rama-grpc (protoc), rama-dns (libclang," >&2
-        echo "via bindgen), and arboard (pkg-config + libdbus-1 for" >&2
-        echo "the clipboard backend on Linux and FreeBSD)." >&2
+        echo "chaos pulls in rama-dns (libclang via bindgen) and" >&2
+        echo "arboard (pkg-config + libdbus-1 for the clipboard" >&2
+        echo "backend on Linux and FreeBSD)." >&2
         echo "" >&2
         set --
-        [ -n "$need_protobuf_pkg" ] && set -- "$@" "$need_protobuf_pkg"
         [ -n "$need_clang_pkg" ]    && set -- "$@" "$need_clang_pkg"
         [ -n "$need_pkgconf_pkg" ]  && set -- "$@" "$need_pkgconf_pkg"
         [ -n "$need_dbus_pkg" ]     && set -- "$@" "$need_dbus_pkg"
         hint_pkg "$@"
         echo "" >&2
         echo "Or point the build at existing binaries:" >&2
-        [ -n "$need_protobuf_pkg" ] && echo "  export PROTOC=/path/to/protoc" >&2
         [ -n "$need_clang_pkg" ]    && echo "  export LIBCLANG_PATH=/path/to/libclang/lib" >&2
         [ -n "$need_pkgconf_pkg" ]  && echo "  ensure pkg-config is on PATH" >&2
         [ -n "$need_dbus_pkg" ]     && echo "  ensure PKG_CONFIG_PATH points at a directory with dbus-1.pc" >&2

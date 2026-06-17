@@ -74,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          upkg install protobuf llvm pkgconf
+          upkg install llvm pkgconf
           LLVM_PREFIX="$(brew --prefix llvm)"
           echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
           echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
@@ -82,7 +82,7 @@ jobs:
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         shell: bash
-        run: upkg install pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
+        run: upkg install pkg-config libcap-dev libdbus-1-dev libclang-dev
 
       - uses: dtolnay/rust-toolchain@1.95.0
         if: matrix.os_label != 'dragonfly-x86_64'
@@ -157,14 +157,14 @@ jobs:
       - name: Install Linux build dependencies
         if: matrix.os_label == 'linux-aarch64'
         shell: bash
-        run: upkg install pkg-config libcap-dev libdbus-1-dev protobuf-compiler libclang-dev
+        run: upkg install pkg-config libcap-dev libdbus-1-dev libclang-dev
 
       - name: Install FreeBSD build dependencies
         if: matrix.os_label == 'freebsd-x86_64'
         shell: sh
         run: |
           set -eu
-          upkg install protobuf llvm pkgconf dbus
+          upkg install llvm pkgconf dbus
           libclang_path=$(ls -d /usr/local/llvm*/lib 2>/dev/null | sort -V -r | head -1)
           if [ -n "$libclang_path" ] && [ -f "$libclang_path/libclang.so" ]; then
             echo "LIBCLANG_PATH=${libclang_path}" >> "$GITHUB_ENV"
@@ -176,7 +176,7 @@ jobs:
         run: |
           set -eu
           export PATH=/raven/bin:$PATH
-          for cmd in protoc llvm-config pkgconf dbus-daemon rustc cargo; do
+          for cmd in llvm-config pkgconf dbus-daemon rustc cargo; do
             command -v "$cmd" || { echo "error: $cmd not found"; exit 1; }
           done
           echo "PATH=/raven/bin:/usr/local/bin:$PATH" >> "$GITHUB_ENV"

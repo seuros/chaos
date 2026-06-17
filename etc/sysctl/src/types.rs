@@ -615,13 +615,6 @@ pub enum OtelExporterKind {
         #[serde(default)]
         tls: Option<OtelTlsConfig>,
     },
-    OtlpGrpc {
-        endpoint: String,
-        #[serde(default)]
-        headers: HashMap<String, String>,
-        #[serde(default)]
-        tls: Option<OtelTlsConfig>,
-    },
 }
 
 /// OTEL settings loaded from config.toml. Fields are optional so we can apply defaults.

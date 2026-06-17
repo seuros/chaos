@@ -45,22 +45,6 @@ pub fn build_provider(
                 }),
             }
         }
-        Kind::OtlpGrpc {
-            endpoint,
-            headers,
-            tls,
-        } => OtelExporter::OtlpGrpc {
-            endpoint: endpoint.clone(),
-            headers: headers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            tls: tls.as_ref().map(|config| OtelTlsSettings {
-                ca_certificate: config.ca_certificate.clone(),
-                client_certificate: config.client_certificate.clone(),
-                client_private_key: config.client_private_key.clone(),
-            }),
-        },
     };
 
     let exporter = to_otel_exporter(&config.otel.exporter);

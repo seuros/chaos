@@ -40,14 +40,11 @@ opentelemetry_sdk = { workspace = true, features = [
     "trace",
 ] }
 opentelemetry-otlp = { workspace = true, features = [
-    "grpc-tonic",
     "http-proto",
     "http-json",
     "logs",
     "metrics",
     "trace",
-    "tls",
-    "tls-roots",
 ]}
 http = { workspace = true }
 os_info = { workspace = true }

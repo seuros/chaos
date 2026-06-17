@@ -14,9 +14,6 @@ use opentelemetry_otlp::OTEL_EXPORTER_OTLP_METRICS_TIMEOUT;
 use opentelemetry_otlp::Protocol;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_otlp::WithHttpConfig;
-use opentelemetry_otlp::WithTonicConfig;
-use opentelemetry_otlp::tonic_types::metadata::MetadataMap;
-use opentelemetry_otlp::tonic_types::transport::ClientTlsConfig;
 use rama::telemetry::opentelemetry::KeyValue;
 use rama::telemetry::opentelemetry::metrics::Counter;
 use rama::telemetry::opentelemetry::metrics::Histogram;
@@ -341,36 +338,6 @@ fn build_otlp_metric_exporter(
 ) -> Result<opentelemetry_otlp::MetricExporter> {
     match exporter {
         OtelExporter::None => Err(MetricsError::ExporterDisabled),
-        OtelExporter::OtlpGrpc {
-            endpoint,
-            headers,
-            tls,
-        } => {
-            debug!("Using OTLP Grpc exporter for metrics: {endpoint}");
-
-            let header_map = crate::otlp::build_header_map(&headers);
-
-            let base_tls_config = ClientTlsConfig::new()
-                .with_enabled_roots()
-                .assume_http2(true);
-
-            let tls_config = match tls.as_ref() {
-                Some(tls) => crate::otlp::build_grpc_tls_config(&endpoint, base_tls_config, tls)
-                    .map_err(|err| MetricsError::InvalidConfig {
-                        message: err.to_string(),
-                    })?,
-                None => base_tls_config,
-            };
-
-            opentelemetry_otlp::MetricExporter::builder()
-                .with_tonic()
-                .with_endpoint(endpoint)
-                .with_temporality(temporality)
-                .with_metadata(MetadataMap::from_headers(header_map))
-                .with_tls_config(tls_config)
-                .build()
-                .map_err(|source| MetricsError::ExporterBuild { source })
-        }
         OtelExporter::OtlpHttp {
             endpoint,
             headers,

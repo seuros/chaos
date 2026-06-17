@@ -1,66 +1,6 @@
 use crate::config::OtelTlsConfig;
 use crate::rama_otel_client::RamaOtelClient;
-use chaos_realpath::AbsolutePathBuf;
-use http::HeaderMap;
-use http::HeaderName;
-use http::HeaderValue;
-use http::Uri;
-use opentelemetry_otlp::tonic_types::transport::Certificate as TonicCertificate;
-use opentelemetry_otlp::tonic_types::transport::ClientTlsConfig;
-use opentelemetry_otlp::tonic_types::transport::Identity as TonicIdentity;
 use std::error::Error;
-use std::fs;
-use std::io;
-use std::io::ErrorKind;
-use std::path::PathBuf;
-
-pub(crate) fn build_header_map(headers: &std::collections::HashMap<String, String>) -> HeaderMap {
-    let mut header_map = HeaderMap::new();
-    for (key, value) in headers {
-        if let Ok(name) = HeaderName::from_bytes(key.as_bytes())
-            && let Ok(val) = HeaderValue::from_str(value)
-        {
-            header_map.insert(name, val);
-        }
-    }
-    header_map
-}
-
-pub(crate) fn build_grpc_tls_config(
-    endpoint: &str,
-    tls_config: ClientTlsConfig,
-    tls: &OtelTlsConfig,
-) -> Result<ClientTlsConfig, Box<dyn Error>> {
-    let uri: Uri = endpoint.parse()?;
-    let host = uri.host().ok_or_else(|| {
-        config_error(format!(
-            "OTLP gRPC endpoint {endpoint} does not include a host"
-        ))
-    })?;
-
-    let mut config = tls_config.domain_name(host.to_owned());
-
-    if let Some(path) = tls.ca_certificate.as_ref() {
-        let (pem, _) = read_bytes(path)?;
-        config = config.ca_certificate(TonicCertificate::from_pem(pem));
-    }
-
-    match (&tls.client_certificate, &tls.client_private_key) {
-        (Some(cert_path), Some(key_path)) => {
-            let (cert_pem, _) = read_bytes(cert_path)?;
-            let (key_pem, _) = read_bytes(key_path)?;
-            config = config.identity(TonicIdentity::from_pem(cert_pem, key_pem));
-        }
-        (Some(_), None) | (None, Some(_)) => {
-            return Err(config_error(
-                "client_certificate and client_private_key must both be provided for mTLS",
-            ));
-        }
-        (None, None) => {}
-    }
-
-    Ok(config)
-}
 
 /// Build an HTTP client for OTLP HTTP exporters.
 ///
@@ -90,20 +30,6 @@ pub(crate) fn build_async_http_client(
 ) -> Result<RamaOtelClient, Box<dyn Error>> {
     // TODO: wire TLS config into rama's rustls layer for custom CA/mTLS.
     Ok(RamaOtelClient::new())
-}
-
-fn read_bytes(path: &AbsolutePathBuf) -> Result<(Vec<u8>, PathBuf), Box<dyn Error>> {
-    match fs::read(path) {
-        Ok(bytes) => Ok((bytes, path.to_path_buf())),
-        Err(error) => Err(Box::new(io::Error::new(
-            error.kind(),
-            format!("failed to read {}: {error}", path.display()),
-        ))),
-    }
-}
-
-fn config_error(message: impl Into<String>) -> Box<dyn Error> {
-    Box::new(io::Error::new(ErrorKind::InvalidData, message.into()))
 }
 
 #[cfg(test)]

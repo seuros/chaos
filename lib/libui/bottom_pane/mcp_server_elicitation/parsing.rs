@@ -165,6 +165,27 @@ pub(super) fn parse_fields_from_schema(
     Some(fields)
 }
 
+/// Assemble a single-select field from its already-computed parts.
+fn select_field(
+    id: &str,
+    label: String,
+    prompt: String,
+    required: bool,
+    options: Vec<McpServerElicitationOption>,
+    default_idx: Option<usize>,
+) -> Option<McpServerElicitationField> {
+    Some(McpServerElicitationField {
+        id: id.to_string(),
+        label,
+        prompt,
+        required,
+        input: McpServerElicitationFieldInput::Select {
+            options,
+            default_idx,
+        },
+    })
+}
+
 pub(super) fn parse_field(
     id: &str,
     property: McpElicitationPrimitiveSchema,
@@ -197,16 +218,7 @@ pub(super) fn parse_field(
                     }
                 })
                 .collect();
-            Some(McpServerElicitationField {
-                id: id.to_string(),
-                label,
-                prompt,
-                required,
-                input: McpServerElicitationFieldInput::Select {
-                    options,
-                    default_idx,
-                },
-            })
+            select_field(id, label, prompt, required, options, default_idx)
         }
         McpElicitationPrimitiveSchema::Enum(McpElicitationEnumSchema::Legacy(schema)) => {
             let label = schema.title.unwrap_or_else(|| id.to_string());
@@ -229,16 +241,7 @@ pub(super) fn parse_field(
                     value: Value::String(value),
                 })
                 .collect();
-            Some(McpServerElicitationField {
-                id: id.to_string(),
-                label,
-                prompt,
-                required,
-                input: McpServerElicitationFieldInput::Select {
-                    options,
-                    default_idx,
-                },
-            })
+            select_field(id, label, prompt, required, options, default_idx)
         }
         McpElicitationPrimitiveSchema::Enum(McpElicitationEnumSchema::SingleSelect(schema)) => {
             parse_single_select_field(id, schema, required)
@@ -270,16 +273,7 @@ pub(super) fn parse_single_select_field(
                     value: Value::String(value),
                 })
                 .collect();
-            Some(McpServerElicitationField {
-                id: id.to_string(),
-                label,
-                prompt,
-                required,
-                input: McpServerElicitationFieldInput::Select {
-                    options,
-                    default_idx,
-                },
-            })
+            select_field(id, label, prompt, required, options, default_idx)
         }
         McpElicitationSingleSelectEnumSchema::Titled(schema) => {
             let label = schema.title.unwrap_or_else(|| id.to_string());
@@ -299,16 +293,7 @@ pub(super) fn parse_single_select_field(
                     value: Value::String(entry.const_),
                 })
                 .collect();
-            Some(McpServerElicitationField {
-                id: id.to_string(),
-                label,
-                prompt,
-                required,
-                input: McpServerElicitationFieldInput::Select {
-                    options,
-                    default_idx,
-                },
-            })
+            select_field(id, label, prompt, required, options, default_idx)
         }
     }
 }

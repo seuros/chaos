@@ -116,8 +116,7 @@ impl McpServerElicitationOverlay {
             .collect();
         self.current_idx = 0;
         self.validation_error = None;
-        self.composer
-            .set_text_content(String::new(), Vec::new(), Vec::new());
+        self.clear_composer();
     }
 
     fn field_count(&self) -> usize {
@@ -141,6 +140,12 @@ impl McpServerElicitationOverlay {
         self.answers.get_mut(idx)
     }
 
+    /// Reset the composer to an empty text buffer with no elements or pastes.
+    fn clear_composer(&mut self) {
+        self.composer
+            .set_text_content(String::new(), Vec::new(), Vec::new());
+    }
+
     fn capture_composer_draft(&self) -> ComposerDraft {
         ComposerDraft {
             text: self.composer.current_text(),
@@ -160,14 +165,12 @@ impl McpServerElicitationOverlay {
             .set_placeholder_text(self.answer_placeholder().to_string());
         self.composer.set_footer_hint_override(Some(Vec::new()));
         if self.current_field_is_select() {
-            self.composer
-                .set_text_content(String::new(), Vec::new(), Vec::new());
+            self.clear_composer();
             self.composer.move_cursor_to_end();
             return;
         }
         let Some(answer) = self.current_answer() else {
-            self.composer
-                .set_text_content(String::new(), Vec::new(), Vec::new());
+            self.clear_composer();
             self.composer.move_cursor_to_end();
             return;
         };
@@ -199,8 +202,7 @@ impl McpServerElicitationOverlay {
             answer.draft = ComposerDraft::default();
             answer.answer_committed = false;
         }
-        self.composer
-            .set_text_content(String::new(), Vec::new(), Vec::new());
+        self.clear_composer();
         self.composer.move_cursor_to_end();
     }
 

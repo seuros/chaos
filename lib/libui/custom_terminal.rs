@@ -37,6 +37,7 @@ use derive_more::IsVariant;
 use ratatui::backend::Backend;
 use ratatui::backend::ClearType;
 use ratatui::buffer::Buffer;
+use ratatui::buffer::CellDiffOption;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::layout::Size;
@@ -576,7 +577,10 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
     // their place (the skipped cells should be blank anyway), or due to per-cell-skipping:
     let mut to_skip: usize = 0;
     for (i, (current, previous)) in next_buffer.iter().zip(previous_buffer.iter()).enumerate() {
-        if !current.skip && (current != previous || invalidated > 0) && to_skip == 0 {
+        if current.diff_option != CellDiffOption::Skip
+            && (current != previous || invalidated > 0)
+            && to_skip == 0
+        {
             let (x, y) = a.pos_of(i);
             let row = i / a.area.width as usize;
             if x <= last_nonblank_columns[row] {

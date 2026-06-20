@@ -155,7 +155,7 @@ fn install_filesystem_landlock_rules_on_current_thread(
         .create()?
         .add_rules(landlock::path_beneath_rules(&["/"], access_ro))?
         .add_rules(landlock::path_beneath_rules(&["/dev/null"], access_rw))?
-        .set_no_new_privs(true);
+        .no_new_privs(true);
 
     if !writable_roots.is_empty() {
         ruleset = ruleset.add_rules(landlock::path_beneath_rules(&writable_roots, access_rw))?;
@@ -272,7 +272,7 @@ fn install_network_landlock_rules_on_current_thread(allowed_proxy_ports: &[u16])
         .set_compatibility(CompatLevel::BestEffort)
         .handle_access(AccessNet::ConnectTcp)?
         .create()?
-        .set_no_new_privs(true);
+        .no_new_privs(true);
 
     for port in allowed_proxy_ports {
         ruleset = ruleset.add_rule(NetPort::new(*port, AccessNet::ConnectTcp))?;

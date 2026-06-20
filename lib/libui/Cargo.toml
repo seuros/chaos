@@ -112,13 +112,11 @@ rustls = { workspace = true, optional = true }
 libc = { workspace = true }
 
 [dev-dependencies]
-anyhow = { workspace = true }
 assert_matches = { workspace = true }
 insta = { workspace = true }
 pretty_assertions = { workspace = true }
 rand = { workspace = true }
 rustls = { workspace = true }
-serial_test = { workspace = true }
 
 [package.metadata.cargo-shear]
 ignored = ["ratatui-macros"]

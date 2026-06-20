@@ -41,7 +41,6 @@ color-eyre = { workspace = true }
 crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
 jiff = { workspace = true }
 pulldown-cmark = { workspace = true }
-rand = { workspace = true }
 ratatui-hypertile = { workspace = true }
 ratatui-hypertile-extras = { workspace = true }
 ratatui = { workspace = true, features = [
@@ -85,7 +84,6 @@ assert_matches = { workspace = true }
 insta = { workspace = true }
 libui = { workspace = true, features = ["testing"] }
 pretty_assertions = { workspace = true }
-rand = { workspace = true }
 serial_test = { workspace = true }
 uuid = { workspace = true }
 

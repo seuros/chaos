@@ -1285,7 +1285,6 @@ dependencies = [
  "supports-color",
  "tempfile",
  "tokio",
- "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -1335,7 +1334,6 @@ dependencies = [
  "libui",
  "pretty_assertions",
  "pulldown-cmark 0.13.4",
- "rand 0.10.1",
  "ratatui",
  "ratatui-hypertile",
  "ratatui-hypertile-extras",
@@ -1796,7 +1794,6 @@ dependencies = [
  "anyhow",
  "clap",
  "crossbeam-channel",
- "fff-grep",
  "fff-search",
  "ignore",
  "pretty_assertions",
@@ -2324,7 +2321,6 @@ dependencies = [
 name = "chaos-which"
 version = "47.0.0"
 dependencies = [
- "assert_cmd",
  "thiserror 2.0.18",
 ]
 
@@ -3814,9 +3810,9 @@ dependencies = [
 
 [[package]]
 name = "fff-grep"
-version = "0.8.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68286213d07412846c0010a0b227b79c08fbc214cf7822f85cabd9e3f36606ae"
+checksum = "4ca3367e0080e9433f5f8809e6ba6444b9725c025c5c4c41895fc80c4731278d"
 dependencies = [
  "bstr",
  "memchr",
@@ -3838,15 +3834,15 @@ dependencies = [
 
 [[package]]
 name = "fff-query-parser"
-version = "0.8.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5eb0a0363657b57a3a60d12a76a41f799406514b238123487e54290a6f1a62f"
+checksum = "8700449bc66d28ddbc035ea59402536aa947ab219c0b5dfb81109bc6863169d2"
 
 [[package]]
 name = "fff-search"
-version = "0.8.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b6b4517eb8a9b87a46d09e9958f2ddbc036440a9fb5d5ddfc05e6dcf4655ce2"
+checksum = "81b731814c19be6815361c1c885199b1f2ae4afb5cabff23f4b22db0efd1eb7a"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -3872,6 +3868,7 @@ dependencies = [
  "regex",
  "regex-syntax",
  "serde",
+ "signal-hook-registry",
  "smallvec",
  "thiserror 2.0.18",
  "tracing",
@@ -6781,7 +6778,6 @@ name = "libui"
 version = "47.0.0"
 dependencies = [
  "ansi-to-tui",
- "anyhow",
  "arboard",
  "assert_matches",
  "base64 0.22.1",
@@ -6828,7 +6824,6 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "serial_test",
  "shlex 1.3.0",
  "strum 0.28.0",
  "strum_macros 0.28.0",

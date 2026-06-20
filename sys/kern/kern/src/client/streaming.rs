@@ -120,6 +120,26 @@ pub(super) fn build_responses_headers(
     headers
 }
 
+/// Adapt a model adapter's event stream into a `ResponseStream`: convert each
+/// `Ok` event into a `ResponseEvent`, map adapter errors to API errors, and
+/// pipe the result through [`map_response_stream`].
+pub(super) fn adapt_adapter_stream<S, E>(
+    api_stream: S,
+    session_telemetry: SessionTelemetry,
+) -> ResponseStream
+where
+    S: futures::Stream<Item = std::result::Result<E, AbiError>> + Unpin + Send + 'static,
+    E: Send + 'static,
+    ResponseEvent: From<E>,
+{
+    let response_events = api_stream.map(|event| {
+        event
+            .map(ResponseEvent::from)
+            .map_err(abi_error_to_api_error)
+    });
+    map_response_stream(response_events, session_telemetry)
+}
+
 pub(super) fn map_response_stream<S>(
     api_stream: S,
     session_telemetry: SessionTelemetry,
@@ -906,15 +926,7 @@ impl ModelClientSession {
         .with_sniffer(sniffer);
 
         match adapter.stream(turn_request).await {
-            Ok(stream) => {
-                let response_events = stream.map(|event| {
-                    event
-                        .map(ResponseEvent::from)
-                        .map_err(abi_error_to_api_error)
-                });
-                let stream = map_response_stream(response_events, session_telemetry.clone());
-                Ok(stream)
-            }
+            Ok(stream) => Ok(adapt_adapter_stream(stream, session_telemetry.clone())),
             Err(err) => Err(map_api_error(abi_error_to_api_error(err))),
         }
     }
@@ -1178,15 +1190,7 @@ impl ModelClientSession {
         );
 
         match adapter.stream(turn_request).await {
-            Ok(stream) => {
-                let response_events = stream.map(|event| {
-                    event
-                        .map(ResponseEvent::from)
-                        .map_err(abi_error_to_api_error)
-                });
-                let stream = map_response_stream(response_events, session_telemetry.clone());
-                Ok(stream)
-            }
+            Ok(stream) => Ok(adapt_adapter_stream(stream, session_telemetry.clone())),
             Err(err) => {
                 tracing::error!(
                     error = %err,
@@ -1236,15 +1240,7 @@ impl ModelClientSession {
         .with_sniffer(sniffer);
 
         match adapter.stream(turn_request).await {
-            Ok(stream) => {
-                let response_events = stream.map(|event| {
-                    event
-                        .map(ResponseEvent::from)
-                        .map_err(abi_error_to_api_error)
-                });
-                let stream = map_response_stream(response_events, session_telemetry.clone());
-                Ok(stream)
-            }
+            Ok(stream) => Ok(adapt_adapter_stream(stream, session_telemetry.clone())),
             Err(err) => Err(map_api_error(abi_error_to_api_error(err))),
         }
     }

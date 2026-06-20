@@ -146,29 +146,6 @@ pub fn simplify_once(commands: &[ParsedCommand]) -> Option<Vec<ParsedCommand>> {
     None
 }
 
-/// Validates that this is a `sed -n 123,123p` command.
-fn is_valid_sed_n_arg(arg: Option<&str>) -> bool {
-    let s = match arg {
-        Some(s) => s,
-        None => return false,
-    };
-    let core = match s.strip_suffix('p') {
-        Some(rest) => rest,
-        None => return false,
-    };
-    let parts: Vec<&str> = core.split(',').collect();
-    match parts.as_slice() {
-        [num] => !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()),
-        [a, b] => {
-            !a.is_empty()
-                && !b.is_empty()
-                && a.chars().all(|c| c.is_ascii_digit())
-                && b.chars().all(|c| c.is_ascii_digit())
-        }
-        _ => false,
-    }
-}
-
 fn sed_read_path(args: &[String]) -> Option<String> {
     let args_no_connector = trim_at_connector(args);
     if !args_no_connector.iter().any(|arg| arg == "-n") {
@@ -179,7 +156,9 @@ fn sed_read_path(args: &[String]) -> Option<String> {
     while i < args_no_connector.len() {
         let arg = &args_no_connector[i];
         if matches!(arg.as_str(), "-e" | "--expression") {
-            if is_valid_sed_n_arg(args_no_connector.get(i + 1).map(String::as_str)) {
+            if crate::command_safety::is_valid_sed_n_arg(
+                args_no_connector.get(i + 1).map(String::as_str),
+            ) {
                 has_range_script = true;
             }
             i += 2;
@@ -192,9 +171,9 @@ fn sed_read_path(args: &[String]) -> Option<String> {
         i += 1;
     }
     if !has_range_script {
-        has_range_script = args_no_connector
-            .iter()
-            .any(|arg| !arg.starts_with('-') && is_valid_sed_n_arg(Some(arg)));
+        has_range_script = args_no_connector.iter().any(|arg| {
+            !arg.starts_with('-') && crate::command_safety::is_valid_sed_n_arg(Some(arg))
+        });
     }
     if !has_range_script {
         return None;
@@ -207,7 +186,9 @@ fn sed_read_path(args: &[String]) -> Option<String> {
         .collect();
     match non_flags.as_slice() {
         [] => None,
-        [first, rest @ ..] if is_valid_sed_n_arg(Some(first)) => rest.first().cloned(),
+        [first, rest @ ..] if crate::command_safety::is_valid_sed_n_arg(Some(first)) => {
+            rest.first().cloned()
+        }
         [first, ..] => Some(first.clone()),
     }
 }

@@ -422,6 +422,28 @@ struct TextAccumulator {
 /// ```
 /// The final chunk carries `"finish_reason": "stop"` or similar, and when
 /// `stream_options.include_usage=true` the very last chunk has `"usage"`.
+/// Build a `Completed` event from a chat-completions `usage` object,
+/// mapping `prompt_tokens`/`completion_tokens` to the token-usage totals.
+fn completed_event_from_usage(response_id: &str, usage: &Value) -> TurnEvent {
+    let input_tokens = usage
+        .get("prompt_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let output_tokens = usage
+        .get("completion_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    TurnEvent::Completed {
+        response_id: response_id.to_string(),
+        token_usage: Some(TokenUsage {
+            input_tokens: input_tokens as i64,
+            output_tokens: output_tokens as i64,
+            total_tokens: (input_tokens + output_tokens) as i64,
+            ..Default::default()
+        }),
+    }
+}
+
 fn parse_chunk(
     json: &Value,
     tool_acc: &mut BTreeMap<usize, ToolCallAccumulator>,
@@ -450,23 +472,7 @@ fn parse_chunk(
         None => {
             // Usage-only trailing chunk.
             if let Some(usage) = json.get("usage") {
-                let input_tokens = usage
-                    .get("prompt_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
-                let output_tokens = usage
-                    .get("completion_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
-                events.push(TurnEvent::Completed {
-                    response_id: response_id.clone(),
-                    token_usage: Some(TokenUsage {
-                        input_tokens: input_tokens as i64,
-                        output_tokens: output_tokens as i64,
-                        total_tokens: (input_tokens + output_tokens) as i64,
-                        ..Default::default()
-                    }),
-                });
+                events.push(completed_event_from_usage(response_id, usage));
             }
             return Ok(events);
         }
@@ -550,23 +556,7 @@ fn parse_chunk(
             // the completion here and let the usage chunk emit it instead.
             // However if `usage` is co-located in this chunk, emit now.
             if let Some(usage) = json.get("usage") {
-                let input_tokens = usage
-                    .get("prompt_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
-                let output_tokens = usage
-                    .get("completion_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
-                events.push(TurnEvent::Completed {
-                    response_id: response_id.clone(),
-                    token_usage: Some(TokenUsage {
-                        input_tokens: input_tokens as i64,
-                        output_tokens: output_tokens as i64,
-                        total_tokens: (input_tokens + output_tokens) as i64,
-                        ..Default::default()
-                    }),
-                });
+                events.push(completed_event_from_usage(response_id, usage));
             }
         }
     }

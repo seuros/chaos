@@ -109,6 +109,34 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn file_storage_save_is_atomic_and_leaves_no_temp_files() -> anyhow::Result<()> {
+    let chaos_home = tempdir()?;
+    let storage = FileAuthStorage::new(chaos_home.path().to_path_buf());
+
+    let first = auth_with_prefix("first");
+    storage.save(&first).context("save first")?;
+
+    // Overwriting must replace the previous contents in place and must not
+    // strand a temp file alongside auth.json.
+    let second = auth_with_prefix("second");
+    storage.save(&second).context("save second")?;
+
+    let loaded = storage.load()?.context("auth should load")?;
+    assert_eq!(loaded, normalized(&second));
+
+    let leftovers: Vec<_> = std::fs::read_dir(chaos_home.path())?
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name != "auth.json")
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "save should leave only auth.json, found: {leftovers:?}"
+    );
+    Ok(())
+}
+
 #[test]
 fn file_storage_delete_removes_auth_file() -> anyhow::Result<()> {
     let dir = tempdir()?;

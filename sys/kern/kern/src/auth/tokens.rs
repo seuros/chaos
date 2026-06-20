@@ -667,7 +667,24 @@ impl AuthManager {
         auth: &ChatgptAuth,
         refresh_token: String,
     ) -> Result<(), RefreshTokenError> {
-        let refresh_response = request_chatgpt_token_refresh(refresh_token, auth.client()).await?;
+        let refresh_response = match request_chatgpt_token_refresh(refresh_token, auth.client())
+            .await
+        {
+            Ok(response) => response,
+            Err(err) => {
+                // A reused refresh token means the authority already rotated it
+                // (typically a write the previous run never persisted), so the
+                // on-disk token is permanently spent. Clear it now; otherwise
+                // every subsequent launch replays the same dead token and loops
+                // on "log out and sign in again" until the user does it by hand.
+                if err.failed_reason() == Some(RefreshTokenFailedReason::Exhausted)
+                    && let Err(logout_err) = self.logout()
+                {
+                    tracing::warn!("Failed to clear auth after reused refresh token: {logout_err}");
+                }
+                return Err(err);
+            }
+        };
 
         persist_tokens(
             auth.storage(),

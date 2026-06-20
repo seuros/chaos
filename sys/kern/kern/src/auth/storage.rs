@@ -14,6 +14,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use tracing::warn;
 
 use crate::token_data::TokenData;
@@ -23,6 +25,10 @@ use chaos_keyring::KeyringStore;
 use std::sync::LazyLock;
 
 pub use chaos_sysctl::types::AuthCredentialsStoreMode;
+
+/// Distinguishes concurrent temp files when several saves race within one
+/// process; pairs with the pid to stay unique across processes too.
+static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct ProviderAuthRecord {
@@ -101,20 +107,37 @@ impl AuthStorageBackend for FileAuthStorage {
     fn save(&self, auth_dot_json: &AuthDotJson) -> std::io::Result<()> {
         let auth_file = get_auth_file(&self.chaos_home);
 
-        if let Some(parent) = auth_file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let parent = auth_file
+            .parent()
+            .ok_or_else(|| std::io::Error::other("auth.json path has no parent directory"))?;
+        std::fs::create_dir_all(parent)?;
+
         let normalized = auth_dot_json.normalized();
         let json_data = serde_json::to_string_pretty(&normalized)?;
-        let mut options = OpenOptions::new();
-        options.truncate(true).write(true).create(true);
-        {
-            options.mode(0o600);
+
+        // Write to a sibling temp file, fsync, then atomically rename over the
+        // target. A crash between truncate and write must never leave a
+        // truncated auth.json that drops a freshly rotated refresh token: with
+        // token rotation the server has already invalidated the old token, so a
+        // lost write strands the account with no usable credentials.
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp_path = parent.join(format!("auth.json.tmp.{}.{unique}", std::process::id()));
+
+        let write_result = (|| {
+            let mut options = OpenOptions::new();
+            options.truncate(true).write(true).create(true).mode(0o600);
+            let mut file = options.open(&tmp_path)?;
+            file.write_all(json_data.as_bytes())?;
+            file.flush()?;
+            file.sync_all()?;
+            drop(file);
+            std::fs::rename(&tmp_path, &auth_file)
+        })();
+
+        if write_result.is_err() {
+            let _ = std::fs::remove_file(&tmp_path);
         }
-        let mut file = options.open(auth_file)?;
-        file.write_all(json_data.as_bytes())?;
-        file.flush()?;
-        Ok(())
+        write_result
     }
 
     fn delete(&self) -> std::io::Result<bool> {

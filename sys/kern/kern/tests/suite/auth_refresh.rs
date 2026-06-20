@@ -442,6 +442,56 @@ async fn refresh_token_returns_permanent_error_for_expired_refresh_token() -> Re
 
 #[serial_test::serial(process_env)]
 #[tokio::test]
+async fn reused_refresh_token_clears_stored_auth() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({
+            "error": {
+                "code": "refresh_token_reused"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let ctx = RefreshTokenTestContext::new(&server)?;
+    let initial_last_refresh = timestamp_hours_ago(24)?;
+    let initial_tokens = build_tokens(INITIAL_ACCESS_TOKEN, INITIAL_REFRESH_TOKEN);
+    let initial_auth = openai_auth(
+        AuthMode::Chatgpt,
+        None,
+        Some(initial_tokens.clone()),
+        Some(initial_last_refresh),
+    );
+    ctx.write_auth(&initial_auth)?;
+
+    let err = ctx
+        .auth_manager
+        .refresh_token_from_authority()
+        .await
+        .err()
+        .context("refresh should fail")?;
+    assert_eq!(
+        err.failed_reason(),
+        Some(RefreshTokenFailedReason::Exhausted)
+    );
+
+    // The spent token must not survive: a retained reused token would replay on
+    // every launch and loop forever. Auth is cleared so the next run logs in.
+    let stored = load_auth_dot_json(ctx.chaos_home.path(), AuthCredentialsStoreMode::File)
+        .context("load auth.json")?;
+    assert_eq!(stored, None, "reused refresh token should clear auth.json");
+    assert!(ctx.auth_manager.auth().await.is_none());
+
+    server.verify().await;
+    Ok(())
+}
+
+#[serial_test::serial(process_env)]
+#[tokio::test]
 async fn refresh_token_returns_transient_error_on_server_failure() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

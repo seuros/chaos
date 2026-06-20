@@ -88,6 +88,14 @@ pub fn parse_command_impl(command: &[String]) -> Vec<ParsedCommand> {
     commands
 }
 
+/// Returns a copy of `commands` with the element at `idx` removed.
+fn without_at(commands: &[ParsedCommand], idx: usize) -> Vec<ParsedCommand> {
+    let mut out = Vec::with_capacity(commands.len() - 1);
+    out.extend_from_slice(&commands[..idx]);
+    out.extend_from_slice(&commands[idx + 1..]);
+    out
+}
+
 pub fn simplify_once(commands: &[ParsedCommand]) -> Option<Vec<ParsedCommand>> {
     if commands.len() <= 1 {
         return None;
@@ -108,10 +116,7 @@ pub fn simplify_once(commands: &[ParsedCommand]) -> Option<Vec<ParsedCommand>> {
         _ => false,
     }) && commands.len() > idx + 1
     {
-        let mut out = Vec::with_capacity(commands.len() - 1);
-        out.extend_from_slice(&commands[..idx]);
-        out.extend_from_slice(&commands[idx + 1..]);
-        return Some(out);
+        return Some(without_at(commands, idx));
     }
 
     // cmd || true => cmd
@@ -119,10 +124,7 @@ pub fn simplify_once(commands: &[ParsedCommand]) -> Option<Vec<ParsedCommand>> {
         .iter()
         .position(|pc| matches!(pc, ParsedCommand::Unknown { cmd } if cmd == "true"))
     {
-        let mut out = Vec::with_capacity(commands.len() - 1);
-        out.extend_from_slice(&commands[..idx]);
-        out.extend_from_slice(&commands[idx + 1..]);
-        return Some(out);
+        return Some(without_at(commands, idx));
     }
 
     // nl -[any_flags] && ...rest => ...rest
@@ -137,10 +139,7 @@ pub fn simplify_once(commands: &[ParsedCommand]) -> Option<Vec<ParsedCommand>> {
         }
         _ => false,
     }) {
-        let mut out = Vec::with_capacity(commands.len() - 1);
-        out.extend_from_slice(&commands[..idx]);
-        out.extend_from_slice(&commands[idx + 1..]);
-        return Some(out);
+        return Some(without_at(commands, idx));
     }
 
     None

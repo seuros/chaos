@@ -394,6 +394,20 @@ pub fn parse_git_apply_output(
         }
     }
 
+    // Assign the `path` capture of `c` into `primary`, clearing it from the
+    // two other buckets. No-op when the capture is absent.
+    fn assign_capture(
+        c: &regex::Captures,
+        primary: &mut std::collections::BTreeSet<String>,
+        other_a: &mut std::collections::BTreeSet<String>,
+        other_b: &mut std::collections::BTreeSet<String>,
+        last_seen_path: &mut Option<String>,
+    ) {
+        if let Some(m) = c.name("path") {
+            assign(m.as_str(), primary, other_a, other_b, last_seen_path);
+        }
+    }
+
     static APPLIED_CLEAN: LazyLock<Regex> =
         LazyLock::new(|| regex_ci("^Applied patch(?: to)?\\s+(?P<path>.+?)\\s+cleanly\\.?$"));
     static APPLIED_CONFLICTS: LazyLock<Regex> = LazyLock::new(|| {
@@ -473,53 +487,45 @@ pub fn parse_git_apply_output(
 
         // === Status lines ===
         if let Some(c) = APPLIED_CLEAN.captures(line) {
-            if let Some(m) = c.name("path") {
-                assign(
-                    m.as_str(),
-                    &mut applied,
-                    &mut conflicted,
-                    &mut skipped,
-                    &mut last_seen_path,
-                );
-            }
+            assign_capture(
+                &c,
+                &mut applied,
+                &mut conflicted,
+                &mut skipped,
+                &mut last_seen_path,
+            );
             continue;
         }
         if let Some(c) = APPLIED_CONFLICTS.captures(line) {
-            if let Some(m) = c.name("path") {
-                assign(
-                    m.as_str(),
-                    &mut conflicted,
-                    &mut applied,
-                    &mut skipped,
-                    &mut last_seen_path,
-                );
-            }
+            assign_capture(
+                &c,
+                &mut conflicted,
+                &mut applied,
+                &mut skipped,
+                &mut last_seen_path,
+            );
             continue;
         }
         if let Some(c) = APPLYING_WITH_REJECTS.captures(line) {
-            if let Some(m) = c.name("path") {
-                assign(
-                    m.as_str(),
-                    &mut conflicted,
-                    &mut applied,
-                    &mut skipped,
-                    &mut last_seen_path,
-                );
-            }
+            assign_capture(
+                &c,
+                &mut conflicted,
+                &mut applied,
+                &mut skipped,
+                &mut last_seen_path,
+            );
             continue;
         }
 
         // === “U <path>” after conflicts ===
         if let Some(c) = UNMERGED_LINE.captures(line) {
-            if let Some(m) = c.name("path") {
-                assign(
-                    m.as_str(),
-                    &mut conflicted,
-                    &mut applied,
-                    &mut skipped,
-                    &mut last_seen_path,
-                );
-            }
+            assign_capture(
+                &c,
+                &mut conflicted,
+                &mut applied,
+                &mut skipped,
+                &mut last_seen_path,
+            );
             continue;
         }
 
@@ -564,29 +570,25 @@ pub fn parse_git_apply_output(
             .or_else(|| CANNOT_READ_CURRENT.captures(line))
             .or_else(|| SKIPPED_PATCH.captures(line))
         {
-            if let Some(m) = c.name("path") {
-                assign(
-                    m.as_str(),
-                    &mut skipped,
-                    &mut applied,
-                    &mut conflicted,
-                    &mut last_seen_path,
-                );
-            }
+            assign_capture(
+                &c,
+                &mut skipped,
+                &mut applied,
+                &mut conflicted,
+                &mut last_seen_path,
+            );
             continue;
         }
 
         // === Warnings that imply conflicts ===
         if let Some(c) = CANNOT_MERGE_BINARY_WARN.captures(line) {
-            if let Some(m) = c.name("path") {
-                assign(
-                    m.as_str(),
-                    &mut conflicted,
-                    &mut applied,
-                    &mut skipped,
-                    &mut last_seen_path,
-                );
-            }
+            assign_capture(
+                &c,
+                &mut conflicted,
+                &mut applied,
+                &mut skipped,
+                &mut last_seen_path,
+            );
             continue;
         }
     }

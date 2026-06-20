@@ -2313,7 +2313,7 @@ fn extract_memory_mode(items: &[RolloutItem]) -> Option<String> {
 }
 
 fn push_process_filters_postgres<'a>(
-    builder: &mut QueryBuilder<'a, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     archived_only: bool,
     allowed_sources: &'a [String],
     model_providers: Option<&'a [String]>,
@@ -2372,7 +2372,7 @@ fn push_process_filters_postgres<'a>(
 }
 
 fn push_process_order_and_limit_postgres(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     sort_key: crate::SortKey,
     limit: usize,
 ) {

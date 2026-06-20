@@ -1,5 +1,6 @@
 use anyhow::Context as _;
 use pgvector::Vector;
+use sqlx::AssertSqlSafe;
 use sqlx::PgPool;
 use tracing::{debug, instrument};
 
@@ -30,14 +31,14 @@ impl PgRecallStore {
             .await
             .context("create vector extension")?;
 
-        sqlx::query(&format!(
+        sqlx::query(AssertSqlSafe(format!(
             "CREATE TABLE IF NOT EXISTS recall_docs (
                 id          TEXT PRIMARY KEY,
                 content     TEXT NOT NULL,
                 metadata    JSONB NOT NULL DEFAULT '{{}}',
                 embedding   vector({DIM})
             )"
-        ))
+        )))
         .execute(&self.pool)
         .await
         .context("create recall_docs table")?;
@@ -132,7 +133,7 @@ impl RecallStore for PgRecallStore {
         self.check_dim(&req.query_vec)?;
 
         if let Some(ef) = req.ef_search {
-            sqlx::query(&format!("SET hnsw.ef_search = {ef}"))
+            sqlx::query(AssertSqlSafe(format!("SET hnsw.ef_search = {ef}")))
                 .execute(&self.pool)
                 .await
                 .context("set ef_search")

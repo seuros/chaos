@@ -4,6 +4,7 @@ use crate::job::CreateJobParams;
 use crate::job::CronJob;
 use crate::job::CronScope;
 use crate::schedule::Schedule;
+use sqlx::AssertSqlSafe;
 use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::SqlitePool;
@@ -111,7 +112,7 @@ impl CronStore {
         }
         query.push_str(" ORDER BY created_at DESC");
 
-        let mut q = sqlx::query(&query);
+        let mut q = sqlx::query(AssertSqlSafe(query));
         if let Some(ref s) = scope {
             q = q.bind(s.as_str());
         }

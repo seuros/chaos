@@ -6,7 +6,7 @@ use super::levels::push_level_filter;
 /// This includes level, timestamp range, module/file LIKE patterns, process
 /// scoping, cursor-based pagination, and full-text search.  Every clause is
 /// prefixed with `AND` so callers must already have a `WHERE 1 = 1` anchor.
-pub(super) fn push_log_filters<'a>(builder: &mut QueryBuilder<'a, Sqlite>, query: &'a LogQuery) {
+pub(super) fn push_log_filters(builder: &mut QueryBuilder<Sqlite>, query: &LogQuery) {
     push_level_filter(builder, query);
     if let Some(from_ts) = query.from_ts {
         builder.push(" AND ts >= ").push_bind(from_ts);
@@ -65,10 +65,10 @@ pub(super) fn push_log_filters<'a>(builder: &mut QueryBuilder<'a, Sqlite>, query
 /// Multiple patterns are OR-ed together so a row matches if its column value
 /// contains any of the given substrings.  The group is wrapped in parentheses
 /// and prefixed with `AND`.  When `filters` is empty this is a no-op.
-pub(super) fn push_like_filters<'a>(
-    builder: &mut QueryBuilder<'a, Sqlite>,
+pub(super) fn push_like_filters(
+    builder: &mut QueryBuilder<Sqlite>,
     column: &str,
-    filters: &'a [String],
+    filters: &[String],
 ) {
     if filters.is_empty() {
         return;

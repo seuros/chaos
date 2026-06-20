@@ -3,6 +3,7 @@
 use chaos_ration::Freshness;
 use chaos_ration::UsageWindow;
 use chaos_storage::ChaosStorageProvider;
+use sqlx::AssertSqlSafe;
 use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::SqlitePool;
@@ -65,13 +66,13 @@ macro_rules! record_windows {
             let limit = w.limit.map(|v| v as i64);
             let remaining = w.remaining.map(|v| v as i64);
 
-            sqlx::query(&format!(
+            sqlx::query(AssertSqlSafe(format!(
                 "INSERT INTO ration_history \
                  (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at) \
                  VALUES ({p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8})",
                 p1 = ph(1), p2 = ph(2), p3 = ph(3), p4 = ph(4),
                 p5 = ph(5), p6 = ph(6), p7 = ph(7), p8 = ph(8),
-            ))
+            )))
             .bind($provider)
             .bind($base_url)
             .bind(&w.label)
@@ -83,7 +84,7 @@ macro_rules! record_windows {
             .execute(&mut **tx)
             .await?;
 
-            sqlx::query(&format!(
+            sqlx::query(AssertSqlSafe(format!(
                 "INSERT INTO ration_usage \
                  (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at, updated_at) \
                  VALUES ({p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8}, {now}) \
@@ -97,7 +98,7 @@ macro_rules! record_windows {
                 p1 = ph(1), p2 = ph(2), p3 = ph(3), p4 = ph(4),
                 p5 = ph(5), p6 = ph(6), p7 = ph(7), p8 = ph(8),
                 now = now,
-            ))
+            )))
             .bind($provider)
             .bind($base_url)
             .bind(&w.label)
@@ -122,13 +123,13 @@ macro_rules! record_windows {
 macro_rules! fetch_latest {
     ($pool:expr, $provider:expr, $ph1:expr) => {{
         let rows = if let Some(p) = $provider {
-            sqlx::query(&format!(
+            sqlx::query(AssertSqlSafe(format!(
                 "SELECT provider, base_url, label, limit_value, remaining, \
                  utilization, resets_at, observed_at \
                  FROM ration_usage WHERE provider = {ph1} \
                  ORDER BY base_url ASC, label ASC",
                 ph1 = $ph1,
-            ))
+            )))
             .bind(p)
             .fetch_all($pool)
             .await?

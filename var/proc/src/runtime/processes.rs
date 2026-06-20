@@ -628,7 +628,7 @@ pub(super) fn extract_memory_mode(items: &[RolloutItem]) -> Option<String> {
 }
 
 pub(super) fn push_process_filters<'a>(
-    builder: &mut QueryBuilder<'a, Sqlite>,
+    builder: &mut QueryBuilder<Sqlite>,
     archived_only: bool,
     allowed_sources: &'a [String],
     model_providers: Option<&'a [String]>,
@@ -687,7 +687,7 @@ pub(super) fn push_process_filters<'a>(
 }
 
 pub(super) fn push_process_order_and_limit(
-    builder: &mut QueryBuilder<'_, Sqlite>,
+    builder: &mut QueryBuilder<Sqlite>,
     sort_key: SortKey,
     limit: usize,
 ) {

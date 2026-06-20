@@ -1,5 +1,8 @@
 //! chaos-httpd — HTTP trigger server for Chaos.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
+// sqlx 0.9's sqlite worker future, nested inside rama's service stack, pushes
+// Send auto-trait evaluation past the default recursion depth.
+#![recursion_limit = "256"]
 
 mod api;
 mod auth;

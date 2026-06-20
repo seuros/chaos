@@ -16,7 +16,7 @@ use super::{
 };
 
 /// Generic widget for rendering a pager view.
-pub(super) struct PagerView {
+pub(crate) struct PagerView {
     pub(super) renderables: Vec<Box<dyn Renderable>>,
     pub(super) scroll_offset: usize,
     pub(super) title: String,

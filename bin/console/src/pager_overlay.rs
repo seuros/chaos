@@ -100,6 +100,23 @@ impl Overlay {
     }
 }
 
+/// Shared rendering for the scrollable pager overlays (static + transcript):
+/// a [`PagerView`](pager_view::PagerView) fills the top region and a two-line
+/// hint bar sits in the bottom three rows. Implementors supply access to the
+/// view and the hint bar; `render` lays them out identically for both.
+pub(crate) trait PagerOverlay {
+    fn view(&mut self) -> &mut pager_view::PagerView;
+    fn render_hints(&self, area: Rect, buf: &mut Buffer);
+
+    fn render(&mut self, area: Rect, buf: &mut Buffer) {
+        let top_h = area.height.saturating_sub(3);
+        let top = Rect::new(area.x, area.y, area.width, top_h);
+        let bottom = Rect::new(area.x, area.y + top_h, area.width, 3);
+        self.view().render(top, buf);
+        self.render_hints(bottom, buf);
+    }
+}
+
 pub(crate) const KEY_UP: KeyBinding = key_hint::plain(KeyCode::Up);
 pub(crate) const KEY_DOWN: KeyBinding = key_hint::plain(KeyCode::Down);
 pub(crate) const KEY_K: KeyBinding = key_hint::plain(KeyCode::Char('k'));

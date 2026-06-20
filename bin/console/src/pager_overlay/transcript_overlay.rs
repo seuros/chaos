@@ -18,7 +18,7 @@ use crate::tui::{self, TuiEvent};
 use super::pager_view::PagerView;
 use super::{
     KEY_CTRL_C, KEY_CTRL_T, KEY_ENTER, KEY_ESC, KEY_LEFT, KEY_Q, KEY_RIGHT, PAGER_KEY_HINTS,
-    render_key_hints,
+    PagerOverlay, render_key_hints,
 };
 
 /// A renderable that caches its desired height.
@@ -276,30 +276,6 @@ impl TranscriptOverlay {
         renderable
     }
 
-    fn render_hints(&self, area: Rect, buf: &mut Buffer) {
-        let line1 = Rect::new(area.x, area.y, area.width, 1);
-        let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
-        render_key_hints(line1, buf, PAGER_KEY_HINTS);
-
-        let mut pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
-        if self.highlight_cell.is_some() {
-            pairs.push((&[KEY_ESC, KEY_LEFT], "to edit prev"));
-            pairs.push((&[KEY_RIGHT], "to edit next"));
-            pairs.push((&[KEY_ENTER], "to edit message"));
-        } else {
-            pairs.push((&[KEY_ESC], "to edit prev"));
-        }
-        render_key_hints(line2, buf, &pairs);
-    }
-
-    pub(crate) fn render(&mut self, area: Rect, buf: &mut Buffer) {
-        let top_h = area.height.saturating_sub(3);
-        let top = Rect::new(area.x, area.y, area.width, top_h);
-        let bottom = Rect::new(area.x, area.y + top_h, area.width, 3);
-        self.view.render(top, buf);
-        self.render_hints(bottom, buf);
-    }
-
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         match event {
             TuiEvent::Key(key_event) => match key_event {
@@ -327,5 +303,27 @@ impl TranscriptOverlay {
     #[cfg(test)]
     pub(crate) fn committed_cell_count(&self) -> usize {
         self.cells.len()
+    }
+}
+
+impl PagerOverlay for TranscriptOverlay {
+    fn view(&mut self) -> &mut PagerView {
+        &mut self.view
+    }
+
+    fn render_hints(&self, area: Rect, buf: &mut Buffer) {
+        let line1 = Rect::new(area.x, area.y, area.width, 1);
+        let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
+        render_key_hints(line1, buf, PAGER_KEY_HINTS);
+
+        let mut pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
+        if self.highlight_cell.is_some() {
+            pairs.push((&[KEY_ESC, KEY_LEFT], "to edit prev"));
+            pairs.push((&[KEY_RIGHT], "to edit next"));
+            pairs.push((&[KEY_ENTER], "to edit message"));
+        } else {
+            pairs.push((&[KEY_ESC], "to edit prev"));
+        }
+        render_key_hints(line2, buf, &pairs);
     }
 }

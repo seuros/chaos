@@ -32,6 +32,7 @@ use crate::app_event::AppEvent;
 use crate::history_cell::SessionInfoCell;
 use crate::history_cell::UserHistoryCell;
 use crate::pager_overlay::Overlay;
+use crate::pager_overlay::PagerOverlay;
 use crate::tui;
 use crate::tui::TuiEvent;
 use chaos_ipc::ProcessId;

@@ -15,7 +15,7 @@ use crate::tui::{self, TuiEvent};
 
 use super::pager_view::PagerView;
 use super::transcript_overlay::CachedRenderable;
-use super::{KEY_CTRL_C, KEY_Q, PAGER_KEY_HINTS, centered_rect, render_key_hints};
+use super::{KEY_CTRL_C, KEY_Q, PAGER_KEY_HINTS, PagerOverlay, centered_rect, render_key_hints};
 
 pub(crate) struct StaticOverlay {
     pub(super) view: PagerView,
@@ -33,22 +33,6 @@ impl StaticOverlay {
             view: PagerView::new(renderables, title, /*scroll_offset*/ 0),
             is_done: false,
         }
-    }
-
-    fn render_hints(&self, area: Rect, buf: &mut Buffer) {
-        let line1 = Rect::new(area.x, area.y, area.width, 1);
-        let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
-        render_key_hints(line1, buf, PAGER_KEY_HINTS);
-        let pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
-        render_key_hints(line2, buf, &pairs);
-    }
-
-    pub(crate) fn render(&mut self, area: Rect, buf: &mut Buffer) {
-        let top_h = area.height.saturating_sub(3);
-        let top = Rect::new(area.x, area.y, area.width, top_h);
-        let bottom = Rect::new(area.x, area.y + top_h, area.width, 3);
-        self.view.render(top, buf);
-        self.render_hints(bottom, buf);
     }
 
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
@@ -73,6 +57,20 @@ impl StaticOverlay {
 
     pub(crate) fn is_done(&self) -> bool {
         self.is_done
+    }
+}
+
+impl PagerOverlay for StaticOverlay {
+    fn view(&mut self) -> &mut PagerView {
+        &mut self.view
+    }
+
+    fn render_hints(&self, area: Rect, buf: &mut Buffer) {
+        let line1 = Rect::new(area.x, area.y, area.width, 1);
+        let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
+        render_key_hints(line1, buf, PAGER_KEY_HINTS);
+        let pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
+        render_key_hints(line2, buf, &pairs);
     }
 }
 

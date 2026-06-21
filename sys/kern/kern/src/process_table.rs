@@ -165,20 +165,33 @@ impl ProcessTable {
         let chaos_home = config.chaos_home.clone();
         // Use the active model provider for discovery, not hardcoded OpenAI.
         let models_provider = config.model_provider.clone();
+        let models_manager = Arc::new(ModelsManager::new_with_provider(
+            chaos_home.clone(),
+            auth_manager.clone(),
+            config.model_catalog.clone(),
+            collaboration_modes_config,
+            models_provider,
+        ));
+        Self::assemble(models_manager, auth_manager, session_source, chaos_home)
+    }
+
+    /// Assemble a `ProcessTable` from its model/auth parts. Builds the MCP
+    /// manager, file watcher, shared state, and router common to every
+    /// constructor.
+    fn assemble(
+        models_manager: Arc<ModelsManager>,
+        auth_manager: Arc<AuthManager>,
+        session_source: SessionSource,
+        chaos_home: PathBuf,
+    ) -> Self {
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let mcp_manager = Arc::new(McpManager::new());
-        let file_watcher = build_file_watcher(chaos_home.clone());
+        let file_watcher = build_file_watcher(chaos_home);
         let state = Arc::new(ProcessTableState {
             processes: Arc::new(RwLock::new(HashMap::new())),
             closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
             process_created_tx,
-            models_manager: Arc::new(ModelsManager::new_with_provider(
-                chaos_home,
-                auth_manager.clone(),
-                config.model_catalog.clone(),
-                collaboration_modes_config,
-                models_provider,
-            )),
+            models_manager,
             mcp_manager,
             file_watcher,
             auth_manager,
@@ -222,31 +235,17 @@ impl ProcessTable {
     ) -> Self {
         set_process_table_test_mode_for_tests(/*enabled*/ true);
         let auth_manager = AuthManager::from_auth_for_testing(auth);
-        let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
-        let mcp_manager = Arc::new(McpManager::new());
-        let file_watcher = build_file_watcher(chaos_home.clone());
-        let state = Arc::new(ProcessTableState {
-            processes: Arc::new(RwLock::new(HashMap::new())),
-            closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
-            process_created_tx,
-            models_manager: Arc::new(ModelsManager::with_provider_for_tests(
-                chaos_home,
-                auth_manager.clone(),
-                provider,
-            )),
-            mcp_manager,
-            file_watcher,
+        let models_manager = Arc::new(ModelsManager::with_provider_for_tests(
+            chaos_home.clone(),
+            auth_manager.clone(),
+            provider,
+        ));
+        Self::assemble(
+            models_manager,
             auth_manager,
-            session_source: SessionSource::Exec,
-            ops_log: should_use_process_table_test_behavior()
-                .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
-        });
-        let router = ProcessTableRouter::enumerate(Arc::clone(&state));
-        Self {
-            state,
-            router,
-            _test_chaos_home_guard: None,
-        }
+            SessionSource::Exec,
+            chaos_home,
+        )
     }
 
     pub fn session_source(&self) -> SessionSource {
@@ -578,6 +577,12 @@ impl ProcessTableState {
             .await
             .get(&process_id)
             .cloned();
+        let resumed = |history| {
+            InitialHistory::Resumed(ResumedHistory {
+                conversation_id: process_id,
+                history,
+            })
+        };
         let initial_history = match RolloutRecorder::journal_contains_process(process_id).await {
             Ok(true) => match RolloutRecorder::get_rollout_history_for_process(process_id).await {
                 Ok(history) => history,
@@ -588,27 +593,16 @@ impl ProcessTableState {
                             error = %err,
                             "journal returned empty/unusable history; falling back to in-memory stash"
                         );
-                        InitialHistory::Resumed(ResumedHistory {
-                            conversation_id: process_id,
-                            history,
-                        })
+                        resumed(history)
                     }
                     None => return Err(err.into()),
                 },
             },
             Ok(false) => stashed_history
-                .map(|history| {
-                    InitialHistory::Resumed(ResumedHistory {
-                        conversation_id: process_id,
-                        history,
-                    })
-                })
+                .map(resumed)
                 .ok_or(ChaosErr::ProcessNotFound(process_id))?,
             Err(err) => match stashed_history {
-                Some(history) => InitialHistory::Resumed(ResumedHistory {
-                    conversation_id: process_id,
-                    history,
-                }),
+                Some(history) => resumed(history),
                 None => {
                     tracing::warn!(
                         process_id = %process_id,
@@ -619,7 +613,7 @@ impl ProcessTableState {
                 }
             },
         };
-        Box::pin(self.spawn_process_with_source(
+        self.spawn_process_with_source(
             config,
             initial_history,
             Arc::clone(&self.auth_manager),
@@ -630,7 +624,7 @@ impl ProcessTableState {
             /*metrics_service_name*/ None,
             inherited_shell_snapshot,
             /*parent_trace*/ None,
-        ))
+        )
         .await
     }
 
@@ -643,7 +637,7 @@ impl ProcessTableState {
         persist_extended_history: bool,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
     ) -> ChaosResult<NewProcess> {
-        Box::pin(self.spawn_process_with_source(
+        self.spawn_process_with_source(
             config,
             initial_history,
             Arc::clone(&self.auth_manager),
@@ -654,7 +648,7 @@ impl ProcessTableState {
             /*metrics_service_name*/ None,
             inherited_shell_snapshot,
             /*parent_trace*/ None,
-        ))
+        )
         .await
     }
 
@@ -671,7 +665,7 @@ impl ProcessTableState {
         metrics_service_name: Option<String>,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
-        Box::pin(self.spawn_process_with_source(
+        self.spawn_process_with_source(
             config,
             initial_history,
             auth_manager,
@@ -682,7 +676,7 @@ impl ProcessTableState {
             metrics_service_name,
             /*inherited_shell_snapshot*/ None,
             parent_trace,
-        ))
+        )
         .await
     }
 

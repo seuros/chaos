@@ -104,11 +104,18 @@ impl Chaos {
         if let Some(trace) = parent_trace.as_ref() {
             let _ = set_parent_from_w3c_trace_context(&process_spawn_span, trace);
         }
-        Self::spawn_internal(ChaosSpawnArgs {
-            parent_trace,
-            ..args
-        })
-        .instrument(process_spawn_span)
+        // Box the spawn future at its source. `spawn_internal` is a large
+        // async fn; embedding its state machine inline forces every caller's
+        // future layout to nest through it, overflowing the type-layout
+        // recursion limit in downstream crates. Heap-allocating here caps the
+        // layout depth once for all callers.
+        Box::pin(
+            Self::spawn_internal(ChaosSpawnArgs {
+                parent_trace,
+                ..args
+            })
+            .instrument(process_spawn_span),
+        )
         .await
     }
 

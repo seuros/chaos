@@ -44,8 +44,8 @@ use chaos_parrot::ResponsesOptions as ApiResponsesOptions;
 use chaos_parrot::SseTelemetry;
 use chaos_parrot::TransportError;
 use chaos_snitch::SessionTelemetry;
-use http::StatusCode as HttpStatusCode;
 use rama::error::BoxError;
+use rama::http::StatusCode as HttpStatusCode;
 use rama::http::sse::Event;
 
 use crate::api_bridge::CoreAuthProvider;

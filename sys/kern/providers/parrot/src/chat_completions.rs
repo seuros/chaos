@@ -20,9 +20,9 @@ use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use chaos_libration::UsageSniffer;
-use http::HeaderMap;
 use rama::error::BoxError;
 use rama::futures::StreamExt;
+use rama::http::HeaderMap;
 use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
@@ -909,7 +909,7 @@ mod tests {
         let headers = adapter.build_headers().expect("headers should build");
         assert_eq!(
             headers
-                .get(http::header::AUTHORIZATION)
+                .get(rama::http::header::AUTHORIZATION)
                 .and_then(|v| v.to_str().ok()),
             Some("Bearer sk-test")
         );

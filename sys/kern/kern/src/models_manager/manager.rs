@@ -29,7 +29,7 @@ use chaos_parrot::TransportError;
 use chaos_snitch::TelemetryAuthMode;
 use chrono_machines::ExponentialBackoff;
 use chrono_machines::backoff::BackoffStrategy;
-use http::HeaderMap;
+use rama::http::{HeaderMap, StatusCode};
 use rand::make_rng;
 use rand::rngs::StdRng;
 use std::path::PathBuf;
@@ -66,7 +66,7 @@ impl RequestTelemetry for ModelsRequestTelemetry {
     fn on_request(
         &self,
         attempt: u64,
-        status: Option<http::StatusCode>,
+        status: Option<StatusCode>,
         error: Option<&TransportError>,
         duration: Duration,
     ) {

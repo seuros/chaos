@@ -18,8 +18,8 @@ use chaos_parrot::RequestTelemetry;
 use chaos_parrot::build_conversation_headers;
 use chaos_parrot::create_text_param_for_request;
 use chaos_snitch::SessionTelemetry;
-use http::HeaderMap as ApiHeaderMap;
-use http::HeaderValue;
+use rama::http::HeaderMap as ApiHeaderMap;
+use rama::http::HeaderValue;
 use tracing::warn;
 
 use crate::api_bridge::map_api_error;

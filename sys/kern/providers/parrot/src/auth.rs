@@ -1,6 +1,6 @@
 use codex_client::Request;
-use http::HeaderMap;
-use http::HeaderValue;
+use rama::http::HeaderMap;
+use rama::http::HeaderValue;
 
 /// Provides bearer and account identity information for API requests.
 ///
@@ -18,7 +18,7 @@ pub(crate) fn add_auth_headers_to_header_map<A: AuthProvider>(auth: &A, headers:
     if let Some(token) = auth.bearer_token()
         && let Ok(header) = HeaderValue::from_str(&format!("Bearer {token}"))
     {
-        let _ = headers.insert(http::header::AUTHORIZATION, header);
+        let _ = headers.insert(rama::http::header::AUTHORIZATION, header);
     }
     if let Some(account_id) = auth.account_id()
         && let Ok(header) = HeaderValue::from_str(&account_id)

@@ -18,7 +18,7 @@ use rama::{
     error::BoxError,
     futures::Stream,
     http::{
-        Body, HeaderValue, Request, Response, StatusCode, Version,
+        Body, HeaderValue, Request, Response, StatusCode, Uri, Version,
         body::{BodyDataStream, util::BodyExt},
         client::EasyHttpWebClient,
         header::HOST,
@@ -27,9 +27,8 @@ use rama::{
             remove_header::{RemoveRequestHeaderLayer, RemoveResponseHeaderLayer},
         },
         server::HttpServer,
-        uri::{Authority, Scheme, Uri},
     },
-    net::tls::client::TlsClientConfig,
+    net::{Protocol, address::Authority, tls::client::TlsClientConfig},
     rt::Executor,
     service::service_fn,
     tcp::server::TcpListener,
@@ -92,30 +91,30 @@ pub trait WiretapSink: Send + Sync + 'static {
 /// base URL.
 #[derive(Clone)]
 struct Upstream {
-    scheme: Scheme,
+    scheme: Protocol,
     authority: Authority,
 }
 
 impl Upstream {
     fn anthropic() -> Self {
         Self {
-            scheme: Scheme::HTTPS,
+            scheme: Protocol::HTTPS,
             authority: Authority::from_static(UPSTREAM_HOST),
         }
     }
 
     fn from_base_url(base_url: &str) -> Result<Self, BoxError> {
         let uri: Uri = base_url.parse()?;
-        let scheme = uri.scheme().cloned().unwrap_or(Scheme::HTTPS);
+        let scheme = uri.scheme().cloned().unwrap_or(Protocol::HTTPS);
         let authority = uri
             .authority()
-            .cloned()
+            .map(|authority| authority.into_owned())
             .ok_or_else(|| BoxError::from("upstream base url has no authority"))?;
         Ok(Self { scheme, authority })
     }
 
     fn host_header(&self) -> HeaderValue {
-        HeaderValue::from_str(self.authority.as_str())
+        HeaderValue::from_str(&self.authority.to_string())
             .unwrap_or_else(|_| HeaderValue::from_static(UPSTREAM_HOST))
     }
 }
@@ -294,11 +293,7 @@ async fn forward(
     let (mut parts, body) = req.into_parts();
 
     let method = parts.method.to_string();
-    let path = parts
-        .uri
-        .path_and_query()
-        .map(|pq| pq.as_str().to_owned())
-        .unwrap_or_else(|| "/".to_owned());
+    let path = parts.uri.request_target().into_owned();
 
     let headers = redact_headers(&parts.headers);
 
@@ -322,15 +317,8 @@ async fn forward(
     };
 
     // Rewrite URI to the upstream scheme+authority, keeping path+query.
-    let mut uri_parts = std::mem::take(&mut parts.uri).into_parts();
-    uri_parts.scheme = Some(upstream.scheme.clone());
-    uri_parts.authority = Some(upstream.authority.clone());
-    let Ok(uri) = Uri::from_parts(uri_parts) else {
-        warn!("wiretap: failed to rebuild upstream uri");
-        sink.record(record.into_exchange(None, None, false));
-        return Ok(error_response(StatusCode::BAD_GATEWAY));
-    };
-    parts.uri = uri;
+    parts.uri.set_scheme(upstream.scheme.clone());
+    parts.uri.set_authority(upstream.authority.clone());
     parts.headers.insert(HOST, upstream.host_header());
     // Ask the upstream for identity encoding so the tee captures readable bytes;
     // the subprocess still receives a valid (uncompressed) response.

@@ -16,9 +16,9 @@
 use crate::common::MIME_APPLICATION_JSON;
 use crate::common::MIME_TEXT_EVENT_STREAM;
 use chaos_abi::AbiError;
-use http::HeaderMap;
-use http::HeaderValue;
-use http::header;
+use rama::http::HeaderMap;
+use rama::http::HeaderValue;
+use rama::http::header;
 
 /// Insert `Authorization: Bearer <api_key>`. Returns
 /// `AbiError::InvalidRequest` if the key is empty or the formatted

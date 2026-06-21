@@ -88,10 +88,10 @@ mod tests {
     use super::telemetry_transport_error_message;
     use chaos_parrot::TransportError;
     use chaos_parrot::error::ApiError;
-    use http::HeaderMap;
-    use http::HeaderValue;
-    use http::StatusCode;
     use pretty_assertions::assert_eq;
+    use rama::http::HeaderMap;
+    use rama::http::HeaderValue;
+    use rama::http::StatusCode;
 
     #[test]
     fn extract_response_debug_context_decodes_identity_headers() {

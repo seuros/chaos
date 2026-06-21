@@ -7,9 +7,9 @@ use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use codex_client::RequestTelemetry;
-use http::HeaderMap;
-use http::HeaderName;
-use http::HeaderValue;
+use rama::http::HeaderMap;
+use rama::http::HeaderName;
+use rama::http::HeaderValue;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -304,10 +304,10 @@ async fn fetch_openai_models(
 
     let url = format!("{}/models", base_url.trim_end_matches('/'));
 
-    let mut builder = Request::builder().method("GET").uri(&url);
+    let mut builder = Request::builder().method("GET").uri(url.as_str());
     if let Some(token) = token {
         let bearer = format!("Bearer {token}");
-        builder = builder.header(http::header::AUTHORIZATION, bearer);
+        builder = builder.header(rama::http::header::AUTHORIZATION, bearer);
     }
     let request = builder
         .body(Body::empty())

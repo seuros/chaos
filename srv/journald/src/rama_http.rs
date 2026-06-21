@@ -72,7 +72,11 @@ where
 
     pub async fn handle_http(&self, request: Request) -> Response {
         let method = request.method().clone();
-        let path = request.uri().path().to_string();
+        let path = request
+            .uri()
+            .path()
+            .map(|path| path.as_raw_str())
+            .unwrap_or("");
 
         if method != Method::POST {
             return text_response(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");

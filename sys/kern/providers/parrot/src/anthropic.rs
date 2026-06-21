@@ -15,9 +15,9 @@ use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use chaos_libration::UsageSniffer;
-use http::HeaderMap;
 use rama::error::BoxError;
 use rama::futures::StreamExt;
+use rama::http::HeaderMap;
 use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
@@ -111,7 +111,7 @@ impl AnthropicAdapter {
         }
         headers.insert(
             "anthropic-version",
-            http::HeaderValue::from_static(ANTHROPIC_VERSION),
+            rama::http::HeaderValue::from_static(ANTHROPIC_VERSION),
         );
         crate::http_helpers::insert_streaming_json_headers(&mut headers);
         Ok(headers)
@@ -791,7 +791,8 @@ async fn fetch_anthropic_models(
     let mut builder = Request::builder().method("GET").uri(url);
     // Copy auth and version headers, skip content-type/accept (not needed for GET)
     for (name, value) in headers.iter() {
-        let dominated = name == http::header::CONTENT_TYPE || name == http::header::ACCEPT;
+        let dominated =
+            name == rama::http::header::CONTENT_TYPE || name == rama::http::header::ACCEPT;
         if !dominated {
             builder = builder.header(name, value);
         }
@@ -884,7 +885,7 @@ async fn fetch_anthropic_models(
 mod tests {
     use super::*;
     use futures::stream;
-    use http::header::AUTHORIZATION;
+    use rama::http::header::AUTHORIZATION;
     use std::time::Duration;
 
     fn test_provider() -> Provider {

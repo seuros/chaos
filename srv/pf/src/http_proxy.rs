@@ -105,7 +105,6 @@ mod tests {
     use rama::http::Request;
     use rama::http::StatusCode;
     use rama::http::header;
-    use rama::net::http::RequestContext;
     use std::net::Ipv4Addr;
     use std::net::TcpListener as StdTcpListener;
     use std::sync::Arc;
@@ -350,10 +349,7 @@ mod tests {
             .body(Body::empty())
             .unwrap();
 
-        assert_eq!(
-            validate_absolute_form_host_header(&req, &RequestContext::try_from(&req).unwrap(),),
-            Ok(())
-        );
+        assert_eq!(validate_absolute_form_host_header(&req), Ok(()));
     }
 
     #[test]
@@ -366,7 +362,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            validate_absolute_form_host_header(&req, &RequestContext::try_from(&req).unwrap(),),
+            validate_absolute_form_host_header(&req),
             Err("Host header does not match request target")
         );
     }
@@ -381,7 +377,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            validate_absolute_form_host_header(&req, &RequestContext::try_from(&req).unwrap(),),
+            validate_absolute_form_host_header(&req),
             Err("Host header does not match request target")
         );
     }

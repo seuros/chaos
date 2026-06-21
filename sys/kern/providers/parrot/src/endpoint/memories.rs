@@ -6,7 +6,7 @@ use crate::error::ApiError;
 use crate::provider::Provider;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
-use http::HeaderMap;
+use rama::http::HeaderMap;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -82,10 +82,10 @@ mod tests {
     use codex_client::Response;
     use codex_client::StreamResponse;
     use codex_client::TransportError;
-    use http::HeaderMap;
-    use http::Method;
-    use http::StatusCode;
     use pretty_assertions::assert_eq;
+    use rama::http::HeaderMap;
+    use rama::http::Method;
+    use rama::http::StatusCode;
     use serde_json::json;
     use std::sync::Arc;
     use std::sync::Mutex;

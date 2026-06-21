@@ -29,9 +29,13 @@ pub(crate) fn http_service(
 
 async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     let method = request.method().clone();
-    let path = request.uri().path().to_string();
+    let path = request
+        .uri()
+        .path()
+        .map(|path| path.as_raw_str())
+        .unwrap_or("");
 
-    match (method.clone(), path.as_str()) {
+    match (method.clone(), path) {
         (Method::GET, "/monitor") => monitor::page_response(),
         (Method::GET, "/monitor/events") => monitor::events_response(state),
         (Method::GET, "/assets/datastar.js") => monitor::datastar_script_response(),

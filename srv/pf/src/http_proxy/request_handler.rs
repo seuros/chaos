@@ -38,7 +38,8 @@ use rama::http::StatusCode;
 use rama::http::header;
 use rama::http::layer::upgrade::DefaultHttpProxyConnectReplyService;
 use rama::http::layer::upgrade::UpgradeResponse;
-use rama::net::http::RequestContext;
+use rama::net::Protocol;
+use rama::net::TransportAddressInputExt;
 use rama::net::proxy::ProxyTarget;
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -55,10 +56,10 @@ pub(super) async fn http_connect_accept(
         .get_arc::<NetworkProxyState>()
         .ok_or_else(|| text_response(StatusCode::INTERNAL_SERVER_ERROR, "missing state"))?;
 
-    let authority = match RequestContext::try_from(&req).map(|ctx| ctx.host_with_port()) {
-        Ok(authority) => authority,
-        Err(err) => {
-            warn!("CONNECT missing authority: {err}");
+    let authority = match req.host_with_port_or(Protocol::HTTP_DEFAULT_PORT) {
+        Some(authority) => authority,
+        None => {
+            warn!("CONNECT missing authority");
             return Err(text_response(StatusCode::BAD_REQUEST, "missing authority"));
         }
     };
@@ -361,17 +362,16 @@ pub(super) async fn http_plain_proxy(
         };
     }
 
-    let request_ctx = match RequestContext::try_from(&req) {
-        Ok(request_ctx) => request_ctx,
-        Err(err) => {
-            warn!("missing host: {err}");
+    let authority = match req.host_with_port_or(Protocol::HTTP_DEFAULT_PORT) {
+        Some(authority) => authority,
+        None => {
+            warn!("missing host");
             return Ok(text_response(StatusCode::BAD_REQUEST, "missing host"));
         }
     };
-    let authority = request_ctx.host_with_port();
     let host = normalize_host(&authority.host.to_string());
     let port = authority.port;
-    if let Err(reason) = validate_absolute_form_host_header(&req, &request_ctx) {
+    if let Err(reason) = validate_absolute_form_host_header(&req) {
         let client = client.as_deref().unwrap_or_default();
         let host_header = req
             .headers()

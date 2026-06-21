@@ -6,6 +6,7 @@ use rama::error::extra::OpaqueError;
 use rama::http::Body;
 use rama::http::body::util::BodyExt;
 use rama::service::BoxService;
+use rama_http_hyperium::{TryIntoHyperiumHttp, TryIntoRamaHttp};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -16,6 +17,30 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 
 type HttpError = Box<dyn std::error::Error + Send + Sync>;
+
+#[derive(Debug, thiserror::Error)]
+enum RamaOtelClientError {
+    #[error("failed to convert OpenTelemetry HTTP request into rama HTTP request")]
+    RequestConversion(#[source] rama::http::HttpError),
+
+    #[error("rama OpenTelemetry HTTP request failed")]
+    Request(#[source] OpaqueError),
+
+    #[error("failed to collect rama OpenTelemetry HTTP response body")]
+    ResponseBody(#[source] rama::error::BoxError),
+
+    #[error("failed to convert rama HTTP response into OpenTelemetry HTTP response")]
+    ResponseConversion(#[source] http::Error),
+
+    #[error("rama OpenTelemetry HTTP runtime task failed")]
+    RuntimeJoin(#[source] tokio::task::JoinError),
+}
+
+impl RamaOtelClientError {
+    fn boxed(self) -> HttpError {
+        Box::new(self)
+    }
+}
 
 /// Background tokio runtime used when the OTLP exporter drives the http
 /// client from a thread that has no current tokio context. The OpenTelemetry
@@ -64,24 +89,27 @@ async fn drive_request(
     inner: Arc<Mutex<BoxService<rama::http::Request, rama::http::Response, OpaqueError>>>,
     request: http::Request<Bytes>,
 ) -> Result<http::Response<Bytes>, HttpError> {
-    let (parts, body) = request.into_parts();
-    let rama_body = Body::from(body.to_vec());
-    let rama_request = rama::http::Request::from_parts(parts.into(), rama_body);
+    let rama_request = request
+        .map(Body::from)
+        .try_into_rama_http()
+        .map_err(|err| RamaOtelClientError::RequestConversion(err).boxed())?;
 
     let rama_response: rama::http::Response = inner
         .lock()
         .await
         .serve(rama_request)
         .await
-        .map_err(|e| -> HttpError { Box::new(std::io::Error::other(e.to_string())) })?;
+        .map_err(|err| RamaOtelClientError::Request(err).boxed())?;
 
     let (parts, body) = rama_response.into_parts();
     let collected = BodyExt::collect(body)
         .await
-        .map_err(|e| -> HttpError { Box::new(std::io::Error::other(e.to_string())) })?;
+        .map_err(|err| RamaOtelClientError::ResponseBody(err).boxed())?;
     let body_bytes = collected.to_bytes();
 
-    Ok(http::Response::from_parts(parts.into(), body_bytes))
+    rama::http::Response::from_parts(parts, body_bytes)
+        .try_into_hyperium_http()
+        .map_err(|err| RamaOtelClientError::ResponseConversion(err).boxed())
 }
 
 impl opentelemetry_http::HttpClient for RamaOtelClient {
@@ -108,7 +136,7 @@ impl opentelemetry_http::HttpClient for RamaOtelClient {
                 runtime_handle
                     .spawn(drive_request(inner, request))
                     .await
-                    .map_err(|e| -> HttpError { Box::new(std::io::Error::other(e.to_string())) })?
+                    .map_err(|err| RamaOtelClientError::RuntimeJoin(err).boxed())?
             }
         })
     }

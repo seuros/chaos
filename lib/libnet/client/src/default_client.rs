@@ -157,7 +157,7 @@ impl ChaosRequestBuilder {
 
         let mut builder = rama::http::Request::builder()
             .method(self.method.clone())
-            .uri(&self.url);
+            .uri(self.url.as_str());
 
         for (key, value) in headers.iter() {
             builder = builder.header(key, value);

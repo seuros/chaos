@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn http_transport_status_is_preserved_in_abi_error() {
         let err = crate::error::ApiError::Transport(crate::TransportError::Http {
-            status: http::StatusCode::UNAUTHORIZED,
+            status: rama::http::StatusCode::UNAUTHORIZED,
             url: Some("https://api.openai.com/v1/responses".to_string()),
             headers: None,
             body: Some("unauthorized".to_string()),

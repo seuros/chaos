@@ -139,11 +139,7 @@ pub(super) async fn proxy_via_unix_socket(req: Request, socket_path: &str) -> Re
         let client = UpstreamClient::unix_socket(socket_path);
 
         let (mut parts, body) = req.into_parts();
-        let path = parts
-            .uri
-            .path_and_query()
-            .map(rama::http::uri::PathAndQuery::as_str)
-            .unwrap_or("/");
+        let path = parts.uri.request_target().into_owned();
         parts.uri = path
             .parse()
             .with_context(|| format!("invalid unix socket request path: {path}"))?;

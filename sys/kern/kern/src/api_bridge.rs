@@ -4,8 +4,8 @@ use chaos_parrot::AuthProvider as ApiAuthProvider;
 use chaos_parrot::TransportError;
 use chaos_parrot::error::ApiError;
 use chaos_parrot::rate_limits::parse_rate_limit_for_limit;
-use http::HeaderMap;
 use jiff::Timestamp;
+use rama::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -47,7 +47,7 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
             } => {
                 let body_text = body.unwrap_or_default();
 
-                if status == http::StatusCode::SERVICE_UNAVAILABLE
+                if status == StatusCode::SERVICE_UNAVAILABLE
                     && let Ok(value) = serde_json::from_str::<serde_json::Value>(&body_text)
                     && matches!(
                         value
@@ -60,7 +60,7 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
                     return ChaosErr::ServerOverloaded;
                 }
 
-                if status == http::StatusCode::BAD_REQUEST {
+                if status == StatusCode::BAD_REQUEST {
                     if body_text
                         .contains("The image data you provided does not represent a valid image")
                     {
@@ -68,9 +68,9 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
                     } else {
                         ChaosErr::InvalidRequest(body_text)
                     }
-                } else if status == http::StatusCode::INTERNAL_SERVER_ERROR {
+                } else if status == StatusCode::INTERNAL_SERVER_ERROR {
                     ChaosErr::InternalServerError
-                } else if status == http::StatusCode::TOO_MANY_REQUESTS {
+                } else if status == StatusCode::TOO_MANY_REQUESTS {
                     if let Ok(err) = serde_json::from_str::<UsageErrorResponse>(&body_text) {
                         if err.error.error_type.as_deref() == Some("usage_limit_reached") {
                             let limit_id = extract_header(headers.as_ref(), ACTIVE_LIMIT_HEADER);
@@ -110,7 +110,7 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
                 }
             }
             TransportError::RetryLimit => ChaosErr::RetryLimit(RetryLimitReachedError {
-                status: http::StatusCode::INTERNAL_SERVER_ERROR,
+                status: StatusCode::INTERNAL_SERVER_ERROR,
                 request_id: None,
             }),
             TransportError::Timeout => ChaosErr::Timeout,
@@ -136,8 +136,7 @@ pub(crate) fn abi_error_to_api_error(err: AbiError) -> ApiError {
             ApiError::Transport(TransportError::Network(message))
         }
         AbiError::Transport { status, message } => ApiError::Transport(TransportError::Http {
-            status: http::StatusCode::from_u16(status)
-                .unwrap_or(http::StatusCode::INTERNAL_SERVER_ERROR),
+            status: StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             url: None,
             headers: None,
             body: Some(message),

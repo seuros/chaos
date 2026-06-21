@@ -2,7 +2,7 @@ use chaos_abi::RateLimitSnapshot;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::protocol::CreditsSnapshot;
 use chaos_ipc::protocol::RateLimitWindow;
-use http::HeaderMap;
+use rama::http::HeaderMap;
 use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::fmt::Display;
@@ -369,8 +369,8 @@ fn header_prefix_has_data(headers: &HeaderMap, prefix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::HeaderValue;
     use pretty_assertions::assert_eq;
+    use rama::http::HeaderValue;
 
     #[test]
     fn parse_rate_limit_for_limit_defaults_to_codex_headers() {

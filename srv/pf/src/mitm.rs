@@ -436,7 +436,7 @@ fn extract_request_host(req: &Request) -> Option<String> {
         .get(HOST)
         .and_then(|v| v.to_str().ok())
         .map(ToString::to_string)
-        .or_else(|| req.uri().authority().map(|a| a.as_str().to_string()))
+        .or_else(|| req.uri().authority().map(|authority| authority.to_string()))
 }
 
 fn authority_header_value(host: &str, port: u16) -> String {
@@ -455,7 +455,7 @@ fn authority_header_value(host: &str, port: u16) -> String {
 }
 
 fn path_for_log(uri: &Uri) -> String {
-    uri.path().to_string()
+    uri.path_or_root().to_string()
 }
 
 #[cfg(test)]

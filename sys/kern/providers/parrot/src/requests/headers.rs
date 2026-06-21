@@ -1,6 +1,6 @@
 use chaos_ipc::protocol::SessionSource;
-use http::HeaderMap;
-use http::HeaderValue;
+use rama::http::HeaderMap;
+use rama::http::HeaderValue;
 
 pub fn build_conversation_headers(conversation_id: Option<String>) -> HeaderMap {
     let mut headers = HeaderMap::new();
@@ -29,7 +29,7 @@ pub(crate) fn subagent_header(source: &Option<SessionSource>) -> Option<String> 
 
 pub(crate) fn insert_header(headers: &mut HeaderMap, name: &str, value: &str) {
     if let (Ok(header_name), Ok(header_value)) = (
-        name.parse::<http::HeaderName>(),
+        name.parse::<rama::http::HeaderName>(),
         HeaderValue::from_str(value),
     ) {
         headers.insert(header_name, header_value);

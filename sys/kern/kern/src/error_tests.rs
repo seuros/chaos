@@ -1,10 +1,10 @@
 use super::*;
 use crate::exec::StreamOutput;
 use chaos_ipc::protocol::RateLimitWindow;
-use http::StatusCode;
 use jiff::Timestamp;
 use jiff::ToSpan;
 use pretty_assertions::assert_eq;
+use rama::http::StatusCode;
 
 fn rate_limit_snapshot() -> RateLimitSnapshot {
     let primary_reset_at = "2024-01-01T01:00:00Z"

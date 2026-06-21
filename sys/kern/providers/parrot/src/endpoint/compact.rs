@@ -6,7 +6,7 @@ use crate::provider::Provider;
 use chaos_abi::ResponseItem;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
-use http::HeaderMap;
+use rama::http::HeaderMap;
 use serde::Deserialize;
 use std::sync::Arc;
 

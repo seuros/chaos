@@ -15,9 +15,9 @@ use chaos_ipc::protocol::SessionSource;
 use codex_client::HttpTransport;
 use codex_client::RequestCompression;
 use codex_client::RequestTelemetry;
-use http::HeaderMap;
-use http::HeaderValue;
-use http::Method;
+use rama::http::HeaderMap;
+use rama::http::HeaderValue;
+use rama::http::Method;
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -139,7 +139,7 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
                 Some(body),
                 |req| {
                     req.headers.insert(
-                        http::header::ACCEPT,
+                        rama::http::header::ACCEPT,
                         HeaderValue::from_static(crate::common::MIME_TEXT_EVENT_STREAM),
                     );
                     req.compression = request_compression;

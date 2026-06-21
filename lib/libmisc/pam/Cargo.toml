@@ -14,7 +14,7 @@ codex-client = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-services = { workspace = true }
 chaos-ipc = { workspace = true }
-http = { workspace = true }
+rama = { workspace = true }
 jiff = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -538,10 +538,10 @@ mod tests {
     use chaos_ipc::models::MessagePhase;
     use codex_client::StreamResponse;
     use futures::stream;
-    use http::HeaderMap;
-    use http::HeaderValue;
-    use http::StatusCode;
     use pretty_assertions::assert_eq;
+    use rama::http::HeaderMap;
+    use rama::http::HeaderValue;
+    use rama::http::StatusCode;
     use serde_json::json;
     use tokio::sync::mpsc;
     use tokio_test::io::Builder as IoBuilder;

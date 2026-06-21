@@ -125,7 +125,9 @@ impl RamaTransport {
         // Inject trace headers.
         inject_trace_headers(&mut headers);
 
-        let mut builder = rama::http::Request::builder().method(http_method).uri(&url);
+        let mut builder = rama::http::Request::builder()
+            .method(http_method)
+            .uri(url.as_str());
 
         for (key, value) in headers.iter() {
             builder = builder.header(key, value);

@@ -6,8 +6,8 @@ use rama::http::Body;
 use rama::http::Request;
 use rama::http::Response;
 use rama::http::client::EasyHttpWebClient;
+use rama::net::ProtocolInputExt;
 use rama::net::address::ProxyAddress;
-use rama::net::http::RequestContext;
 use rama::rt::Executor;
 use rama::service::BoxService;
 use tracing::warn;
@@ -31,8 +31,9 @@ impl ProxyConfig {
     }
 
     fn proxy_for_request(&self, req: &Request) -> Option<ProxyAddress> {
-        let is_secure = RequestContext::try_from(req)
-            .map(|ctx| ctx.protocol.is_secure())
+        let is_secure = req
+            .protocol()
+            .map(|protocol| protocol.is_secure())
             .unwrap_or(false);
         self.proxy_for_protocol(is_secure)
     }

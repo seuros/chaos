@@ -1,9 +1,9 @@
 use chaos_ipc::product::CHAOS_VERSION;
 use codex_client::ChaosHttpClient;
 pub use codex_client::ChaosRequestBuilder;
-use http::HeaderMap;
-use http::HeaderValue;
-use http::header::USER_AGENT;
+use rama::http::HeaderMap;
+use rama::http::HeaderValue;
+use rama::http::header::USER_AGENT;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::sync::OnceLock;

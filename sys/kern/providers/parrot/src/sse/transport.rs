@@ -1,9 +1,9 @@
 use crate::provider::RetryConfig;
 use chaos_abi::AbiError;
 use chaos_libration::UsageSniffer;
-use http::HeaderMap;
 use rama::Service;
 use rama::http::Body;
+use rama::http::HeaderMap;
 use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;

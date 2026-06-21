@@ -5,7 +5,8 @@ use rama::http::Request;
 use rama::http::header;
 use rama::http::headers::HeaderMapExt;
 use rama::http::headers::Host;
-use rama::net::http::RequestContext;
+use rama::net::Protocol;
+use rama::net::ProtocolInputExt;
 use rama::net::stream::SocketInfo;
 
 pub(super) fn client_addr<T: ExtensionsRef>(input: &T) -> Option<String> {
@@ -15,10 +16,7 @@ pub(super) fn client_addr<T: ExtensionsRef>(input: &T) -> Option<String> {
         .map(|info| info.peer_addr().to_string())
 }
 
-pub(super) fn validate_absolute_form_host_header(
-    req: &Request,
-    request_ctx: &RequestContext,
-) -> Result<(), &'static str> {
+pub(super) fn validate_absolute_form_host_header(req: &Request) -> Result<(), &'static str> {
     if req.uri().scheme_str().is_none() {
         return Ok(());
     }
@@ -31,18 +29,28 @@ pub(super) fn validate_absolute_form_host_header(
         return Ok(());
     };
 
-    if host_header.0.host != request_ctx.authority.host {
+    let Some(target_host) = req.uri().host().map(|host| host.into_owned()) else {
+        return Err("missing request target host");
+    };
+    if host_header.0.host != target_host {
         return Err("Host header does not match request target");
     }
 
+    let protocol = req.protocol().unwrap_or(Protocol::HTTP);
+    let target_port = req.uri().port_u16().unwrap_or_else(|| {
+        protocol
+            .default_port()
+            .unwrap_or(Protocol::HTTP_DEFAULT_PORT)
+    });
+
     if let Some(host_port) = host_header.0.port.as_u16() {
-        if Some(host_port) != request_ctx.authority.port.as_u16() {
+        if host_port != target_port {
             return Err("Host header does not match request target");
         }
         return Ok(());
     }
 
-    if !request_ctx.authority_has_default_port() {
+    if protocol.default_port() != Some(target_port) {
         return Err("Host header does not match request target");
     }
 

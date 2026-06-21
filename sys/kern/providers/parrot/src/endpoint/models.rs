@@ -6,9 +6,9 @@ use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelsResponse;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
-use http::HeaderMap;
-use http::Method;
-use http::header::ETAG;
+use rama::http::HeaderMap;
+use rama::http::Method;
+use rama::http::header::ETAG;
 use std::sync::Arc;
 
 pub struct ModelsClient<T: HttpTransport, A: AuthProvider> {
@@ -81,9 +81,9 @@ mod tests {
     use codex_client::Response;
     use codex_client::StreamResponse;
     use codex_client::TransportError;
-    use http::HeaderMap;
-    use http::StatusCode;
     use pretty_assertions::assert_eq;
+    use rama::http::HeaderMap;
+    use rama::http::StatusCode;
     use serde_json::json;
     use std::sync::Arc;
     use std::sync::Mutex;

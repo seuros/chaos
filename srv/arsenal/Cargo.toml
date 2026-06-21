@@ -17,11 +17,11 @@ workspace = true
 chaos-locate = { workspace = true }
 chaos-traits = { workspace = true }
 chaos-wchar = { workspace = true }
-grep-regex = { workspace = true }
-grep-searcher = { workspace = true }
+fff-search = "0.9"
 ignore = { workspace = true }
 inventory = { workspace = true }
 mcp-host = { workspace = true, features = ["macros"] }
+regex = { workspace = true }
 schemars = "1.2.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

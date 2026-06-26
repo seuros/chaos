@@ -39,7 +39,7 @@ use core_test_support::stdio_server_bin;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_with_timeout;
-use http::StatusCode;
+use rama::http::StatusCode;
 use serde_json::Value;
 use serde_json::json;
 use serial_test::serial;

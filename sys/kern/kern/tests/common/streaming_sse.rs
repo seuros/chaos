@@ -268,8 +268,8 @@ fn unix_ms_now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::StatusCode;
     use pretty_assertions::assert_eq;
+    use rama::http::StatusCode;
     use tokio::net::TcpStream;
     use tokio::time::Duration;
     use tokio::time::timeout;

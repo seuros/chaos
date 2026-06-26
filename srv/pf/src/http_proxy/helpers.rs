@@ -29,7 +29,11 @@ pub(super) fn validate_absolute_form_host_header(req: &Request) -> Result<(), &'
         return Ok(());
     };
 
-    let Some(target_host) = req.uri().host().map(|host| host.into_owned()) else {
+    let Some(target_host) = req
+        .uri()
+        .host()
+        .map(rama::net::address::HostRef::into_owned)
+    else {
         return Err("missing request target host");
     };
     if host_header.0.host != target_host {

@@ -108,7 +108,7 @@ impl Upstream {
         let scheme = uri.scheme().cloned().unwrap_or(Protocol::HTTPS);
         let authority = uri
             .authority()
-            .map(|authority| authority.into_owned())
+            .map(rama::net::address::AuthorityRef::into_owned)
             .ok_or_else(|| BoxError::from("upstream base url has no authority"))?;
         Ok(Self { scheme, authority })
     }
@@ -595,7 +595,7 @@ mod tests {
             .unwrap();
         let port = listener.local_addr().unwrap().port();
         let svc = HttpServer::auto(exec).service(Arc::new(service_fn(|req: Request| async move {
-            let resp = if req.uri().path() == "/error" {
+            let resp = if req.uri().path().is_some_and(|p| p.as_raw_str() == "/error") {
                 error_response(StatusCode::INTERNAL_SERVER_ERROR)
             } else {
                 let mut r = Response::new(Body::from("event: message_start\ndata: {}\n\n"));

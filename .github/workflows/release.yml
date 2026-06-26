@@ -21,7 +21,7 @@ jobs:
       tag_name: ${{ steps.meta.outputs.tag_name }}
       is_github: ${{ steps.meta.outputs.is_github }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute metadata
         id: meta
@@ -65,7 +65,7 @@ jobs:
             os_label: macos-aarch64
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: seuros/setup-upkg@master
 
@@ -149,7 +149,7 @@ jobs:
             os_label: dragonfly-x86_64
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: seuros/setup-upkg@master
         if: matrix.os_label != 'dragonfly-x86_64'

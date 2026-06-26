@@ -39,7 +39,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
             profile: dev
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: seuros/setup-upkg@master
 

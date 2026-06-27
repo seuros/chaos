@@ -19,7 +19,6 @@ codex-client = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-which = { workspace = true }
 ctor = { workspace = true }
-http = { workspace = true }
 notify = { workspace = true }
 rama = { workspace = true }
 regex-lite = { workspace = true }

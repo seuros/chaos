@@ -21,7 +21,10 @@ jobs:
     runs-on: ${{ matrix.runs_on || matrix.runner }}
     timeout-minutes: 30
     env:
-      USE_SCCACHE: "true"
+      # Temporarily disabled: a runtime-binary build links sqlx-sqlite's
+      # call to sqlite3_unlock_notify, which the wrapped build of the
+      # bundled amalgamation drops only under sccache. Disable to confirm.
+      USE_SCCACHE: "false"
       CARGO_INCREMENTAL: "0"
       SCCACHE_CACHE_SIZE: 10G
 

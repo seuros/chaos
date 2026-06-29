@@ -8,12 +8,9 @@ use chaos_abi::SpoolPhase;
 use chaos_storage::ChaosStorageProvider;
 use chaos_storage::StorageKind;
 use sqlx::PgPool;
-use sqlx::Row;
 use sqlx::SqlitePool;
-use sqlx::postgres::PgRow;
-use sqlx::sqlite::SqliteRow;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub(crate) struct SpoolRow {
     pub manifest_id: String,
     pub backend: String,
@@ -42,7 +39,7 @@ impl SpoolStore {
 
     /// Load the row if it exists and has a non-null batch_id.
     pub async fn load(&self, manifest_id: &str) -> anyhow::Result<Option<SpoolRow>> {
-        let row = sqlx::query(
+        let row = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
                     result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
              FROM spool_jobs WHERE manifest_id = ?",
@@ -50,11 +47,7 @@ impl SpoolStore {
         .bind(manifest_id)
         .fetch_optional(&self.pool)
         .await?;
-
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        Ok(Some(row_to_spool_row_sqlite(&row)))
+        Ok(row)
     }
 
     /// Write terminal state: `Completed`/`Failed`/`Expired`/`Cancelled` with
@@ -177,14 +170,14 @@ impl SpoolStore {
     }
 
     pub async fn list(&self) -> anyhow::Result<Vec<SpoolRow>> {
-        let rows = sqlx::query(
+        let rows = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
                     result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
              FROM spool_jobs ORDER BY created_at DESC, manifest_id DESC",
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(row_to_spool_row_sqlite).collect())
+        Ok(rows)
     }
 }
 
@@ -200,7 +193,7 @@ impl PostgresSpoolStore {
 
     /// Load the row if it exists and has a non-null batch_id.
     pub async fn load(&self, manifest_id: &str) -> anyhow::Result<Option<SpoolRow>> {
-        let row = sqlx::query(
+        let row = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
                     result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
              FROM spool_jobs WHERE manifest_id = $1",
@@ -208,11 +201,7 @@ impl PostgresSpoolStore {
         .bind(manifest_id)
         .fetch_optional(&self.pool)
         .await?;
-
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        Ok(Some(row_to_spool_row_postgres(&row)))
+        Ok(row)
     }
 
     /// Write terminal state: `Completed`/`Failed`/`Expired`/`Cancelled` with
@@ -335,14 +324,14 @@ impl PostgresSpoolStore {
     }
 
     pub async fn list(&self) -> anyhow::Result<Vec<SpoolRow>> {
-        let rows = sqlx::query(
+        let rows = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
                     result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
              FROM spool_jobs ORDER BY created_at DESC, manifest_id DESC",
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(row_to_spool_row_postgres).collect())
+        Ok(rows)
     }
 }
 
@@ -463,41 +452,5 @@ fn phase_to_status(phase: SpoolPhase) -> &'static str {
         SpoolPhase::Failed => "Failed",
         SpoolPhase::Expired => "Expired",
         SpoolPhase::Cancelled => "Cancelled",
-    }
-}
-
-fn row_to_spool_row_sqlite(row: &SqliteRow) -> SpoolRow {
-    SpoolRow {
-        manifest_id: row.get("manifest_id"),
-        backend: row.get("backend"),
-        batch_id: row.get("batch_id"),
-        status: row.get("status"),
-        request_count: row.get("request_count"),
-        payload_json: row.get("payload_json"),
-        result_json: row.get("result_json"),
-        raw_result: row.get("raw_result"),
-        error: row.get("error"),
-        submitted_at: row.get("submitted_at"),
-        completed_at: row.get("completed_at"),
-        created_at: row.get("created_at"),
-        updated_at: row.get("updated_at"),
-    }
-}
-
-fn row_to_spool_row_postgres(row: &PgRow) -> SpoolRow {
-    SpoolRow {
-        manifest_id: row.get("manifest_id"),
-        backend: row.get("backend"),
-        batch_id: row.get("batch_id"),
-        status: row.get("status"),
-        request_count: row.get("request_count"),
-        payload_json: row.get("payload_json"),
-        result_json: row.get("result_json"),
-        raw_result: row.get("raw_result"),
-        error: row.get("error"),
-        submitted_at: row.get("submitted_at"),
-        completed_at: row.get("completed_at"),
-        created_at: row.get("created_at"),
-        updated_at: row.get("updated_at"),
     }
 }

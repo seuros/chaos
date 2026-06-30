@@ -31,6 +31,28 @@ pub fn single_unknown_for_command(command: &[String]) -> ParsedCommand {
     }
 }
 
+fn unknown_for_main_cmd(main_cmd: &[String]) -> ParsedCommand {
+    ParsedCommand::Unknown {
+        cmd: shlex_join(main_cmd),
+    }
+}
+
+fn read_command(main_cmd: &[String], path: String) -> ParsedCommand {
+    let name = short_display_path(&path);
+    ParsedCommand::Read {
+        cmd: shlex_join(main_cmd),
+        name,
+        path: PathBuf::from(path),
+    }
+}
+
+fn read_command_or_unknown(main_cmd: &[String], path: Option<String>) -> ParsedCommand {
+    match path {
+        Some(path) => read_command(main_cmd, path),
+        None => unknown_for_main_cmd(main_cmd),
+    }
+}
+
 pub fn parse_command_impl(command: &[String]) -> Vec<ParsedCommand> {
     if let Some(commands) = parse_shell_lc_commands(command) {
         return commands;
@@ -730,9 +752,7 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
                     path,
                 }
             }
-            _ => ParsedCommand::Unknown {
-                cmd: shlex_join(main_cmd),
-            },
+            _ => unknown_for_main_cmd(main_cmd),
         },
         Some((head, tail)) if head == "fd" => {
             let (query, path) = parse_fd_query_and_path(tail);
@@ -794,21 +814,11 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
             }
         }
         Some((head, tail)) if head == "cat" => {
-            if let Some(path) = single_non_flag_operand(tail, &[]) {
-                let name = short_display_path(&path);
-                ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                }
-            } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
-            }
+            read_command_or_unknown(main_cmd, single_non_flag_operand(tail, &[]))
         }
-        Some((head, tail)) if matches!(head.as_str(), "bat" | "batcat") => {
-            if let Some(path) = single_non_flag_operand(
+        Some((head, tail)) if matches!(head.as_str(), "bat" | "batcat") => read_command_or_unknown(
+            main_cmd,
+            single_non_flag_operand(
                 tail,
                 &[
                     "--theme",
@@ -819,21 +829,11 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
                     "--line-range",
                     "--map-syntax",
                 ],
-            ) {
-                let name = short_display_path(&path);
-                ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                }
-            } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
-            }
-        }
-        Some((head, tail)) if head == "less" => {
-            if let Some(path) = single_non_flag_operand(
+            ),
+        ),
+        Some((head, tail)) if head == "less" => read_command_or_unknown(
+            main_cmd,
+            single_non_flag_operand(
                 tail,
                 &[
                     "-p",
@@ -848,32 +848,10 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
                     "--shift",
                     "--jump-target",
                 ],
-            ) {
-                let name = short_display_path(&path);
-                ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                }
-            } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
-            }
-        }
+            ),
+        ),
         Some((head, tail)) if head == "more" => {
-            if let Some(path) = single_non_flag_operand(tail, &[]) {
-                let name = short_display_path(&path);
-                ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                }
-            } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
-            }
+            read_command_or_unknown(main_cmd, single_non_flag_operand(tail, &[]))
         }
         Some((head, tail)) if head == "head" => {
             // Support `head -n 50 file` and `head -n50 file` forms.
@@ -902,28 +880,15 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
                     i += 1;
                 }
                 if let Some(p) = candidates.into_iter().find(|p| !p.starts_with('-')) {
-                    let path = p.clone();
-                    let name = short_display_path(&path);
-                    return ParsedCommand::Read {
-                        cmd: shlex_join(main_cmd),
-                        name,
-                        path: PathBuf::from(path),
-                    };
+                    return read_command(main_cmd, p.clone());
                 }
             }
             if let [path] = tail
                 && !path.starts_with('-')
             {
-                let name = short_display_path(path);
-                return ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                };
+                return read_command(main_cmd, path.clone());
             }
-            ParsedCommand::Unknown {
-                cmd: shlex_join(main_cmd),
-            }
+            unknown_for_main_cmd(main_cmd)
         }
         Some((head, tail)) if head == "tail" => {
             // Support `tail -n +10 file` and `tail -n+10 file` forms.
@@ -956,73 +921,32 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
                     i += 1;
                 }
                 if let Some(p) = candidates.into_iter().find(|p| !p.starts_with('-')) {
-                    let path = p.clone();
-                    let name = short_display_path(&path);
-                    return ParsedCommand::Read {
-                        cmd: shlex_join(main_cmd),
-                        name,
-                        path: PathBuf::from(path),
-                    };
+                    return read_command(main_cmd, p.clone());
                 }
             }
             if let [path] = tail
                 && !path.starts_with('-')
             {
-                let name = short_display_path(path);
-                return ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                };
+                return read_command(main_cmd, path.clone());
             }
-            ParsedCommand::Unknown {
-                cmd: shlex_join(main_cmd),
-            }
+            unknown_for_main_cmd(main_cmd)
         }
         Some((head, tail)) if head == "awk" => {
-            if let Some(path) = awk_data_file_operand_inner(tail) {
-                let name = short_display_path(&path);
-                ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                }
-            } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
-            }
+            read_command_or_unknown(main_cmd, awk_data_file_operand_inner(tail))
         }
         Some((head, tail)) if head == "nl" => {
             // Avoid treating option values as paths (e.g., nl -s "  ").
             let candidates = skip_flag_values(tail, &["-s", "-w", "-v", "-i", "-b"]);
-            if let Some(p) = candidates.into_iter().find(|p| !p.starts_with('-')) {
-                let path = p.clone();
-                let name = short_display_path(&path);
-                ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                }
-            } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
-            }
+            read_command_or_unknown(
+                main_cmd,
+                candidates
+                    .into_iter()
+                    .find(|p| !p.starts_with('-'))
+                    .cloned(),
+            )
         }
         Some((head, tail)) if head == "sed" => {
-            if let Some(path) = sed_read_path(tail) {
-                let name = short_display_path(&path);
-                ParsedCommand::Read {
-                    cmd: shlex_join(main_cmd),
-                    name,
-                    path: PathBuf::from(path),
-                }
-            } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
-            }
+            read_command_or_unknown(main_cmd, sed_read_path(tail))
         }
         Some((head, tail)) if is_python_command(head) => {
             if python_walks_files(tail) {
@@ -1031,14 +955,10 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
                     path: None,
                 }
             } else {
-                ParsedCommand::Unknown {
-                    cmd: shlex_join(main_cmd),
-                }
+                unknown_for_main_cmd(main_cmd)
             }
         }
         // Other commands
-        _ => ParsedCommand::Unknown {
-            cmd: shlex_join(main_cmd),
-        },
+        _ => unknown_for_main_cmd(main_cmd),
     }
 }

@@ -18,7 +18,7 @@ use rama::{
     error::BoxError,
     futures::Stream,
     http::{
-        Body, HeaderValue, Request, Response, StatusCode, Uri, Version,
+        Body, HeaderValue, Request, Response, StatusCode, Version,
         body::{BodyDataStream, util::BodyExt},
         client::EasyHttpWebClient,
         header::HOST,
@@ -28,10 +28,11 @@ use rama::{
         },
         server::HttpServer,
     },
-    net::{Protocol, address::Authority, tls::client::TlsClientConfig},
+    net::{Protocol, address::Authority, uri::Uri},
     rt::Executor,
     service::service_fn,
     tcp::server::TcpListener,
+    tls::client::TlsClientConfig,
 };
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -329,6 +330,7 @@ async fn forward(
     let tls = TlsClientConfig::new().with_alpn_http_auto();
     let client = EasyHttpWebClient::connector_builder()
         .with_default_transport_connector()
+        .with_default_dns_connector()
         .with_tls_proxy_support_using_rustls()
         .with_proxy_support()
         .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
@@ -595,7 +597,7 @@ mod tests {
             .unwrap();
         let port = listener.local_addr().unwrap().port();
         let svc = HttpServer::auto(exec).service(Arc::new(service_fn(|req: Request| async move {
-            let resp = if req.uri().path().is_some_and(|p| p.as_raw_str() == "/error") {
+            let resp = if req.uri().path().is_some_and(|p| p.as_encoded_str() == "/error") {
                 error_response(StatusCode::INTERNAL_SERVER_ERROR)
             } else {
                 let mut r = Response::new(Body::from("event: message_start\ndata: {}\n\n"));
@@ -615,6 +617,7 @@ mod tests {
         let client = (MapResponseBodyLayer::new_boxed_streaming_body(),).into_layer(
             EasyHttpWebClient::connector_builder()
                 .with_default_transport_connector()
+                .with_default_dns_connector()
                 .with_tls_proxy_support_using_rustls()
                 .with_proxy_support()
                 .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)

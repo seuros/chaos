@@ -29,11 +29,8 @@ pub(crate) fn http_service(
 
 async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     let method = request.method().clone();
-    let path = request
-        .uri()
-        .path()
-        .map(|path| path.as_raw_str())
-        .unwrap_or("");
+    let path_cow = request.uri().path().map(|path| path.as_encoded_str());
+    let path = path_cow.as_deref().unwrap_or("");
 
     match (method.clone(), path) {
         (Method::GET, "/monitor") => monitor::page_response(),

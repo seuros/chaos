@@ -104,7 +104,7 @@ async fn drive_request(
     let (parts, body) = rama_response.into_parts();
     let collected = BodyExt::collect(body)
         .await
-        .map_err(|err| RamaOtelClientError::ResponseBody(err).boxed())?;
+        .map_err(|err| RamaOtelClientError::ResponseBody(Box::new(err)).boxed())?;
     let body_bytes = collected.to_bytes();
 
     rama::http::Response::from_parts(parts, body_bytes)

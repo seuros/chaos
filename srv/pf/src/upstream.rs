@@ -144,6 +144,7 @@ fn build_http_client() -> RamaHttpClient {
 fn build_unix_client(path: &str) -> RamaHttpClient {
     EasyHttpWebClient::connector_builder()
         .with_custom_transport_connector(UnixConnector::fixed(path))
+        .without_dns_connector()
         .without_tls_proxy_support()
         .without_proxy_support()
         .without_tls_support()

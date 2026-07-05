@@ -21,14 +21,14 @@ use rama::http::layer::upgrade::Upgraded;
 use rama::net::Protocol;
 use rama::net::address::ProxyAddress;
 use rama::net::client::ConnectorService;
+use rama::net::client::ConnectorTarget;
 use rama::net::client::EstablishedClientConnection;
+use rama::net::client::Request as TcpRequest;
 use rama::net::proxy::IoForwardService;
-use rama::net::proxy::ProxyTarget;
-use rama::net::tls::client::TlsClientConfig;
 use rama::rt::Executor;
-use rama::tcp::client::Request as TcpRequest;
 use rama::tcp::client::service::TcpConnector;
 use rama::tcp::proxy::IoToProxyBridgeIoLayer;
+use rama::tls::client::TlsClientConfig;
 use rama::tls::rustls::client::TlsConnectorLayer;
 use std::convert::Infallible;
 use tracing::error;
@@ -50,7 +50,9 @@ where
     type Error = C::Error;
 
     async fn serve(&self, req: TcpRequest) -> Result<Self::Output, Self::Error> {
-        self.inner.connect(req.with_protocol(Protocol::HTTPS)).await
+        self.inner
+            .connect(req.with_application_protocol(Protocol::HTTPS))
+            .await
     }
 }
 
@@ -63,7 +65,7 @@ pub(super) async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infalli
 
     let Some(target) = upgraded
         .extensions()
-        .get_ref::<ProxyTarget>()
+        .get_ref::<ConnectorTarget>()
         .map(|t| t.0.clone())
     else {
         warn!("CONNECT missing proxy target");
@@ -113,11 +115,11 @@ pub(super) async fn forward_connect_tunnel(
 ) -> Result<(), BoxError> {
     let authority = upgraded
         .extensions()
-        .get_ref::<ProxyTarget>()
+        .get_ref::<ConnectorTarget>()
         .map(|target| target.0.clone())
         .ok_or_else(|| BoxError::from("missing forward authority"))?;
 
-    let proxy_connector = HttpProxyConnector::optional(TcpConnector::new(Executor::default()));
+    let proxy_connector = HttpProxyConnector::optional(TcpConnector::new());
     let tls_config = TlsClientConfig::new().with_alpn_http_auto();
     let connector = TlsConnectorLayer::tunnel(None)
         .with_base_config(tls_config)
@@ -126,7 +128,7 @@ pub(super) async fn forward_connect_tunnel(
     if let Some(proxy) = proxy {
         upgraded.extensions().insert(proxy);
     }
-    IoToProxyBridgeIoLayer::extension_proxy_target_with_connector(connector)
+    IoToProxyBridgeIoLayer::extension_connector_target_with_connector(connector)
         .into_layer(IoForwardService::new(Executor::default()))
         .serve(upgraded)
         .await

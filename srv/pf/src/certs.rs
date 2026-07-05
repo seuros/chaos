@@ -16,9 +16,8 @@ use rama::crypto::dep::rcgen::SanType;
 use rama::crypto::pki_types::CertificateDer;
 use rama::crypto::pki_types::PrivateKeyDer;
 use rama::crypto::pki_types::pem::PemObject;
-use rama::net::tls::ApplicationProtocol;
-use rama::tls::rustls::dep::rustls;
-use rama::tls::rustls::server::TlsAcceptorData;
+use rama::tls::server::ServerAuthData;
+use rama::tls::server::TlsServerConfig;
 use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -43,23 +42,16 @@ impl ManagedMitmCa {
         Ok(Self { issuer })
     }
 
-    pub(super) fn tls_acceptor_data_for_host(&self, host: &str) -> Result<TlsAcceptorData> {
+    pub(super) fn tls_acceptor_data_for_host(&self, host: &str) -> Result<TlsServerConfig> {
         let (cert_pem, key_pem) = issue_host_certificate_pem(host, &self.issuer)?;
         let cert = CertificateDer::from_pem_slice(cert_pem.as_bytes())
             .context("failed to parse host cert PEM")?;
         let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
             .context("failed to parse host key PEM")?;
-        let mut server_config =
-            rustls::ServerConfig::builder_with_protocol_versions(rustls::ALL_VERSIONS)
-                .with_no_client_auth()
-                .with_single_cert(vec![cert], key)
-                .context("failed to build rustls server config")?;
-        server_config.alpn_protocols = vec![
-            ApplicationProtocol::HTTP_2.as_bytes().to_vec(),
-            ApplicationProtocol::HTTP_11.as_bytes().to_vec(),
-        ];
 
-        Ok(TlsAcceptorData::from(server_config))
+        Ok(TlsServerConfig::new()
+            .with_single_cert(ServerAuthData::new(vec![cert], key))
+            .with_alpn_http_auto())
     }
 }
 

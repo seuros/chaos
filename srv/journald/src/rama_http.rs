@@ -75,8 +75,8 @@ where
         let path = request
             .uri()
             .path()
-            .map(|path| path.as_raw_str())
-            .unwrap_or("");
+            .map(|path| path.as_encoded_str())
+            .unwrap_or(std::borrow::Cow::Borrowed(""));
 
         if method != Method::POST {
             return text_response(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");

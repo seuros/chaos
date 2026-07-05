@@ -24,18 +24,18 @@ use rama::http::BodyDataStream;
 use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
-use rama::http::Uri;
 use rama::http::header::HOST;
 use rama::http::layer::remove_header::RemoveRequestHeaderLayer;
 use rama::http::layer::remove_header::RemoveResponseHeaderLayer;
 use rama::http::layer::upgrade::Upgraded;
 use rama::http::server::HttpServer;
-use rama::net::proxy::ProxyTarget;
+use rama::net::client::ConnectorTarget;
 use rama::net::stream::SocketInfo;
+use rama::net::uri::Uri;
 use rama::rt::Executor;
 use rama::service::service_fn;
-use rama::tls::rustls::server::TlsAcceptorData;
 use rama::tls::rustls::server::TlsAcceptorLayer;
+use rama::tls::server::TlsServerConfig;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context as TaskContext;
@@ -101,7 +101,7 @@ impl MitmState {
         })
     }
 
-    fn tls_acceptor_data_for_host(&self, host: &str) -> Result<TlsAcceptorData> {
+    fn tls_acceptor_data_for_host(&self, host: &str) -> Result<TlsServerConfig> {
         self.ca.tls_acceptor_data_for_host(host)
     }
 
@@ -126,7 +126,7 @@ pub(crate) async fn mitm_tunnel(upgraded: Upgraded) -> Result<()> {
         .context("missing app state")?;
     let target = upgraded
         .extensions()
-        .get_ref::<ProxyTarget>()
+        .get_ref::<ConnectorTarget>()
         .context("missing proxy target")?
         .0
         .clone();

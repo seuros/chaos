@@ -38,9 +38,9 @@ use rama::http::StatusCode;
 use rama::http::header;
 use rama::http::layer::upgrade::DefaultHttpProxyConnectReplyService;
 use rama::http::layer::upgrade::UpgradeResponse;
+use rama::net::ConnectorTargetInputExt;
 use rama::net::Protocol;
-use rama::net::TransportAddressInputExt;
-use rama::net::proxy::ProxyTarget;
+use rama::net::client::ConnectorTarget;
 use std::convert::Infallible;
 use std::sync::Arc;
 use tracing::error;
@@ -56,7 +56,7 @@ pub(super) async fn http_connect_accept(
         .get_arc::<NetworkProxyState>()
         .ok_or_else(|| text_response(StatusCode::INTERNAL_SERVER_ERROR, "missing state"))?;
 
-    let authority = match req.host_with_port_or(Protocol::HTTP_DEFAULT_PORT) {
+    let authority = match req.connector_target_with_default_port(Protocol::HTTP_DEFAULT_PORT) {
         Some(authority) => authority,
         None => {
             warn!("CONNECT missing authority");
@@ -196,7 +196,7 @@ pub(super) async fn http_connect_accept(
         return Err(blocked_text_with_details(REASON_MITM_REQUIRED, &details));
     }
 
-    req.extensions().insert(ProxyTarget(authority));
+    req.extensions().insert(ConnectorTarget(authority));
     req.extensions().insert(mode);
     if let Some(mitm_state) = mitm_state {
         req.extensions().insert_arc(mitm_state);
@@ -362,7 +362,7 @@ pub(super) async fn http_plain_proxy(
         };
     }
 
-    let authority = match req.host_with_port_or(Protocol::HTTP_DEFAULT_PORT) {
+    let authority = match req.connector_target_with_default_port(Protocol::HTTP_DEFAULT_PORT) {
         Some(authority) => authority,
         None => {
             warn!("missing host");

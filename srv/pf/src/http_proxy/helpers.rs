@@ -40,7 +40,7 @@ pub(super) fn validate_absolute_form_host_header(req: &Request) -> Result<(), &'
         return Err("Host header does not match request target");
     }
 
-    let protocol = req.protocol().unwrap_or(Protocol::HTTP);
+    let protocol = req.protocol().unwrap_or(&Protocol::HTTP);
     let target_port = req.uri().port_u16().unwrap_or_else(|| {
         protocol
             .default_port()

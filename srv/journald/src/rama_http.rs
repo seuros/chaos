@@ -75,7 +75,7 @@ where
         let path = request
             .uri()
             .path()
-            .map(|path| path.as_encoded_str())
+            .map(rama::net::uri::PathRef::as_encoded_str)
             .unwrap_or(std::borrow::Cow::Borrowed(""));
 
         if method != Method::POST {

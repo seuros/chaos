@@ -597,7 +597,11 @@ mod tests {
             .unwrap();
         let port = listener.local_addr().unwrap().port();
         let svc = HttpServer::auto(exec).service(Arc::new(service_fn(|req: Request| async move {
-            let resp = if req.uri().path().is_some_and(|p| p.as_encoded_str() == "/error") {
+            let resp = if req
+                .uri()
+                .path()
+                .is_some_and(|p| p.as_encoded_str() == "/error")
+            {
                 error_response(StatusCode::INTERNAL_SERVER_ERROR)
             } else {
                 let mut r = Response::new(Body::from("event: message_start\ndata: {}\n\n"));

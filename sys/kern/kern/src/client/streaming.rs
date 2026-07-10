@@ -991,7 +991,7 @@ impl ModelClientSession {
 
         if self.client.state.provider.wire_api == WireApi::TensorZero {
             return self
-                .stream_tensorzero_api(prompt, model_info, session_telemetry)
+                .stream_lsd_api(prompt, model_info, session_telemetry)
                 .await;
         }
 
@@ -1142,7 +1142,7 @@ impl ModelClientSession {
 
     #[allow(clippy::too_many_arguments)]
     #[instrument(
-        name = "model_client.stream_tensorzero_api",
+        name = "model_client.stream_lsd_api",
         level = "info",
         skip_all,
         fields(
@@ -1151,7 +1151,7 @@ impl ModelClientSession {
             transport = "tensorzero_http",
         )
     )]
-    async fn stream_tensorzero_api(
+    async fn stream_lsd_api(
         &self,
         prompt: &Prompt,
         model_info: &ModelInfo,
@@ -1176,7 +1176,7 @@ impl ModelClientSession {
             "tensorzero",
             &client_setup.api_provider.base_url,
         );
-        let adapter = chaos_parrot::tensorzero::TensorZeroAdapter::new(
+        let adapter = chaos_parrot::lsd::LsdAdapter::new(
             client_setup.api_provider,
             api_key,
             Some(model_info.slug.clone()),

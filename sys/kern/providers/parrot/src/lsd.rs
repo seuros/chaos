@@ -34,7 +34,7 @@ use tokio::time::timeout;
 
 /// Adapter for the TensorZero native inference API (`POST /inference`).
 #[derive(Debug, Clone)]
-pub struct TensorZeroAdapter {
+pub struct LsdAdapter {
     provider: Provider,
     api_key: String,
     /// TensorZero function name (e.g. "coding_large").
@@ -42,7 +42,7 @@ pub struct TensorZeroAdapter {
     sniffer: Option<Arc<UsageSniffer>>,
 }
 
-impl TensorZeroAdapter {
+impl LsdAdapter {
     pub fn new(provider: Provider, api_key: String, default_function: Option<String>) -> Self {
         Self {
             provider,
@@ -96,7 +96,7 @@ impl TensorZeroAdapter {
     }
 }
 
-impl ModelAdapter for TensorZeroAdapter {
+impl ModelAdapter for LsdAdapter {
     fn stream(&self, request: TurnRequest) -> AdapterFuture<'_> {
         Box::pin(async move {
             let url = self.inference_url();

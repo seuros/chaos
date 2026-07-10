@@ -16,6 +16,7 @@ pub mod common;
 pub mod endpoint;
 pub mod error;
 pub mod http_helpers;
+pub mod lsd;
 pub mod openai;
 pub mod provider;
 pub mod rate_limits;
@@ -24,7 +25,6 @@ pub mod requests;
 pub mod sanitize;
 pub mod sse;
 pub mod telemetry;
-pub mod tensorzero;
 
 use chaos_abi::ModelAdapter;
 
@@ -92,12 +92,8 @@ pub fn adapter_for_wire(
             .with_sniffer(sniffer),
         )),
         "tensorzero" => Some(Box::new(
-            tensorzero::TensorZeroAdapter::from_base_url_and_api_key(
-                base_url,
-                api_key,
-                default_model,
-            )
-            .with_sniffer(sniffer),
+            lsd::LsdAdapter::from_base_url_and_api_key(base_url, api_key, default_model)
+                .with_sniffer(sniffer),
         )),
         _ => None,
     }

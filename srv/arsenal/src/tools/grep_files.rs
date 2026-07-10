@@ -109,7 +109,7 @@ async fn execute_params_structured(params: GrepFilesParams) -> Result<serde_json
         .include
         .as_deref()
         .map(str::trim)
-        .and_then(|val| if val.is_empty() { None } else { Some(val) });
+        .filter(|val| !val.is_empty());
 
     // fff-search is sync — run on a blocking thread.
     let pattern = pattern.to_string();

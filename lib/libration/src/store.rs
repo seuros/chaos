@@ -224,10 +224,8 @@ impl UsageStore {
     pub fn from_provider(provider: &ChaosStorageProvider) -> Option<Arc<Self>> {
         let backend = if let Some(pool) = provider.sqlite_pool_cloned() {
             Backend::Sqlite(pool)
-        } else if let Some(pool) = provider.postgres_pool_cloned() {
-            Backend::Postgres(pool)
         } else {
-            return None;
+            Backend::Postgres(provider.postgres_pool_cloned()?)
         };
 
         let (tx, rx) = mpsc::channel(WRITER_QUEUE_CAPACITY);

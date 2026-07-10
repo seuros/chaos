@@ -19,10 +19,7 @@ pub(crate) struct ResponseDebugContext {
 pub(crate) fn extract_response_debug_context(transport: &TransportError) -> ResponseDebugContext {
     let mut context = ResponseDebugContext::default();
 
-    let TransportError::Http {
-        headers, body: _, ..
-    } = transport
-    else {
+    let TransportError::Http { headers, .. } = transport else {
         return context;
     };
 

@@ -42,10 +42,8 @@ pub fn file_url_for_local_link(dest_url: &str, cwd: Option<&Path>) -> Option<Str
         path_text
     } else if path_text.starts_with("~/") {
         return None;
-    } else if let Some(cwd) = cwd {
-        normalize_local_link_path_text(&cwd.join(&path_text).to_string_lossy())
     } else {
-        return None;
+        normalize_local_link_path_text(&cwd?.join(&path_text).to_string_lossy())
     };
     file_url_from_absolute_local_path_text(&absolute_path_text)
 }

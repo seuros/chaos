@@ -236,10 +236,7 @@ pub(super) fn try_new_completed_mcp_tool_call_with_image_output(
 /// Decodes an MCP `ImageContent` block into an in-memory image.
 pub(super) fn decode_mcp_image(block: &serde_json::Value) -> Option<DynamicImage> {
     let content = serde_json::from_value::<mcp_guest::ContentBlock>(block.clone()).ok()?;
-    let mcp_guest::ContentBlock::Image {
-        data, mime_type: _, ..
-    } = content
-    else {
+    let mcp_guest::ContentBlock::Image { data, .. } = content else {
         return None;
     };
     let base64_data = if let Some(data_url) = data.strip_prefix("data:") {

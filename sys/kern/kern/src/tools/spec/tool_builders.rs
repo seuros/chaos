@@ -20,6 +20,41 @@ use super::schemas::{
     unified_exec_output_schema, wait_output_schema,
 };
 
+pub(crate) fn create_set_parent_effort_tool() -> ToolSpec {
+    let levels = "none, minimal, low, medium, high, xhigh, max, ultra";
+    let properties = BTreeMap::from([
+        (
+            "effort".to_string(),
+            JsonSchema::String {
+                description: Some(format!(
+                    "Reasoning effort for subsequent parent turns. One of: {levels}."
+                )),
+            },
+        ),
+        (
+            "reason".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Brief user-visible reason for changing effort (optional).".to_string(),
+                ),
+            },
+        ),
+    ]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: "set_parent_effort".to_string(),
+        description: "Changes this parent session's reasoning effort for subsequent turns. It cannot change the effort of the turn already in progress."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["effort".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 pub(crate) fn create_exec_command_tool(
     allow_login_shell: bool,
     exec_permission_approvals_enabled: bool,

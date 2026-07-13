@@ -186,6 +186,9 @@ pub enum Op {
         personality: Option<Personality>,
     },
 
+    /// Enable or disable the model-callable parent effort control for future turns.
+    SetDynamicParentEffort { enabled: bool },
+
     /// Toggle clamped mode (Claude Code subprocess as transport).
     SetClamped { enabled: bool },
 
@@ -336,6 +339,7 @@ impl Op {
             Self::UserInput { .. } => "user_input",
             Self::UserTurn { .. } => "user_turn",
             Self::OverrideTurnContext { .. } => "override_turn_context",
+            Self::SetDynamicParentEffort { .. } => "set_dynamic_parent_effort",
             Self::SetClamped { .. } => "set_clamped",
             Self::ExecApproval { .. } => "exec_approval",
             Self::PatchApproval { .. } => "patch_approval",

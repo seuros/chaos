@@ -104,6 +104,10 @@ impl ChatWidget {
             EventMsg::TurnProgress(ev) => self.on_turn_progress(ev),
             EventMsg::Warning(WarningEvent { message }) => self.on_warning(message),
             EventMsg::ModelReroute(_) => {}
+            EventMsg::ParentEffortChanged(event) => {
+                self.app_event_tx
+                    .send(AppEvent::UpdateReasoningEffort(Some(event.effort)));
+            }
             EventMsg::Error(ErrorEvent {
                 message,
                 chaos_error_info,

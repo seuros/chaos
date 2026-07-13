@@ -9,7 +9,7 @@ pub(crate) use approvals::{
 };
 pub(crate) use mcp::{
     clean_background_terminals, interrupt, override_turn_context, refresh_mcp_servers,
-    reload_user_config, review, shutdown, user_input_or_turn,
+    reload_user_config, review, set_dynamic_parent_effort, shutdown, user_input_or_turn,
 };
 pub(crate) use tasks::{
     add_to_history, compact, get_history_entry_request, process_rollback, run_user_shell_command,

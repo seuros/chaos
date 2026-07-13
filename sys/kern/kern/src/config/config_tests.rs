@@ -900,6 +900,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         alcatraz_macos_exe: None,
         hide_agent_reasoning: false,
         model_reasoning_effort: None,
+        dynamic_parent_effort: false,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,

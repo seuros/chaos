@@ -53,6 +53,20 @@ pub async fn override_turn_context(sess: &Session, sub_id: String, updates: Sess
     }
 }
 
+pub async fn set_dynamic_parent_effort(sess: &Session, sub_id: String, enabled: bool) {
+    sess.set_dynamic_parent_effort(enabled).await;
+    sess.send_event_raw(Event {
+        id: sub_id,
+        msg: EventMsg::BackgroundEvent(chaos_ipc::protocol::BackgroundEventEvent {
+            message: format!(
+                "Dynamic parent effort {}. Changes made by the model apply to subsequent turns.",
+                if enabled { "enabled" } else { "disabled" }
+            ),
+        }),
+    })
+    .await;
+}
+
 pub async fn user_input_or_turn(sess: &Arc<Session>, sub_id: String, op: Op) {
     let (items, updates) = match op {
         Op::UserTurn {

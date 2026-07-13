@@ -43,6 +43,8 @@ pub enum ReasoningEffort {
     Medium,
     High,
     XHigh,
+    Max,
+    Ultra,
 }
 
 /// Canonical user-input modality tags advertised by a model.
@@ -428,6 +430,18 @@ impl ModelPreset {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reasoning_effort_accepts_current_catalog_levels() {
+        assert_eq!(
+            serde_json::from_str::<ReasoningEffort>("\"max\"").expect("deserialize max"),
+            ReasoningEffort::Max
+        );
+        assert_eq!(
+            serde_json::from_str::<ReasoningEffort>("\"ultra\"").expect("deserialize ultra"),
+            ReasoningEffort::Ultra
+        );
+    }
     use pretty_assertions::assert_eq;
 
     fn test_model(spec: Option<ModelMessages>) -> ModelInfo {

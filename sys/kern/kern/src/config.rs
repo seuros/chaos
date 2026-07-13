@@ -348,6 +348,8 @@ pub struct Config {
     /// Value to use for `reasoning.effort` when making a request using the
     /// Responses API.
     pub model_reasoning_effort: Option<ReasoningEffort>,
+    /// Allow the parent model to change its own reasoning effort for subsequent turns.
+    pub dynamic_parent_effort: bool,
     /// Optional Plan-mode-specific reasoning effort override used by the TUI.
     ///
     /// When unset, Plan mode uses the built-in Plan preset default (currently
@@ -617,6 +619,8 @@ pub struct ConfigToml {
     pub hide_agent_reasoning: Option<bool>,
 
     pub model_reasoning_effort: Option<ReasoningEffort>,
+    /// Allow the parent model to change its own reasoning effort for subsequent turns.
+    pub dynamic_parent_effort: Option<bool>,
     pub plan_mode_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
@@ -736,6 +740,7 @@ impl From<ConfigToml> for UserSavedConfig {
             forced_login_method: config_toml.forced_login_method,
             model: config_toml.model,
             model_reasoning_effort: config_toml.model_reasoning_effort,
+            dynamic_parent_effort: config_toml.dynamic_parent_effort,
             model_reasoning_summary: config_toml.model_reasoning_summary,
             model_verbosity: config_toml.model_verbosity,
             tools: config_toml.tools.map(From::from),

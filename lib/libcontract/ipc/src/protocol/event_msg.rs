@@ -41,6 +41,7 @@ use super::McpStartupUpdateEvent;
 use super::McpToolCallBeginEvent;
 use super::McpToolCallEndEvent;
 use super::ModelRerouteEvent;
+use super::ParentEffortChangedEvent;
 use super::PatchApplyBeginEvent;
 use super::PatchApplyEndEvent;
 use super::PlanDeltaEvent;
@@ -113,6 +114,9 @@ pub enum EventMsg {
 
     /// Model routing changed from the requested model to a different model.
     ModelReroute(ModelRerouteEvent),
+
+    /// The model changed the parent session's reasoning effort for future turns.
+    ParentEffortChanged(ParentEffortChangedEvent),
 
     /// Conversation history was compacted (either automatically or manually).
     ContextCompacted(ContextCompactedEvent),

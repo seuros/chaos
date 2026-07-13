@@ -647,6 +647,51 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
 }
 
 #[test]
+fn dynamic_parent_effort_tool_is_opt_in() {
+    let model_info = model_info_from_models_json(REPRESENTATIVE_CODE_EDIT_MODEL_SLUG);
+    let available_models = Vec::new();
+    let base = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Disabled),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    });
+
+    let (tools, _) = build_specs(&base, None, None, &[]).build();
+    assert_lacks_tool_name(&tools, "set_parent_effort");
+
+    let enabled = base.with_dynamic_parent_effort(true, &SessionSource::Cli);
+    let (tools, _) = build_specs(&enabled, None, None, &[]).build();
+    let tool = find_tool(&tools, "set_parent_effort");
+    assert!(!tool.supports_parallel_tool_calls);
+}
+
+#[test]
+fn subagents_cannot_receive_dynamic_parent_effort_tool() {
+    let model_info = model_info_from_models_json(REPRESENTATIVE_CODE_EDIT_MODEL_SLUG);
+    let available_models = Vec::new();
+    let source = SessionSource::SubAgent(SubAgentSource::Other("test".to_string()));
+    let config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Disabled),
+        session_source: source.clone(),
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    })
+    .with_dynamic_parent_effort(true, &source);
+
+    let (tools, _) = build_specs(&config, None, None, &[]).build();
+    assert_lacks_tool_name(&tools, "set_parent_effort");
+}
+
+#[test]
 fn arsenal_tools_keep_closed_object_schemas() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);

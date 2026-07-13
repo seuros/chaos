@@ -105,6 +105,13 @@ impl Session {
             .clone()
     }
 
+    pub(crate) async fn set_dynamic_parent_effort(&self, enabled: bool) {
+        let mut state = self.state.lock().await;
+        let mut config = (*state.session_configuration.original_config_do_not_use).clone();
+        config.dynamic_parent_effort = enabled;
+        state.session_configuration.original_config_do_not_use = Arc::new(config);
+    }
+
     pub(crate) async fn reload_user_config_layer(&self) {
         let config_toml_path = {
             let state = self.state.lock().await;

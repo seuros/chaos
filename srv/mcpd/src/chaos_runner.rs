@@ -401,6 +401,7 @@ async fn run_event_loop(
                     | EventMsg::DynamicToolCallResponse(_)
                     | EventMsg::ContextCompacted(_)
                     | EventMsg::ModelReroute(_)
+                    | EventMsg::ParentEffortChanged(_)
                     | EventMsg::ProcessRolledBack(_)
                     | EventMsg::CollabAgentSpawnBegin(_)
                     | EventMsg::CollabAgentSpawnEnd(_)

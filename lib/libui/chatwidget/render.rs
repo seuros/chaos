@@ -384,6 +384,8 @@ impl ChatWidget {
             Some(ReasoningEffortConfig::Medium) => "medium",
             Some(ReasoningEffortConfig::High) => "high",
             Some(ReasoningEffortConfig::XHigh) => "xhigh",
+            Some(ReasoningEffortConfig::Max) => "max",
+            Some(ReasoningEffortConfig::Ultra) => "ultra",
             None | Some(ReasoningEffortConfig::None) => "default",
         }
     }

@@ -3,6 +3,7 @@ use crate::config_types::ModeKind;
 use crate::items::TurnItem;
 use crate::models::MessagePhase;
 use crate::models::ResponseItem;
+use crate::openai_models::ReasoningEffort;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -23,6 +24,11 @@ pub struct ModelRerouteEvent {
     pub from_model: String,
     pub to_model: String,
     pub reason: ModelRerouteReason,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct ParentEffortChangedEvent {
+    pub effort: ReasoningEffort,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

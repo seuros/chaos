@@ -119,6 +119,10 @@ pub(super) async fn submission_loop(
                     .await;
                     false
                 }
+                Op::SetDynamicParentEffort { enabled } => {
+                    handlers::set_dynamic_parent_effort(&sess, sub.id.clone(), enabled).await;
+                    false
+                }
                 Op::SetClamped { enabled } => {
                     sess.services.model_client.set_clamped(enabled).await;
                     let mode = if enabled {

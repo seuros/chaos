@@ -38,6 +38,7 @@ pub(crate) struct ToolsConfig {
     pub collab_tools: bool,
     pub request_user_input: bool,
     pub default_mode_request_user_input: bool,
+    pub dynamic_parent_effort: bool,
     pub experimental_supported_tools: Vec<String>,
     pub minion_jobs_tools: bool,
     pub minion_jobs_worker_tools: bool,
@@ -116,6 +117,7 @@ impl ToolsConfig {
             collab_tools: include_collab_tools,
             request_user_input: include_request_user_input,
             default_mode_request_user_input: include_default_mode_request_user_input,
+            dynamic_parent_effort: false,
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
             minion_jobs_tools: include_minion_jobs,
             minion_jobs_worker_tools,
@@ -143,6 +145,16 @@ impl ToolsConfig {
 
     pub fn with_web_search_config(mut self, web_search_config: Option<WebSearchConfig>) -> Self {
         self.web_search_config = web_search_config;
+        self
+    }
+
+    pub fn with_dynamic_parent_effort(
+        mut self,
+        enabled: bool,
+        session_source: &SessionSource,
+    ) -> Self {
+        self.dynamic_parent_effort =
+            enabled && !matches!(session_source, SessionSource::SubAgent(_));
         self
     }
 }

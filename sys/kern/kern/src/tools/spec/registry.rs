@@ -22,9 +22,9 @@ use super::tool_builders::{
     create_list_mcp_resources_tool, create_read_mcp_resource_tool,
     create_report_minion_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_send_input_tool,
-    create_shell_command_tool, create_shell_tool, create_spawn_agent_tool,
-    create_spawn_minions_on_csv_tool, create_test_sync_tool, create_view_image_tool,
-    create_wait_agent_tool, create_write_stdin_tool,
+    create_set_parent_effort_tool, create_shell_command_tool, create_shell_tool,
+    create_spawn_agent_tool, create_spawn_minions_on_csv_tool, create_test_sync_tool,
+    create_view_image_tool, create_wait_agent_tool, create_write_stdin_tool,
 };
 
 pub(crate) fn push_tool_spec(
@@ -98,6 +98,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::McpTaskHandler;
     use crate::tools::handlers::PLAN_TOOL;
+    use crate::tools::handlers::ParentEffortHandler;
     use crate::tools::handlers::PlanHandler;
     use crate::tools::handlers::RequestPermissionsHandler;
     use crate::tools::handlers::RequestUserInputHandler;
@@ -114,6 +115,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let shell_handler = Arc::new(ShellHandler);
     let unified_exec_handler = Arc::new(UnifiedExecHandler);
     let plan_handler = Arc::new(PlanHandler);
+    let parent_effort_handler = Arc::new(ParentEffortHandler);
     let apply_patch_handler = Arc::new(ApplyPatchHandler);
     let dynamic_tool_handler = Arc::new(DynamicToolHandler);
     let view_image_handler = Arc::new(ViewImageHandler);
@@ -241,6 +243,15 @@ pub(crate) fn build_specs_with_discoverable_tools(
             /*supports_parallel_tool_calls*/ false,
         );
         builder.register_handler("request_permissions", request_permissions_handler);
+    }
+
+    if config.dynamic_parent_effort {
+        push_tool_spec(
+            &mut builder,
+            create_set_parent_effort_tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        builder.register_handler("set_parent_effort", parent_effort_handler);
     }
 
     if let Some(apply_patch_tool_type) = &config.apply_patch_tool_type {

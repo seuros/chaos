@@ -46,6 +46,9 @@ impl ChatWidget {
             SlashCommand::Model => {
                 self.open_model_popup();
             }
+            SlashCommand::DynamicEffort => {
+                self.show_dynamic_effort_status();
+            }
             SlashCommand::Plan => {
                 if !self.collaboration_modes_enabled() {
                     self.add_info_message(
@@ -312,6 +315,35 @@ impl ChatWidget {
                     self.queue_user_message(user_message);
                 }
             }
+            SlashCommand::DynamicEffort if !trimmed.is_empty() => {
+                let enabled = match trimmed.to_ascii_lowercase().as_str() {
+                    "on" | "enable" | "enabled" => true,
+                    "off" | "disable" | "disabled" => false,
+                    "status" => {
+                        self.show_dynamic_effort_status();
+                        self.bottom_pane.drain_pending_submission_state();
+                        return;
+                    }
+                    _ => {
+                        self.add_error_message("Usage: /dynamic-effort on|off|status".to_string());
+                        self.bottom_pane.drain_pending_submission_state();
+                        return;
+                    }
+                };
+                self.config.dynamic_parent_effort = enabled;
+                self.app_event_tx
+                    .send(AppEvent::UpdateDynamicParentEffort(enabled));
+                self.app_event_tx
+                    .send(AppEvent::PersistDynamicParentEffort(enabled));
+                self.add_info_message(
+                    format!(
+                        "Dynamic parent effort is now {}.",
+                        if enabled { "enabled" } else { "disabled" }
+                    ),
+                    Some("Model-requested changes apply only to subsequent turns.".to_string()),
+                );
+                self.bottom_pane.drain_pending_submission_state();
+            }
             SlashCommand::Review if !trimmed.is_empty() => {
                 let Some((prepared_args, _prepared_elements)) = self
                     .bottom_pane
@@ -364,5 +396,19 @@ impl ChatWidget {
         );
 
         self.bottom_pane.show_view(Box::new(view));
+    }
+
+    fn show_dynamic_effort_status(&mut self) {
+        self.add_info_message(
+            format!(
+                "Dynamic parent effort is {}.",
+                if self.config.dynamic_parent_effort {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            ),
+            Some("Use /dynamic-effort on|off|status.".to_string()),
+        );
     }
 }

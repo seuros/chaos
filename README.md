@@ -114,6 +114,27 @@ progress counter such as `~1.2K tokens`. This is a liveness/size indicator for
 the current response, not provider usage accounting; exact usage is still shown
 from provider-reported token counts when available.
 
+### Dynamic parent reasoning effort
+
+By default, the active model cannot change the reasoning effort of its own
+session. To opt in, use the TUI command:
+
+```text
+/dynamic-effort on
+```
+
+The corresponding persisted setting is:
+
+```toml
+dynamic_parent_effort = true
+```
+
+When enabled, the parent model receives a `set_parent_effort` tool. A change is
+reported visibly and applies to subsequent turns only; it cannot alter the turn
+already in progress. Subagents never receive this tool. Use
+`/dynamic-effort off` to disable it or `/dynamic-effort status` to inspect the
+current setting.
+
 ---
 
 ## Docs

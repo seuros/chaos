@@ -706,6 +706,28 @@ impl App {
                     }
                 }
             }
+            AppEvent::UpdateDynamicParentEffort(enabled) => {
+                self.config.dynamic_parent_effort = enabled;
+                self.chat_widget
+                    .submit_op(Op::SetDynamicParentEffort { enabled });
+                self.refresh_status_line();
+            }
+            AppEvent::PersistDynamicParentEffort(enabled) => {
+                let edit = ConfigEdit::SetPath {
+                    segments: vec!["dynamic_parent_effort".to_string()],
+                    value: enabled.into(),
+                };
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    tracing::error!(error = %err, "failed to persist dynamic parent effort");
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save dynamic parent effort preference: {err}"
+                    ));
+                }
+            }
             AppEvent::OpenApprovalsPopup => {
                 self.chat_widget.open_approvals_popup();
             }

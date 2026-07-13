@@ -225,6 +225,12 @@ pub enum AppEvent {
     /// Persist the Plan-mode-specific reasoning effort.
     PersistPlanModeReasoningEffort(Option<ReasoningEffort>),
 
+    /// Update the dynamic parent effort preference in memory and in the live session.
+    UpdateDynamicParentEffort(bool),
+
+    /// Persist the dynamic parent effort preference.
+    PersistDynamicParentEffort(bool),
+
     /// Re-open the approval presets popup.
     OpenApprovalsPopup,
 

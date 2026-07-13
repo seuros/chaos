@@ -14,6 +14,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    DynamicEffort,
     Approvals,
     Permissions,
     #[strum(serialize = "setup-default-sandbox")]
@@ -85,6 +86,9 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE".into(),
             SlashCommand::MemoryUpdate => "DO NOT USE".into(),
             SlashCommand::Model => "choose what model and reasoning effort to use".into(),
+            SlashCommand::DynamicEffort => {
+                "allow or disallow model-controlled effort changes".into()
+            }
             SlashCommand::Plan => "switch to Plan mode".into(),
             SlashCommand::Collab => "change collaboration mode (experimental)".into(),
             SlashCommand::Agent | SlashCommand::MultiAgents => {
@@ -126,6 +130,7 @@ impl SlashCommand {
             SlashCommand::Review
                 | SlashCommand::Rename
                 | SlashCommand::Plan
+                | SlashCommand::DynamicEffort
                 | SlashCommand::SandboxReadRoot
         )
     }
@@ -138,6 +143,7 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Compact
             | SlashCommand::Model
+            | SlashCommand::DynamicEffort
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Review
@@ -218,6 +224,7 @@ pub(crate) mod tests {
     pub(crate) fn slash_command_suite() {
         stop_command_is_canonical_name();
         clean_alias_parses_to_stop_command();
+        dynamic_effort_accepts_inline_args();
     }
     #[cfg(test)]
     fn stop_command_is_canonical_name() {
@@ -227,5 +234,14 @@ pub(crate) mod tests {
     #[cfg(test)]
     fn clean_alias_parses_to_stop_command() {
         assert_eq!(SlashCommand::from_str("clean"), Ok(SlashCommand::Stop));
+    }
+
+    #[test]
+    fn dynamic_effort_accepts_inline_args() {
+        assert_eq!(
+            SlashCommand::from_str("dynamic-effort"),
+            Ok(SlashCommand::DynamicEffort)
+        );
+        assert!(SlashCommand::DynamicEffort.supports_inline_args());
     }
 }

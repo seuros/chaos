@@ -880,8 +880,18 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79897f504d9df42a4e8361c4655587c835705f5fa9570d79407a7ba2e1d6bba5"
 dependencies = [
- "chrono-machines",
- "state-machines",
+ "chrono-machines 0.3.2",
+ "state-machines 0.9.0",
+]
+
+[[package]]
+name = "breaker-machines"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9702fd4f684cec05070d132c7c2c1a04ff5b01abfb011304e646548fc35ba1f9"
+dependencies = [
+ "chrono-machines 0.3.2",
+ "state-machines 0.20.1",
 ]
 
 [[package]]
@@ -1141,7 +1151,7 @@ dependencies = [
  "futures",
  "serde",
  "serde_json",
- "state-machines",
+ "state-machines 0.9.0",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -1656,7 +1666,7 @@ dependencies = [
  "assert_matches",
  "async-channel",
  "base64 0.22.1",
- "breaker-machines",
+ "breaker-machines 0.7.6",
  "chaos-abi",
  "chaos-argv",
  "chaos-arsenal",
@@ -1704,7 +1714,7 @@ dependencies = [
  "chaos-which",
  "chaos_journald",
  "chardetng",
- "chrono-machines",
+ "chrono-machines 0.3.2",
  "clap",
  "codex-client",
  "core_test_support",
@@ -1744,12 +1754,12 @@ dependencies = [
  "shlex 1.3.0",
  "similar",
  "sqlx",
- "state-machines",
+ "state-machines 0.9.0",
  "tempfile",
  "test-case",
  "test-log",
  "thiserror 2.0.18",
- "throttle-machines",
+ "throttle-machines 0.1.0",
  "time",
  "tokio",
  "tokio-stream",
@@ -1868,7 +1878,7 @@ dependencies = [
  "serde_json",
  "shlex 1.3.0",
  "sqlx",
- "state-machines",
+ "state-machines 0.9.0",
  "tempfile",
  "tokio",
  "tracing",
@@ -1891,7 +1901,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "state-machines",
+ "state-machines 0.9.0",
  "tokio",
  "tracing",
 ]
@@ -1915,7 +1925,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "state-machines",
+ "state-machines 0.9.0",
  "tempfile",
  "tiny_http",
  "tokio",
@@ -2012,7 +2022,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "state-machines",
+ "state-machines 0.9.0",
  "tokio",
  "tracing",
  "uuid",
@@ -2406,6 +2416,15 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef0d653a2ac04a81e4effc5c33a55a69b63cea93891a18365e649214b01714c"
 dependencies = [
+ "rand 0.10.1",
+]
+
+[[package]]
+name = "chrono-machines"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d14e76579ce2b100164d550a14d1307cc234666a94414c7ed4274392564005ea"
+dependencies = [
  "async-trait",
  "rand 0.10.1",
 ]
@@ -2579,7 +2598,7 @@ dependencies = [
  "bytes",
  "chaos-abi",
  "chaos-which",
- "chrono-machines",
+ "chrono-machines 0.3.2",
  "futures",
  "pretty_assertions",
  "rama",
@@ -7071,7 +7090,7 @@ name = "mcp-guest"
 version = "47.0.0"
 dependencies = [
  "chaos-abi",
- "chrono-machines",
+ "chrono-machines 0.3.2",
  "mcp-host",
  "rama",
  "rand 0.10.1",
@@ -7086,15 +7105,15 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.1.40"
+version = "0.1.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a403bbcd202d570d6d04635a9ae870b916ece62b83f02da48a407da8c5d141e8"
+checksum = "fc4115232220b812337348edd86ef4ad6f1df43b004827a2b621341c3045ca5a"
 dependencies = [
  "arc-swap",
  "base64 0.22.1",
- "breaker-machines",
+ "breaker-machines 0.14.0",
  "chrono",
- "chrono-machines",
+ "chrono-machines 0.4.0",
  "dashmap",
  "futures",
  "ignore",
@@ -7105,10 +7124,10 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "state-machines",
+ "state-machines 0.20.1",
  "strum 0.28.0",
  "thiserror 2.0.18",
- "throttle-machines",
+ "throttle-machines 0.2.0",
  "tokio",
  "tracing",
  "uuid",
@@ -7116,9 +7135,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host-macros"
-version = "0.1.40"
+version = "0.1.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c638df1be25a6715153a40ddc6325709140196d96640d32fd6318bab4851fa34"
+checksum = "697b706bad9892f5b0e26ba343dcf150a2c582c1590dd59515c93d73740bfe22"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -11298,7 +11317,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6a3c439e93b084079d81f1ccec41c64edf5a7348484db5228344372e634b92f"
 dependencies = [
  "state-machines-core",
- "state-machines-macro",
+ "state-machines-macro 0.9.0",
+]
+
+[[package]]
+name = "state-machines"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4085a22c58f0cb2e44848846197b7aa1e270ac080554e2c27fe318ba8f5d3ad2"
+dependencies = [
+ "state-machines-core",
+ "state-machines-macro 0.21.0",
 ]
 
 [[package]]
@@ -11312,6 +11341,17 @@ name = "state-machines-macro"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7158fc1607004ff2bfba01ef8ca59d0446c374cd52a25a8726bba0cbb0d5c74"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
+name = "state-machines-macro"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cda45f33b02ad3a74b0b38cf704586230e3fcbf0178e0cf4824ded7b088961b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11776,6 +11816,12 @@ name = "throttle-machines"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37ddf0aa98f258ef624ba9fed2a1c3f01b6c63cfb970b9e4cfa358083593e7ac"
+
+[[package]]
+name = "throttle-machines"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eae767823657559fc3b81e6b72c79fa1a7e618f3223e08d789bc1fdef9fd6f2"
 
 [[package]]
 name = "tiff"

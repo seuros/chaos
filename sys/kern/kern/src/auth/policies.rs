@@ -108,9 +108,9 @@ impl UnauthorizedRecovery {
                 if !self.manager.has_external_auth_refresher() {
                     return false;
                 }
-                m.current_state() != "Completed"
+                m.current_state() != ExternalRecoveryState::Completed
             }
-            RecoveryMachine::Managed(m) => m.current_state() != "Done",
+            RecoveryMachine::Managed(m) => m.current_state() != ManagedRecoveryState::Done,
         }
     }
 
@@ -131,8 +131,8 @@ impl UnauthorizedRecovery {
         }
 
         let is_done = match &self.machine {
-            RecoveryMachine::Managed(m) => m.current_state() == "Done",
-            RecoveryMachine::External(m) => m.current_state() == "Completed",
+            RecoveryMachine::Managed(m) => m.current_state() == ManagedRecoveryState::Done,
+            RecoveryMachine::External(m) => m.current_state() == ExternalRecoveryState::Completed,
         };
         if is_done {
             return "recovery_exhausted";
@@ -151,12 +151,12 @@ impl UnauthorizedRecovery {
     pub fn step_name(&self) -> &'static str {
         match &self.machine {
             RecoveryMachine::Managed(m) => match m.current_state() {
-                "Reload" => "reload",
-                "RefreshToken" => "refresh_token",
+                ManagedRecoveryState::Reload => "reload",
+                ManagedRecoveryState::RefreshToken => "refresh_token",
                 _ => "done",
             },
             RecoveryMachine::External(m) => match m.current_state() {
-                "Pending" => "external_refresh",
+                ExternalRecoveryState::Pending => "external_refresh",
                 _ => "done",
             },
         }
@@ -172,7 +172,7 @@ impl UnauthorizedRecovery {
 
         match &mut self.machine {
             RecoveryMachine::Managed(m) => match m.current_state() {
-                "Reload" => {
+                ManagedRecoveryState::Reload => {
                     match self
                         .manager
                         .reload_if_account_id_matches(self.expected_account_id.as_deref())
@@ -198,7 +198,7 @@ impl UnauthorizedRecovery {
                         }
                     }
                 }
-                "RefreshToken" => {
+                ManagedRecoveryState::RefreshToken => {
                     self.manager.refresh_token_from_authority().await?;
                     let _ = m.handle(ManagedRecoveryEvent::Refreshed);
                     Ok(UnauthorizedRecoveryStepResult {

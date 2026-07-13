@@ -18,7 +18,7 @@ const CHAOS_HOME_ENV_VAR: &str = "CHAOS_HOME";
 // It allows the test binary to behave like chaos and dispatch to apply_patch and alcatraz-linux
 // based on the arg0.
 // NOTE: this doesn't work on ARM
-#[ctor]
+#[ctor(unsafe)]
 pub static CHAOS_ALIASES_TEMP_DIR: TestChaosAliasesGuard = unsafe {
     #[allow(clippy::unwrap_used)]
     let chaos_home = tempfile::Builder::new()

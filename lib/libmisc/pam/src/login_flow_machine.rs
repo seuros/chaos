@@ -83,7 +83,7 @@ impl LoginFlowWorkflow {
         if self.machine.handle(event).is_err() {
             debug_assert!(
                 false,
-                "illegal LoginFlow transition: {label} from {}",
+                "illegal LoginFlow transition: {label} from {:?}",
                 self.machine.current_state()
             );
         }
@@ -131,7 +131,7 @@ impl LoginFlowWorkflow {
     }
 
     #[cfg(test)]
-    fn current_state(&self) -> &str {
+    fn current_state(&self) -> LoginFlowLifecycleState {
         self.machine.current_state()
     }
 }
@@ -344,34 +344,46 @@ mod tests {
     #[test]
     fn workflow_covers_browser_device_fallback_and_cancel_paths() {
         let mut wf = LoginFlowWorkflow::new();
-        assert_eq!(wf.current_state(), "Idle");
+        assert_eq!(wf.current_state(), LoginFlowLifecycleState::Idle);
 
         wf.start_browser();
-        assert_eq!(wf.current_state(), "StartingBrowser");
+        assert_eq!(wf.current_state(), LoginFlowLifecycleState::StartingBrowser);
 
         wf.browser_ready();
-        assert_eq!(wf.current_state(), "WaitingForBrowser");
+        assert_eq!(
+            wf.current_state(),
+            LoginFlowLifecycleState::WaitingForBrowser
+        );
 
         wf.succeed();
-        assert_eq!(wf.current_state(), "Succeeded");
+        assert_eq!(wf.current_state(), LoginFlowLifecycleState::Succeeded);
 
         let mut wf = LoginFlowWorkflow::new();
         wf.start_device_code();
-        assert_eq!(wf.current_state(), "RequestingDeviceCode");
+        assert_eq!(
+            wf.current_state(),
+            LoginFlowLifecycleState::RequestingDeviceCode
+        );
 
         wf.device_code_unsupported();
-        assert_eq!(wf.current_state(), "StartingBrowser");
+        assert_eq!(wf.current_state(), LoginFlowLifecycleState::StartingBrowser);
 
         wf.browser_ready();
-        assert_eq!(wf.current_state(), "WaitingForBrowser");
+        assert_eq!(
+            wf.current_state(),
+            LoginFlowLifecycleState::WaitingForBrowser
+        );
 
         let mut wf = LoginFlowWorkflow::new();
         wf.start_device_code();
         wf.device_code_ready();
-        assert_eq!(wf.current_state(), "WaitingForDeviceCode");
+        assert_eq!(
+            wf.current_state(),
+            LoginFlowLifecycleState::WaitingForDeviceCode
+        );
 
         wf.cancel();
-        assert_eq!(wf.current_state(), "Cancelled");
+        assert_eq!(wf.current_state(), LoginFlowLifecycleState::Cancelled);
     }
 
     #[test]
@@ -379,10 +391,10 @@ mod tests {
         // Drive the raw machine so the wrapper's debug_assert does not fire:
         // succeeding from Idle is not a declared transition.
         let mut machine = DynamicLoginFlowLifecycle::new(());
-        assert_eq!(machine.current_state(), "Idle");
+        assert_eq!(machine.current_state(), LoginFlowLifecycleState::Idle);
 
         assert!(machine.handle(LoginFlowLifecycleEvent::Succeed).is_err());
-        assert_eq!(machine.current_state(), "Idle");
+        assert_eq!(machine.current_state(), LoginFlowLifecycleState::Idle);
     }
 
     #[cfg(debug_assertions)]

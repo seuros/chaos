@@ -60,11 +60,14 @@ impl ProposedPlanItemState {
     }
 
     pub(super) fn started(&self) -> bool {
-        matches!(self.machine.current_state(), "Started" | "Completed")
+        matches!(
+            self.machine.current_state(),
+            PlanItemMachineState::Started | PlanItemMachineState::Completed
+        )
     }
 
     pub(super) fn completed(&self) -> bool {
-        self.machine.current_state() == "Completed"
+        self.machine.current_state() == PlanItemMachineState::Completed
     }
 
     pub(super) async fn start(&mut self, sess: &Session, turn_context: &TurnContext) {

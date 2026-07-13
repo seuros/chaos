@@ -45,19 +45,6 @@ state_machine! {
     }
 }
 
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelDiscoveryState {
-    Idle,
-    CheckingCache,
-    CacheMiss,
-    CachedCatalog,
-    Fetching,
-    LiveCatalog,
-    UnsupportedCatalog,
-    Failed,
-}
-
 #[derive(Debug)]
 pub struct ModelDiscoveryWorkflow {
     machine: DynamicModelDiscovery<()>,
@@ -107,17 +94,7 @@ impl ModelDiscoveryWorkflow {
 
     #[cfg(test)]
     pub fn state(&self) -> ModelDiscoveryState {
-        match self.machine.current_state() {
-            "Idle" => ModelDiscoveryState::Idle,
-            "CheckingCache" => ModelDiscoveryState::CheckingCache,
-            "CacheMiss" => ModelDiscoveryState::CacheMiss,
-            "CachedCatalog" => ModelDiscoveryState::CachedCatalog,
-            "Fetching" => ModelDiscoveryState::Fetching,
-            "LiveCatalog" => ModelDiscoveryState::LiveCatalog,
-            "UnsupportedCatalog" => ModelDiscoveryState::UnsupportedCatalog,
-            "Failed" => ModelDiscoveryState::Failed,
-            _ => ModelDiscoveryState::Failed,
-        }
+        self.machine.current_state()
     }
 }
 

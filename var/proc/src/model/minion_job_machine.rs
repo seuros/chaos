@@ -81,7 +81,7 @@ pub(crate) mod job {
         }
 
         #[cfg(test)]
-        pub(crate) fn current_state(&self) -> &str {
+        pub(crate) fn current_state(&self) -> MinionJobLifecycleState {
             self.machine.current_state()
         }
     }
@@ -93,38 +93,44 @@ pub(crate) mod job {
         #[test]
         fn workflow_transitions_and_persisted_status_replay() {
             let mut wf = MinionJobWorkflow::new();
-            assert_eq!(wf.current_state(), "Pending");
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Pending);
 
             assert!(wf.start());
-            assert_eq!(wf.current_state(), "Running");
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Running);
 
             assert!(wf.complete());
-            assert_eq!(wf.current_state(), "Completed");
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Completed);
 
             let mut wf = MinionJobWorkflow::new();
             wf.start();
             assert!(wf.fail());
-            assert_eq!(wf.current_state(), "Failed");
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Failed);
 
             let mut wf = MinionJobWorkflow::new();
             assert!(wf.cancel());
-            assert_eq!(wf.current_state(), "Cancelled");
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Cancelled);
 
             let mut wf = MinionJobWorkflow::new();
             wf.start();
             assert!(wf.cancel());
-            assert_eq!(wf.current_state(), "Cancelled");
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Cancelled);
 
             let mut wf = MinionJobWorkflow::new();
             assert!(!wf.complete());
-            assert_eq!(wf.current_state(), "Pending");
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Pending);
 
             let cases = [
-                (MinionJobStatus::Pending, "Pending"),
-                (MinionJobStatus::Running, "Running"),
-                (MinionJobStatus::Completed, "Completed"),
-                (MinionJobStatus::Failed, "Failed"),
-                (MinionJobStatus::Cancelled, "Cancelled"),
+                (MinionJobStatus::Pending, MinionJobLifecycleState::Pending),
+                (MinionJobStatus::Running, MinionJobLifecycleState::Running),
+                (
+                    MinionJobStatus::Completed,
+                    MinionJobLifecycleState::Completed,
+                ),
+                (MinionJobStatus::Failed, MinionJobLifecycleState::Failed),
+                (
+                    MinionJobStatus::Cancelled,
+                    MinionJobLifecycleState::Cancelled,
+                ),
             ];
             for (status, expected) in cases {
                 let wf = MinionJobWorkflow::from_status(status);
@@ -218,7 +224,7 @@ pub(crate) mod item {
         }
 
         #[cfg(test)]
-        pub(crate) fn current_state(&self) -> &str {
+        pub(crate) fn current_state(&self) -> MinionJobItemLifecycleState {
             self.machine.current_state()
         }
     }
@@ -230,31 +236,43 @@ pub(crate) mod item {
         #[test]
         fn workflow_transitions_retry_and_persisted_status_replay() {
             let mut wf = MinionJobItemWorkflow::new();
-            assert_eq!(wf.current_state(), "Pending");
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Pending);
 
             assert!(wf.start());
-            assert_eq!(wf.current_state(), "Running");
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Running);
 
             assert!(wf.complete());
-            assert_eq!(wf.current_state(), "Completed");
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Completed);
 
             let mut wf = MinionJobItemWorkflow::new();
             wf.start();
             assert!(wf.retry());
-            assert_eq!(wf.current_state(), "Pending");
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Pending);
 
             assert!(wf.start());
-            assert_eq!(wf.current_state(), "Running");
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Running);
 
             let mut wf = MinionJobItemWorkflow::new();
             assert!(!wf.retry());
-            assert_eq!(wf.current_state(), "Pending");
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Pending);
 
             let cases = [
-                (MinionJobItemStatus::Pending, "Pending"),
-                (MinionJobItemStatus::Running, "Running"),
-                (MinionJobItemStatus::Completed, "Completed"),
-                (MinionJobItemStatus::Failed, "Failed"),
+                (
+                    MinionJobItemStatus::Pending,
+                    MinionJobItemLifecycleState::Pending,
+                ),
+                (
+                    MinionJobItemStatus::Running,
+                    MinionJobItemLifecycleState::Running,
+                ),
+                (
+                    MinionJobItemStatus::Completed,
+                    MinionJobItemLifecycleState::Completed,
+                ),
+                (
+                    MinionJobItemStatus::Failed,
+                    MinionJobItemLifecycleState::Failed,
+                ),
             ];
             for (status, expected) in cases {
                 let wf = MinionJobItemWorkflow::from_status(status);

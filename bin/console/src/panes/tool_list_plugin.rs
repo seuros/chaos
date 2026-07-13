@@ -24,7 +24,7 @@ impl ToolListPlugin {
 }
 
 impl HypertilePlugin for ToolListPlugin {
-    fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer, is_focused: bool) {
         self.state.borrow().render(area, buf, is_focused);
     }
 

@@ -63,7 +63,7 @@ impl PaneKind {
 struct EmptyPlugin;
 
 impl HypertilePlugin for EmptyPlugin {
-    fn render(&self, _area: Rect, _buf: &mut Buffer, _focused: bool) {}
+    fn render(&mut self, _area: Rect, _buf: &mut Buffer, _focused: bool) {}
 }
 
 /// Wraps [`HypertileRuntime`] and exposes a [`PaneKind`]-aware API.

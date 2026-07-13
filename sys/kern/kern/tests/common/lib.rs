@@ -30,13 +30,13 @@ pub mod auth_test_fixtures {
     pub use chaos_auth_test_fixtures::openai_record;
 }
 
-#[ctor]
+#[ctor(unsafe)]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {
     chaos_kern::test_support::set_process_table_test_mode(/*enabled*/ true);
     chaos_kern::test_support::set_deterministic_process_ids(/*enabled*/ true);
 }
 
-#[ctor]
+#[ctor(unsafe)]
 fn configure_insta_workspace_root_for_snapshot_tests() {
     if std::env::var_os("INSTA_WORKSPACE_ROOT").is_some() {
         return;

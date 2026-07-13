@@ -123,11 +123,21 @@ impl Session {
                 .get(id)
                 .copied()
                 .unwrap_or(0.0);
-            let result = throttle_machines::gcra::check(tat, now, emission_interval, 0.0);
+            let result = {
+                use throttle_machines::gate::Gate;
+                throttle_machines::gcra::Gcra::check(
+                    tat,
+                    now,
+                    throttle_machines::gcra::GcraParams {
+                        emission_interval,
+                        delay_tolerance: 0.0,
+                    },
+                )
+            };
             RATE_TATS
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(id.clone(), result.new_tat);
+                .insert(id.clone(), result.state);
             if !result.allowed {
                 tracing::warn!(
                     limit_id = %id,

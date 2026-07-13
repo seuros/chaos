@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::compact::InitialContextInjection;
-use crate::compact::run_inline_auto_compact_task;
-use crate::compact::should_use_remote_compact_task;
-use crate::compact_remote::run_inline_remote_auto_compact_task;
+use crate::distill::InitialContextInjection;
+use crate::distill::run_inline_auto_distill_task;
+use crate::distill::should_use_remote_distill_task;
+use crate::distill_remote::run_inline_remote_auto_distill_task;
 use crate::error::Result as ChaosResult;
 
 use super::super::Session;
@@ -82,15 +82,15 @@ pub(super) async fn run_auto_compact(
     turn_context: &Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
 ) -> ChaosResult<()> {
-    if should_use_remote_compact_task(&turn_context.provider) {
-        run_inline_remote_auto_compact_task(
+    if should_use_remote_distill_task(&turn_context.provider) {
+        run_inline_remote_auto_distill_task(
             Arc::clone(sess),
             Arc::clone(turn_context),
             initial_context_injection,
         )
         .await?;
     } else {
-        run_inline_auto_compact_task(
+        run_inline_auto_distill_task(
             Arc::clone(sess),
             Arc::clone(turn_context),
             initial_context_injection,

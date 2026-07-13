@@ -16,7 +16,7 @@ use crate::chaos::Session;
 use crate::config::Config;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::process_names;
-use crate::tasks::CompactTask;
+use crate::tasks::DistillTask;
 use crate::tasks::UndoTask;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::UserShellCommandTask;
@@ -38,7 +38,7 @@ pub async fn compact(sess: &Arc<Session>, sub_id: String) {
             // Compaction prompt is synthesized; no UI element ranges to preserve.
             text_elements: Vec::new(),
         }],
-        CompactTask,
+        DistillTask,
     )
     .await;
 }

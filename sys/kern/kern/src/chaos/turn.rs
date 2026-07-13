@@ -25,7 +25,7 @@ use tracing::info;
 use tracing::warn;
 
 use crate::client::ModelClientSession;
-use crate::compact::InitialContextInjection;
+use crate::distill::InitialContextInjection;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::parse_turn_item;

@@ -34,11 +34,11 @@ pub use chaos_context::distill::content_items_to_text;
 pub use chaos_context::distill::insert_initial_context_before_last_real_user_or_summary;
 pub use chaos_context::distill::is_summary_message;
 
-pub(crate) fn should_use_remote_compact_task(provider: &ModelProviderInfo) -> bool {
+pub(crate) fn should_use_remote_distill_task(provider: &ModelProviderInfo) -> bool {
     provider.is_openai()
 }
 
-pub(crate) async fn run_inline_auto_compact_task(
+pub(crate) async fn run_inline_auto_distill_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
@@ -50,11 +50,11 @@ pub(crate) async fn run_inline_auto_compact_task(
         text_elements: Vec::new(),
     }];
 
-    run_compact_task_inner(sess, turn_context, input, initial_context_injection).await?;
+    run_distill_task_inner(sess, turn_context, input, initial_context_injection).await?;
     Ok(())
 }
 
-pub(crate) async fn run_compact_task(
+pub(crate) async fn run_distill_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
@@ -65,7 +65,7 @@ pub(crate) async fn run_compact_task(
         collaboration_mode_kind: turn_context.collaboration_mode.mode,
     });
     sess.send_event(&turn_context, start_event).await;
-    run_compact_task_inner(
+    run_distill_task_inner(
         sess.clone(),
         turn_context,
         input,
@@ -74,7 +74,7 @@ pub(crate) async fn run_compact_task(
     .await
 }
 
-async fn run_compact_task_inner(
+async fn run_distill_task_inner(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
@@ -267,5 +267,5 @@ async fn drain_to_completed(
 }
 
 #[cfg(test)]
-#[path = "compact_tests.rs"]
+#[path = "distill_tests.rs"]
 mod tests;

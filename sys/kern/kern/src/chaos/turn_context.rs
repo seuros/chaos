@@ -27,12 +27,12 @@ use chaos_snitch::current_span_trace_id;
 
 use crate::AuthManager;
 use crate::ModelProviderInfo;
-use crate::compact;
 use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ConstraintResult;
 use crate::config::GhostSnapshotConfig;
 use crate::config::types::ShellEnvironmentPolicy;
+use crate::distill;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::shell_snapshot::ShellSnapshot;
@@ -209,7 +209,7 @@ impl TurnContext {
     pub(crate) fn compact_prompt(&self) -> &str {
         self.compact_prompt
             .as_deref()
-            .unwrap_or(compact::SUMMARIZATION_PROMPT)
+            .unwrap_or(distill::SUMMARIZATION_PROMPT)
     }
 
     pub(crate) fn to_turn_context_item(&self) -> TurnContextItem {

@@ -1,4 +1,4 @@
-mod compact;
+mod distill;
 mod ghost_snapshot;
 mod regular;
 mod review;
@@ -46,7 +46,7 @@ use chaos_snitch::metrics::names::TURN_NETWORK_PROXY_METRIC;
 use chaos_snitch::metrics::names::TURN_TOKEN_USAGE_METRIC;
 use chaos_snitch::metrics::names::TURN_TOOL_CALL_METRIC;
 
-pub(crate) use compact::CompactTask;
+pub(crate) use distill::DistillTask;
 pub(crate) use ghost_snapshot::GhostSnapshotTask;
 pub(crate) use regular::RegularTask;
 pub(crate) use review::ReviewTask;

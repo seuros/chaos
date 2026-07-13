@@ -84,13 +84,13 @@ pub(crate) use crate::client::ModelClient;
 #[cfg(test)]
 pub(crate) use crate::collaboration_modes::CollaborationModesConfig;
 #[cfg(test)]
-pub(crate) use crate::compact;
-#[cfg(test)]
-pub(crate) use crate::compact::collect_user_messages;
-#[cfg(test)]
 pub(crate) use crate::config::Config;
 #[cfg(test)]
 pub(crate) use crate::context_manager::ContextManager;
+#[cfg(test)]
+pub(crate) use crate::distill;
+#[cfg(test)]
+pub(crate) use crate::distill::collect_user_messages;
 #[cfg(test)]
 pub(crate) use crate::exec::StreamOutput;
 #[cfg(test)]

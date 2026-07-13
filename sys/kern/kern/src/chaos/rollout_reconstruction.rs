@@ -3,9 +3,9 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::TurnContextItem;
 
-use crate::compact;
-use crate::compact::collect_user_messages;
 use crate::context_manager::ContextManager;
+use crate::distill;
+use crate::distill::collect_user_messages;
 
 use super::session::Session;
 use super::turn_context::PreviousTurnSettings;
@@ -274,7 +274,7 @@ impl Session {
                         // TODO(ccunningham): if we drop support for None replacement_history compaction items,
                         // we can get rid of this second loop entirely and just build `history` directly in the first loop.
                         let user_messages = collect_user_messages(history.raw_items());
-                        let rebuilt = compact::build_compacted_history(
+                        let rebuilt = distill::build_compacted_history(
                             Vec::new(),
                             &user_messages,
                             &compacted.message,

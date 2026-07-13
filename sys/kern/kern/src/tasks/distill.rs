@@ -10,9 +10,9 @@ use chaos_ipc::user_input::UserInput;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct CompactTask;
+pub(crate) struct DistillTask;
 
-impl SessionTask for CompactTask {
+impl SessionTask for DistillTask {
     fn kind(&self) -> TaskKind {
         TaskKind::Compact
     }
@@ -30,20 +30,20 @@ impl SessionTask for CompactTask {
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
         Box::pin(async move {
             let session = session.clone_session();
-            let _ = if crate::compact::should_use_remote_compact_task(&ctx.provider) {
+            let _ = if crate::distill::should_use_remote_distill_task(&ctx.provider) {
                 session.services.session_telemetry.counter(
                     "chaos.task.compact",
                     /*inc*/ 1,
                     &[("type", "remote")],
                 );
-                crate::compact_remote::run_remote_compact_task(session.clone(), ctx).await
+                crate::distill_remote::run_remote_distill_task(session.clone(), ctx).await
             } else {
                 session.services.session_telemetry.counter(
                     "chaos.task.compact",
                     /*inc*/ 1,
                     &[("type", "local")],
                 );
-                crate::compact::run_compact_task(session.clone(), ctx, input).await
+                crate::distill::run_distill_task(session.clone(), ctx, input).await
             };
             None
         })

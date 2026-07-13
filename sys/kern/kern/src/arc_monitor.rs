@@ -7,8 +7,8 @@ use tracing::warn;
 
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
-use crate::compact::content_items_to_text;
 use crate::default_client::build_http_client;
+use crate::distill::content_items_to_text;
 use crate::event_mapping::is_contextual_user_message_content;
 use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseItem;

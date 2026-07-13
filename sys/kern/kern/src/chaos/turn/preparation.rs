@@ -15,7 +15,9 @@ pub(super) async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
 ) -> ChaosResult<()> {
-    maybe_run_previous_model_inline_compact(sess, turn_context).await?;
+    if maybe_run_previous_model_inline_compact(sess, turn_context).await? {
+        return Ok(());
+    }
     if sess.allotment_status(turn_context).await.limit_reached {
         run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
     }

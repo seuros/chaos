@@ -26,7 +26,7 @@ pub enum Scope {
     BodyAfterPrefix,
 }
 
-/// The allotments a allotment status is measured against.
+/// Limits an allotment status is measured against.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Limits {
     /// Token threshold that triggers auto-distillation for the active scope.

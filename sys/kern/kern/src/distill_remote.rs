@@ -24,6 +24,7 @@ use futures::TryFutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
+use tracing::warn;
 
 pub(crate) async fn run_inline_remote_auto_distill_task(
     sess: Arc<Session>,
@@ -253,6 +254,13 @@ fn trim_function_call_history_to_fit_context_window(
                 trim_tool_output_item(item).map(|rewritten| (index, rewritten))
             })
         else {
+            // Nothing left to trim; the request may still exceed the window
+            // and fail at the provider.
+            warn!(
+                turn_id = %turn_context.sub_id,
+                trimmed_items,
+                "history still exceeds the context window after trimming all tool outputs"
+            );
             break;
         };
         if !history.rewrite_item(index, rewritten) {

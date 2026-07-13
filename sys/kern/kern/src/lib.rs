@@ -35,7 +35,9 @@ mod command_canonicalization;
 pub mod config;
 pub mod config_loader;
 mod context_manager;
-mod contextual_user_message;
+mod contextual_user_message {
+    pub use chaos_context::contextual_user_message::*;
+}
 pub mod custom_prompts;
 mod developer_instructions;
 pub mod env;
@@ -75,7 +77,9 @@ pub mod test_support;
 mod text_encoding;
 pub mod token_data;
 mod traits_impl;
-mod truncate;
+mod truncate {
+    pub use chaos_context::ration::*;
+}
 mod unified_exec;
 pub use client::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;
 pub use model_provider_info::ModelProviderInfo;
@@ -86,13 +90,17 @@ pub use model_provider_info::ProviderAuthMethod;
 pub use model_provider_info::WireApi;
 pub use model_provider_info::built_in_model_providers;
 pub use model_provider_info::create_oss_provider_with_base_url;
-mod event_mapping;
+mod event_mapping {
+    pub use chaos_context::event_mapping::*;
+}
 mod process_table;
 mod prompt_images;
 mod response_debug_context;
 pub mod review_format;
 pub mod review_prompts;
-pub mod web_search;
+pub mod web_search {
+    pub use chaos_context::web_search::*;
+}
 pub use process_table::NewProcess;
 pub use process_table::ProcessTable;
 // Re-export common auth types for workspace consumers

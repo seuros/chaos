@@ -1356,6 +1356,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-context"
+version = "47.0.0"
+dependencies = [
+ "chaos-ipc",
+ "pretty_assertions",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "chaos-contraband"
 version = "47.0.0"
 
@@ -1651,6 +1661,7 @@ dependencies = [
  "chaos-check",
  "chaos-clamp",
  "chaos-concierge",
+ "chaos-context",
  "chaos-cron",
  "chaos-diff",
  "chaos-doas",

@@ -1,6 +1,6 @@
-//! Utilities for truncating large chunks of output while preserving a prefix
-//! and suffix on UTF-8 boundaries, and helpers for line/token‑based truncation
-//! used across the core crate.
+//! Allotment enforcement: utilities for truncating large chunks of output
+//! while preserving a prefix and suffix on UTF-8 boundaries, and helpers for
+//! line/token-based truncation and approximate token accounting.
 
 use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::openai_models::TruncationMode;
@@ -76,7 +76,7 @@ impl std::ops::Mul<f64> for TruncationPolicy {
     }
 }
 
-pub(crate) fn formatted_truncate_text(content: &str, policy: TruncationPolicy) -> String {
+pub fn formatted_truncate_text(content: &str, policy: TruncationPolicy) -> String {
     if content.len() <= policy.byte_budget() {
         return content.to_string();
     }
@@ -85,7 +85,7 @@ pub(crate) fn formatted_truncate_text(content: &str, policy: TruncationPolicy) -
     format!("Total output lines: {total_lines}\n\n{result}")
 }
 
-pub(crate) fn truncate_text(content: &str, policy: TruncationPolicy) -> String {
+pub fn truncate_text(content: &str, policy: TruncationPolicy) -> String {
     match policy {
         TruncationPolicy::Bytes(_) => truncate_with_byte_estimate(content, policy),
         TruncationPolicy::Tokens(_) => {
@@ -96,7 +96,7 @@ pub(crate) fn truncate_text(content: &str, policy: TruncationPolicy) -> String {
 }
 
 #[cfg(test)]
-pub(crate) fn formatted_truncate_text_content_items_with_policy(
+pub fn formatted_truncate_text_content_items_with_policy(
     items: &[FunctionCallOutputContentItem],
     policy: TruncationPolicy,
 ) -> (Vec<FunctionCallOutputContentItem>, Option<usize>) {
@@ -143,7 +143,7 @@ pub(crate) fn formatted_truncate_text_content_items_with_policy(
 /// Globally truncate function output items to fit within the given
 /// truncation policy's budget, preserving as many text/image items as
 /// possible and appending a summary for any omitted text items.
-pub(crate) fn truncate_function_output_items_with_policy(
+pub fn truncate_function_output_items_with_policy(
     items: &[FunctionCallOutputContentItem],
     policy: TruncationPolicy,
 ) -> Vec<FunctionCallOutputContentItem> {
@@ -336,22 +336,22 @@ fn assemble_truncated_output(prefix: &str, suffix: &str, marker: &str) -> String
     out
 }
 
-pub(crate) fn approx_token_count(text: &str) -> usize {
+pub fn approx_token_count(text: &str) -> usize {
     let len = text.len();
     len.saturating_add(APPROX_BYTES_PER_TOKEN.saturating_sub(1)) / APPROX_BYTES_PER_TOKEN
 }
 
-pub(crate) fn approx_bytes_for_tokens(tokens: usize) -> usize {
+pub fn approx_bytes_for_tokens(tokens: usize) -> usize {
     tokens.saturating_mul(APPROX_BYTES_PER_TOKEN)
 }
 
-pub(crate) fn approx_tokens_from_byte_count(bytes: usize) -> u64 {
+pub fn approx_tokens_from_byte_count(bytes: usize) -> u64 {
     let bytes_u64 = bytes as u64;
     bytes_u64.saturating_add((APPROX_BYTES_PER_TOKEN as u64).saturating_sub(1))
         / (APPROX_BYTES_PER_TOKEN as u64)
 }
 
-pub(crate) fn approx_tokens_from_byte_count_i64(bytes: i64) -> i64 {
+pub fn approx_tokens_from_byte_count_i64(bytes: i64) -> i64 {
     if bytes <= 0 {
         return 0;
     }
@@ -360,5 +360,5 @@ pub(crate) fn approx_tokens_from_byte_count_i64(bytes: i64) -> i64 {
 }
 
 #[cfg(test)]
-#[path = "truncate_tests.rs"]
+#[path = "ration_tests.rs"]
 mod tests;

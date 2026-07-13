@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::contextual_user_message::is_contextual_user_fragment;
 use crate::web_search::web_search_action_detail;
 
-pub(crate) fn is_contextual_user_message_content(message: &[ContentItem]) -> bool {
+pub fn is_contextual_user_message_content(message: &[ContentItem]) -> bool {
     message.iter().any(is_contextual_user_fragment)
 }
 

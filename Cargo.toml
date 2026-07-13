@@ -2,6 +2,7 @@
 members = [
     # sys/ — kernel
     "sys/kern/kern",
+    "sys/kern/context",
     "sys/storage",
     # sys/arch — platform sandboxes
     "sys/arch/base",
@@ -130,6 +131,7 @@ publish = false
 [workspace.dependencies]
 # Internal — sys/
 chaos-kern = { path = "sys/kern/kern" }
+chaos-context = { path = "sys/kern/context" }
 chaos-abi = { path = "lib/libcontract/abi" }
 chaos-ipc = { path = "lib/libcontract/ipc" }
 chaos-traits = { path = "lib/libcontract/traits" }

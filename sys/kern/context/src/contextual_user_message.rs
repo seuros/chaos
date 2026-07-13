@@ -3,28 +3,28 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_CLOSE_TAG;
 use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
 
-pub(crate) const USER_SHELL_COMMAND_OPEN_TAG: &str = "<user_shell_command>";
-pub(crate) const USER_SHELL_COMMAND_CLOSE_TAG: &str = "</user_shell_command>";
-pub(crate) const TURN_ABORTED_OPEN_TAG: &str = "<turn_aborted>";
-pub(crate) const TURN_ABORTED_CLOSE_TAG: &str = "</turn_aborted>";
-pub(crate) const SUBAGENT_NOTIFICATION_OPEN_TAG: &str = "<subagent_notification>";
-pub(crate) const SUBAGENT_NOTIFICATION_CLOSE_TAG: &str = "</subagent_notification>";
+pub const USER_SHELL_COMMAND_OPEN_TAG: &str = "<user_shell_command>";
+pub const USER_SHELL_COMMAND_CLOSE_TAG: &str = "</user_shell_command>";
+pub const TURN_ABORTED_OPEN_TAG: &str = "<turn_aborted>";
+pub const TURN_ABORTED_CLOSE_TAG: &str = "</turn_aborted>";
+pub const SUBAGENT_NOTIFICATION_OPEN_TAG: &str = "<subagent_notification>";
+pub const SUBAGENT_NOTIFICATION_CLOSE_TAG: &str = "</subagent_notification>";
 
 #[derive(Clone, Copy)]
-pub(crate) struct ContextualUserFragmentDefinition {
+pub struct ContextualUserFragmentDefinition {
     start_marker: &'static str,
     end_marker: &'static str,
 }
 
 impl ContextualUserFragmentDefinition {
-    pub(crate) const fn new(start_marker: &'static str, end_marker: &'static str) -> Self {
+    pub const fn new(start_marker: &'static str, end_marker: &'static str) -> Self {
         Self {
             start_marker,
             end_marker,
         }
     }
 
-    pub(crate) fn matches_text(&self, text: &str) -> bool {
+    pub fn matches_text(&self, text: &str) -> bool {
         let trimmed = text.trim_start();
         let starts_with_marker = trimmed
             .get(..self.start_marker.len())
@@ -36,11 +36,11 @@ impl ContextualUserFragmentDefinition {
         starts_with_marker && ends_with_marker
     }
 
-    pub(crate) fn wrap(&self, body: String) -> String {
+    pub fn wrap(&self, body: String) -> String {
         format!("{}\n{}\n{}", self.start_marker, body, self.end_marker)
     }
 
-    pub(crate) fn into_message(self, text: String) -> ResponseItem {
+    pub fn into_message(self, text: String) -> ResponseItem {
         ResponseItem::Message {
             id: None,
             role: "user".to_string(),
@@ -51,19 +51,19 @@ impl ContextualUserFragmentDefinition {
     }
 }
 
-pub(crate) const ENVIRONMENT_CONTEXT_FRAGMENT: ContextualUserFragmentDefinition =
+pub const ENVIRONMENT_CONTEXT_FRAGMENT: ContextualUserFragmentDefinition =
     ContextualUserFragmentDefinition::new(
         ENVIRONMENT_CONTEXT_OPEN_TAG,
         ENVIRONMENT_CONTEXT_CLOSE_TAG,
     );
-pub(crate) const USER_SHELL_COMMAND_FRAGMENT: ContextualUserFragmentDefinition =
+pub const USER_SHELL_COMMAND_FRAGMENT: ContextualUserFragmentDefinition =
     ContextualUserFragmentDefinition::new(
         USER_SHELL_COMMAND_OPEN_TAG,
         USER_SHELL_COMMAND_CLOSE_TAG,
     );
-pub(crate) const TURN_ABORTED_FRAGMENT: ContextualUserFragmentDefinition =
+pub const TURN_ABORTED_FRAGMENT: ContextualUserFragmentDefinition =
     ContextualUserFragmentDefinition::new(TURN_ABORTED_OPEN_TAG, TURN_ABORTED_CLOSE_TAG);
-pub(crate) const SUBAGENT_NOTIFICATION_FRAGMENT: ContextualUserFragmentDefinition =
+pub const SUBAGENT_NOTIFICATION_FRAGMENT: ContextualUserFragmentDefinition =
     ContextualUserFragmentDefinition::new(
         SUBAGENT_NOTIFICATION_OPEN_TAG,
         SUBAGENT_NOTIFICATION_CLOSE_TAG,
@@ -76,7 +76,7 @@ const CONTEXTUAL_USER_FRAGMENTS: &[ContextualUserFragmentDefinition] = &[
     SUBAGENT_NOTIFICATION_FRAGMENT,
 ];
 
-pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
+pub fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
     let ContentItem::InputText { text } = content_item else {
         return false;
     };

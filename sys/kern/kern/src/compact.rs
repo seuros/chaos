@@ -16,37 +16,23 @@ use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
 use crate::protocol::TurnStartedEvent;
 use crate::protocol::WarningEvent;
-use crate::truncate::TruncationPolicy;
-use crate::truncate::approx_token_count;
-use crate::truncate::truncate_text;
 use crate::util::backoff;
 use chaos_ipc::items::ContextCompactionItem;
 use chaos_ipc::items::TurnItem;
-use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::user_input::UserInput;
 use futures::prelude::*;
 use tracing::error;
 
-pub const SUMMARIZATION_PROMPT: &str = include_str!("../templates/compact/prompt.md");
-pub const SUMMARY_PREFIX: &str = include_str!("../templates/compact/summary_prefix.md");
-const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
-
-/// Controls whether compaction replacement history must include initial context.
-///
-/// Pre-turn/manual compaction variants use `DoNotInject`: they replace history with a summary and
-/// clear `reference_context_item`, so the next regular turn will fully reinject initial context
-/// after compaction.
-///
-/// Mid-turn compaction must use `BeforeLastUserMessage` because the model is trained to see the
-/// compaction summary as the last item in history after mid-turn compaction; we therefore inject
-/// initial context into the replacement history just above the last real user message.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum InitialContextInjection {
-    BeforeLastUserMessage,
-    DoNotInject,
-}
+pub use chaos_context::distill::InitialContextInjection;
+pub use chaos_context::distill::SUMMARIZATION_PROMPT;
+pub use chaos_context::distill::SUMMARY_PREFIX;
+pub use chaos_context::distill::build_compacted_history;
+pub use chaos_context::distill::collect_user_messages;
+pub use chaos_context::distill::content_items_to_text;
+pub use chaos_context::distill::insert_initial_context_before_last_real_user_or_summary;
+pub use chaos_context::distill::is_summary_message;
 
 pub(crate) fn should_use_remote_compact_task(provider: &ModelProviderInfo) -> bool {
     provider.is_openai()
@@ -230,169 +216,6 @@ async fn run_compact_task_inner(
     });
     sess.send_event(&turn_context, warning).await;
     Ok(())
-}
-
-pub fn content_items_to_text(content: &[ContentItem]) -> Option<String> {
-    let mut pieces = Vec::new();
-    for item in content {
-        match item {
-            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
-                if !text.is_empty() {
-                    pieces.push(text.as_str());
-                }
-            }
-            ContentItem::InputImage { .. } => {}
-            ContentItem::Document { text, .. } => {
-                if !text.is_empty() {
-                    pieces.push(text.as_str());
-                }
-            }
-        }
-    }
-    if pieces.is_empty() {
-        None
-    } else {
-        Some(pieces.join("\n"))
-    }
-}
-
-pub(crate) fn collect_user_messages(items: &[ResponseItem]) -> Vec<String> {
-    items
-        .iter()
-        .filter_map(|item| match crate::event_mapping::parse_turn_item(item) {
-            Some(TurnItem::UserMessage(user)) => {
-                if is_summary_message(&user.message()) {
-                    None
-                } else {
-                    Some(user.message())
-                }
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-pub(crate) fn is_summary_message(message: &str) -> bool {
-    message.starts_with(format!("{SUMMARY_PREFIX}\n").as_str())
-}
-
-/// Inserts canonical initial context into compacted replacement history at the
-/// model-expected boundary.
-///
-/// Placement rules:
-/// - Prefer immediately before the last real user message.
-/// - If no real user messages remain, insert before the compaction summary so
-///   the summary stays last.
-/// - If there are no user messages, insert before the last compaction item so
-///   that item remains last (remote compaction may return only compaction items).
-/// - If there are no user messages or compaction items, append the context.
-pub(crate) fn insert_initial_context_before_last_real_user_or_summary(
-    mut compacted_history: Vec<ResponseItem>,
-    initial_context: Vec<ResponseItem>,
-) -> Vec<ResponseItem> {
-    let mut last_user_or_summary_index = None;
-    let mut last_real_user_index = None;
-    for (i, item) in compacted_history.iter().enumerate().rev() {
-        let Some(TurnItem::UserMessage(user)) = crate::event_mapping::parse_turn_item(item) else {
-            continue;
-        };
-        // Compaction summaries are encoded as user messages, so track both:
-        // the last real user message (preferred insertion point) and the last
-        // user-message-like item (fallback summary insertion point).
-        last_user_or_summary_index.get_or_insert(i);
-        if !is_summary_message(&user.message()) {
-            last_real_user_index = Some(i);
-            break;
-        }
-    }
-    let last_compaction_index = compacted_history
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(i, item)| matches!(item, ResponseItem::Compaction { .. }).then_some(i));
-    let insertion_index = last_real_user_index
-        .or(last_user_or_summary_index)
-        .or(last_compaction_index);
-
-    // Re-inject canonical context from the current session since we stripped it
-    // from the pre-compaction history. Prefer placing it before the last real
-    // user message; if there is no real user message left, place it before the
-    // summary or compaction item so the compaction item remains last.
-    if let Some(insertion_index) = insertion_index {
-        compacted_history.splice(insertion_index..insertion_index, initial_context);
-    } else {
-        compacted_history.extend(initial_context);
-    }
-
-    compacted_history
-}
-
-pub(crate) fn build_compacted_history(
-    initial_context: Vec<ResponseItem>,
-    user_messages: &[String],
-    summary_text: &str,
-) -> Vec<ResponseItem> {
-    build_compacted_history_with_limit(
-        initial_context,
-        user_messages,
-        summary_text,
-        COMPACT_USER_MESSAGE_MAX_TOKENS,
-    )
-}
-
-fn build_compacted_history_with_limit(
-    mut history: Vec<ResponseItem>,
-    user_messages: &[String],
-    summary_text: &str,
-    max_tokens: usize,
-) -> Vec<ResponseItem> {
-    let mut selected_messages: Vec<String> = Vec::new();
-    if max_tokens > 0 {
-        let mut remaining = max_tokens;
-        for message in user_messages.iter().rev() {
-            if remaining == 0 {
-                break;
-            }
-            let tokens = approx_token_count(message);
-            if tokens <= remaining {
-                selected_messages.push(message.clone());
-                remaining = remaining.saturating_sub(tokens);
-            } else {
-                let truncated = truncate_text(message, TruncationPolicy::Tokens(remaining));
-                selected_messages.push(truncated);
-                break;
-            }
-        }
-        selected_messages.reverse();
-    }
-
-    for message in &selected_messages {
-        history.push(ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: message.clone(),
-            }],
-            end_turn: None,
-            phase: None,
-        });
-    }
-
-    let summary_text = if summary_text.is_empty() {
-        "(no summary available)".to_string()
-    } else {
-        summary_text.to_string()
-    };
-
-    history.push(ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText { text: summary_text }],
-        end_turn: None,
-        phase: None,
-    });
-
-    history
 }
 
 async fn drain_to_completed(

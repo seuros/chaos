@@ -865,6 +865,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        model_auto_compact_token_limit_scope: Default::default(),
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),

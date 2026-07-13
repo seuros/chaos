@@ -11,9 +11,27 @@ use super::Session;
 use crate::chaos::TurnContext;
 
 impl Session {
-    pub(crate) async fn get_total_token_usage(&self) -> i64 {
+    /// Measures the current context load against the model's allotments,
+    /// honoring the configured scope and the current pressure-window baseline.
+    pub(crate) async fn allotment_status(
+        &self,
+        turn_context: &TurnContext,
+    ) -> chaos_context::allotment::AllotmentStatus {
         let state = self.state.lock().await;
-        state.get_total_token_usage(state.server_reasoning_included())
+        let active_tokens = state.get_total_token_usage(state.server_reasoning_included());
+        let baseline = state
+            .pressure
+            .baseline()
+            .map(chaos_context::pressure::Baseline::tokens);
+        chaos_context::allotment::status(
+            turn_context.config.model_auto_compact_token_limit_scope,
+            active_tokens,
+            baseline,
+            chaos_context::allotment::Limits {
+                auto_distill_token_limit: turn_context.model_info.auto_compact_token_limit(),
+                context_window: turn_context.model_context_window(),
+            },
+        )
     }
 
     pub(crate) async fn get_total_token_usage_breakdown(&self) -> TotalTokenUsageBreakdown {

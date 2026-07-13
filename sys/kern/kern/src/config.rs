@@ -174,6 +174,10 @@ pub struct Config {
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
 
+    /// How the auto-compaction token limit is measured: against the total
+    /// active context, or only the tokens grown since the last compaction.
+    pub model_auto_compact_token_limit_scope: chaos_context::allotment::Scope,
+
     /// Key into the model_providers map that specifies which provider to use.
     pub model_provider_id: String,
 
@@ -475,6 +479,11 @@ pub struct ConfigToml {
 
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
+
+    /// How the auto-compaction token limit is measured: against the total
+    /// active context ("total", the default), or only the tokens grown since
+    /// the last compaction ("body-after-prefix").
+    pub model_auto_compact_token_limit_scope: Option<chaos_context::allotment::Scope>,
 
     /// Default approval policy for executing commands.
     pub approval_policy: Option<ApprovalPolicy>,

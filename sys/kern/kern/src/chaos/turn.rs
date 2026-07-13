@@ -175,9 +175,6 @@ pub(crate) async fn run_turn(
         return None;
     }
 
-    let model_info = turn_context.model_info.clone();
-    let auto_compact_limit = model_info.auto_compact_token_limit().unwrap_or(i64::MAX);
-
     let event = EventMsg::TurnStarted(TurnStartedEvent {
         turn_id: turn_context.sub_id.clone(),
         model_context_window: turn_context.model_context_window(),
@@ -358,17 +355,17 @@ pub(crate) async fn run_turn(
                     needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
                 } = sampling_request_output;
-                let total_usage_tokens = sess.get_total_token_usage().await;
-                let token_limit_reached = total_usage_tokens >= auto_compact_limit;
+                let allotment = sess.allotment_status(turn_context.as_ref()).await;
+                let token_limit_reached = allotment.limit_reached;
 
                 let estimated_token_count =
                     sess.get_estimated_token_count(turn_context.as_ref()).await;
 
                 tracing::trace!(
                     turn_id = %turn_context.sub_id,
-                    total_usage_tokens,
+                    scope_tokens = allotment.scope_tokens,
+                    tokens_until_distillation = ?allotment.tokens_until_distillation,
                     estimated_token_count = ?estimated_token_count,
-                    auto_compact_limit,
                     token_limit_reached,
                     needs_follow_up,
                     "post sampling token usage"

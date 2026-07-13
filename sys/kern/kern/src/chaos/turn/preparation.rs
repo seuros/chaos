@@ -13,20 +13,8 @@ pub(super) async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
 ) -> ChaosResult<()> {
-    let total_usage_tokens_before_compaction = sess.get_total_token_usage().await;
-    maybe_run_previous_model_inline_compact(
-        sess,
-        turn_context,
-        total_usage_tokens_before_compaction,
-    )
-    .await?;
-    let total_usage_tokens = sess.get_total_token_usage().await;
-    let auto_compact_limit = turn_context
-        .model_info
-        .auto_compact_token_limit()
-        .unwrap_or(i64::MAX);
-    // Compact if the total usage tokens are greater than the auto compact limit
-    if total_usage_tokens >= auto_compact_limit {
+    maybe_run_previous_model_inline_compact(sess, turn_context).await?;
+    if sess.allotment_status(turn_context).await.limit_reached {
         run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
     }
     Ok(())
@@ -41,7 +29,6 @@ pub(super) async fn run_pre_sampling_compact(
 async fn maybe_run_previous_model_inline_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
-    total_usage_tokens: i64,
 ) -> ChaosResult<bool> {
     let Some(previous_turn_settings) = sess.previous_turn_settings().await else {
         return Ok(false);
@@ -58,11 +45,7 @@ async fn maybe_run_previous_model_inline_compact(
     let Some(new_context_window) = turn_context.model_context_window() else {
         return Ok(false);
     };
-    let new_auto_compact_limit = turn_context
-        .model_info
-        .auto_compact_token_limit()
-        .unwrap_or(i64::MAX);
-    let should_run = total_usage_tokens > new_auto_compact_limit
+    let should_run = sess.allotment_status(turn_context).await.limit_reached
         && previous_model_turn_context.model_info.slug != turn_context.model_info.slug
         && old_context_window > new_context_window;
     if should_run {

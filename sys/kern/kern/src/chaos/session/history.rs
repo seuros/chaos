@@ -220,6 +220,10 @@ impl Session {
     ) {
         self.replace_history(items, reference_context_item.clone())
             .await;
+        {
+            let mut state = self.state.lock().await;
+            state.pressure.advance();
+        }
 
         self.persist_rollout_items(&[RolloutItem::Compacted(compacted_item)])
             .await;

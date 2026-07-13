@@ -6,8 +6,84 @@ use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::openai_models::TruncationMode;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::protocol::TruncationPolicy as ProtocolTruncationPolicy;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
 
 const APPROX_BYTES_PER_TOKEN: usize = 4;
+
+/// How the auto-distillation token limit is measured.
+///
+/// `Total` compares the full active context against the limit. `BodyAfterPrefix`
+/// compares only the tokens grown since the current window's baseline (see
+/// [`crate::pressure::Window`]), so a large stable prefix does not count
+/// against the allotment.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope {
+    #[default]
+    Total,
+    BodyAfterPrefix,
+}
+
+/// The allotments a allotment status is measured against.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Limits {
+    /// Token threshold that triggers auto-distillation for the active scope.
+    pub auto_distill_token_limit: Option<i64>,
+    /// Full context window of the model; reaching it forces distillation
+    /// regardless of scope.
+    pub context_window: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AllotmentStatus {
+    /// Tokens counted under the active scope.
+    pub scope_tokens: i64,
+    /// Whether distillation should run now.
+    pub limit_reached: bool,
+    /// Tokens left before distillation triggers, if any limit is configured.
+    pub tokens_until_distillation: Option<i64>,
+}
+
+/// Computes the allotment status for the current context load.
+///
+/// `active_tokens` is the total live context size; `baseline` is the current
+/// window's prefill baseline (ignored under `Scope::Total`). With no baseline
+/// recorded yet, `BodyAfterPrefix` measures zero growth.
+pub fn status(
+    scope: Scope,
+    active_tokens: i64,
+    baseline: Option<i64>,
+    limits: Limits,
+) -> AllotmentStatus {
+    let scope_tokens = match scope {
+        Scope::Total => active_tokens,
+        Scope::BodyAfterPrefix => active_tokens.saturating_sub(baseline.unwrap_or(active_tokens)),
+    };
+    let scope_limit_reached = limits
+        .auto_distill_token_limit
+        .is_some_and(|limit| scope_tokens >= limit);
+    let window_limit_reached = limits
+        .context_window
+        .is_some_and(|window| active_tokens >= window);
+    let scope_remaining = limits
+        .auto_distill_token_limit
+        .map(|limit| limit.saturating_sub(scope_tokens).max(0));
+    let window_remaining = limits
+        .context_window
+        .map(|window| window.saturating_sub(active_tokens).max(0));
+    let tokens_until_distillation = match (scope_remaining, window_remaining) {
+        (Some(scope), Some(window)) => Some(scope.min(window)),
+        (scope, window) => scope.or(window),
+    };
+
+    AllotmentStatus {
+        scope_tokens,
+        limit_reached: scope_limit_reached || window_limit_reached,
+        tokens_until_distillation,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TruncationPolicy {
@@ -360,5 +436,5 @@ pub fn approx_tokens_from_byte_count_i64(bytes: i64) -> i64 {
 }
 
 #[cfg(test)]
-#[path = "ration_tests.rs"]
+#[path = "allotment_tests.rs"]
 mod tests;

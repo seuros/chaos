@@ -12,6 +12,7 @@ use crate::protocol::TokenUsage;
 use crate::protocol::TokenUsageInfo;
 use crate::sandboxing::merge_permission_profiles;
 use crate::truncate::TruncationPolicy;
+use chaos_context::pressure::Window;
 use chaos_ipc::protocol::TurnContextItem;
 
 /// Persistent, session-scoped state owned by the session runner task.
@@ -27,6 +28,8 @@ pub(crate) struct SessionState {
     previous_turn_settings: Option<PreviousTurnSettings>,
     pub(crate) pending_session_start_source: Option<chaos_dtrace::SessionStartSource>,
     granted_permissions: Option<PermissionProfile>,
+    /// Context-pressure window state; rotates on each distillation.
+    pub(crate) pressure: Window,
 }
 
 impl SessionState {
@@ -42,6 +45,7 @@ impl SessionState {
             previous_turn_settings: None,
             pending_session_start_source: None,
             granted_permissions: None,
+            pressure: Window::new(),
         }
     }
 
@@ -96,6 +100,7 @@ impl SessionState {
         usage: &TokenUsage,
         model_context_window: Option<i64>,
     ) {
+        self.pressure.observe_server_baseline(usage.input_tokens);
         self.history.update_token_info(usage, model_context_window);
     }
 

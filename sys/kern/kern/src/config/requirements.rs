@@ -603,6 +603,9 @@ impl Config {
             review_model,
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
+            model_auto_compact_token_limit_scope: cfg
+                .model_auto_compact_token_limit_scope
+                .unwrap_or_default(),
             model_provider_id,
             model_provider,
             cwd: resolved_cwd,

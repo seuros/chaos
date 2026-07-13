@@ -4,8 +4,9 @@
 //!
 //! The kernel owns session orchestration; this crate owns the pure logic.
 
+pub mod allotment;
 pub mod contextual_user_message;
 pub mod distill;
 pub mod event_mapping;
-pub mod ration;
+pub mod pressure;
 pub mod web_search;

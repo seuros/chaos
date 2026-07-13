@@ -2,10 +2,10 @@
 //! construction, and initial-context placement. Session orchestration (the
 //! model round-trips that produce the summary) lives in the kernel.
 
+use crate::allotment::TruncationPolicy;
+use crate::allotment::approx_token_count;
+use crate::allotment::truncate_text;
 use crate::event_mapping::parse_turn_item;
-use crate::ration::TruncationPolicy;
-use crate::ration::approx_token_count;
-use crate::ration::truncate_text;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;

@@ -7,7 +7,6 @@ use crate::chaos::built_tools;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::context_manager::estimate_response_item_model_visible_bytes;
-use crate::context_manager::is_codex_generated_item;
 use crate::distill::InitialContextInjection;
 use crate::distill::insert_initial_context_before_last_real_user_or_summary;
 use crate::error::ChaosErr;
@@ -16,6 +15,7 @@ use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
 use crate::protocol::TurnStartedEvent;
 use chaos_context::distill::should_keep_compacted_history_item;
+use chaos_context::distill::trim_tool_output_item;
 use chaos_ipc::items::ContextCompactionItem;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::BaseInstructions;
@@ -75,16 +75,16 @@ async fn run_remote_distill_task_inner_impl(
         .await;
     let mut history = sess.clone_history().await;
     let base_instructions = sess.get_base_instructions().await;
-    let deleted_items = trim_function_call_history_to_fit_context_window(
+    let trimmed_items = trim_function_call_history_to_fit_context_window(
         &mut history,
         turn_context.as_ref(),
         &base_instructions,
     );
-    if deleted_items > 0 {
+    if trimmed_items > 0 {
         info!(
             turn_id = %turn_context.sub_id,
-            deleted_items,
-            "trimmed history items before remote compaction"
+            trimmed_items,
+            "trimmed tool outputs before remote compaction"
         );
     }
     // Required to keep `/undo` available after compaction
@@ -231,26 +231,36 @@ fn trim_function_call_history_to_fit_context_window(
     turn_context: &TurnContext,
     base_instructions: &BaseInstructions,
 ) -> usize {
-    let mut deleted_items = 0usize;
+    let mut trimmed_items = 0usize;
     let Some(context_window) = turn_context.model_context_window() else {
-        return deleted_items;
+        return trimmed_items;
     };
 
+    // Rewrite the oldest tool-call outputs to a short marker until the
+    // estimate fits: call/output pairs stay intact and the prefix cache keeps
+    // as much of its head as possible, unlike deleting items outright.
+    let mut next_index = 0usize;
     while history
         .estimate_token_count_with_base_instructions(base_instructions)
         .is_some_and(|estimated_tokens| estimated_tokens > context_window)
     {
-        let Some(last_item) = history.raw_items().last() else {
+        let Some((index, rewritten)) = history
+            .raw_items()
+            .iter()
+            .enumerate()
+            .skip(next_index)
+            .find_map(|(index, item)| {
+                trim_tool_output_item(item).map(|rewritten| (index, rewritten))
+            })
+        else {
             break;
         };
-        if !is_codex_generated_item(last_item) {
+        if !history.rewrite_item(index, rewritten) {
             break;
         }
-        if !history.remove_last_item() {
-            break;
-        }
-        deleted_items += 1;
+        next_index = index + 1;
+        trimmed_items += 1;
     }
 
-    deleted_items
+    trimmed_items
 }

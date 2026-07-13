@@ -8,6 +8,7 @@ use crate::allotment::truncate_text;
 use crate::event_mapping::parse_turn_item;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ContentItem;
+use chaos_ipc::models::FunctionCallOutputPayload;
 use chaos_ipc::models::ResponseItem;
 
 pub const SUMMARIZATION_PROMPT: &str = include_str!("../templates/distill/prompt.md");
@@ -228,6 +229,38 @@ pub fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
         | ResponseItem::ImageGenerationCall { .. }
         | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::Other => false,
+    }
+}
+
+/// Replacement body for tool outputs trimmed to fit the context window.
+pub const TRIMMED_TOOL_OUTPUT_MARKER: &str =
+    "Output exceeded the available model context and was trimmed.";
+
+/// Rewrites a tool-call output's payload to the trim marker, keeping the
+/// call/output pairing intact instead of deleting items. Returns `None` when
+/// the item is not a rewritable tool output or is already trimmed.
+pub fn trim_tool_output_item(item: &ResponseItem) -> Option<ResponseItem> {
+    let trimmed = FunctionCallOutputPayload::from_text(TRIMMED_TOOL_OUTPUT_MARKER.to_string());
+    match item {
+        ResponseItem::FunctionCallOutput {
+            call_id,
+            output,
+            tool_name,
+        } if *output != trimmed => Some(ResponseItem::FunctionCallOutput {
+            call_id: call_id.clone(),
+            output: trimmed,
+            tool_name: tool_name.clone(),
+        }),
+        ResponseItem::CustomToolCallOutput {
+            call_id,
+            output,
+            tool_name,
+        } if *output != trimmed => Some(ResponseItem::CustomToolCallOutput {
+            call_id: call_id.clone(),
+            output: trimmed,
+            tool_name: tool_name.clone(),
+        }),
+        _ => None,
     }
 }
 

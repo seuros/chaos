@@ -160,17 +160,20 @@ impl ContextManager {
         }
     }
 
-    pub(crate) fn remove_last_item(&mut self) -> bool {
-        if let Some(removed) = self.items.pop() {
-            normalize::remove_corresponding_for(&mut self.items, &removed);
-            true
-        } else {
-            false
-        }
-    }
-
     pub(crate) fn replace(&mut self, items: Vec<ResponseItem>) {
         self.items = items;
+    }
+
+    /// Replaces the item at `index` in place, preserving ordering and
+    /// call/output pairing. Returns false when the index is out of bounds.
+    pub(crate) fn rewrite_item(&mut self, index: usize, item: ResponseItem) -> bool {
+        match self.items.get_mut(index) {
+            Some(slot) => {
+                *slot = item;
+                true
+            }
+            None => false,
+        }
     }
 
     /// Replace image content in the last turn if it originated from a tool output.
@@ -625,15 +628,6 @@ fn is_model_generated_item(item: &ResponseItem) -> bool {
         | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::Other => false,
     }
-}
-
-pub(crate) fn is_codex_generated_item(item: &ResponseItem) -> bool {
-    matches!(
-        item,
-        ResponseItem::FunctionCallOutput { .. }
-            | ResponseItem::ToolSearchOutput { .. }
-            | ResponseItem::CustomToolCallOutput { .. }
-    ) || matches!(item, ResponseItem::Message { role, .. } if role == "system")
 }
 
 pub(crate) fn is_user_turn_boundary(item: &ResponseItem) -> bool {

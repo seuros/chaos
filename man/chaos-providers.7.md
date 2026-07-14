@@ -76,6 +76,11 @@ chaos --provider anthropic --model haiku
 ```
 
 The URL contains `anthropic`, so FreeChaOS routes to the Messages API adapter.
+For the official Anthropic endpoint, five-minute prompt caching is enabled by
+default. Set `CHAOS_ANTHROPIC_CACHE_TTL=1h` for the extended TTL or
+`CHAOS_ANTHROPIC_CACHE_TTL=off` to disable caching. A request-level
+`anthropic_cache_ttl` extension (`5m`, `1h`, or `off`) takes precedence over
+the environment variable.
 
 ### TensorZero
 
@@ -158,6 +163,10 @@ name = "MiniMax"
 base_url = "https://api.minimax.io/anthropic"
 env_key = "MINIMAX_API_KEY"
 ```
+
+Prompt caching remains opt-in for compatible endpoints because some providers
+reject Anthropic-specific request fields. Set `CHAOS_ANTHROPIC_CACHE_TTL=5m`
+or `1h` only when the endpoint supports top-level `cache_control`.
 
 ## CONFIGURATION
 

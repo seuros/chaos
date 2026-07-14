@@ -51,6 +51,6 @@ pub struct TurnRequest {
     ///
     /// Examples:
     /// - OpenAI: `store`, `include`, `service_tier`, `prompt_cache_key`
-    /// - Anthropic: `max_tokens`, `thinking.budget_tokens`
+    /// - Anthropic: `max_tokens`, `thinking.budget_tokens`, `anthropic_cache_ttl`
     pub extensions: Map<String, Value>,
 }

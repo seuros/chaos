@@ -28,6 +28,9 @@ use tokio::time::timeout;
 
 const DEFAULT_MAX_TOKENS: u64 = 8192;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+const DEFAULT_CACHE_TTL: &str = "5m";
+const CACHE_TTL_EXTENSION: &str = "anthropic_cache_ttl";
+const CACHE_TTL_ENV: &str = "CHAOS_ANTHROPIC_CACHE_TTL";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnthropicAuth {
@@ -132,7 +135,11 @@ impl ModelAdapter for AnthropicAdapter {
 
             let url = self.messages_url();
             let model = self.model_for_request(&request.model)?;
-            let body = build_request_body(&request, &model)?;
+            let body = build_request_body(
+                &request,
+                &model,
+                default_cache_ttl_for_base_url(&self.provider.base_url),
+            )?;
             let headers = self.build_headers()?;
             let retry = self.provider.retry.clone();
             let idle_timeout = self.provider.stream_idle_timeout;
@@ -192,6 +199,8 @@ struct AnthropicRequest {
     max_tokens: u64,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     system: Option<String>,
     messages: Vec<AnthropicMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -212,12 +221,40 @@ struct AnthropicTool {
     input_schema: Value,
 }
 
-pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
+pub(crate) fn default_cache_ttl_for_base_url(base_url: &str) -> &'static str {
+    let is_official_anthropic = url::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| host == "api.anthropic.com");
+    if is_official_anthropic {
+        DEFAULT_CACHE_TTL
+    } else {
+        "off"
+    }
+}
+
+pub(crate) fn build_request_body(
+    request: &TurnRequest,
+    model: &str,
+    default_cache_ttl: &str,
+) -> Result<Value, AbiError> {
     let max_tokens = request
         .extensions
         .get("max_tokens")
         .and_then(Value::as_u64)
         .unwrap_or(DEFAULT_MAX_TOKENS);
+    let cache_ttl = request
+        .extensions
+        .get(CACHE_TTL_EXTENSION)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| std::env::var(CACHE_TTL_ENV).ok())
+        .unwrap_or_else(|| default_cache_ttl.to_string());
+    let cache_control = match cache_ttl.as_str() {
+        "off" => None,
+        "1h" => Some(serde_json::json!({"type": "ephemeral", "ttl": "1h"})),
+        _ => Some(serde_json::json!({"type": "ephemeral"})),
+    };
 
     let system = if request.instructions.is_empty() {
         None
@@ -232,6 +269,7 @@ pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<V
         model: model.to_string(),
         max_tokens,
         stream: true,
+        cache_control,
         system,
         messages,
         tools,
@@ -451,6 +489,51 @@ struct TextAccumulator {
     text: String,
 }
 
+#[derive(Default)]
+struct UsageAccumulator {
+    input_tokens: u64,
+    cache_creation_input_tokens: u64,
+    cache_read_input_tokens: u64,
+    output_tokens: u64,
+}
+
+impl UsageAccumulator {
+    fn update(&mut self, usage: &Value) {
+        if let Some(value) = usage.get("input_tokens").and_then(Value::as_u64) {
+            self.input_tokens = value;
+        }
+        if let Some(value) = usage
+            .get("cache_creation_input_tokens")
+            .and_then(Value::as_u64)
+        {
+            self.cache_creation_input_tokens = value;
+        }
+        if let Some(value) = usage.get("cache_read_input_tokens").and_then(Value::as_u64) {
+            self.cache_read_input_tokens = value;
+        }
+        if let Some(value) = usage.get("output_tokens").and_then(Value::as_u64) {
+            self.output_tokens = value;
+        }
+    }
+
+    fn token_usage(&self) -> TokenUsage {
+        // Anthropic reports uncached, cache-write, and cache-read input as
+        // separate counters. Chaos's TokenUsage expects input_tokens to be
+        // the full prompt count, with cached_input_tokens as a subset.
+        let prompt_tokens = self
+            .input_tokens
+            .saturating_add(self.cache_creation_input_tokens)
+            .saturating_add(self.cache_read_input_tokens);
+        TokenUsage {
+            input_tokens: prompt_tokens as i64,
+            cached_input_tokens: self.cache_read_input_tokens as i64,
+            output_tokens: self.output_tokens as i64,
+            total_tokens: prompt_tokens.saturating_add(self.output_tokens) as i64,
+            ..Default::default()
+        }
+    }
+}
+
 /// Parse a single SSE event block into zero or more TurnEvents.
 ///
 /// Anthropic SSE event lifecycle for a tool call:
@@ -472,9 +555,13 @@ fn parse_sse_event(
     json: &Value,
     tool_acc: &mut Option<ToolUseAccumulator>,
     text_acc: &mut Option<TextAccumulator>,
+    usage_acc: &mut UsageAccumulator,
 ) -> Result<Vec<TurnEvent>, AbiError> {
     match event_type {
         "message_start" => {
+            if let Some(usage) = json.pointer("/message/usage") {
+                usage_acc.update(usage);
+            }
             let model = json
                 .pointer("/message/model")
                 .and_then(Value::as_str)
@@ -594,22 +681,12 @@ fn parse_sse_event(
         "message_delta" => {
             let stop_reason = json.pointer("/delta/stop_reason").and_then(Value::as_str);
             if stop_reason.is_some() {
-                let input_tokens = json
-                    .pointer("/usage/input_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
-                let output_tokens = json
-                    .pointer("/usage/output_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
+                if let Some(usage) = json.get("usage") {
+                    usage_acc.update(usage);
+                }
                 Ok(vec![TurnEvent::Completed {
                     response_id: String::new(),
-                    token_usage: Some(TokenUsage {
-                        input_tokens: input_tokens as i64,
-                        output_tokens: output_tokens as i64,
-                        total_tokens: (input_tokens + output_tokens) as i64,
-                        ..Default::default()
-                    }),
+                    token_usage: Some(usage_acc.token_usage()),
                 }])
             } else {
                 Ok(vec![])
@@ -682,6 +759,7 @@ where
 {
     let mut tool_acc: Option<ToolUseAccumulator> = None;
     let mut text_acc: Option<TextAccumulator> = None;
+    let mut usage_acc = UsageAccumulator::default();
     let mut stream = EventStream::<_, String>::new(data_stream);
     loop {
         let sse = match timeout(idle_timeout, stream.next()).await {
@@ -702,7 +780,13 @@ where
             continue;
         };
 
-        let events = parse_sse_event(event_type, &json, &mut tool_acc, &mut text_acc)?;
+        let events = parse_sse_event(
+            event_type,
+            &json,
+            &mut tool_acc,
+            &mut text_acc,
+            &mut usage_acc,
+        )?;
         for event in events {
             let is_done = matches!(&event, TurnEvent::Completed { .. });
             if tx.send(Ok(event)).await.is_err() {
@@ -886,7 +970,32 @@ mod tests {
     use super::*;
     use futures::stream;
     use rama::http::header::AUTHORIZATION;
+    use serde_json::Map;
+    use serde_json::json;
     use std::time::Duration;
+
+    fn test_request() -> TurnRequest {
+        TurnRequest {
+            model: "claude-test".to_string(),
+            instructions: "Be helpful.".to_string(),
+            input: vec![ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "Hello".to_string(),
+                }],
+                phase: None,
+                end_turn: None,
+            }],
+            tools: Vec::new(),
+            parallel_tool_calls: true,
+            reasoning: None,
+            output_schema: None,
+            verbosity: None,
+            turn_state: None,
+            extensions: Map::new(),
+        }
+    }
 
     fn test_provider() -> Provider {
         use crate::provider::RetryConfig;
@@ -943,6 +1052,121 @@ mod tests {
             Some("Bearer tok-ant")
         );
         assert!(headers.get("x-api-key").is_none());
+    }
+
+    #[test]
+    fn build_request_body_enables_automatic_prompt_caching() {
+        let request = test_request();
+
+        let body = build_request_body(&request, "claude-test", "5m").expect("request should build");
+
+        assert_eq!(body["cache_control"], json!({"type": "ephemeral"}));
+    }
+
+    #[test]
+    fn build_request_body_supports_one_hour_cache_ttl() {
+        let mut request = test_request();
+        request
+            .extensions
+            .insert(CACHE_TTL_EXTENSION.to_string(), json!("1h"));
+
+        let body =
+            build_request_body(&request, "claude-test", "off").expect("request should build");
+
+        assert_eq!(
+            body["cache_control"],
+            json!({"type": "ephemeral", "ttl": "1h"})
+        );
+    }
+
+    #[test]
+    fn build_request_body_can_disable_prompt_caching() {
+        let mut request = test_request();
+        request
+            .extensions
+            .insert(CACHE_TTL_EXTENSION.to_string(), json!("off"));
+
+        let body = build_request_body(&request, "claude-test", "5m").expect("request should build");
+
+        assert!(body.get("cache_control").is_none());
+    }
+
+    #[test]
+    fn prompt_caching_defaults_on_only_for_official_anthropic_endpoint() {
+        assert_eq!(
+            default_cache_ttl_for_base_url("https://api.anthropic.com/v1"),
+            "5m"
+        );
+        assert_eq!(
+            default_cache_ttl_for_base_url("https://api.minimax.io/anthropic"),
+            "off"
+        );
+        assert_eq!(
+            default_cache_ttl_for_base_url("https://api.moonshot.ai/anthropic"),
+            "off"
+        );
+        assert_eq!(
+            default_cache_ttl_for_base_url("https://api.z.ai/api/anthropic"),
+            "off"
+        );
+    }
+
+    #[test]
+    fn streamed_usage_combines_message_start_cache_usage_and_message_delta_output() {
+        let mut tool_acc = None;
+        let mut text_acc = None;
+        let mut usage_acc = UsageAccumulator::default();
+
+        let start_events = parse_sse_event(
+            "message_start",
+            &json!({
+                "message": {
+                    "model": "claude-test",
+                    "usage": {
+                        "input_tokens": 11,
+                        "cache_creation_input_tokens": 13,
+                        "cache_read_input_tokens": 17,
+                        "output_tokens": 1
+                    }
+                }
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut usage_acc,
+        )
+        .expect("message_start should parse");
+        assert_eq!(start_events.len(), 2);
+        assert!(matches!(start_events[0], TurnEvent::Created));
+        assert!(matches!(
+            &start_events[1],
+            TurnEvent::ServerModel(model) if model == "claude-test"
+        ));
+
+        let completed = parse_sse_event(
+            "message_delta",
+            &json!({
+                "delta": {"stop_reason": "end_turn"},
+                "usage": {"output_tokens": 19}
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut usage_acc,
+        )
+        .expect("message_delta should parse");
+
+        assert_eq!(completed.len(), 1);
+        let TurnEvent::Completed {
+            response_id,
+            token_usage: Some(usage),
+        } = &completed[0]
+        else {
+            panic!("expected one completed event with token usage");
+        };
+        assert!(response_id.is_empty());
+        assert_eq!(usage.input_tokens, 41);
+        assert_eq!(usage.cached_input_tokens, 17);
+        assert_eq!(usage.output_tokens, 19);
+        assert_eq!(usage.total_tokens, 60);
     }
 
     #[tokio::test]

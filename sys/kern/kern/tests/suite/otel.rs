@@ -81,6 +81,16 @@ async fn setup_test_chaos_with_server() -> (MockServer, Arc<Process>) {
     (server, chaos)
 }
 
+async fn wait_for_completed_provider_usage(chaos: &Process) {
+    wait_for_event(chaos, |event| {
+        matches!(
+            event,
+            EventMsg::TokenCount(event) if !event.provider_request_started
+        )
+    })
+    .await;
+}
+
 fn get_buffer_logs(buffer: &Mutex<Vec<u8>>) -> String {
     let bytes = buffer.lock().expect("log buffer poisoned").clone();
     String::from_utf8(bytes).expect("log buffer not utf-8")
@@ -676,7 +686,7 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -738,7 +748,7 @@ async fn handle_response_item_records_tool_result_for_function_call() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -810,16 +820,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
         .await
         .unwrap();
 
-    // This malformed item is not guaranteed to reach TurnComplete on every
-    // platform. Wait for a completed provider usage snapshot, explicitly
-    // excluding the provider-dispatch marker that caused the original race.
-    wait_for_event(&chaos, |ev| {
-        matches!(
-            ev,
-            EventMsg::TokenCount(event) if !event.provider_request_started
-        )
-    })
-    .await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -875,7 +876,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -1048,7 +1049,7 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(tool_decision_assertion(
         "user_approved_call",
@@ -1113,7 +1114,7 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(tool_decision_assertion(
         "user_approved_session_call",
@@ -1178,7 +1179,7 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(tool_decision_assertion(
         "sandbox_retry_call",
@@ -1243,7 +1244,7 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(tool_decision_assertion(
         "user_denied_call",
@@ -1308,7 +1309,7 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(tool_decision_assertion(
         "sandbox_session_call",
@@ -1374,7 +1375,7 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(tool_decision_assertion(
         "sandbox_deny_call",

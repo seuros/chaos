@@ -204,10 +204,10 @@ impl TokenUsageInfo {
         let delta = (context_window - previous_total).max(0);
 
         self.model_context_window = Some(context_window);
-        self.total_token_usage = TokenUsage {
-            total_tokens: context_window,
-            ..TokenUsage::default()
-        };
+        // This method substitutes an estimated context load after the provider
+        // reports that the context window is full. It must not erase the
+        // process-lifetime billing counters accumulated before that error.
+        self.total_token_usage.total_tokens = context_window;
         self.last_token_usage = TokenUsage {
             total_tokens: delta,
             ..TokenUsage::default()

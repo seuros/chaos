@@ -501,6 +501,36 @@ fn record_provider_request_preserves_last_usage_context_semantics() {
 }
 
 #[test]
+fn fill_to_context_window_preserves_process_usage_counters() {
+    let cumulative = TokenUsage {
+        input_tokens: 1_000,
+        cache_creation_input_tokens: 200,
+        cached_input_tokens: 700,
+        output_tokens: 100,
+        reasoning_output_tokens: 10,
+        total_tokens: 1_100,
+        provider_request_count: 4,
+    };
+    let mut info = TokenUsageInfo {
+        total_token_usage: cumulative.clone(),
+        last_token_usage: TokenUsage::default(),
+        model_context_window: Some(128_000),
+    };
+
+    info.fill_to_context_window(200_000);
+
+    assert_eq!(
+        info.total_token_usage,
+        TokenUsage {
+            total_tokens: 200_000,
+            ..cumulative
+        }
+    );
+    assert_eq!(info.last_token_usage.total_tokens, 198_900);
+    assert_eq!(info.model_context_window, Some(200_000));
+}
+
+#[test]
 fn rollout_item_accepts_legacy_turn_context() -> Result<()> {
     // Exact wire shape found in journal_1.sqlite rows persisted before the
     // sandbox split. RolloutItem must still load them.

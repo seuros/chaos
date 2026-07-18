@@ -225,6 +225,7 @@ async fn drain_to_completed(
     turn_metadata_header: Option<&str>,
     prompt: &Prompt,
 ) -> ChaosResult<()> {
+    sess.record_provider_request_started(turn_context).await;
     let mut stream = client_session
         .stream(
             prompt,

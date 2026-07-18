@@ -10,6 +10,13 @@ use ts_rs::TS;
 pub struct TokenUsage {
     #[ts(type = "number")]
     pub input_tokens: i64,
+    /// Input tokens written into the provider prompt cache.
+    ///
+    /// This is separate from [`Self::cached_input_tokens`], which is the
+    /// compatibility name for cache-read input tokens.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub cache_creation_input_tokens: i64,
     #[ts(type = "number")]
     pub cached_input_tokens: i64,
     #[ts(type = "number")]
@@ -18,6 +25,10 @@ pub struct TokenUsage {
     pub reasoning_output_tokens: i64,
     #[ts(type = "number")]
     pub total_tokens: i64,
+    /// Number of model-provider requests dispatched for this usage scope.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub provider_request_count: i64,
 }
 
 // Includes prompts, tools and space to call compact.
@@ -32,6 +43,23 @@ impl TokenUsage {
         self.cached_input_tokens.max(0)
     }
 
+    /// Compatibility-safe name for cache-read input.
+    pub fn cache_read_input(&self) -> i64 {
+        self.cached_input()
+    }
+
+    pub fn cache_creation_input(&self) -> i64 {
+        self.cache_creation_input_tokens.max(0)
+    }
+
+    /// Ordinary provider input, excluding cache writes and cache reads.
+    pub fn uncached_input(&self) -> i64 {
+        (self.input_tokens - self.cache_creation_input() - self.cached_input()).max(0)
+    }
+
+    /// Compatibility helper: input excluding cache reads, but including cache
+    /// creation. Prefer [`Self::uncached_input`] for a provider billing
+    /// breakdown.
     pub fn non_cached_input(&self) -> i64 {
         (self.input_tokens - self.cached_input()).max(0)
     }
@@ -81,10 +109,42 @@ impl TokenUsage {
     /// In-place element-wise sum of token counts.
     pub fn add_assign(&mut self, other: &TokenUsage) {
         self.input_tokens += other.input_tokens;
+        self.cache_creation_input_tokens += other.cache_creation_input_tokens;
         self.cached_input_tokens += other.cached_input_tokens;
         self.output_tokens += other.output_tokens;
         self.reasoning_output_tokens += other.reasoning_output_tokens;
         self.total_tokens += other.total_tokens;
+        self.provider_request_count += other.provider_request_count;
+    }
+
+    /// Saturating element-wise difference for cumulative provider accounting.
+    pub fn difference_since(&self, baseline: &TokenUsage) -> TokenUsage {
+        fn delta(current: i64, previous: i64) -> i64 {
+            if current >= previous {
+                current - previous
+            } else {
+                current.max(0)
+            }
+        }
+
+        TokenUsage {
+            input_tokens: delta(self.input_tokens, baseline.input_tokens),
+            cache_creation_input_tokens: delta(
+                self.cache_creation_input_tokens,
+                baseline.cache_creation_input_tokens,
+            ),
+            cached_input_tokens: delta(self.cached_input_tokens, baseline.cached_input_tokens),
+            output_tokens: delta(self.output_tokens, baseline.output_tokens),
+            reasoning_output_tokens: delta(
+                self.reasoning_output_tokens,
+                baseline.reasoning_output_tokens,
+            ),
+            total_tokens: delta(self.total_tokens, baseline.total_tokens),
+            provider_request_count: delta(
+                self.provider_request_count,
+                baseline.provider_request_count,
+            ),
+        }
     }
 }
 
@@ -127,6 +187,16 @@ impl TokenUsageInfo {
     pub fn append_last_usage(&mut self, last: &TokenUsage) {
         self.total_token_usage.add_assign(last);
         self.last_token_usage = last.clone();
+    }
+
+    /// Count one provider dispatch without disturbing the last provider usage,
+    /// which is also used for context-window calculations.
+    pub fn record_provider_request(&mut self) -> i64 {
+        self.total_token_usage.provider_request_count = self
+            .total_token_usage
+            .provider_request_count
+            .saturating_add(1);
+        self.total_token_usage.provider_request_count
     }
 
     pub fn fill_to_context_window(&mut self, context_window: i64) {
@@ -188,6 +258,9 @@ pub struct CreditsSnapshot {
 pub struct TokenCountEvent {
     pub info: Option<TokenUsageInfo>,
     pub rate_limits: Option<RateLimitSnapshot>,
+    /// True on the snapshot emitted immediately after a provider stream opens.
+    #[serde(default)]
+    pub provider_request_started: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]

@@ -89,10 +89,12 @@ impl Session {
 
             info.last_token_usage = TokenUsage {
                 input_tokens: 0,
+                cache_creation_input_tokens: 0,
                 cached_input_tokens: 0,
                 output_tokens: 0,
                 reasoning_output_tokens: 0,
                 total_tokens: estimated_total_tokens.max(0),
+                provider_request_count: 0,
             };
 
             if let Some(model_context_window) = turn_context.model_context_window() {
@@ -164,8 +166,48 @@ impl Session {
             let state = self.state.lock().await;
             state.token_info_and_rate_limits()
         };
-        let event =
-            chaos_ipc::protocol::EventMsg::TokenCount(TokenCountEvent { info, rate_limits });
+        let event = chaos_ipc::protocol::EventMsg::TokenCount(TokenCountEvent {
+            info,
+            rate_limits,
+            provider_request_started: false,
+        });
+        self.send_event(turn_context, event).await;
+    }
+
+    /// Record one model-provider request dispatch for this turn.
+    ///
+    /// Call this immediately before invoking the provider client. It therefore
+    /// counts tool continuations, lifecycle-hook continuations, and dispatched
+    /// requests that fail while opening or consuming the response stream.
+    pub(crate) async fn record_provider_request_started(&self, turn_context: &TurnContext) {
+        let provider_request_count = {
+            let mut state = self.state.lock().await;
+            let mut info = state.token_info().unwrap_or(TokenUsageInfo {
+                total_token_usage: TokenUsage::default(),
+                last_token_usage: TokenUsage::default(),
+                model_context_window: turn_context.model_context_window(),
+            });
+            let provider_request_count = info.record_provider_request();
+            state.set_token_info(Some(info));
+            provider_request_count
+        };
+        tracing::debug!(
+            process_id = %self.conversation_id,
+            turn_id = %turn_context.sub_id,
+            provider = %turn_context.provider.name,
+            model = %turn_context.model_info.slug,
+            provider_request_count,
+            "provider request dispatched"
+        );
+        let (info, rate_limits) = {
+            let state = self.state.lock().await;
+            state.token_info_and_rate_limits()
+        };
+        let event = chaos_ipc::protocol::EventMsg::TokenCount(TokenCountEvent {
+            info,
+            rate_limits,
+            provider_request_started: true,
+        });
         self.send_event(turn_context, event).await;
     }
 

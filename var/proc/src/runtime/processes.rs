@@ -1062,16 +1062,14 @@ mod tests {
             chaos_ipc::protocol::TokenCountEvent {
                 info: Some(chaos_ipc::protocol::TokenUsageInfo {
                     total_token_usage: chaos_ipc::protocol::TokenUsage {
-                        input_tokens: 0,
-                        cached_input_tokens: 0,
-                        output_tokens: 0,
-                        reasoning_output_tokens: 0,
                         total_tokens: 321,
+                        ..Default::default()
                     },
                     last_token_usage: chaos_ipc::protocol::TokenUsage::default(),
                     model_context_window: None,
                 }),
                 rate_limits: None,
+                provider_request_started: false,
             },
         ))];
         let override_updated_at = jiff::Timestamp::new(1_700_001_234, 0).expect("timestamp");

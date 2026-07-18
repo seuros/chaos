@@ -66,6 +66,7 @@ pub struct EventProcessorWithJsonOutput {
     // Tracks the todo list for the current turn (at most one per turn).
     running_todo_list: Option<RunningTodoList>,
     last_total_token_usage: Option<chaos_ipc::protocol::TokenUsage>,
+    invocation_usage_baseline: Option<chaos_ipc::protocol::TokenUsage>,
     running_mcp_tool_calls: HashMap<String, RunningMcpToolCall>,
     running_collab_tool_calls: HashMap<String, RunningCollabToolCall>,
     running_web_search_calls: HashMap<String, String>,
@@ -109,6 +110,7 @@ impl EventProcessorWithJsonOutput {
             running_patch_applies: HashMap::new(),
             running_todo_list: None,
             last_total_token_usage: None,
+            invocation_usage_baseline: None,
             running_mcp_tool_calls: HashMap::new(),
             running_collab_tool_calls: HashMap::new(),
             running_web_search_calls: HashMap::new(),
@@ -155,6 +157,12 @@ impl EventProcessorWithJsonOutput {
             protocol::EventMsg::WebSearchEnd(ev) => self.handle_web_search_end(ev),
             protocol::EventMsg::TokenCount(ev) => {
                 if let Some(info) = &ev.info {
+                    if ev.provider_request_started && self.invocation_usage_baseline.is_none() {
+                        let mut baseline = info.total_token_usage.clone();
+                        baseline.provider_request_count =
+                            baseline.provider_request_count.saturating_sub(1);
+                        self.invocation_usage_baseline = Some(baseline);
+                    }
                     self.last_total_token_usage = Some(info.total_token_usage.clone());
                 }
                 Vec::new()
@@ -749,19 +757,40 @@ impl EventProcessorWithJsonOutput {
 
     fn handle_task_started(&mut self, _: &protocol::TurnStartedEvent) -> Vec<ProcessEvent> {
         self.last_critical_error = None;
+        self.invocation_usage_baseline = None;
         vec![ProcessEvent::TurnStarted(TurnStartedEvent {})]
     }
 
     fn handle_task_complete(&mut self) -> Vec<ProcessEvent> {
-        let usage = if let Some(u) = &self.last_total_token_usage {
-            Usage {
-                input_tokens: u.input_tokens,
-                cached_input_tokens: u.cached_input_tokens,
-                output_tokens: u.output_tokens,
-            }
-        } else {
-            Usage::default()
+        const TELEMETRY_SCHEMA_VERSION: u32 = 1;
+        let cumulative = self.last_total_token_usage.clone().unwrap_or_default();
+        let (invocation, scope, complete) = match &self.invocation_usage_baseline {
+            Some(baseline) => (
+                cumulative.difference_since(baseline),
+                crate::exec_events::UsageScope::Invocation,
+                true,
+            ),
+            None if cumulative == chaos_ipc::protocol::TokenUsage::default() => (
+                chaos_ipc::protocol::TokenUsage::default(),
+                crate::exec_events::UsageScope::Invocation,
+                true,
+            ),
+            // A producer or persisted event stream predating provider-start
+            // markers can still give us useful cumulative usage. Preserve it
+            // rather than emitting fabricated zero invocation usage, but mark
+            // the scope and completeness honestly.
+            None => (
+                cumulative.clone(),
+                crate::exec_events::UsageScope::ProcessCumulative,
+                false,
+            ),
         };
+        let usage = usage_from_tokens(&invocation, scope, complete);
+        let session_usage = usage_from_tokens(
+            &cumulative,
+            crate::exec_events::UsageScope::ProcessCumulative,
+            true,
+        );
 
         let mut items = Vec::new();
 
@@ -793,10 +822,34 @@ impl EventProcessorWithJsonOutput {
         if let Some(error) = self.last_critical_error.take() {
             items.push(ProcessEvent::TurnFailed(TurnFailedEvent { error }));
         } else {
-            items.push(ProcessEvent::TurnCompleted(TurnCompletedEvent { usage }));
+            items.push(ProcessEvent::TurnCompleted(TurnCompletedEvent {
+                telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
+                usage,
+                session_usage: Some(session_usage),
+            }));
         }
 
         items
+    }
+}
+
+fn usage_from_tokens(
+    tokens: &chaos_ipc::protocol::TokenUsage,
+    scope: crate::exec_events::UsageScope,
+    complete: bool,
+) -> Usage {
+    Usage {
+        scope,
+        input_tokens: tokens.input_tokens,
+        uncached_input_tokens: tokens.uncached_input(),
+        cache_creation_input_tokens: tokens.cache_creation_input_tokens,
+        cache_read_input_tokens: tokens.cached_input_tokens,
+        cached_input_tokens: tokens.cached_input_tokens,
+        output_tokens: tokens.output_tokens,
+        reasoning_output_tokens: (tokens.reasoning_output_tokens > 0)
+            .then_some(tokens.reasoning_output_tokens),
+        provider_request_count: tokens.provider_request_count,
+        complete,
     }
 }
 

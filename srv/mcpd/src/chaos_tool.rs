@@ -303,7 +303,7 @@ fn chaos_output_schema() -> serde_json::Value {
 }
 
 fn chaos_tool_info() -> ToolInfo {
-    tool_info_with_output(
+    let mut info = tool_info_with_output(
         "chaos",
         None,
         Some(format!(
@@ -311,7 +311,12 @@ fn chaos_tool_info() -> ToolInfo {
         )),
         chaos_input_schema(),
         chaos_output_schema(),
-    )
+    );
+    // Sessions run long; let task-capable clients poll instead of blocking.
+    info.execution = Some(mcp_host::protocol::types::ToolExecution {
+        task_support: Some(mcp_host::protocol::types::TaskSupport::Optional),
+    });
+    info
 }
 
 fn chaos_handler<'a>(
@@ -344,5 +349,9 @@ mod tests {
             "process-id field required"
         );
         assert_eq!(tool_json.get("name"), Some(&json!("chaos")));
+        assert_eq!(
+            tool_json.get("execution"),
+            Some(&json!({ "taskSupport": "optional" }))
+        );
     }
 }

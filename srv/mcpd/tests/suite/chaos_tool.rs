@@ -650,3 +650,108 @@ stream_max_retries = 0
         ),
     )
 }
+
+/// Task-augmented `chaos` call: tools/call with `task` metadata returns a
+/// task immediately; tasks/get reaches `completed`; tasks/result carries the
+/// final tool output.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_chaos_tool_task_augmented_call() {
+    if env::var(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok() {
+        println!(
+            "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
+        );
+        return;
+    }
+    if let Err(err) = chaos_tool_task_augmented_call().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn chaos_tool_task_augmented_call() -> anyhow::Result<()> {
+    let McpHandle {
+        process: mut mcp,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(vec![create_final_assistant_message_sse_response(
+        "Task path works!",
+    )?])
+    .await?;
+
+    let request_id = mcp
+        .send_custom_request(
+            "tools/call",
+            Some(json!({
+                "name": "chaos",
+                "arguments": { "prompt": "say hi" },
+                "task": { "ttl": 60_000 }
+            })),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(request_id),
+    )
+    .await??;
+    let task = response
+        .result
+        .as_ref()
+        .and_then(|r| r.get("task"))
+        .context("tools/call response should carry a task")?;
+    assert_eq!(task.get("status"), Some(&json!("working")));
+    let task_id = task
+        .get("taskId")
+        .and_then(|v| v.as_str())
+        .context("taskId")?
+        .to_string();
+
+    let deadline = tokio::time::Instant::now() + DEFAULT_READ_TIMEOUT;
+    let mut status = "working".to_string();
+    while status == "working" {
+        anyhow::ensure!(
+            tokio::time::Instant::now() < deadline,
+            "task did not settle before timeout"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let get_id = mcp
+            .send_custom_request("tasks/get", Some(json!({ "taskId": task_id })))
+            .await?;
+        let get_response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_response_message(get_id),
+        )
+        .await??;
+        status = get_response
+            .result
+            .as_ref()
+            .and_then(|r| r.get("status"))
+            .and_then(|v| v.as_str())
+            .context("tasks/get status")?
+            .to_string();
+    }
+    assert_eq!(status, "completed");
+
+    let result_id = mcp
+        .send_custom_request("tasks/result", Some(json!({ "taskId": task_id })))
+        .await?;
+    let result_response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(result_id),
+    )
+    .await??;
+    let result = result_response.result.context("tasks/result payload")?;
+    assert_eq!(
+        result
+            .get("structuredContent")
+            .and_then(|v| v.get("content")),
+        Some(&json!("Task path works!"))
+    );
+    assert_eq!(
+        result
+            .get("_meta")
+            .and_then(|m| m.get("io.modelcontextprotocol/related-task"))
+            .and_then(|t| t.get("taskId"))
+            .and_then(|v| v.as_str()),
+        Some(task_id.as_str())
+    );
+    Ok(())
+}

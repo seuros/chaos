@@ -81,9 +81,9 @@ dependencies = [
 
 [[package]]
 name = "age"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a371ea05d36dce79871e0ff524bc35e7b6320f2f73718e7175915ed1b5af5ce5"
+checksum = "fd290633c2482479f70f6d1d96ae0e9f52c6a26cd5859edd47ee1fe33fc89f26"
 dependencies = [
  "age-core",
  "base64",
@@ -898,23 +898,25 @@ dependencies = [
 
 [[package]]
 name = "breaker-machines"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9702fd4f684cec05070d132c7c2c1a04ff5b01abfb011304e646548fc35ba1f9"
+checksum = "02c82b34e6e71182ba917c6ed33a878852d8d5455132b2885e3ffd28631bd1ea"
 dependencies = [
- "chrono-machines 0.3.2",
+ "chrono-machines",
+ "hashbrown 0.15.5",
+ "spin 0.12.2",
  "state-machines",
 ]
 
 [[package]]
 name = "breaker-machines"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02c82b34e6e71182ba917c6ed33a878852d8d5455132b2885e3ffd28631bd1ea"
+checksum = "405da8da3de027352d71477991350edb758e88ad4339ed2a20f86770fca15717"
 dependencies = [
- "chrono-machines 0.4.0",
+ "chrono-machines",
  "hashbrown 0.15.5",
- "spin 0.12.1",
+ "spin 0.12.2",
  "state-machines",
 ]
 
@@ -1736,7 +1738,7 @@ dependencies = [
  "chaos-which",
  "chaos_journald",
  "chardetng",
- "chrono-machines 0.4.0",
+ "chrono-machines",
  "clap",
  "codex-client",
  "core_test_support",
@@ -2425,20 +2427,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
- "js-sys",
  "num-traits",
  "serde",
- "wasm-bindgen",
  "windows-link",
-]
-
-[[package]]
-name = "chrono-machines"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ef0d653a2ac04a81e4effc5c33a55a69b63cea93891a18365e649214b01714c"
-dependencies = [
- "rand 0.10.2",
 ]
 
 [[package]]
@@ -2620,7 +2611,7 @@ dependencies = [
  "bytes",
  "chaos-abi",
  "chaos-which",
- "chrono-machines 0.4.0",
+ "chrono-machines",
  "futures",
  "pretty_assertions",
  "rama",
@@ -4076,7 +4067,7 @@ dependencies = [
  "fastrand",
  "futures-core",
  "futures-sink",
- "spin 0.9.8",
+ "spin 0.9.9",
 ]
 
 [[package]]
@@ -7158,7 +7149,7 @@ name = "mcp-guest"
 version = "47.0.0"
 dependencies = [
  "chaos-abi",
- "chrono-machines 0.4.0",
+ "chrono-machines",
  "mcp-host",
  "rama",
  "rand 0.10.2",
@@ -7173,18 +7164,18 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.1.51"
+version = "0.1.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc4115232220b812337348edd86ef4ad6f1df43b004827a2b621341c3045ca5a"
+checksum = "db172dbded34bc94de8aeee1b8c2ec9dbf2a4d14c180235d2547919de92f513c"
 dependencies = [
  "arc-swap",
  "base64",
- "breaker-machines 0.14.0",
- "chrono",
- "chrono-machines 0.4.0",
+ "breaker-machines 0.16.0",
+ "chrono-machines",
  "dashmap",
  "futures",
  "ignore",
+ "jiff",
  "mcp-host-macros",
  "parking_lot",
  "rand 0.10.2",
@@ -7203,9 +7194,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host-macros"
-version = "0.1.51"
+version = "0.1.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "697b706bad9892f5b0e26ba343dcf150a2c582c1590dd59515c93d73740bfe22"
+checksum = "80b2bcabc54b291bcf1095502306b8900671f4a97fe85999b874cabbf2de2c91"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -7432,7 +7423,7 @@ dependencies = [
  "httparse",
  "memchr",
  "mime",
- "spin 0.9.8",
+ "spin 0.9.9",
  "version_check",
 ]
 
@@ -11022,9 +11013,9 @@ checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
 
 [[package]]
 name = "simd_cesu8"
-version = "1.1.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94f90157bb87cddf702797c5dadfa0be7d266cdf49e22da2fcaa32eff75b2c33"
+checksum = "11031e251abf8611c80f460e19dbdeb54a66db918e49c65a7065b46ac7aec520"
 dependencies = [
  "rustc_version",
  "simdutf8",
@@ -11191,9 +11182,9 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
@@ -11232,18 +11223,18 @@ dependencies = [
 
 [[package]]
 name = "spin"
-version = "0.9.8"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 dependencies = [
  "lock_api",
 ]
 
 [[package]]
 name = "spin"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd5231412d905519dca6a5deb0327d407be68d6c941feec004533401d3a0a715"
+checksum = "8abadc99fd9c7bbb7d0ca2b31d72a067d0c0dcd7aad25ab8cac71ba91417694b"
 
 [[package]]
 name = "spirv"

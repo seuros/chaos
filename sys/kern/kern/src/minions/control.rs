@@ -18,6 +18,7 @@ use crate::session_prefix::format_subagent_notification_message;
 use crate::shell_snapshot::ShellSnapshot;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputPayload;
+use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::Op;
@@ -37,6 +38,27 @@ const FORKED_SPAWN_AGENT_OUTPUT_MESSAGE: &str = "You are the newly spawned agent
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SpawnAgentOptions {
     pub(crate) fork_parent_spawn_call_id: Option<String>,
+}
+
+/// Strip tool traffic and interim narration from a forked child's history so it
+/// starts from conversational context only. The parent's `spawn_agent` call is
+/// retained: the orientation message appended afterwards is its output, and an
+/// unmatched output would be dropped as an orphan during history normalization.
+pub(super) fn sanitize_forked_history(items: &mut Vec<RolloutItem>, spawn_call_id: &str) {
+    items.retain(|item| match item {
+        RolloutItem::ResponseItem(response_item) => match response_item {
+            ResponseItem::Message { role, phase, .. } => {
+                role != "assistant" || !matches!(phase, Some(MessagePhase::Commentary))
+            }
+            ResponseItem::FunctionCall { call_id, .. } => call_id == spawn_call_id,
+            // Inline compaction summaries stand in for the history they
+            // replaced; dropping them would erase the parent's summarized
+            // context.
+            ResponseItem::Compaction { .. } => true,
+            _ => false,
+        },
+        _ => true,
+    });
 }
 
 fn agent_nickname_candidates(
@@ -226,6 +248,7 @@ impl AgentControl {
                                     .collect()
                             }
                         };
+                    sanitize_forked_history(&mut forked_rollout_items, call_id);
                     let mut output = FunctionCallOutputPayload::from_text(
                         FORKED_SPAWN_AGENT_OUTPUT_MESSAGE.to_string(),
                     );

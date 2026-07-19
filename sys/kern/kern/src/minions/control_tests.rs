@@ -1097,3 +1097,89 @@ async fn resume_process_subagent_restores_stored_nickname_and_role() {
         .await
         .expect("resumed child shutdown should submit");
 }
+
+#[test]
+fn sanitize_forked_history_keeps_conversation_and_spawn_call() {
+    use chaos_ipc::models::FunctionCallOutputPayload;
+    use chaos_ipc::models::MessagePhase;
+    use chaos_ipc::protocol::CompactedItem;
+    use chaos_ipc::protocol::RolloutItem;
+
+    let message = |role: &str, text: &str, phase: Option<MessagePhase>| {
+        RolloutItem::ResponseItem(ResponseItem::Message {
+            id: None,
+            role: role.to_string(),
+            content: vec![ContentItem::OutputText {
+                text: text.to_string(),
+            }],
+            end_turn: None,
+            phase,
+        })
+    };
+    let function_call = |call_id: &str| {
+        RolloutItem::ResponseItem(ResponseItem::FunctionCall {
+            id: None,
+            name: "shell".to_string(),
+            namespace: None,
+            arguments: "{}".to_string(),
+            call_id: call_id.to_string(),
+        })
+    };
+
+    let mut items = vec![
+        message("user", "task", None),
+        message("assistant", "let me look", Some(MessagePhase::Commentary)),
+        RolloutItem::ResponseItem(ResponseItem::Reasoning {
+            id: "r1".to_string(),
+            summary: vec![],
+            content: None,
+            encrypted_content: None,
+        }),
+        function_call("call-shell"),
+        RolloutItem::ResponseItem(ResponseItem::FunctionCallOutput {
+            call_id: "call-shell".to_string(),
+            output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
+        }),
+        message("assistant", "done", Some(MessagePhase::FinalAnswer)),
+        message("assistant", "legacy no-phase", None),
+        message("user", "odd-phase user", Some(MessagePhase::Commentary)),
+        RolloutItem::ResponseItem(ResponseItem::Compaction {
+            encrypted_content: "opaque".to_string(),
+        }),
+        RolloutItem::Compacted(CompactedItem {
+            message: "summary".to_string(),
+            replacement_history: None,
+        }),
+        function_call("call-spawn"),
+    ];
+
+    crate::minions::control::sanitize_forked_history(&mut items, "call-spawn");
+
+    let kept: Vec<String> = items
+        .iter()
+        .map(|item| match item {
+            RolloutItem::ResponseItem(ResponseItem::Message { role, phase, .. }) => {
+                format!("{role}:{phase:?}")
+            }
+            RolloutItem::ResponseItem(ResponseItem::FunctionCall { call_id, .. }) => {
+                format!("call:{call_id}")
+            }
+            RolloutItem::ResponseItem(ResponseItem::Compaction { .. }) => "compaction".to_string(),
+            RolloutItem::Compacted(_) => "compacted".to_string(),
+            other => format!("unexpected:{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        kept,
+        vec![
+            "user:None",
+            "assistant:Some(FinalAnswer)",
+            "assistant:None",
+            "user:Some(Commentary)",
+            "compaction",
+            "compacted",
+            "call:call-spawn",
+        ]
+    );
+}

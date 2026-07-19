@@ -17,8 +17,6 @@ chaos-proc = { workspace = true }
 chaos-traits = { workspace = true }
 inventory = { workspace = true }
 chaos-storage = { workspace = true }
-chrono = { workspace = true }
-croner = { workspace = true }
 jiff = { workspace = true }
 mcp-host = { workspace = true, features = ["macros"] }
 schemars = "1.2.1"

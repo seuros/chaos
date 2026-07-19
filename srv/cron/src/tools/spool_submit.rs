@@ -36,10 +36,10 @@ pub struct SpoolSubmitParams {
     /// via env (ANTHROPIC_API_KEY / XAI_API_KEY) at kernel boot.
     pub backend: String,
 
-    /// Cron schedule driving the poll loop (e.g. "5m", "15m", "1h").
-    /// Defaults to 5 minutes.
+    /// Schedule driving the poll loop, e.g. `{"kind":"interval","seconds":300}`.
+    /// Defaults to every 5 minutes.
     #[serde(default = "default_poll_schedule")]
-    pub poll_schedule: String,
+    pub poll_schedule: crate::schedule::Schedule,
 
     /// Human-readable label for the poll cron row.
     #[serde(default)]
@@ -49,8 +49,8 @@ pub struct SpoolSubmitParams {
     pub items: Vec<SpoolSubmitItem>,
 }
 
-fn default_poll_schedule() -> String {
-    "5m".to_string()
+fn default_poll_schedule() -> crate::schedule::Schedule {
+    crate::schedule::Schedule::Interval { seconds: 300 }
 }
 
 /// One batch item. Minimal shape: system prompt + single user message.
@@ -133,11 +133,14 @@ pub async fn execute_structured(
 
     // Validate the schedule BEFORE we push anything at the backend — a bad
     // schedule would leave us with a live batch and no way to poll it.
-    if let Err(e) = crate::Schedule::parse(&params.poll_schedule) {
-        let msg = format!("invalid poll_schedule: {e}");
-        persist_failed_attempt(&provider, params, &msg).await;
-        return Err(msg);
-    }
+    let poll_schedule_json = match params.poll_schedule.validate().and_then(|_| params.poll_schedule.to_json()) {
+        Ok(json) => json,
+        Err(e) => {
+            let msg = format!("invalid poll_schedule: {e}");
+            persist_failed_attempt(&provider, params, &msg).await;
+            return Err(msg);
+        }
+    };
 
     let project_path = match owner.project_path.clone() {
         Some(project_path) => project_path,
@@ -172,7 +175,7 @@ pub async fn execute_structured(
         .unwrap_or_else(|| format!("spool-poll-{}", params.manifest_id));
     let cron_params = CreateJobParams::spool(
         name,
-        params.poll_schedule.clone(),
+        poll_schedule_json,
         params.manifest_id.clone(),
         CronScope::Project,
         Some(project_path),
@@ -358,7 +361,7 @@ mod tests {
         let params = SpoolSubmitParams {
             manifest_id: "manifest-tool-1".into(),
             backend: "mock".into(),
-            poll_schedule: "5m".into(),
+            poll_schedule: crate::schedule::Schedule::Interval { seconds: 300 },
             name: Some("nightly-review".into()),
             items: vec![
                 SpoolSubmitItem {
@@ -417,7 +420,10 @@ mod tests {
         let enabled: i64 = cron_row.get("enabled");
         let project_path: String = cron_row.get("project_path");
         assert_eq!(name, "nightly-review");
-        assert_eq!(schedule, "5m");
+        assert_eq!(
+            crate::schedule::Schedule::parse(&schedule).expect("valid schedule"),
+            crate::schedule::Schedule::Interval { seconds: 300 }
+        );
         assert_eq!(kind, "spool");
         assert_eq!(enabled, 1);
         assert_eq!(project_path, "/tmp/project");
@@ -436,7 +442,7 @@ mod tests {
         let params = SpoolSubmitParams {
             manifest_id: "m2".into(),
             backend: "nonexistent".into(),
-            poll_schedule: "5m".into(),
+            poll_schedule: crate::schedule::Schedule::Interval { seconds: 300 },
             name: None,
             items: vec![SpoolSubmitItem {
                 custom_id: "a".into(),
@@ -498,7 +504,7 @@ mod tests {
         let first = SpoolSubmitParams {
             manifest_id: "manifest-replace".into(),
             backend: "mock".into(),
-            poll_schedule: "5m".into(),
+            poll_schedule: crate::schedule::Schedule::Interval { seconds: 300 },
             name: Some("first".into()),
             items: vec![SpoolSubmitItem {
                 custom_id: "a".into(),
@@ -514,7 +520,7 @@ mod tests {
         let second = SpoolSubmitParams {
             manifest_id: "manifest-replace".into(),
             backend: "mock".into(),
-            poll_schedule: "15m".into(),
+            poll_schedule: crate::schedule::Schedule::Interval { seconds: 900 },
             name: Some("second".into()),
             items: vec![SpoolSubmitItem {
                 custom_id: "b".into(),
@@ -550,6 +556,9 @@ mod tests {
         let name: String = cron_row.get("name");
         let schedule: String = cron_row.get("schedule");
         assert_eq!(name, "second");
-        assert_eq!(schedule, "15m");
+        assert_eq!(
+            crate::schedule::Schedule::parse(&schedule).expect("valid schedule"),
+            crate::schedule::Schedule::Interval { seconds: 900 }
+        );
     }
 }

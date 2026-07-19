@@ -208,7 +208,9 @@ mod tests {
         CronJob {
             id: "job-1".into(),
             name: "spool-poll".into(),
-            schedule: "1m".into(),
+            schedule: crate::schedule::Schedule::Interval { seconds: 60 }
+                .to_json()
+                .expect("serialize schedule"),
             command: String::new(),
             scope: CronScope::Project,
             project_path: None,
@@ -253,12 +255,16 @@ mod tests {
     }
 
     async fn seed_cron_row(pool: &sqlx::SqlitePool, job_id: &str, manifest_id: &str) {
+        let schedule = crate::schedule::Schedule::Interval { seconds: 60 }
+            .to_json()
+            .expect("serialize schedule");
         sqlx::query(
             "INSERT INTO cron_jobs \
              (id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id) \
-             VALUES (?, 'spool-poll', '1m', '', 'project', NULL, NULL, 1, NULL, 0, 0, 0, 'spool', ?)",
+             VALUES (?, 'spool-poll', ?, '', 'project', NULL, NULL, 1, NULL, 0, 0, 0, 'spool', ?)",
         )
         .bind(job_id)
+        .bind(schedule)
         .bind(manifest_id)
         .execute(pool)
         .await

@@ -21,8 +21,10 @@ pub struct CronCreateParams {
     /// Human-readable name for the job (e.g., "check CI status").
     pub name: String,
 
-    /// Cron expression ("*/5 * * * *") or interval shorthand ("5m", "2h", "1d").
-    pub schedule: String,
+    /// When to run: `{"kind":"interval","seconds":300}`,
+    /// `{"kind":"daily","hour":9,"minute":0}` (UTC), or
+    /// `{"kind":"weekly","weekday":"mon","hour":9,"minute":0}` (UTC).
+    pub schedule: crate::schedule::Schedule,
 
     /// The command or prompt to execute on each tick.
     pub command: String,
@@ -49,7 +51,7 @@ pub struct OwnerContext {
 impl CronServer {
     #[mcp_tool(
         name = "cron_create",
-        description = "Schedule a recurring cron job with a cron expression or interval shorthand.",
+        description = "Schedule a recurring cron job: interval, daily, or weekly (UTC).",
         destructive = false,
         open_world = false
     )]
@@ -97,8 +99,14 @@ async fn execute_with_storage_structured<S: CronStorage>(
     storage: &S,
     owner: &OwnerContext,
 ) -> Result<serde_json::Value, String> {
-    // Validate the schedule parses
-    crate::Schedule::parse(&params.schedule).map_err(|e| format!("invalid schedule: {e}"))?;
+    params
+        .schedule
+        .validate()
+        .map_err(|e| format!("invalid schedule: {e}"))?;
+    let schedule_json = params
+        .schedule
+        .to_json()
+        .map_err(|e| format!("invalid schedule: {e}"))?;
 
     // Validate scope
     let scope: crate::CronScope = params
@@ -125,7 +133,7 @@ async fn execute_with_storage_structured<S: CronStorage>(
 
     let create_params = CreateJobParams::shell(
         params.name.clone(),
-        params.schedule.clone(),
+        schedule_json,
         params.command.clone(),
         scope,
         project_path,

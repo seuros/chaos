@@ -290,7 +290,9 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
     store
         .create(&CreateJobParams::shell(
             "persisted job".to_string(),
-            "5m".to_string(),
+            chaos_cron::Schedule::Interval { seconds: 300 }
+                .to_json()
+                .expect("serialize schedule"),
             "echo hi".to_string(),
             CronScope::Project,
             Some("/tmp/project".to_string()),

@@ -76,7 +76,7 @@ impl JobKind {
 pub struct CronJob {
     pub id: String,
     pub name: String,
-    /// Cron expression (e.g., "*/5 * * * *") or interval shorthand (e.g., "5m").
+    /// JSON-serialized `Schedule` (interval/daily/weekly).
     pub schedule: String,
     /// The command or action to execute.
     pub command: String,

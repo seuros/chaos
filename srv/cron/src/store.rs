@@ -560,6 +560,12 @@ mod tests {
 
     const TEST_DATABASE_URL_ENV: &str = "TEST_DATABASE_URL";
 
+    fn daily_schedule_json() -> String {
+        Schedule::Interval { seconds: 86_400 }
+            .to_json()
+            .expect("serialize schedule")
+    }
+
     fn postgres_test_url() -> Option<String> {
         std::env::var(TEST_DATABASE_URL_ENV)
             .ok()
@@ -586,7 +592,7 @@ mod tests {
     fn test_params(name: &str) -> CreateJobParams {
         CreateJobParams::shell(
             name.to_string(),
-            "1d".to_string(),
+            daily_schedule_json(),
             "echo hi".to_string(),
             CronScope::Project,
             None,
@@ -650,7 +656,7 @@ mod tests {
         let job = store
             .create(&CreateJobParams::shell(
                 "session-job".to_string(),
-                "1d".to_string(),
+                daily_schedule_json(),
                 "echo hi".to_string(),
                 CronScope::Session,
                 None,
@@ -787,7 +793,7 @@ mod tests {
         let job = store
             .create(&CreateJobParams::shell(
                 "postgres-session-job".to_string(),
-                "1d".to_string(),
+                daily_schedule_json(),
                 "echo hi".to_string(),
                 CronScope::Session,
                 Some("/tmp/chaos-postgres".to_string()),

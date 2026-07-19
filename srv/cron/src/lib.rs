@@ -99,7 +99,10 @@ fn cron_tool_driver() -> Arc<dyn CatalogToolDriver> {
 inventory::submit! {
     CatalogRegistration {
         name: "cron",
-        tools: || tool_infos_to_catalog_tools_with_parallel(tool_infos(), false),
+        tools: || {
+            let spool_available = chaos_abi::shared_spool_registry().is_some_and(|r| !r.is_empty());
+            tool_infos_to_catalog_tools_with_parallel(catalog_tool_infos(spool_available), false)
+        },
         resources: || vec![],
         resource_templates: || vec![],
         prompts: || vec![],
@@ -116,4 +119,31 @@ pub type CronCtx<'a> = Ctx<'a>;
 /// Returns tool metadata for all cron tools.
 pub fn tool_infos() -> Vec<ToolInfo> {
     tools::router().list()
+}
+
+/// Tool metadata as exposed to the catalog. `spool_submit` only appears when
+/// at least one spool backend was registered at kernel boot; without a
+/// backend the tool can never succeed, so it is not offered at all.
+fn catalog_tool_infos(spool_available: bool) -> Vec<ToolInfo> {
+    tool_infos()
+        .into_iter()
+        .filter(|tool| spool_available || tool.name != "spool_submit")
+        .collect()
+}
+
+#[cfg(test)]
+mod catalog_visibility_tests {
+    use super::catalog_tool_infos;
+
+    #[test]
+    fn spool_submit_hidden_without_backends_and_listed_with_them() {
+        let names = |infos: Vec<mcp_host::prelude::ToolInfo>| {
+            infos.into_iter().map(|t| t.name).collect::<Vec<_>>()
+        };
+        let without = names(catalog_tool_infos(false));
+        assert!(!without.contains(&"spool_submit".to_string()));
+        assert!(without.contains(&"cron_create".to_string()));
+        let with = names(catalog_tool_infos(true));
+        assert!(with.contains(&"spool_submit".to_string()));
+    }
 }

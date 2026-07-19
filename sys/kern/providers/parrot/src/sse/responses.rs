@@ -152,6 +152,9 @@ impl From<ResponseCompletedUsage> for TokenUsage {
     fn from(val: ResponseCompletedUsage) -> Self {
         TokenUsage {
             input_tokens: val.input_tokens,
+            // The Responses API currently exposes cache reads but not a
+            // separate cache-write category.
+            cache_creation_input_tokens: 0,
             cached_input_tokens: val
                 .input_tokens_details
                 .map(|d| d.cached_tokens)
@@ -162,6 +165,7 @@ impl From<ResponseCompletedUsage> for TokenUsage {
                 .map(|d| d.reasoning_tokens)
                 .unwrap_or(0),
             total_tokens: val.total_tokens,
+            provider_request_count: 0,
         }
     }
 }

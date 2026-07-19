@@ -526,6 +526,7 @@ impl UsageAccumulator {
             .saturating_add(self.cache_read_input_tokens);
         TokenUsage {
             input_tokens: prompt_tokens as i64,
+            cache_creation_input_tokens: self.cache_creation_input_tokens as i64,
             cached_input_tokens: self.cache_read_input_tokens as i64,
             output_tokens: self.output_tokens as i64,
             total_tokens: prompt_tokens.saturating_add(self.output_tokens) as i64,
@@ -1164,6 +1165,7 @@ mod tests {
         };
         assert!(response_id.is_empty());
         assert_eq!(usage.input_tokens, 41);
+        assert_eq!(usage.cache_creation_input_tokens, 13);
         assert_eq!(usage.cached_input_tokens, 17);
         assert_eq!(usage.output_tokens, 19);
         assert_eq!(usage.total_tokens, 60);

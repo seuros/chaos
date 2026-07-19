@@ -48,7 +48,11 @@ pub struct TurnStartedEvent {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct TurnCompletedEvent {
+    #[serde(default)]
+    pub telemetry_schema_version: u32,
     pub usage: Usage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_usage: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -56,15 +60,34 @@ pub struct TurnFailedEvent {
     pub error: ProcessErrorEvent,
 }
 
-/// Describes the usage of tokens during a turn.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS, Default)]
 pub struct Usage {
-    /// The number of input tokens used during the turn.
+    #[serde(default)]
+    pub scope: UsageScope,
     pub input_tokens: i64,
-    /// The number of cached input tokens used during the turn.
+    #[serde(default)]
+    pub uncached_input_tokens: i64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: i64,
+    #[serde(default)]
+    pub cache_read_input_tokens: i64,
+    /// Compatibility alias for `cache_read_input_tokens`.
     pub cached_input_tokens: i64,
-    /// The number of output tokens used during the turn.
     pub output_tokens: i64,
+    #[serde(default)]
+    pub reasoning_output_tokens: Option<i64>,
+    #[serde(default)]
+    pub provider_request_count: i64,
+    #[serde(default)]
+    pub complete: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageScope {
+    #[default]
+    Invocation,
+    ProcessCumulative,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

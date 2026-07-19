@@ -333,10 +333,12 @@ fn token_usage_info_new_or_append_updates_context_window_when_provided() {
     });
     let last = Some(TokenUsage {
         input_tokens: 10,
+        cache_creation_input_tokens: 0,
         cached_input_tokens: 0,
         output_tokens: 0,
         reasoning_output_tokens: 0,
         total_tokens: 10,
+        provider_request_count: 0,
     });
 
     let info = TokenUsageInfo::new_or_append(&initial, &last, Some(128_000))
@@ -354,16 +356,178 @@ fn token_usage_info_new_or_append_preserves_context_window_when_not_provided() {
     });
     let last = Some(TokenUsage {
         input_tokens: 10,
+        cache_creation_input_tokens: 0,
         cached_input_tokens: 0,
         output_tokens: 0,
         reasoning_output_tokens: 0,
         total_tokens: 10,
+        provider_request_count: 0,
     });
 
     let info = TokenUsageInfo::new_or_append(&initial, &last, None)
         .expect("new_or_append should return info");
 
     assert_eq!(info.model_context_window, Some(258_400));
+}
+
+#[test]
+fn token_usage_add_assign_sums_cache_creation_and_provider_requests() {
+    let mut total = TokenUsage {
+        input_tokens: 100,
+        cache_creation_input_tokens: 20,
+        cached_input_tokens: 30,
+        output_tokens: 10,
+        reasoning_output_tokens: 2,
+        total_tokens: 110,
+        provider_request_count: 1,
+    };
+    total.add_assign(&TokenUsage {
+        input_tokens: 200,
+        cache_creation_input_tokens: 40,
+        cached_input_tokens: 50,
+        output_tokens: 20,
+        reasoning_output_tokens: 3,
+        total_tokens: 220,
+        provider_request_count: 2,
+    });
+
+    assert_eq!(
+        total,
+        TokenUsage {
+            input_tokens: 300,
+            cache_creation_input_tokens: 60,
+            cached_input_tokens: 80,
+            output_tokens: 30,
+            reasoning_output_tokens: 5,
+            total_tokens: 330,
+            provider_request_count: 3,
+        }
+    );
+    assert_eq!(total.cache_read_input(), 80);
+    assert_eq!(total.uncached_input(), 160);
+}
+
+#[test]
+fn token_usage_difference_since_handles_process_resume_and_counter_resets() {
+    let baseline = TokenUsage {
+        input_tokens: 1_000,
+        cache_creation_input_tokens: 200,
+        cached_input_tokens: 700,
+        output_tokens: 100,
+        reasoning_output_tokens: 10,
+        total_tokens: 1_100,
+        provider_request_count: 4,
+    };
+    let cumulative = TokenUsage {
+        input_tokens: 1_100,
+        cache_creation_input_tokens: 220,
+        cached_input_tokens: 770,
+        output_tokens: 110,
+        reasoning_output_tokens: 12,
+        total_tokens: 1_210,
+        provider_request_count: 5,
+    };
+
+    assert_eq!(
+        cumulative.difference_since(&baseline),
+        TokenUsage {
+            input_tokens: 100,
+            cache_creation_input_tokens: 20,
+            cached_input_tokens: 70,
+            output_tokens: 10,
+            reasoning_output_tokens: 2,
+            total_tokens: 110,
+            provider_request_count: 1,
+        }
+    );
+
+    let reset = TokenUsage {
+        input_tokens: 50,
+        cache_creation_input_tokens: 10,
+        cached_input_tokens: 30,
+        output_tokens: 5,
+        reasoning_output_tokens: 0,
+        total_tokens: 55,
+        provider_request_count: 1,
+    };
+    assert_eq!(reset.difference_since(&baseline), reset);
+}
+
+#[test]
+fn token_usage_serialization_is_additive_and_legacy_defaults_are_safe() -> Result<()> {
+    let usage = TokenUsage {
+        input_tokens: 100,
+        cache_creation_input_tokens: 20,
+        cached_input_tokens: 30,
+        output_tokens: 10,
+        reasoning_output_tokens: 2,
+        total_tokens: 110,
+        provider_request_count: 3,
+    };
+    let value = serde_json::to_value(&usage)?;
+    assert_eq!(value["cache_creation_input_tokens"], 20);
+    assert_eq!(value["provider_request_count"], 3);
+
+    let legacy: TokenUsage = serde_json::from_value(json!({
+        "input_tokens": 100,
+        "cached_input_tokens": 30,
+        "output_tokens": 10,
+        "reasoning_output_tokens": 2,
+        "total_tokens": 110
+    }))?;
+    assert_eq!(legacy.cache_creation_input_tokens, 0);
+    assert_eq!(legacy.provider_request_count, 0);
+    Ok(())
+}
+
+#[test]
+fn record_provider_request_preserves_last_usage_context_semantics() {
+    let last = TokenUsage {
+        input_tokens: 100,
+        total_tokens: 110,
+        ..TokenUsage::default()
+    };
+    let mut info = TokenUsageInfo {
+        total_token_usage: last.clone(),
+        last_token_usage: last.clone(),
+        model_context_window: Some(128_000),
+    };
+
+    let request_count = info.record_provider_request();
+
+    assert_eq!(request_count, 1);
+    assert_eq!(info.total_token_usage.provider_request_count, 1);
+    assert_eq!(info.last_token_usage, last);
+}
+
+#[test]
+fn fill_to_context_window_preserves_process_usage_counters() {
+    let cumulative = TokenUsage {
+        input_tokens: 1_000,
+        cache_creation_input_tokens: 200,
+        cached_input_tokens: 700,
+        output_tokens: 100,
+        reasoning_output_tokens: 10,
+        total_tokens: 1_100,
+        provider_request_count: 4,
+    };
+    let mut info = TokenUsageInfo {
+        total_token_usage: cumulative.clone(),
+        last_token_usage: TokenUsage::default(),
+        model_context_window: Some(128_000),
+    };
+
+    info.fill_to_context_window(200_000);
+
+    assert_eq!(
+        info.total_token_usage,
+        TokenUsage {
+            total_tokens: 200_000,
+            ..cumulative
+        }
+    );
+    assert_eq!(info.last_token_usage.total_tokens, 198_900);
+    assert_eq!(info.model_context_window, Some(200_000));
 }
 
 #[test]

@@ -335,6 +335,9 @@ impl Session {
                 input_tokens: (total_token_usage.input_tokens
                     - token_usage_at_turn_start.input_tokens)
                     .max(0),
+                cache_creation_input_tokens: (total_token_usage.cache_creation_input_tokens
+                    - token_usage_at_turn_start.cache_creation_input_tokens)
+                    .max(0),
                 cached_input_tokens: (total_token_usage.cached_input_tokens
                     - token_usage_at_turn_start.cached_input_tokens)
                     .max(0),
@@ -346,6 +349,9 @@ impl Session {
                     .max(0),
                 total_tokens: (total_token_usage.total_tokens
                     - token_usage_at_turn_start.total_tokens)
+                    .max(0),
+                provider_request_count: (total_token_usage.provider_request_count
+                    - token_usage_at_turn_start.provider_request_count)
                     .max(0),
             };
             self.services.session_telemetry.histogram(

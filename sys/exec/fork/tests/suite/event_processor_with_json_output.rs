@@ -29,6 +29,7 @@ use chaos_fork::exec_events::TurnCompletedEvent;
 use chaos_fork::exec_events::TurnFailedEvent;
 use chaos_fork::exec_events::TurnStartedEvent;
 use chaos_fork::exec_events::Usage;
+use chaos_fork::exec_events::UsageScope;
 use chaos_fork::exec_events::WebSearchItem;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ModeKind;
@@ -460,7 +461,16 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
                 },
             }),
             ProcessEvent::TurnCompleted(TurnCompletedEvent {
-                usage: Usage::default(),
+                telemetry_schema_version: 1,
+                usage: Usage {
+                    complete: true,
+                    ..Usage::default()
+                },
+                session_usage: Some(Usage {
+                    scope: UsageScope::ProcessCumulative,
+                    complete: true,
+                    ..Usage::default()
+                }),
             }),
         ]
     );
@@ -1273,14 +1283,39 @@ fn patch_apply_failure_produces_item_completed_patchapply_failed() {
 #[test]
 fn task_complete_produces_turn_completed_with_usage() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
+    let _ = ep.collect_process_events(&event(
+        "started",
+        EventMsg::TurnStarted(chaos_ipc::protocol::TurnStartedEvent {
+            turn_id: "turn-1".to_string(),
+            model_context_window: None,
+            collaboration_mode_kind: Default::default(),
+        }),
+    ));
 
-    // First, feed a TokenCount event with known totals.
+    let _ = ep.collect_process_events(&event(
+        "provider-started",
+        EventMsg::TokenCount(chaos_ipc::protocol::TokenCountEvent {
+            info: Some(chaos_ipc::protocol::TokenUsageInfo {
+                total_token_usage: chaos_ipc::protocol::TokenUsage {
+                    provider_request_count: 1,
+                    ..Default::default()
+                },
+                last_token_usage: Default::default(),
+                model_context_window: None,
+            }),
+            rate_limits: None,
+            provider_request_started: true,
+        }),
+    ));
+
     let usage = chaos_ipc::protocol::TokenUsage {
         input_tokens: 1200,
+        cache_creation_input_tokens: 300,
         cached_input_tokens: 200,
         output_tokens: 345,
-        reasoning_output_tokens: 0,
-        total_tokens: 0,
+        reasoning_output_tokens: 20,
+        total_tokens: 1565,
+        provider_request_count: 3,
     };
     let info = chaos_ipc::protocol::TokenUsageInfo {
         total_token_usage: usage.clone(),
@@ -1292,11 +1327,11 @@ fn task_complete_produces_turn_completed_with_usage() {
         EventMsg::TokenCount(chaos_ipc::protocol::TokenCountEvent {
             info: Some(info),
             rate_limits: None,
+            provider_request_started: false,
         }),
     );
     assert!(ep.collect_process_events(&token_count_event).is_empty());
 
-    // Then TurnComplete should produce turn.completed with the captured usage.
     let complete_event = event(
         "e2",
         EventMsg::TurnComplete(chaos_ipc::protocol::TurnCompleteEvent {
@@ -1308,11 +1343,196 @@ fn task_complete_produces_turn_completed_with_usage() {
     assert_eq!(
         out,
         vec![ProcessEvent::TurnCompleted(TurnCompletedEvent {
+            telemetry_schema_version: 1,
+            usage: Usage {
+                scope: UsageScope::Invocation,
+                input_tokens: 1200,
+                uncached_input_tokens: 700,
+                cache_creation_input_tokens: 300,
+                cache_read_input_tokens: 200,
+                cached_input_tokens: 200,
+                output_tokens: 345,
+                reasoning_output_tokens: Some(20),
+                provider_request_count: 3,
+                complete: true,
+            },
+            session_usage: Some(Usage {
+                scope: UsageScope::ProcessCumulative,
+                input_tokens: 1200,
+                uncached_input_tokens: 700,
+                cache_creation_input_tokens: 300,
+                cache_read_input_tokens: 200,
+                cached_input_tokens: 200,
+                output_tokens: 345,
+                reasoning_output_tokens: Some(20),
+                provider_request_count: 3,
+                complete: true,
+            }),
+        })]
+    );
+}
+
+#[test]
+fn resumed_exec_reports_invocation_delta_and_process_cumulative_usage() {
+    let mut ep = EventProcessorWithJsonOutput::new(None);
+    let _ = ep.collect_process_events(&event(
+        "started",
+        EventMsg::TurnStarted(chaos_ipc::protocol::TurnStartedEvent {
+            turn_id: "resumed-turn".to_string(),
+            model_context_window: None,
+            collaboration_mode_kind: Default::default(),
+        }),
+    ));
+
+    let baseline = chaos_ipc::protocol::TokenUsage {
+        input_tokens: 49_500,
+        cache_creation_input_tokens: 1_950,
+        cached_input_tokens: 39_600,
+        output_tokens: 4_975,
+        reasoning_output_tokens: 500,
+        total_tokens: 54_475,
+        provider_request_count: 9,
+    };
+    let _ = ep.collect_process_events(&event(
+        "provider-started",
+        EventMsg::TokenCount(chaos_ipc::protocol::TokenCountEvent {
+            info: Some(chaos_ipc::protocol::TokenUsageInfo {
+                total_token_usage: baseline,
+                last_token_usage: Default::default(),
+                model_context_window: None,
+            }),
+            rate_limits: None,
+            provider_request_started: true,
+        }),
+    ));
+
+    let cumulative = chaos_ipc::protocol::TokenUsage {
+        input_tokens: 50_000,
+        cache_creation_input_tokens: 2_000,
+        cached_input_tokens: 40_000,
+        output_tokens: 5_000,
+        reasoning_output_tokens: 500,
+        total_tokens: 55_000,
+        provider_request_count: 9,
+    };
+    let _ = ep.collect_process_events(&event(
+        "usage",
+        EventMsg::TokenCount(chaos_ipc::protocol::TokenCountEvent {
+            info: Some(chaos_ipc::protocol::TokenUsageInfo {
+                total_token_usage: cumulative.clone(),
+                last_token_usage: chaos_ipc::protocol::TokenUsage {
+                    input_tokens: 500,
+                    cache_creation_input_tokens: 50,
+                    cached_input_tokens: 400,
+                    output_tokens: 25,
+                    reasoning_output_tokens: 0,
+                    total_tokens: 525,
+                    provider_request_count: 1,
+                },
+                model_context_window: None,
+            }),
+            rate_limits: None,
+            provider_request_started: false,
+        }),
+    ));
+    let completed = ep.collect_process_events(&event(
+        "done",
+        EventMsg::TurnComplete(chaos_ipc::protocol::TurnCompleteEvent {
+            turn_id: "resumed-turn".to_string(),
+            last_agent_message: None,
+        }),
+    ));
+    let ProcessEvent::TurnCompleted(completed) = &completed[0] else {
+        panic!("expected turn.completed");
+    };
+    assert_eq!(completed.telemetry_schema_version, 1);
+    assert_eq!(completed.usage.scope, UsageScope::Invocation);
+    assert_eq!(completed.usage.input_tokens, 500);
+    assert_eq!(completed.usage.cache_creation_input_tokens, 50);
+    assert_eq!(completed.usage.cache_read_input_tokens, 400);
+    assert_eq!(completed.usage.output_tokens, 25);
+    assert_eq!(completed.usage.provider_request_count, 1);
+    assert!(completed.usage.complete);
+    let session_usage = completed.session_usage.as_ref().expect("session usage");
+    assert_eq!(session_usage.scope, UsageScope::ProcessCumulative);
+    assert_eq!(session_usage.input_tokens, cumulative.input_tokens);
+    assert_eq!(
+        session_usage.cache_creation_input_tokens,
+        cumulative.cache_creation_input_tokens
+    );
+    assert_eq!(
+        session_usage.provider_request_count,
+        cumulative.provider_request_count
+    );
+}
+
+#[test]
+fn usage_without_provider_start_marker_preserves_cumulative_counters_as_incomplete() {
+    let mut ep = EventProcessorWithJsonOutput::new(None);
+    let usage = chaos_ipc::protocol::TokenUsage {
+        input_tokens: 1_200,
+        cache_creation_input_tokens: 300,
+        cached_input_tokens: 200,
+        output_tokens: 345,
+        reasoning_output_tokens: 20,
+        total_tokens: 1_565,
+        provider_request_count: 0,
+    };
+    let _ = ep.collect_process_events(&event(
+        "usage",
+        EventMsg::TokenCount(chaos_ipc::protocol::TokenCountEvent {
+            info: Some(chaos_ipc::protocol::TokenUsageInfo {
+                total_token_usage: usage.clone(),
+                last_token_usage: usage,
+                model_context_window: None,
+            }),
+            rate_limits: None,
+            provider_request_started: false,
+        }),
+    ));
+
+    let completed = ep.collect_process_events(&event(
+        "done",
+        EventMsg::TurnComplete(chaos_ipc::protocol::TurnCompleteEvent {
+            turn_id: "legacy-turn".to_string(),
+            last_agent_message: None,
+        }),
+    ));
+    let ProcessEvent::TurnCompleted(completed) = &completed[0] else {
+        panic!("expected turn.completed");
+    };
+
+    assert_eq!(completed.usage.scope, UsageScope::ProcessCumulative);
+    assert_eq!(completed.usage.input_tokens, 1_200);
+    assert_eq!(completed.usage.cache_creation_input_tokens, 300);
+    assert_eq!(completed.usage.cache_read_input_tokens, 200);
+    assert_eq!(completed.usage.output_tokens, 345);
+    assert!(!completed.usage.complete);
+}
+
+#[test]
+fn usage_deserializes_legacy_turn_completed_shape_with_safe_defaults() {
+    let event: ProcessEvent = serde_json::from_value(json!({
+        "type": "turn.completed",
+        "usage": {
+            "input_tokens": 1200,
+            "cached_input_tokens": 200,
+            "output_tokens": 345
+        }
+    }))
+    .expect("legacy turn.completed should remain readable");
+
+    assert_eq!(
+        event,
+        ProcessEvent::TurnCompleted(TurnCompletedEvent {
+            telemetry_schema_version: 0,
             usage: Usage {
                 input_tokens: 1200,
                 cached_input_tokens: 200,
                 output_tokens: 345,
+                ..Usage::default()
             },
-        })]
+            session_usage: None,
+        })
     );
 }

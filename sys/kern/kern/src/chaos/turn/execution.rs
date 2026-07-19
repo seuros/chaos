@@ -70,6 +70,7 @@ pub(super) async fn try_run_sampling_request(
         effort = turn_context.reasoning_effort,
         auth_mode = sess.services.auth_manager.auth_mode(),
     );
+    sess.record_provider_request_started(&turn_context).await;
     let mut stream = client_session
         .stream(
             prompt,

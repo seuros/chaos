@@ -137,6 +137,7 @@ async fn status_snapshot_includes_reasoning_details() {
         output_tokens: 900,
         reasoning_output_tokens: 150,
         total_tokens: 2_250,
+        ..Default::default()
     };
 
     let captured_at = local_ts(2024, 1, 2, 3, 4, 5);
@@ -259,6 +260,7 @@ async fn status_snapshot_includes_forked_from() {
         output_tokens: 400,
         reasoning_output_tokens: 0,
         total_tokens: 1_200,
+        ..Default::default()
     };
 
     let captured_at = local_ts(2024, 8, 9, 10, 11, 12);
@@ -305,6 +307,7 @@ async fn status_snapshot_includes_monthly_limit() {
         output_tokens: 400,
         reasoning_output_tokens: 0,
         total_tokens: 1_200,
+        ..Default::default()
     };
 
     let captured_at = local_ts(2024, 5, 6, 7, 8, 9);
@@ -538,6 +541,7 @@ async fn status_card_token_usage_excludes_cached_tokens() {
         output_tokens: 900,
         reasoning_output_tokens: 0,
         total_tokens: 2_100,
+        ..Default::default()
     };
 
     let now = local_ts(2024, 1, 1, 0, 0, 0);
@@ -583,6 +587,7 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
         output_tokens: 900,
         reasoning_output_tokens: 150,
         total_tokens: 2_250,
+        ..Default::default()
     };
 
     let captured_at = local_ts(2024, 1, 2, 3, 4, 5);
@@ -638,6 +643,7 @@ async fn status_snapshot_shows_missing_limits_message() {
         output_tokens: 250,
         reasoning_output_tokens: 0,
         total_tokens: 750,
+        ..Default::default()
     };
 
     let now = local_ts(2024, 2, 3, 4, 5, 6);
@@ -678,6 +684,7 @@ async fn status_snapshot_includes_credits_and_limits() {
         output_tokens: 600,
         reasoning_output_tokens: 0,
         total_tokens: 2_200,
+        ..Default::default()
     };
 
     let captured_at = local_ts(2024, 7, 8, 9, 10, 11);
@@ -739,6 +746,7 @@ async fn status_snapshot_shows_empty_limits_message() {
         output_tokens: 250,
         reasoning_output_tokens: 0,
         total_tokens: 750,
+        ..Default::default()
     };
 
     let snapshot = RateLimitSnapshot {
@@ -788,6 +796,7 @@ async fn status_snapshot_shows_stale_limits_message() {
         output_tokens: 900,
         reasoning_output_tokens: 150,
         total_tokens: 2_250,
+        ..Default::default()
     };
 
     let captured_at = local_ts(2024, 1, 2, 3, 4, 5);
@@ -846,6 +855,7 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         output_tokens: 350,
         reasoning_output_tokens: 0,
         total_tokens: 1_450,
+        ..Default::default()
     };
 
     let captured_at = local_ts(2024, 9, 10, 11, 12, 13);
@@ -907,6 +917,7 @@ async fn status_context_window_uses_last_usage() {
         output_tokens: 879,
         reasoning_output_tokens: 0,
         total_tokens: 102_000,
+        ..Default::default()
     };
     let last_usage = TokenUsage {
         input_tokens: 12_800,
@@ -914,6 +925,7 @@ async fn status_context_window_uses_last_usage() {
         output_tokens: 879,
         reasoning_output_tokens: 0,
         total_tokens: 13_679,
+        ..Default::default()
     };
 
     let now = local_ts(2024, 6, 1, 12, 0, 0);

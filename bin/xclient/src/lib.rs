@@ -623,21 +623,15 @@ mod tests {
             info: Some(TokenUsageInfo {
                 total_token_usage: TokenUsage {
                     input_tokens: 10,
-                    cached_input_tokens: 0,
                     output_tokens: 20,
-                    reasoning_output_tokens: 0,
                     total_tokens: 30,
+                    ..Default::default()
                 },
-                last_token_usage: TokenUsage {
-                    input_tokens: 0,
-                    cached_input_tokens: 0,
-                    output_tokens: 0,
-                    reasoning_output_tokens: 0,
-                    total_tokens: 0,
-                },
+                last_token_usage: TokenUsage::default(),
                 model_context_window: None,
             }),
             rate_limits: None,
+            provider_request_started: false,
         })));
         assert_eq!(
             app.frontend.transcript.len(),

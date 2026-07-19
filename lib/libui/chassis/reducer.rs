@@ -441,15 +441,15 @@ mod tests {
             info: Some(TokenUsageInfo {
                 total_token_usage: TokenUsage {
                     input_tokens: 1,
-                    cached_input_tokens: 0,
                     output_tokens: 2,
-                    reasoning_output_tokens: 0,
                     total_tokens: 3,
+                    ..Default::default()
                 },
                 last_token_usage: TokenUsage::default(),
                 model_context_window: None,
             }),
             rate_limits: None,
+            provider_request_started: false,
         }));
         assert_eq!(
             Some(3),

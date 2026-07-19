@@ -217,41 +217,49 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
 }
 
 #[tokio::test]
-async fn record_initial_history_seeds_token_info_from_rollout() {
+async fn resumed_history_restores_process_cumulative_usage_and_continues_accumulating() {
     let (session, turn_context) = make_session_and_context().await;
     let (mut rollout_items, _expected) = sample_rollout(&session, &turn_context).await;
 
     let info1 = TokenUsageInfo {
         total_token_usage: TokenUsage {
             input_tokens: 10,
+            cache_creation_input_tokens: 2,
             cached_input_tokens: 0,
             output_tokens: 20,
             reasoning_output_tokens: 0,
             total_tokens: 30,
+            provider_request_count: 1,
         },
         last_token_usage: TokenUsage {
             input_tokens: 3,
+            cache_creation_input_tokens: 1,
             cached_input_tokens: 0,
             output_tokens: 4,
             reasoning_output_tokens: 0,
             total_tokens: 7,
+            provider_request_count: 1,
         },
         model_context_window: Some(1_000),
     };
     let info2 = TokenUsageInfo {
         total_token_usage: TokenUsage {
             input_tokens: 100,
+            cache_creation_input_tokens: 20,
             cached_input_tokens: 50,
             output_tokens: 200,
             reasoning_output_tokens: 25,
             total_tokens: 375,
+            provider_request_count: 4,
         },
         last_token_usage: TokenUsage {
             input_tokens: 10,
+            cache_creation_input_tokens: 3,
             cached_input_tokens: 0,
             output_tokens: 20,
             reasoning_output_tokens: 5,
             total_tokens: 35,
+            provider_request_count: 1,
         },
         model_context_window: Some(2_000),
     };
@@ -260,24 +268,28 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
         TokenCountEvent {
             info: Some(info1),
             rate_limits: None,
+            provider_request_started: false,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
         TokenCountEvent {
             info: None,
             rate_limits: None,
+            provider_request_started: false,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
         TokenCountEvent {
             info: Some(info2.clone()),
             rate_limits: None,
+            provider_request_started: false,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
         TokenCountEvent {
             info: None,
             rate_limits: None,
+            provider_request_started: false,
         },
     )));
 
@@ -289,7 +301,48 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
         .await;
 
     let actual = session.state.lock().await.token_info();
-    assert_eq!(actual, Some(info2));
+    assert_eq!(actual, Some(info2.clone()));
+
+    session.record_provider_request_started(&turn_context).await;
+    session
+        .update_token_usage_info(
+            &turn_context,
+            Some(&TokenUsage {
+                input_tokens: 25,
+                cache_creation_input_tokens: 5,
+                cached_input_tokens: 15,
+                output_tokens: 7,
+                reasoning_output_tokens: 2,
+                total_tokens: 32,
+                provider_request_count: 0,
+            }),
+        )
+        .await;
+
+    let after_resumed_turn = session
+        .state
+        .lock()
+        .await
+        .token_info()
+        .expect("resumed token info");
+    assert_eq!(after_resumed_turn.total_token_usage.input_tokens, 125);
+    assert_eq!(
+        after_resumed_turn
+            .total_token_usage
+            .cache_creation_input_tokens,
+        25
+    );
+    assert_eq!(after_resumed_turn.total_token_usage.cached_input_tokens, 65);
+    assert_eq!(after_resumed_turn.total_token_usage.output_tokens, 207);
+    assert_eq!(
+        after_resumed_turn.total_token_usage.reasoning_output_tokens,
+        27
+    );
+    assert_eq!(after_resumed_turn.total_token_usage.total_tokens, 407);
+    assert_eq!(
+        after_resumed_turn.total_token_usage.provider_request_count,
+        5
+    );
 }
 
 #[tokio::test]

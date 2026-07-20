@@ -18,12 +18,40 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse_completed;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use wiremock::BodyPrintLimit;
 use wiremock::MockServer;
+
+async fn submit_hello_turn(
+    test: &TestChaos,
+    model: String,
+    approval_policy: ApprovalPolicy,
+    personality: Option<Personality>,
+) -> anyhow::Result<()> {
+    test.process
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "hello".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: test.cwd_path().to_path_buf(),
+            approval_policy,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            model,
+            effort: test.config.model_reasoning_effort,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality,
+        })
+        .await?;
+    Ok(())
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn personality_does_not_mutate_base_instructions_without_template() {
@@ -64,24 +92,13 @@ async fn user_turn_personality_none_does_not_add_update_message() -> anyhow::Res
     let mut builder = test_chaos().with_model("gpt-5.4-codex");
     let test = builder.build(&server).await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -110,24 +127,13 @@ async fn config_personality_some_sets_instructions_template() -> anyhow::Result<
         });
     let test = builder.build(&server).await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -156,24 +162,13 @@ async fn config_personality_none_sends_no_personality() -> anyhow::Result<()> {
         });
     let test = builder.build(&server).await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -198,24 +193,13 @@ async fn default_personality_is_pragmatic_without_config_toml() -> anyhow::Resul
     let mut builder = test_chaos().with_model("gpt-5.4-codex");
     let test = builder.build(&server).await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -244,24 +228,13 @@ async fn user_turn_personality_some_adds_update_message() -> anyhow::Result<()> 
     let mut builder = test_chaos().with_model("exp-codex-personality");
     let test = builder.build(&server).await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -281,24 +254,13 @@ async fn user_turn_personality_some_adds_update_message() -> anyhow::Result<()> 
         })
         .await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -332,24 +294,13 @@ async fn user_turn_personality_same_value_does_not_add_update_message() -> anyho
         });
     let test = builder.build(&server).await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -369,24 +320,13 @@ async fn user_turn_personality_same_value_does_not_add_update_message() -> anyho
         })
         .await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: test.config.permissions.approval_policy.value(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: test.session_configured.model.clone(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        test.session_configured.model.clone(),
+        test.config.permissions.approval_policy.value(),
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -447,24 +387,13 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
 
     wait_for_model_available(&test.process_table.get_models_manager(), remote_slug).await;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: ApprovalPolicy::Headless,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: remote_slug.to_string(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: Some(Personality::Friendly),
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        remote_slug.to_string(),
+        ApprovalPolicy::Headless,
+        Some(Personality::Friendly),
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -528,24 +457,13 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
 
     wait_for_model_available(&test.process_table.get_models_manager(), remote_slug).await;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: ApprovalPolicy::Headless,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: remote_slug.to_string(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        remote_slug.to_string(),
+        ApprovalPolicy::Headless,
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -565,24 +483,13 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         })
         .await?;
 
-    test.process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
-            approval_policy: ApprovalPolicy::Headless,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: remote_slug.to_string(),
-            effort: test.config.model_reasoning_effort,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
+    submit_hello_turn(
+        &test,
+        remote_slug.to_string(),
+        ApprovalPolicy::Headless,
+        None,
+    )
+    .await?;
 
     wait_for_event(&test.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 

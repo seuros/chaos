@@ -253,29 +253,7 @@ async fn enqueue_primary_event_delivers_session_configured_before_buffered_appro
             parsed_cmd: Vec::new(),
         }),
     };
-    let session_configured_event = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured_event = session_configured_event(process_id);
 
     app.enqueue_primary_event(approval_event.clone()).await?;
     app.enqueue_primary_event(session_configured_event.clone())
@@ -505,29 +483,7 @@ async fn replay_process_snapshot_restores_draft_and_queued_input() {
 async fn replayed_turn_complete_submits_restored_queued_follow_up() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    let session_configured = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured = session_configured_event(process_id);
     app.chat_widget
         .handle_codex_event(session_configured.clone());
     app.chat_widget.handle_codex_event(Event {
@@ -591,29 +547,7 @@ async fn replayed_turn_complete_submits_restored_queued_follow_up() {
 async fn replay_only_thread_keeps_restored_queue_visible() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    let session_configured = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured = session_configured_event(process_id);
     app.chat_widget
         .handle_codex_event(session_configured.clone());
     app.chat_widget.handle_codex_event(Event {
@@ -676,29 +610,7 @@ async fn replay_only_thread_keeps_restored_queue_visible() {
 async fn replay_process_snapshot_keeps_queue_when_running_state_only_comes_from_snapshot() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    let session_configured = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured = session_configured_event(process_id);
     app.chat_widget
         .handle_codex_event(session_configured.clone());
     app.chat_widget.handle_codex_event(Event {
@@ -755,29 +667,7 @@ async fn replay_process_snapshot_keeps_queue_when_running_state_only_comes_from_
 async fn replay_process_snapshot_does_not_submit_queue_before_replay_catches_up() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    let session_configured = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured = session_configured_event(process_id);
     app.chat_widget
         .handle_codex_event(session_configured.clone());
     app.chat_widget.handle_codex_event(Event {
@@ -946,29 +836,7 @@ async fn replay_process_snapshot_restores_pending_pastes_for_submit() {
 async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    let session_configured = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured = session_configured_event(process_id);
     app.chat_widget
         .handle_codex_event(session_configured.clone());
     app.chat_widget
@@ -1051,29 +919,7 @@ async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() 
 async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    let session_configured = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured = session_configured_event(process_id);
     app.chat_widget
         .handle_codex_event(session_configured.clone());
     app.chat_widget
@@ -1128,29 +974,7 @@ async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
 async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    let session_configured = Event {
-        id: "session-configured".to_string(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: process_id,
-            forked_from_id: None,
-            process_name: None,
-            model: "gpt-test".to_string(),
-            model_provider_id: "test-provider".to_string(),
-            service_tier: None,
-            approval_policy: ApprovalPolicy::Headless,
-            approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
-            cwd: PathBuf::from("/tmp/project"),
-            reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-        }),
-    };
+    let session_configured = session_configured_event(process_id);
     app.chat_widget
         .handle_codex_event(session_configured.clone());
     app.chat_widget.handle_codex_event(Event {
@@ -1723,6 +1547,32 @@ fn make_test_tui() -> crate::tui::Tui {
     let mut tui = crate::tui::Tui::new(terminal);
     tui.set_alt_screen_enabled(false);
     tui
+}
+
+fn session_configured_event(process_id: ProcessId) -> Event {
+    Event {
+        id: "session-configured".to_string(),
+        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
+            session_id: process_id,
+            forked_from_id: None,
+            process_name: None,
+            model: "gpt-test".to_string(),
+            model_provider_id: "test-provider".to_string(),
+            service_tier: None,
+            approval_policy: ApprovalPolicy::Headless,
+            approvals_reviewer: ApprovalsReviewer::User,
+            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            socket_policy: chaos_ipc::protocol::SocketPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            cwd: PathBuf::from("/tmp/project"),
+            reasoning_effort: None,
+            history_log_id: 0,
+            history_entry_count: 0,
+            initial_messages: None,
+            network_proxy: None,
+        }),
+    }
 }
 
 async fn make_test_app_with_channels() -> (

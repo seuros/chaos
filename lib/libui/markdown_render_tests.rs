@@ -222,16 +222,7 @@ fn blockquote_single() {
 fn blockquote_soft_break() {
     // Soft break via lazy continuation should render as a new line in blockquotes.
     let text = render_markdown_text("> This is a blockquote\nwith a soft break\n");
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(
         lines,
         vec![
@@ -328,16 +319,7 @@ fn list_item_with_inline_blockquote_on_same_line() {
 fn blockquote_surrounded_by_blank_lines() {
     let md = "foo\n\n> bar\n\nbaz\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(
         lines,
         vec![
@@ -355,16 +337,7 @@ fn blockquote_in_ordered_list_on_next_line() {
     // render inline on the same marker line.
     let md = "1.\n   > quoted\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["1. > quoted".to_string()]);
 }
 
@@ -373,16 +346,7 @@ fn blockquote_in_unordered_list_on_next_line() {
     // render inline on the same marker line.
     let md = "-\n  > quoted\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["- > quoted".to_string()]);
 }
 
@@ -390,16 +354,7 @@ fn blockquote_two_paragraphs_inside_ordered_list_has_blank_line() {
     // Two blockquote paragraphs inside a list item should be separated by a blank line.
     let md = "1.\n   > para 1\n   >\n   > para 2\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(
         lines,
         vec![
@@ -414,64 +369,28 @@ fn blockquote_two_paragraphs_inside_ordered_list_has_blank_line() {
 fn blockquote_inside_nested_list() {
     let md = "1. A\n    - B\n      > inner\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["1. A", "    - B", "      > inner"]);
 }
 
 fn list_item_text_then_blockquote() {
     let md = "1. before\n   > quoted\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["1. before", "   > quoted"]);
 }
 
 fn list_item_blockquote_then_text() {
     let md = "1.\n   > quoted\n   after\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["1. > quoted", "   > after"]);
 }
 
 fn list_item_text_blockquote_text() {
     let md = "1. before\n   > quoted\n   after\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["1. before", "   > quoted", "   > after"]);
 }
 
@@ -479,16 +398,7 @@ fn blockquote_with_heading_and_paragraph() {
     let md = "> # Heading\n> paragraph text\n";
     let text = render_markdown_text(md);
     // Validate on content shape; styling is handled elsewhere
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(
         lines,
         vec![
@@ -519,32 +429,14 @@ fn blockquote_heading_inherits_heading_style() {
 fn blockquote_with_code_block() {
     let md = "> ```\n> code\n> ```\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["> code".to_string()]);
 }
 
 fn blockquote_with_multiline_code_block() {
     let md = "> ```\n> first\n> second\n> ```\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["> first", "> second"]);
 }
 
@@ -567,16 +459,7 @@ fn nested_blockquote_with_inline_and_fenced_code() {
 > > ```
 "#;
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(
         lines,
         vec![
@@ -1042,17 +925,7 @@ fn markdown_render_file_link_snapshot() {
         "See [markdown_render.rs:74](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74).",
         Path::new("/Users/example/code/chaos"),
     );
-    let rendered = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = plain_lines(&text).join("\n");
 
     assert_snapshot!(rendered);
 }
@@ -1132,16 +1005,7 @@ fn consecutive_unordered_list_local_file_links_do_not_detach_paths() {
 
 fn code_block_known_lang_has_syntax_colors() {
     let text = render_markdown_text("```rust\nfn main() {}\n```\n");
-    let content: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let content = plain_lines(&text);
     // Content should be preserved; ignore trailing empty line from highlighting.
     let content: Vec<&str> = content
         .iter()
@@ -1164,16 +1028,7 @@ fn code_block_known_lang_has_syntax_colors() {
 
 fn code_block_unknown_lang_plain() {
     let text = render_markdown_text("```xyzlang\nhello world\n```\n");
-    let content: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let content = plain_lines(&text);
     let content: Vec<&str> = content
         .iter()
         .map(std::string::String::as_str)
@@ -1195,16 +1050,7 @@ fn code_block_unknown_lang_plain() {
 
 fn code_block_no_lang_plain() {
     let text = render_markdown_text("```\nno lang specified\n```\n");
-    let content: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let content = plain_lines(&text);
     let content: Vec<&str> = content
         .iter()
         .map(std::string::String::as_str)
@@ -1237,16 +1083,7 @@ fn code_block_indented() {
 fn horizontal_rule_renders_em_dashes() {
     let md = "Before\n\n---\n\nAfter\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["Before", "", "———", "", "After"]);
 }
 
@@ -1262,16 +1099,7 @@ Here is a code block that shows another fenced block:
 ````
 "#;
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     // Filter empty trailing lines for stability; the code block may or may
     // not emit a trailing blank depending on the highlighting path.
     let trimmed: Vec<&str> = {
@@ -1298,48 +1126,21 @@ Here is a code block that shows another fenced block:
 fn code_block_inside_unordered_list_item_is_indented() {
     let md = "- Item\n\n  ```\n  code line\n  ```\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["- Item", "", "  code line"]);
 }
 
 fn code_block_multiple_lines_inside_unordered_list() {
     let md = "- Item\n\n  ```\n  first\n  second\n  ```\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["- Item", "", "  first", "  second"]);
 }
 
 fn code_block_inside_unordered_list_item_multiple_lines() {
     let md = "- Item\n\n  ```\n  first\n  second\n  ```\n";
     let text = render_markdown_text(md);
-    let lines: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let lines = plain_lines(&text);
     assert_eq!(lines, vec!["- Item", "", "  first", "  second"]);
 }
 
@@ -1398,17 +1199,7 @@ URL with parentheses: [link](https://example.com/path_(with)_parens).
 
     let text = render_markdown_text(md);
     // Convert to plain text lines for snapshot (ignore styles)
-    let rendered = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = plain_lines(&text).join("\n");
 
     assert_snapshot!(rendered);
 }
@@ -1561,16 +1352,7 @@ fn gfm_alerts_emit_styled_header_line_per_kind() {
 > Fifth
 ";
     let text = render_markdown_text(md);
-    let rendered: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let rendered = plain_lines(&text);
 
     for needle in ["ⓘ NOTE", "★ TIP", "‼ IMPORTANT", "⚠ WARNING", "⛔ CAUTION"] {
         assert!(
@@ -1640,16 +1422,7 @@ fn display_math_rewrites_and_frames_on_own_lines() {
     // Display math ($$...$$) should rewrite glyphs and keep the normal single
     // paragraph gap before and after it.
     let text = render_markdown_text("Before.\n\n$$\\sum_{i=0}^{n} i^2$$\n\nAfter.\n");
-    let rendered: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let rendered = plain_lines(&text);
     let math_idx = rendered
         .iter()
         .position(|l| l.contains("∑"))
@@ -1722,16 +1495,7 @@ fn code_block_preserves_trailing_blank_lines() {
     // A fenced code block with an intentional trailing blank line must keep it.
     let md = "```rust\nfn main() {}\n\n```\n";
     let text = render_markdown_text(md);
-    let content: Vec<String> = text
-        .lines
-        .iter()
-        .map(|l| {
-            l.spans
-                .iter()
-                .map(|s| s.content.clone())
-                .collect::<String>()
-        })
-        .collect();
+    let content = plain_lines(&text);
     // Should have: "fn main() {}" then "" (the blank line).
     // Filter only to content lines (skip leading/trailing empty from rendering).
     assert!(

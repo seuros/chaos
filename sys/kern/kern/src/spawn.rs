@@ -29,6 +29,29 @@ pub enum StdioPolicy {
     Inherit,
 }
 
+impl StdioPolicy {
+    /// Configure the command's stdin/stdout/stderr according to this policy.
+    pub fn apply(self, cmd: &mut Command) {
+        match self {
+            StdioPolicy::RedirectForShellTool => {
+                // Do not create a file descriptor for stdin because otherwise some
+                // commands may hang forever waiting for input. For example, ripgrep has
+                // a heuristic where it may try to read from stdin as explained here:
+                // https://github.com/BurntSushi/ripgrep/blob/e2362d4d5185d02fa857bf381e7bd52e66fafc73/crates/core/flags/hiargs.rs#L1101-L1103
+                cmd.stdin(Stdio::null());
+
+                cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+            }
+            StdioPolicy::Inherit => {
+                // Inherit stdin, stdout, and stderr from the parent process.
+                cmd.stdin(Stdio::inherit())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit());
+            }
+        }
+    }
+}
+
 /// Spawns the appropriate child process for the ExecParams and SandboxPolicy,
 /// ensuring the args and environment variables used to create the `Command`
 /// (and `Child`) honor the configuration.
@@ -107,23 +130,7 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
         });
     }
 
-    match stdio_policy {
-        StdioPolicy::RedirectForShellTool => {
-            // Do not create a file descriptor for stdin because otherwise some
-            // commands may hang forever waiting for input. For example, ripgrep has
-            // a heuristic where it may try to read from stdin as explained here:
-            // https://github.com/BurntSushi/ripgrep/blob/e2362d4d5185d02fa857bf381e7bd52e66fafc73/crates/core/flags/hiargs.rs#L1101-L1103
-            cmd.stdin(Stdio::null());
-
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-        }
-        StdioPolicy::Inherit => {
-            // Inherit stdin, stdout, and stderr from the parent process.
-            cmd.stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit());
-        }
-    }
+    stdio_policy.apply(&mut cmd);
 
     cmd.kill_on_drop(true).spawn()
 }

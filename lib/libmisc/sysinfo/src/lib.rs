@@ -21,6 +21,9 @@ mod platform;
 #[path = "platform_freebsd.rs"]
 mod platform;
 
+#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+mod sysctl;
+
 // ── Public API ───────────────────────────────────────────────────────
 
 static SYSINFO: OnceLock<SystemInfo> = OnceLock::new();

@@ -334,17 +334,7 @@ async fn spawn_command_under_macos_seatbelt(
     cmd.env_clear();
     cmd.envs(env);
 
-    match stdio_policy {
-        StdioPolicy::RedirectForShellTool => {
-            cmd.stdin(Stdio::null());
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-        }
-        StdioPolicy::Inherit => {
-            cmd.stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit());
-        }
-    }
+    stdio_policy.apply(&mut cmd);
 
     cmd.kill_on_drop(true).spawn()
 }

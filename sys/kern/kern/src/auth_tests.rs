@@ -54,6 +54,69 @@ async fn refresh_without_id_token() {
     assert_eq!(tokens.refresh_token, "new-refresh-token");
 }
 
+#[tokio::test]
+#[serial(refresh_token_url_override)]
+async fn concurrent_refresh_single_flights_to_one_request() {
+    core_test_support::skip_if_no_network!();
+
+    use std::time::Duration;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+
+    let chaos_home = tempdir().unwrap();
+    write_auth_file(
+        AuthFileParams {
+            openai_api_key: None,
+            chatgpt_plan_type: Some("pro".to_string()),
+            chatgpt_account_id: None,
+        },
+        chaos_home.path(),
+    )
+    .expect("failed to write auth file");
+
+    let server = MockServer::start().await;
+    let refreshed_jwt = build_fake_jwt(Some("pro"), None);
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_millis(50))
+                .set_body_json(serde_json::json!({
+                    "id_token": refreshed_jwt,
+                    "access_token": "refreshed-access-token",
+                    "refresh_token": "refreshed-refresh-token",
+                })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let _guard = EnvVarGuard::set(
+        crate::auth::REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR,
+        format!("{}/oauth/token", server.uri()),
+    );
+
+    let auth = super::load_auth(chaos_home.path(), false, AuthCredentialsStoreMode::File)
+        .unwrap()
+        .unwrap();
+    let manager = crate::auth::tokens::AuthManager::from_auth_for_testing_with_home(
+        auth,
+        chaos_home.path().to_path_buf(),
+    );
+
+    let (first, second) = tokio::join!(
+        manager.refresh_token_from_authority(),
+        manager.refresh_token_from_authority()
+    );
+    first.expect("first refresh should succeed");
+    second.expect("second refresh should succeed");
+
+    server.verify().await;
+}
+
 #[test]
 fn login_with_api_key_overwrites_existing_auth_json() {
     let dir = tempdir().unwrap();

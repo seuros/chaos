@@ -243,6 +243,8 @@ pub struct AuthManager {
     pub(super) enable_codex_api_key_env: bool,
     pub(super) auth_credentials_store_mode: AuthCredentialsStoreMode,
     pub(super) forced_chatgpt_workspace_id: RwLock<Option<String>>,
+    /// Single-flights `refresh_token_from_authority`.
+    pub(super) refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl AuthManager {
@@ -271,6 +273,7 @@ impl AuthManager {
             enable_codex_api_key_env,
             auth_credentials_store_mode,
             forced_chatgpt_workspace_id: RwLock::new(None),
+            refresh_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -287,6 +290,7 @@ impl AuthManager {
             enable_codex_api_key_env: false,
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             forced_chatgpt_workspace_id: RwLock::new(None),
+            refresh_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -305,6 +309,7 @@ impl AuthManager {
             enable_codex_api_key_env: false,
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             forced_chatgpt_workspace_id: RwLock::new(None),
+            refresh_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -507,14 +512,27 @@ impl AuthManager {
     }
 
     /// Attempt to refresh the current auth token from the authority that issued
-    /// the token.
+    /// the token. Serialized via `refresh_lock`.
     pub async fn refresh_token_from_authority(&self) -> Result<(), RefreshTokenError> {
-        tracing::info!("Refreshing token");
-
         let auth = match self.auth_cached() {
             Some(auth) => auth,
             None => return Ok(()),
         };
+        if matches!(auth, ChaosAuth::ApiKey(_)) {
+            return Ok(());
+        }
+
+        let pre_lock_token = auth.get_token().ok();
+        let _guard = self.refresh_lock.lock().await;
+
+        if let Some(current) = self.auth_cached()
+            && current.get_token().ok() != pre_lock_token
+        {
+            tracing::info!("Skipping token refresh: already refreshed by a concurrent caller.");
+            return Ok(());
+        }
+
+        tracing::info!("Refreshing token");
         match auth {
             ChaosAuth::ChatgptAuthTokens(_) => {
                 self.refresh_external_auth(ExternalAuthRefreshReason::Unauthorized)
@@ -530,7 +548,7 @@ impl AuthManager {
                     .await?;
                 Ok(())
             }
-            ChaosAuth::ApiKey(_) => Ok(()),
+            ChaosAuth::ApiKey(_) => unreachable!("returned above"),
         }
     }
 

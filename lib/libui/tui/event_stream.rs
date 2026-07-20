@@ -17,6 +17,7 @@
 //!
 //! See https://ratatui.rs/recipes/apps/spawn-vim/ and https://www.reddit.com/r/rust/comments/1f3o33u/myterious_crossterm_input_after_running_vim for more details.
 
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -24,6 +25,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
+use std::time::Duration;
 
 use crossterm::event::Event;
 use tokio::sync::broadcast;
@@ -34,6 +36,9 @@ use tokio_stream::wrappers::WatchStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
 use super::TuiEvent;
+
+/// Trailing-edge debounce for terminal resize events; only the settled size draws.
+const RESIZE_DEBOUNCE: Duration = Duration::from_millis(17);
 
 /// Result type produced by an event source.
 pub type EventResult = std::io::Result<Event>;
@@ -145,6 +150,7 @@ pub struct TuiEventStream<S: EventSource + Default + Unpin = CrosstermEventSourc
     suspend_context: crate::tui::job_control::SuspendContext,
     alt_screen_active: Arc<AtomicBool>,
     mouse_capture_active: Arc<AtomicBool>,
+    resize_debounce: Option<Pin<Box<tokio::time::Sleep>>>,
 }
 
 impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
@@ -166,6 +172,21 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
             suspend_context,
             alt_screen_active,
             mouse_capture_active,
+            resize_debounce: None,
+        }
+    }
+
+    /// Poll the resize debounce timer; yields one `Draw` once the burst settles.
+    fn poll_resize_debounce(&mut self, cx: &mut Context<'_>) -> Poll<TuiEvent> {
+        let Some(sleep) = self.resize_debounce.as_mut() else {
+            return Poll::Pending;
+        };
+        match sleep.as_mut().poll(cx) {
+            Poll::Ready(()) => {
+                self.resize_debounce = None;
+                Poll::Ready(TuiEvent::Draw)
+            }
+            Poll::Pending => Poll::Pending,
         }
     }
 
@@ -244,7 +265,10 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
                 }
                 Some(TuiEvent::Key(key_event))
             }
-            Event::Resize(_, _) => Some(TuiEvent::Draw),
+            Event::Resize(_, _) => {
+                self.resize_debounce = Some(Box::pin(tokio::time::sleep(RESIZE_DEBOUNCE)));
+                None
+            }
             Event::Mouse(mouse_event) => Some(TuiEvent::Mouse(mouse_event)),
             Event::Paste(pasted) => Some(TuiEvent::Paste(pasted)),
             Event::FocusGained => {
@@ -284,6 +308,11 @@ impl<S: EventSource + Default + Unpin> Stream for TuiEventStream<S> {
             if let Poll::Ready(event) = self.poll_draw_event(cx) {
                 return Poll::Ready(event);
             }
+        }
+
+        // After the input sources so a resize burst re-arms the debounce first.
+        if let Poll::Ready(event) = self.poll_resize_debounce(cx) {
+            return Poll::Ready(Some(event));
         }
 
         Poll::Pending
@@ -394,6 +423,22 @@ pub(crate) mod tests {
         error_or_eof_ends_stream().await;
         resume_wakes_paused_stream().await;
         resume_wakes_pending_stream().await;
+        resize_burst_debounces_to_single_draw().await;
+    }
+
+    async fn resize_burst_debounces_to_single_draw() {
+        let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
+        let mut stream = make_stream(broker, draw_rx, terminal_focused);
+
+        handle.send(Ok(Event::Resize(80, 24)));
+        handle.send(Ok(Event::Resize(100, 30)));
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        handle.send(Ok(Event::Key(key)));
+
+        assert!(matches!(stream.next().await, Some(TuiEvent::Key(k)) if k == key));
+        assert!(matches!(stream.next().await, Some(TuiEvent::Draw)));
+        let after = timeout(Duration::from_millis(50), stream.next()).await;
+        assert!(after.is_err(), "expected no further events, got {after:?}");
     }
 
     async fn key_event_skips_unmapped() {

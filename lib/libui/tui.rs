@@ -508,9 +508,14 @@ impl Tui {
             };
 
             let max_viewport_height = size.height.saturating_sub(reserved);
-            let mut area = terminal.viewport_area;
+            let old_area = terminal.viewport_area;
+            let mut area = old_area;
             area.height = height.min(max_viewport_height);
             area.width = size.width;
+            // Keep a bottom-anchored viewport pinned to the screen edge on shrink.
+            if area.height < old_area.height && old_area.bottom() >= size.height {
+                area.y = size.height - area.height;
+            }
             // Ensure the viewport never overlaps the reserved top rows.
             area.y = area.y.max(reserved);
             // If the viewport has expanded, scroll everything else up to make room.

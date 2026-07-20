@@ -26,11 +26,17 @@ struct QueuedLine {
     enqueued_at: Instant,
 }
 
+/// Minimum interval between full markdown re-renders while lines are already
+/// queued for display; display pacing stays with the queue.
+const MARKDOWN_RENDER_INTERVAL: Duration = Duration::from_millis(47);
+
 /// Holds in-flight markdown stream state and queued committed lines.
 pub struct StreamState {
     pub collector: MarkdownStreamCollector,
     queued_lines: VecDeque<QueuedLine>,
     pub has_seen_delta: bool,
+    render_pending: bool,
+    last_render_at: Option<Instant>,
 }
 
 impl StreamState {
@@ -43,6 +49,8 @@ impl StreamState {
             collector: MarkdownStreamCollector::new(width, cwd),
             queued_lines: VecDeque::new(),
             has_seen_delta: false,
+            render_pending: false,
+            last_render_at: None,
         }
     }
     /// Resets collector and queue state for the next stream lifecycle.
@@ -50,6 +58,47 @@ impl StreamState {
         self.collector.clear();
         self.queued_lines.clear();
         self.has_seen_delta = false;
+        self.render_pending = false;
+        self.last_render_at = None;
+    }
+    /// Accumulates a delta and commits newly completed lines when a render is due.
+    ///
+    /// Returns true when new lines were enqueued.
+    pub fn push_and_maybe_commit(&mut self, delta: &str) -> bool {
+        if !delta.is_empty() {
+            self.has_seen_delta = true;
+        }
+        self.collector.push_delta(delta);
+        if delta.contains('\n') {
+            self.render_pending = true;
+        }
+        self.commit_if_due(Instant::now())
+    }
+    /// Renders pending completed lines when the throttle allows it; an empty
+    /// queue always renders immediately. Returns true when lines were enqueued.
+    pub fn commit_if_due(&mut self, now: Instant) -> bool {
+        if !self.render_pending {
+            return false;
+        }
+        let due = self.queued_lines.is_empty()
+            || self
+                .last_render_at
+                .is_none_or(|at| now.saturating_duration_since(at) >= MARKDOWN_RENDER_INTERVAL);
+        if !due {
+            return false;
+        }
+        self.render_pending = false;
+        self.last_render_at = Some(now);
+        let newly_completed = self.collector.commit_complete_lines();
+        if newly_completed.is_empty() {
+            return false;
+        }
+        self.enqueue(newly_completed);
+        true
+    }
+    /// Returns whether a throttled render is still waiting to run.
+    pub fn has_pending_render(&self) -> bool {
+        self.render_pending
     }
     /// Drains one queued line from the front of the queue.
     pub fn step(&mut self) -> Vec<Line<'static>> {

@@ -46,16 +46,19 @@ impl ChatWidget {
         self.adaptive_chunking.reset();
     }
 
-    /// Returns `true` when all stream controllers have no queued lines.
+    /// Returns `true` when all stream controllers have no queued lines and no
+    /// throttled render waiting to enqueue more.
     pub(super) fn stream_controllers_idle(&self) -> bool {
         self.stream_controller
             .as_ref()
-            .map(|controller| controller.queued_lines() == 0)
+            .map(|controller| controller.queued_lines() == 0 && !controller.has_pending_render())
             .unwrap_or(true)
             && self
                 .plan_stream_controller
                 .as_ref()
-                .map(|controller| controller.queued_lines() == 0)
+                .map(|controller| {
+                    controller.queued_lines() == 0 && !controller.has_pending_render()
+                })
                 .unwrap_or(true)
     }
 

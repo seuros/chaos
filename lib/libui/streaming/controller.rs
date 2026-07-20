@@ -31,21 +31,9 @@ impl StreamController {
         }
     }
 
-    /// Push a delta; if it contains a newline, commit completed lines and start animation.
+    /// Push a delta; if it completes lines and a render is due, commit them and start animation.
     pub fn push(&mut self, delta: &str) -> bool {
-        let state = &mut self.state;
-        if !delta.is_empty() {
-            state.has_seen_delta = true;
-        }
-        state.collector.push_delta(delta);
-        if delta.contains('\n') {
-            let newly_completed = state.collector.commit_complete_lines();
-            if !newly_completed.is_empty() {
-                state.enqueue(newly_completed);
-                return true;
-            }
-        }
-        false
+        self.state.push_and_maybe_commit(delta)
     }
 
     /// Finalize the active stream. Drain and emit now.
@@ -74,8 +62,9 @@ impl StreamController {
 
     /// Step animation: commit at most one queued line and handle end-of-drain cleanup.
     pub fn on_commit_tick(&mut self) -> (Option<Box<dyn HistoryCell>>, bool) {
+        self.state.commit_if_due(Instant::now());
         let step = self.state.step();
-        (self.emit(step), self.state.is_idle())
+        (self.emit(step), self.is_idle())
     }
 
     /// Step animation: commit at most `max_lines` queued lines.
@@ -86,13 +75,25 @@ impl StreamController {
         &mut self,
         max_lines: usize,
     ) -> (Option<Box<dyn HistoryCell>>, bool) {
+        self.state.commit_if_due(Instant::now());
         let step = self.state.drain_n(max_lines.max(1));
-        (self.emit(step), self.state.is_idle())
+        (self.emit(step), self.is_idle())
+    }
+
+    /// Idle only when no lines are queued and no throttled render is waiting,
+    /// so a pending render keeps commit ticks alive until it flushes.
+    fn is_idle(&self) -> bool {
+        self.state.is_idle() && !self.state.has_pending_render()
     }
 
     /// Returns the current number of queued lines waiting to be displayed.
     pub fn queued_lines(&self) -> usize {
         self.state.queued_len()
+    }
+
+    /// Returns whether a throttled markdown render has not been flushed yet.
+    pub fn has_pending_render(&self) -> bool {
+        self.state.has_pending_render()
     }
 
     /// Returns the age of the oldest queued line.
@@ -133,21 +134,9 @@ impl PlanStreamController {
         }
     }
 
-    /// Push a delta; if it contains a newline, commit completed lines and start animation.
+    /// Push a delta; if it completes lines and a render is due, commit them and start animation.
     pub fn push(&mut self, delta: &str) -> bool {
-        let state = &mut self.state;
-        if !delta.is_empty() {
-            state.has_seen_delta = true;
-        }
-        state.collector.push_delta(delta);
-        if delta.contains('\n') {
-            let newly_completed = state.collector.commit_complete_lines();
-            if !newly_completed.is_empty() {
-                state.enqueue(newly_completed);
-                return true;
-            }
-        }
-        false
+        self.state.push_and_maybe_commit(delta)
     }
 
     /// Finalize the active stream. Drain and emit now.
@@ -172,10 +161,11 @@ impl PlanStreamController {
 
     /// Step animation: commit at most one queued line and handle end-of-drain cleanup.
     pub fn on_commit_tick(&mut self) -> (Option<Box<dyn HistoryCell>>, bool) {
+        self.state.commit_if_due(Instant::now());
         let step = self.state.step();
         (
             self.emit(step, /*include_bottom_padding*/ false),
-            self.state.is_idle(),
+            self.is_idle(),
         )
     }
 
@@ -187,16 +177,28 @@ impl PlanStreamController {
         &mut self,
         max_lines: usize,
     ) -> (Option<Box<dyn HistoryCell>>, bool) {
+        self.state.commit_if_due(Instant::now());
         let step = self.state.drain_n(max_lines.max(1));
         (
             self.emit(step, /*include_bottom_padding*/ false),
-            self.state.is_idle(),
+            self.is_idle(),
         )
+    }
+
+    /// Idle only when no lines are queued and no throttled render is waiting,
+    /// so a pending render keeps commit ticks alive until it flushes.
+    fn is_idle(&self) -> bool {
+        self.state.is_idle() && !self.state.has_pending_render()
     }
 
     /// Returns the current number of queued plan lines waiting to be displayed.
     pub fn queued_lines(&self) -> usize {
         self.state.queued_len()
+    }
+
+    /// Returns whether a throttled markdown render has not been flushed yet.
+    pub fn has_pending_render(&self) -> bool {
+        self.state.has_pending_render()
     }
 
     /// Returns the age of the oldest queued plan line.

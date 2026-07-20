@@ -1074,7 +1074,8 @@ const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "read_file",
     "cron_create",
     "cron_toggle",
-    "spool_submit",
+    // spool_submit is only listed when a spool backend is registered; none is
+    // in the test harness.
     "git_blame",
     "git_branches",
     "git_diff",

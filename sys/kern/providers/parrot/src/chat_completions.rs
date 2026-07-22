@@ -972,9 +972,10 @@ mod tests {
             Some(&Value::String(signature.to_string())),
             "Gemini requires the original thought signature on the replayed assistant tool call"
         );
-        assert_eq!(body.pointer("/messages/1/tool_call_id"), Some(&Value::String(
-            "call_exec".to_string()
-        )));
+        assert_eq!(
+            body.pointer("/messages/1/tool_call_id"),
+            Some(&Value::String("call_exec".to_string()))
+        );
     }
 
     #[tokio::test]

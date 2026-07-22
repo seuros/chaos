@@ -147,6 +147,7 @@ fn reserializes_shell_outputs_for_function_and_custom_tool_calls() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: "call-1".to_string(),
+            provider_metadata: None,
         },
         ResponseItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
@@ -178,6 +179,7 @@ fn reserializes_shell_outputs_for_function_and_custom_tool_calls() {
                 namespace: None,
                 arguments: "{}".to_string(),
                 call_id: "call-1".to_string(),
+                provider_metadata: None,
             },
             ResponseItem::FunctionCallOutput {
                 call_id: "call-1".to_string(),
@@ -212,6 +214,7 @@ fn prompt_get_formatted_input_reserializes_shell_outputs_without_apply_patch_too
                 namespace: None,
                 arguments: "{}".to_string(),
                 call_id: "call-1".to_string(),
+                provider_metadata: None,
             },
             ResponseItem::FunctionCallOutput {
                 call_id: "call-1".to_string(),
@@ -233,6 +236,7 @@ fn prompt_get_formatted_input_reserializes_shell_outputs_without_apply_patch_too
                 namespace: None,
                 arguments: "{}".to_string(),
                 call_id: "call-1".to_string(),
+                provider_metadata: None,
             },
             ResponseItem::FunctionCallOutput {
                 call_id: "call-1".to_string(),

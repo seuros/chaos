@@ -19,6 +19,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+use chaos_abi::ReasoningEffort;
 use chaos_abi::ResponseItem;
 
 // ---------------------------------------------------------------------------
@@ -28,6 +29,12 @@ use chaos_abi::ResponseItem;
 /// Projects a sequence of Chaos-ABI response items into provider-safe wire items.
 pub trait Representer: Send + Sync {
     fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem>;
+
+    /// Project provider-neutral reasoning effort onto this provider's wire
+    /// vocabulary.
+    fn represent_reasoning_effort(&self, effort: ReasoningEffort) -> ReasoningEffort {
+        effort
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +140,10 @@ impl Representer for ResponsesRepresenter {
             .map(remap_system_to_developer)
             .collect()
     }
+
+    fn represent_reasoning_effort(&self, effort: ReasoningEffort) -> ReasoningEffort {
+        crate::common::effort_for_openai_wire(effort)
+    }
 }
 
 fn remap_system_to_developer(item: ResponseItem) -> ResponseItem {
@@ -206,6 +217,12 @@ impl SessionRepresenter {
     /// Project a batch of ABI items for wire serialization.
     pub fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem> {
         self.0.represent(items)
+    }
+
+    /// Project provider-neutral reasoning effort onto this session's provider
+    /// wire vocabulary.
+    pub fn represent_reasoning_effort(&self, effort: ReasoningEffort) -> ReasoningEffort {
+        self.0.represent_reasoning_effort(effort)
     }
 
     /// Access the inner representer for callers that need `&dyn Representer`.

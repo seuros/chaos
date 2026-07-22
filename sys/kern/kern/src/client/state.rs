@@ -255,7 +255,12 @@ impl ModelClient {
         for tool_name in &model_info.native_server_side_tools {
             tools.push(serde_json::json!({"type": tool_name}));
         }
-        let reasoning = Self::build_reasoning(model_info, effort, summary);
+        let mut reasoning = Self::build_reasoning(model_info, effort, summary);
+        if let Some(reasoning) = reasoning.as_mut() {
+            reasoning.effort = reasoning
+                .effort
+                .map(|effort| self.state.representer.represent_reasoning_effort(effort));
+        }
         let verbosity = if model_info.support_verbosity {
             self.state.model_verbosity.or(model_info.default_verbosity)
         } else {

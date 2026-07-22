@@ -134,6 +134,15 @@ pub struct Reasoning {
     pub summary: Option<ReasoningSummaryConfig>,
 }
 
+/// The OpenAI Responses API caps `reasoning.effort` at `max`; `ultra` is a
+/// client-side tier that rides the wire as `max`.
+pub(crate) fn effort_for_openai_wire(effort: ReasoningEffortConfig) -> ReasoningEffortConfig {
+    match effort {
+        ReasoningEffortConfig::Ultra => ReasoningEffortConfig::Max,
+        other => other,
+    }
+}
+
 #[derive(Debug, Serialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum TextFormatType {

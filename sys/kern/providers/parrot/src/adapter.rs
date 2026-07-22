@@ -42,7 +42,9 @@ pub(crate) fn turn_request_to_api_request(
         .unwrap_or_else(|| req.tools.into_iter().map(tool_def_to_openai).collect());
 
     let reasoning = req.reasoning.map(|r| Reasoning {
-        effort: r.effort,
+        effort: r
+            .effort
+            .map(|effort| representer.represent_reasoning_effort(effort)),
         summary: r.summary,
     });
 
@@ -323,6 +325,44 @@ mod tests {
         assert_eq!(
             api_req.include,
             vec!["reasoning.encrypted_content".to_string()]
+        );
+    }
+
+    #[test]
+    fn ultra_effort_clamps_to_max_on_the_wire() {
+        let mut req = make_req("gpt-5.6-sol");
+        req.reasoning = Some(ReasoningConfig {
+            effort: Some(chaos_abi::ReasoningEffort::Ultra),
+            summary: None,
+        });
+
+        let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
+
+        let reasoning = api_req.reasoning.expect("reasoning present");
+        assert_eq!(reasoning.effort, Some(chaos_abi::ReasoningEffort::Max));
+        assert_eq!(
+            serde_json::to_value(&reasoning).unwrap()["effort"],
+            serde_json::json!("max")
+        );
+    }
+
+    #[test]
+    fn compatible_provider_preserves_ultra_effort_on_the_wire() {
+        use crate::representer::OpenwAInnabeRepresenter;
+
+        let mut req = make_req("grok-4");
+        req.reasoning = Some(ReasoningConfig {
+            effort: Some(chaos_abi::ReasoningEffort::Ultra),
+            summary: None,
+        });
+
+        let api_req = turn_request_to_api_request(req, &OpenwAInnabeRepresenter);
+
+        let reasoning = api_req.reasoning.expect("reasoning present");
+        assert_eq!(reasoning.effort, Some(chaos_abi::ReasoningEffort::Ultra));
+        assert_eq!(
+            serde_json::to_value(&reasoning).unwrap()["effort"],
+            serde_json::json!("ultra")
         );
     }
 

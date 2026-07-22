@@ -36,6 +36,7 @@ fn drops_from_last_user_only() {
             name: "tool".to_string(),
             namespace: None,
             arguments: "{}".to_string(),
+            provider_metadata: None,
         },
         assistant_msg("a4"),
     ];

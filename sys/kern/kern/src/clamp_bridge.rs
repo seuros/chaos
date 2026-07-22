@@ -271,6 +271,7 @@ async fn dispatch_tool_call(
             arguments: serde_json::to_string(&arguments)
                 .map_err(|err| format!("failed to encode tool arguments: {err}"))?,
             call_id,
+            provider_metadata: None,
         },
         ToolSpec::Freeform(_) => ResponseItem::CustomToolCall {
             id: None,

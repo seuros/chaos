@@ -263,6 +263,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: "call-1".to_string(),
+            provider_metadata: None,
         },
         ResponseItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
@@ -327,6 +328,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: "call-1".to_string(),
+            provider_metadata: None,
         },
         ResponseItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
@@ -516,6 +518,7 @@ fn remove_first_item_removes_matching_output_for_function_call() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: "call-1".to_string(),
+            provider_metadata: None,
         },
         ResponseItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
@@ -542,6 +545,7 @@ fn remove_first_item_removes_matching_call_for_output() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: "call-2".to_string(),
+            provider_metadata: None,
         },
     ];
     let mut h = create_history_with_items(items);
@@ -989,6 +993,7 @@ fn normalize_adds_missing_output_for_function_call() {
         namespace: None,
         arguments: "{}".to_string(),
         call_id: "call-x".to_string(),
+        provider_metadata: None,
     }];
     let mut h = create_history_with_items(items);
 
@@ -1003,6 +1008,7 @@ fn normalize_adds_missing_output_for_function_call() {
                 namespace: None,
                 arguments: "{}".to_string(),
                 call_id: "call-x".to_string(),
+                provider_metadata: None,
             },
             ResponseItem::FunctionCallOutput {
                 call_id: "call-x".to_string(),
@@ -1130,6 +1136,7 @@ fn normalize_mixed_inserts_and_removals() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: "c1".to_string(),
+            provider_metadata: None,
         },
         // Orphan output that should be removed
         ResponseItem::FunctionCallOutput {
@@ -1172,6 +1179,7 @@ fn normalize_mixed_inserts_and_removals() {
                 namespace: None,
                 arguments: "{}".to_string(),
                 call_id: "c1".to_string(),
+                provider_metadata: None,
             },
             ResponseItem::FunctionCallOutput {
                 call_id: "c1".to_string(),
@@ -1219,6 +1227,7 @@ fn normalize_adds_missing_output_for_function_call_inserts_output() {
         namespace: None,
         arguments: "{}".to_string(),
         call_id: "call-x".to_string(),
+        provider_metadata: None,
     }];
     let mut h = create_history_with_items(items);
     h.normalize_history(&default_input_modalities());
@@ -1231,6 +1240,7 @@ fn normalize_adds_missing_output_for_function_call_inserts_output() {
                 namespace: None,
                 arguments: "{}".to_string(),
                 call_id: "call-x".to_string(),
+                provider_metadata: None,
             },
             ResponseItem::FunctionCallOutput {
                 call_id: "call-x".to_string(),
@@ -1399,6 +1409,7 @@ fn normalize_mixed_inserts_and_removals_panics_in_debug() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: "c1".to_string(),
+            provider_metadata: None,
         },
         ResponseItem::FunctionCallOutput {
             call_id: "c2".to_string(),

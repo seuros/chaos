@@ -401,6 +401,7 @@ mod tests {
                 namespace: Some("mcp__codex_apps__gmail".to_string()),
                 arguments: "{\"top_k\":5}".to_string(),
                 call_id: "call-1".to_string(),
+                provider_metadata: None,
             }
         );
     }

@@ -385,6 +385,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
         namespace: None,
         arguments: "{}".to_string(),
         call_id: parent_spawn_call_id.clone(),
+        provider_metadata: None,
     };
     parent_thread
         .chaos
@@ -468,6 +469,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
         namespace: None,
         arguments: "{}".to_string(),
         call_id: parent_spawn_call_id.clone(),
+        provider_metadata: None,
     };
     parent_thread
         .chaos
@@ -542,6 +544,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
         namespace: None,
         arguments: "{}".to_string(),
         call_id: parent_spawn_call_id.clone(),
+        provider_metadata: None,
     };
     parent_thread
         .chaos
@@ -1123,6 +1126,7 @@ fn sanitize_forked_history_keeps_conversation_and_spawn_call() {
             namespace: None,
             arguments: "{}".to_string(),
             call_id: call_id.to_string(),
+            provider_metadata: None,
         })
     };
 

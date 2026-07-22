@@ -601,6 +601,7 @@ fn parse_chunk(
                 },
                 call_id: acc.id,
                 namespace: None,
+                provider_metadata: None,
             }));
         }
 

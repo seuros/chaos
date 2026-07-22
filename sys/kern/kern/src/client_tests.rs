@@ -236,6 +236,7 @@ fn render_clamp_full_prompt_preserves_prior_messages_and_tool_outputs() {
                 namespace: None,
                 arguments: "{\"command\":[\"pwd\"]}".into(),
                 call_id: "call_123".into(),
+                provider_metadata: None,
             },
             ResponseItem::FunctionCallOutput {
                 call_id: "call_123".into(),

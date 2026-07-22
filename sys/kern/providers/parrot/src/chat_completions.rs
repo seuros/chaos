@@ -293,20 +293,25 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<ChatMessage> {
                 name,
                 arguments,
                 call_id,
+                provider_metadata,
                 ..
             } => {
                 // Assistant turn that issued a tool call.
+                let mut tool_call = serde_json::json!({
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": arguments,
+                    }
+                });
+                if let Some(metadata) = provider_metadata {
+                    tool_call["extra_content"] = metadata.clone();
+                }
                 messages.push(ChatMessage {
                     role: "assistant".to_string(),
                     content: None,
-                    tool_calls: Some(serde_json::json!([{
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": name,
-                            "arguments": arguments,
-                        }
-                    }])),
+                    tool_calls: Some(Value::Array(vec![tool_call])),
                     tool_call_id: None,
                     name: None,
                 });
@@ -404,6 +409,7 @@ struct ToolCallAccumulator {
     id: String,
     name: String,
     arguments: String,
+    provider_metadata: Option<Value>,
 }
 
 /// In-flight text accumulator so we can finalize the assistant message.
@@ -522,6 +528,10 @@ fn parse_chunk(
                 if let Some(chunk) = tc.pointer("/function/arguments").and_then(Value::as_str) {
                     acc.arguments.push_str(chunk);
                 }
+
+                if let Some(extra_content) = tc.get("extra_content") {
+                    acc.provider_metadata = Some(extra_content.clone());
+                }
             }
         }
 
@@ -548,6 +558,7 @@ fn parse_chunk(
                     },
                     call_id: acc.id,
                     namespace: None,
+                    provider_metadata: acc.provider_metadata,
                 }));
             }
 
@@ -859,6 +870,112 @@ mod tests {
                 ..
             }) if name == "second" && arguments == "{\"b\":2}" && call_id == "call_2"
         ));
+    }
+
+    #[test]
+    fn gemini_thought_signature_survives_tool_call_round_trip() {
+        let signature = "opaque-gemini-thought-signature";
+        let mut tool_acc = BTreeMap::new();
+        let mut text_acc = None;
+        let mut response_id = String::new();
+        let mut server_model = None;
+
+        parse_chunk(
+            &serde_json::json!({
+                "id": "chatcmpl-gemini-1",
+                "model": "gemini-2.5-pro",
+                "choices": [{
+                    "delta": {
+                        "tool_calls": [{
+                            "index": 0,
+                            "id": "call_exec",
+                            "type": "function",
+                            "function": {
+                                "name": "default_api:exec_command",
+                                "arguments": "{\"cmd\":\"ls\"}"
+                            },
+                            "extra_content": {
+                                "google": {
+                                    "thought_signature": signature
+                                }
+                            }
+                        }]
+                    },
+                    "finish_reason": null
+                }]
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut response_id,
+            &mut server_model,
+        )
+        .expect("Gemini tool-call chunk should parse");
+
+        let events = parse_chunk(
+            &serde_json::json!({
+                "id": "chatcmpl-gemini-1",
+                "model": "gemini-2.5-pro",
+                "choices": [{
+                    "delta": {},
+                    "finish_reason": "tool_calls"
+                }]
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut response_id,
+            &mut server_model,
+        )
+        .expect("Gemini tool call should finalize");
+
+        let tool_call = events
+            .into_iter()
+            .find_map(|event| match event {
+                TurnEvent::OutputItemDone(item @ ResponseItem::FunctionCall { .. }) => Some(item),
+                _ => None,
+            })
+            .expect("finalized tool call should be emitted");
+
+        // The provider adapter crosses the ABI/IPC boundary before the next
+        // request, so exercise serde as well as the in-memory conversion.
+        let tool_call: ResponseItem = serde_json::from_value(
+            serde_json::to_value(tool_call).expect("tool call should serialize"),
+        )
+        .expect("tool call should deserialize");
+
+        let request = TurnRequest {
+            model: "gemini-2.5-pro".to_string(),
+            instructions: String::new(),
+            input: vec![
+                tool_call,
+                ResponseItem::FunctionCallOutput {
+                    call_id: "call_exec".to_string(),
+                    output: chaos_ipc::models::FunctionCallOutputPayload::from_text(
+                        "command output".to_string(),
+                    ),
+                    tool_name: Some("default_api:exec_command".to_string()),
+                },
+            ],
+            tools: vec![],
+            parallel_tool_calls: false,
+            reasoning: None,
+            output_schema: None,
+            verbosity: None,
+            turn_state: None,
+            extensions: serde_json::Map::new(),
+        };
+
+        let body =
+            build_request_body(&request, "gemini-2.5-pro").expect("follow-up body should build");
+
+        assert_eq!(
+            body.pointer("/messages/0/tool_calls/0/extra_content/google/thought_signature"),
+            Some(&Value::String(signature.to_string())),
+            "Gemini requires the original thought signature on the replayed assistant tool call"
+        );
+        assert_eq!(
+            body.pointer("/messages/1/tool_call_id"),
+            Some(&Value::String("call_exec".to_string()))
+        );
     }
 
     #[tokio::test]

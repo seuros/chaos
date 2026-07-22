@@ -663,6 +663,7 @@ fn parse_sse_event(
                         },
                         call_id: acc.id,
                         namespace: None,
+                        provider_metadata: None,
                     },
                 )])
             } else if let Some(acc) = text_acc.take() {

@@ -78,6 +78,7 @@ fn base_represent(item: ResponseItem) -> Option<ResponseItem> {
             namespace: None,
             arguments: input,
             call_id,
+            provider_metadata: None,
         }),
 
         // LocalShellCall → FunctionCall so the matching FunctionCallOutput
@@ -96,6 +97,7 @@ fn base_represent(item: ResponseItem) -> Option<ResponseItem> {
                 namespace: None,
                 arguments,
                 call_id,
+                provider_metadata: None,
             })
         }
 

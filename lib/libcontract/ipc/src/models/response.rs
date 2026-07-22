@@ -137,6 +137,15 @@ pub enum ResponseItem {
         // Session::handle_function_call parse it into a Value.
         arguments: String,
         call_id: String,
+        /// Opaque metadata attached to a provider's tool call.
+        ///
+        /// Chat-completions-compatible providers may require this data to be
+        /// replayed verbatim with the assistant tool call. Gemini, for example,
+        /// returns `extra_content.google.thought_signature` and rejects the
+        /// follow-up tool result when that signature is missing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        provider_metadata: Option<serde_json::Value>,
     },
     ToolSearchCall {
         #[serde(default, skip_serializing)]

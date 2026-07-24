@@ -174,13 +174,15 @@ fn response_input_to_tool_output(
         }
         ResponseInputItem::McpToolCallOutput { output, .. } => {
             if let Some(structured) = output.structured_content {
-                Ok(ToolOutput::json(structured))
+                ToolOutput::structured(structured)
+                    .map_err(|e| ToolError::Internal(format!("non-object tool output: {e}")))
             } else {
                 Ok(ToolOutput::text(content_items_to_text(&output.content)))
             }
         }
         ResponseInputItem::ToolSearchOutput { tools, .. } => {
-            Ok(ToolOutput::json(serde_json::json!({ "tools": tools })))
+            ToolOutput::structured(serde_json::json!({ "tools": tools }))
+                .map_err(|e| ToolError::Internal(format!("non-object tool output: {e}")))
         }
         ResponseInputItem::Message { content, .. } => Ok(ToolOutput::text(
             content

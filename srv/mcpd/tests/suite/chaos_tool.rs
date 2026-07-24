@@ -304,7 +304,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
 
     let codex_response = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
+        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id.into())),
     )
     .await??;
     let result = codex_response
@@ -317,7 +317,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .and_then(serde_json::Value::as_str)
         .context("chaos tool response should include structuredContent.processId")?;
     assert_eq!(codex_response.jsonrpc, "2.0");
-    assert_eq!(codex_response.id, json!(codex_request_id));
+    assert_eq!(codex_response.id, Some(json!(codex_request_id)));
     let structured_text = format!("{{\"processId\":\"{process_id}\",\"content\":\"Enjoy!\"}}");
     assert_eq!(
         *result,
@@ -435,11 +435,11 @@ async fn assert_tool_response_content(
 ) -> anyhow::Result<()> {
     let codex_response = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
+        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id.into())),
     )
     .await??;
     assert_eq!(codex_response.jsonrpc, "2.0");
-    assert_eq!(codex_response.id, json!(codex_request_id));
+    assert_eq!(codex_response.id, Some(json!(codex_request_id)));
     assert!(codex_response.error.is_none());
     let result = codex_response
         .result
@@ -554,7 +554,7 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
             JsonRpcMessage::Response(ref resp) if resp.error.is_some() => {
                 panic!("unexpected json-rpc error: {resp:?}");
             }
-            JsonRpcMessage::Response(response) if response.id == json!(codex_request_id) => {
+            JsonRpcMessage::Response(response) if response.id == Some(json!(codex_request_id)) => {
                 break response;
             }
             JsonRpcMessage::Response(_) => {}

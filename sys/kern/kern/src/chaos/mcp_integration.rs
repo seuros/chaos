@@ -333,7 +333,10 @@ impl Session {
         }
         let id = match &request_id {
             RequestId::String(value) => chaos_ipc::mcp::RequestId::String(value.clone()),
-            RequestId::Number(value) => chaos_ipc::mcp::RequestId::Integer(*value),
+            RequestId::Number(value) => match value.as_i64() {
+                Some(value) => chaos_ipc::mcp::RequestId::Integer(value),
+                None => chaos_ipc::mcp::RequestId::String(value.to_string()),
+            },
         };
         let event = EventMsg::ElicitationRequest(ElicitationRequestEvent {
             turn_id: params.turn_id,

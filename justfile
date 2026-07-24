@@ -222,6 +222,10 @@ clean-qa:
         .tmp/just-qa*.log \
         .tmp/nextest*.log
 
+# List outdated deps via cargo-edit (cargo-outdated skips workspace-inherited deps)
+outdated:
+    RUSTC_WRAPPER= cargo upgrade --dry-run
+
 # Fix clippy warnings automatically
 fix:
     RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo clippy --fix --workspace --all-features --tests --allow-dirty

@@ -35,7 +35,10 @@ use super::filter::store_managed_tools;
 pub(super) fn request_id_to_protocol(id: &RequestId) -> ProtocolRequestId {
     match id {
         RequestId::String(s) => ProtocolRequestId::String(s.clone()),
-        RequestId::Number(n) => ProtocolRequestId::Integer(*n),
+        RequestId::Number(n) => match n.as_i64() {
+            Some(n) => ProtocolRequestId::Integer(n),
+            None => ProtocolRequestId::String(n.to_string()),
+        },
     }
 }
 

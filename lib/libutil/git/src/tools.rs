@@ -26,7 +26,8 @@ where
 
 fn output_from_json_result(result: Result<serde_json::Value, String>) -> ToolResult {
     match result {
-        Ok(value) => Ok(ToolOutput::json(value)),
+        Ok(value) => ToolOutput::structured(value)
+            .map_err(|e| ToolError::Execution(format!("non-object tool output: {e}"))),
         Err(msg) => Err(ToolError::Execution(msg)),
     }
 }

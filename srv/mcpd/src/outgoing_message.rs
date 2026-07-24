@@ -184,7 +184,7 @@ impl From<OutgoingMessage> for OutgoingJsonRpcMessage {
                 JsonRpcMessage::Notification(JsonRpcRequest::notification(method, params))
             }
             OutgoingMessage::Error(OutgoingError { id, error }) => {
-                JsonRpcMessage::Response(JsonRpcResponse::error(id.to_value(), error))
+                JsonRpcMessage::Response(JsonRpcResponse::error(Some(id.to_value()), error))
             }
         }
     }

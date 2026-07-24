@@ -87,7 +87,7 @@ async fn perform_handshake(
     let init_result: InitializeResult = loop {
         match transport.recv().await? {
             JsonRpcMessage::Response(response) => {
-                if response.id != serde_json::json!(1) {
+                if response.id != Some(serde_json::json!(1)) {
                     continue;
                 }
                 if let Some(error) = response.error {
@@ -181,7 +181,7 @@ async fn run_runtime(
                         };
                         let Some(request_id) = RequestId::from_value(&id_value) else {
                             let response = JsonRpcResponse::error(
-                                id_value,
+                                Some(id_value),
                                 JsonRpcError::invalid_request("request id must be string or number"),
                             );
                             if let Err(error) = transport.send(JsonRpcMessage::Response(response)).await {
@@ -273,7 +273,7 @@ fn route_response(
     response: JsonRpcResponse,
     pending_outgoing: &mut HashMap<RequestId, oneshot::Sender<Result<Value, GuestError>>>,
 ) {
-    let Some(request_id) = RequestId::from_value(&response.id) else {
+    let Some(request_id) = response.id.as_ref().and_then(RequestId::from_value) else {
         return;
     };
 
@@ -432,7 +432,7 @@ async fn handle_server_request_message(
                 Some(params) => params,
                 None => {
                     return JsonRpcResponse::error(
-                        id,
+                        Some(id),
                         JsonRpcError::invalid_params("missing params"),
                     );
                 }
@@ -450,7 +450,7 @@ async fn handle_server_request_message(
                 Some(params) => params,
                 None => {
                     return JsonRpcResponse::error(
-                        id,
+                        Some(id),
                         JsonRpcError::invalid_params("missing params"),
                     );
                 }
@@ -472,7 +472,7 @@ async fn handle_server_request_message(
 
     match result {
         Ok(value) => JsonRpcResponse::success(id, value),
-        Err(error) => JsonRpcResponse::error(id, guest_error_to_jsonrpc(error)),
+        Err(error) => JsonRpcResponse::error(Some(id), guest_error_to_jsonrpc(error)),
     }
 }
 
@@ -642,7 +642,7 @@ mod tests {
             matches!(&sent[0], JsonRpcMessage::Request(request) if request.method == "initialize")
         );
         assert!(
-            matches!(&sent[1], JsonRpcMessage::Response(response) if response.id == serde_json::json!("ping-1"))
+            matches!(&sent[1], JsonRpcMessage::Response(response) if response.id == Some(serde_json::json!("ping-1")))
         );
         assert!(
             matches!(&sent[2], JsonRpcMessage::Notification(notification) if notification.method == "notifications/initialized")

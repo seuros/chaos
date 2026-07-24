@@ -290,7 +290,7 @@ impl HttpTransportInner {
             return Ok(());
         };
 
-        if *id != serde_json::json!(1) {
+        if *id != Some(serde_json::json!(1)) {
             return Ok(());
         }
 
@@ -844,7 +844,7 @@ mod tests {
         let JsonRpcMessage::Response(response) = message else {
             panic!("expected initialize response");
         };
-        assert_eq!(response.id, json!(1));
+        assert_eq!(response.id, Some(json!(1)));
         assert!(response.error.is_none());
         let result = response.result.expect("initialize result");
         assert_eq!(result["protocolVersion"], json!("2025-11-25"));
@@ -940,7 +940,7 @@ mod tests {
         let JsonRpcMessage::Response(response) = first else {
             panic!("expected initialize response");
         };
-        assert_eq!(response.id, json!(1));
+        assert_eq!(response.id, Some(json!(1)));
         assert!(response.error.is_none());
 
         transport
@@ -1064,7 +1064,7 @@ mod tests {
         let JsonRpcMessage::Response(response) = message else {
             panic!("expected retried ping response");
         };
-        assert_eq!(response.id, json!(2));
+        assert_eq!(response.id, Some(json!(2)));
         assert!(response.error.is_none());
 
         let seen = seen_requests.lock().await.clone();

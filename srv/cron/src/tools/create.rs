@@ -62,7 +62,8 @@ impl CronServer {
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
         match execute_structured(&params.0, None, &owner).await {
-            Ok(value) => Ok(ToolOutput::json(value)),
+            Ok(value) => ToolOutput::structured(value)
+                .map_err(|e| ToolError::Execution(format!("non-object tool output: {e}"))),
             Err(msg) => Err(ToolError::Execution(msg)),
         }
     }

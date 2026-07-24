@@ -136,7 +136,7 @@ impl McpProcess {
             anyhow::bail!("expected initialize response message, got: {initialized:?}")
         };
         assert_eq!(jsonrpc, "2.0");
-        assert_eq!(id, json!(0));
+        assert_eq!(id, Some(json!(0)));
         // mcp-host's ResourcesCapability struct doesn't yet carry a
         // `listTemplates` flag, so the on-the-wire capability set
         // omits it even though the server still serves
@@ -151,6 +151,15 @@ impl McpProcess {
                     "resources": {
                         "listChanged": true,
                         "subscribe": false
+                    },
+                    "tasks": {
+                        "list": {},
+                        "cancel": {},
+                        "requests": {
+                            "tools": {
+                                "call": {}
+                            }
+                        }
                     },
                 },
                 "instructions": "Chaos — provider-agnostic coding agent",
@@ -256,6 +265,7 @@ impl McpProcess {
     pub async fn send_chaos_tool_call(&mut self, params: ChaosToolParams) -> anyhow::Result<i64> {
         let codex_tool_call_params = CallToolRequestParams {
             meta: None,
+            task: None,
             name: "chaos".into(),
             arguments: Some(match serde_json::to_value(params)? {
                 serde_json::Value::Object(map) => map,
@@ -287,7 +297,9 @@ impl McpProcess {
         method: &str,
         params: Option<serde_json::Value>,
     ) -> anyhow::Result<RequestId> {
-        Ok(RequestId::Number(self.send_request(method, params).await?))
+        Ok(RequestId::Number(
+            self.send_request(method, params).await?.into(),
+        ))
     }
 
     pub async fn send_response(
@@ -297,7 +309,7 @@ impl McpProcess {
     ) -> anyhow::Result<()> {
         self.send_jsonrpc_message(JsonRpcMessage::Response(JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
-            id: id.to_value(),
+            id: Some(id.to_value()),
             result: Some(result),
             error: None,
         }))
@@ -374,7 +386,7 @@ impl McpProcess {
                     anyhow::bail!("unexpected JSONRPCMessage error response: {message:?}");
                 }
                 JsonRpcMessage::Response(jsonrpc_response) => {
-                    if jsonrpc_response.id == id_value {
+                    if jsonrpc_response.id.as_ref() == Some(&id_value) {
                         return Ok(jsonrpc_response);
                     }
                 }
@@ -398,7 +410,7 @@ impl McpProcess {
                 JsonRpcMessage::Request(_) => {
                     anyhow::bail!("unexpected JSONRPCMessage::Request: {message:?}");
                 }
-                JsonRpcMessage::Response(ref resp) if resp.id == id_value => {
+                JsonRpcMessage::Response(ref resp) if resp.id.as_ref() == Some(&id_value) => {
                     return Ok(message);
                 }
                 JsonRpcMessage::Response(_) => {}

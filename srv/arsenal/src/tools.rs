@@ -17,7 +17,8 @@ pub fn tool_infos() -> Vec<mcp_host::prelude::ToolInfo> {
 
 pub(crate) fn tool_json_result(result: Result<Value, String>) -> ToolResult {
     match result {
-        Ok(value) => Ok(ToolOutput::json(value)),
+        Ok(value) => ToolOutput::structured(value)
+            .map_err(|e| ToolError::Execution(format!("non-object tool output: {e}"))),
         Err(msg) => Err(ToolError::Execution(msg)),
     }
 }

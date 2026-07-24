@@ -183,8 +183,13 @@ fn resource_info(spec: &builtin_mcp_resources::ChaosBuiltinResourceSpec) -> Reso
     ResourceInfo {
         uri: spec.uri.to_string(),
         name: spec.name.to_string(),
+        title: None,
         description: Some(spec.description.to_string()),
         mime_type: Some(spec.mime_type.to_string()),
+        icons: None,
+        annotations: None,
+        size: None,
+        meta: None,
     }
 }
 
@@ -197,6 +202,9 @@ fn template_info(
         title: None,
         description: Some(spec.description.to_string()),
         mime_type: Some(spec.mime_type.to_string()),
+        icons: None,
+        annotations: None,
+        meta: None,
     }
 }
 

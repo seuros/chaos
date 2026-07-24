@@ -144,6 +144,7 @@ pub async fn run_main(
         .with_tools(true)
         .with_resources(true, false)
         .with_resource_templates()
+        .with_tasks(true, true)
         .with_instructions("Chaos — provider-agnostic coding agent")
         .on_initialized({
             let outgoing = outgoing.clone();

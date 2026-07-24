@@ -55,6 +55,15 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
             "resources": {
                 "listChanged": true,
                 "subscribe": false
+            },
+            "tasks": {
+                "list": {},
+                "cancel": {},
+                "requests": {
+                    "tools": {
+                        "call": {}
+                    }
+                }
             }
         })
     );
@@ -91,7 +100,7 @@ async fn tools_list_before_initialize_is_rejected() -> Result<()> {
     };
     let error = resp.error.as_ref().expect("expected error response");
 
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
     assert_eq!(
         error.data,
@@ -130,7 +139,7 @@ async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
         anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
 
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     let tools = resp.result.as_ref().unwrap()["tools"]
         .as_array()
@@ -158,7 +167,7 @@ async fn resources_are_listed_after_initialize() -> Result<()> {
     let JsonRpcMessage::Response(resp) = message else {
         anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
 
     let resources = resp.result.as_ref().unwrap()["resources"]
@@ -192,7 +201,7 @@ async fn resource_templates_are_listed_after_initialize() -> Result<()> {
     let JsonRpcMessage::Response(resp) = message else {
         anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
 
     let templates = resp.result.as_ref().unwrap()["resourceTemplates"]
@@ -225,7 +234,7 @@ async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
     let JsonRpcMessage::Response(resp) = message else {
         anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
 
     assert_eq!(
@@ -261,7 +270,7 @@ async fn spool_resource_can_be_read_after_initialize() -> Result<()> {
     let JsonRpcMessage::Response(resp) = message else {
         anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
 
     assert_eq!(
@@ -316,7 +325,7 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
     let JsonRpcMessage::Response(resp) = message else {
         anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
 
     let text = resp.result.as_ref().unwrap()["contents"][0]["text"]
@@ -363,7 +372,7 @@ async fn spool_resource_reads_rows_from_runtime_db_even_without_preopened_state_
     let JsonRpcMessage::Response(resp) = message else {
         anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
 
     let text = resp.result.as_ref().unwrap()["contents"][0]["text"]
@@ -402,7 +411,7 @@ async fn resource_subscribe_is_rejected_when_capability_disabled() -> Result<()>
     };
     let error = resp.error.as_ref().expect("expected error response");
 
-    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(resp.id, Some(request_id.to_value()));
     assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
     assert_eq!(
         error.message,

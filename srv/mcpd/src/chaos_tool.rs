@@ -232,7 +232,7 @@ impl ChaosMcpServer {
             (prompt, Some(cfg))
         };
 
-        let progress_token = ctx.progress_token().map(String::from);
+        let progress_token = ctx.progress_token().map(ToString::to_string);
 
         let outcome = chaos_runner::run_chaos_session(chaos_runner::RunChaosSessionArgs {
             request_id,

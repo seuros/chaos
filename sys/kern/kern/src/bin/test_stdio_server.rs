@@ -35,7 +35,7 @@ impl TestStdioServer {
         if let Ok(value) = std::env::var("MCP_TEST_VALUE") {
             payload.insert("env".to_string(), serde_json::Value::String(value));
         }
-        Ok(ToolOutput::json(serde_json::Value::Object(payload)))
+        Ok(ToolOutput::json(payload))
     }
 
     #[mcp_tool(name = "image", read_only = true, open_world = false)]

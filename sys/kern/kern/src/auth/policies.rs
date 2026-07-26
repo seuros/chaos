@@ -16,7 +16,7 @@ const REFRESH_TOKEN_ACCOUNT_MISMATCH_MESSAGE: &str = "Your access token could no
 
 // UnauthorizedRecovery is a state machine that handles 401 recovery.
 //
-// Managed mode (ChatGPT auth):
+// Managed mode (ChatGPT or xAI auth):
 //   Reload → RefreshToken → Done
 // External mode (external ChatGPT auth tokens):
 //   ExternalRefresh → Done
@@ -98,7 +98,7 @@ impl UnauthorizedRecovery {
             .manager
             .auth_cached()
             .as_ref()
-            .is_some_and(ChaosAuth::is_chatgpt_auth)
+            .is_some_and(ChaosAuth::supports_unauthorized_recovery)
         {
             return false;
         }
@@ -119,9 +119,9 @@ impl UnauthorizedRecovery {
             .manager
             .auth_cached()
             .as_ref()
-            .is_some_and(ChaosAuth::is_chatgpt_auth)
+            .is_some_and(ChaosAuth::supports_unauthorized_recovery)
         {
-            return "not_chatgpt_auth";
+            return "unsupported_auth";
         }
 
         if let RecoveryMachine::External(_) = &self.machine

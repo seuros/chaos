@@ -159,6 +159,23 @@ pub fn parse_chatgpt_jwt_claims(jwt: &str) -> Result<IdTokenInfo, IdTokenInfoErr
     }
 }
 
+pub(crate) fn parse_jwt_subject(jwt: &str) -> Result<Option<String>, IdTokenInfoError> {
+    #[derive(Deserialize)]
+    struct SubjectClaim {
+        #[serde(default)]
+        sub: Option<String>,
+    }
+
+    let mut parts = jwt.split('.');
+    let (_header_b64, payload_b64, _sig_b64) = match (parts.next(), parts.next(), parts.next()) {
+        (Some(h), Some(p), Some(s)) if !h.is_empty() && !p.is_empty() && !s.is_empty() => (h, p, s),
+        _ => return Err(IdTokenInfoError::InvalidFormat),
+    };
+    let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload_b64)?;
+    let claims: SubjectClaim = serde_json::from_slice(&payload_bytes)?;
+    Ok(claims.sub)
+}
+
 fn deserialize_id_token<'de, D>(deserializer: D) -> Result<IdTokenInfo, D::Error>
 where
     D: serde::Deserializer<'de>,

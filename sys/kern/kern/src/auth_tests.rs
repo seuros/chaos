@@ -4,6 +4,7 @@ use crate::config::ConfigBuilder;
 use crate::test_support::EnvVarGuard;
 use crate::token_data::KnownPlan as InternalKnownPlan;
 use crate::token_data::PlanType as InternalPlanType;
+use base64::Engine;
 use chaos_ipc::account::PlanType as AccountPlanType;
 
 use chaos_ipc::config_types::ForcedLoginMethod;
@@ -18,6 +19,55 @@ mod auth_test_fixtures;
 use auth_test_fixtures::build_fake_jwt;
 use auth_test_fixtures::openai_auth;
 use auth_test_fixtures::parse_id_token;
+
+fn access_token_with_expiration(expiration: i64) -> String {
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(serde_json::json!({ "exp": expiration }).to_string());
+    format!("{header}.{payload}.signature")
+}
+
+#[test]
+fn unauthorized_recovery_supports_external_chatgpt_and_managed_xai_auth() {
+    let chaos_home = tempdir().unwrap();
+    let external_access_token = build_fake_jwt(None, None);
+    login_with_chatgpt_auth_tokens(
+        chaos_home.path(),
+        &external_access_token,
+        "workspace-123",
+        Some("pro"),
+    )
+    .expect("external ChatGPT auth should persist");
+    let external = load_auth(
+        chaos_home.path(),
+        false,
+        AuthCredentialsStoreMode::Ephemeral,
+    )
+    .expect("external ChatGPT auth should load")
+    .expect("external ChatGPT auth should exist");
+    assert!(external.supports_unauthorized_recovery());
+
+    let xai_home = tempdir().unwrap();
+    login_with_xai_oauth_tokens(
+        xai_home.path(),
+        Some(&build_fake_jwt(None, None)),
+        "xai-access",
+        "xai-refresh",
+        AuthCredentialsStoreMode::File,
+    )
+    .expect("xAI auth should persist");
+    let xai = load_auth_for_provider(
+        xai_home.path(),
+        "xai",
+        false,
+        AuthCredentialsStoreMode::File,
+    )
+    .expect("xAI auth should load")
+    .expect("xAI auth should exist");
+    assert!(xai.supports_unauthorized_recovery());
+
+    assert!(!ChaosAuth::from_api_key("api-key").supports_unauthorized_recovery());
+}
 
 #[tokio::test]
 async fn refresh_without_id_token() {
@@ -113,6 +163,64 @@ async fn concurrent_refresh_single_flights_to_one_request() {
     );
     first.expect("first refresh should succeed");
     second.expect("second refresh should succeed");
+
+    server.verify().await;
+}
+
+#[tokio::test]
+#[serial(xai_refresh_token_url_override)]
+async fn provider_scoped_xai_auth_refreshes_and_preserves_identity() {
+    core_test_support::skip_if_no_network!();
+
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::body_string_contains;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+
+    let chaos_home = tempdir().unwrap();
+    let identity_token = build_fake_jwt(None, None);
+    login_with_xai_oauth_tokens(
+        chaos_home.path(),
+        Some(&identity_token),
+        &access_token_with_expiration(0),
+        "initial-xai-refresh",
+        AuthCredentialsStoreMode::File,
+    )
+    .expect("xAI login should persist");
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth2/token"))
+        .and(body_string_contains("grant_type=refresh_token"))
+        .and(body_string_contains("refresh_token=initial-xai-refresh"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "refreshed-xai-access",
+            "refresh_token": "refreshed-xai-refresh"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let _guard = EnvVarGuard::set(
+        crate::auth::XAI_REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR,
+        format!("{}/oauth2/token", server.uri()),
+    );
+
+    let manager = AuthManager::shared(
+        chaos_home.path().to_path_buf(),
+        false,
+        AuthCredentialsStoreMode::File,
+    );
+    let auth = manager
+        .fresh_auth_for_provider("xai")
+        .await
+        .expect("xAI auth should load");
+    assert_eq!(auth.auth_mode(), AuthMode::Xai);
+    let tokens = auth.get_token_data().expect("xAI tokens should exist");
+    assert_eq!(tokens.id_token.raw_jwt, identity_token);
+    assert_eq!(tokens.access_token, "refreshed-xai-access");
+    assert_eq!(tokens.refresh_token, "refreshed-xai-refresh");
 
     server.verify().await;
 }

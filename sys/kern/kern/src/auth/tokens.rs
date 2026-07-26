@@ -1,7 +1,7 @@
 //! Token storage, rotation, and validation logic.
 //!
 //! This module owns the `AuthManager` type and the low-level helpers for
-//! persisting and refreshing ChatGPT OAuth tokens.
+//! persisting and refreshing managed provider OAuth tokens.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -25,6 +25,7 @@ use crate::error::RefreshTokenFailedReason;
 use crate::token_data::TokenData;
 use crate::token_data::parse_chatgpt_jwt_claims;
 use crate::util::try_parse_error_message;
+use base64::Engine;
 use codex_client::ChaosHttpClient;
 use jiff::Timestamp;
 use rama::http::StatusCode;
@@ -40,10 +41,25 @@ const REFRESH_TOKEN_UNKNOWN_MESSAGE: &str =
     "Your access token could not be refreshed. Please log out and sign in again.";
 const REFRESH_TOKEN_ACCOUNT_MISMATCH_MESSAGE: &str = "Your access token could not be refreshed because you have since logged out or signed in to another account. Please sign in again.";
 const REFRESH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const XAI_REFRESH_TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
+const XAI_CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
+const XAI_REFRESH_SKEW_SECONDS: i64 = 60;
+const XAI_OPAQUE_TOKEN_REFRESH_INTERVAL_MINUTES: i64 = 5;
 pub(super) use super::REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR;
+pub(super) use super::XAI_REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR;
 
 // Shared constant for token refresh (client id used for oauth token refresh flow)
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+
+fn jwt_expiration(token: &str) -> Option<Timestamp> {
+    let payload = token.split('.').nth(1)?;
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let claims = serde_json::from_slice::<serde_json::Value>(&payload).ok()?;
+    let expires_at = claims.get("exp")?.as_i64()?;
+    Timestamp::from_second(expires_at).ok()
+}
 
 #[derive(Serialize)]
 pub(super) struct RefreshRequest {
@@ -57,6 +73,13 @@ pub(super) struct RefreshResponse {
     pub(super) id_token: Option<String>,
     pub(super) access_token: Option<String>,
     pub(super) refresh_token: Option<String>,
+}
+
+#[derive(Serialize)]
+struct XaiRefreshRequest {
+    client_id: &'static str,
+    grant_type: &'static str,
+    refresh_token: String,
 }
 
 pub(super) fn refresh_token_endpoint() -> String {
@@ -136,6 +159,60 @@ pub(super) async fn request_chatgpt_token_refresh(
             )))
         }
     }
+}
+
+async fn request_xai_token_refresh(
+    refresh_token: String,
+    client: &ChaosHttpClient,
+) -> Result<RefreshResponse, RefreshTokenError> {
+    let request = XaiRefreshRequest {
+        client_id: XAI_CLIENT_ID,
+        grant_type: "refresh_token",
+        refresh_token,
+    };
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs([
+            ("client_id", request.client_id),
+            ("grant_type", request.grant_type),
+            ("refresh_token", request.refresh_token.as_str()),
+        ])
+        .finish();
+    let endpoint = std::env::var(XAI_REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR)
+        .unwrap_or_else(|_| XAI_REFRESH_TOKEN_URL.to_string());
+    let response = client
+        .post(&endpoint)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Accept", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|err| RefreshTokenError::Transient(std::io::Error::other(err)))?;
+    let status = response.status();
+    if status.is_success() {
+        return response
+            .json::<RefreshResponse>()
+            .await
+            .map_err(|err| RefreshTokenError::Transient(std::io::Error::other(err)));
+    }
+
+    let body = response.text().await.unwrap_or_default();
+    let message = try_parse_error_message(&body);
+    let error_code = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|value| value.get("error")?.as_str().map(str::to_owned));
+    if matches!(
+        error_code.as_deref(),
+        Some("invalid_grant" | "invalid_client")
+    ) || matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+    {
+        return Err(RefreshTokenError::Permanent(RefreshTokenFailedError::new(
+            RefreshTokenFailedReason::Other,
+            format!("Your xAI connection could not be refreshed: {message}. Please sign in again."),
+        )));
+    }
+    Err(RefreshTokenError::Transient(std::io::Error::other(
+        format!("Failed to refresh xAI token: {status}: {message}"),
+    )))
 }
 
 pub(super) fn classify_refresh_token_failure(body: &str) -> RefreshTokenFailedError {
@@ -239,12 +316,13 @@ pub(super) enum ReloadOutcome {
 #[derive(Debug)]
 pub struct AuthManager {
     pub(super) chaos_home: PathBuf,
+    pub(super) provider_id: String,
     pub(super) inner: RwLock<CachedAuth>,
     pub(super) enable_codex_api_key_env: bool,
     pub(super) auth_credentials_store_mode: AuthCredentialsStoreMode,
     pub(super) forced_chatgpt_workspace_id: RwLock<Option<String>>,
     /// Single-flights `refresh_token_from_authority`.
-    pub(super) refresh_lock: tokio::sync::Mutex<()>,
+    pub(super) refresh_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AuthManager {
@@ -266,6 +344,7 @@ impl AuthManager {
         .flatten();
         Self {
             chaos_home,
+            provider_id: DEFAULT_AUTH_PROVIDER_ID.to_string(),
             inner: RwLock::new(CachedAuth {
                 auth: managed_auth,
                 external_refresher: None,
@@ -273,12 +352,13 @@ impl AuthManager {
             enable_codex_api_key_env,
             auth_credentials_store_mode,
             forced_chatgpt_workspace_id: RwLock::new(None),
-            refresh_lock: tokio::sync::Mutex::new(()),
+            refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
     /// Create an AuthManager with a specific ChaosAuth, for testing only.
     pub(crate) fn from_auth_for_testing(auth: ChaosAuth) -> Arc<Self> {
+        let provider_id = auth.provider_id().to_string();
         let cached = CachedAuth {
             auth: Some(auth),
             external_refresher: None,
@@ -286,11 +366,12 @@ impl AuthManager {
 
         Arc::new(Self {
             chaos_home: PathBuf::from("non-existent"),
+            provider_id,
             inner: RwLock::new(cached),
             enable_codex_api_key_env: false,
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             forced_chatgpt_workspace_id: RwLock::new(None),
-            refresh_lock: tokio::sync::Mutex::new(()),
+            refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
 
@@ -299,17 +380,19 @@ impl AuthManager {
         auth: ChaosAuth,
         chaos_home: PathBuf,
     ) -> Arc<Self> {
+        let provider_id = auth.provider_id().to_string();
         let cached = CachedAuth {
             auth: Some(auth),
             external_refresher: None,
         };
         Arc::new(Self {
             chaos_home,
+            provider_id,
             inner: RwLock::new(cached),
             enable_codex_api_key_env: false,
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             forced_chatgpt_workspace_id: RwLock::new(None),
-            refresh_lock: tokio::sync::Mutex::new(()),
+            refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
 
@@ -319,7 +402,7 @@ impl AuthManager {
     }
 
     /// Current cached auth (clone). May be `None` if not logged in or load failed.
-    /// Refreshes cached ChatGPT tokens if they are stale before returning.
+    /// Refreshes cached managed OAuth tokens if they are stale before returning.
     pub async fn auth(&self) -> Option<ChaosAuth> {
         let auth = self.auth_cached()?;
         if let Err(err) = self.refresh_if_stale(&auth).await {
@@ -379,6 +462,7 @@ impl AuthManager {
             (Some(a), Some(b)) => match (a.api_auth_mode(), b.api_auth_mode()) {
                 (ApiAuthMode::ApiKey, ApiAuthMode::ApiKey) => a.api_key() == b.api_key(),
                 (ApiAuthMode::Chatgpt, ApiAuthMode::Chatgpt)
+                | (ApiAuthMode::Xai, ApiAuthMode::Xai)
                 | (ApiAuthMode::ChatgptAuthTokens, ApiAuthMode::ChatgptAuthTokens) => {
                     a.get_current_auth_json() == b.get_current_auth_json()
                 }
@@ -397,17 +481,28 @@ impl AuthManager {
     }
 
     fn load_auth_from_storage(&self) -> Option<ChaosAuth> {
-        load_auth(
-            &self.chaos_home,
-            self.enable_codex_api_key_env,
-            self.auth_credentials_store_mode,
-        )
-        .ok()
-        .flatten()
+        if self.provider_id == DEFAULT_AUTH_PROVIDER_ID {
+            load_auth(
+                &self.chaos_home,
+                self.enable_codex_api_key_env,
+                self.auth_credentials_store_mode,
+            )
+            .ok()
+            .flatten()
+        } else {
+            load_auth_for_provider(
+                &self.chaos_home,
+                &self.provider_id,
+                /*enable_codex_api_key_env*/ false,
+                self.auth_credentials_store_mode,
+            )
+            .ok()
+            .flatten()
+        }
     }
 
     pub fn auth_for_provider(&self, provider_id: &str) -> Option<ChaosAuth> {
-        if provider_id == DEFAULT_AUTH_PROVIDER_ID {
+        if provider_id == self.provider_id {
             return self.auth_cached();
         }
 
@@ -419,6 +514,41 @@ impl AuthManager {
         )
         .ok()
         .flatten()
+    }
+
+    /// Resolve provider-scoped auth and refresh managed OAuth credentials when stale.
+    pub async fn fresh_auth_for_provider(self: &Arc<Self>, provider_id: &str) -> Option<ChaosAuth> {
+        if provider_id == self.provider_id {
+            return self.auth().await;
+        }
+        self.for_provider(provider_id).auth().await
+    }
+
+    /// Create a provider-scoped manager sharing this manager's credential store settings.
+    pub fn for_provider(self: &Arc<Self>, provider_id: &str) -> Arc<Self> {
+        if provider_id == self.provider_id {
+            return Arc::clone(self);
+        }
+        let managed_auth = load_auth_for_provider(
+            &self.chaos_home,
+            provider_id,
+            /*enable_codex_api_key_env*/ false,
+            self.auth_credentials_store_mode,
+        )
+        .ok()
+        .flatten();
+        Arc::new(Self {
+            chaos_home: self.chaos_home.clone(),
+            provider_id: provider_id.to_string(),
+            inner: RwLock::new(CachedAuth {
+                auth: managed_auth,
+                external_refresher: None,
+            }),
+            enable_codex_api_key_env: false,
+            auth_credentials_store_mode: self.auth_credentials_store_mode,
+            forced_chatgpt_workspace_id: RwLock::new(None),
+            refresh_lock: Arc::clone(&self.refresh_lock),
+        })
     }
 
     fn set_cached_auth(&self, new_auth: Option<ChaosAuth>) -> bool {
@@ -548,6 +678,16 @@ impl AuthManager {
                     .await?;
                 Ok(())
             }
+            ChaosAuth::Xai(xai_auth) => {
+                let token_data = xai_auth.current_token_data().ok_or_else(|| {
+                    RefreshTokenError::Transient(std::io::Error::other(
+                        "Token data is not available.",
+                    ))
+                })?;
+                self.refresh_and_persist_xai_token(&xai_auth, token_data.refresh_token)
+                    .await?;
+                Ok(())
+            }
             ChaosAuth::ApiKey(_) => unreachable!("returned above"),
         }
     }
@@ -574,16 +714,16 @@ impl AuthManager {
     ) -> Result<bool, RefreshTokenError> {
         use jiff::ToSpan;
 
-        let chatgpt_auth = match auth {
-            ChaosAuth::Chatgpt(chatgpt_auth) => chatgpt_auth,
+        let managed_auth = match auth {
+            ChaosAuth::Chatgpt(auth) | ChaosAuth::Xai(auth) => auth,
             _ => return Ok(false),
         };
 
-        let auth_dot_json = match chatgpt_auth.current_auth_json() {
+        let auth_dot_json = match managed_auth.current_auth_json() {
             Some(auth_dot_json) => auth_dot_json,
             None => return Ok(false),
         };
-        let Some(record) = auth_dot_json.provider_record(chatgpt_auth.provider_id()) else {
+        let Some(record) = auth_dot_json.provider_record(managed_auth.provider_id()) else {
             return Ok(false);
         };
         let tokens = match record.tokens {
@@ -595,14 +735,28 @@ impl AuthManager {
             None => return Ok(false),
         };
 
-        const TOKEN_REFRESH_INTERVAL: i64 = 8;
-        if last_refresh
-            >= Timestamp::now()
-                .checked_sub(TOKEN_REFRESH_INTERVAL.saturating_mul(24).hours())
-                .unwrap_or(Timestamp::now())
-        {
+        let now = Timestamp::now();
+        let should_refresh = match auth {
+            ChaosAuth::Xai(_) => {
+                let refresh_deadline = now
+                    .checked_add(XAI_REFRESH_SKEW_SECONDS.seconds())
+                    .unwrap_or(now);
+                jwt_expiration(&tokens.access_token).map_or_else(
+                    || {
+                        last_refresh
+                            < now
+                                .checked_sub(XAI_OPAQUE_TOKEN_REFRESH_INTERVAL_MINUTES.minutes())
+                                .unwrap_or(now)
+                    },
+                    |expires_at| expires_at <= refresh_deadline,
+                )
+            }
+            _ => last_refresh < now.checked_sub((8 * 24).hours()).unwrap_or(now),
+        };
+        if !should_refresh {
             return Ok(false);
         }
+        let _guard = self.refresh_lock.lock().await;
         let expected_account_id = tokens.account_id.clone();
         let refresh_token = tokens.refresh_token;
         if let Some(expected_account_id) = expected_account_id.as_deref() {
@@ -623,8 +777,17 @@ impl AuthManager {
             }
         }
 
-        self.refresh_and_persist_chatgpt_token(chatgpt_auth, refresh_token)
-            .await?;
+        match auth {
+            ChaosAuth::Chatgpt(_) => {
+                self.refresh_and_persist_chatgpt_token(managed_auth, refresh_token)
+                    .await?;
+            }
+            ChaosAuth::Xai(_) => {
+                self.refresh_and_persist_xai_token(managed_auth, refresh_token)
+                    .await?;
+            }
+            _ => unreachable!("managed auth was matched above"),
+        }
         Ok(true)
     }
 
@@ -714,6 +877,24 @@ impl AuthManager {
         .map_err(RefreshTokenError::from)?;
         self.reload();
 
+        Ok(())
+    }
+
+    async fn refresh_and_persist_xai_token(
+        &self,
+        auth: &ChatgptAuth,
+        refresh_token: String,
+    ) -> Result<(), RefreshTokenError> {
+        let refresh_response = request_xai_token_refresh(refresh_token, auth.client()).await?;
+        persist_tokens(
+            auth.storage(),
+            auth.provider_id(),
+            refresh_response.id_token,
+            refresh_response.access_token,
+            refresh_response.refresh_token,
+        )
+        .map_err(RefreshTokenError::from)?;
+        self.reload();
         Ok(())
     }
 }

@@ -176,6 +176,7 @@ impl AuthRequestTelemetryContext {
             auth_mode: auth_mode.map(|mode| match mode {
                 AuthMode::ApiKey => "ApiKey",
                 AuthMode::Chatgpt => "Chatgpt",
+                AuthMode::Xai => "Xai",
             }),
             auth_header_attached: api_auth.auth_header_attached(),
             auth_header_name: api_auth.auth_header_name(),

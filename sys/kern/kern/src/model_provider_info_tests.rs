@@ -101,3 +101,31 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
     assert_eq!(expected_provider, provider);
 }
+
+#[test]
+fn xai_subscription_auth_adds_cli_token_header_only_for_oauth() {
+    let provider = built_in_model_providers()
+        .remove("xai")
+        .expect("xAI provider should be built in");
+
+    let oauth = provider
+        .to_api_provider(Some(AuthMode::Xai))
+        .expect("xAI OAuth provider should build");
+    assert_eq!(
+        oauth.base_url, "https://cli-chat-proxy.grok.com/v1",
+        "subscription auth must use xAI's CLI proxy rather than the API-key endpoint"
+    );
+    assert_eq!(
+        oauth
+            .headers
+            .get(XAI_TOKEN_AUTH_HEADER)
+            .and_then(|value| value.to_str().ok()),
+        Some(XAI_TOKEN_AUTH_VALUE)
+    );
+
+    let api_key = provider
+        .to_api_provider(Some(AuthMode::ApiKey))
+        .expect("xAI API-key provider should build");
+    assert_eq!(api_key.base_url, "https://api.x.ai/v1");
+    assert!(api_key.headers.get(XAI_TOKEN_AUTH_HEADER).is_none());
+}

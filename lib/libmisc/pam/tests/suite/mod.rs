@@ -5,3 +5,5 @@ mod auth_test_support;
 mod device_code_login;
 #[path = "login_server_e2e.rs"]
 mod login_server_e2e;
+#[path = "xai_device_code_login.rs"]
+mod xai_device_code_login;

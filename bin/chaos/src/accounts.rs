@@ -22,6 +22,10 @@ use chaos_pam::DeviceCode;
 use chaos_pam::LoginFlowMode;
 use chaos_pam::LoginFlowUpdate;
 use chaos_pam::ServerOptions;
+use chaos_pam::XaiDeviceCode;
+use chaos_pam::XaiDeviceCodeOptions;
+use chaos_pam::complete_xai_device_code_login;
+use chaos_pam::request_xai_device_code;
 use chaos_pam::spawn_login_flow;
 use std::io::IsTerminal;
 use std::io::Read;
@@ -34,6 +38,8 @@ use chaos_snitch::open_log_file_layer;
 
 const CHATGPT_LOGIN_DISABLED_MESSAGE: &str =
     "ChatGPT account connection is disabled. Use an API key connection instead.";
+const ACCOUNT_LOGIN_DISABLED_MESSAGE: &str =
+    "Subscription account connection is disabled. Use an API key connection instead.";
 const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
     "API key connection is disabled. Use a ChatGPT account instead.";
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
@@ -124,6 +130,20 @@ fn print_device_code_prompt(device_code: &DeviceCode) {
             "\nDevice codes are a common phishing target. Never share this code.\n"
         ),
         device_code.verification_url, device_code.user_code
+    );
+}
+
+fn print_xai_device_code_prompt(device_code: &XaiDeviceCode) {
+    eprintln!(
+        concat!(
+            "\nFollow these steps to sign in with xAI using device authorization:\n",
+            "\n1. Open this link in your browser and sign in to your account\n   {}\n",
+            "\n2. If prompted, enter this one-time code (expires in {} minutes)\n   {}\n",
+            "\nDevice codes are a common phishing target. Never share this code.\n"
+        ),
+        device_code.verification_url,
+        device_code.expires_in.div_ceil(60),
+        device_code.user_code
     );
 }
 
@@ -279,7 +299,7 @@ pub fn read_api_key_from_stdin() -> String {
     api_key
 }
 
-/// Connect a ChatGPT account using the OAuth device-code flow.
+/// Connect a supported subscription account using its OAuth device-code flow.
 pub async fn run_connect_with_device_code(
     cli_config_overrides: CliConfigOverrides,
     issuer_base_url: Option<String>,
@@ -287,9 +307,59 @@ pub async fn run_connect_with_device_code(
 ) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
     let _login_log_guards = init_accounts_file_logging(&config);
-    tracing::info!("starting device code account connection flow");
+    tracing::info!(
+        provider_id = %config.model_provider_id,
+        "starting device code account connection flow"
+    );
     if matches!(config.forced_login_method, Some(ForcedLoginMethod::Api)) {
-        eprintln!("{CHATGPT_LOGIN_DISABLED_MESSAGE}");
+        eprintln!("{ACCOUNT_LOGIN_DISABLED_MESSAGE}");
+        std::process::exit(1);
+    }
+    if config
+        .model_provider
+        .supports_auth_method(ProviderAuthMethod::XaiAccount)
+    {
+        let mut opts =
+            XaiDeviceCodeOptions::new(config.chaos_home, config.cli_auth_credentials_store_mode);
+        if let Some(issuer) = issuer_base_url {
+            opts.issuer = issuer;
+        }
+        if let Some(client_id) = client_id {
+            opts.client_id = client_id;
+        }
+        let device_code = match request_xai_device_code(&opts).await {
+            Ok(device_code) => device_code,
+            Err(err) => {
+                eprintln!("Error starting xAI device authorization: {err}");
+                std::process::exit(1);
+            }
+        };
+        print_xai_device_code_prompt(&device_code);
+        match complete_xai_device_code_login(opts, device_code).await {
+            Ok(()) => {
+                eprintln!(
+                    "Successfully connected {} using your xAI account",
+                    config.model_provider.name
+                );
+                std::process::exit(0);
+            }
+            Err(err) => {
+                eprintln!(
+                    "Error connecting {} with device authorization: {err}",
+                    config.model_provider.name
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+    if !config
+        .model_provider
+        .supports_auth_method(ProviderAuthMethod::ChatgptAccount)
+    {
+        eprintln!(
+            "{} does not support subscription account connections. Use `chaos --provider {} accounts --with-api-key` instead.",
+            config.model_provider.name, config.model_provider_id
+        );
         std::process::exit(1);
     }
     let forced_chatgpt_workspace_id = config.forced_chatgpt_workspace_id.clone();
@@ -409,6 +479,16 @@ fn describe_provider_record(
         chaos_ipc::api::AuthMode::ChatgptAuthTokens => {
             format!("{provider_name}: externally managed ChatGPT tokens connected")
         }
+        chaos_ipc::api::AuthMode::Xai => {
+            let email = record
+                .tokens
+                .as_ref()
+                .and_then(|tokens| tokens.id_token.email.as_deref());
+            match email {
+                Some(email) => format!("{provider_name}: xAI account ({email})"),
+                None => format!("{provider_name}: xAI account connected"),
+            }
+        }
     }
 }
 
@@ -474,6 +554,9 @@ pub async fn run_accounts_status(cli_config_overrides: CliConfigOverrides) -> ! 
             },
             AuthMode::Chatgpt => {
                 eprintln!("Active connection: {active_provider_name} ChatGPT account")
+            }
+            AuthMode::Xai => {
+                eprintln!("Active connection: {active_provider_name} xAI account")
             }
         }
     } else {

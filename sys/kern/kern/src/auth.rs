@@ -40,6 +40,7 @@ pub use permissions::enforce_login_restrictions;
 pub use permissions::login_with_api_key;
 pub use permissions::login_with_chatgpt_auth_tokens;
 pub use permissions::login_with_provider_api_key;
+pub use permissions::login_with_xai_oauth_tokens;
 pub use policies::UnauthorizedRecovery;
 pub use policies::UnauthorizedRecoveryStepResult;
 pub use tokens::AuthManager;
@@ -56,6 +57,7 @@ pub const DEFAULT_AUTH_PROVIDER_ID: &str = "openai";
 pub enum AuthMode {
     ApiKey,
     Chatgpt,
+    Xai,
 }
 
 impl From<AuthMode> for TelemetryAuthMode {
@@ -63,6 +65,7 @@ impl From<AuthMode> for TelemetryAuthMode {
         match mode {
             AuthMode::ApiKey => TelemetryAuthMode::ApiKey,
             AuthMode::Chatgpt => TelemetryAuthMode::Chatgpt,
+            AuthMode::Xai => TelemetryAuthMode::Xai,
         }
     }
 }
@@ -72,6 +75,7 @@ impl From<AuthMode> for TelemetryAuthMode {
 pub enum ChaosAuth {
     ApiKey(ApiKeyAuth),
     Chatgpt(ChatgptAuth),
+    Xai(ChatgptAuth),
     ChatgptAuthTokens(ChatgptAuthTokens),
 }
 
@@ -106,6 +110,7 @@ impl PartialEq for ChaosAuth {
 }
 
 pub const REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR: &str = "CHAOS_REFRESH_TOKEN_URL_OVERRIDE";
+pub const XAI_REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR: &str = "CHAOS_XAI_REFRESH_TOKEN_URL_OVERRIDE";
 
 #[derive(Debug, Error)]
 pub enum RefreshTokenError {
@@ -191,6 +196,10 @@ impl ChaosAuth {
                 let storage = create_auth_storage(chaos_home.to_path_buf(), storage_mode);
                 Ok(Self::Chatgpt(ChatgptAuth { state, storage }))
             }
+            ApiAuthMode::Xai => {
+                let storage = create_auth_storage(chaos_home.to_path_buf(), storage_mode);
+                Ok(Self::Xai(ChatgptAuth { state, storage }))
+            }
             ApiAuthMode::ChatgptAuthTokens => {
                 Ok(Self::ChatgptAuthTokens(ChatgptAuthTokens { state }))
             }
@@ -214,6 +223,7 @@ impl ChaosAuth {
         match self {
             Self::ApiKey(_) => AuthMode::ApiKey,
             Self::Chatgpt(_) | Self::ChatgptAuthTokens(_) => AuthMode::Chatgpt,
+            Self::Xai(_) => AuthMode::Xai,
         }
     }
 
@@ -221,6 +231,7 @@ impl ChaosAuth {
         match self {
             Self::ApiKey(_) => ApiAuthMode::ApiKey,
             Self::Chatgpt(_) => ApiAuthMode::Chatgpt,
+            Self::Xai(_) => ApiAuthMode::Xai,
             Self::ChatgptAuthTokens(_) => ApiAuthMode::ChatgptAuthTokens,
         }
     }
@@ -233,6 +244,14 @@ impl ChaosAuth {
         self.auth_mode() == AuthMode::Chatgpt
     }
 
+    pub fn is_managed_oauth_auth(&self) -> bool {
+        matches!(self, Self::Chatgpt(_) | Self::Xai(_))
+    }
+
+    fn supports_unauthorized_recovery(&self) -> bool {
+        self.is_managed_oauth_auth() || self.is_external_chatgpt_tokens()
+    }
+
     pub fn is_external_chatgpt_tokens(&self) -> bool {
         matches!(self, Self::ChatgptAuthTokens(_))
     }
@@ -241,7 +260,7 @@ impl ChaosAuth {
     pub fn api_key(&self) -> Option<&str> {
         match self {
             Self::ApiKey(auth) => Some(auth.api_key.as_str()),
-            Self::Chatgpt(_) | Self::ChatgptAuthTokens(_) => None,
+            Self::Chatgpt(_) | Self::Xai(_) | Self::ChatgptAuthTokens(_) => None,
         }
     }
 
@@ -255,7 +274,7 @@ impl ChaosAuth {
     pub fn get_token(&self) -> Result<String, std::io::Error> {
         match self {
             Self::ApiKey(auth) => Ok(auth.api_key.clone()),
-            Self::Chatgpt(_) | Self::ChatgptAuthTokens(_) => {
+            Self::Chatgpt(_) | Self::Xai(_) | Self::ChatgptAuthTokens(_) => {
                 let access_token = self.get_token_data()?.access_token;
                 Ok(access_token)
             }
@@ -306,6 +325,7 @@ impl ChaosAuth {
     pub(crate) fn get_current_auth_json(&self) -> Option<AuthDotJson> {
         let state = match self {
             Self::Chatgpt(auth) => &auth.state,
+            Self::Xai(auth) => &auth.state,
             Self::ChatgptAuthTokens(auth) => &auth.state,
             Self::ApiKey(_) => return None,
         };
@@ -317,6 +337,7 @@ impl ChaosAuth {
     fn get_current_token_data(&self) -> Option<TokenData> {
         let provider_id = match self {
             Self::Chatgpt(auth) => auth.state.provider_id.as_str(),
+            Self::Xai(auth) => auth.state.provider_id.as_str(),
             Self::ChatgptAuthTokens(auth) => auth.state.provider_id.as_str(),
             Self::ApiKey(_) => return None,
         };
@@ -378,6 +399,7 @@ impl ChaosAuth {
         match self {
             Self::ApiKey(auth) => auth.provider_id.as_str(),
             Self::Chatgpt(auth) => auth.state.provider_id.as_str(),
+            Self::Xai(auth) => auth.state.provider_id.as_str(),
             Self::ChatgptAuthTokens(auth) => auth.state.provider_id.as_str(),
         }
     }

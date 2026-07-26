@@ -2,6 +2,7 @@ mod device_code_auth;
 mod login_flow_machine;
 mod pkce;
 mod server;
+mod xai_device_code_auth;
 
 pub use codex_client::BuildCustomCaTransportError as BuildLoginHttpClientError;
 pub use device_code_auth::DeviceCode;
@@ -17,6 +18,12 @@ pub use server::LoginServer;
 pub use server::ServerOptions;
 pub use server::ShutdownHandle;
 pub use server::run_login_server;
+pub use xai_device_code_auth::XAI_OAUTH_CLIENT_ID;
+pub use xai_device_code_auth::XAI_OAUTH_ISSUER;
+pub use xai_device_code_auth::XaiDeviceCode;
+pub use xai_device_code_auth::XaiDeviceCodeOptions;
+pub use xai_device_code_auth::complete_xai_device_code_login;
+pub use xai_device_code_auth::request_xai_device_code;
 
 // Re-export commonly used auth types and helpers from chaos-kern for compatibility
 pub use chaos_ipc::api::AuthMode;

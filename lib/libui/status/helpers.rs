@@ -55,6 +55,11 @@ pub fn compose_account_display(
                 plan,
             })
         }
+        CoreAuthMode::Xai => Some(StatusAccountDisplay::ChatGpt {
+            provider_label,
+            email: auth.get_account_email(),
+            plan: None,
+        }),
     }
 }
 

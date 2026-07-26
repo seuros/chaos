@@ -1794,6 +1794,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "tracing-test",
+ "url",
  "uuid",
  "walkdir",
  "which",

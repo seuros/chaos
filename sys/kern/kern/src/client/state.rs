@@ -353,7 +353,11 @@ impl ModelClient {
                 {
                     manager.auth().await
                 }
-                Some(manager) => manager.auth_for_provider(&self.state.provider_id),
+                Some(manager) => {
+                    manager
+                        .fresh_auth_for_provider(&self.state.provider_id)
+                        .await
+                }
                 None => None,
             }
         };

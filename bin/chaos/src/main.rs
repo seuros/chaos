@@ -190,7 +190,10 @@ struct AccountsCommand {
     )]
     with_api_key: bool,
 
-    #[arg(long = "device-auth")]
+    #[arg(
+        long = "device-auth",
+        help = "Connect the selected provider with a subscription account using device authorization"
+    )]
     use_device_code: bool,
 
     /// EXPERIMENTAL: Use custom OAuth issuer base URL (advanced)

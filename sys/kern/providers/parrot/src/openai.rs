@@ -21,6 +21,12 @@ use crate::ResponsesOptions;
 use crate::SseTelemetry;
 use crate::requests::responses::Compression;
 
+const GROK_SUBSCRIPTION_PROXY_HOST: &str = "cli-chat-proxy.grok.com";
+const GROK_CLIENT_VERSION_HEADER: &str = "x-grok-client-version";
+const GROK_MODEL_OVERRIDE_HEADER: &str = "x-grok-model-override";
+const XAI_TOKEN_AUTH_HEADER: &str = "x-xai-token-auth";
+const XAI_TOKEN_AUTH_VALUE: &str = "xai-grok-cli";
+
 #[derive(Clone, Default)]
 pub struct StaticAuthProvider {
     token: Option<String>,
@@ -148,7 +154,12 @@ where
                 request.model = default_model.clone();
             }
 
-            let options = responses_options_from_turn_request(&request, self.options.clone());
+            let mut options = responses_options_from_turn_request(&request, self.options.clone());
+            insert_grok_subscription_headers(
+                &self.discovery_base_url,
+                &request.model,
+                &mut options.extra_headers,
+            );
             let api_request = crate::adapter::turn_request_to_api_request(
                 request,
                 self.representer.as_representer(),
@@ -233,6 +244,23 @@ fn parse_compression(value: Option<&Value>) -> Compression {
     }
 }
 
+fn is_grok_subscription_proxy(base_url: &str) -> bool {
+    url::Url::parse(base_url).is_ok_and(|url| url.host_str() == Some(GROK_SUBSCRIPTION_PROXY_HOST))
+}
+
+fn insert_grok_subscription_headers(base_url: &str, model: &str, headers: &mut HeaderMap) {
+    if !is_grok_subscription_proxy(base_url) {
+        return;
+    }
+    headers.insert(
+        HeaderName::from_static(GROK_CLIENT_VERSION_HEADER),
+        HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
+    );
+    if let Ok(model) = HeaderValue::from_str(model) {
+        headers.insert(HeaderName::from_static(GROK_MODEL_OVERRIDE_HEADER), model);
+    }
+}
+
 // ── Model discovery ────────────────────────────────────────────────────────
 
 /// Detect native server-side tools a provider supports based on its base URL.
@@ -308,6 +336,11 @@ async fn fetch_openai_models(
     if let Some(token) = token {
         let bearer = format!("Bearer {token}");
         builder = builder.header(rama::http::header::AUTHORIZATION, bearer);
+    }
+    if is_grok_subscription_proxy(base_url) {
+        builder = builder
+            .header(XAI_TOKEN_AUTH_HEADER, XAI_TOKEN_AUTH_VALUE)
+            .header(GROK_CLIENT_VERSION_HEADER, env!("CARGO_PKG_VERSION"));
     }
     let request = builder
         .body(Body::empty())
@@ -457,6 +490,55 @@ mod tests {
                 .turn_state
                 .as_ref()
                 .is_some_and(|state| Arc::ptr_eq(state, &turn_state))
+        );
+    }
+
+    #[test]
+    fn identifies_only_the_official_grok_subscription_proxy() {
+        assert!(is_grok_subscription_proxy(
+            "https://cli-chat-proxy.grok.com/v1"
+        ));
+        assert!(!is_grok_subscription_proxy("https://api.x.ai/v1"));
+        assert!(!is_grok_subscription_proxy(
+            "https://cli-chat-proxy.grok.com.attacker.example/v1"
+        ));
+    }
+
+    #[test]
+    fn grok_subscription_requests_route_by_model_header() {
+        let request = TurnRequest {
+            model: "grok-4.3".to_string(),
+            instructions: String::new(),
+            input: vec![],
+            tools: vec![],
+            parallel_tool_calls: false,
+            reasoning: None,
+            output_schema: None,
+            verbosity: None,
+            turn_state: None,
+            extensions: serde_json::Map::new(),
+        };
+        let mut options =
+            responses_options_from_turn_request(&request, ResponsesOptions::default());
+        insert_grok_subscription_headers(
+            "https://cli-chat-proxy.grok.com/v1",
+            &request.model,
+            &mut options.extra_headers,
+        );
+
+        assert_eq!(
+            options
+                .extra_headers
+                .get(GROK_MODEL_OVERRIDE_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some("grok-4.3")
+        );
+        assert_eq!(
+            options
+                .extra_headers
+                .get(GROK_CLIENT_VERSION_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some(env!("CARGO_PKG_VERSION"))
         );
     }
 }

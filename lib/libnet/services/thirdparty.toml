@@ -37,6 +37,7 @@ base_url             = "https://api.x.ai/v1"
 env_key              = "XAI_API_KEY"
 env_key_instructions = "Get an API key at https://console.x.ai and export it as XAI_API_KEY."
 wire_api             = "responses"
+auth.methods         = ["api_key", "xai_account"]
 
 [zai]
 name                 = "Z.ai"

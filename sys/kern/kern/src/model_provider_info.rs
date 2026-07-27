@@ -24,6 +24,9 @@ use std::time::Duration;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;
 const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;
 const DEFAULT_REQUEST_MAX_RETRIES: u64 = 4;
+const XAI_TOKEN_AUTH_HEADER: &str = "x-xai-token-auth";
+const XAI_TOKEN_AUTH_VALUE: &str = "xai-grok-cli";
+const XAI_ACCOUNT_DEFAULT_BASE_URL: &str = "https://cli-chat-proxy.grok.com/v1";
 /// Hard cap for user-configured `stream_max_retries`.
 const MAX_STREAM_MAX_RETRIES: u64 = 100;
 /// Hard cap for user-configured `request_max_retries`.
@@ -33,6 +36,8 @@ const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const OPENAI_DEFAULT_BASE_URL: &str = chaos_services::openai::OPENAI_API_BASE;
 const CHATGPT_DEFAULT_BASE_URL: &str = chaos_services::openai::CHATGPT_BACKEND_BASE;
+
+pub const XAI_PROVIDER_ID: &str = "xai";
 
 const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic";
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
@@ -92,6 +97,7 @@ impl<'de> Deserialize<'de> for WireApi {
 pub enum ProviderAuthMethod {
     ApiKey,
     ChatgptAccount,
+    XaiAccount,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -204,6 +210,10 @@ pub struct ModelProviderInfo {
 
 impl ModelProviderInfo {
     pub(crate) fn effective_base_url(&self, auth_mode: Option<AuthMode>) -> String {
+        if self.supports_xai_account_auth() && matches!(auth_mode, Some(AuthMode::Xai)) {
+            return XAI_ACCOUNT_DEFAULT_BASE_URL.to_string();
+        }
+
         // Only route to the ChatGPT backend when the provider actually uses
         // OpenAI auth.  Self-authenticated providers (env_key, bearer token)
         // must never be redirected to chatgpt.com.
@@ -253,7 +263,13 @@ impl ModelProviderInfo {
         &self,
         auth_mode: Option<AuthMode>,
     ) -> crate::error::Result<ApiProvider> {
-        let headers = self.build_header_map()?;
+        let mut headers = self.build_header_map()?;
+        if self.supports_xai_account_auth() && matches!(auth_mode, Some(AuthMode::Xai)) {
+            headers.insert(
+                HeaderName::from_static(XAI_TOKEN_AUTH_HEADER),
+                HeaderValue::from_static(XAI_TOKEN_AUTH_VALUE),
+            );
+        }
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
             base_delay: Duration::from_millis(200),
@@ -338,12 +354,20 @@ impl ModelProviderInfo {
         self.supports_auth_method(ProviderAuthMethod::ChatgptAccount)
     }
 
+    pub fn supports_xai_account_auth(&self) -> bool {
+        self.supports_auth_method(ProviderAuthMethod::XaiAccount)
+    }
+
+    pub fn supports_account_auth(&self) -> bool {
+        self.supports_chatgpt_account_auth() || self.supports_xai_account_auth()
+    }
+
     pub fn supports_api_key_auth(&self) -> bool {
         self.supports_auth_method(ProviderAuthMethod::ApiKey)
     }
 
     pub fn requires_managed_auth(&self) -> bool {
-        self.supports_chatgpt_account_auth() || self.supports_api_key_auth()
+        self.supports_account_auth() || self.supports_api_key_auth()
     }
 
     pub fn create_anthropic_provider() -> ModelProviderInfo {

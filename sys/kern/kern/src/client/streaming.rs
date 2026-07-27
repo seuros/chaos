@@ -519,7 +519,8 @@ impl ModelClientSession {
         let auth_manager = self.client.state.auth_manager.clone();
         let mut auth_recovery = auth_manager
             .as_ref()
-            .map(crate::auth::AuthManager::unauthorized_recovery);
+            .map(|manager| manager.for_provider(&self.client.state.provider_id))
+            .map(|manager| manager.unauthorized_recovery());
         let mut pending_retry = PendingUnauthorizedRetry::default();
         loop {
             let client_setup = self.client.current_client_setup().await?;

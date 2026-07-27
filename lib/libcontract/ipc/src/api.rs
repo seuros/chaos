@@ -41,7 +41,7 @@ impl GitSha {
     }
 }
 
-/// Authentication mode for OpenAI-backed providers.
+/// Authentication mode for managed model-provider credentials.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthMode {
@@ -49,6 +49,8 @@ pub enum AuthMode {
     ApiKey,
     /// ChatGPT OAuth managed by Chaos (tokens persisted and refreshed by Chaos).
     Chatgpt,
+    /// xAI OAuth managed by Chaos (tokens persisted and refreshed by Chaos).
+    Xai,
     /// [UNSTABLE] FOR OPENAI INTERNAL USE ONLY - DO NOT USE.
     ///
     /// ChatGPT auth tokens are supplied by an external host app and are only

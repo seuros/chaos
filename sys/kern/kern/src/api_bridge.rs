@@ -18,6 +18,7 @@ use crate::error::UsageLimitReachedError;
 use crate::model_provider_info::ANTHROPIC_PROVIDER_ID;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::OPENAI_PROVIDER_ID;
+use crate::model_provider_info::XAI_PROVIDER_ID;
 use crate::model_provider_info::is_anthropic_wire;
 
 pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
@@ -199,6 +200,18 @@ pub(crate) fn auth_provider_from_auth(
         });
     }
 
+    if let Some(auth) = auth.as_ref()
+        && !auth.is_api_key_auth()
+    {
+        return Ok(CoreAuthProvider {
+            token: Some(auth.get_token()?),
+            account_id: auth
+                .is_chatgpt_auth()
+                .then(|| auth.get_account_id())
+                .flatten(),
+        });
+    }
+
     match provider.api_key() {
         Ok(Some(api_key)) => {
             return Ok(CoreAuthProvider {
@@ -251,7 +264,7 @@ pub(crate) fn provider_auth_missing(provider: &ModelProviderInfo) -> ChaosErr {
         provider_name: provider.name.clone(),
         env_key: provider.env_key.clone(),
         env_key_instructions: provider.env_key_instructions.clone(),
-        supports_oauth: provider.supports_chatgpt_account_auth(),
+        supports_oauth: provider.supports_account_auth(),
     })
 }
 
@@ -261,6 +274,9 @@ pub(crate) fn provider_auth_missing(provider: &ModelProviderInfo) -> ChaosErr {
 fn stable_provider_id(provider: &ModelProviderInfo) -> String {
     if provider.is_openai() {
         return OPENAI_PROVIDER_ID.to_string();
+    }
+    if provider.supports_xai_account_auth() {
+        return XAI_PROVIDER_ID.to_string();
     }
     if is_anthropic_wire(provider.base_url.as_deref()) {
         return ANTHROPIC_PROVIDER_ID.to_string();

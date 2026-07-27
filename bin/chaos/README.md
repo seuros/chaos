@@ -6,6 +6,22 @@ sessions.
 
 ## Account management
 
+Connect a provider subscription account with device authorization:
+
+- ChatGPT:
+  - `chaos --provider openai accounts --device-auth`
+- xAI:
+  - `chaos --provider xai accounts --device-auth`
+
+The command prints a verification URL and one-time code, then stores the
+resulting provider-scoped OAuth credentials in Chaos's normal credential
+store (`auth.json` when file storage is configured). Existing API-key
+connections remain unchanged unless this command is run for that provider.
+
+xAI subscription auth uses xAI's public Grok CLI OAuth client and device-code
+endpoints. Authenticated model requests are sent to the Grok CLI subscription
+proxy; API-key requests continue to use `https://api.x.ai/v1`.
+
 Use the CLI to disconnect stored provider credentials:
 
 - disconnect the active provider:

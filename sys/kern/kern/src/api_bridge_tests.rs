@@ -225,6 +225,27 @@ fn auth_provider_from_auth_preflight_matrix() {
     assert!(!info.supports_oauth);
     assert!(info.to_string().contains(xai_var));
 
+    let xai_oauth = ModelProviderInfo {
+        auth: Some(crate::model_provider_info::ProviderAuthCapabilities {
+            methods: vec![
+                crate::model_provider_info::ProviderAuthMethod::ApiKey,
+                crate::model_provider_info::ProviderAuthMethod::XaiAccount,
+            ],
+        }),
+        ..xai_missing.clone()
+    };
+    let Err(err) = auth_provider_from_auth(None, &xai_oauth) else {
+        panic!("xAI without OAuth or API-key credentials must fail preflight");
+    };
+    let ChaosErr::ProviderAuthMissing(info) = err else {
+        panic!("expected ProviderAuthMissing, got {err:?}");
+    };
+    assert_eq!(
+        info.provider_id,
+        crate::model_provider_info::XAI_PROVIDER_ID
+    );
+    assert!(info.supports_oauth, "xAI should offer OAuth fallback");
+
     unsafe {
         std::env::set_var(xai_var, "live-key");
     }

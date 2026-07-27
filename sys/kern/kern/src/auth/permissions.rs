@@ -10,7 +10,9 @@ use crate::auth::logout;
 use crate::auth::storage::AuthDotJson;
 use crate::auth::storage::ProviderAuthRecord;
 use crate::config::Config;
+use crate::model_provider_info::XAI_PROVIDER_ID;
 use chaos_ipc::config_types::ForcedLoginMethod;
+use jiff::Timestamp;
 
 /// Enforce login method and workspace restrictions from the current config.
 ///
@@ -30,11 +32,11 @@ pub fn enforce_login_restrictions(config: &Config) -> std::io::Result<()> {
         let method_violation = match (required_method, auth.auth_mode()) {
             (ForcedLoginMethod::Api, AuthMode::ApiKey) => None,
             (ForcedLoginMethod::Chatgpt, AuthMode::Chatgpt) => None,
-            (ForcedLoginMethod::Api, AuthMode::Chatgpt) => Some(
+            (ForcedLoginMethod::Api, AuthMode::Chatgpt | AuthMode::Xai) => Some(
                 "API key login is required, but ChatGPT is currently being used. Logging out."
                     .to_string(),
             ),
-            (ForcedLoginMethod::Chatgpt, AuthMode::ApiKey) => Some(
+            (ForcedLoginMethod::Chatgpt, AuthMode::ApiKey | AuthMode::Xai) => Some(
                 "ChatGPT login is required, but an API key is currently being used. Logging out."
                     .to_string(),
             ),
@@ -203,6 +205,46 @@ pub fn login_with_provider_api_key(
             api_key: Some(api_key.to_string()),
             tokens: None,
             last_refresh: None,
+        },
+    );
+    super::save_auth(chaos_home, &auth_dot_json, auth_credentials_store_mode)
+}
+
+/// Writes or updates the xAI OAuth record inside `auth.json`.
+pub fn login_with_xai_oauth_tokens(
+    chaos_home: &Path,
+    id_token: Option<&str>,
+    access_token: &str,
+    refresh_token: &str,
+    auth_credentials_store_mode: AuthCredentialsStoreMode,
+) -> std::io::Result<()> {
+    use chaos_ipc::api::AuthMode as ApiAuthMode;
+
+    // xAI normally returns an ID token for the requested `openid` scope, but
+    // the field is optional in the token response. Its access token is also a
+    // JWT, so retain provider identity and status metadata if the ID token is
+    // omitted rather than rejecting an otherwise valid login.
+    let identity_token = id_token.unwrap_or(access_token);
+    let account_id =
+        crate::token_data::parse_jwt_subject(identity_token).map_err(std::io::Error::other)?;
+    let id_token = crate::token_data::parse_chatgpt_jwt_claims(identity_token)
+        .map_err(std::io::Error::other)?;
+    let mut auth_dot_json = super::load_auth_dot_json(chaos_home, auth_credentials_store_mode)?
+        .unwrap_or(AuthDotJson {
+            providers: Default::default(),
+        });
+    auth_dot_json.set_provider_record(
+        XAI_PROVIDER_ID,
+        ProviderAuthRecord {
+            auth_mode: Some(ApiAuthMode::Xai),
+            api_key: None,
+            tokens: Some(crate::token_data::TokenData {
+                id_token,
+                access_token: access_token.to_string(),
+                refresh_token: refresh_token.to_string(),
+                account_id,
+            }),
+            last_refresh: Some(Timestamp::now()),
         },
     );
     super::save_auth(chaos_home, &auth_dot_json, auth_credentials_store_mode)

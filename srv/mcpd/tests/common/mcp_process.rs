@@ -120,6 +120,7 @@ impl McpProcess {
                         url: None,
                     }),
                     experimental: None,
+                    extensions: None,
                     roots: None,
                     sampling: None,
                     tasks: None,
@@ -188,6 +189,7 @@ impl McpProcess {
                     url: None,
                 }),
                 experimental: None,
+                extensions: None,
                 roots: None,
                 sampling: None,
                 tasks: None,
@@ -203,6 +205,7 @@ impl McpProcess {
                 ClientCapabilities {
                     elicitation: None,
                     experimental: None,
+                    extensions: None,
                     roots: None,
                     sampling: None,
                     tasks: None,
@@ -308,7 +311,7 @@ impl McpProcess {
         result: serde_json::Value,
     ) -> anyhow::Result<()> {
         self.send_jsonrpc_message(JsonRpcMessage::Response(JsonRpcResponse {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: "2.0".into(),
             id: Some(id.to_value()),
             result: Some(result),
             error: None,

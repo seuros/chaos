@@ -13,6 +13,7 @@ use crate::protocol::ElicitationCapability;
 use crate::protocol::EmptyObject;
 use crate::protocol::FormElicitationCapability;
 use crate::protocol::Implementation;
+use crate::protocol::ProtocolMode;
 use crate::protocol::RootsCapability;
 use crate::protocol::SamplingCapability;
 use crate::protocol::TasksCapability;
@@ -48,6 +49,7 @@ pub fn stdio(command: &str, args: &[String]) -> StdioBuilder {
         capabilities: ClientCapabilities::default(),
         handler: Arc::new(NoopClientHandler),
         default_timeout: Duration::from_secs(30),
+        protocol_mode: ProtocolMode::Stateful,
     }
 }
 
@@ -62,6 +64,7 @@ pub fn http(endpoint: &str) -> HttpBuilder {
         capabilities: ClientCapabilities::default(),
         handler: Arc::new(NoopClientHandler),
         default_timeout: Duration::from_secs(30),
+        protocol_mode: ProtocolMode::Stateful,
     }
 }
 
@@ -72,6 +75,7 @@ pub struct StdioBuilder {
     capabilities: ClientCapabilities,
     handler: Arc<dyn ClientHandler>,
     default_timeout: Duration,
+    protocol_mode: ProtocolMode,
 }
 
 #[cfg(feature = "http")]
@@ -84,6 +88,7 @@ pub struct HttpBuilder {
     capabilities: ClientCapabilities,
     handler: Arc<dyn ClientHandler>,
     default_timeout: Duration,
+    protocol_mode: ProtocolMode,
 }
 
 #[cfg(feature = "stdio")]
@@ -178,6 +183,16 @@ impl StdioBuilder {
         self
     }
 
+    pub fn stateless(mut self) -> Self {
+        self.protocol_mode = ProtocolMode::Stateless;
+        self
+    }
+
+    pub fn with_protocol_mode(mut self, protocol_mode: ProtocolMode) -> Self {
+        self.protocol_mode = protocol_mode;
+        self
+    }
+
     pub fn shutdown_timeout(mut self, timeout: Duration) -> Self {
         self.process.shutdown_timeout = timeout;
         self
@@ -208,6 +223,7 @@ impl StdioBuilder {
                 capabilities: self.capabilities,
                 handler: self.handler,
                 default_timeout: self.default_timeout,
+                protocol_mode: self.protocol_mode,
             },
         )
         .await
@@ -323,6 +339,16 @@ impl HttpBuilder {
         self
     }
 
+    pub fn stateless(mut self) -> Self {
+        self.protocol_mode = ProtocolMode::Stateless;
+        self
+    }
+
+    pub fn with_protocol_mode(mut self, protocol_mode: ProtocolMode) -> Self {
+        self.protocol_mode = protocol_mode;
+        self
+    }
+
     pub async fn connect(self) -> Result<McpSession, GuestError> {
         let endpoint =
             Url::parse(&self.endpoint).map_err(|error| GuestError::UrlParse(error.to_string()))?;
@@ -349,6 +375,7 @@ impl HttpBuilder {
                 capabilities: self.capabilities,
                 handler: self.handler,
                 default_timeout: self.default_timeout,
+                protocol_mode: self.protocol_mode,
             },
         )
         .await

@@ -25,6 +25,7 @@ use crate::protocol::ListResourcesResult;
 use crate::protocol::ListTasksResult;
 use crate::protocol::ListToolsResult;
 use crate::protocol::PaginatedRequestParams;
+use crate::protocol::ProtocolMode;
 use crate::protocol::ReadResourceRequestParams;
 use crate::protocol::ReadResourceResult;
 use crate::protocol::RequestId;
@@ -59,6 +60,7 @@ pub(crate) enum RuntimeCommand {
 pub(crate) struct SharedState {
     pub info: ServerInfo,
     pub default_timeout: Duration,
+    pub protocol_mode: ProtocolMode,
     pub tools: RwLock<Option<Vec<ToolInfo>>>,
     pub resources: RwLock<Option<Vec<crate::protocol::ResourceInfo>>>,
     pub resource_templates: RwLock<Option<Vec<crate::protocol::ResourceTemplateInfo>>>,
@@ -66,10 +68,11 @@ pub(crate) struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(info: ServerInfo, default_timeout: Duration) -> Self {
+    pub fn new(info: ServerInfo, default_timeout: Duration, protocol_mode: ProtocolMode) -> Self {
         Self {
             info,
             default_timeout,
+            protocol_mode,
             tools: RwLock::new(None),
             resources: RwLock::new(None),
             resource_templates: RwLock::new(None),
@@ -96,6 +99,14 @@ impl McpSession {
 
     pub fn default_timeout(&self) -> Duration {
         self.shared.default_timeout
+    }
+
+    pub fn protocol_mode(&self) -> ProtocolMode {
+        self.shared.protocol_mode
+    }
+
+    pub fn is_stateless(&self) -> bool {
+        self.protocol_mode().is_stateless()
     }
 
     pub async fn request_value(
@@ -224,6 +235,7 @@ impl McpSession {
     }
 
     pub async fn ping(&self) -> Result<(), GuestError> {
+        self.require_stateful("ping")?;
         self.request_value("ping", Some(serde_json::json!({})))
             .await?;
         Ok(())
@@ -264,13 +276,17 @@ impl McpSession {
     }
 
     pub async fn list_tools(&self) -> Result<Vec<ToolInfo>, GuestError> {
-        if let Some(cached) = self.shared.tools.read().await.clone() {
+        if !self.is_stateless()
+            && let Some(cached) = self.shared.tools.read().await.clone()
+        {
             return Ok(cached);
         }
         let tools = self
             .paginated_list("tools/list", |r: ListToolsResult| (r.tools, r.next_cursor))
             .await?;
-        *self.shared.tools.write().await = Some(tools.clone());
+        if !self.is_stateless() {
+            *self.shared.tools.write().await = Some(tools.clone());
+        }
         Ok(tools)
     }
 
@@ -300,7 +316,9 @@ impl McpSession {
     }
 
     pub async fn list_resources(&self) -> Result<Vec<crate::protocol::ResourceInfo>, GuestError> {
-        if let Some(cached) = self.shared.resources.read().await.clone() {
+        if !self.is_stateless()
+            && let Some(cached) = self.shared.resources.read().await.clone()
+        {
             return Ok(cached);
         }
         let resources = self
@@ -308,14 +326,18 @@ impl McpSession {
                 (r.resources, r.next_cursor)
             })
             .await?;
-        *self.shared.resources.write().await = Some(resources.clone());
+        if !self.is_stateless() {
+            *self.shared.resources.write().await = Some(resources.clone());
+        }
         Ok(resources)
     }
 
     pub async fn list_resource_templates(
         &self,
     ) -> Result<Vec<crate::protocol::ResourceTemplateInfo>, GuestError> {
-        if let Some(cached) = self.shared.resource_templates.read().await.clone() {
+        if !self.is_stateless()
+            && let Some(cached) = self.shared.resource_templates.read().await.clone()
+        {
             return Ok(cached);
         }
         let templates = self
@@ -324,7 +346,9 @@ impl McpSession {
                 |r: ListResourceTemplatesResult| (r.resource_templates, r.next_cursor),
             )
             .await?;
-        *self.shared.resource_templates.write().await = Some(templates.clone());
+        if !self.is_stateless() {
+            *self.shared.resource_templates.write().await = Some(templates.clone());
+        }
         Ok(templates)
     }
 
@@ -355,6 +379,7 @@ impl McpSession {
         method: &'static str,
         uri: impl Into<String>,
     ) -> Result<(), GuestError> {
+        self.require_stateful(method)?;
         let _: Value = self
             .request(
                 method,
@@ -368,7 +393,9 @@ impl McpSession {
     }
 
     pub async fn list_prompts(&self) -> Result<Vec<crate::protocol::PromptInfo>, GuestError> {
-        if let Some(cached) = self.shared.prompts.read().await.clone() {
+        if !self.is_stateless()
+            && let Some(cached) = self.shared.prompts.read().await.clone()
+        {
             return Ok(cached);
         }
         let prompts = self
@@ -376,7 +403,9 @@ impl McpSession {
                 (r.prompts, r.next_cursor)
             })
             .await?;
-        *self.shared.prompts.write().await = Some(prompts.clone());
+        if !self.is_stateless() {
+            *self.shared.prompts.write().await = Some(prompts.clone());
+        }
         Ok(prompts)
     }
 
@@ -401,6 +430,7 @@ impl McpSession {
     }
 
     pub async fn set_logging_level(&self, level: impl Into<String>) -> Result<(), GuestError> {
+        self.require_stateful("logging/setLevel")?;
         let _: Value = self
             .request(
                 "logging/setLevel",
@@ -413,6 +443,7 @@ impl McpSession {
     }
 
     pub async fn list_tasks(&self) -> Result<ListTasksResult, GuestError> {
+        self.require_stateful("tasks/list")?;
         let tasks = self
             .paginated_list("tasks/list", |r: ListTasksResult| (r.tasks, r.next_cursor))
             .await?;
@@ -424,6 +455,7 @@ impl McpSession {
     }
 
     pub async fn get_task(&self, task_id: impl Into<String>) -> Result<Task, GuestError> {
+        self.require_stateful("tasks/get")?;
         self.request(
             "tasks/get",
             &GetTaskParams {
@@ -434,6 +466,7 @@ impl McpSession {
     }
 
     pub async fn task_result(&self, task_id: impl Into<String>) -> Result<Value, GuestError> {
+        self.require_stateful("tasks/result")?;
         self.request_value(
             "tasks/result",
             Some(serde_json::to_value(GetTaskParams {
@@ -444,6 +477,7 @@ impl McpSession {
     }
 
     pub async fn cancel_task(&self, task_id: impl Into<String>) -> Result<Task, GuestError> {
+        self.require_stateful("tasks/cancel")?;
         self.request(
             "tasks/cancel",
             &crate::protocol::CancelTaskParams {
@@ -461,6 +495,14 @@ impl McpSession {
             .map_err(|_| GuestError::Disconnected)?;
         let _ = response_rx.await;
         Ok(())
+    }
+
+    fn require_stateful(&self, method: &'static str) -> Result<(), GuestError> {
+        if self.is_stateless() {
+            Err(GuestError::MethodNotSupported(method.to_string()))
+        } else {
+            Ok(())
+        }
     }
 }
 

@@ -444,6 +444,7 @@ pub(super) async fn make_managed_client(
 
     let capabilities = mcp_guest::protocol::ClientCapabilities {
         experimental: None,
+        extensions: None,
         roots: Some(mcp_guest::protocol::RootsCapability {
             list_changed: Some(true),
         }),

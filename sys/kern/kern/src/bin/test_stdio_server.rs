@@ -45,8 +45,8 @@ impl TestStdioServer {
         })?;
         let (mime_type, base64_data) = parse_data_url(&data_url).map_err(ToolError::Execution)?;
         Ok(ToolOutput::content(vec![Box::new(ImageContent::new(
-            base64_data,
-            mime_type,
+            base64_data.to_owned(),
+            mime_type.to_owned(),
         ))]))
     }
 }

@@ -54,6 +54,17 @@ pub enum GuestError {
 
 impl GuestError {
     pub fn server_from_error(error: crate::protocol::JsonRpcError) -> Self {
+        if error.code == crate::protocol::UNSUPPORTED_PROTOCOL_VERSION {
+            let requested = error
+                .data
+                .as_ref()
+                .and_then(|data| data.get("requested"))
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_string();
+            return Self::UnsupportedProtocolVersion(requested);
+        }
+
         Self::Server {
             code: error.code,
             message: error.message,

@@ -128,11 +128,14 @@ pub(crate) async fn app_tests_suite() {
     replayed_initial_messages_apply_rollback_in_queue_order().await;
     live_rollback_during_replay_is_applied_in_app_event_order().await;
     queued_rollback_syncs_overlay_and_clears_deferred_history().await;
+    #[cfg(feature = "vt100-tests")]
     page_up_opens_transcript_overlay_from_main_view().await;
+    #[cfg(feature = "vt100-tests")]
     page_up_keeps_log_panel_priority_when_visible().await;
     new_session_requests_shutdown_for_previous_conversation().await;
     shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails().await;
     shutdown_first_exit_waits_for_shutdown_when_submit_succeeds().await;
+    #[cfg(feature = "vt100-tests")]
     clear_only_ui_reset_preserves_chat_session_state().await;
     session_summary_skip_zero_usage().await;
     session_summary_includes_resume_hint().await;

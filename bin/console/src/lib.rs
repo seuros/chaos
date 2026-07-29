@@ -857,7 +857,6 @@ mod tests {
         super::additional_dirs::tests::add_dir_warning_message_only_warns_for_read_only_sandbox_with_dirs();
         super::app::tests::app_tests_suite().await;
         super::app_backtrack::tests::app_backtrack_suite();
-        #[cfg(feature = "vt100-tests")]
         super::cwd_prompt::tests::cwd_prompt_suite();
         super::external_editor::tests::run_editor_returns_updated_content().await;
         super::onboarding::tests::onboarding_suite();

@@ -364,7 +364,9 @@ pub(crate) mod tests {
         rows_from_items_preserves_backend_order();
         row_uses_tail_timestamp_for_updated_at();
         row_display_preview_prefers_process_name();
+        #[cfg(feature = "vt100-tests")]
         resume_table_snapshot();
+        #[cfg(feature = "vt100-tests")]
         resume_search_error_snapshot();
         pageless_scrolling_deduplicates_and_keeps_order();
         ensure_minimum_rows_prefetches_when_underfilled();

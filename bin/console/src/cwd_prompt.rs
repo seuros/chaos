@@ -267,13 +267,15 @@ pub(crate) mod tests {
         )
     }
 
-    #[cfg(feature = "vt100-tests")]
     pub(crate) fn cwd_prompt_suite() {
+        #[cfg(feature = "vt100-tests")]
         cwd_prompt_snapshot();
+        #[cfg(feature = "vt100-tests")]
         cwd_prompt_fork_snapshot();
         cwd_prompt_key_handling_selects_default_current_and_exit();
     }
 
+    #[cfg(feature = "vt100-tests")]
     fn cwd_prompt_snapshot() {
         let screen = new_prompt();
         let mut terminal = Terminal::new(VT100Backend::new(80, 14)).expect("terminal");

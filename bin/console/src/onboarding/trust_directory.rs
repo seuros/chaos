@@ -180,6 +180,7 @@ pub(crate) mod tests {
 
     pub(crate) fn trust_directory_suite() {
         release_event_does_not_change_selection();
+        #[cfg(feature = "vt100-tests")]
         renders_snapshot_for_git_repo();
     }
 

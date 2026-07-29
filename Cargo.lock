@@ -154,7 +154,7 @@ dependencies = [
 
 [[package]]
 name = "alcatraz-base"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-parole",
@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "alcatraz-freebsd"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "alcatraz-base",
  "chaos-ipc",
@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "alcatraz-linux"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "alcatraz-base",
  "chaos-ipc",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "alcatraz-macos"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-parole",
@@ -1177,7 +1177,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-abi"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "futures",
@@ -1190,11 +1190,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-age-verification"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-amphetamine"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "core-foundation 0.10.1",
@@ -1204,11 +1204,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-apropos"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-argv"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "alcatraz-freebsd",
  "alcatraz-linux",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-arsenal"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-locate",
@@ -1245,7 +1245,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-auth-test-fixtures"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "base64",
  "chaos-ipc",
@@ -1256,7 +1256,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-chassis"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "pretty_assertions",
@@ -1265,7 +1265,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-check"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-clamp"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-abi",
  "chaos-ipc",
@@ -1290,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-cli"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "alcatraz-freebsd",
  "alcatraz-linux",
@@ -1334,7 +1334,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-concierge"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -1348,7 +1348,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-console"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1399,7 +1399,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-context"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "pretty_assertions",
@@ -1411,11 +1411,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-contraband"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-conv"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "serde_json",
  "toml 1.1.3+spec-1.1.0",
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-coreboot"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-kern",
@@ -1431,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-cron"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-abi",
@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-daemon"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-pwd",
  "jiff",
@@ -1468,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-diff"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-doas"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -1504,7 +1504,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-dtrace"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -1522,7 +1522,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-epoll"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "pretty_assertions",
  "tokio",
@@ -1531,7 +1531,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-fork"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "alcatraz-freebsd",
  "alcatraz-macos",
@@ -1574,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-getopt"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "clap",
@@ -1584,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-git"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-traits",
  "gix",
@@ -1601,11 +1601,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-glob"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-halluacinate"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -1619,7 +1619,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-highlight"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "insta",
  "pretty_assertions",
@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-httpd"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-argv",
@@ -1652,7 +1652,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-ipc"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-realpath",
@@ -1677,7 +1677,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-jail-report"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-kern",
@@ -1685,7 +1685,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-kern"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "alcatraz-freebsd",
  "alcatraz-linux",
@@ -1812,7 +1812,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-keyring"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "keyring-core",
  "tracing",
@@ -1820,14 +1820,14 @@ dependencies = [
 
 [[package]]
 name = "chaos-lex"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "pretty_assertions",
 ]
 
 [[package]]
 name = "chaos-libration"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-proc",
@@ -1843,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-locate"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1859,11 +1859,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-lsd"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-mcp-runtime"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -1888,7 +1888,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-mcpd"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-argv",
@@ -1919,11 +1919,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-minions"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-model-catalog"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-abi",
  "chaos-ipc",
@@ -1939,7 +1939,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-pam"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1969,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-parole"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-realpath",
@@ -1977,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-parrot"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2006,7 +2006,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-pf"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-pwd",
@@ -2027,7 +2027,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-pixbuf"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "base64",
  "chaos-tmpfs",
@@ -2039,7 +2039,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-proc"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -2061,7 +2061,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-pty"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -2072,7 +2072,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-pwd"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "dirs 6.0.0",
  "pretty_assertions",
@@ -2081,7 +2081,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-ration"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "rama",
  "serde",
@@ -2091,7 +2091,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-ready"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "assert_matches",
  "thiserror 2.0.19",
@@ -2101,7 +2101,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-realpath"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "dirs 6.0.0",
  "path-absolutize",
@@ -2112,7 +2112,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-recall"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "pgvector",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-regress"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-amphetamine",
  "chaos-apropos",
@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-scm"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "assert_matches",
  "pretty_assertions",
@@ -2165,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-selinux"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-realpath",
@@ -2182,11 +2182,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-services"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-session"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-kern",
@@ -2197,7 +2197,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-sh"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-snitch"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-parrot",
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-storage"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-proc",
  "sqlx",
@@ -2251,14 +2251,14 @@ dependencies = [
 
 [[package]]
 name = "chaos-sudoers"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
 ]
 
 [[package]]
 name = "chaos-sysctl"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -2283,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-sysinfo"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "iana-time-zone",
  "libc",
@@ -2293,7 +2293,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-termcap"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "ansi-to-tui",
  "ratatui",
@@ -2302,7 +2302,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-tmpfs"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "lru 0.18.1",
  "sha1 0.11.0",
@@ -2311,7 +2311,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-traits"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -2327,11 +2327,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-uptime"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-vault"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "age",
  "anyhow",
@@ -2351,11 +2351,11 @@ dependencies = [
 
 [[package]]
 name = "chaos-warden"
-version = "47.0.0"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-watchdog"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-ipc",
  "chaos-realpath",
@@ -2366,21 +2366,21 @@ dependencies = [
 
 [[package]]
 name = "chaos-wchar"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "regex-lite",
 ]
 
 [[package]]
 name = "chaos-which"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "thiserror 2.0.19",
 ]
 
 [[package]]
 name = "chaos-xclient"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-chassis",
@@ -2395,7 +2395,7 @@ dependencies = [
 
 [[package]]
 name = "chaos_journald"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
@@ -2613,7 +2613,7 @@ dependencies = [
 
 [[package]]
 name = "codex-client"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "bytes",
  "chaos-abi",
@@ -2881,7 +2881,7 @@ dependencies = [
 
 [[package]]
 name = "core_test_support"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -6888,7 +6888,7 @@ dependencies = [
 
 [[package]]
 name = "libui"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "ansi-to-tui",
  "arboard",
@@ -7174,7 +7174,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-guest"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "chaos-abi",
  "chrono-machines",
@@ -7236,7 +7236,7 @@ dependencies = [
 
 [[package]]
 name = "mcp_test_support"
-version = "47.0.0"
+version = "47.1.0"
 dependencies = [
  "anyhow",
  "chaos-mcpd",

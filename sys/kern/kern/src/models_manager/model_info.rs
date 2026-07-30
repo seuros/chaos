@@ -37,10 +37,24 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
         };
     }
 
-    // Merge provider-config native tools on top of ABI-derived ones (union, no duplicates).
-    for tool in &config.model_provider.native_server_side_tools {
-        if !model.native_server_side_tools.contains(tool) {
-            model.native_server_side_tools.push(tool.clone());
+    // Merge provider-config and provider-derived native tools on top of the
+    // ABI-derived ones (union, no duplicates). Providers that run web search
+    // themselves must own it for every model they serve, catalogued or not, so
+    // that the client-managed `web_search` tool with its `external_web_access`
+    // argument is never injected alongside the provider's own.
+    let provider_tools = config
+        .model_provider
+        .native_server_side_tools
+        .iter()
+        .cloned()
+        .chain(
+            crate::model_provider_info::native_server_side_tools_for_url(
+                config.model_provider.base_url.as_deref(),
+            ),
+        );
+    for tool in provider_tools {
+        if !model.native_server_side_tools.contains(&tool) {
+            model.native_server_side_tools.push(tool);
         }
     }
 

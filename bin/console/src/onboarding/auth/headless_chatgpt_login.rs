@@ -10,7 +10,14 @@ use crate::shimmer::shimmer_spans;
 
 use super::AccountsWidget;
 use super::ContinueWithDeviceCodeState;
+use super::XaiDeviceCodeLoginState;
 use super::mark_url_hyperlink;
+
+struct DeviceCodeView<'a> {
+    verification_url: &'a str,
+    user_code: &'a str,
+    expires_in_minutes: u64,
+}
 
 pub(super) fn render_device_code_login(
     widget: &AccountsWidget,
@@ -18,7 +25,41 @@ pub(super) fn render_device_code_login(
     buf: &mut Buffer,
     state: &ContinueWithDeviceCodeState,
 ) {
-    let banner = if state.device_code.is_some() {
+    let view = state
+        .device_code
+        .as_ref()
+        .map(|device_code| DeviceCodeView {
+            verification_url: device_code.verification_url.as_str(),
+            user_code: device_code.user_code.as_str(),
+            expires_in_minutes: 15,
+        });
+    render_device_code(widget, area, buf, view);
+}
+
+pub(super) fn render_xai_device_code_login(
+    widget: &AccountsWidget,
+    area: Rect,
+    buf: &mut Buffer,
+    state: &XaiDeviceCodeLoginState,
+) {
+    let view = state
+        .device_code
+        .as_ref()
+        .map(|device_code| DeviceCodeView {
+            verification_url: device_code.verification_url.as_str(),
+            user_code: device_code.user_code.as_str(),
+            expires_in_minutes: device_code.expires_in.div_ceil(60),
+        });
+    render_device_code(widget, area, buf, view);
+}
+
+fn render_device_code(
+    widget: &AccountsWidget,
+    area: Rect,
+    buf: &mut Buffer,
+    view: Option<DeviceCodeView<'_>>,
+) {
+    let banner = if view.is_some() {
         "Finish signing in via your browser"
     } else {
         "Preparing device code login"
@@ -36,22 +77,23 @@ pub(super) fn render_device_code_login(
 
     let mut lines = vec![spans.into(), "".into()];
 
-    let verification_url = if let Some(device_code) = &state.device_code {
+    let verification_url = if let Some(view) = &view {
         lines.push("  1. Open this link in your browser and sign in".into());
         lines.push("".into());
         lines.push(Line::from(vec![
             "  ".into(),
-            device_code.verification_url.as_str().cyan().underlined(),
+            view.verification_url.cyan().underlined(),
         ]));
         lines.push("".into());
         lines.push(
-            "  2. Enter this one-time code after you are signed in (expires in 15 minutes)".into(),
+            format!(
+                "  2. Enter this one-time code after you are signed in (expires in {} minutes)",
+                view.expires_in_minutes
+            )
+            .into(),
         );
         lines.push("".into());
-        lines.push(Line::from(vec![
-            "  ".into(),
-            device_code.user_code.as_str().cyan().bold(),
-        ]));
+        lines.push(Line::from(vec!["  ".into(), view.user_code.cyan().bold()]));
         lines.push("".into());
         lines.push(
             "  Device codes are a common phishing target. Never share this code."
@@ -59,7 +101,7 @@ pub(super) fn render_device_code_login(
                 .into(),
         );
         lines.push("".into());
-        Some(device_code.verification_url.clone())
+        Some(view.verification_url.to_string())
     } else {
         lines.push("  Requesting a one-time code...".dim().into());
         lines.push("".into());

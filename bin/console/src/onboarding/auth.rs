@@ -14,6 +14,10 @@ use chaos_pam::LoginFlowHandle;
 use chaos_pam::LoginFlowMode;
 use chaos_pam::LoginFlowUpdate;
 use chaos_pam::ServerOptions;
+use chaos_pam::XaiDeviceCode;
+use chaos_pam::XaiDeviceCodeOptions;
+use chaos_pam::complete_xai_device_code_login;
+use chaos_pam::request_xai_device_code;
 use chaos_pam::spawn_login_flow;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -39,6 +43,9 @@ use chaos_ipc::config_types::ForcedLoginMethod;
 use chaos_kern::auth::AuthMode;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use tokio::task::AbortHandle;
 
 use crate::onboarding::onboarding_screen::KeyboardHandler;
 use crate::onboarding::onboarding_screen::StepStateProvider;
@@ -96,10 +103,69 @@ pub(crate) enum SignInState {
     PickMode,
     ChatGptContinueInBrowser(ContinueInBrowserState),
     ChatGptDeviceCode(ContinueWithDeviceCodeState),
+    XaiDeviceCode(XaiDeviceCodeLoginState),
     ChatGptSuccessMessage,
     ChatGptSuccess,
     ApiKeyEntry(ApiKeyInputState),
     ApiKeyConfigured(AccountProvider),
+}
+
+/// Renders one numbered picker entry: a title line and an indented description,
+/// styled according to whether the entry is highlighted.
+fn numbered_item_lines(
+    idx: usize,
+    selected: bool,
+    title: &str,
+    description: &str,
+) -> Vec<Line<'static>> {
+    let title_line = if selected {
+        Line::from(vec![
+            format!("> {}. ", idx + 1).cyan().dim(),
+            title.to_string().cyan(),
+        ])
+    } else {
+        format!("  {}. {title}", idx + 1).into()
+    };
+    let description_line = if selected {
+        Line::from(format!("     {description}"))
+            .fg(crate::theme::accent_color())
+            .add_modifier(Modifier::DIM)
+    } else {
+        Line::from(format!("     {description}"))
+            .style(Style::default().add_modifier(Modifier::DIM))
+    };
+    vec![title_line, description_line]
+}
+
+fn push_error_line(lines: &mut Vec<Line<'static>>, error: Option<String>) {
+    if let Some(error) = error {
+        lines.push("".into());
+        lines.push(error.red().into());
+    }
+}
+
+impl SignInState {
+    /// Stops whatever login attempt this state represents, if any.
+    fn cancel_pending_login(&self) {
+        match self {
+            SignInState::ChatGptContinueInBrowser(state) => {
+                if let Some(cancel) = &state.cancel {
+                    cancel.cancel();
+                }
+            }
+            SignInState::ChatGptDeviceCode(state) => {
+                if let Some(cancel) = &state.cancel {
+                    cancel.cancel();
+                }
+            }
+            SignInState::XaiDeviceCode(state) => {
+                if let Some(cancel) = &state.cancel {
+                    cancel.cancel();
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,6 +177,7 @@ pub(crate) enum AccountsCompletion {
 pub(crate) enum SignInOption {
     ChatGpt,
     DeviceCode,
+    XaiAccount,
     ApiKey,
 }
 
@@ -120,6 +187,7 @@ pub(crate) struct AccountProvider {
     display_name: String,
     env_key: Option<String>,
     supports_chatgpt_account: bool,
+    supports_xai_account: bool,
     supports_api_key: bool,
 }
 
@@ -145,6 +213,25 @@ pub(crate) struct ContinueWithDeviceCodeState {
     cancel: Option<LoginFlowCancel>,
 }
 
+#[derive(Clone)]
+pub(crate) struct XaiDeviceCodeLoginState {
+    pub(super) device_code: Option<XaiDeviceCode>,
+    cancel: Option<XaiLoginCancel>,
+}
+
+#[derive(Clone)]
+struct XaiLoginCancel {
+    cancelled: Arc<AtomicBool>,
+    abort: AbortHandle,
+}
+
+impl XaiLoginCancel {
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        self.abort.abort();
+    }
+}
+
 impl KeyboardHandler for AccountsWidget {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         if self.handle_api_key_entry_key_event(&key_event) {
@@ -168,28 +255,12 @@ impl KeyboardHandler for AccountsWidget {
                     self.move_highlight(/*delta*/ 1);
                 }
             }
-            KeyCode::Char('1') => {
-                let sign_in_state = self.sign_in_state();
-                if matches!(sign_in_state, SignInState::PickProvider) {
-                    self.select_provider_by_index(0);
+            KeyCode::Char(digit @ '1'..='3') => {
+                let index = digit as usize - '1' as usize;
+                if matches!(self.sign_in_state(), SignInState::PickProvider) {
+                    self.select_provider_by_index(index);
                 } else {
-                    self.select_option_by_index(/*index*/ 0);
-                }
-            }
-            KeyCode::Char('2') => {
-                let sign_in_state = self.sign_in_state();
-                if matches!(sign_in_state, SignInState::PickProvider) {
-                    self.select_provider_by_index(1);
-                } else {
-                    self.select_option_by_index(/*index*/ 1);
-                }
-            }
-            KeyCode::Char('3') => {
-                let sign_in_state = self.sign_in_state();
-                if matches!(sign_in_state, SignInState::PickProvider) {
-                    self.select_provider_by_index(2);
-                } else {
-                    self.select_option_by_index(/*index*/ 2);
+                    self.select_option_by_index(index);
                 }
             }
             KeyCode::Enter => {
@@ -211,29 +282,17 @@ impl KeyboardHandler for AccountsWidget {
                 tracing::info!("Esc pressed");
                 let mut sign_in_state = self.sign_in_state.write().unwrap();
                 match &*sign_in_state {
-                    SignInState::ChatGptContinueInBrowser(state) => {
-                        if let Some(cancel) = &state.cancel {
-                            cancel.cancel();
-                        }
-                        *sign_in_state = self.back_destination_for_selected_provider();
-                        drop(sign_in_state);
-                        self.request_frame.schedule_frame();
-                    }
-                    SignInState::ChatGptDeviceCode(state) => {
-                        if let Some(cancel) = &state.cancel {
-                            cancel.cancel();
-                        }
+                    SignInState::ChatGptContinueInBrowser(_)
+                    | SignInState::ChatGptDeviceCode(_)
+                    | SignInState::XaiDeviceCode(_)
+                    | SignInState::ApiKeyEntry(_) => {
+                        sign_in_state.cancel_pending_login();
                         *sign_in_state = self.back_destination_for_selected_provider();
                         drop(sign_in_state);
                         self.request_frame.schedule_frame();
                     }
                     SignInState::PickMode => {
                         *sign_in_state = SignInState::PickProvider;
-                        drop(sign_in_state);
-                        self.request_frame.schedule_frame();
-                    }
-                    SignInState::ApiKeyEntry(_) => {
-                        *sign_in_state = self.back_destination_for_selected_provider();
                         drop(sign_in_state);
                         self.request_frame.schedule_frame();
                     }
@@ -354,9 +413,12 @@ impl AccountsWidget {
                 let supports_chatgpt_account = provider
                     .supports_auth_method(ProviderAuthMethod::ChatgptAccount)
                     && !matches!(forced_login_method, Some(ForcedLoginMethod::Api));
+                let supports_xai_account = provider
+                    .supports_auth_method(ProviderAuthMethod::XaiAccount)
+                    && !matches!(forced_login_method, Some(ForcedLoginMethod::Api));
                 let supports_api_key = provider.supports_auth_method(ProviderAuthMethod::ApiKey)
                     && !matches!(forced_login_method, Some(ForcedLoginMethod::Chatgpt));
-                if !supports_chatgpt_account && !supports_api_key {
+                if !supports_chatgpt_account && !supports_xai_account && !supports_api_key {
                     return None;
                 }
                 Some(AccountProvider {
@@ -364,6 +426,7 @@ impl AccountsWidget {
                     display_name: provider.name.clone(),
                     env_key: provider.env_key.clone(),
                     supports_chatgpt_account,
+                    supports_xai_account,
                     supports_api_key,
                 })
             })
@@ -396,11 +459,20 @@ impl AccountsWidget {
             .unwrap_or(false)
     }
 
+    fn is_xai_login_allowed(&self) -> bool {
+        self.selected_provider()
+            .map(|provider| provider.supports_xai_account)
+            .unwrap_or(false)
+    }
+
     fn provider_sign_in_options(&self, provider: &AccountProvider) -> Vec<SignInOption> {
         let mut options = Vec::new();
         if provider.supports_chatgpt_account {
             options.push(SignInOption::ChatGpt);
             options.push(SignInOption::DeviceCode);
+        }
+        if provider.supports_xai_account {
+            options.push(SignInOption::XaiAccount);
         }
         if provider.supports_api_key {
             options.push(SignInOption::ApiKey);
@@ -498,6 +570,11 @@ impl AccountsWidget {
                     self.start_device_code_connection();
                 }
             }
+            SignInOption::XaiAccount => {
+                if self.is_xai_login_allowed() {
+                    self.start_xai_account_connection();
+                }
+            }
             SignInOption::ApiKey => {
                 if self.is_api_login_allowed() {
                     self.start_api_key_entry();
@@ -509,7 +586,11 @@ impl AccountsWidget {
     }
 
     fn disallow_api_login(&mut self) {
-        self.highlighted_mode = SignInOption::ChatGpt;
+        self.highlighted_mode = self
+            .displayed_sign_in_options()
+            .into_iter()
+            .find(|option| *option != SignInOption::ApiKey)
+            .unwrap_or(SignInOption::ChatGpt);
         self.set_error(Some(API_KEY_DISABLED_MESSAGE.to_string()));
         *self.sign_in_state.write().unwrap() = SignInState::PickMode;
         self.request_frame.schedule_frame();
@@ -549,7 +630,6 @@ impl AccountsWidget {
             .take(end.saturating_sub(start))
         {
             let selected = self.highlighted_provider == idx;
-            let caret = if selected { ">" } else { " " };
             let title = format!(
                 "{} {}",
                 provider.display_name,
@@ -561,31 +641,18 @@ impl AccountsWidget {
             )
             .trim()
             .to_string();
-            let description = if provider.supports_chatgpt_account && provider.supports_api_key {
-                "ChatGPT account or API key"
-            } else if provider.supports_chatgpt_account {
-                "ChatGPT account"
-            } else {
-                "API key"
+            let description = match (
+                provider.supports_chatgpt_account,
+                provider.supports_xai_account,
+                provider.supports_api_key,
+            ) {
+                (true, _, true) => "ChatGPT account or API key",
+                (true, _, false) => "ChatGPT account",
+                (false, true, true) => "xAI account or API key",
+                (false, true, false) => "xAI account",
+                _ => "API key",
             };
-            let line1 = if selected {
-                Line::from(vec![
-                    format!("{caret} {}. ", idx + 1).cyan().dim(),
-                    title.clone().cyan(),
-                ])
-            } else {
-                format!("  {}. {title}", idx + 1).into()
-            };
-            let line2 = if selected {
-                Line::from(format!("     {description}"))
-                    .fg(crate::theme::accent_color())
-                    .add_modifier(Modifier::DIM)
-            } else {
-                Line::from(format!("     {description}"))
-                    .style(Style::default().add_modifier(Modifier::DIM))
-            };
-            lines.push(line1);
-            lines.push(line2);
+            lines.extend(numbered_item_lines(idx, selected, &title, description));
             lines.push("".into());
         }
         if show_window_hint {
@@ -602,10 +669,7 @@ impl AccountsWidget {
         }
         lines.push("  Use ↑/↓ (or j/k) to choose".dim().into());
         lines.push("  Press Enter to continue".dim().into());
-        if let Some(err) = error {
-            lines.push("".into());
-            lines.push(err.red().into());
-        }
+        push_error_line(&mut lines, error);
 
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -635,28 +699,12 @@ impl AccountsWidget {
                                 text: &str,
                                 description: &str|
          -> Vec<Line<'static>> {
-            let is_selected = self.highlighted_mode == selected_mode;
-            let caret = if is_selected { ">" } else { " " };
-
-            let line1 = if is_selected {
-                Line::from(vec![
-                    format!("{caret} {index}. ", index = idx + 1).cyan().dim(),
-                    text.to_string().cyan(),
-                ])
-            } else {
-                format!("  {index}. {text}", index = idx + 1).into()
-            };
-
-            let line2 = if is_selected {
-                Line::from(format!("     {description}"))
-                    .fg(crate::theme::accent_color())
-                    .add_modifier(Modifier::DIM)
-            } else {
-                Line::from(format!("     {description}"))
-                    .style(Style::default().add_modifier(Modifier::DIM))
-            };
-
-            vec![line1, line2]
+            numbered_item_lines(
+                idx,
+                self.highlighted_mode == selected_mode,
+                text,
+                description,
+            )
         };
 
         let chatgpt_description = if !self.is_chatgpt_login_allowed() {
@@ -684,6 +732,18 @@ impl AccountsWidget {
                         device_code_description,
                     ));
                 }
+                SignInOption::XaiAccount => {
+                    let label = provider
+                        .as_ref()
+                        .map(|provider| format!("Connect {} account", provider.display_name))
+                        .unwrap_or_else(|| "Connect xAI account".to_string());
+                    let description = if self.is_xai_login_allowed() {
+                        "Usage included with your X or xAI subscription"
+                    } else {
+                        "xAI account connection is unavailable"
+                    };
+                    lines.extend(create_mode_item(idx, option, &label, description));
+                }
                 SignInOption::ApiKey => {
                     let provider_api_key_label = provider
                         .as_ref()
@@ -703,10 +763,7 @@ impl AccountsWidget {
         lines.push("  Use ↑/↓ (or j/k) to choose".dim().into());
         lines.push("  Press Enter to continue".dim().into());
         lines.push("  Press Esc to go back".dim().into());
-        if let Some(err) = self.error_message() {
-            lines.push("".into());
-            lines.push(err.red().into());
-        }
+        push_error_line(&mut lines, self.error_message());
 
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -784,8 +841,16 @@ impl AccountsWidget {
     }
 
     fn render_chatgpt_success(&self, area: Rect, buf: &mut Buffer) {
+        let account_label = match self.selected_provider() {
+            Some(provider)
+                if provider.supports_xai_account && !provider.supports_chatgpt_account =>
+            {
+                format!("your {} account", provider.display_name)
+            }
+            _ => "your ChatGPT account".to_string(),
+        };
         let lines = vec![
-            "✓ Signed in with your ChatGPT account"
+            format!("✓ Signed in with {account_label}")
                 .fg(crate::theme::success_color())
                 .into(),
         ];
@@ -872,10 +937,7 @@ impl AccountsWidget {
             "  Press Enter to save".dim().into(),
             "  Press Esc to go back".dim().into(),
         ];
-        if let Some(error) = self.error_message() {
-            footer_lines.push("".into());
-            footer_lines.push(error.red().into());
-        }
+        push_error_line(&mut footer_lines, self.error_message());
         Paragraph::new(footer_lines)
             .wrap(Wrap { trim: false })
             .render(footer_area, buf);
@@ -968,15 +1030,24 @@ impl AccountsWidget {
         true
     }
 
-    fn start_api_key_entry(&mut self) {
+    /// Returns the provider the API-key flow should act on, or `None` after
+    /// steering the UI back to whichever picker the user still owes an answer.
+    fn provider_for_api_key_flow(&mut self) -> Option<AccountProvider> {
         if !self.is_api_login_allowed() {
             self.disallow_api_login();
-            return;
+            return None;
         }
-        let Some(provider) = self.selected_provider() else {
+        let provider = self.selected_provider();
+        if provider.is_none() {
             self.set_error(Some("Choose a provider first.".to_string()));
             *self.sign_in_state.write().unwrap() = SignInState::PickProvider;
             self.request_frame.schedule_frame();
+        }
+        provider
+    }
+
+    fn start_api_key_entry(&mut self) {
+        let Some(provider) = self.provider_for_api_key_flow() else {
             return;
         };
         self.set_error(None);
@@ -1017,18 +1088,8 @@ impl AccountsWidget {
     }
 
     fn save_api_key(&mut self, api_key: String) {
-        if !self.is_api_login_allowed() {
-            self.disallow_api_login();
+        let Some(provider) = self.provider_for_api_key_flow() else {
             return;
-        }
-        let provider = match self.selected_provider() {
-            Some(provider) => provider,
-            None => {
-                self.set_error(Some("Choose a provider first.".to_string()));
-                *self.sign_in_state.write().unwrap() = SignInState::PickProvider;
-                self.request_frame.schedule_frame();
-                return;
-            }
         };
         match login_with_provider_api_key(
             &self.chaos_home,
@@ -1064,6 +1125,10 @@ impl AccountsWidget {
     }
 
     fn handle_existing_chatgpt_connection(&mut self) -> bool {
+        self.handle_existing_account_connection(AuthMode::Chatgpt)
+    }
+
+    fn handle_existing_account_connection(&mut self, auth_mode: AuthMode) -> bool {
         let Some(selected_provider_id) = self.selected_provider().map(|provider| provider.id)
         else {
             return false;
@@ -1072,7 +1137,7 @@ impl AccountsWidget {
             .auth_manager
             .auth_for_provider(&selected_provider_id)
             .as_ref()
-            .is_some_and(|auth| auth.auth_mode() == AuthMode::Chatgpt)
+            .is_some_and(|auth| auth.auth_mode() == auth_mode)
         {
             *self.sign_in_state.write().unwrap() = SignInState::ChatGptSuccess;
             self.request_frame.schedule_frame();
@@ -1080,6 +1145,15 @@ impl AccountsWidget {
         } else {
             false
         }
+    }
+
+    fn chatgpt_server_options(&self) -> ServerOptions {
+        ServerOptions::new(
+            self.chaos_home.clone(),
+            CLIENT_ID.to_string(),
+            self.forced_chatgpt_workspace_id.clone(),
+            self.cli_auth_credentials_store_mode,
+        )
     }
 
     /// Kicks off the ChatGPT account flow and keeps the UI state consistent with the attempt.
@@ -1091,13 +1165,7 @@ impl AccountsWidget {
         }
 
         self.set_error(None);
-        let opts = ServerOptions::new(
-            self.chaos_home.clone(),
-            CLIENT_ID.to_string(),
-            self.forced_chatgpt_workspace_id.clone(),
-            self.cli_auth_credentials_store_mode,
-        );
-        let handle = spawn_login_flow(opts, LoginFlowMode::Browser);
+        let handle = spawn_login_flow(self.chatgpt_server_options(), LoginFlowMode::Browser);
         let cancel = handle.cancel_handle();
         *self.sign_in_state.write().unwrap() =
             SignInState::ChatGptContinueInBrowser(ContinueInBrowserState {
@@ -1114,12 +1182,7 @@ impl AccountsWidget {
         }
 
         self.set_error(None);
-        let mut opts = ServerOptions::new(
-            self.chaos_home.clone(),
-            CLIENT_ID.to_string(),
-            self.forced_chatgpt_workspace_id.clone(),
-            self.cli_auth_credentials_store_mode,
-        );
+        let mut opts = self.chatgpt_server_options();
         opts.open_browser = false;
         let handle = spawn_login_flow(
             opts,
@@ -1135,6 +1198,83 @@ impl AccountsWidget {
             });
         self.request_frame.schedule_frame();
         self.consume_chatgpt_account_flow(handle);
+    }
+
+    fn start_xai_account_connection(&mut self) {
+        if self.handle_existing_account_connection(AuthMode::Xai) {
+            return;
+        }
+
+        self.set_error(None);
+        *self.sign_in_state.write().unwrap() =
+            SignInState::XaiDeviceCode(XaiDeviceCodeLoginState {
+                device_code: None,
+                cancel: None,
+            });
+        self.request_frame.schedule_frame();
+
+        let opts = XaiDeviceCodeOptions::new(
+            self.chaos_home.clone(),
+            self.cli_auth_credentials_store_mode,
+        );
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let sign_in_state = self.sign_in_state.clone();
+        let error = self.error.clone();
+        let request_frame = self.request_frame.clone();
+        let auth_manager = self.auth_manager.clone();
+        let fallback_state = self.back_destination_for_selected_provider();
+        let task_cancelled = cancelled.clone();
+
+        let join = tokio::spawn(async move {
+            let is_cancelled = || task_cancelled.load(Ordering::SeqCst);
+            let fail = |message: String| {
+                if is_cancelled() {
+                    return;
+                }
+                *error.write().unwrap() = Some(message);
+                *sign_in_state.write().unwrap() = fallback_state.clone();
+                request_frame.schedule_frame();
+            };
+
+            let device_code = match request_xai_device_code(&opts).await {
+                Ok(device_code) => device_code,
+                Err(err) => {
+                    fail(format!("Failed to start xAI device authorization: {err}"));
+                    return;
+                }
+            };
+
+            {
+                // A cancelled login has already moved the state elsewhere.
+                let mut guard = sign_in_state.write().unwrap();
+                let SignInState::XaiDeviceCode(state) = &mut *guard else {
+                    return;
+                };
+                state.device_code = Some(device_code.clone());
+            }
+            request_frame.schedule_frame();
+
+            match complete_xai_device_code_login(opts, device_code).await {
+                Ok(()) => {
+                    if is_cancelled() {
+                        return;
+                    }
+                    *error.write().unwrap() = None;
+                    auth_manager.reload();
+                    *sign_in_state.write().unwrap() = SignInState::ChatGptSuccessMessage;
+                    request_frame.schedule_frame();
+                }
+                Err(err) => fail(format!("Failed to connect xAI account: {err}")),
+            }
+        });
+
+        let cancel = XaiLoginCancel {
+            cancelled,
+            abort: join.abort_handle(),
+        };
+        if let SignInState::XaiDeviceCode(state) = &mut *self.sign_in_state.write().unwrap() {
+            state.cancel = Some(cancel);
+        }
     }
 
     fn consume_chatgpt_account_flow(&mut self, mut handle: LoginFlowHandle) {
@@ -1202,6 +1342,7 @@ impl StepStateProvider for AccountsWidget {
             | SignInState::ApiKeyEntry(_)
             | SignInState::ChatGptContinueInBrowser(_)
             | SignInState::ChatGptDeviceCode(_)
+            | SignInState::XaiDeviceCode(_)
             | SignInState::ChatGptSuccessMessage => StepState::InProgress,
             SignInState::ChatGptSuccess | SignInState::ApiKeyConfigured(_) => StepState::Complete,
         }
@@ -1223,6 +1364,9 @@ impl WidgetRef for AccountsWidget {
             }
             SignInState::ChatGptDeviceCode(state) => {
                 headless_chatgpt_login::render_device_code_login(self, area, buf, state);
+            }
+            SignInState::XaiDeviceCode(state) => {
+                headless_chatgpt_login::render_xai_device_code_login(self, area, buf, state);
             }
             SignInState::ChatGptSuccessMessage => {
                 self.render_chatgpt_success_message(area, buf);
@@ -1308,6 +1452,7 @@ pub(crate) mod tests {
         escape_from_provider_mode_returns_to_provider_picker();
         escape_from_single_option_provider_returns_to_provider_picker();
         provider_picker_renders_highlighted_zai_provider_when_scrolled();
+        xai_provider_offers_account_connection();
         continue_in_browser_renders_osc8_hyperlink();
         mark_url_hyperlink_wraps_cyan_underlined_cells();
         mark_url_hyperlink_sanitizes_control_chars();
@@ -1430,6 +1575,35 @@ pub(crate) mod tests {
         assert!(
             text.contains("Showing"),
             "expected provider paging hint when list is truncated, got: {text:?}"
+        );
+    }
+
+    fn xai_provider_offers_account_connection() {
+        let (mut widget, _tmp) = widget_with_model_providers(built_in_model_providers());
+        let xai_index = widget
+            .providers
+            .iter()
+            .position(|provider| provider.id == "xai")
+            .expect("xAI provider should be connectable");
+        widget.highlighted_provider = xai_index;
+
+        widget.open_selected_provider();
+
+        assert!(matches!(widget.sign_in_state(), SignInState::PickMode));
+        assert_eq!(
+            widget.displayed_sign_in_options(),
+            vec![SignInOption::XaiAccount, SignInOption::ApiKey]
+        );
+        assert_eq!(widget.highlighted_mode, SignInOption::XaiAccount);
+
+        let area = Rect::new(0, 0, 70, 20);
+        let mut buf = Buffer::empty(area);
+        widget.render_pick_mode(area, &mut buf);
+
+        let text = buffer_to_text(&buf, area);
+        assert!(
+            text.contains("Connect xAI account"),
+            "expected xAI account option in the mode picker, got: {text:?}"
         );
     }
 

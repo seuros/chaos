@@ -167,7 +167,7 @@ impl ProcessTable {
         let models_provider = config.model_provider.clone();
         let models_manager = Arc::new(ModelsManager::new_with_provider(
             chaos_home.clone(),
-            auth_manager.clone(),
+            auth_manager.for_provider(&config.model_provider_id),
             config.model_catalog.clone(),
             collaboration_modes_config,
             models_provider,

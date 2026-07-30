@@ -43,7 +43,7 @@ pub async fn run(cli: ModelsCli, config_profile: Option<String>) -> anyhow::Resu
 
     let models_manager = ModelsManager::new_with_provider(
         chaos_home,
-        auth_manager,
+        auth_manager.for_provider(&config.model_provider_id),
         config.model_catalog.clone(),
         CollaborationModesConfig::default(),
         config.model_provider.clone(),

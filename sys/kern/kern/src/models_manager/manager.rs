@@ -598,22 +598,12 @@ impl ModelsManager {
         use chaos_abi::ListModelsError;
         use chaos_abi::ModelAdapter;
         use chaos_parrot::openai::OpenAiAdapter;
-        use chaos_parrot::openai::StaticAuthProvider;
 
         let auth = self.auth_manager.auth().await;
         let auth_mode = auth.as_ref().map(ChaosAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
 
-        let token = match self.provider.api_key() {
-            Ok(Some(api_key)) => Some(api_key),
-            Ok(None) => self.provider.experimental_bearer_token.clone(),
-            Err(ChaosErr::EnvVar(_)) => {
-                return Err(crate::api_bridge::provider_auth_missing(&self.provider));
-            }
-            Err(other) => return Err(other),
-        };
-
-        let auth_provider = StaticAuthProvider::new(token, None);
+        let auth_provider = auth_provider_from_auth(auth, &self.provider)?;
         let representer = if self.provider.is_openai() {
             chaos_parrot::SessionRepresenter::openai()
         } else {

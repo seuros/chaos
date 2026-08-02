@@ -275,6 +275,39 @@ fn native_tools_for_base_url(base_url: &str) -> Vec<String> {
     }
 }
 
+/// Families that share a `/models` listing with chat models while being unable
+/// to answer a prompt. Matched as substrings of the model id.
+const NON_CONVERSATIONAL_MARKERS: &[&str] = &[
+    "embed",
+    "ocr",
+    "moderation",
+    "rerank",
+    "guard",
+    "tts",
+    "stt",
+    "whisper",
+    "transcribe",
+    "speech",
+    "image",
+    "video",
+];
+
+/// Whether a discovered model can carry a turn.
+///
+/// A provider that declares its capabilities is taken at its word. The rest are
+/// judged by name, which is crude, but a listing is otherwise dominated by
+/// models nothing in this program can call: a prompt sent to an embedding or
+/// transcription endpoint is an error, not a conversation.
+fn can_carry_a_turn(id: &str, declares_chat: Option<bool>) -> bool {
+    if let Some(declared) = declares_chat {
+        return declared;
+    }
+    let id = id.to_ascii_lowercase();
+    !NON_CONVERSATIONAL_MARKERS
+        .iter()
+        .any(|marker| id.contains(marker))
+}
+
 /// Fetch models from an OpenAI-compatible `GET /models` endpoint.
 ///
 /// The wire format is `{ "object": "list", "data": [{ "id", "object",
@@ -328,6 +361,17 @@ async fn fetch_openai_models(
         #[serde(alias = "supports_vision")]
         #[serde(alias = "supports_image_input")]
         supports_image_in: Option<bool>,
+        /// Capability block exposed by providers that publish one.
+        #[serde(default)]
+        capabilities: Option<ModelCapabilities>,
+    }
+
+    #[derive(Deserialize)]
+    struct ModelCapabilities {
+        #[serde(default)]
+        #[serde(alias = "chat")]
+        #[serde(alias = "chat_completion")]
+        completion_chat: Option<bool>,
     }
 
     let url = format!("{}/models", base_url.trim_end_matches('/'));
@@ -390,6 +434,14 @@ async fn fetch_openai_models(
     let models = resp
         .data
         .into_iter()
+        .filter(|m| {
+            can_carry_a_turn(
+                &m.id,
+                m.capabilities
+                    .as_ref()
+                    .and_then(|caps| caps.completion_chat),
+            )
+        })
         .map(|m| {
             let id = m.id;
             chaos_abi::AbiModelInfo {
@@ -414,6 +466,75 @@ mod tests {
     use super::*;
     use chaos_ipc::protocol::SessionSource;
     use std::sync::OnceLock;
+
+    #[test]
+    fn model_discovery_keeps_only_models_that_can_answer_a_prompt() {
+        // Named like chat models, and nothing declared: kept.
+        for id in [
+            "gpt-5.6-sol",
+            "grok-4.5",
+            "deepseek-reasoner",
+            "mistral-large-latest",
+            "pixtral-12b",
+        ] {
+            assert!(can_carry_a_turn(id, None), "{id} should be kept");
+        }
+
+        // Named like the families that ride along in the same listing.
+        for id in [
+            "mistral-embed",
+            "codestral-embed",
+            "mistral-ocr-latest",
+            "mistral-moderation-latest",
+            "voxtral-mini-latest-tts",
+            "whisper-1",
+            "gpt-image-1",
+            "llama-guard-4",
+        ] {
+            assert!(!can_carry_a_turn(id, None), "{id} should be dropped");
+        }
+
+        // A declared capability outranks the name in both directions.
+        assert!(can_carry_a_turn("mistral-ocr-latest", Some(true)));
+        assert!(!can_carry_a_turn("mistral-large-latest", Some(false)));
+    }
+
+    /// The same rule applied to a real listing: a provider that mixes chat
+    /// models with embeddings, transcription and moderation yields only the
+    /// ones a turn can be sent to.
+    #[tokio::test]
+    async fn discovery_drops_models_that_cannot_answer_a_prompt() {
+        use wiremock::Mock;
+        use wiremock::MockServer;
+        use wiremock::ResponseTemplate;
+        use wiremock::matchers::method;
+        use wiremock::matchers::path;
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [
+                    { "id": "mistral-large-latest" },
+                    { "id": "mistral-embed" },
+                    { "id": "mistral-ocr-latest" },
+                    { "id": "voxtral-mini-latest-tts" },
+                    // Declared capabilities beat the name, both ways.
+                    { "id": "codestral-latest", "capabilities": { "completion_chat": true } },
+                    { "id": "mistral-fim-latest", "capabilities": { "completion_chat": false } },
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let models = fetch_openai_models(&server.uri(), None)
+            .await
+            .expect("listing succeeds");
+        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+
+        assert_eq!(ids, vec!["mistral-large-latest", "codestral-latest"]);
+    }
 
     #[test]
     fn responses_options_preserve_conversation_and_session_when_not_overridden() {

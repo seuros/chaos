@@ -269,6 +269,19 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourc
         let provider = resolve_chaos_storage_provider(self.session, self.turn).await?;
         builtin_mcp_resources::spool_json_from_provider(Some(&provider)).await
     }
+
+    async fn models_json(&self) -> Result<String, String> {
+        let groups = self
+            .session
+            .services
+            .models_manager
+            .list_models_by_provider(
+                &self.turn.config.model_providers,
+                &self.turn.config.model_provider_id,
+            )
+            .await;
+        builtin_mcp_resources::models_json_from_provider_models(&groups)
+    }
 }
 
 async fn resolve_chaos_storage_provider(

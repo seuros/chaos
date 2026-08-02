@@ -121,6 +121,48 @@ impl ModelsCacheManager {
         self.save_internal(&cache).await
     }
 
+    /// Load every cached provider scope, regardless of age or client version.
+    ///
+    /// Unlike [`Self::load_fresh`], stale rows are returned as-is: callers that
+    /// enumerate providers offline would rather show an old catalog with its
+    /// `fetched_at` than show nothing at all.
+    pub async fn load_all(&self) -> io::Result<Vec<ModelsCache>> {
+        let Some(pool) = self.runtime_pool().await else {
+            return Ok(Vec::new());
+        };
+
+        let caches = match pool {
+            RuntimeCachePool::Sqlite(pool) => {
+                let rows = sqlx::query(
+                    "SELECT provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json \
+                     FROM model_catalog_cache \
+                     ORDER BY provider_name, wire_api, base_url",
+                )
+                .fetch_all(&pool)
+                .await
+                .map_err(io::Error::other)?;
+                rows.into_iter()
+                    .map(|row| decode_models_cache_row_sqlite(Some(row), None))
+                    .collect::<io::Result<Vec<_>>>()?
+            }
+            RuntimeCachePool::Postgres(pool) => {
+                let rows = sqlx::query(
+                    "SELECT provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json \
+                     FROM model_catalog_cache \
+                     ORDER BY provider_name, wire_api, base_url",
+                )
+                .fetch_all(&pool)
+                .await
+                .map_err(io::Error::other)?;
+                rows.into_iter()
+                    .map(|row| decode_models_cache_row_postgres(Some(row), None))
+                    .collect::<io::Result<Vec<_>>>()?
+            }
+        };
+
+        Ok(caches.into_iter().flatten().collect())
+    }
+
     async fn load(&self, scope: &ModelsCacheScope) -> io::Result<Option<ModelsCache>> {
         let Some(pool) = self.runtime_pool().await else {
             return Ok(None);

@@ -133,7 +133,7 @@ fn merge_inline_resources_adds_local_chaos_crons_resource() {
         .get(INTERNAL_TASK_SERVER_NAME)
         .expect("inline chaos resources should exist");
 
-    assert_eq!(resources.len(), 3);
+    assert_eq!(resources.len(), 4);
     assert_eq!(resources[0].uri, builtin_mcp_resources::CHAOS_SESSIONS_URI);
     assert_eq!(resources[0].name, "sessions");
     assert_eq!(
@@ -150,6 +150,12 @@ fn merge_inline_resources_adds_local_chaos_crons_resource() {
     assert_eq!(resources[2].name, "spool");
     assert_eq!(
         resources[2].mime_type.as_deref(),
+        Some(builtin_mcp_resources::JSON_MIME_TYPE)
+    );
+    assert_eq!(resources[3].uri, builtin_mcp_resources::CHAOS_MODELS_URI);
+    assert_eq!(resources[3].name, "models");
+    assert_eq!(
+        resources[3].mime_type.as_deref(),
         Some(builtin_mcp_resources::JSON_MIME_TYPE)
     );
 }

@@ -180,6 +180,7 @@ async fn resources_are_listed_after_initialize() -> Result<()> {
     assert!(uris.contains(&"chaos://sessions"));
     assert!(uris.contains(&"chaos://crons"));
     assert!(uris.contains(&"chaos://spool"));
+    assert!(uris.contains(&"chaos://models"));
 
     Ok(())
 }
@@ -285,6 +286,67 @@ async fn spool_resource_can_be_read_after_initialize() -> Result<()> {
             ]
         })
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn models_resource_can_be_read_after_initialize() -> Result<()> {
+    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    mcp.initialize().await?;
+
+    let request_id = mcp
+        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://models" })))
+        .await?;
+    let message = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id.clone()),
+    )
+    .await??;
+
+    let JsonRpcMessage::Response(resp) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+    };
+    assert_eq!(resp.id, Some(request_id.to_value()));
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+
+    let result = resp.result.as_ref().unwrap();
+    let content = &result["contents"][0];
+    assert_eq!(content["uri"], json!("chaos://models"));
+    assert_eq!(content["mimeType"], json!("application/json"));
+
+    // The payload depends on which providers this machine has credentials for,
+    // so assert the grouped shape rather than an exact document.
+    let text = content["text"].as_str().expect("text payload");
+    let groups: serde_json::Value = serde_json::from_str(text)?;
+    let groups = groups.as_array().expect("providers array");
+    for group in groups {
+        for key in ["provider", "active", "models"] {
+            assert!(
+                group.get(key).is_some(),
+                "provider group missing '{key}': {group}"
+            );
+        }
+        assert!(
+            group["models"].is_array(),
+            "models must be an array: {group}"
+        );
+    }
+    // Credentials never travel with the catalog, and endpoints are none of a
+    // caller's business — it selects providers by id.
+    for forbidden in [
+        "api_key",
+        "bearer",
+        "token",
+        "Authorization",
+        "base_url",
+        "wire_api",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "payload leaked '{forbidden}': {text}"
+        );
+    }
 
     Ok(())
 }

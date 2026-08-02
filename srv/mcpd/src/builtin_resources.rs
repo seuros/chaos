@@ -106,6 +106,25 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
         .await?;
         chaos_cron::resource::list_spool(Some(&provider)).await
     }
+
+    async fn models_json(&self) -> Result<String, String> {
+        // The provider map lives in config, not in the process table, so load
+        // config the same way a `chaos` tool call does — minus any overrides.
+        let config = chaos_kern::config::Config::load_with_cli_overrides_and_harness_overrides(
+            Vec::new(),
+            chaos_kern::config::ConfigOverrides::default(),
+        )
+        .await
+        .map_err(|err| format!("failed to load config for model listing: {err}"))?;
+
+        let groups = self
+            .server
+            .process_table
+            .get_models_manager()
+            .list_models_by_provider(&config.model_providers, &config.model_provider_id)
+            .await;
+        builtin_mcp_resources::models_json_from_provider_models(&groups)
+    }
 }
 
 async fn read_builtin_resource_json(
@@ -155,6 +174,14 @@ fn spool_list_handler<'a>(
 ) -> ResourceReadFuture<'a> {
     let _ = ctx;
     read_static_resource_handler(server, builtin_mcp_resources::CHAOS_SPOOL_URI)
+}
+
+fn models_list_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    let _ = ctx;
+    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MODELS_URI)
 }
 
 fn session_detail_handler<'a>(
@@ -215,6 +242,7 @@ pub(crate) fn resource_router() -> McpResourceRouter<ChaosMcpServer> {
             builtin_mcp_resources::ChaosBuiltinResourceKind::Sessions => sessions_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Crons => crons_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Spool => spool_list_handler,
+            builtin_mcp_resources::ChaosBuiltinResourceKind::Models => models_list_handler,
         };
         router = router.with_resource(resource_info(spec), handler, None);
     }

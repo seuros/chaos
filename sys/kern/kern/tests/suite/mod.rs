@@ -88,6 +88,8 @@ mod model_info_overrides;
 mod model_overrides;
 #[path = "model_switching.rs"]
 mod model_switching;
+#[path = "models_by_provider.rs"]
+mod models_by_provider;
 #[path = "models_cache_ttl.rs"]
 mod models_cache_ttl;
 #[path = "models_etag_responses.rs"]

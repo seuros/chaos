@@ -581,6 +581,128 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
     Ok(())
 }
 
+/// The `provider` argument has to do two things: reach `ConfigOverrides` so the
+/// session actually runs against the chosen provider, and reject ids that are
+/// not configured instead of silently falling back to the default.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_chaos_tool_provider_override() {
+    if env::var(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok() {
+        println!(
+            "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
+        );
+        return;
+    }
+    if let Err(err) = chaos_tool_provider_override().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn chaos_tool_provider_override() -> anyhow::Result<()> {
+    let server = create_mock_responses_server(vec![create_final_assistant_message_sse_response(
+        "Answered by the overridden provider.",
+    )?])
+    .await;
+    let chaos_home = TempDir::new()?;
+    // The default provider points nowhere: only an override that really lands
+    // in the config can reach the mock server.
+    create_two_provider_config_toml(chaos_home.path(), &server.uri())?;
+    let mut mcp = McpProcess::new(chaos_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_custom_request(
+            "tools/call",
+            Some(json!({
+                "name": "chaos",
+                "arguments": {
+                    "prompt": "say hi",
+                    "process-id": "new",
+                    "provider": "no_such_provider",
+                },
+            })),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id),
+    )
+    .await??;
+    let JsonRpcMessage::Response(response) = response else {
+        anyhow::bail!("expected JSON-RPC response, got: {response:?}");
+    };
+    let rendered = serde_json::to_string(&response)?;
+    assert!(
+        rendered.contains("Model provider `no_such_provider` not found"),
+        "unknown provider should be rejected rather than falling back, got {rendered}"
+    );
+
+    let request_id = mcp
+        .send_custom_request(
+            "tools/call",
+            Some(json!({
+                "name": "chaos",
+                "arguments": {
+                    "prompt": "say hi",
+                    "process-id": "new",
+                    "provider": "mock_provider",
+                    "model": "mock-model",
+                },
+            })),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id),
+    )
+    .await??;
+    let JsonRpcMessage::Response(response) = response else {
+        anyhow::bail!("expected JSON-RPC response, got: {response:?}");
+    };
+    assert!(response.error.is_none(), "unexpected error: {response:?}");
+    assert_eq!(
+        response
+            .result
+            .as_ref()
+            .and_then(|r| r.get("structuredContent"))
+            .and_then(|c| c.get("content")),
+        Some(&json!("Answered by the overridden provider."))
+    );
+
+    Ok(())
+}
+
+/// Default provider is deliberately unreachable so a `provider` override is the
+/// only way to get a successful turn.
+fn create_two_provider_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
+    let config_toml = chaos_home.join("config.toml");
+    std::fs::write(
+        config_toml,
+        format!(
+            r#"
+model = "dead-model"
+approval_policy = "headless"
+sandbox_policy = "read-only"
+
+model_provider = "dead_provider"
+
+[model_providers.dead_provider]
+name = "Unreachable provider"
+base_url = "http://127.0.0.1:1/v1"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+
+[model_providers.mock_provider]
+name = "Mock provider for test"
+base_url = "{server_uri}/v1"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+"#
+        ),
+    )
+}
+
 /// This handle is used to ensure that the MockServer and TempDir are not dropped while
 /// the McpProcess is still running.
 pub struct McpHandle {

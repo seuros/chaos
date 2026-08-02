@@ -29,9 +29,11 @@ use chaos_parrot::TransportError;
 use chaos_snitch::TelemetryAuthMode;
 use chrono_machines::ExponentialBackoff;
 use chrono_machines::backoff::BackoffStrategy;
+use jiff::Timestamp;
 use rama::http::{HeaderMap, StatusCode};
 use rand::make_rng;
 use rand::rngs::StdRng;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,6 +48,34 @@ use tracing::warn;
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
+
+/// Models available from a single configured provider.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderModels {
+    /// Key into the configured `model_providers` map, as accepted by the
+    /// `model_provider` config override.
+    pub provider_id: String,
+    /// Friendly provider name.
+    pub provider_name: String,
+    pub wire_api: String,
+    /// Whether this is the provider the current session is bound to.
+    pub active: bool,
+    /// When the cached catalog was fetched, absent when nothing is cached.
+    pub fetched_at: Option<Timestamp>,
+    pub models: Vec<ModelPreset>,
+}
+
+/// Convert a cached catalog into presets, priority order preserved.
+///
+/// Deliberately skips `ModelPreset::filter_by_auth`: that filter encodes
+/// OpenAI's ChatGPT-versus-API distinction and says nothing useful about a
+/// third-party provider's catalog.
+fn build_presets(mut models: Vec<ModelInfo>) -> Vec<ModelPreset> {
+    models.sort_by_key(|model| model.priority);
+    let mut presets: Vec<ModelPreset> = models.into_iter().map(Into::into).collect();
+    ModelPreset::mark_default_by_picker_visibility(&mut presets);
+    presets
+}
 
 enum FetchedCatalog {
     Live {
@@ -221,6 +251,109 @@ impl ModelsManager {
         }
         let remote_models = self.get_remote_models().await;
         self.build_available_models(remote_models)
+    }
+
+    /// List models for every configured provider the user can actually reach.
+    ///
+    /// Reads exclusively from the persisted catalog cache — no provider is
+    /// contacted, so a provider that has never been used in a session appears
+    /// with an empty model list rather than blocking the call. Providers with
+    /// no resolvable credentials are omitted entirely.
+    ///
+    /// `active_provider_id` is the configured id the session is running on;
+    /// entries are keyed by id throughout, so several entries may name the same
+    /// vendor while holding separate credentials.
+    pub async fn list_models_by_provider(
+        &self,
+        providers: &HashMap<String, ModelProviderInfo>,
+        active_provider_id: &str,
+    ) -> Vec<ProviderModels> {
+        let cached = self.cache_manager.load_all().await.unwrap_or_else(|err| {
+            error!("failed to load cached model catalogs: {err}");
+            Vec::new()
+        });
+
+        let mut groups: Vec<ProviderModels> = Vec::new();
+        for (provider_id, provider) in providers {
+            // Compare ids, not vendor names: two entries can point at the same
+            // vendor with different credentials — that is how a second account
+            // is configured — and only one of them is the one in use.
+            //
+            // The session is already running on the active provider, so it is
+            // usable by construction even when its credentials live somewhere
+            // this check cannot see.
+            let active = provider_id == active_provider_id;
+            if !active && !self.provider_is_usable(provider_id, provider) {
+                continue;
+            }
+            // Match the endpoint this provider would actually be called on, not
+            // just its name: account sign-in and an API key route to different
+            // hosts that serve different catalogs, and offering models from the
+            // endpoint the caller cannot reach is worse than offering none.
+            let auth_mode = if active {
+                self.auth_manager.auth_mode()
+            } else {
+                self.auth_manager
+                    .auth_for_provider(provider_id)
+                    .map(|auth| auth.auth_mode())
+            };
+            let base_url = provider.effective_base_url(auth_mode);
+            let cache = cached.iter().find(|entry| {
+                entry.scope.as_ref().is_some_and(|scope| {
+                    scope.provider_name == provider.name
+                        && scope.wire_api == provider.wire_api.to_string()
+                        && scope.base_url == base_url
+                })
+            });
+
+            // The active provider's in-memory list is authoritative and already
+            // auth-filtered; everything else is reconstructed from its cache
+            // row. A host that has never fetched — mcpd, say — holds an empty
+            // in-memory list, so fall back to the cache rather than claiming
+            // the active provider serves nothing.
+            let mut models = if active {
+                self.build_available_models(self.get_remote_models().await)
+            } else {
+                Vec::new()
+            };
+            if models.is_empty() {
+                models = cache
+                    .map(|cache| build_presets(cache.models.clone()))
+                    .unwrap_or_default();
+            }
+
+            groups.push(ProviderModels {
+                provider_id: provider_id.clone(),
+                provider_name: provider.name.clone(),
+                wire_api: provider.wire_api.to_string(),
+                active,
+                fetched_at: cache.map(|cache| cache.fetched_at),
+                models,
+            });
+        }
+
+        groups.sort_by(|a, b| {
+            b.active
+                .cmp(&a.active)
+                .then_with(|| a.provider_id.cmp(&b.provider_id))
+        });
+        groups
+    }
+
+    /// Whether credentials for `provider` resolve without prompting the user.
+    ///
+    /// Account credentials are looked up per provider rather than through the
+    /// session's active auth mode, so signing into one provider does not hide
+    /// the others.
+    fn provider_is_usable(&self, provider_id: &str, provider: &ModelProviderInfo) -> bool {
+        if provider.experimental_bearer_token.is_some() {
+            return true;
+        }
+        if matches!(provider.api_key(), Ok(Some(_))) {
+            return true;
+        }
+        provider.supports_account_auth()
+            && self.auth_manager.auth_for_provider(provider_id).is_some()
     }
 
     /// List collaboration mode presets.

@@ -1,5 +1,8 @@
 use chaos_ipc::ProcessId;
+use chaos_ipc::openai_models::ModelPreset;
 use chaos_storage::ChaosStorageProvider;
+
+use crate::models_manager::manager::ProviderModels;
 use serde::Serialize;
 use serde_json::json;
 
@@ -10,12 +13,14 @@ pub const CHAOS_SESSIONS_URI: &str = "chaos://sessions";
 pub const CHAOS_SESSIONS_URI_TEMPLATE: &str = "chaos://sessions/{id}";
 pub const CHAOS_CRONS_URI: &str = "chaos://crons";
 pub const CHAOS_SPOOL_URI: &str = "chaos://spool";
+pub const CHAOS_MODELS_URI: &str = "chaos://models";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChaosBuiltinResourceKind {
     Sessions,
     Crons,
     Spool,
+    Models,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +46,7 @@ pub struct ChaosBuiltinResourceTemplateSpec {
     pub mime_type: &'static str,
 }
 
-const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 3] = [
+const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 4] = [
     ChaosBuiltinResourceSpec {
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
@@ -61,6 +66,13 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 3] = [
         uri: CHAOS_SPOOL_URI,
         name: "spool",
         description: "List all persisted spool jobs",
+        mime_type: JSON_MIME_TYPE,
+    },
+    ChaosBuiltinResourceSpec {
+        kind: ChaosBuiltinResourceKind::Models,
+        uri: CHAOS_MODELS_URI,
+        name: "models",
+        description: "List every model preset available to this ChaOS installation",
         mime_type: JSON_MIME_TYPE,
     },
 ];
@@ -88,6 +100,7 @@ pub enum ResolvedChaosBuiltinResource {
     SessionDetail { process_id: ProcessId },
     Crons,
     Spool,
+    Models,
 }
 
 pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinResource>, String> {
@@ -95,6 +108,7 @@ pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinReso
         CHAOS_SESSIONS_URI => Ok(Some(ResolvedChaosBuiltinResource::Sessions)),
         CHAOS_CRONS_URI => Ok(Some(ResolvedChaosBuiltinResource::Crons)),
         CHAOS_SPOOL_URI => Ok(Some(ResolvedChaosBuiltinResource::Spool)),
+        CHAOS_MODELS_URI => Ok(Some(ResolvedChaosBuiltinResource::Models)),
         _ => {
             let Some(id) = uri.strip_prefix("chaos://sessions/") else {
                 return Ok(None);
@@ -185,6 +199,36 @@ pub async fn session_detail_json_from_runtime_db(
     )
 }
 
+/// Just enough to choose with: what to ask for, what it is good at, and which
+/// reasoning efforts it will accept. Picker flags, modalities and transport
+/// details stay behind.
+fn model_json(preset: &ModelPreset) -> serde_json::Value {
+    json!({
+        "id": preset.model,
+        "description": preset.description,
+        "reasoning_efforts": preset
+            .supported_reasoning_efforts
+            .iter()
+            .map(|effort| effort.effort)
+            .collect::<Vec<_>>(),
+    })
+}
+
+pub fn models_json_from_provider_models(groups: &[ProviderModels]) -> Result<String, String> {
+    let providers = groups
+        .iter()
+        .map(|group| {
+            json!({
+                "provider": group.provider_id,
+                "active": group.active,
+                "models": group.models.iter().map(model_json).collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    to_pretty_json(&providers, "ChaOS models")
+}
+
 pub async fn crons_json_from_provider(
     provider: Option<&ChaosStorageProvider>,
 ) -> Result<String, String> {
@@ -203,6 +247,7 @@ pub trait ChaosBuiltinResourceBackend {
     async fn session_detail_json(&self, process_id: ProcessId) -> Result<String, String>;
     async fn crons_json(&self) -> Result<String, String>;
     async fn spool_json(&self) -> Result<String, String>;
+    async fn models_json(&self) -> Result<String, String>;
 }
 
 pub async fn read_resource_json<B: ChaosBuiltinResourceBackend + Sync>(
@@ -216,6 +261,7 @@ pub async fn read_resource_json<B: ChaosBuiltinResourceBackend + Sync>(
         }
         Some(ResolvedChaosBuiltinResource::Crons) => backend.crons_json().await.map(Some),
         Some(ResolvedChaosBuiltinResource::Spool) => backend.spool_json().await.map(Some),
+        Some(ResolvedChaosBuiltinResource::Models) => backend.models_json().await.map(Some),
         None => Ok(None),
     }
 }
@@ -237,6 +283,10 @@ mod tests {
         assert_eq!(
             resolve_resource_uri(CHAOS_SPOOL_URI).expect("resolve spool"),
             Some(ResolvedChaosBuiltinResource::Spool)
+        );
+        assert_eq!(
+            resolve_resource_uri(CHAOS_MODELS_URI).expect("resolve models"),
+            Some(ResolvedChaosBuiltinResource::Models)
         );
     }
 

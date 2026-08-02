@@ -67,6 +67,11 @@ pub struct ChaosToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
+    /// Provider to run against (e.g. 'openai', 'xai', 'anthropic').
+    /// Read `chaos://models` for the providers available here and what each one serves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+
     /// Configuration profile from config.toml.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
@@ -146,6 +151,7 @@ impl ChaosToolParams {
             prompt,
             process_id: _,
             model,
+            provider,
             profile,
             cwd,
             approval_policy,
@@ -158,6 +164,10 @@ impl ChaosToolParams {
 
         let overrides = ConfigOverrides {
             model,
+            // An explicitly chosen provider must not inherit the global default
+            // model, which usually belongs to a different provider.
+            provider_user_override: provider.is_some(),
+            model_provider: provider,
             config_profile: profile,
             cwd: cwd.map(PathBuf::from),
             approval_policy: approval_policy.map(Into::into),
@@ -177,6 +187,8 @@ impl ChaosToolParams {
             .map(|(k, v)| (k, json_to_toml(v)))
             .collect();
 
+        // An unknown provider id is rejected by config loading itself, so a
+        // typo never silently falls back to the default provider.
         let cfg =
             Config::load_with_cli_overrides_and_harness_overrides(cli_overrides, overrides).await?;
 

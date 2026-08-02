@@ -264,6 +264,16 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         }
     };
 
+    // Promote `-c model_provider=<name>` (which is where `--provider` lands)
+    // into the typed override, so an explicitly chosen provider does not
+    // inherit the global model — that model usually belongs to whichever
+    // provider the config defaults to, and the chosen one has never heard of
+    // it.
+    let cli_model_provider: Option<String> = cli_kv_overrides
+        .iter()
+        .find(|(key, _)| key == "model_provider")
+        .and_then(|(_, value)| value.as_str().map(ToString::to_string));
+
     // Load configuration and determine approval policy
     let overrides = ConfigOverrides {
         model,
@@ -286,8 +296,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         mcp_servers: None,
         active_project_trust: None,
         additional_writable_roots: add_dir,
-        model_provider: None,
-        provider_user_override: false,
+        provider_user_override: cli_model_provider.is_some(),
+        model_provider: cli_model_provider,
     };
 
     let config = ConfigBuilder::default()

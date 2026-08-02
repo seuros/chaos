@@ -167,6 +167,41 @@ fn runtime_config_defaults_model_availability_nux() {
 }
 
 #[test]
+fn runtime_config_defaults_clamp_to_false_and_parses_true() {
+    let default_cfg = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").path().to_path_buf(),
+    )
+    .expect("load default config");
+    assert!(!default_cfg.clamp);
+
+    let parsed =
+        toml::from_str::<ConfigToml>("clamp = true").expect("clamp should deserialize from TOML");
+    let enabled_cfg = Config::load_from_base_config_with_overrides(
+        parsed,
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").path().to_path_buf(),
+    )
+    .expect("load clamped config");
+    assert!(enabled_cfg.clamp);
+}
+
+#[tokio::test]
+async fn config_builder_applies_clamp_cli_override() {
+    let chaos_home = tempdir().expect("tempdir");
+    let cfg = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .cli_overrides(vec![("clamp".to_string(), TomlValue::Boolean(true))])
+        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
+        .build()
+        .await
+        .expect("load config with clamp CLI override");
+
+    assert!(cfg.clamp);
+}
+
+#[test]
 fn tui_theme_deserializes_from_toml() {
     let cfg = r#"
 [tui]
@@ -872,6 +907,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         permissions: expected_precedence_fixture_permissions(ApprovalPolicy::Supervised),
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(None),
+        clamp: false,
         user_instructions: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),

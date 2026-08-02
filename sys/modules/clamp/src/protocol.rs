@@ -135,6 +135,10 @@ pub enum Message {
     Result {
         result: Value,
         #[serde(default)]
+        subtype: Option<String>,
+        #[serde(default)]
+        is_error: bool,
+        #[serde(default)]
         total_cost_usd: Option<f64>,
         #[serde(default)]
         session_id: Option<String>,
@@ -293,10 +297,18 @@ mod tests {
         }))
         .expect("error result should deserialize");
 
-        let Message::Result { usage, .. } = message else {
+        let Message::Result {
+            usage,
+            subtype,
+            is_error,
+            ..
+        } = message
+        else {
             panic!("expected result message");
         };
 
         assert_eq!(usage, None);
+        assert_eq!(subtype.as_deref(), Some("error_during_execution"));
+        assert!(is_error);
     }
 }

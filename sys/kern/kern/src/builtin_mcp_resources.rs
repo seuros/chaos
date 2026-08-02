@@ -203,15 +203,26 @@ pub async fn session_detail_json_from_runtime_db(
 /// reasoning efforts it will accept. Picker flags, modalities and transport
 /// details stay behind.
 fn model_json(preset: &ModelPreset) -> serde_json::Value {
-    json!({
-        "id": preset.model,
-        "description": preset.description,
-        "reasoning_efforts": preset
-            .supported_reasoning_efforts
-            .iter()
-            .map(|effort| effort.effort)
-            .collect::<Vec<_>>(),
-    })
+    let mut model = serde_json::Map::new();
+    model.insert("id".to_string(), json!(preset.model));
+    // Providers reached through a bare `/models` listing publish neither of
+    // these. Emitting them empty spends tokens to say nothing.
+    if !preset.description.is_empty() {
+        model.insert("description".to_string(), json!(preset.description));
+    }
+    if !preset.supported_reasoning_efforts.is_empty() {
+        model.insert(
+            "reasoning_efforts".to_string(),
+            json!(
+                preset
+                    .supported_reasoning_efforts
+                    .iter()
+                    .map(|effort| effort.effort)
+                    .collect::<Vec<_>>()
+            ),
+        );
+    }
+    serde_json::Value::Object(model)
 }
 
 pub fn models_json_from_provider_models(groups: &[ProviderModels]) -> Result<String, String> {

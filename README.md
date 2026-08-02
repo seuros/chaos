@@ -76,11 +76,25 @@ Windows is not supported.
 ## Clamping / Docking
 
 Anthropic requires MAX subscribers to use the official Claude Code harness.
-The Clamping module works within these terms: it launches Claude Code with `--bare`,
-strips its built-in tools, and connects through MCP. FreeChaOS provides the tools.
-FreeChaOS hooks into the lifecycle. Claude Code becomes the transport.
+The Clamping module works within these terms: it launches Claude Code with settings
+discovery disabled, strips its built-in tools, and connects through MCP. FreeChaOS
+provides the tools. FreeChaOS hooks into the lifecycle. Claude Code becomes the
+transport.
 
 API key users connect directly through the kernel — no clamping needed.
+
+Headless `chaos exec` sessions can request the clamped transport through the
+layered configuration:
+
+```bash
+chaos exec --json -c clamp=true -m claude-sonnet-4-5 "say ok"
+chaos exec --json -c clamp=true resume <process_id> "continue"
+```
+
+The effective config for each invocation governs its transport, so resumed
+sessions must pass `-c clamp=true` again. If Claude Code is missing,
+unauthenticated, or fails during a turn, the exec command fails instead of
+falling back to direct API billing.
 
 This architecture is correct usage of both providers' terms of service.
 

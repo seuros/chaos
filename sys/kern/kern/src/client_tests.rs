@@ -33,7 +33,30 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         None,
         false,
         None,
+        false,
     )
+}
+
+#[test]
+fn model_client_can_start_clamped_before_the_first_turn() {
+    let provider = crate::model_provider_info::create_oss_provider_with_base_url(
+        "https://example.com/v1",
+        crate::model_provider_info::WireApi::Responses,
+    );
+    let client = ModelClient::new(
+        None,
+        ProcessId::new(),
+        "gpt-oss".to_string(),
+        provider,
+        SessionSource::Exec,
+        ApprovalPolicy::Headless,
+        None,
+        false,
+        None,
+        true,
+    );
+
+    assert!(client.is_clamped());
 }
 
 fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {
@@ -102,6 +125,7 @@ fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
         None,
         false,
         None,
+        false,
     );
     let session = client.new_session();
 
@@ -127,6 +151,7 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
         None,
         false,
         None,
+        false,
     );
     let session = client.new_session();
 

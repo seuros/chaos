@@ -205,6 +205,12 @@ pub struct Config {
     /// users are only interested in the final agent responses.
     pub hide_agent_reasoning: bool,
 
+    /// Start `chaos exec` sessions using the Claude Code subprocess transport.
+    ///
+    /// Interactive sessions ignore this setting and retain their existing
+    /// `/clamp` and `--clamp` controls.
+    pub clamp: bool,
+
     /// Optional user-provided instructions (currently always `None`; a
     /// schema-based replacement for the removed AGENTS.md loader will
     /// repopulate this later).
@@ -617,6 +623,10 @@ pub struct ConfigToml {
     /// When set to `true`, `AgentReasoning` events will be hidden from the
     /// UI/output. Defaults to `false`.
     pub hide_agent_reasoning: Option<bool>,
+
+    /// Start `chaos exec` sessions using the Claude Code subprocess transport.
+    /// Defaults to `false`.
+    pub clamp: Option<bool>,
 
     pub model_reasoning_effort: Option<ReasoningEffort>,
     /// Allow the parent model to change its own reasoning effort for subsequent turns.

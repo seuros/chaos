@@ -776,7 +776,8 @@ impl ModelClientSession {
                         if let Err(e) = t.initialize().await {
                             let _ = tx_event
                                 .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                                    "clamp init failed: {e}"
+                                    "{}: {e}",
+                                    clamp_failure_marker(&e, "clamp_startup_failed")
                                 ))))
                                 .await;
                             return;
@@ -792,7 +793,8 @@ impl ModelClientSession {
                     Err(e) => {
                         let _ = tx_event
                             .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                                "clamp spawn failed: {e}"
+                                "{}: {e}",
+                                clamp_failure_marker(&e, "clamp_startup_failed")
                             ))))
                             .await;
                         return;
@@ -818,7 +820,8 @@ impl ModelClientSession {
                 *guard = None;
                 let _ = tx_event
                     .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                        "clamp set_model failed: {e}"
+                        "{}: {e}",
+                        clamp_failure_marker(&e, "clamp_runtime_failed")
                     ))))
                     .await;
                 return;
@@ -846,7 +849,8 @@ impl ModelClientSession {
                 *guard = None;
                 let _ = tx_event
                     .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                        "clamp send failed: {e}"
+                        "{}: {e}",
+                        clamp_failure_marker(&e, "clamp_runtime_failed")
                     ))))
                     .await;
                 return;
@@ -918,7 +922,8 @@ impl ModelClientSession {
                         *guard = None;
                         let _ = tx_event
                             .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                                "clamp error: {e}"
+                                "{}: {e}",
+                                clamp_failure_marker(&e, "clamp_runtime_failed")
                             ))))
                             .await;
                         break;
@@ -1299,6 +1304,14 @@ impl ModelClientSession {
             Ok(stream) => Ok(adapt_adapter_stream(stream, session_telemetry.clone())),
             Err(err) => Err(map_api_error(abi_error_to_api_error(err))),
         }
+    }
+}
+
+fn clamp_failure_marker(error: &chaos_clamp::ClampError, fallback: &'static str) -> &'static str {
+    match error {
+        chaos_clamp::ClampError::CliNotFound(_) => "clamp_cli_not_found",
+        chaos_clamp::ClampError::AuthenticationUnavailable => "clamp_auth_unavailable",
+        _ => fallback,
     }
 }
 

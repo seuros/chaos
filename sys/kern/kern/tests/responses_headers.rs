@@ -96,6 +96,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         config.model_verbosity,
         false,
         None,
+        false,
     );
     let mut client_session = client.new_session();
 
@@ -209,6 +210,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
         config.model_verbosity,
         false,
         None,
+        false,
     );
     let mut client_session = client.new_session();
 
@@ -321,6 +323,7 @@ async fn responses_respects_model_info_overrides_from_config() {
         config.model_verbosity,
         false,
         None,
+        false,
     );
     let mut client_session = client.new_session();
 

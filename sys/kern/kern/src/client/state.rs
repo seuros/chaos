@@ -50,6 +50,7 @@ impl ModelClient {
         model_verbosity: Option<chaos_ipc::config_types::Verbosity>,
         enable_request_compression: bool,
         beta_features_header: Option<String>,
+        initial_clamped: bool,
     ) -> Self {
         let representer = if provider.is_openai() {
             chaos_parrot::SessionRepresenter::openai()
@@ -69,7 +70,7 @@ impl ModelClient {
                 enable_request_compression,
                 beta_features_header,
                 resolved_wire: std::sync::OnceLock::new(),
-                clamped: std::sync::atomic::AtomicBool::new(false),
+                clamped: std::sync::atomic::AtomicBool::new(initial_clamped),
                 clamp_transport: tokio::sync::Mutex::new(None),
                 clamp_wiretap: tokio::sync::Mutex::new(None),
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),

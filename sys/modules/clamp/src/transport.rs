@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
@@ -33,6 +34,9 @@ use crate::protocol::Message;
 use crate::protocol::UserMessage;
 use crate::protocol::control_request_envelope;
 use crate::protocol::initialize_request;
+
+const STDERR_TAIL_MAX_LINES: usize = 32;
+const STDERR_TAIL_MAX_CHARS_PER_LINE: usize = 512;
 
 /// Async callback for Claude Code `can_use_tool` requests.
 pub type ToolPermissionHandler = Arc<
@@ -177,6 +181,10 @@ pub struct ClampTransport {
     hook_callback_handler: Option<HookCallbackHandler>,
     /// Optional handler for MCP messages.
     mcp_message_handler: Option<McpMessageHandler>,
+    /// Bounded stderr tail retained only for classifying subprocess failures.
+    /// It is never included in user-facing errors because it may contain
+    /// credentials or other sensitive diagnostic context.
+    stderr_tail: Arc<StdMutex<VecDeque<String>>>,
 }
 
 /// Runtime info about the clamped Claude Code subprocess.
@@ -304,6 +312,12 @@ pub enum ClampError {
     #[error("control request failed: {0}")]
     ControlError(String),
 
+    #[error("Claude Code subscription authentication is unavailable")]
+    AuthenticationUnavailable,
+
+    #[error("Claude Code reported a failed result")]
+    TurnFailed,
+
     #[error("transport closed")]
     Closed,
 
@@ -332,13 +346,28 @@ impl ClampTransport {
             .take()
             .ok_or_else(|| ClampError::Protocol("no stdout on child".to_string()))?;
 
-        // Drain stderr in background
+        let stderr_tail = Arc::new(StdMutex::new(VecDeque::new()));
+
+        // Drain stderr in the background. Keep only a small bounded tail for
+        // failure classification; never expose the captured text directly.
         if let Some(stderr) = child.stderr.take() {
+            let stderr_tail = Arc::clone(&stderr_tail);
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     debug!(target: "chaos_clamp::stderr", "{}", line);
+                    let line = line
+                        .chars()
+                        .take(STDERR_TAIL_MAX_CHARS_PER_LINE)
+                        .collect::<String>();
+                    let mut tail = stderr_tail
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if tail.len() == STDERR_TAIL_MAX_LINES {
+                        tail.pop_front();
+                    }
+                    tail.push_back(line);
                 }
             });
         }
@@ -362,6 +391,7 @@ impl ClampTransport {
             tool_permission_handler: config.tool_permission_handler,
             hook_callback_handler: config.hook_callback_handler,
             mcp_message_handler: config.mcp_message_handler,
+            stderr_tail,
         })
     }
 
@@ -381,8 +411,10 @@ impl ClampTransport {
         loop {
             let msg = tokio::time::timeout_at(deadline, self.message_rx.recv())
                 .await
-                .map_err(|_| ClampError::Timeout(id.clone()))?
-                .ok_or(ClampError::Closed)?;
+                .map_err(|_| ClampError::Timeout(id.clone()))?;
+            let Some(msg) = msg else {
+                return Err(self.closed_error().await);
+            };
 
             let Some(resp_id) = control_response_request_id(&msg) else {
                 if let Some(queued) = self.handle_message(msg).await? {
@@ -411,7 +443,7 @@ impl ClampTransport {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown error")
                     .to_string();
-                return Err(ClampError::ControlError(err));
+                return Err(self.classify_control_error(err));
             }
             let result = response
                 .get("response")
@@ -469,15 +501,20 @@ impl ClampTransport {
         loop {
             tokio::select! {
                 result = &mut rx => {
-                    let result = result.map_err(|_| ClampError::Closed)?;
-                    return result.map_err(ClampError::ControlError);
+                    let result = match result {
+                        Ok(result) => result,
+                        Err(_) => return Err(self.closed_error().await),
+                    };
+                    return result.map_err(|err| self.classify_control_error(err));
                 }
                 _ = &mut timeout => {
                     self.pending.remove(&id);
                     return Err(ClampError::Timeout(id));
                 }
                 maybe_msg = self.message_rx.recv() => {
-                    let msg = maybe_msg.ok_or(ClampError::Closed)?;
+                    let Some(msg) = maybe_msg else {
+                        return Err(self.closed_error().await);
+                    };
                     if let Some(queued) = self.handle_message(msg).await? {
                         self.queued_messages.push_back(queued);
                     }
@@ -501,10 +538,20 @@ impl ClampTransport {
 
             let msg = match self.message_rx.recv().await {
                 Some(msg) => msg,
-                None => return Ok(None),
+                None => return Err(self.closed_error().await),
             };
 
             if let Some(message) = self.handle_message(msg).await? {
+                if let Message::Result {
+                    result,
+                    subtype,
+                    is_error,
+                    ..
+                } = &message
+                    && result_indicates_error(subtype.as_deref(), *is_error)
+                {
+                    return Err(self.classify_result_error(result));
+                }
                 return Ok(Some(message));
             }
         }
@@ -542,6 +589,38 @@ impl ClampTransport {
     fn next_request_id(&self) -> String {
         let n = self.request_counter.fetch_add(1, Ordering::Relaxed);
         format!("chaos_req_{n}")
+    }
+
+    async fn closed_error(&self) -> ClampError {
+        // Give the stderr drain task one scheduling turn to record diagnostics
+        // emitted immediately before the subprocess closed stdout.
+        tokio::task::yield_now().await;
+        if stderr_indicates_auth_failure(&self.stderr_tail) {
+            ClampError::AuthenticationUnavailable
+        } else {
+            ClampError::Closed
+        }
+    }
+
+    fn classify_control_error(&self, error: String) -> ClampError {
+        if text_indicates_auth_failure(&error) || stderr_indicates_auth_failure(&self.stderr_tail) {
+            ClampError::AuthenticationUnavailable
+        } else {
+            ClampError::ControlError(error)
+        }
+    }
+
+    fn classify_result_error(&self, result: &Value) -> ClampError {
+        let result = result
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| result.to_string());
+        if text_indicates_auth_failure(&result) || stderr_indicates_auth_failure(&self.stderr_tail)
+        {
+            ClampError::AuthenticationUnavailable
+        } else {
+            ClampError::TurnFailed
+        }
     }
 
     async fn write_json(&mut self, value: &Value) -> Result<(), ClampError> {
@@ -583,12 +662,16 @@ impl ClampTransport {
             Message::Result {
                 session_id: Some(session_id),
                 result,
+                subtype,
+                is_error,
                 total_cost_usd,
                 usage,
             } => {
                 self.session_id = session_id.clone();
                 Ok(Some(Message::Result {
                     result,
+                    subtype,
+                    is_error,
                     total_cost_usd,
                     session_id: Some(session_id),
                     usage,
@@ -731,6 +814,33 @@ impl ClampTransport {
     }
 }
 
+fn stderr_indicates_auth_failure(stderr_tail: &StdMutex<VecDeque<String>>) -> bool {
+    let tail = stderr_tail
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    tail.iter().any(|line| text_indicates_auth_failure(line))
+}
+
+fn text_indicates_auth_failure(text: &str) -> bool {
+    let text = text.to_ascii_lowercase();
+    [
+        "not logged in",
+        "not authenticated",
+        "authentication required",
+        "authentication failed",
+        "oauth token",
+        "invalid api key",
+        "please run /login",
+        "please run claude auth login",
+    ]
+    .iter()
+    .any(|marker| text.contains(marker))
+}
+
+fn result_indicates_error(subtype: Option<&str>, is_error: bool) -> bool {
+    is_error || subtype.is_some_and(|subtype| subtype != "success")
+}
+
 fn control_response_request_id(msg: &Message) -> Option<&str> {
     let Message::ControlResponse { response } = msg else {
         return None;
@@ -831,6 +941,43 @@ async fn read_stdout(stdout: ChildStdout, tx: mpsc::Sender<Message>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_missing_cli_path_is_distinguishable() {
+        let config = ClampConfig {
+            cli_path: Some(PathBuf::from("/definitely/not/a/real/claude-code-binary")),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            find_claude_cli(&config),
+            Err(ClampError::CliNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn authentication_failures_are_classified_without_exposing_stderr() {
+        assert!(text_indicates_auth_failure(
+            "Not logged in. Please run claude auth login."
+        ));
+        assert!(text_indicates_auth_failure(
+            "Authentication failed: invalid OAuth token"
+        ));
+        assert!(!text_indicates_auth_failure(
+            "unexpected control protocol response"
+        ));
+    }
+
+    #[test]
+    fn failed_result_detection_preserves_legacy_success_messages() {
+        assert!(result_indicates_error(Some("error_during_execution"), true));
+        assert!(result_indicates_error(
+            Some("error_during_execution"),
+            false
+        ));
+        assert!(!result_indicates_error(Some("success"), false));
+        assert!(!result_indicates_error(None, false));
+    }
 
     #[test]
     fn default_tool_permission_allow_preserves_input() {

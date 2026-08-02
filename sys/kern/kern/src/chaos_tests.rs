@@ -467,6 +467,7 @@ fn make_test_session_services(
             config.model_verbosity,
             true,
             Session::build_model_client_beta_features_header(config),
+            false,
         ),
         halluacinate: None,
     }

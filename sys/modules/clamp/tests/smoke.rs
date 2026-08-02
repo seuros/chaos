@@ -23,11 +23,8 @@ async fn clamp_round_trip() {
     let mut transport = ClampTransport::spawn(config).await.expect("spawn failed");
 
     eprintln!("[test] initializing control protocol...");
-    let init = transport.initialize().await.expect("init failed");
-    eprintln!(
-        "[test] initialized: {}",
-        serde_json::to_string_pretty(&init).unwrap_or_default()
-    );
+    transport.initialize().await.expect("init failed");
+    eprintln!("[test] initialized");
 
     eprintln!("[test] sending prompt...");
     transport
@@ -42,8 +39,23 @@ async fn clamp_round_trip() {
             Message::Assistant { message } => {
                 eprintln!("[test] assistant: {message}");
             }
-            Message::Result { total_cost_usd, .. } => {
-                eprintln!("[test] turn complete (cost: {total_cost_usd:?})");
+            Message::Result { usage, .. } => {
+                let usage = usage.as_ref().expect("result did not include usage");
+                assert!(
+                    usage.input_tokens > 0,
+                    "input token count should be non-zero"
+                );
+                assert!(
+                    usage.output_tokens > 0,
+                    "output token count should be non-zero"
+                );
+                eprintln!(
+                    "[test] usage: input={} cache_creation={} cache_read={} output={}",
+                    usage.input_tokens,
+                    usage.cache_creation_input_tokens,
+                    usage.cache_read_input_tokens,
+                    usage.output_tokens
+                );
                 got_result = true;
                 break;
             }

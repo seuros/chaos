@@ -237,6 +237,31 @@ impl ModelsManager {
         }
     }
 
+    /// The provider this manager refreshes and resolves models from.
+    pub fn provider(&self) -> &ModelProviderInfo {
+        &self.provider
+    }
+
+    /// A manager pointed at another provider, sharing this one's cache store.
+    /// Credentials are re-resolved for the target id — the catalog endpoint and
+    /// the token that opens it belong to the same provider, and pairing one
+    /// with the other's token just earns a 401.
+    ///
+    /// Returns `None` when the catalog was supplied by the caller: that list is
+    /// authoritative and says nothing about a provider it was not written for.
+    pub fn rebound_to(&self, provider_id: &str, provider: ModelProviderInfo) -> Option<Self> {
+        if self.catalog_mode == CatalogMode::Custom {
+            return None;
+        }
+        Some(Self::new_with_provider(
+            self.cache_manager.home().to_path_buf(),
+            self.auth_manager.for_provider(provider_id),
+            None,
+            self.collaboration_modes_config,
+            provider,
+        ))
+    }
+
     /// List all available models, refreshing according to the specified strategy.
     ///
     /// Returns model presets sorted by priority and filtered by auth mode and visibility.

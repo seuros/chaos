@@ -40,6 +40,12 @@ impl ModelsCacheManager {
         }
     }
 
+    /// Where this cache lives, so a caller can build a second manager over the
+    /// same store without threading the path alongside it.
+    pub fn home(&self) -> &std::path::Path {
+        self.sqlite_home.as_path()
+    }
+
     /// Attempt to load a fresh cache entry. Returns `None` if the cache doesn't exist, is stale,
     /// or was written for a different provider scope.
     pub async fn load_fresh(

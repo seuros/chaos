@@ -719,3 +719,83 @@ fn test_models_response_roundtrips() {
         "test models should contain at least one model"
     );
 }
+
+/// A manager rebound to another provider resolves models from that provider,
+/// not from the one it was constructed with. This is what keeps a process that
+/// picked a non-default provider from inheriting a model name the provider it
+/// chose has never heard of.
+#[tokio::test]
+async fn rebound_manager_resolves_models_from_the_new_provider() {
+    let chaos_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
+
+    let default_server = MockServer::start().await;
+    mount_models_once(
+        &default_server,
+        ModelsResponse {
+            models: vec![remote_model("default-provider-model", "Default", 1)],
+        },
+    )
+    .await;
+    let chosen_server = MockServer::start().await;
+    mount_models_once(
+        &chosen_server,
+        ModelsResponse {
+            models: vec![remote_model("chosen-provider-model", "Chosen", 1)],
+        },
+    )
+    .await;
+
+    let manager = ModelsManager::with_provider_for_tests(
+        chaos_home.path().to_path_buf(),
+        auth_manager,
+        provider_for(default_server.uri()),
+    );
+
+    assert_eq!(
+        manager
+            .get_default_model(&None, RefreshStrategy::OnlineIfUncached)
+            .await,
+        "default-provider-model"
+    );
+
+    let rebound = manager
+        .rebound_to("chosen", provider_for(chosen_server.uri()))
+        .expect("a catalog fetched from the network can be rebound");
+
+    assert_eq!(
+        rebound
+            .get_default_model(&None, RefreshStrategy::OnlineIfUncached)
+            .await,
+        "chosen-provider-model"
+    );
+    assert_eq!(
+        manager
+            .get_default_model(&None, RefreshStrategy::OnlineIfUncached)
+            .await,
+        "default-provider-model",
+        "rebinding hands back a new manager and leaves the original pointed where it was"
+    );
+}
+
+/// A caller-supplied catalog is authoritative and describes no particular
+/// provider, so there is nothing to rebind.
+#[tokio::test]
+async fn custom_catalog_refuses_to_rebind() {
+    let chaos_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
+    let manager = ModelsManager::new(
+        chaos_home.path().to_path_buf(),
+        auth_manager,
+        Some(ModelsResponse {
+            models: vec![remote_model("supplied", "Supplied", 1)],
+        }),
+        CollaborationModesConfig::default(),
+    );
+
+    assert!(
+        manager
+            .rebound_to("chosen", provider_for("http://127.0.0.1:1/v1".to_string()))
+            .is_none()
+    );
+}

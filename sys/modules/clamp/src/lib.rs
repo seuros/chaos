@@ -15,6 +15,7 @@ mod transport;
 pub use protocol::ControlRequest;
 pub use protocol::ControlResponse;
 pub use protocol::Message;
+pub use protocol::Usage;
 pub use proxy::FileWiretapSink;
 pub use proxy::WiretapExchange;
 pub use proxy::WiretapProxy;

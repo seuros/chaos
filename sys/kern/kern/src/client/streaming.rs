@@ -19,6 +19,7 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use chaos_ipc::protocol::TokenUsage;
 use chaos_parrot::RamaTransport;
 use chaos_parrot::RequestTelemetry;
 use chaos_parrot::ResponsesOptions as ApiResponsesOptions;
@@ -68,6 +69,28 @@ use super::{
 };
 
 // ── Response stream helpers ───────────────────────────────────────────────────
+
+fn clamp_usage_to_token_usage(usage: chaos_clamp::Usage) -> TokenUsage {
+    fn saturating_i64(value: u64) -> i64 {
+        i64::try_from(value).unwrap_or(i64::MAX)
+    }
+
+    let input_tokens = usage
+        .input_tokens
+        .saturating_add(usage.cache_creation_input_tokens)
+        .saturating_add(usage.cache_read_input_tokens);
+    let total_tokens = input_tokens.saturating_add(usage.output_tokens);
+
+    TokenUsage {
+        input_tokens: saturating_i64(input_tokens),
+        cache_creation_input_tokens: saturating_i64(usage.cache_creation_input_tokens),
+        cached_input_tokens: saturating_i64(usage.cache_read_input_tokens),
+        output_tokens: saturating_i64(usage.output_tokens),
+        reasoning_output_tokens: 0,
+        total_tokens: saturating_i64(total_tokens),
+        provider_request_count: 0,
+    }
+}
 
 /// Parses per-turn metadata into an HTTP header value.
 pub(super) fn parse_turn_metadata_header(
@@ -828,7 +851,9 @@ impl ModelClientSession {
                             }
                         }
                     }
-                    Ok(Some(ClampMessage::Result { session_id, .. })) => {
+                    Ok(Some(ClampMessage::Result {
+                        session_id, usage, ..
+                    })) => {
                         let _ = tx_event
                             .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
                                 id: None,
@@ -842,7 +867,7 @@ impl ModelClientSession {
                         let _ = tx_event
                             .send(Ok(ResponseEvent::Completed {
                                 response_id,
-                                token_usage: None,
+                                token_usage: usage.map(clamp_usage_to_token_usage),
                             }))
                             .await;
                         break;
@@ -1272,5 +1297,47 @@ fn clamp_wiretap_mode() -> WiretapMode {
         }
         "trace" | "tracing" => WiretapMode::File(None),
         path => WiretapMode::File(Some(std::path::PathBuf::from(path))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clamp_usage_to_token_usage;
+    use chaos_clamp::Usage;
+
+    #[test]
+    fn clamp_usage_matches_anthropic_accounting_semantics() {
+        let usage = clamp_usage_to_token_usage(Usage {
+            input_tokens: 11,
+            cache_creation_input_tokens: 13,
+            cache_read_input_tokens: 17,
+            output_tokens: 19,
+        });
+
+        assert_eq!(usage.input_tokens, 41);
+        assert_eq!(usage.cache_creation_input_tokens, 13);
+        assert_eq!(usage.cached_input_tokens, 17);
+        assert_eq!(usage.output_tokens, 19);
+        assert_eq!(usage.reasoning_output_tokens, 0);
+        assert_eq!(usage.total_tokens, 60);
+        assert_eq!(usage.provider_request_count, 0);
+    }
+
+    #[test]
+    fn clamp_usage_saturates_on_overflow() {
+        let usage = clamp_usage_to_token_usage(Usage {
+            input_tokens: u64::MAX,
+            cache_creation_input_tokens: u64::MAX,
+            cache_read_input_tokens: u64::MAX,
+            output_tokens: u64::MAX,
+        });
+
+        assert_eq!(usage.input_tokens, i64::MAX);
+        assert_eq!(usage.cache_creation_input_tokens, i64::MAX);
+        assert_eq!(usage.cached_input_tokens, i64::MAX);
+        assert_eq!(usage.output_tokens, i64::MAX);
+        assert_eq!(usage.reasoning_output_tokens, 0);
+        assert_eq!(usage.total_tokens, i64::MAX);
+        assert_eq!(usage.provider_request_count, 0);
     }
 }

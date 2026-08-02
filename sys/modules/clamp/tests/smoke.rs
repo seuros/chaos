@@ -36,8 +36,8 @@ async fn clamp_round_trip() {
     let mut got_result = false;
     while let Ok(Some(msg)) = transport.next_message().await {
         match &msg {
-            Message::Assistant { .. } => {
-                eprintln!("[test] assistant message received");
+            Message::Assistant { message } => {
+                eprintln!("[test] assistant: {message}");
             }
             Message::Result { usage, .. } => {
                 let usage = usage.as_ref().expect("result did not include usage");
@@ -59,8 +59,8 @@ async fn clamp_round_trip() {
                 got_result = true;
                 break;
             }
-            Message::System { .. } => {
-                eprintln!("[test] system message received");
+            Message::System { message, .. } => {
+                eprintln!("[test] system: {message:?}");
             }
             _ => {}
         }

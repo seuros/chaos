@@ -585,7 +585,6 @@ impl ClampTransport {
                 result,
                 total_cost_usd,
                 usage,
-                model_usage,
             } => {
                 self.session_id = session_id.clone();
                 Ok(Some(Message::Result {
@@ -593,7 +592,6 @@ impl ClampTransport {
                     total_cost_usd,
                     session_id: Some(session_id),
                     usage,
-                    model_usage,
                 }))
             }
             msg @ (Message::Assistant { .. } | Message::Result { .. } | Message::System { .. }) => {

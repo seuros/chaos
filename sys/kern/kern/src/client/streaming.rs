@@ -70,22 +70,38 @@ use super::{
 
 // ── Response stream helpers ───────────────────────────────────────────────────
 
-fn clamp_usage_to_token_usage(usage: chaos_clamp::Usage) -> TokenUsage {
+fn clamp_usage_to_token_usage(
+    aggregate_usage: chaos_clamp::Usage,
+    context_usage: Option<&chaos_clamp::Usage>,
+) -> TokenUsage {
     fn saturating_i64(value: u64) -> i64 {
         i64::try_from(value).unwrap_or(i64::MAX)
     }
 
-    let input_tokens = usage
+    let input_tokens = aggregate_usage
         .input_tokens
-        .saturating_add(usage.cache_creation_input_tokens)
-        .saturating_add(usage.cache_read_input_tokens);
-    let total_tokens = input_tokens.saturating_add(usage.output_tokens);
+        .saturating_add(aggregate_usage.cache_creation_input_tokens)
+        .saturating_add(aggregate_usage.cache_read_input_tokens);
+    // Claude Code's result usage aggregates every provider call in its tool
+    // loop. Keep those counters for activity reporting, but derive the context
+    // load from the final raw assistant message, whose usage is per-call.
+    let total_tokens = context_usage
+        .map(|usage| {
+            usage
+                .input_tokens
+                .saturating_add(usage.cache_creation_input_tokens)
+                .saturating_add(usage.cache_read_input_tokens)
+                .saturating_add(usage.output_tokens)
+        })
+        // Missing per-call usage is safer as an unknown/zero context load than
+        // as the confidently wrong aggregate that drives auto-compaction.
+        .unwrap_or(0);
 
     TokenUsage {
         input_tokens: saturating_i64(input_tokens),
-        cache_creation_input_tokens: saturating_i64(usage.cache_creation_input_tokens),
-        cached_input_tokens: saturating_i64(usage.cache_read_input_tokens),
-        output_tokens: saturating_i64(usage.output_tokens),
+        cache_creation_input_tokens: saturating_i64(aggregate_usage.cache_creation_input_tokens),
+        cached_input_tokens: saturating_i64(aggregate_usage.cache_read_input_tokens),
+        output_tokens: saturating_i64(aggregate_usage.output_tokens),
         reasoning_output_tokens: 0,
         total_tokens: saturating_i64(total_tokens),
         provider_request_count: 0,
@@ -837,9 +853,21 @@ impl ModelClientSession {
             }
 
             let mut full_text = String::new();
+            let mut last_assistant_usage = None;
             loop {
                 match transport.next_message().await {
                     Ok(Some(ClampMessage::Assistant { message })) => {
+                        if let Some(raw_usage) = message.get("usage").cloned() {
+                            match serde_json::from_value::<chaos_clamp::Usage>(raw_usage) {
+                                Ok(usage) => last_assistant_usage = Some(usage),
+                                Err(error) => {
+                                    tracing::warn!(
+                                        %error,
+                                        "failed to parse clamp assistant usage"
+                                    );
+                                }
+                            }
+                        }
                         if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
                             for block in content {
                                 if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
@@ -867,7 +895,9 @@ impl ModelClientSession {
                         let _ = tx_event
                             .send(Ok(ResponseEvent::Completed {
                                 response_id,
-                                token_usage: usage.map(clamp_usage_to_token_usage),
+                                token_usage: usage.map(|usage| {
+                                    clamp_usage_to_token_usage(usage, last_assistant_usage.as_ref())
+                                }),
                             }))
                             .await;
                         break;
@@ -1306,31 +1336,40 @@ mod tests {
     use chaos_clamp::Usage;
 
     #[test]
-    fn clamp_usage_matches_anthropic_accounting_semantics() {
-        let usage = clamp_usage_to_token_usage(Usage {
-            input_tokens: 11,
-            cache_creation_input_tokens: 13,
-            cache_read_input_tokens: 17,
-            output_tokens: 19,
-        });
+    fn clamp_usage_uses_aggregate_counters_and_last_call_context() {
+        let usage = clamp_usage_to_token_usage(
+            Usage {
+                input_tokens: 8,
+                cache_creation_input_tokens: 45_558,
+                cache_read_input_tokens: 136_189,
+                output_tokens: 233,
+            },
+            Some(&Usage {
+                input_tokens: 3,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 45_700,
+                output_tokens: 47,
+            }),
+        );
 
-        assert_eq!(usage.input_tokens, 41);
-        assert_eq!(usage.cache_creation_input_tokens, 13);
-        assert_eq!(usage.cached_input_tokens, 17);
-        assert_eq!(usage.output_tokens, 19);
+        assert_eq!(usage.input_tokens, 181_755);
+        assert_eq!(usage.cache_creation_input_tokens, 45_558);
+        assert_eq!(usage.cached_input_tokens, 136_189);
+        assert_eq!(usage.output_tokens, 233);
         assert_eq!(usage.reasoning_output_tokens, 0);
-        assert_eq!(usage.total_tokens, 60);
+        assert_eq!(usage.total_tokens, 45_750);
         assert_eq!(usage.provider_request_count, 0);
     }
 
     #[test]
     fn clamp_usage_saturates_on_overflow() {
-        let usage = clamp_usage_to_token_usage(Usage {
+        let max_usage = Usage {
             input_tokens: u64::MAX,
             cache_creation_input_tokens: u64::MAX,
             cache_read_input_tokens: u64::MAX,
             output_tokens: u64::MAX,
-        });
+        };
+        let usage = clamp_usage_to_token_usage(max_usage.clone(), Some(&max_usage));
 
         assert_eq!(usage.input_tokens, i64::MAX);
         assert_eq!(usage.cache_creation_input_tokens, i64::MAX);
@@ -1339,5 +1378,22 @@ mod tests {
         assert_eq!(usage.reasoning_output_tokens, 0);
         assert_eq!(usage.total_tokens, i64::MAX);
         assert_eq!(usage.provider_request_count, 0);
+    }
+
+    #[test]
+    fn clamp_usage_leaves_context_unknown_without_assistant_usage() {
+        let usage = clamp_usage_to_token_usage(
+            Usage {
+                input_tokens: 11,
+                cache_creation_input_tokens: 13,
+                cache_read_input_tokens: 17,
+                output_tokens: 19,
+            },
+            None,
+        );
+
+        assert_eq!(usage.input_tokens, 41);
+        assert_eq!(usage.output_tokens, 19);
+        assert_eq!(usage.total_tokens, 0);
     }
 }

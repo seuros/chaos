@@ -140,8 +140,6 @@ pub enum Message {
         session_id: Option<String>,
         #[serde(default)]
         usage: Option<Usage>,
-        #[serde(default, rename = "modelUsage")]
-        model_usage: Option<Value>,
     },
 
     /// A system message (e.g., init, rate limit, error).
@@ -201,7 +199,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn result_preserves_usage_and_model_usage() {
+    fn result_preserves_usage() {
         let message: Message = serde_json::from_value(json!({
             "type": "result",
             "subtype": "success",
@@ -226,10 +224,7 @@ mod tests {
         }))
         .expect("result should deserialize");
 
-        let Message::Result {
-            usage, model_usage, ..
-        } = message
-        else {
+        let Message::Result { usage, .. } = message else {
             panic!("expected result message");
         };
 
@@ -238,17 +233,6 @@ mod tests {
         assert_eq!(usage.cache_creation_input_tokens, 13);
         assert_eq!(usage.cache_read_input_tokens, 17);
         assert_eq!(usage.output_tokens, 19);
-        assert_eq!(
-            model_usage,
-            Some(json!({
-                "claude-test": {
-                    "inputTokens": 11,
-                    "cacheCreationInputTokens": 13,
-                    "cacheReadInputTokens": 17,
-                    "outputTokens": 19
-                }
-            }))
-        );
     }
 
     #[test]
@@ -261,15 +245,11 @@ mod tests {
         }))
         .expect("historical result should deserialize");
 
-        let Message::Result {
-            usage, model_usage, ..
-        } = message
-        else {
+        let Message::Result { usage, .. } = message else {
             panic!("expected result message");
         };
 
         assert_eq!(usage, None);
-        assert_eq!(model_usage, None);
     }
 
     #[test]

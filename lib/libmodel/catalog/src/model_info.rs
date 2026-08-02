@@ -32,7 +32,7 @@ pub fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
     ModelInfo {
         slug: abi.id.clone(),
         display_name: abi.display_name.clone(),
-        description: None,
+        description: abi.description.clone(),
         default_reasoning_level: None,
         supported_reasoning_levels: Vec::new(),
         shell_type: ConfigShellToolType::Default,

@@ -7,6 +7,7 @@ fn with_config_overrides_never_yields_empty_base_instructions() {
     let model = model_info_from_abi(&AbiModelInfo {
         id: "test-model".to_string(),
         display_name: "Test".to_string(),
+        description: None,
         max_input_tokens: None,
         max_output_tokens: None,
         supports_thinking: false,
@@ -27,6 +28,7 @@ fn unknown_model() -> ModelInfo {
     model_info_from_abi(&AbiModelInfo {
         id: "unknown-model".to_string(),
         display_name: "unknown-model".to_string(),
+        description: None,
         max_input_tokens: None,
         max_output_tokens: None,
         supports_thinking: false,

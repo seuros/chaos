@@ -938,6 +938,7 @@ async fn fetch_anthropic_models(
             chaos_abi::AbiModelInfo {
                 display_name: m.display_name.unwrap_or_else(|| id.clone()),
                 id,
+                description: None,
                 max_input_tokens: m.max_input_tokens,
                 max_output_tokens: m.max_tokens,
                 // capabilities struct takes precedence; flat fields are fallback

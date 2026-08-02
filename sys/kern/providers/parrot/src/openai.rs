@@ -341,11 +341,16 @@ async fn fetch_openai_models(
         id: String,
         /// Human-readable name when provided by the provider.
         #[serde(default)]
+        #[serde(alias = "name")]
         display_name: Option<String>,
+        /// Short human description when provided by the provider.
+        #[serde(default)]
+        description: Option<String>,
         /// Context window in tokens. Captured under multiple field names.
         #[serde(default)]
         #[serde(alias = "context_window")]
         #[serde(alias = "max_context_tokens")]
+        #[serde(alias = "max_context_length")]
         #[serde(alias = "max_input_tokens")]
         context_length: Option<i64>,
         /// Max output tokens when exposed.
@@ -366,12 +371,21 @@ async fn fetch_openai_models(
         capabilities: Option<ModelCapabilities>,
     }
 
-    #[derive(Deserialize)]
+    /// A provider that publishes what its models can do is more reliable than
+    /// any guess made from a slug, so every field here outranks the top-level
+    /// hints and the name heuristic alike.
+    #[derive(Deserialize, Default)]
     struct ModelCapabilities {
         #[serde(default)]
         #[serde(alias = "chat")]
         #[serde(alias = "chat_completion")]
         completion_chat: Option<bool>,
+        #[serde(default)]
+        #[serde(alias = "image_input")]
+        vision: Option<bool>,
+        #[serde(default)]
+        #[serde(alias = "thinking")]
+        reasoning: Option<bool>,
     }
 
     let url = format!("{}/models", base_url.trim_end_matches('/'));
@@ -444,13 +458,15 @@ async fn fetch_openai_models(
         })
         .map(|m| {
             let id = m.id;
+            let caps = m.capabilities.unwrap_or_default();
             chaos_abi::AbiModelInfo {
                 display_name: m.display_name.unwrap_or_else(|| id.clone()),
                 id,
+                description: m.description,
                 max_input_tokens: m.context_length,
                 max_output_tokens: m.max_tokens_output,
-                supports_thinking: m.supports_reasoning.unwrap_or(false),
-                supports_images: m.supports_image_in.unwrap_or(false),
+                supports_thinking: caps.reasoning.or(m.supports_reasoning).unwrap_or(false),
+                supports_images: caps.vision.or(m.supports_image_in).unwrap_or(false),
                 supports_structured_output: false,
                 supports_reasoning_effort: false,
                 native_server_side_tools: native_tools.clone(),
@@ -499,9 +515,9 @@ mod tests {
         assert!(!can_carry_a_turn("mistral-large-latest", Some(false)));
     }
 
-    /// The same rule applied to a real listing: a provider that mixes chat
-    /// models with embeddings, transcription and moderation yields only the
-    /// ones a turn can be sent to.
+    /// The same rule applied to a real listing, in the shape Mistral actually
+    /// publishes: only the models a turn can be sent to survive, and what the
+    /// provider says about them is carried across rather than defaulted away.
     #[tokio::test]
     async fn discovery_drops_models_that_cannot_answer_a_prompt() {
         use wiremock::Mock;
@@ -516,13 +532,23 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "object": "list",
                 "data": [
-                    { "id": "mistral-large-latest" },
-                    { "id": "mistral-embed" },
+                    {
+                        "id": "mistral-large-latest",
+                        "name": "Mistral Large",
+                        "description": "Top-tier reasoning model.",
+                        "max_context_length": 262_144,
+                        "capabilities": {
+                            "completion_chat": true,
+                            "vision": true,
+                            "reasoning": true,
+                        },
+                    },
+                    { "id": "mistral-embed", "capabilities": { "completion_chat": false } },
                     { "id": "mistral-ocr-latest" },
                     { "id": "voxtral-mini-latest-tts" },
-                    // Declared capabilities beat the name, both ways.
-                    { "id": "codestral-latest", "capabilities": { "completion_chat": true } },
-                    { "id": "mistral-fim-latest", "capabilities": { "completion_chat": false } },
+                    // A declaration outranks the name in both directions.
+                    { "id": "codestral-embed", "capabilities": { "completion_chat": true } },
+                    { "id": "chatty-mcchatface", "capabilities": { "completion_chat": false } },
                 ]
             })))
             .mount(&server)
@@ -532,8 +558,20 @@ mod tests {
             .await
             .expect("listing succeeds");
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["mistral-large-latest", "codestral-embed"]);
 
-        assert_eq!(ids, vec!["mistral-large-latest", "codestral-latest"]);
+        let large = &models[0];
+        assert_eq!(large.display_name, "Mistral Large");
+        assert_eq!(
+            large.description.as_deref(),
+            Some("Top-tier reasoning model.")
+        );
+        assert_eq!(large.max_input_tokens, Some(262_144));
+        assert!(large.supports_images, "declared vision should be carried");
+        assert!(
+            large.supports_thinking,
+            "declared reasoning should be carried"
+        );
     }
 
     #[test]

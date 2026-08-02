@@ -23,6 +23,10 @@ pub struct AbiModelInfo {
     /// Human-readable display name (e.g. `Claude Sonnet 4`).
     pub display_name: String,
 
+    /// Short description published by the provider, when it publishes one.
+    #[serde(default)]
+    pub description: Option<String>,
+
     /// Maximum input tokens the model accepts.
     pub max_input_tokens: Option<i64>,
 

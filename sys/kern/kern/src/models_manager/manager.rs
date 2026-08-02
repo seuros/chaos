@@ -519,6 +519,7 @@ impl ModelsManager {
                 ..model_info::model_info_from_abi(&chaos_abi::AbiModelInfo {
                     id: model.to_string(),
                     display_name: model.to_string(),
+                    description: None,
                     max_input_tokens: None,
                     max_output_tokens: None,
                     supports_thinking: false,

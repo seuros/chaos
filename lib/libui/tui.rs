@@ -35,6 +35,7 @@ use ratatui::crossterm::terminal::disable_raw_mode;
 use ratatui::crossterm::terminal::enable_raw_mode;
 use ratatui::layout::Offset;
 use ratatui::layout::Rect;
+use ratatui::layout::Size;
 use ratatui::text::Line;
 use tokio::sync::broadcast;
 use tokio_stream::Stream;
@@ -70,6 +71,45 @@ pub(crate) mod tests {
         run_async(super::event_stream::tests::event_stream_suite());
         super::frame_rate_limiter::tests::frame_rate_limiter_suite();
         super::frame_requester::tests::frame_requester_suite();
+    }
+
+    #[test]
+    fn bottom_anchored_viewport_tracks_terminal_growth() {
+        let viewport = ratatui::layout::Rect::new(0, 18, 80, 6);
+        let resized = super::bottom_anchored_viewport_after_resize(
+            viewport,
+            ratatui::layout::Size::new(80, 24),
+            ratatui::layout::Size::new(120, 40),
+            0,
+        );
+
+        assert_eq!(resized, Some(ratatui::layout::Rect::new(0, 34, 80, 6)));
+    }
+
+    #[test]
+    fn bottom_anchored_viewport_tracks_terminal_shrink() {
+        let viewport = ratatui::layout::Rect::new(0, 18, 80, 6);
+        let resized = super::bottom_anchored_viewport_after_resize(
+            viewport,
+            ratatui::layout::Size::new(80, 24),
+            ratatui::layout::Size::new(80, 12),
+            0,
+        );
+
+        assert_eq!(resized, Some(ratatui::layout::Rect::new(0, 6, 80, 6)));
+    }
+
+    #[test]
+    fn non_bottom_anchored_viewport_keeps_cursor_heuristic() {
+        let viewport = ratatui::layout::Rect::new(0, 10, 80, 6);
+        let resized = super::bottom_anchored_viewport_after_resize(
+            viewport,
+            ratatui::layout::Size::new(80, 24),
+            ratatui::layout::Size::new(120, 40),
+            0,
+        );
+
+        assert_eq!(resized, None);
     }
 }
 
@@ -583,9 +623,24 @@ impl Tui {
         let terminal = &mut self.terminal;
         let screen_size = terminal.size()?;
         let last_known_screen_size = terminal.last_known_screen_size;
-        if screen_size != last_known_screen_size
-            && let Ok(cursor_pos) = terminal.get_cursor_position()
-        {
+        if screen_size != last_known_screen_size {
+            let reserved = if self.alt_screen_active.load(Ordering::Relaxed) {
+                0
+            } else {
+                self.top_reserved_rows
+            };
+            if let Some(new_area) = bottom_anchored_viewport_after_resize(
+                terminal.viewport_area,
+                last_known_screen_size,
+                screen_size,
+                reserved,
+            ) {
+                return Ok(Some(new_area));
+            }
+
+            let Ok(cursor_pos) = terminal.get_cursor_position() else {
+                return Ok(None);
+            };
             let last_known_cursor_pos = terminal.last_known_cursor_pos;
             // If we resized AND the cursor moved, we adjust the viewport area to keep the
             // cursor in the same position. This is a heuristic that seems to work well
@@ -597,7 +652,6 @@ impl Tui {
                 };
                 let mut new_area = terminal.viewport_area.offset(offset);
                 // Keep the viewport below the reserved top bar rows.
-                let reserved = self.top_reserved_rows;
                 if new_area.y < reserved {
                     new_area.y = reserved;
                 }
@@ -606,6 +660,27 @@ impl Tui {
         }
         Ok(None)
     }
+}
+
+/// Preserve the geometric bottom anchor across a terminal resize without relying on the
+/// terminal's cursor position. Terminal reflow can move the reported cursor even though the
+/// inline viewport itself should remain pinned to the bottom of the window.
+fn bottom_anchored_viewport_after_resize(
+    viewport: Rect,
+    old_screen: Size,
+    new_screen: Size,
+    reserved: u16,
+) -> Option<Rect> {
+    if viewport.bottom() < old_screen.height {
+        return None;
+    }
+
+    let mut resized = viewport;
+    resized.y = new_screen
+        .height
+        .saturating_sub(viewport.height)
+        .max(reserved);
+    Some(resized)
 }
 
 /// Render the sticky top bar directly to the terminal at row 0, outside the viewport.

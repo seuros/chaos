@@ -755,6 +755,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial(postgres_cron_jobs)]
     async fn postgres_create_retries_on_id_collision() {
         let Some((pool, store)) = open_postgres_store().await else {
             eprintln!(
@@ -782,6 +783,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial(postgres_cron_jobs)]
     async fn postgres_store_round_trips_session_jobs_and_due_views() {
         let Some((pool, store)) = open_postgres_store().await else {
             eprintln!(

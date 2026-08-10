@@ -8,7 +8,7 @@
 
 use chaos_abi::SpoolRegistry;
 use chaos_abi::TurnRequest;
-use chaos_storage::ChaosStorageProvider;
+use chaos_vfs::ChaosVfs;
 
 use crate::spool_store::BackendSpoolStore;
 
@@ -73,12 +73,12 @@ pub(crate) async fn submit_manifest(
 /// Convenience wrapper: build the store from a provider and submit.
 pub async fn submit_manifest_from_provider(
     registry: &SpoolRegistry,
-    provider: &ChaosStorageProvider,
+    provider: &ChaosVfs,
     manifest_id: &str,
     backend_name: &str,
     items: Vec<(String, TurnRequest)>,
 ) -> Result<String, String> {
-    let store = BackendSpoolStore::from_provider(provider)?;
+    let store = BackendSpoolStore::from_provider(provider);
     submit_manifest(registry, &store, manifest_id, backend_name, items).await
 }
 
@@ -96,6 +96,7 @@ mod tests {
     use chaos_abi::SpoolPhase;
     use chaos_abi::SpoolStatusReport;
     use chaos_abi::TurnRequest;
+    use chaos_vfs::MountConfig;
     use sqlx::Row;
 
     struct RecordingBackend {
@@ -212,11 +213,11 @@ mod tests {
     #[tokio::test]
     async fn submit_manifest_persists_in_progress_row_with_batch_id() {
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
-        let store = BackendSpoolStore::from_provider(&provider).expect("store");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
+        let store = BackendSpoolStore::from_provider(&provider);
 
         let backend = Arc::new(RecordingBackend::new());
         let recorder = backend.clone();
@@ -262,11 +263,11 @@ mod tests {
     #[tokio::test]
     async fn submit_manifest_errors_when_backend_not_registered() {
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
-        let store = BackendSpoolStore::from_provider(&provider).expect("store");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
+        let store = BackendSpoolStore::from_provider(&provider);
         let registry = SpoolRegistry::new();
 
         let err = submit_manifest(
@@ -309,11 +310,11 @@ mod tests {
     #[tokio::test]
     async fn submit_manifest_persists_failed_row_when_backend_submit_errors() {
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
-        let store = BackendSpoolStore::from_provider(&provider).expect("store");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
+        let store = BackendSpoolStore::from_provider(&provider);
         let mut registry = SpoolRegistry::new();
         registry.register(Arc::new(FailingBackend));
 
@@ -362,11 +363,11 @@ mod tests {
     #[tokio::test]
     async fn submit_manifest_replaces_terminal_payload_with_fresh_in_progress_state() {
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
-        let store = BackendSpoolStore::from_provider(&provider).expect("store");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
+        let store = BackendSpoolStore::from_provider(&provider);
 
         sqlx::query(
             "INSERT INTO spool_jobs \
@@ -417,10 +418,10 @@ mod tests {
     #[tokio::test]
     async fn submit_manifest_rejects_empty_batches() {
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let store = BackendSpoolStore::from_provider(&provider).expect("store");
+        let store = BackendSpoolStore::from_provider(&provider);
         let backend = Arc::new(RecordingBackend::new());
         let mut registry = SpoolRegistry::new();
         registry.register(backend);

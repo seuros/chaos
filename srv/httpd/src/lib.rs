@@ -122,7 +122,10 @@ pub async fn run_main(
         .build()
         .await?;
 
-    // 7. Enforce login restrictions.
+    // 7. Mount the storage backend for the life of the process.
+    chaos_kern::runtime_db::mount_vfs(&config).await?;
+
+    // 8. Enforce login restrictions.
     chaos_kern::auth::enforce_login_restrictions(&config)?;
 
     // 8. Git/trust check.

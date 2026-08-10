@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+chaos-dispatch = { workspace = true }
 anyhow = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }

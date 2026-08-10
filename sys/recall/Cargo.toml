@@ -16,13 +16,13 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-# pgvector backend (default)
-pgvector = { workspace = true, optional = true, features = ["sqlx"] }
-sqlx = { workspace = true, optional = true }
+chaos-vfs = { workspace = true }
+pgvector = { workspace = true, features = ["sqlx"] }
+sqlx = { workspace = true }
 
-[features]
-default = ["pgvec"]
-pgvec = ["dep:pgvector", "dep:sqlx"]
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

@@ -16,12 +16,12 @@ use crate::job::CreateJobParams;
 use crate::spool_store::BackendSpoolStore;
 use crate::spool_submit::submit_manifest_from_provider;
 use crate::tools::owner_context_from_cron_ctx;
-use crate::tools::resolve_cron_provider;
+use crate::tools::cron_vfs;
 use chaos_abi::ContentItem;
 use chaos_abi::ResponseItem;
 use chaos_abi::TurnRequest;
 use chaos_abi::shared_spool_registry;
-use chaos_storage::ChaosStorageProvider;
+use chaos_vfs::ChaosVfs;
 
 /// Parameters for the spool_submit tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -82,7 +82,7 @@ impl CronServer {
         params: Parameters<SpoolSubmitParams>,
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
-        match execute_structured(&params.0, None, &owner).await {
+        match execute_structured(&params.0, &owner).await {
             Ok(value) => ToolOutput::structured(value)
                 .map_err(|e| ToolError::Execution(format!("non-object tool output: {e}"))),
             Err(msg) => Err(ToolError::Execution(msg)),
@@ -93,24 +93,28 @@ impl CronServer {
 /// Standalone execution — callable from both MCP and kernel adapter.
 pub async fn execute(
     params: &SpoolSubmitParams,
-    provider: Option<&ChaosStorageProvider>,
     owner: &OwnerContext,
 ) -> Result<String, String> {
-    execute_structured(params, provider, owner)
+    execute_structured(params, owner)
         .await
         .map(|value| value.to_string())
 }
 
 pub async fn execute_structured(
     params: &SpoolSubmitParams,
-    provider: Option<&ChaosStorageProvider>,
+    owner: &OwnerContext,
+) -> Result<serde_json::Value, String> {
+    execute_structured_on(cron_vfs()?, params, owner).await
+}
+
+async fn execute_structured_on(
+    provider: &ChaosVfs,
+    params: &SpoolSubmitParams,
     owner: &OwnerContext,
 ) -> Result<serde_json::Value, String> {
     if params.items.is_empty() {
         return Err("spool_submit requires at least one item".into());
     }
-
-    let provider = resolve_cron_provider(provider).await?;
 
     let registry = match shared_spool_registry() {
         Some(registry) => registry,
@@ -118,7 +122,7 @@ pub async fn execute_structured(
             let msg = "no spool backends installed — set ANTHROPIC_API_KEY or XAI_API_KEY \
                        before starting chaos"
                 .to_string();
-            persist_failed_attempt(&provider, params, &msg).await;
+            persist_failed_attempt(provider, params, &msg).await;
             return Err(msg);
         }
     };
@@ -128,7 +132,7 @@ pub async fn execute_structured(
             "backend '{}' not registered; available: {:?}",
             params.backend, available
         );
-        persist_failed_attempt(&provider, params, &msg).await;
+        persist_failed_attempt(provider, params, &msg).await;
         return Err(msg);
     }
 
@@ -138,7 +142,7 @@ pub async fn execute_structured(
         Ok(json) => json,
         Err(e) => {
             let msg = format!("invalid poll_schedule: {e}");
-            persist_failed_attempt(&provider, params, &msg).await;
+            persist_failed_attempt(provider, params, &msg).await;
             return Err(msg);
         }
     };
@@ -147,7 +151,7 @@ pub async fn execute_structured(
         Some(project_path) => project_path,
         None => {
             let msg = "current context is missing a project path for the poll cron row".to_string();
-            persist_failed_attempt(&provider, params, &msg).await;
+            persist_failed_attempt(provider, params, &msg).await;
             return Err(msg);
         }
     };
@@ -160,7 +164,7 @@ pub async fn execute_structured(
 
     let batch_id = submit_manifest_from_provider(
         &registry,
-        &provider,
+        provider,
         &params.manifest_id,
         &params.backend,
         turn_items,
@@ -169,7 +173,7 @@ pub async fn execute_structured(
 
     // Wire a cron row to drive the poll loop. Scope=Project because the
     // spool row lives in the shared DB and must be pollable across sessions.
-    let storage = BackendCronStorage::from_provider(&provider)?;
+    let storage = BackendCronStorage::from_provider(provider);
     let name = params
         .name
         .clone()
@@ -205,7 +209,7 @@ pub async fn execute_structured(
 }
 
 async fn persist_failed_attempt(
-    provider: &ChaosStorageProvider,
+    provider: &ChaosVfs,
     params: &SpoolSubmitParams,
     error: &str,
 ) {
@@ -224,9 +228,7 @@ async fn persist_failed_attempt(
     let Ok(payload_json) = serde_json::to_string(&custom_ids) else {
         return;
     };
-    let Ok(store) = BackendSpoolStore::from_provider(provider) else {
-        return;
-    };
+    let store = BackendSpoolStore::from_provider(provider);
     let _ = store
         .insert_queued(
             &params.manifest_id,
@@ -279,6 +281,7 @@ pub fn mount(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_vfs::MountConfig;
     use chaos_abi::SpoolBackend;
     use chaos_abi::SpoolError;
     use chaos_abi::SpoolItem;
@@ -354,10 +357,10 @@ mod tests {
         install_shared_registry_with_mock();
 
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
 
         let params = SpoolSubmitParams {
             manifest_id: "manifest-tool-1".into(),
@@ -384,9 +387,10 @@ mod tests {
             session_id: Some("session-1".into()),
         };
 
-        let summary = execute(&params, Some(&provider), &owner)
+        let summary = execute_structured_on(&provider, &params, &owner)
             .await
-            .expect("tool ok");
+            .expect("tool ok")
+            .to_string();
         assert!(summary.contains("mock-batch-99"), "summary={summary}");
         assert!(summary.contains("manifest-tool-1"), "summary={summary}");
 
@@ -435,10 +439,10 @@ mod tests {
         install_shared_registry_with_mock();
 
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
 
         let params = SpoolSubmitParams {
             manifest_id: "m2".into(),
@@ -457,7 +461,7 @@ mod tests {
             session_id: Some("s".into()),
         };
 
-        let err = execute(&params, Some(&provider), &owner)
+        let err = execute_structured_on(&provider, &params, &owner)
             .await
             .expect_err("should fail");
         assert!(err.contains("nonexistent"), "err={err}");
@@ -493,10 +497,10 @@ mod tests {
         install_shared_registry_with_mock();
 
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
         let owner = OwnerContext {
             project_path: Some("/tmp/project".into()),
             session_id: Some("session-1".into()),
@@ -514,7 +518,7 @@ mod tests {
                 user_message: "hi".into(),
             }],
         };
-        execute(&first, Some(&provider), &owner)
+        execute_structured_on(&provider, &first, &owner)
             .await
             .expect("first submit");
 
@@ -530,12 +534,10 @@ mod tests {
                 user_message: "there".into(),
             }],
         };
-        let summary = execute(&second, Some(&provider), &owner)
+        let summary = execute_structured_on(&provider, &second, &owner)
             .await
             .expect("second submit");
-        let summary_json: serde_json::Value =
-            serde_json::from_str(&summary).expect("summary should be JSON");
-        assert_eq!(summary_json["replaced_poll_rows"], 1);
+        assert_eq!(summary["replaced_poll_rows"], 1);
 
         let row = sqlx::query(
             "SELECT COUNT(*) AS count FROM cron_jobs WHERE kind = 'spool' AND manifest_id = ?",

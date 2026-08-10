@@ -2,7 +2,8 @@
 
 use chaos_ration::Freshness;
 use chaos_ration::UsageWindow;
-use chaos_storage::ChaosStorageProvider;
+use chaos_vfs::ChaosVfs;
+use chaos_vfs::Vfs;
 use sqlx::AssertSqlSafe;
 use sqlx::PgPool;
 use sqlx::Row;
@@ -179,55 +180,40 @@ pub struct LatestWindow {
 /// serialized queue: a DB outage fills the channel, and new snapshots
 /// are dropped with a warning instead of stacking up unbounded tasks.
 pub struct UsageStore {
-    backend: Backend,
+    backend: Vfs,
     writer: mpsc::Sender<WriteJob>,
 }
 
-#[derive(Clone)]
-enum Backend {
-    Sqlite(SqlitePool),
-    Postgres(PgPool),
+async fn record(
+    backend: &Vfs,
+    provider: &str,
+    base_url: &str,
+    windows: &[UsageWindow],
+) -> anyhow::Result<()> {
+    match backend {
+        Vfs::Sqlite(pool) => record_sqlite(pool, provider, base_url, windows).await,
+        Vfs::Postgres(pool) => record_postgres(pool, provider, base_url, windows).await,
+    }
 }
 
-impl Backend {
-    async fn record(
-        &self,
-        provider: &str,
-        base_url: &str,
-        windows: &[UsageWindow],
-    ) -> anyhow::Result<()> {
-        match self {
-            Backend::Sqlite(pool) => record_sqlite(pool, provider, base_url, windows).await,
-            Backend::Postgres(pool) => record_postgres(pool, provider, base_url, windows).await,
-        }
-    }
-
-    async fn fetch_latest(
-        &self,
-        provider: Option<&str>,
-    ) -> anyhow::Result<Vec<(String, String, UsageWindow)>> {
-        match self {
-            Backend::Sqlite(pool) => fetch_latest_sqlite(pool, provider).await,
-            Backend::Postgres(pool) => fetch_latest_postgres(pool, provider).await,
-        }
+async fn fetch_latest(
+    backend: &Vfs,
+    provider: Option<&str>,
+) -> anyhow::Result<Vec<(String, String, UsageWindow)>> {
+    match backend {
+        Vfs::Sqlite(pool) => fetch_latest_sqlite(pool, provider).await,
+        Vfs::Postgres(pool) => fetch_latest_postgres(pool, provider).await,
     }
 }
 
 impl UsageStore {
-    /// Build a store from a chaos-storage provider and spawn the
-    /// background writer. Returns `None` if the provider has no usable
-    /// pool (should not happen once wired from boot, but we stay
-    /// defensive so misconfig surfaces as an error, not a panic).
+    /// Build a store on a mounted filesystem and spawn the background
+    /// writer.
     ///
     /// Must be called from within a tokio runtime — the returned store
     /// drives its writer on the current runtime.
-    pub fn from_provider(provider: &ChaosStorageProvider) -> Option<Arc<Self>> {
-        let backend = if let Some(pool) = provider.sqlite_pool_cloned() {
-            Backend::Sqlite(pool)
-        } else {
-            Backend::Postgres(provider.postgres_pool_cloned()?)
-        };
-
+    pub fn from_provider(vfs: &ChaosVfs) -> Arc<Self> {
+        let backend = vfs.pool();
         let (tx, rx) = mpsc::channel(WRITER_QUEUE_CAPACITY);
         let store = Arc::new(Self {
             backend: backend.clone(),
@@ -239,7 +225,7 @@ impl UsageStore {
         // loop would never terminate when the public `Arc<UsageStore>`
         // finally drops.
         tokio::spawn(async move { run_writer(backend, rx).await });
-        Some(store)
+        store
     }
 
     /// Enqueue a batch of windows for asynchronous persistence. Returns
@@ -290,7 +276,7 @@ impl UsageStore {
         if windows.is_empty() {
             return Ok(());
         }
-        self.backend.record(provider, base_url, windows).await
+        record(&self.backend, provider, base_url, windows).await
     }
 
     /// Fetch the latest window for every (base_url, label) under
@@ -299,14 +285,14 @@ impl UsageStore {
     /// stale-but-valid cache, and past-reset "budget recovered" states
     /// without recomputing the rule.
     pub async fn latest_for(&self, provider: &str, now: i64) -> anyhow::Result<Vec<LatestWindow>> {
-        let rows = self.backend.fetch_latest(Some(provider)).await?;
+        let rows = fetch_latest(&self.backend, Some(provider)).await?;
         Ok(tag_freshness(rows, now))
     }
 
     /// Fetch the latest window for every (provider, base_url, label) in
     /// the store.
     pub async fn latest_all(&self, now: i64) -> anyhow::Result<Vec<LatestWindow>> {
-        let rows = self.backend.fetch_latest(None).await?;
+        let rows = fetch_latest(&self.backend, None).await?;
         Ok(tag_freshness(rows, now))
     }
 }
@@ -314,11 +300,9 @@ impl UsageStore {
 /// Drain the mpsc channel, persisting each batch as it arrives. Runs
 /// for the lifetime of the store — the loop exits when the last sender
 /// is dropped (which happens when the `Arc<UsageStore>` goes away).
-async fn run_writer(backend: Backend, mut rx: mpsc::Receiver<WriteJob>) {
+async fn run_writer(backend: Vfs, mut rx: mpsc::Receiver<WriteJob>) {
     while let Some(job) = rx.recv().await {
-        let result = backend
-            .record(&job.provider, &job.base_url, &job.windows)
-            .await;
+        let result = record(&backend, &job.provider, &job.base_url, &job.windows).await;
         if let Err(err) = result {
             tracing::warn!(
                 target: "ration",

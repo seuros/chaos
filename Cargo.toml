@@ -3,7 +3,7 @@ members = [
     # sys/ — kernel
     "sys/kern/kern",
     "sys/kern/context",
-    "sys/storage",
+    "sys/vfs",
     # sys/arch — platform sandboxes
     "sys/arch/base",
     "sys/arch/linux",
@@ -94,6 +94,7 @@ members = [
     "lib/libutil/uptime",
     "lib/libutil/glob",
     "lib/libutil/scm",
+    "lib/libutil/dispatch",
     "lib/libutil/git",
     "lib/libutil/pwd",
     "lib/libutil/pixbuf",
@@ -135,7 +136,7 @@ chaos-context = { path = "sys/kern/context" }
 chaos-abi = { path = "lib/libcontract/abi" }
 chaos-ipc = { path = "lib/libcontract/ipc" }
 chaos-traits = { path = "lib/libcontract/traits" }
-chaos-storage = { path = "sys/storage" }
+chaos-vfs = { path = "sys/vfs" }
 chaos-recall = { path = "sys/recall" }
 alcatraz-base = { path = "sys/arch/base" }
 alcatraz-linux = { path = "sys/arch/linux" }
@@ -209,6 +210,7 @@ chaos-snitch = { path = "lib/libtrace/snitch" }
     chaos-termcap = { path = "lib/libui/termcap" }
 chaos-highlight = { path = "lib/libui/highlight" }
 chaos-scm = { path = "lib/libutil/scm" }
+chaos-dispatch = { path = "lib/libutil/dispatch" }
 chaos-git = { path = "lib/libutil/git" }
 chaos-realpath = { path = "lib/libutil/realpath" }
 chaos-sudoers = { path = "lib/libutil/sudoers" }

@@ -227,10 +227,7 @@ pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String)
         return;
     }
 
-    let chaos_home = sess.chaos_home().await;
-    if let Err(e) =
-        process_names::append_process_name(&chaos_home, sess.conversation_id, &name).await
-    {
+    if let Err(e) = process_names::append_process_name(sess.conversation_id, &name).await {
         let event = Event {
             id: sub_id,
             msg: EventMsg::Error(ErrorEvent {

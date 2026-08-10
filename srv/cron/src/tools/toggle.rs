@@ -11,9 +11,8 @@ use crate::CronScope;
 use crate::CronServer;
 use crate::CronStorage;
 use crate::OwnerContext;
-use crate::tools::cron_storage_from_optional_provider;
+use crate::tools::cron_storage;
 use crate::tools::owner_context_from_cron_ctx;
-use chaos_storage::ChaosStorageProvider;
 
 /// Parameters for the cron_toggle tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -40,7 +39,7 @@ impl CronServer {
         params: Parameters<CronToggleParams>,
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
-        match execute_structured(&params.0, None, Some(&owner)).await {
+        match execute_structured(&params.0, Some(&owner)).await {
             Ok(value) => ToolOutput::structured(value)
                 .map_err(|e| ToolError::Execution(format!("non-object tool output: {e}"))),
             Err(msg) => Err(ToolError::Execution(msg)),
@@ -51,21 +50,18 @@ impl CronServer {
 /// Standalone execution — callable from both MCP and kernel adapter.
 pub async fn execute(
     params: &CronToggleParams,
-    provider: Option<&ChaosStorageProvider>,
     owner: Option<&OwnerContext>,
 ) -> Result<String, String> {
-    execute_structured(params, provider, owner)
+    execute_structured(params, owner)
         .await
         .map(|value| value.to_string())
 }
 
 pub async fn execute_structured(
     params: &CronToggleParams,
-    provider: Option<&ChaosStorageProvider>,
     owner: Option<&OwnerContext>,
 ) -> Result<serde_json::Value, String> {
-    let (_provider, storage) = cron_storage_from_optional_provider(provider).await?;
-    execute_with_storage_structured(params, &storage, owner).await
+    execute_with_storage_structured(params, &cron_storage()?, owner).await
 }
 
 async fn execute_with_storage_structured<S: CronStorage>(

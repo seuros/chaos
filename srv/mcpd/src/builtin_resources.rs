@@ -78,33 +78,11 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn crons_json(&self) -> Result<String, String> {
-        let existing_runtime_pool = self
-            .server
-            .runtime_db
-            .as_ref()
-            .and_then(chaos_kern::runtime_db::RuntimeDbHandle::sqlite_pool_cloned);
-        let provider = chaos_kern::runtime_db::resolve_runtime_storage_provider_with_config(
-            existing_runtime_pool.as_ref(),
-            self.server.storage_url.as_deref(),
-            &self.server.sqlite_home,
-        )
-        .await?;
-        chaos_cron::resource::list_crons(Some(&provider)).await
+        chaos_cron::resource::list_crons().await
     }
 
     async fn spool_json(&self) -> Result<String, String> {
-        let existing_runtime_pool = self
-            .server
-            .runtime_db
-            .as_ref()
-            .and_then(chaos_kern::runtime_db::RuntimeDbHandle::sqlite_pool_cloned);
-        let provider = chaos_kern::runtime_db::resolve_runtime_storage_provider_with_config(
-            existing_runtime_pool.as_ref(),
-            self.server.storage_url.as_deref(),
-            &self.server.sqlite_home,
-        )
-        .await?;
-        chaos_cron::resource::list_spool(Some(&provider)).await
+        chaos_cron::resource::list_spool().await
     }
 
     async fn models_json(&self) -> Result<String, String> {

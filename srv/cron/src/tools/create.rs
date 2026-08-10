@@ -9,9 +9,8 @@ use crate::CronCtx;
 use crate::CronServer;
 use crate::CronStorage;
 use crate::job::CreateJobParams;
-use crate::tools::cron_storage_from_optional_provider;
+use crate::tools::cron_storage;
 use crate::tools::owner_context_from_cron_ctx;
-use chaos_storage::ChaosStorageProvider;
 
 /// Parameters for the cron_create tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -61,7 +60,7 @@ impl CronServer {
         params: Parameters<CronCreateParams>,
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
-        match execute_structured(&params.0, None, &owner).await {
+        match execute_structured(&params.0, &owner).await {
             Ok(value) => ToolOutput::structured(value)
                 .map_err(|e| ToolError::Execution(format!("non-object tool output: {e}"))),
             Err(msg) => Err(ToolError::Execution(msg)),
@@ -71,28 +70,23 @@ impl CronServer {
 
 /// Standalone execution — callable from both MCP and kernel adapter.
 ///
-/// When `provider` is `Some`, the job is persisted to that configured
-/// shared runtime backend. When `None`, standalone mode resolves storage
-/// from environment.
-/// Missing DB access is treated as an execution error rather than a
-/// validation-only success, because cron jobs are always expected to persist.
+/// The job is persisted to the mounted filesystem. Missing DB access is
+/// treated as an execution error rather than a validation-only success,
+/// because cron jobs are always expected to persist.
 pub async fn execute(
     params: &CronCreateParams,
-    provider: Option<&ChaosStorageProvider>,
     owner: &OwnerContext,
 ) -> Result<String, String> {
-    execute_structured(params, provider, owner)
+    execute_structured(params, owner)
         .await
         .map(|value| value.to_string())
 }
 
 pub async fn execute_structured(
     params: &CronCreateParams,
-    provider: Option<&ChaosStorageProvider>,
     owner: &OwnerContext,
 ) -> Result<serde_json::Value, String> {
-    let (_provider, storage) = cron_storage_from_optional_provider(provider).await?;
-    execute_with_storage_structured(params, &storage, owner).await
+    execute_with_storage_structured(params, &cron_storage()?, owner).await
 }
 
 async fn execute_with_storage_structured<S: CronStorage>(

@@ -16,7 +16,7 @@ chaos-abi = { workspace = true }
 chaos-proc = { workspace = true }
 chaos-traits = { workspace = true }
 inventory = { workspace = true }
-chaos-storage = { workspace = true }
+chaos-vfs = { workspace = true }
 jiff = { workspace = true }
 mcp-host = { workspace = true, features = ["macros"] }
 schemars = "1.2.1"
@@ -28,6 +28,7 @@ tracing = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
+serial_test = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 

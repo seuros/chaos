@@ -369,17 +369,11 @@ impl RuntimeDbHandle {
         }
     }
 
-    pub fn sqlite_pool_cloned(&self) -> Option<SqlitePool> {
+    #[cfg(test)]
+    pub(crate) fn sqlite_pool_cloned(&self) -> Option<SqlitePool> {
         match self {
             Self::Postgres(_) => None,
             Self::Sqlite(runtime) => Some(runtime.pool().to_owned()),
-        }
-    }
-
-    pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<ProcessMetadata>> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_process(id).await,
-            Self::Sqlite(runtime) => runtime.get_process(id).await,
         }
     }
 
@@ -461,394 +455,130 @@ impl RuntimeDbHandle {
         }
     }
 
-    pub async fn get_dynamic_tools(
-        &self,
-        process_id: ProcessId,
-    ) -> anyhow::Result<Option<Vec<DynamicToolSpec>>> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_dynamic_tools(process_id).await,
-            Self::Sqlite(runtime) => runtime.get_dynamic_tools(process_id).await,
-        }
-    }
-
-    pub async fn persist_dynamic_tools(
-        &self,
-        process_id: ProcessId,
-        tools: Option<&[DynamicToolSpec]>,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.persist_dynamic_tools(process_id, tools).await,
-            Self::Sqlite(runtime) => runtime.persist_dynamic_tools(process_id, tools).await,
-        }
-    }
-
-    pub async fn get_project_trust(
-        &self,
-        project_path: &Path,
-    ) -> anyhow::Result<Option<TrustLevel>> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_project_trust(project_path).await,
-            Self::Sqlite(runtime) => runtime.get_project_trust(project_path).await,
-        }
-    }
-
-    pub async fn set_project_trust(
-        &self,
-        project_path: &Path,
-        trust_level: TrustLevel,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.set_project_trust(project_path, trust_level).await,
-            Self::Sqlite(runtime) => runtime.set_project_trust(project_path, trust_level).await,
-        }
-    }
-
-    pub async fn list_global_mcp_servers(
-        &self,
-    ) -> anyhow::Result<std::collections::BTreeMap<String, McpServerConfig>> {
-        match self {
-            Self::Postgres(runtime) => runtime.list_global_mcp_servers().await,
-            Self::Sqlite(runtime) => runtime.list_global_mcp_servers().await,
-        }
-    }
-
-    pub async fn get_global_mcp_server(
-        &self,
-        name: &str,
-    ) -> anyhow::Result<Option<McpServerConfig>> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_global_mcp_server(name).await,
-            Self::Sqlite(runtime) => runtime.get_global_mcp_server(name).await,
-        }
-    }
-
-    pub async fn upsert_global_mcp_server(
-        &self,
-        name: &str,
-        config: &McpServerConfig,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.upsert_global_mcp_server(name, config).await,
-            Self::Sqlite(runtime) => runtime.upsert_global_mcp_server(name, config).await,
-        }
-    }
-
-    /// Persist a clamp wiretap exchange.
-    pub async fn record_clamp_exchange(&self, rec: &ClampExchangeRecord) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.record_clamp_exchange(rec).await,
-            Self::Sqlite(runtime) => runtime.record_clamp_exchange(rec).await,
-        }
-    }
-
-    pub async fn delete_global_mcp_server(&self, name: &str) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => runtime.delete_global_mcp_server(name).await,
-            Self::Sqlite(runtime) => runtime.delete_global_mcp_server(name).await,
-        }
-    }
-
-    pub async fn replace_global_mcp_servers(
-        &self,
-        servers: &std::collections::BTreeMap<String, McpServerConfig>,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.replace_global_mcp_servers(servers).await,
-            Self::Sqlite(runtime) => runtime.replace_global_mcp_servers(servers).await,
-        }
-    }
-
-    pub async fn mark_process_memory_mode_polluted(
-        &self,
-        process_id: ProcessId,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => runtime.mark_process_memory_mode_polluted(process_id).await,
-            Self::Sqlite(runtime) => runtime.mark_process_memory_mode_polluted(process_id).await,
-        }
-    }
-
-    pub async fn apply_rollout_items(
-        &self,
-        builder: &ProcessMetadataBuilder,
-        items: &[RolloutItem],
-        new_process_memory_mode: Option<&str>,
-        updated_at_override: Option<jiff::Timestamp>,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => {
-                runtime
-                    .apply_rollout_items(
-                        builder,
-                        items,
-                        new_process_memory_mode,
-                        updated_at_override,
-                    )
-                    .await
-            }
-            Self::Sqlite(runtime) => {
-                runtime
-                    .apply_rollout_items(
-                        builder,
-                        items,
-                        new_process_memory_mode,
-                        updated_at_override,
-                    )
-                    .await
-            }
-        }
-    }
-
-    pub async fn touch_process_updated_at(
-        &self,
-        process_id: ProcessId,
-        updated_at: jiff::Timestamp,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => {
-                runtime
-                    .touch_process_updated_at(process_id, updated_at)
-                    .await
-            }
-            Self::Sqlite(runtime) => {
-                runtime
-                    .touch_process_updated_at(process_id, updated_at)
-                    .await
-            }
-        }
-    }
-
-    pub async fn append_message_history_entry(
-        &self,
-        entry: &chaos_ipc::message_history::HistoryEntry,
-        max_bytes: Option<usize>,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.append_message_history_entry(entry, max_bytes).await,
-            Self::Sqlite(runtime) => runtime.append_message_history_entry(entry, max_bytes).await,
-        }
-    }
-
-    pub async fn message_history_metadata(&self) -> anyhow::Result<(u64, usize)> {
-        match self {
-            Self::Postgres(runtime) => runtime.message_history_metadata().await,
-            Self::Sqlite(runtime) => runtime.message_history_metadata().await,
-        }
-    }
-
-    pub async fn get_message_history_entry(
-        &self,
-        log_id: u64,
-        offset: usize,
-    ) -> anyhow::Result<Option<chaos_ipc::message_history::HistoryEntry>> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_message_history_entry(log_id, offset).await,
-            Self::Sqlite(runtime) => runtime.get_message_history_entry(log_id, offset).await,
-        }
-    }
-
-    pub(crate) async fn create_minion_job(
-        &self,
-        params: &MinionJobCreateParams,
-        items: &[MinionJobItemCreateParams],
-    ) -> anyhow::Result<MinionJob> {
-        match self {
-            Self::Postgres(runtime) => runtime.create_minion_job(params, items).await,
-            Self::Sqlite(runtime) => runtime.create_minion_job(params, items).await,
-        }
-    }
-
-    pub(crate) async fn get_minion_job(&self, job_id: &str) -> anyhow::Result<Option<MinionJob>> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_minion_job(job_id).await,
-            Self::Sqlite(runtime) => runtime.get_minion_job(job_id).await,
-        }
-    }
-
-    pub(crate) async fn list_minion_job_items(
-        &self,
-        job_id: &str,
-        status: Option<MinionJobItemStatus>,
-        limit: Option<usize>,
-    ) -> anyhow::Result<Vec<MinionJobItem>> {
-        match self {
-            Self::Postgres(runtime) => runtime.list_minion_job_items(job_id, status, limit).await,
-            Self::Sqlite(runtime) => runtime.list_minion_job_items(job_id, status, limit).await,
-        }
-    }
-
-    pub(crate) async fn get_minion_job_item(
-        &self,
-        job_id: &str,
-        item_id: &str,
-    ) -> anyhow::Result<Option<MinionJobItem>> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_minion_job_item(job_id, item_id).await,
-            Self::Sqlite(runtime) => runtime.get_minion_job_item(job_id, item_id).await,
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_running(&self, job_id: &str) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.mark_minion_job_running(job_id).await,
-            Self::Sqlite(runtime) => runtime.mark_minion_job_running(job_id).await,
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.mark_minion_job_completed(job_id).await,
-            Self::Sqlite(runtime) => runtime.mark_minion_job_completed(job_id).await,
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_failed(
-        &self,
-        job_id: &str,
-        error_message: &str,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Postgres(runtime) => runtime.mark_minion_job_failed(job_id, error_message).await,
-            Self::Sqlite(runtime) => runtime.mark_minion_job_failed(job_id, error_message).await,
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_cancelled(
-        &self,
-        job_id: &str,
-        reason: &str,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => runtime.mark_minion_job_cancelled(job_id, reason).await,
-            Self::Sqlite(runtime) => runtime.mark_minion_job_cancelled(job_id, reason).await,
-        }
-    }
-
-    pub(crate) async fn is_minion_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => runtime.is_minion_job_cancelled(job_id).await,
-            Self::Sqlite(runtime) => runtime.is_minion_job_cancelled(job_id).await,
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_item_running_with_thread(
-        &self,
-        job_id: &str,
-        item_id: &str,
-        process_id: &str,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => {
-                runtime
-                    .mark_minion_job_item_running_with_thread(job_id, item_id, process_id)
-                    .await
-            }
-            Self::Sqlite(runtime) => {
-                runtime
-                    .mark_minion_job_item_running_with_thread(job_id, item_id, process_id)
-                    .await
-            }
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_item_pending(
-        &self,
-        job_id: &str,
-        item_id: &str,
-        error_message: Option<&str>,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => {
-                runtime
-                    .mark_minion_job_item_pending(job_id, item_id, error_message)
-                    .await
-            }
-            Self::Sqlite(runtime) => {
-                runtime
-                    .mark_minion_job_item_pending(job_id, item_id, error_message)
-                    .await
-            }
-        }
-    }
-
-    pub(crate) async fn report_minion_job_item_result(
-        &self,
-        job_id: &str,
-        item_id: &str,
-        reporting_process_id: &str,
-        result_json: &Value,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => {
-                runtime
-                    .report_minion_job_item_result(
-                        job_id,
-                        item_id,
-                        reporting_process_id,
-                        result_json,
-                    )
-                    .await
-            }
-            Self::Sqlite(runtime) => {
-                runtime
-                    .report_minion_job_item_result(
-                        job_id,
-                        item_id,
-                        reporting_process_id,
-                        result_json,
-                    )
-                    .await
-            }
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_item_completed(
-        &self,
-        job_id: &str,
-        item_id: &str,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => {
-                runtime
-                    .mark_minion_job_item_completed(job_id, item_id)
-                    .await
-            }
-            Self::Sqlite(runtime) => {
-                runtime
-                    .mark_minion_job_item_completed(job_id, item_id)
-                    .await
-            }
-        }
-    }
-
-    pub(crate) async fn mark_minion_job_item_failed(
-        &self,
-        job_id: &str,
-        item_id: &str,
-        error_message: &str,
-    ) -> anyhow::Result<bool> {
-        match self {
-            Self::Postgres(runtime) => {
-                runtime
-                    .mark_minion_job_item_failed(job_id, item_id, error_message)
-                    .await
-            }
-            Self::Sqlite(runtime) => {
-                runtime
-                    .mark_minion_job_item_failed(job_id, item_id, error_message)
-                    .await
-            }
-        }
-    }
-
-    pub(crate) async fn get_minion_job_progress(
-        &self,
-        job_id: &str,
-    ) -> anyhow::Result<MinionJobProgress> {
-        match self {
-            Self::Postgres(runtime) => runtime.get_minion_job_progress(job_id).await,
-            Self::Sqlite(runtime) => runtime.get_minion_job_progress(job_id).await,
-        }
+    chaos_dispatch::backend_dispatch! {
+        pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<ProcessMetadata>>;
+        pub async fn get_dynamic_tools(
+            &self,
+            process_id: ProcessId,
+        ) -> anyhow::Result<Option<Vec<DynamicToolSpec>>>;
+        pub async fn persist_dynamic_tools(
+            &self,
+            process_id: ProcessId,
+            tools: Option<&[DynamicToolSpec]>,
+        ) -> anyhow::Result<()>;
+        pub async fn get_project_trust(&self, project_path: &Path) -> anyhow::Result<Option<TrustLevel>>;
+        pub async fn set_project_trust(
+            &self,
+            project_path: &Path,
+            trust_level: TrustLevel,
+        ) -> anyhow::Result<()>;
+        pub async fn list_global_mcp_servers(
+            &self,
+        ) -> anyhow::Result<std::collections::BTreeMap<String, McpServerConfig>>;
+        pub async fn get_global_mcp_server(&self, name: &str) -> anyhow::Result<Option<McpServerConfig>>;
+        pub async fn upsert_global_mcp_server(
+            &self,
+            name: &str,
+            config: &McpServerConfig,
+        ) -> anyhow::Result<()>;
+        /// Persist a clamp wiretap exchange.
+        pub async fn record_clamp_exchange(&self, rec: &ClampExchangeRecord) -> anyhow::Result<()>;
+        pub async fn delete_global_mcp_server(&self, name: &str) -> anyhow::Result<bool>;
+        pub async fn replace_global_mcp_servers(
+            &self,
+            servers: &std::collections::BTreeMap<String, McpServerConfig>,
+        ) -> anyhow::Result<()>;
+        pub async fn mark_process_memory_mode_polluted(
+            &self,
+            process_id: ProcessId,
+        ) -> anyhow::Result<bool>;
+        pub async fn apply_rollout_items(
+            &self,
+            builder: &ProcessMetadataBuilder,
+            items: &[RolloutItem],
+            new_process_memory_mode: Option<&str>,
+            updated_at_override: Option<jiff::Timestamp>,
+        ) -> anyhow::Result<()>;
+        pub async fn touch_process_updated_at(
+            &self,
+            process_id: ProcessId,
+            updated_at: jiff::Timestamp,
+        ) -> anyhow::Result<bool>;
+        pub async fn append_message_history_entry(
+            &self,
+            entry: &chaos_ipc::message_history::HistoryEntry,
+            max_bytes: Option<usize>,
+        ) -> anyhow::Result<()>;
+        pub async fn message_history_metadata(&self) -> anyhow::Result<(u64, usize)>;
+        pub async fn get_message_history_entry(
+            &self,
+            log_id: u64,
+            offset: usize,
+        ) -> anyhow::Result<Option<chaos_ipc::message_history::HistoryEntry>>;
+        pub(crate) async fn create_minion_job(
+            &self,
+            params: &MinionJobCreateParams,
+            items: &[MinionJobItemCreateParams],
+        ) -> anyhow::Result<MinionJob>;
+        pub(crate) async fn get_minion_job(&self, job_id: &str) -> anyhow::Result<Option<MinionJob>>;
+        pub(crate) async fn list_minion_job_items(
+            &self,
+            job_id: &str,
+            status: Option<MinionJobItemStatus>,
+            limit: Option<usize>,
+        ) -> anyhow::Result<Vec<MinionJobItem>>;
+        pub(crate) async fn get_minion_job_item(
+            &self,
+            job_id: &str,
+            item_id: &str,
+        ) -> anyhow::Result<Option<MinionJobItem>>;
+        pub(crate) async fn mark_minion_job_running(&self, job_id: &str) -> anyhow::Result<()>;
+        pub(crate) async fn mark_minion_job_completed(&self, job_id: &str) -> anyhow::Result<()>;
+        pub(crate) async fn mark_minion_job_failed(
+            &self,
+            job_id: &str,
+            error_message: &str,
+        ) -> anyhow::Result<()>;
+        pub(crate) async fn mark_minion_job_cancelled(
+            &self,
+            job_id: &str,
+            reason: &str,
+        ) -> anyhow::Result<bool>;
+        pub(crate) async fn is_minion_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool>;
+        pub(crate) async fn mark_minion_job_item_running_with_thread(
+            &self,
+            job_id: &str,
+            item_id: &str,
+            process_id: &str,
+        ) -> anyhow::Result<bool>;
+        pub(crate) async fn mark_minion_job_item_pending(
+            &self,
+            job_id: &str,
+            item_id: &str,
+            error_message: Option<&str>,
+        ) -> anyhow::Result<bool>;
+        pub(crate) async fn report_minion_job_item_result(
+            &self,
+            job_id: &str,
+            item_id: &str,
+            reporting_process_id: &str,
+            result_json: &Value,
+        ) -> anyhow::Result<bool>;
+        pub(crate) async fn mark_minion_job_item_completed(
+            &self,
+            job_id: &str,
+            item_id: &str,
+        ) -> anyhow::Result<bool>;
+        pub(crate) async fn mark_minion_job_item_failed(
+            &self,
+            job_id: &str,
+            item_id: &str,
+            error_message: &str,
+        ) -> anyhow::Result<bool>;
+        pub(crate) async fn get_minion_job_progress(
+            &self,
+            job_id: &str,
+        ) -> anyhow::Result<MinionJobProgress>;
     }
 }
 

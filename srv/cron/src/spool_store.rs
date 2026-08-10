@@ -5,8 +5,8 @@
 //! whatever tool creates the manifest) and is not implemented here.
 
 use chaos_abi::SpoolPhase;
-use chaos_storage::ChaosStorageProvider;
-use chaos_storage::StorageKind;
+use chaos_vfs::ChaosVfs;
+use chaos_vfs::Vfs;
 use sqlx::PgPool;
 use sqlx::SqlitePool;
 
@@ -342,106 +342,39 @@ pub(crate) enum BackendSpoolStore {
 }
 
 impl BackendSpoolStore {
-    pub fn from_provider(provider: &ChaosStorageProvider) -> Result<Self, String> {
-        match provider.kind() {
-            StorageKind::Sqlite => {
-                let pool = provider.sqlite_pool_cloned().ok_or_else(|| {
-                    "chaos DB unavailable — spool storage backend not supported".to_string()
-                })?;
-                Ok(Self::Sqlite(SpoolStore::new(pool)))
-            }
-            StorageKind::Postgres => {
-                let pool = provider.postgres_pool_cloned().ok_or_else(|| {
-                    "chaos DB unavailable — spool storage backend not supported".to_string()
-                })?;
-                Ok(Self::Postgres(PostgresSpoolStore::new(pool)))
-            }
+    pub fn from_provider(vfs: &ChaosVfs) -> Self {
+        match vfs.pool() {
+            Vfs::Sqlite(pool) => Self::Sqlite(SpoolStore::new(pool)),
+            Vfs::Postgres(pool) => Self::Postgres(PostgresSpoolStore::new(pool)),
         }
     }
 
-    pub async fn load(&self, manifest_id: &str) -> anyhow::Result<Option<SpoolRow>> {
-        match self {
-            Self::Sqlite(store) => store.load(manifest_id).await,
-            Self::Postgres(store) => store.load(manifest_id).await,
-        }
-    }
-
-    pub async fn mark_terminal(
-        &self,
-        manifest_id: &str,
-        phase: SpoolPhase,
-        result_json: Option<&str>,
-        error: Option<&str>,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Sqlite(store) => {
-                store
-                    .mark_terminal(manifest_id, phase, result_json, error)
-                    .await
-            }
-            Self::Postgres(store) => {
-                store
-                    .mark_terminal(manifest_id, phase, result_json, error)
-                    .await
-            }
-        }
-    }
-
-    pub async fn insert_queued(
-        &self,
-        manifest_id: &str,
-        backend: &str,
-        request_count: u32,
-        payload_json: &str,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Sqlite(store) => {
-                store
-                    .insert_queued(manifest_id, backend, request_count, payload_json)
-                    .await
-            }
-            Self::Postgres(store) => {
-                store
-                    .insert_queued(manifest_id, backend, request_count, payload_json)
-                    .await
-            }
-        }
-    }
-
-    pub async fn mark_submit_failed(&self, manifest_id: &str, error: &str) -> anyhow::Result<()> {
-        match self {
-            Self::Sqlite(store) => store.mark_submit_failed(manifest_id, error).await,
-            Self::Postgres(store) => store.mark_submit_failed(manifest_id, error).await,
-        }
-    }
-
-    pub async fn insert_submitted(
-        &self,
-        manifest_id: &str,
-        backend: &str,
-        batch_id: &str,
-        request_count: u32,
-        payload_json: &str,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::Sqlite(store) => {
-                store
-                    .insert_submitted(manifest_id, backend, batch_id, request_count, payload_json)
-                    .await
-            }
-            Self::Postgres(store) => {
-                store
-                    .insert_submitted(manifest_id, backend, batch_id, request_count, payload_json)
-                    .await
-            }
-        }
-    }
-
-    pub async fn list(&self) -> anyhow::Result<Vec<SpoolRow>> {
-        match self {
-            Self::Sqlite(store) => store.list().await,
-            Self::Postgres(store) => store.list().await,
-        }
+    chaos_vfs::backend_dispatch! {
+        pub async fn load(&self, manifest_id: &str) -> anyhow::Result<Option<SpoolRow>>;
+        pub async fn mark_terminal(
+            &self,
+            manifest_id: &str,
+            phase: SpoolPhase,
+            result_json: Option<&str>,
+            error: Option<&str>,
+        ) -> anyhow::Result<()>;
+        pub async fn insert_queued(
+            &self,
+            manifest_id: &str,
+            backend: &str,
+            request_count: u32,
+            payload_json: &str,
+        ) -> anyhow::Result<()>;
+        pub async fn mark_submit_failed(&self, manifest_id: &str, error: &str) -> anyhow::Result<()>;
+        pub async fn insert_submitted(
+            &self,
+            manifest_id: &str,
+            backend: &str,
+            batch_id: &str,
+            request_count: u32,
+            payload_json: &str,
+        ) -> anyhow::Result<()>;
+        pub async fn list(&self) -> anyhow::Result<Vec<SpoolRow>>;
     }
 }
 

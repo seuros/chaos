@@ -1,32 +1,14 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::path::Path;
 
 use chaos_ipc::ProcessId;
-use chaos_storage::ChaosStorageProvider;
+use chaos_vfs::Vfs;
 use sqlx::PgPool;
 use sqlx::QueryBuilder;
 use sqlx::Row;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
 use sqlx::postgres::Postgres;
-
-async fn open_runtime_storage(chaos_home: &Path) -> std::io::Result<Option<ChaosStorageProvider>> {
-    if let Ok(provider) = ChaosStorageProvider::from_env(None).await {
-        return Ok(Some(provider));
-    }
-
-    let db_path = chaos_proc::runtime_db_path(chaos_home);
-    if !tokio::fs::try_exists(&db_path).await? {
-        return Ok(None);
-    }
-
-    Ok(Some(
-        ChaosStorageProvider::from_optional_sqlite(None, Some(chaos_home))
-            .await
-            .map_err(std::io::Error::other)?,
-    ))
-}
 
 trait ProcessNameStore {
     async fn set_process_name(
@@ -217,46 +199,22 @@ impl ProcessNameStore for PgPool {
     }
 }
 
-/// Calls `op` with the pool selected from `provider`, or returns `default` if
-/// no pool is available.
-async fn with_store<T, F, Fut>(
-    provider: &ChaosStorageProvider,
-    default: T,
-    op: F,
-) -> std::io::Result<T>
+/// Calls `op` with the pool of the mounted backend.
+async fn with_store<T, F, Fut>(op: F) -> std::io::Result<T>
 where
-    F: FnOnce(PoolRef) -> Fut,
+    F: FnOnce(Vfs) -> Fut,
     Fut: Future<Output = std::io::Result<T>>,
 {
-    if let Some(pool) = provider.sqlite_pool_cloned() {
-        op(PoolRef::Sqlite(pool)).await
-    } else if let Some(pool) = provider.postgres_pool_cloned() {
-        op(PoolRef::Postgres(pool)).await
-    } else {
-        Ok(default)
-    }
-}
-
-enum PoolRef {
-    Sqlite(SqlitePool),
-    Postgres(PgPool),
+    let pool = chaos_vfs::pool().map_err(std::io::Error::other)?;
+    op(pool).await
 }
 
 /// Persist the explicit process name in the active runtime store.
-pub async fn append_process_name(
-    chaos_home: &Path,
-    process_id: ProcessId,
-    name: &str,
-) -> std::io::Result<()> {
-    let Some(provider) = open_runtime_storage(chaos_home).await? else {
-        return Err(std::io::Error::other(
-            "runtime db is unavailable; cannot persist process name",
-        ));
-    };
-    let updated = with_store(&provider, false, |pool| async move {
+pub async fn append_process_name(process_id: ProcessId, name: &str) -> std::io::Result<()> {
+    let updated = with_store(|pool| async move {
         match pool {
-            PoolRef::Sqlite(p) => p.set_process_name(process_id, Some(name)).await,
-            PoolRef::Postgres(p) => p.set_process_name(process_id, Some(name)).await,
+            Vfs::Sqlite(p) => p.set_process_name(process_id, Some(name)).await,
+            Vfs::Postgres(p) => p.set_process_name(process_id, Some(name)).await,
         }
     })
     .await?;
@@ -271,17 +229,11 @@ pub async fn append_process_name(
 }
 
 /// Find the explicit process name for a process id, if any.
-pub async fn find_process_name_by_id(
-    chaos_home: &Path,
-    process_id: &ProcessId,
-) -> std::io::Result<Option<String>> {
-    let Some(provider) = open_runtime_storage(chaos_home).await? else {
-        return Ok(None);
-    };
-    with_store(&provider, None, |pool| async move {
+pub async fn find_process_name_by_id(process_id: &ProcessId) -> std::io::Result<Option<String>> {
+    with_store(|pool| async move {
         match pool {
-            PoolRef::Sqlite(p) => p.get_process_name(*process_id).await,
-            PoolRef::Postgres(p) => p.get_process_name(*process_id).await,
+            Vfs::Sqlite(p) => p.get_process_name(*process_id).await,
+            Vfs::Postgres(p) => p.get_process_name(*process_id).await,
         }
     })
     .await
@@ -289,33 +241,23 @@ pub async fn find_process_name_by_id(
 
 /// Find explicit process names for a batch of process ids.
 pub async fn find_process_names_by_ids(
-    chaos_home: &Path,
     process_ids: &HashSet<ProcessId>,
 ) -> std::io::Result<HashMap<ProcessId, String>> {
-    let Some(provider) = open_runtime_storage(chaos_home).await? else {
-        return Ok(HashMap::new());
-    };
-    with_store(&provider, HashMap::new(), |pool| async move {
+    with_store(|pool| async move {
         match pool {
-            PoolRef::Sqlite(p) => p.get_process_names(process_ids).await,
-            PoolRef::Postgres(p) => p.get_process_names(process_ids).await,
+            Vfs::Sqlite(p) => p.get_process_names(process_ids).await,
+            Vfs::Postgres(p) => p.get_process_names(process_ids).await,
         }
     })
     .await
 }
 
 /// Find the most recently updated process id for a process name, if any.
-pub async fn find_process_id_by_name(
-    chaos_home: &Path,
-    name: &str,
-) -> std::io::Result<Option<ProcessId>> {
-    let Some(provider) = open_runtime_storage(chaos_home).await? else {
-        return Ok(None);
-    };
-    with_store(&provider, None, |pool| async move {
+pub async fn find_process_id_by_name(name: &str) -> std::io::Result<Option<ProcessId>> {
+    with_store(|pool| async move {
         match pool {
-            PoolRef::Sqlite(p) => p.find_process_id_by_name(name).await,
-            PoolRef::Postgres(p) => p.find_process_id_by_name(name).await,
+            Vfs::Sqlite(p) => p.find_process_id_by_name(name).await,
+            Vfs::Postgres(p) => p.find_process_id_by_name(name).await,
         }
     })
     .await

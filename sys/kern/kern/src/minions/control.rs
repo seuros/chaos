@@ -354,7 +354,7 @@ impl AgentControl {
                 // Collab resume callers rebuild a placeholder ProcessSpawn source. Rehydrate the
                 // stored nickname/role from sqlite when available; otherwise leave both unset.
                 let (resumed_agent_nickname, resumed_agent_role) =
-                    if let Some(runtime_db_ctx) = runtime_db::get_runtime_db(&config).await {
+                    if let Some(runtime_db_ctx) = runtime_db::get_runtime_db(&config) {
                         match runtime_db_ctx.get_process(process_id).await {
                             Ok(Some(metadata)) => (metadata.agent_nickname, metadata.agent_role),
                             Ok(None) | Err(_) => (None, None),

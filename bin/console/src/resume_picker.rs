@@ -144,7 +144,6 @@ async fn run_session_picker(
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
 
     let default_provider = config.model_provider_id.to_string();
-    let chaos_home = config.chaos_home.as_path();
     let filter_cwd = if show_all {
         None
     } else {
@@ -179,7 +178,6 @@ async fn run_session_picker(
     });
 
     let mut state = PickerState::new(
-        chaos_home.to_path_buf(),
         alt.tui.frame_requester(),
         page_loader,
         default_provider.clone(),
@@ -322,7 +320,6 @@ pub(crate) mod tests {
     use pretty_assertions::assert_eq;
     #[cfg(feature = "vt100-tests")]
     use ratatui::layout::Rect;
-    use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::Mutex;
 
@@ -451,7 +448,6 @@ pub(crate) mod tests {
 
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -526,7 +522,6 @@ pub(crate) mod tests {
 
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -558,7 +553,6 @@ pub(crate) mod tests {
     fn pageless_scrolling_deduplicates_and_keeps_order() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -623,7 +617,6 @@ pub(crate) mod tests {
         });
 
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -702,7 +695,6 @@ pub(crate) mod tests {
         });
 
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -731,7 +723,6 @@ pub(crate) mod tests {
     async fn page_navigation_uses_view_rows() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -774,7 +765,6 @@ pub(crate) mod tests {
     async fn enter_on_row_selects_process_id() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -812,7 +802,6 @@ pub(crate) mod tests {
     async fn up_at_bottom_does_not_scroll_when_visible() {
         let loader = Arc::new(|_: PageLoadRequest| {});
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),
@@ -855,7 +844,6 @@ pub(crate) mod tests {
         });
 
         let mut state = PickerState::new(
-            PathBuf::from("/tmp"),
             FrameRequester::test_dummy(),
             loader,
             String::from("openai"),

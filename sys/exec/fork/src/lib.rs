@@ -306,6 +306,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         .build()
         .await?;
 
+    chaos_kern::runtime_db::mount_vfs(&config).await?;
+
     #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack).await {
         Ok(None) => {}
@@ -714,8 +716,7 @@ async fn resolve_resume_process_id(
                 Ok(None)
             }
         } else {
-            let process_id =
-                chaos_kern::find_process_id_by_name(&config.chaos_home, id_str).await?;
+            let process_id = chaos_kern::find_process_id_by_name(id_str).await?;
             if let Some(process_id) = process_id
                 && chaos_kern::RolloutRecorder::journal_contains_process(process_id).await?
             {

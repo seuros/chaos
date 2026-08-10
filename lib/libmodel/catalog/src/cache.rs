@@ -1,18 +1,15 @@
 use chaos_ipc::openai_models::ModelInfo;
-use chaos_storage::ChaosStorageProvider;
+use chaos_vfs::Vfs;
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::PgPool;
 use sqlx::Row;
-use sqlx::SqlitePool;
 use sqlx::postgres::PgRow;
 use sqlx::sqlite::SqliteRow;
 use std::io;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::sync::OnceCell;
 use tracing::error;
 use tracing::info;
 
@@ -21,22 +18,23 @@ use tracing::info;
 pub struct ModelsCacheManager {
     sqlite_home: PathBuf,
     cache_ttl: Duration,
-    chaos_pool: OnceCell<Option<RuntimeCachePool>>,
-}
-
-#[derive(Debug, Clone)]
-enum RuntimeCachePool {
-    Sqlite(SqlitePool),
-    Postgres(PgPool),
+    backend: Option<Vfs>,
 }
 
 impl ModelsCacheManager {
-    /// Create a new cache manager backed by the shared runtime store.
+    /// Create a new cache manager over the backend serving `sqlite_home`.
     pub fn new(sqlite_home: PathBuf, cache_ttl: Duration) -> Self {
+        let backend = match chaos_vfs::pool_for(&sqlite_home) {
+            Ok(pool) => Some(pool),
+            Err(err) => {
+                error!("model cache is unavailable: {err}");
+                None
+            }
+        };
         Self {
             sqlite_home,
             cache_ttl,
-            chaos_pool: OnceCell::new(),
+            backend,
         }
     }
 
@@ -138,7 +136,7 @@ impl ModelsCacheManager {
         };
 
         let caches = match pool {
-            RuntimeCachePool::Sqlite(pool) => {
+            Vfs::Sqlite(pool) => {
                 let rows = sqlx::query(
                     "SELECT provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json \
                      FROM model_catalog_cache \
@@ -151,7 +149,7 @@ impl ModelsCacheManager {
                     .map(|row| decode_models_cache_row_sqlite(Some(row), None))
                     .collect::<io::Result<Vec<_>>>()?
             }
-            RuntimeCachePool::Postgres(pool) => {
+            Vfs::Postgres(pool) => {
                 let rows = sqlx::query(
                     "SELECT provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json \
                      FROM model_catalog_cache \
@@ -175,7 +173,7 @@ impl ModelsCacheManager {
         };
 
         match pool {
-            RuntimeCachePool::Sqlite(pool) => {
+            Vfs::Sqlite(pool) => {
                 let row = sqlx::query(
                     "SELECT fetched_at, etag, client_version, models_json \
                      FROM model_catalog_cache \
@@ -189,7 +187,7 @@ impl ModelsCacheManager {
                 .map_err(io::Error::other)?;
                 decode_models_cache_row_sqlite(row, Some(scope.clone()))
             }
-            RuntimeCachePool::Postgres(pool) => {
+            Vfs::Postgres(pool) => {
                 let row = sqlx::query(
                     "SELECT fetched_at, etag, client_version, models_json \
                      FROM model_catalog_cache \
@@ -218,7 +216,7 @@ impl ModelsCacheManager {
         };
 
         match pool {
-            RuntimeCachePool::Sqlite(pool) => {
+            Vfs::Sqlite(pool) => {
                 let models_json = serde_json::to_string(&cache.models)
                     .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
                 sqlx::query(
@@ -243,7 +241,7 @@ impl ModelsCacheManager {
                 .map(|_| ())
                 .map_err(io::Error::other)
             }
-            RuntimeCachePool::Postgres(pool) => {
+            Vfs::Postgres(pool) => {
                 let models_json = serde_json::to_value(&cache.models)
                     .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
                 sqlx::query(
@@ -271,41 +269,8 @@ impl ModelsCacheManager {
         }
     }
 
-    async fn runtime_pool(&self) -> Option<RuntimeCachePool> {
-        self.chaos_pool
-            .get_or_init(|| async {
-                match ChaosStorageProvider::from_env(None).await {
-                    Ok(provider) => {
-                        if let Some(pool) = provider.sqlite_pool_cloned() {
-                            return Some(RuntimeCachePool::Sqlite(pool));
-                        }
-                        if let Some(pool) = provider.postgres_pool_cloned() {
-                            return Some(RuntimeCachePool::Postgres(pool));
-                        }
-                        error!(
-                            "failed to resolve supported runtime storage backend for model cache"
-                        );
-                        None
-                    }
-                    Err(_) => match ChaosStorageProvider::from_optional_sqlite(
-                        None,
-                        Some(self.sqlite_home.as_path()),
-                    )
-                    .await
-                    {
-                        Ok(provider) => provider.sqlite_pool_cloned().map(RuntimeCachePool::Sqlite),
-                        Err(err) => {
-                            error!(
-                                "failed to open runtime db for model cache at {}: {err}",
-                                self.sqlite_home.display()
-                            );
-                            None
-                        }
-                    },
-                }
-            })
-            .await
-            .clone()
+    async fn runtime_pool(&self) -> Option<Vfs> {
+        self.backend.clone()
     }
 
     /// Return the slug of the highest-priority `supported_in_api` model for
@@ -314,7 +279,7 @@ impl ModelsCacheManager {
         let pool = self.runtime_pool().await?;
 
         let models: Vec<ModelInfo> = match pool {
-            RuntimeCachePool::Sqlite(pool) => {
+            Vfs::Sqlite(pool) => {
                 let json: String = sqlx::query_scalar(
                     "SELECT models_json FROM model_catalog_cache \
                      WHERE provider_name = ? \
@@ -326,7 +291,7 @@ impl ModelsCacheManager {
                 .ok()??;
                 serde_json::from_str(&json).ok()?
             }
-            RuntimeCachePool::Postgres(pool) => {
+            Vfs::Postgres(pool) => {
                 let json: serde_json::Value = sqlx::query_scalar(
                     "SELECT models_json FROM model_catalog_cache \
                      WHERE provider_name = $1 \
@@ -353,62 +318,29 @@ impl ModelsCacheManager {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub async fn manipulate_cache_for_test<F>(&self, f: F) -> io::Result<()>
+    pub async fn manipulate_cache_for_test<F>(
+        &self,
+        scope: &ModelsCacheScope,
+        f: F,
+    ) -> io::Result<()>
     where
         F: FnOnce(&mut Timestamp),
     {
-        let mut cache = match self.load_first_for_test().await? {
-            Some(cache) => cache,
-            None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
-        };
-        f(&mut cache.fetched_at);
-        self.save_internal(&cache).await
+        self.mutate_cache_for_test(scope, |cache| f(&mut cache.fetched_at))
+            .await
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub async fn mutate_cache_for_test<F>(&self, f: F) -> io::Result<()>
+    pub async fn mutate_cache_for_test<F>(&self, scope: &ModelsCacheScope, f: F) -> io::Result<()>
     where
         F: FnOnce(&mut ModelsCache),
     {
-        let mut cache = match self.load_first_for_test().await? {
+        let mut cache = match self.load(scope).await? {
             Some(cache) => cache,
             None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
         };
         f(&mut cache);
         self.save_internal(&cache).await
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    async fn load_first_for_test(&self) -> io::Result<Option<ModelsCache>> {
-        let Some(pool) = self.runtime_pool().await else {
-            return Ok(None);
-        };
-        match pool {
-            RuntimeCachePool::Sqlite(pool) => {
-                let row = sqlx::query(
-                    "SELECT provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json \
-                     FROM model_catalog_cache \
-                     ORDER BY fetched_at DESC \
-                     LIMIT 1",
-                )
-                .fetch_optional(&pool)
-                .await
-                .map_err(io::Error::other)?;
-                decode_models_cache_row_sqlite(row, None)
-            }
-            RuntimeCachePool::Postgres(pool) => {
-                let row = sqlx::query(
-                    "SELECT provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json \
-                     FROM model_catalog_cache \
-                     ORDER BY fetched_at DESC \
-                     LIMIT 1",
-                )
-                .fetch_optional(&pool)
-                .await
-                .map_err(io::Error::other)?;
-                decode_models_cache_row_postgres(row, None)
-            }
-        }
     }
 }
 

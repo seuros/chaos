@@ -35,6 +35,10 @@ pub async fn run(cli: ModelsCli, config_profile: Option<String>) -> anyhow::Resu
         .await
         .context("failed to load config")?;
 
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .context("failed to mount runtime storage")?;
+
     let auth_manager = AuthManager::shared(
         config.chaos_home.clone(),
         true,

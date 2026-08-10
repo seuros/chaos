@@ -1,5 +1,5 @@
 [package]
-name = "chaos-storage"
+name = "chaos-vfs"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,12 +7,14 @@ publish.workspace = true
 
 [lib]
 doctest = false
-name = "chaos_storage"
+name = "chaos_vfs"
 path = "src/lib.rs"
 
 [dependencies]
+chaos-dispatch = { workspace = true }
 chaos-proc = { workspace = true }
 sqlx = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

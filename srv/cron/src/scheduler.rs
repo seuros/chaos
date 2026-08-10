@@ -10,7 +10,7 @@ use crate::job::CronScope;
 use crate::job::JobKind;
 use crate::provider::BackendCronStorage;
 use crate::schedule::Schedule;
-use chaos_storage::ChaosStorageProvider;
+use chaos_vfs::ChaosVfs;
 use tokio::sync::watch;
 use tracing::error;
 use tracing::info;
@@ -92,14 +92,14 @@ static SCHEDULER_GUARD: OnceLock<watch::Sender<bool>> = OnceLock::new();
 /// The scheduler runs in a background `tokio::spawn` task until the shutdown
 /// sender is dropped or `true` is sent.
 pub fn spawn_global(
-    provider: &ChaosStorageProvider,
+    provider: &ChaosVfs,
     executor: JobExecutor,
 ) -> Result<Option<&'static watch::Sender<bool>>, String> {
     if SCHEDULER_GUARD.get().is_some() {
         return Ok(None);
     }
 
-    let store = BackendCronStorage::from_provider(provider)?;
+    let store = BackendCronStorage::from_provider(provider);
     let (shutdown_tx, shutdown_rx) = Scheduler::shutdown_channel();
     if SCHEDULER_GUARD.set(shutdown_tx).is_err() {
         return Ok(None);

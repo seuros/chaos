@@ -3,15 +3,11 @@
 use crate::BackendCronStorage;
 use crate::CronStorage;
 use crate::spool_store::BackendSpoolStore;
-use chaos_storage::ChaosStorageProvider;
 
 /// List all cron jobs as a JSON string.
-pub async fn list_crons(provider: Option<&ChaosStorageProvider>) -> Result<String, String> {
-    let provider = match provider {
-        Some(provider) => provider.clone(),
-        None => ChaosStorageProvider::from_env(None).await?,
-    };
-    let storage = BackendCronStorage::from_provider(&provider)?;
+pub async fn list_crons() -> Result<String, String> {
+    let vfs = chaos_vfs::root().map_err(|err| err.to_string())?;
+    let storage = BackendCronStorage::from_provider(vfs);
     list_crons_with_storage(&storage).await
 }
 
@@ -43,12 +39,9 @@ async fn list_crons_with_storage<S: CronStorage>(storage: &S) -> Result<String, 
 }
 
 /// List all spool jobs as a JSON string.
-pub async fn list_spool(provider: Option<&ChaosStorageProvider>) -> Result<String, String> {
-    let provider = match provider {
-        Some(provider) => provider.clone(),
-        None => ChaosStorageProvider::from_env(None).await?,
-    };
-    let storage = BackendSpoolStore::from_provider(&provider)?;
+pub async fn list_spool() -> Result<String, String> {
+    let vfs = chaos_vfs::root().map_err(|err| err.to_string())?;
+    let storage = BackendSpoolStore::from_provider(vfs);
     let rows = storage
         .list()
         .await

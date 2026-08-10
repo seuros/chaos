@@ -204,7 +204,7 @@ impl Chaos {
             };
             match process_id {
                 Some(process_id) => {
-                    let runtime_db_ctx = runtime_db::get_runtime_db(&config).await;
+                    let runtime_db_ctx = runtime_db::get_runtime_db(&config);
                     runtime_db::get_dynamic_tools(
                         runtime_db_ctx.as_ref(),
                         process_id,

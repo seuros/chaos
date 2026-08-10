@@ -16,6 +16,23 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
+/// Build a manager whose model cache lives in its own backend under
+/// `chaos_home`, so parallel tests never read each other's rows.
+async fn manager_over_own_cache(
+    chaos_home: PathBuf,
+    auth_manager: Arc<AuthManager>,
+    provider: ModelProviderInfo,
+) -> ModelsManager {
+    let config = chaos_vfs::MountConfig::sqlite_home(&chaos_home);
+    if chaos_vfs::mounted(&config).is_none() {
+        let backend = chaos_vfs::ChaosVfs::from_config(config.clone())
+            .await
+            .expect("open test cache backend");
+        chaos_vfs::mount(config, backend);
+    }
+    ModelsManager::with_provider_for_tests(chaos_home, auth_manager, provider)
+}
+
 fn remote_model(slug: &str, display: &str, priority: i32) -> ModelInfo {
     remote_model_with_visibility(slug, display, priority, "list")
 }
@@ -228,11 +245,8 @@ async fn refresh_available_models_sorts_by_priority() {
     let auth_manager =
         AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
-    let manager = ModelsManager::with_provider_for_tests(
-        chaos_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
+    let manager =
+        manager_over_own_cache(chaos_home.path().to_path_buf(), auth_manager, provider).await;
 
     manager
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -277,11 +291,8 @@ async fn refresh_available_models_uses_cache_when_fresh() {
     let auth_manager =
         AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
-    let manager = ModelsManager::with_provider_for_tests(
-        chaos_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
+    let manager =
+        manager_over_own_cache(chaos_home.path().to_path_buf(), auth_manager, provider).await;
 
     manager
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -318,11 +329,8 @@ async fn refresh_available_models_refetches_when_cache_stale() {
     let auth_manager =
         AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
-    let manager = ModelsManager::with_provider_for_tests(
-        chaos_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
+    let manager =
+        manager_over_own_cache(chaos_home.path().to_path_buf(), auth_manager, provider).await;
 
     manager
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -332,7 +340,7 @@ async fn refresh_available_models_refetches_when_cache_stale() {
     // Rewrite cache with an old timestamp so it is treated as stale.
     manager
         .cache_manager
-        .manipulate_cache_for_test(|fetched_at| {
+        .manipulate_cache_for_test(&manager.cache_scope(), |fetched_at| {
             *fetched_at = Timestamp::now().checked_sub(1.hours()).unwrap();
         })
         .await
@@ -381,11 +389,8 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
     let auth_manager =
         AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
-    let manager = ModelsManager::with_provider_for_tests(
-        chaos_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
+    let manager =
+        manager_over_own_cache(chaos_home.path().to_path_buf(), auth_manager, provider).await;
 
     manager
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -394,7 +399,7 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
 
     manager
         .cache_manager
-        .mutate_cache_for_test(|cache| {
+        .mutate_cache_for_test(&manager.cache_scope(), |cache| {
             let client_version = crate::models_manager::client_version_to_whole();
             cache.client_version = Some(format!("{client_version}-mismatch"));
         })
@@ -452,11 +457,12 @@ async fn refresh_available_models_refetches_when_provider_scope_changes() {
     let chaos_home = tempdir().expect("temp dir");
     let auth_manager =
         AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager_a = ModelsManager::with_provider_for_tests(
+    let manager_a = manager_over_own_cache(
         chaos_home.path().to_path_buf(),
         auth_manager.clone(),
         provider_for(server_a.uri()),
-    );
+    )
+    .await;
 
     manager_a
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -464,11 +470,12 @@ async fn refresh_available_models_refetches_when_provider_scope_changes() {
         .expect("initial refresh succeeds");
     assert_models_contain(&manager_a.get_remote_models().await, &initial_models);
 
-    let manager_b = ModelsManager::with_provider_for_tests(
+    let manager_b = manager_over_own_cache(
         chaos_home.path().to_path_buf(),
         auth_manager,
         provider_for(server_b.uri()),
-    );
+    )
+    .await;
 
     manager_b
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -510,11 +517,12 @@ async fn refresh_available_models_uses_cache_for_anthropic_provider() {
 
     let chaos_home = tempdir().expect("temp dir");
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
-    let manager = ModelsManager::with_provider_for_tests(
+    let manager = manager_over_own_cache(
         chaos_home.path().to_path_buf(),
         auth_manager,
         anthropic_provider_for(format!("{}/anthropic", server.uri())),
-    );
+    )
+    .await;
 
     manager
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -544,11 +552,12 @@ async fn unsupported_anthropic_provider_caches_empty_catalog_instead_of_bundled_
 
     let chaos_home = tempdir().expect("temp dir");
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
-    let manager = ModelsManager::with_provider_for_tests(
+    let manager = manager_over_own_cache(
         chaos_home.path().to_path_buf(),
         auth_manager,
         anthropic_provider_for(format!("{}/anthropic", server.uri())),
-    );
+    )
+    .await;
 
     manager
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
@@ -584,11 +593,8 @@ async fn refresh_available_models_drops_removed_remote_models() {
     let auth_manager =
         AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
-    let mut manager = ModelsManager::with_provider_for_tests(
-        chaos_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
+    let mut manager =
+        manager_over_own_cache(chaos_home.path().to_path_buf(), auth_manager, provider).await;
     manager.cache_manager.set_ttl(Duration::ZERO);
 
     manager
@@ -655,11 +661,8 @@ async fn refresh_available_models_fetches_regardless_of_auth_mode() {
         AuthCredentialsStoreMode::File,
     ));
     let provider = provider_for(server.uri());
-    let manager = ModelsManager::with_provider_for_tests(
-        chaos_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
+    let manager =
+        manager_over_own_cache(chaos_home.path().to_path_buf(), auth_manager, provider).await;
 
     manager
         .refresh_available_models(RefreshStrategy::Online)
@@ -746,11 +749,12 @@ async fn rebound_manager_resolves_models_from_the_new_provider() {
     )
     .await;
 
-    let manager = ModelsManager::with_provider_for_tests(
+    let manager = manager_over_own_cache(
         chaos_home.path().to_path_buf(),
         auth_manager,
         provider_for(default_server.uri()),
-    );
+    )
+    .await;
 
     assert_eq!(
         manager

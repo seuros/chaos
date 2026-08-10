@@ -117,7 +117,15 @@ pub async fn run_main(
 
     // Init runtime database singleton — same DB as TUI/CLI.
     let config = Arc::new(config);
-    let runtime_db = chaos_kern::runtime_db::get_runtime_db(&config).await;
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .map_err(|e| {
+            std::io::Error::new(
+                ErrorKind::InvalidData,
+                format!("error mounting runtime storage: {e}"),
+            )
+        })?;
+    let runtime_db = chaos_kern::runtime_db::get_runtime_db(&config);
 
     // Build ProcessTable.
     let auth_manager = AuthManager::shared(
@@ -173,8 +181,6 @@ pub async fn run_main(
         process_table,
         outgoing,
         arg0_paths,
-        storage_url: config.storage_url.clone(),
-        sqlite_home: config.sqlite_home.clone(),
         running_requests: Arc::new(Mutex::new(std::collections::HashMap::new())),
         session_processes: Arc::new(Mutex::new(std::collections::HashMap::new())),
         process_names: Arc::new(Mutex::new(std::collections::HashMap::new())),

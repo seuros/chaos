@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use chaos_abi::SpoolPhase;
 use chaos_abi::SpoolRegistry;
-use chaos_storage::ChaosStorageProvider;
+use chaos_vfs::ChaosVfs;
 
 use crate::provider::BackendCronStorage;
 use crate::provider::CronStorage;
@@ -102,10 +102,10 @@ pub(crate) fn spool_executor(
 
 pub fn spool_executor_from_provider(
     registry: Arc<SpoolRegistry>,
-    provider: &ChaosStorageProvider,
+    provider: &ChaosVfs,
 ) -> Result<JobExecutor, String> {
-    let spool_store = BackendSpoolStore::from_provider(provider)?;
-    let cron_store = BackendCronStorage::from_provider(provider)?;
+    let spool_store = BackendSpoolStore::from_provider(provider);
+    let cron_store = BackendCronStorage::from_provider(provider);
     Ok(spool_executor(registry, spool_store, cron_store))
 }
 
@@ -136,7 +136,8 @@ mod tests {
     use chaos_abi::SpoolItem;
     use chaos_abi::SpoolStatusReport;
     use chaos_abi::TurnRequest;
-    use chaos_storage::ChaosStorageProvider;
+    use chaos_vfs::ChaosVfs;
+    use chaos_vfs::MountConfig;
 
     /// Scripted backend: each poll pops the next phase from the queue.
     struct MockBackend {
@@ -287,12 +288,12 @@ mod tests {
         use chaos_abi::TurnResult;
 
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
-        let store = BackendSpoolStore::from_provider(&provider).expect("spool store");
-        let cron_store = BackendCronStorage::from_provider(&provider).expect("cron store");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
+        let store = BackendSpoolStore::from_provider(&provider);
+        let cron_store = BackendCronStorage::from_provider(&provider);
         seed_row(&pool, "manifest-A").await;
         seed_cron_row(&pool, "job-1", "manifest-A").await;
 
@@ -341,12 +342,12 @@ mod tests {
     #[tokio::test]
     async fn spool_executor_persists_failure_and_error_message() {
         let tmp = tempfile::tempdir().expect("tmp");
-        let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(tmp.path()))
+        let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
             .await
             .expect("provider");
-        let pool = provider.sqlite_pool_cloned().expect("sqlite pool");
-        let store = BackendSpoolStore::from_provider(&provider).expect("spool store");
-        let cron_store = BackendCronStorage::from_provider(&provider).expect("cron store");
+        let pool = provider.sqlite_pool().expect("sqlite pool");
+        let store = BackendSpoolStore::from_provider(&provider);
+        let cron_store = BackendCronStorage::from_provider(&provider);
         seed_row(&pool, "manifest-B").await;
         seed_cron_row(&pool, "job-1", "manifest-B").await;
 

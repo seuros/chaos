@@ -915,7 +915,7 @@ pub(crate) fn normalize_storage_url(storage_url: Option<&str>) -> anyhow::Result
         return Ok(None);
     };
 
-    chaos_storage::StorageConfig::from_url(storage_url).map_err(anyhow::Error::msg)?;
+    chaos_vfs::MountConfig::from_url(storage_url).map_err(anyhow::Error::msg)?;
     Ok(Some(storage_url.to_string()))
 }
 

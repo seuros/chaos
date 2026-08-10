@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 
-use chaos_storage::StorageKind;
+use chaos_vfs::VfsKind;
 
 /// Process-wide health for the interactive session journal sink.
 ///
@@ -82,11 +82,11 @@ impl RuntimeStorageBackend {
     }
 }
 
-impl From<StorageKind> for RuntimeStorageBackend {
-    fn from(kind: StorageKind) -> Self {
+impl From<VfsKind> for RuntimeStorageBackend {
+    fn from(kind: VfsKind) -> Self {
         match kind {
-            StorageKind::Sqlite => Self::Sqlite,
-            StorageKind::Postgres => Self::Postgres,
+            VfsKind::Sqlite => Self::Sqlite,
+            VfsKind::Postgres => Self::Postgres,
         }
     }
 }

@@ -252,6 +252,10 @@ pub async fn run_main(
 
     let config = load_config_or_exit(cli_kv_overrides.clone(), overrides.clone()).await;
 
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .map_err(std::io::Error::other)?;
+
     #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack).await {
         Ok(None) => {}
@@ -451,7 +455,7 @@ async fn run_ratatui_app(
     let session_selection =
         if use_fork {
             if let Some(id_str) = cli.fork_session_id.as_deref() {
-                match resolve_saved_process_id(&config.chaos_home, id_str).await? {
+                match resolve_saved_process_id(id_str).await? {
                     Some(process_id) => {
                         resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
                             process_id,
@@ -500,7 +504,7 @@ async fn run_ratatui_app(
                 resume_picker::SessionSelection::StartFresh
             }
         } else if let Some(id_str) = cli.resume_session_id.as_deref() {
-            match resolve_saved_process_id(&config.chaos_home, id_str).await? {
+            match resolve_saved_process_id(id_str).await? {
                 Some(process_id) => {
                     resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
                         process_id,
@@ -667,14 +671,11 @@ async fn run_ratatui_app(
     app_result
 }
 
-async fn resolve_saved_process_id(
-    chaos_home: &Path,
-    id_str: &str,
-) -> std::io::Result<Option<ProcessId>> {
+async fn resolve_saved_process_id(id_str: &str) -> std::io::Result<Option<ProcessId>> {
     let process_id = if Uuid::parse_str(id_str).is_ok() {
         ProcessId::from_string(id_str).ok()
     } else {
-        find_process_id_by_name(chaos_home, id_str).await?
+        find_process_id_by_name(id_str).await?
     };
     let Some(process_id) = process_id else {
         return Ok(None);
@@ -690,7 +691,7 @@ pub(crate) async fn read_session_cwd_by_process_id(
     config: &Config,
     process_id: ProcessId,
 ) -> Option<PathBuf> {
-    if let Some(runtime_db_ctx) = get_runtime_db(config).await
+    if let Some(runtime_db_ctx) = get_runtime_db(config)
         && let Ok(Some(metadata)) = runtime_db_ctx.get_process(process_id).await
     {
         return Some(metadata.cwd);

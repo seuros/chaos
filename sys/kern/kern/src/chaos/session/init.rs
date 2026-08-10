@@ -366,20 +366,19 @@ impl Session {
                     session_telemetry.clone(),
                 )
             };
-        let process_name =
-            match process_names::find_process_name_by_id(&config.chaos_home, &conversation_id)
-                .instrument(info_span!(
-                    "session_init.process_name_lookup",
-                    otel.name = "session_init.process_name_lookup",
-                ))
-                .await
-            {
-                Ok(name) => name,
-                Err(err) => {
-                    warn!("Failed to read session index for process name: {err}");
-                    None
-                }
-            };
+        let process_name = match process_names::find_process_name_by_id(&conversation_id)
+            .instrument(info_span!(
+                "session_init.process_name_lookup",
+                otel.name = "session_init.process_name_lookup",
+            ))
+            .await
+        {
+            Ok(name) => name,
+            Err(err) => {
+                warn!("Failed to read session index for process name: {err}");
+                None
+            }
+        };
         session_configuration.process_name = process_name.clone();
         let state = SessionState::new(session_configuration.clone());
         let managed_network_requirements_enabled = config.managed_network_requirements_enabled();

@@ -35,7 +35,7 @@ chaos-arsenal = { workspace = true }
 chaos-cron = { workspace = true }
 chaos-libration = { workspace = true }
 chaos-model-catalog = { workspace = true }
-chaos-storage = { workspace = true }
+chaos-vfs = { workspace = true }
 chaos-concierge = { workspace = true }
 chaos_journald = { workspace = true }
 chaos-traits = { workspace = true }

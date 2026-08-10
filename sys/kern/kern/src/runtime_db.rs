@@ -15,11 +15,10 @@ use chaos_parrot::endpoint::batches::XaiSpoolBackend;
 pub use chaos_proc::LogEntry;
 use chaos_proc::ProcessMetadataBuilder;
 pub use chaos_proc::RuntimeDbHandle;
-use chaos_storage::ChaosStorageProvider;
-use chaos_storage::StorageConfig;
+use chaos_vfs::ChaosVfs;
+use chaos_vfs::Vfs;
 use jiff::Timestamp;
 use serde_json::Value;
-use sqlx::SqlitePool;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -30,14 +29,8 @@ use uuid::Uuid;
 /// Initialize the runtime DB for thread persistence. To only be used
 /// inside `core`. The initialization should not be done anywhere else.
 pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
-    let provider = match resolve_runtime_storage_provider_with_config(
-        None,
-        config.storage_url.as_deref(),
-        config.sqlite_home.as_path(),
-    )
-    .await
-    {
-        Ok(provider) => provider,
+    let vfs = match mount_vfs(config).await {
+        Ok(vfs) => vfs,
         Err(err) => {
             warn!(
                 "failed to initialize runtime storage for {}: {err}",
@@ -47,26 +40,15 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
         }
     };
 
-    let runtime = match runtime_handle_from_provider(
-        &provider,
+    let runtime = runtime_handle_from_vfs(
+        vfs,
         config.sqlite_home.clone(),
         config.model_provider_id.clone(),
-    )
-    .await
-    {
-        Ok(runtime) => runtime,
-        Err(err) => {
-            warn!(
-                "failed to initialize runtime db at {}: {err}",
-                config.sqlite_home.display()
-            );
-            return None;
-        }
-    };
+    );
 
     if let Err(err) = chaos_cron::spawn_scheduler(
-        &provider,
-        scheduler_executor(&provider, config.sqlite_home.as_path()).await,
+        vfs,
+        scheduler_executor(vfs, config.sqlite_home.as_path()).await,
     ) {
         warn!("failed to initialize cron scheduler storage backend: {err}");
     }
@@ -74,20 +56,14 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
     // Install the shared ration usage store so adapters built later in
     // boot can attach sniffers via `chaos_libration::registry::sniffer_for`.
     // A store already installed (repeated init, tests) is a no-op.
-    match chaos_libration::store::UsageStore::from_provider(&provider) {
-        Some(store) => {
-            let _ = chaos_libration::registry::set_shared_store(store);
-        }
-        None => warn!("failed to install ration store: storage provider exposes no pool"),
-    }
+    let _ = chaos_libration::registry::set_shared_store(
+        chaos_libration::store::UsageStore::from_provider(vfs),
+    );
 
     Some(runtime)
 }
 
-async fn scheduler_executor(
-    provider: &ChaosStorageProvider,
-    sqlite_home: &Path,
-) -> chaos_cron::JobExecutor {
+async fn scheduler_executor(provider: &ChaosVfs, sqlite_home: &Path) -> chaos_cron::JobExecutor {
     let shell = chaos_cron::shell_executor();
     let registry = spool_registry_from_env(sqlite_home).await;
     if registry.is_empty() {
@@ -154,31 +130,53 @@ fn non_empty_env(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-async fn runtime_handle_from_provider(
-    provider: &ChaosStorageProvider,
+fn runtime_handle_from_vfs(
+    vfs: &ChaosVfs,
     chaos_home: PathBuf,
     default_provider: String,
-) -> anyhow::Result<RuntimeDbHandle> {
-    set_runtime_storage_backend(RuntimeStorageBackend::from(provider.kind()));
-    if let Some(pool) = provider.sqlite_pool_cloned() {
-        return Ok(RuntimeDbHandle::from_sqlite_pool(
-            chaos_home,
-            default_provider,
-            pool,
-        ));
+) -> RuntimeDbHandle {
+    set_runtime_storage_backend(RuntimeStorageBackend::from(vfs.kind()));
+    match vfs.pool() {
+        Vfs::Sqlite(pool) => RuntimeDbHandle::from_sqlite_pool(chaos_home, default_provider, pool),
+        Vfs::Postgres(pool) => {
+            RuntimeDbHandle::from_postgres_pool(chaos_home, default_provider, pool)
+        }
     }
-    if let Some(pool) = provider.postgres_pool_cloned() {
-        return Ok(RuntimeDbHandle::from_postgres_pool(
-            chaos_home,
-            default_provider,
-            pool,
-        ));
-    }
-    anyhow::bail!("unsupported runtime storage backend")
 }
 
-/// Open or create the configured runtime DB handle using the shared storage
-/// resolution rules.
+/// Mount the storage backend named by the config, `CHAOS_STORAGE_URL`, or the
+/// chaos home, in that order. Idempotent, so every entry point may call it and
+/// the process still opens exactly one pool.
+pub async fn mount_vfs(config: &Config) -> anyhow::Result<&'static ChaosVfs> {
+    mount_root_for(config.storage_url.as_deref(), config.sqlite_home.as_path()).await
+}
+
+/// Trait-friendly variant: accepts only the fields needed to mount.
+pub async fn mount_root_for(
+    storage_url: Option<&str>,
+    sqlite_home: &Path,
+) -> anyhow::Result<&'static ChaosVfs> {
+    let vfs = mount_vfs_for(storage_url, sqlite_home).await?;
+    chaos_vfs::set_root(vfs);
+    Ok(vfs)
+}
+
+/// Open the backend without claiming the root, for callers that run before boot
+/// has settled which one the process serves.
+pub async fn mount_vfs_for(
+    storage_url: Option<&str>,
+    sqlite_home: &Path,
+) -> anyhow::Result<&'static ChaosVfs> {
+    let config = chaos_vfs::resolve_mount_config(storage_url, sqlite_home)?;
+    if let Some(vfs) = chaos_vfs::mounted(&config) {
+        return Ok(vfs);
+    }
+
+    let vfs = ChaosVfs::from_config(config.clone()).await?;
+    Ok(chaos_vfs::mount(config, vfs))
+}
+
+/// Open the runtime DB handle, mounting the backend if boot has not yet.
 pub async fn open_or_create_runtime_db(
     sqlite_home: &Path,
     default_provider: &str,
@@ -186,161 +184,38 @@ pub async fn open_or_create_runtime_db(
     open_or_create_runtime_db_with_config(None, sqlite_home, default_provider).await
 }
 
-/// Open or create the runtime DB handle, preferring an explicit config-backed
-/// storage URL before falling back to the shared environment/default rules.
+/// Variant that also honours an explicit config-backed storage URL.
 pub async fn open_or_create_runtime_db_with_config(
     storage_url: Option<&str>,
     sqlite_home: &Path,
     default_provider: &str,
 ) -> anyhow::Result<RuntimeDbHandle> {
-    let provider = resolve_runtime_storage_provider_with_config(None, storage_url, sqlite_home)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    runtime_handle_from_provider(
-        &provider,
+    let vfs = mount_vfs_for(storage_url, sqlite_home).await?;
+    Ok(runtime_handle_from_vfs(
+        vfs,
         sqlite_home.to_path_buf(),
         default_provider.to_string(),
-    )
-    .await
+    ))
 }
 
-fn storage_config_from_configured_url(
-    storage_url: Option<&str>,
-) -> Result<Option<StorageConfig>, String> {
-    let Some(storage_url) = storage_url
-        .map(str::trim)
-        .filter(|storage_url| !storage_url.is_empty())
-    else {
-        return Ok(None);
-    };
-
-    StorageConfig::from_url(storage_url).map(Some)
-}
-
-/// Resolve the shared runtime storage provider, preferring an explicit
-/// config-backed storage URL, then environment configuration, and otherwise
-/// falling back to the configured SQLite home.
-pub async fn resolve_runtime_storage_provider_with_config(
-    existing_pool: Option<&SqlitePool>,
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
-) -> Result<ChaosStorageProvider, String> {
-    if let Some(config) = storage_config_from_configured_url(storage_url)? {
-        return ChaosStorageProvider::from_config(config).await;
-    }
-
-    resolve_runtime_storage_provider(existing_pool, sqlite_home).await
-}
-
-/// Resolve the shared runtime storage provider, preferring explicit environment
-/// configuration and otherwise falling back to the configured SQLite home.
-pub async fn resolve_runtime_storage_provider(
-    existing_pool: Option<&SqlitePool>,
-    sqlite_home: &Path,
-) -> Result<ChaosStorageProvider, String> {
-    match ChaosStorageProvider::from_env(existing_pool).await {
-        Ok(provider) => Ok(provider),
-        Err(_) => {
-            ChaosStorageProvider::from_optional_sqlite(existing_pool, Some(sqlite_home)).await
-        }
-    }
-}
-
-/// Get the DB if the feature is enabled and the DB exists.
-pub async fn get_runtime_db(config: &Config) -> Option<RuntimeDbHandle> {
-    get_runtime_db_for_config(
-        config.storage_url.as_deref(),
-        config.sqlite_home.as_path(),
-        &config.model_provider_id,
-    )
-    .await
-}
-
-/// Trait-friendly variant with an optional explicit storage URL.
-pub async fn get_runtime_db_for_config(
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
-    model_provider_id: &str,
-) -> Option<RuntimeDbHandle> {
-    if storage_config_from_configured_url(storage_url)
-        .ok()
-        .flatten()
-        .is_some()
-    {
-        let provider = resolve_runtime_storage_provider_with_config(None, storage_url, sqlite_home)
-            .await
-            .ok()?;
-        return runtime_handle_from_provider(
-            &provider,
-            sqlite_home.to_path_buf(),
-            model_provider_id.to_string(),
-        )
-        .await
-        .ok();
-    }
-
-    get_runtime_db_for(sqlite_home, model_provider_id).await
+/// Get the runtime DB handle when a backend is mounted.
+pub fn get_runtime_db(config: &Config) -> Option<RuntimeDbHandle> {
+    get_runtime_db_for(config.sqlite_home.as_path(), &config.model_provider_id)
 }
 
 /// Trait-friendly variant: accepts only the fields needed to open the runtime DB.
-pub async fn get_runtime_db_for(
-    sqlite_home: &Path,
-    model_provider_id: &str,
-) -> Option<RuntimeDbHandle> {
-    if let Ok(provider) = ChaosStorageProvider::from_env(None).await {
-        return runtime_handle_from_provider(
-            &provider,
-            sqlite_home.to_path_buf(),
-            model_provider_id.to_string(),
-        )
-        .await
-        .ok();
-    }
-
-    let state_path = chaos_proc::runtime_db_path(sqlite_home);
-    if !tokio::fs::try_exists(&state_path).await.unwrap_or(false) {
-        return None;
-    }
-
-    let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(sqlite_home))
-        .await
-        .ok()?;
-    runtime_handle_from_provider(
-        &provider,
+pub fn get_runtime_db_for(sqlite_home: &Path, model_provider_id: &str) -> Option<RuntimeDbHandle> {
+    let vfs = chaos_vfs::root_for(sqlite_home).ok()?;
+    Some(runtime_handle_from_vfs(
+        vfs,
         sqlite_home.to_path_buf(),
         model_provider_id.to_string(),
-    )
-    .await
-    .ok()
+    ))
 }
 
-/// Open the runtime DB when the backing store appears present, without feature gating.
-pub async fn open_if_present(chaos_home: &Path, default_provider: &str) -> Option<RuntimeDbHandle> {
-    if let Ok(provider) = ChaosStorageProvider::from_env(None).await {
-        return runtime_handle_from_provider(
-            &provider,
-            chaos_home.to_path_buf(),
-            default_provider.to_string(),
-        )
-        .await
-        .ok();
-    }
-
-    let db_path = chaos_proc::runtime_db_path(chaos_home);
-    if !tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
-        return None;
-    }
-
-    let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(chaos_home))
-        .await
-        .ok()?;
-    runtime_handle_from_provider(
-        &provider,
-        chaos_home.to_path_buf(),
-        default_provider.to_string(),
-    )
-    .await
-    .ok()
+/// Open the runtime DB when a backend is mounted, without feature gating.
+pub fn open_if_present(chaos_home: &Path, default_provider: &str) -> Option<RuntimeDbHandle> {
+    get_runtime_db_for(chaos_home, default_provider)
 }
 
 fn cursor_to_anchor(cursor: Option<&Cursor>) -> Option<chaos_proc::Anchor> {

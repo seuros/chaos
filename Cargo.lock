@@ -1436,14 +1436,15 @@ dependencies = [
  "anyhow",
  "chaos-abi",
  "chaos-proc",
- "chaos-storage",
  "chaos-traits",
+ "chaos-vfs",
  "inventory",
  "jiff",
  "mcp-host",
  "schemars 1.2.1",
  "serde",
  "serde_json",
+ "serial_test",
  "sqlx",
  "tempfile",
  "tokio",
@@ -1481,6 +1482,10 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-bash",
 ]
+
+[[package]]
+name = "chaos-dispatch"
+version = "47.1.0"
 
 [[package]]
 name = "chaos-doas"
@@ -1734,11 +1739,11 @@ dependencies = [
  "chaos-services",
  "chaos-sh",
  "chaos-snitch",
- "chaos-storage",
  "chaos-sysctl",
  "chaos-tmpfs",
  "chaos-traits",
  "chaos-vault",
+ "chaos-vfs",
  "chaos-watchdog",
  "chaos-wchar",
  "chaos-which",
@@ -1832,7 +1837,7 @@ dependencies = [
  "anyhow",
  "chaos-proc",
  "chaos-ration",
- "chaos-storage",
+ "chaos-vfs",
  "jiff",
  "rama-http-types",
  "sqlx",
@@ -1927,13 +1932,12 @@ version = "47.1.0"
 dependencies = [
  "chaos-abi",
  "chaos-ipc",
- "chaos-storage",
+ "chaos-vfs",
  "jiff",
  "serde",
  "serde_json",
  "sqlx",
  "state-machines",
- "tokio",
  "tracing",
 ]
 
@@ -2042,6 +2046,7 @@ name = "chaos-proc"
 version = "47.1.0"
 dependencies = [
  "anyhow",
+ "chaos-dispatch",
  "chaos-ipc",
  "chaos-sysctl",
  "clap",
@@ -2115,11 +2120,14 @@ name = "chaos-recall"
 version = "47.1.0"
 dependencies = [
  "anyhow",
+ "chaos-vfs",
  "pgvector",
  "serde",
  "serde_json",
  "sqlx",
+ "tempfile",
  "thiserror 2.0.19",
+ "tokio",
  "tracing",
 ]
 
@@ -2240,16 +2248,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chaos-storage"
-version = "47.1.0"
-dependencies = [
- "chaos-proc",
- "sqlx",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "chaos-sudoers"
 version = "47.1.0"
 dependencies = [
@@ -2347,6 +2345,18 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "tracing",
+]
+
+[[package]]
+name = "chaos-vfs"
+version = "47.1.0"
+dependencies = [
+ "chaos-dispatch",
+ "chaos-proc",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
 ]
 
 [[package]]

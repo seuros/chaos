@@ -261,13 +261,11 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourc
     }
 
     async fn crons_json(&self) -> Result<String, String> {
-        let provider = resolve_chaos_storage_provider(self.session, self.turn).await?;
-        builtin_mcp_resources::crons_json_from_provider(Some(&provider)).await
+        builtin_mcp_resources::crons_json().await
     }
 
     async fn spool_json(&self) -> Result<String, String> {
-        let provider = resolve_chaos_storage_provider(self.session, self.turn).await?;
-        builtin_mcp_resources::spool_json_from_provider(Some(&provider)).await
+        builtin_mcp_resources::spool_json().await
     }
 
     async fn models_json(&self) -> Result<String, String> {
@@ -282,19 +280,6 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourc
             .await;
         builtin_mcp_resources::models_json_from_provider_models(&groups)
     }
-}
-
-async fn resolve_chaos_storage_provider(
-    session: &Session,
-    turn: &TurnContext,
-) -> Result<chaos_storage::ChaosStorageProvider, String> {
-    let existing_pool = session.runtime_db().and_then(|db| db.sqlite_pool_cloned());
-    crate::runtime_db::resolve_runtime_storage_provider_with_config(
-        existing_pool.as_ref(),
-        turn.config.storage_url.as_deref(),
-        turn.config.sqlite_home.as_path(),
-    )
-    .await
 }
 
 async fn read_inline_resource(

@@ -93,7 +93,6 @@ impl SearchState {
 }
 
 pub(super) struct PickerState {
-    pub(super) chaos_home: PathBuf,
     pub(super) requester: FrameRequester,
     pub(super) pagination: PaginationState,
     pub(super) all_rows: Vec<Row>,
@@ -118,7 +117,6 @@ pub(super) struct PickerState {
 
 impl PickerState {
     pub(super) fn new(
-        chaos_home: PathBuf,
         requester: FrameRequester,
         page_loader: PageLoader,
         default_provider: String,
@@ -127,7 +125,6 @@ impl PickerState {
         action: SessionPickerAction,
     ) -> Self {
         Self {
-            chaos_home,
             requester,
             pagination: PaginationState {
                 next_cursor: None,
@@ -333,7 +330,7 @@ impl PickerState {
             return;
         }
 
-        let names = find_process_names_by_ids(&self.chaos_home, &missing_ids)
+        let names = find_process_names_by_ids(&missing_ids)
             .await
             .unwrap_or_default();
         for process_id in missing_ids {

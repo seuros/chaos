@@ -236,6 +236,9 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .context("failed to mount runtime storage")?;
 
     let AddArgs {
         name,
@@ -379,6 +382,9 @@ async fn run_login(config_overrides: &CliConfigOverrides, login_args: LoginArgs)
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .context("failed to mount runtime storage")?;
     let mcp_manager = McpManager::new();
     let mcp_servers = mcp_manager.effective_servers(&config);
 
@@ -430,6 +436,9 @@ async fn run_logout(config_overrides: &CliConfigOverrides, logout_args: LogoutAr
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .context("failed to mount runtime storage")?;
     let mcp_manager = McpManager::new();
     let mcp_servers = mcp_manager.effective_servers(&config);
 
@@ -460,6 +469,9 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .context("failed to mount runtime storage")?;
     let mcp_manager = McpManager::new();
     let mcp_servers = mcp_manager.effective_servers(&config);
 
@@ -721,6 +733,9 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
+    chaos_kern::runtime_db::mount_vfs(&config)
+        .await
+        .context("failed to mount runtime storage")?;
     let mcp_manager = McpManager::new();
     let mcp_servers = mcp_manager.effective_servers(&config);
 

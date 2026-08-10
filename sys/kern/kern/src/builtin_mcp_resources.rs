@@ -1,6 +1,5 @@
 use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ModelPreset;
-use chaos_storage::ChaosStorageProvider;
 
 use crate::models_manager::manager::ProviderModels;
 use serde::Serialize;
@@ -240,16 +239,12 @@ pub fn models_json_from_provider_models(groups: &[ProviderModels]) -> Result<Str
     to_pretty_json(&providers, "ChaOS models")
 }
 
-pub async fn crons_json_from_provider(
-    provider: Option<&ChaosStorageProvider>,
-) -> Result<String, String> {
-    chaos_cron::resource::list_crons(provider).await
+pub async fn crons_json() -> Result<String, String> {
+    chaos_cron::resource::list_crons().await
 }
 
-pub async fn spool_json_from_provider(
-    provider: Option<&ChaosStorageProvider>,
-) -> Result<String, String> {
-    chaos_cron::resource::list_spool(provider).await
+pub async fn spool_json() -> Result<String, String> {
+    chaos_cron::resource::list_spool().await
 }
 
 #[allow(async_fn_in_trait)]

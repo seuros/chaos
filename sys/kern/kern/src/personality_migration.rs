@@ -62,7 +62,7 @@ pub async fn maybe_migrate_personality(
 async fn has_recorded_sessions(chaos_home: &Path, default_provider: &str) -> io::Result<bool> {
     let allowed_sources: &[SessionSource] = &[];
 
-    if let Some(runtime_db_ctx) = runtime_db::open_if_present(chaos_home, default_provider).await
+    if let Some(runtime_db_ctx) = runtime_db::open_if_present(chaos_home, default_provider)
         && let Some(ids) = runtime_db::list_process_ids_db(
             Some(&runtime_db_ctx),
             chaos_home,

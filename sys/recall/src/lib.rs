@@ -1,9 +1,11 @@
+//! Vector recall over the mounted Postgres backend, via pgvector.
+
+pub mod pg;
 pub mod store;
 
-#[cfg(feature = "pgvec")]
-pub mod backends;
-
-pub use store::{RecallDoc, RecallStore, SearchRequest, SearchResult};
-
-#[cfg(feature = "pgvec")]
-pub use backends::pg::PgRecallStore;
+pub use pg::PgRecallStore;
+pub use store::RecallDoc;
+pub use store::RecallError;
+pub use store::RecallStore;
+pub use store::SearchRequest;
+pub use store::SearchResult;

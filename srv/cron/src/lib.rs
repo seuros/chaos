@@ -42,16 +42,6 @@ struct CronToolDriver;
 impl CatalogToolDriver for CronToolDriver {
     fn call_tool(&self, request: CatalogToolRequest) -> CatalogToolDriverFuture<'_> {
         Box::pin(async move {
-            let provider = match chaos_storage::ChaosStorageProvider::from_env(None).await {
-                Ok(provider) => provider,
-                Err(_) => {
-                    chaos_storage::ChaosStorageProvider::from_optional_sqlite(
-                        None,
-                        Some(request.sqlite_home.as_path()),
-                    )
-                    .await?
-                }
-            };
             let owner = OwnerContext {
                 project_path: Some(request.cwd.to_string_lossy().to_string()),
                 session_id: Some(request.session_id),
@@ -61,7 +51,7 @@ impl CatalogToolDriver for CronToolDriver {
                     let params: tools::create::CronCreateParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::create::execute_structured(&params, Some(&provider), &owner)
+                    tools::create::execute_structured(&params, &owner)
                         .await
                         .map(|value| value.to_string())
                 }
@@ -69,7 +59,7 @@ impl CatalogToolDriver for CronToolDriver {
                     let params: tools::toggle::CronToggleParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::toggle::execute_structured(&params, Some(&provider), Some(&owner))
+                    tools::toggle::execute_structured(&params, Some(&owner))
                         .await
                         .map(|value| value.to_string())
                 }
@@ -77,7 +67,7 @@ impl CatalogToolDriver for CronToolDriver {
                     let params: tools::spool_submit::SpoolSubmitParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::spool_submit::execute_structured(&params, Some(&provider), &owner)
+                    tools::spool_submit::execute_structured(&params, &owner)
                         .await
                         .map(|value| value.to_string())
                 }

@@ -1,6 +1,6 @@
 [package]
 name = "chaos-libration"
-description = "Usage-window persistence backed by chaos-storage — the ration middleware's store"
+description = "Usage-window persistence backed by chaos-vfs — the ration middleware's store"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,7 +14,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = { workspace = true }
 chaos-ration = { workspace = true }
-chaos-storage = { workspace = true }
+chaos-vfs = { workspace = true }
 jiff = { workspace = true }
 rama-http-types = { workspace = true }
 sqlx = { workspace = true }

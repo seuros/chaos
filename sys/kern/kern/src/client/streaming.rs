@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::SystemTime;
 
 use chaos_abi::AbiError;
 use chaos_abi::FreeformToolDef;
@@ -105,6 +106,143 @@ fn clamp_usage_to_token_usage(
         reasoning_output_tokens: 0,
         total_tokens: saturating_i64(total_tokens),
         provider_request_count: 0,
+    }
+}
+
+fn antigravity_usage_to_token_usage(usage: chaos_clamp::AntigravityUsage) -> TokenUsage {
+    fn saturating_i64(value: u64) -> i64 {
+        i64::try_from(value).unwrap_or(i64::MAX)
+    }
+
+    TokenUsage {
+        input_tokens: saturating_i64(usage.input_tokens),
+        cache_creation_input_tokens: 0,
+        cached_input_tokens: saturating_i64(usage.cache_read_tokens),
+        output_tokens: saturating_i64(usage.output_tokens),
+        reasoning_output_tokens: saturating_i64(usage.thinking_tokens),
+        total_tokens: saturating_i64(usage.total_tokens),
+        // The session records provider_request_started separately, so response
+        // usage must not count the same subprocess invocation a second time.
+        provider_request_count: 0,
+    }
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct PersistedAntigravityConversation {
+    version: u8,
+    model: String,
+    conversation_id: String,
+}
+
+async fn load_antigravity_conversation(
+    path: Option<&std::path::Path>,
+    model: &str,
+) -> Option<String> {
+    let path = path?;
+    let bytes = match tokio::fs::read(path).await {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => {
+            warn!(
+                path = %path.display(),
+                "failed to read persisted Antigravity conversation state: {error}"
+            );
+            return None;
+        }
+    };
+    let state: PersistedAntigravityConversation = match serde_json::from_slice(&bytes) {
+        Ok(state) => state,
+        Err(error) => {
+            warn!(
+                path = %path.display(),
+                "ignoring invalid persisted Antigravity conversation state: {error}"
+            );
+            return None;
+        }
+    };
+    if state.version != 1 || state.model != model {
+        return None;
+    }
+    let conversation_id = state.conversation_id.trim();
+    if conversation_id.is_empty()
+        || conversation_id.len() > 256
+        || !conversation_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        warn!(
+            path = %path.display(),
+            "ignoring invalid persisted Antigravity conversation id"
+        );
+        return None;
+    }
+    Some(conversation_id.to_string())
+}
+
+async fn save_antigravity_conversation(
+    path: Option<&std::path::Path>,
+    model: &str,
+    conversation_id: &str,
+) -> std::io::Result<()> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Antigravity conversation state path has no parent",
+        )
+    })?;
+    tokio::fs::create_dir_all(parent).await?;
+    #[cfg(unix)]
+    tokio::fs::set_permissions(parent, std::os::unix::fs::PermissionsExt::from_mode(0o700)).await?;
+
+    let state = PersistedAntigravityConversation {
+        version: 1,
+        model: model.to_string(),
+        conversation_id: conversation_id.to_string(),
+    };
+    let bytes = serde_json::to_vec(&state).map_err(std::io::Error::other)?;
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temporary_path = parent.join(format!(
+        ".{}.{}.{nonce}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("conversation"),
+        std::process::id()
+    ));
+    let mut options = tokio::fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        options.mode(0o600);
+    }
+    use tokio::io::AsyncWriteExt;
+    let mut file = options.open(&temporary_path).await?;
+    file.write_all(&bytes).await?;
+    file.sync_all().await?;
+    drop(file);
+    if let Err(error) = tokio::fs::rename(&temporary_path, path).await {
+        let _ = tokio::fs::remove_file(&temporary_path).await;
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn remove_antigravity_conversation(path: Option<&std::path::Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => warn!(
+            path = %path.display(),
+            "failed to remove persisted Antigravity conversation state: {error}"
+        ),
     }
 }
 
@@ -633,6 +771,165 @@ impl ModelClientSession {
         }
     }
 
+    /// Streams a turn via Google's official Antigravity CLI.
+    #[instrument(
+        name = "model_client.stream_antigravity",
+        level = "info",
+        skip_all,
+        fields(
+            model = %model_info.slug,
+            wire_api = "clamped",
+            transport = "antigravity_subprocess",
+        )
+    )]
+    async fn stream_antigravity(
+        &self,
+        prompt: &Prompt,
+        model_info: &ModelInfo,
+        session_telemetry: &SessionTelemetry,
+        effort: Option<ReasoningEffortConfig>,
+    ) -> Result<ResponseStream> {
+        use chaos_clamp::AntigravityConfig;
+        use chaos_clamp::AntigravityTransport;
+
+        let full_prompt_state = render_clamp_full_prompt(prompt);
+        let latest_user_content = render_latest_clamp_user_message(prompt);
+        let model = std::env::var("CHAOS_AGY_MODEL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| antigravity_model_slug(&model_info.slug, effort));
+        let clamp_state = Arc::clone(&self.client.state);
+        let (tx_event, rx_event) =
+            mpsc::channel::<std::result::Result<ResponseEvent, chaos_parrot::error::ApiError>>(32);
+
+        let session_telemetry = session_telemetry.clone();
+        tokio::spawn(async move {
+            let mut guard = clamp_state.antigravity_transport.lock().await;
+            if guard
+                .as_ref()
+                .is_some_and(|transport| transport.model() != model)
+            {
+                guard.take();
+                remove_antigravity_conversation(
+                    clamp_state.antigravity_conversation_state_path.as_deref(),
+                )
+                .await;
+            }
+            if guard.is_none() {
+                let config = AntigravityConfig {
+                    cli_path: std::env::var_os("CHAOS_AGY_PATH").map(std::path::PathBuf::from),
+                    home: std::env::var_os("CHAOS_AGY_HOME").map(std::path::PathBuf::from),
+                    cwd: std::env::var_os("CHAOS_AGY_CWD")
+                        .map(std::path::PathBuf::from)
+                        .or_else(|| std::env::current_dir().ok()),
+                    model: model.clone(),
+                    agent: std::env::var("CHAOS_AGY_AGENT")
+                        .ok()
+                        .filter(|value| !value.trim().is_empty()),
+                    ..Default::default()
+                };
+                let persisted_conversation = load_antigravity_conversation(
+                    clamp_state.antigravity_conversation_state_path.as_deref(),
+                    &model,
+                )
+                .await;
+                let transport = match persisted_conversation {
+                    Some(conversation_id) => {
+                        AntigravityTransport::with_conversation_id(config, conversation_id)
+                    }
+                    None => AntigravityTransport::new(config),
+                };
+                match transport {
+                    Ok(transport) => *guard = Some(transport),
+                    Err(error) => {
+                        let _ = tx_event
+                            .send(Err(chaos_parrot::error::ApiError::Stream(format!(
+                                "{}: {error}",
+                                antigravity_failure_marker(&error, "antigravity_startup_failed")
+                            ))))
+                            .await;
+                        return;
+                    }
+                }
+            }
+
+            let Some(transport) = guard.as_mut() else {
+                let _ = tx_event
+                    .send(Err(chaos_parrot::error::ApiError::Stream(
+                        "Antigravity transport missing after initialization".to_string(),
+                    )))
+                    .await;
+                return;
+            };
+            let content = if transport.conversation_id().is_none() {
+                full_prompt_state.as_str()
+            } else {
+                latest_user_content.as_str()
+            };
+
+            let _ = tx_event.send(Ok(ResponseEvent::Created)).await;
+            let _ = tx_event
+                .send(Ok(ResponseEvent::OutputItemAdded(ResponseItem::Message {
+                    id: None,
+                    role: "assistant".to_string(),
+                    content: vec![],
+                    end_turn: None,
+                    phase: None,
+                })))
+                .await;
+
+            match transport.run_turn(content).await {
+                Ok(turn) => {
+                    if let Err(error) = save_antigravity_conversation(
+                        clamp_state.antigravity_conversation_state_path.as_deref(),
+                        transport.model(),
+                        &turn.conversation_id,
+                    )
+                    .await
+                    {
+                        warn!("failed to persist Antigravity conversation state: {error}");
+                    }
+                    let response = turn.response;
+                    if !response.is_empty() {
+                        let _ = tx_event
+                            .send(Ok(ResponseEvent::OutputTextDelta(response.clone())))
+                            .await;
+                    }
+                    let _ = tx_event
+                        .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
+                            id: None,
+                            role: "assistant".to_string(),
+                            content: vec![ContentItem::OutputText { text: response }],
+                            end_turn: Some(true),
+                            phase: None,
+                        })))
+                        .await;
+                    let _ = tx_event
+                        .send(Ok(ResponseEvent::Completed {
+                            response_id: turn.conversation_id,
+                            token_usage: turn.usage.map(antigravity_usage_to_token_usage),
+                        }))
+                        .await;
+                }
+                Err(error) => {
+                    remove_antigravity_conversation(
+                        clamp_state.antigravity_conversation_state_path.as_deref(),
+                    )
+                    .await;
+                    let _ = tx_event
+                        .send(Err(chaos_parrot::error::ApiError::Stream(format!(
+                            "{}: {error}",
+                            antigravity_failure_marker(&error, "antigravity_runtime_failed")
+                        ))))
+                        .await;
+                }
+            }
+        });
+
+        let stream = tokio_stream::wrappers::ReceiverStream::new(rx_event);
+        Ok(map_response_stream(stream, session_telemetry))
+    }
+
     /// Streams a turn via a clamped Claude Code subprocess.
     #[instrument(
         name = "model_client.stream_clamped",
@@ -1021,9 +1318,16 @@ impl ModelClientSession {
         );
 
         if self.client.state.clamped.load(Ordering::Relaxed) {
-            return self
-                .stream_clamped(prompt, model_info, session_telemetry)
-                .await;
+            return match self.client.state.clamp_backend {
+                crate::config::ClampBackend::ClaudeCode => {
+                    self.stream_clamped(prompt, model_info, session_telemetry)
+                        .await
+                }
+                crate::config::ClampBackend::Antigravity => {
+                    self.stream_antigravity(prompt, model_info, session_telemetry, effort)
+                        .await
+                }
+            };
         }
 
         // Fail fast (and stop hammering provider auth) when no credentials are
@@ -1315,6 +1619,45 @@ fn clamp_failure_marker(error: &chaos_clamp::ClampError, fallback: &'static str)
     }
 }
 
+fn antigravity_failure_marker(
+    error: &chaos_clamp::AntigravityError,
+    fallback: &'static str,
+) -> &'static str {
+    match error {
+        chaos_clamp::AntigravityError::CliNotFound(_) => "antigravity_cli_not_found",
+        chaos_clamp::AntigravityError::AuthenticationUnavailable => "antigravity_auth_unavailable",
+        chaos_clamp::AntigravityError::Timeout => "antigravity_timeout",
+        _ => fallback,
+    }
+}
+
+fn antigravity_model_slug(model: &str, effort: Option<ReasoningEffortConfig>) -> String {
+    let model = model.rsplit('/').next().unwrap_or(model);
+    if model.ends_with("-low") || model.ends_with("-medium") || model.ends_with("-high") {
+        return model.to_string();
+    }
+
+    let effort = match effort.unwrap_or(ReasoningEffortConfig::High) {
+        ReasoningEffortConfig::None
+        | ReasoningEffortConfig::Minimal
+        | ReasoningEffortConfig::Low => "low",
+        ReasoningEffortConfig::Medium => "medium",
+        ReasoningEffortConfig::High
+        | ReasoningEffortConfig::XHigh
+        | ReasoningEffortConfig::Max
+        | ReasoningEffortConfig::Ultra => "high",
+    };
+
+    match model {
+        "gemini-3.1-pro" | "gemini-3.1-pro-preview" => {
+            let effort = if effort == "low" { "low" } else { "high" };
+            format!("gemini-3.1-pro-{effort}")
+        }
+        "gemini-3.5-flash" | "gemini-3.6-flash" => format!("{model}-{effort}"),
+        _ => model.to_string(),
+    }
+}
+
 /// How the clamp wiretap records traffic, resolved from `CHAOS_CLAMP_WIRETAP`.
 ///
 /// - unset/empty → `Off` (the default)
@@ -1345,8 +1688,86 @@ fn clamp_wiretap_mode() -> WiretapMode {
 
 #[cfg(test)]
 mod tests {
+    use super::antigravity_model_slug;
+    use super::antigravity_usage_to_token_usage;
     use super::clamp_usage_to_token_usage;
+    use super::load_antigravity_conversation;
+    use super::save_antigravity_conversation;
+    use chaos_clamp::AntigravityUsage;
     use chaos_clamp::Usage;
+    use chaos_ipc::openai_models::ReasoningEffort;
+
+    #[test]
+    fn antigravity_model_mapping_uses_observed_cli_slugs() {
+        assert_eq!(
+            antigravity_model_slug("gemini-3.1-pro-preview", Some(ReasoningEffort::Low)),
+            "gemini-3.1-pro-low"
+        );
+        assert_eq!(
+            antigravity_model_slug("google/gemini-3.1-pro", Some(ReasoningEffort::Medium)),
+            "gemini-3.1-pro-high"
+        );
+        assert_eq!(
+            antigravity_model_slug("gemini-3.6-flash", Some(ReasoningEffort::Medium)),
+            "gemini-3.6-flash-medium"
+        );
+        assert_eq!(
+            antigravity_model_slug("gemini-3.6-flash-low", Some(ReasoningEffort::High)),
+            "gemini-3.6-flash-low"
+        );
+    }
+
+    #[test]
+    fn antigravity_usage_preserves_reasoning_and_cache_tokens() {
+        let usage = antigravity_usage_to_token_usage(AntigravityUsage {
+            input_tokens: 11,
+            output_tokens: 13,
+            thinking_tokens: 17,
+            cache_read_tokens: 19,
+            total_tokens: 60,
+        });
+
+        assert_eq!(usage.input_tokens, 11);
+        assert_eq!(usage.cached_input_tokens, 19);
+        assert_eq!(usage.output_tokens, 13);
+        assert_eq!(usage.reasoning_output_tokens, 17);
+        assert_eq!(usage.total_tokens, 60);
+        assert_eq!(usage.provider_request_count, 0);
+    }
+
+    #[tokio::test]
+    async fn antigravity_conversation_state_round_trips_only_for_matching_model() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join("conversation.json");
+
+        save_antigravity_conversation(Some(&path), "gemini-3.1-pro-low", "conversation-123")
+            .await
+            .expect("save conversation state");
+
+        assert_eq!(
+            load_antigravity_conversation(Some(&path), "gemini-3.1-pro-low").await,
+            Some("conversation-123".to_string())
+        );
+        assert_eq!(
+            load_antigravity_conversation(Some(&path), "gemini-3.1-pro-high").await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn antigravity_conversation_state_rejects_unsafe_identifier() {
+        let directory = tempfile::tempdir().expect("temporary state directory");
+        let path = directory.path().join("conversation.json");
+
+        save_antigravity_conversation(Some(&path), "gemini-3.1-pro-low", "../other-session")
+            .await
+            .expect("save conversation state");
+
+        assert_eq!(
+            load_antigravity_conversation(Some(&path), "gemini-3.1-pro-low").await,
+            None
+        );
+    }
 
     #[test]
     fn clamp_usage_uses_aggregate_counters_and_last_call_context() {

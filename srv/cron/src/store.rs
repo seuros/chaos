@@ -578,15 +578,14 @@ mod tests {
         let pool = chaos_proc::open_runtime_db_postgres_url(&database_url)
             .await
             .expect("open postgres runtime db");
-        reset_postgres_cron_jobs(&pool).await;
         Some((pool.clone(), PostgresCronStore::new(pool)))
     }
 
-    async fn reset_postgres_cron_jobs(pool: &PgPool) {
-        sqlx::query("TRUNCATE TABLE cron_jobs")
-            .execute(pool)
-            .await
-            .expect("truncate postgres cron_jobs");
+    /// A project path only this test owns. The table is shared with whatever
+    /// else runs against the same database, so a test reads back its own rows
+    /// rather than the whole table.
+    fn test_project_path(test: &str) -> String {
+        format!("/tmp/chaos-postgres/{test}/{}", std::process::id())
     }
 
     fn test_params(name: &str) -> CreateJobParams {
@@ -755,35 +754,38 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial_test::serial(postgres_cron_jobs)]
     async fn postgres_create_retries_on_id_collision() {
-        let Some((pool, store)) = open_postgres_store().await else {
+        let Some((_pool, store)) = open_postgres_store().await else {
             eprintln!(
                 "skipping postgres cron store validation; {TEST_DATABASE_URL_ENV} is not set"
             );
             return;
         };
 
+        let taken = format!("{:08x}", std::process::id());
+        let free = format!("{:08x}", !std::process::id());
+
         let first = store
-            .create_with_id_generator(&test_params("postgres-first"), || "deadbeef".to_string())
+            .create_with_id_generator(&test_params("postgres-first"), || taken.clone())
             .await
             .expect("create initial postgres cron job");
-        assert_eq!(first.id, "deadbeef");
+        assert_eq!(first.id, taken);
 
-        let mut ids = ["deadbeef", "cafebabe"].into_iter();
+        let mut ids = [taken.clone(), free.clone()].into_iter();
         let second = store
             .create_with_id_generator(&test_params("postgres-second"), || {
-                ids.next().expect("have another id").to_string()
+                ids.next().expect("have another id")
             })
             .await
             .expect("retry after postgres collision");
 
-        assert_eq!(second.id, "cafebabe");
-        reset_postgres_cron_jobs(&pool).await;
+        assert_eq!(second.id, free);
+
+        store.delete(&taken).await.expect("delete first job");
+        store.delete(&free).await.expect("delete second job");
     }
 
     #[tokio::test]
-    #[serial_test::serial(postgres_cron_jobs)]
     async fn postgres_store_round_trips_session_jobs_and_due_views() {
         let Some((pool, store)) = open_postgres_store().await else {
             eprintln!(
@@ -792,33 +794,36 @@ mod tests {
             return;
         };
 
+        let project_path = test_project_path("round-trip");
+        let session_id = format!("postgres-session-{}", std::process::id());
+
         let job = store
             .create(&CreateJobParams::shell(
                 "postgres-session-job".to_string(),
                 daily_schedule_json(),
                 "echo hi".to_string(),
                 CronScope::Session,
-                Some("/tmp/chaos-postgres".to_string()),
-                Some("postgres-session-123".to_string()),
+                Some(project_path.clone()),
+                Some(session_id.clone()),
             ))
             .await
             .expect("create postgres session cron job");
 
-        let listed = store.list(None, None).await.expect("list cron jobs");
+        let listed = store
+            .list(None, Some(&project_path))
+            .await
+            .expect("list cron jobs");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, job.id);
-        assert_eq!(
-            listed[0].session_id.as_deref(),
-            Some("postgres-session-123")
-        );
+        assert_eq!(listed[0].session_id.as_deref(), Some(session_id.as_str()));
 
         let fetched = store
             .get(&job.id)
             .await
             .expect("get cron job")
             .expect("job exists");
-        assert_eq!(fetched.session_id.as_deref(), Some("postgres-session-123"));
-        assert_eq!(fetched.project_path.as_deref(), Some("/tmp/chaos-postgres"));
+        assert_eq!(fetched.session_id.as_deref(), Some(session_id.as_str()));
+        assert_eq!(fetched.project_path.as_deref(), Some(project_path.as_str()));
 
         sqlx::query("UPDATE cron_jobs SET next_run_at = $1 WHERE id = $2")
             .bind(0_i64)
@@ -827,10 +832,12 @@ mod tests {
             .await
             .expect("force postgres job due");
 
-        let due = store.due_jobs(1).await.expect("list due jobs");
-        assert_eq!(due.len(), 1);
-        assert_eq!(due[0].id, job.id);
-        assert_eq!(due[0].session_id.as_deref(), Some("postgres-session-123"));
+        let due = store.due_jobs(64).await.expect("list due jobs");
+        let due_job = due
+            .iter()
+            .find(|candidate| candidate.id == job.id)
+            .expect("the forced-due job should be due");
+        assert_eq!(due_job.session_id.as_deref(), Some(session_id.as_str()));
 
         let due_now = store.due_now().await.expect("list due-now jobs");
         assert!(
@@ -861,12 +868,11 @@ mod tests {
             .expect("delete postgres cron job");
         assert!(
             store
-                .list(None, None)
+                .list(None, Some(&project_path))
                 .await
                 .expect("list cron jobs after delete")
                 .is_empty(),
-            "cron table should be empty after delete"
+            "the job should be gone after delete"
         );
-        reset_postgres_cron_jobs(&pool).await;
     }
 }

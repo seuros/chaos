@@ -193,16 +193,9 @@ check:
 test *args:
     RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo nextest run --workspace --all-features --no-fail-fast {{args}}
 
-# Run the bounded Postgres validation set for the new storage path.
-postgres-validate-storage database_url:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
-
-postgres-validate-cron database_url:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
-
-postgres-validate-new-storage-path database_url:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
+# Run the bounded Postgres validation set against a mounted filesystem.
+postgres-validate database_url:
+    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo nextest run -p chaos-vfs -p chaos-cron -p chaos-proc -p chaos-recall --all-features --no-fail-fast
 
 # Lint + check + clippy (no tests)
 qq: fmt check clippy

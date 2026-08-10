@@ -114,12 +114,21 @@ impl CronStorage for BackendCronStorage {
 #[cfg(test)]
 mod tests {
     use super::BackendCronStorage;
+    use super::CreateJobParams;
+    use super::CronScope;
     use super::CronStorage;
+    use crate::Schedule;
     use chaos_vfs::ChaosVfs;
     use chaos_vfs::MountConfig;
     use chaos_vfs::Vfs;
 
     const TEST_DATABASE_URL_ENV: &str = "TEST_DATABASE_URL";
+
+    fn daily_schedule_json() -> String {
+        Schedule::Interval { seconds: 86_400 }
+            .to_json()
+            .expect("serialize schedule")
+    }
 
     fn postgres_test_url() -> Option<String> {
         std::env::var(TEST_DATABASE_URL_ENV)
@@ -153,7 +162,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial_test::serial(postgres_cron_jobs)]
     async fn postgres_backend_cron_storage_selects_postgres_provider() {
         let Some(database_url) = postgres_test_url() else {
             eprintln!(
@@ -165,14 +173,10 @@ mod tests {
         let vfs = ChaosVfs::from_config(MountConfig::postgres_url(database_url))
             .await
             .expect("open postgres mount");
-
-        let Vfs::Postgres(pool) = vfs.pool() else {
-            panic!("a postgres mount should hand back a postgres pool");
-        };
-        sqlx::query("TRUNCATE TABLE cron_jobs")
-            .execute(&pool)
-            .await
-            .expect("truncate postgres cron_jobs");
+        assert!(
+            matches!(vfs.pool(), Vfs::Postgres(_)),
+            "a postgres mount should hand back a postgres pool"
+        );
 
         let storage = BackendCronStorage::from_provider(&vfs);
         assert!(
@@ -180,7 +184,28 @@ mod tests {
             "a postgres mount should resolve to postgres storage"
         );
 
-        let jobs = storage.list(None, None).await.expect("list cron jobs");
-        assert!(jobs.is_empty(), "a fresh mount should see no cron jobs");
+        // The table is shared, so the round trip runs under a path this test
+        // owns rather than asserting on everything the database holds.
+        let project_path = format!("/tmp/chaos-postgres/provider/{}", std::process::id());
+        let job = storage
+            .create(&CreateJobParams::shell(
+                "postgres-provider-job".to_string(),
+                daily_schedule_json(),
+                "echo hi".to_string(),
+                CronScope::Project,
+                Some(project_path.clone()),
+                None,
+            ))
+            .await
+            .expect("create cron job through the postgres provider");
+
+        let jobs = storage
+            .list(None, Some(&project_path))
+            .await
+            .expect("list cron jobs");
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, job.id);
+
+        storage.delete(&job.id).await.expect("delete cron job");
     }
 }

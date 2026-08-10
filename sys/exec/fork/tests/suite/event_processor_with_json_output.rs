@@ -33,6 +33,9 @@ use chaos_fork::exec_events::UsageScope;
 use chaos_fork::exec_events::WebSearchItem;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ModeKind;
+use chaos_ipc::items::AgentMessageContent;
+use chaos_ipc::items::AgentMessageItem as CoreAgentMessageItem;
+use chaos_ipc::items::TurnItem;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -853,6 +856,38 @@ fn agent_message_produces_item_completed_agent_message() {
                 }),
             },
         })]
+    );
+}
+
+#[test]
+fn completed_agent_message_item_produces_json_item() {
+    let mut ep = EventProcessorWithJsonOutput::new(None);
+    let ev = event(
+        "e1",
+        EventMsg::ItemCompleted(chaos_ipc::protocol::ItemCompletedEvent {
+            process_id: ProcessId::new(),
+            turn_id: "turn-1".to_string(),
+            item: TurnItem::AgentMessage(CoreAgentMessageItem {
+                id: "message-1".to_string(),
+                content: vec![
+                    AgentMessageContent::Text {
+                        text: "hello ".to_string(),
+                    },
+                    AgentMessageContent::Text {
+                        text: "world".to_string(),
+                    },
+                ],
+                phase: None,
+            }),
+        }),
+    );
+
+    assert_single_item_completed(
+        ep.collect_process_events(&ev),
+        "message-1",
+        ProcessItemDetails::AgentMessage(AgentMessageItem {
+            text: "hello world".to_string(),
+        }),
     );
 }
 

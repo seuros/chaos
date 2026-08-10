@@ -1,17 +1,27 @@
 //! # chaos-clamp
 //!
-//! Claude Code subprocess module for Chaos.
+//! First-party model CLI subprocess transports for Chaos.
 //!
-//! Spawns Claude Code as a headless subprocess and drives it via the
-//! stream-json control protocol. Claude Code becomes an invisible
-//! transport layer — it authenticates with Anthropic using the user's
-//! MAX subscription, while Chaos provides all tools, controls permissions,
-//! and handles the user interface.
+//! Claude Code is driven through its bidirectional stream-JSON control
+//! protocol. Antigravity currently provides a model-only, sandboxed turn
+//! transport through the official `agy` CLI while its Chaos-owned tool bridge
+//! remains under development.
 
+mod antigravity;
 mod protocol;
 mod proxy;
 mod transport;
 
+pub use antigravity::AntigravityConfig;
+pub use antigravity::AntigravityError;
+pub use antigravity::AntigravityEvent;
+pub use antigravity::AntigravityInit;
+pub use antigravity::AntigravityResult;
+pub use antigravity::AntigravityStepUpdate;
+pub use antigravity::AntigravityToolAuthority;
+pub use antigravity::AntigravityTransport;
+pub use antigravity::AntigravityTurn;
+pub use antigravity::AntigravityUsage;
 pub use protocol::ControlRequest;
 pub use protocol::ControlResponse;
 pub use protocol::Message;

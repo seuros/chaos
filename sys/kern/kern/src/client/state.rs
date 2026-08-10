@@ -26,6 +26,7 @@ use crate::api_bridge::map_api_error;
 use crate::auth::ChaosAuth;
 use crate::client::auth_breaker;
 use crate::client_common::Prompt;
+use crate::config::ClampBackend;
 use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::model_provider_info::ModelProviderInfo;
@@ -36,6 +37,17 @@ use super::{
     ApiTelemetry, AuthRequestTelemetryContext, CurrentClientSetup, ModelClient, ModelClientSession,
     ModelClientState, PendingUnauthorizedRetry, RESPONSES_COMPACT_ENDPOINT, RequestRouteTelemetry,
 };
+
+fn antigravity_conversation_state_path(conversation_id: &chaos_ipc::ProcessId) -> Option<PathBuf> {
+    let directory = std::env::var_os("CHAOS_AGY_CONVERSATION_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("CHAOS_AGY_HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".chaos-conversations"))
+        })?;
+    Some(directory.join(format!("{conversation_id}.json")))
+}
 
 impl ModelClient {
     /// Creates a new session-scoped `ModelClient`.
@@ -51,6 +63,7 @@ impl ModelClient {
         enable_request_compression: bool,
         beta_features_header: Option<String>,
         initial_clamped: bool,
+        clamp_backend: ClampBackend,
     ) -> Self {
         let representer = if provider.is_openai() {
             chaos_parrot::SessionRepresenter::openai()
@@ -58,6 +71,8 @@ impl ModelClient {
             chaos_parrot::SessionRepresenter::wannabe()
         };
         let auth_breaker = auth_breaker::AuthBreaker::new(&provider_id);
+        let antigravity_conversation_state_path =
+            antigravity_conversation_state_path(&conversation_id);
         Self {
             state: Arc::new(ModelClientState {
                 auth_manager,
@@ -71,7 +86,10 @@ impl ModelClient {
                 beta_features_header,
                 resolved_wire: std::sync::OnceLock::new(),
                 clamped: std::sync::atomic::AtomicBool::new(initial_clamped),
+                clamp_backend,
                 clamp_transport: tokio::sync::Mutex::new(None),
+                antigravity_transport: tokio::sync::Mutex::new(None),
+                antigravity_conversation_state_path,
                 clamp_wiretap: tokio::sync::Mutex::new(None),
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),
                 session: std::sync::Mutex::new(Weak::new()),
@@ -151,6 +169,11 @@ impl ModelClient {
                 let mut guard = self.state.clamp_transport.lock().await;
                 guard.take()
             };
+            self.state.antigravity_transport.lock().await.take();
+            remove_antigravity_conversation_state(
+                self.state.antigravity_conversation_state_path.as_deref(),
+            )
+            .await;
             let bridge = {
                 let mut guard = self.state.clamp_mcp_bridge.lock().await;
                 guard.take()
@@ -187,6 +210,11 @@ impl ModelClient {
             let mut guard = self.state.clamp_transport.lock().await;
             guard.take()
         };
+        self.state.antigravity_transport.lock().await.take();
+        remove_antigravity_conversation_state(
+            self.state.antigravity_conversation_state_path.as_deref(),
+        )
+        .await;
         if let Some(wiretap) = self.state.clamp_wiretap.lock().await.take() {
             wiretap.shutdown();
         }
@@ -400,6 +428,22 @@ impl ModelClient {
             // Transient failures (e.g. a token refresh hiccup) aren't a signal
             // about login state, so they must not trip the auth breaker.
             Err(other) => Err(other),
+        }
+    }
+}
+
+async fn remove_antigravity_conversation_state(path: Option<&std::path::Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            warn!(
+                path = %path.display(),
+                "failed to remove persisted Antigravity conversation state: {error}"
+            );
         }
     }
 }

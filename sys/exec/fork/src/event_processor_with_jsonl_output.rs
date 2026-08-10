@@ -124,6 +124,10 @@ impl EventProcessorWithJsonOutput {
             protocol::EventMsg::ProcessNameUpdated(_) => Vec::new(),
             protocol::EventMsg::AgentMessage(ev) => self.handle_agent_message(ev),
             protocol::EventMsg::ItemCompleted(protocol::ItemCompletedEvent {
+                item: chaos_ipc::items::TurnItem::AgentMessage(item),
+                ..
+            }) => self.handle_agent_message_item(item),
+            protocol::EventMsg::ItemCompleted(protocol::ItemCompletedEvent {
                 item: chaos_ipc::items::TurnItem::Plan(item),
                 ..
             }) => {
@@ -633,6 +637,24 @@ impl EventProcessorWithJsonOutput {
                 agents_states,
                 status,
             }),
+        };
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
+    }
+
+    fn handle_agent_message_item(
+        &self,
+        payload: &chaos_ipc::items::AgentMessageItem,
+    ) -> Vec<ProcessEvent> {
+        let text = payload
+            .content
+            .iter()
+            .map(|content| match content {
+                chaos_ipc::items::AgentMessageContent::Text { text } => text.as_str(),
+            })
+            .collect::<String>();
+        let item = ProcessItem {
+            id: payload.id.clone(),
+            details: ProcessItemDetails::AgentMessage(AgentMessageItem { text }),
         };
         vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }

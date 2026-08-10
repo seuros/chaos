@@ -468,6 +468,7 @@ fn make_test_session_services(
             true,
             Session::build_model_client_beta_features_header(config),
             false,
+            config.clamp_backend,
         ),
         halluacinate: None,
     }

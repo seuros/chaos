@@ -512,6 +512,7 @@ impl Session {
                 true,
                 Self::build_model_client_beta_features_header(config.as_ref()),
                 config.clamp && matches!(session_configuration.session_source, SessionSource::Exec),
+                config.clamp_backend,
             ),
         };
         let (out_of_band_elicitation_paused, _out_of_band_elicitation_paused_rx) =

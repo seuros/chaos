@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Claude Code subprocess module — use MAX subscription as transport"
+description = "First-party model CLI subprocess transports for subscription-backed inference"
 
 [lints]
 workspace = true

@@ -175,9 +175,15 @@ fn runtime_config_defaults_clamp_to_false_and_parses_true() {
     )
     .expect("load default config");
     assert!(!default_cfg.clamp);
+    assert_eq!(default_cfg.clamp_backend, super::ClampBackend::ClaudeCode);
 
-    let parsed =
-        toml::from_str::<ConfigToml>("clamp = true").expect("clamp should deserialize from TOML");
+    let parsed = toml::from_str::<ConfigToml>(
+        r#"
+clamp = true
+clamp_backend = "antigravity"
+"#,
+    )
+    .expect("clamp settings should deserialize from TOML");
     let enabled_cfg = Config::load_from_base_config_with_overrides(
         parsed,
         ConfigOverrides::default(),
@@ -185,6 +191,7 @@ fn runtime_config_defaults_clamp_to_false_and_parses_true() {
     )
     .expect("load clamped config");
     assert!(enabled_cfg.clamp);
+    assert_eq!(enabled_cfg.clamp_backend, super::ClampBackend::Antigravity);
 }
 
 #[tokio::test]
@@ -192,13 +199,20 @@ async fn config_builder_applies_clamp_cli_override() {
     let chaos_home = tempdir().expect("tempdir");
     let cfg = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
-        .cli_overrides(vec![("clamp".to_string(), TomlValue::Boolean(true))])
+        .cli_overrides(vec![
+            ("clamp".to_string(), TomlValue::Boolean(true)),
+            (
+                "clamp_backend".to_string(),
+                TomlValue::String("antigravity".to_string()),
+            ),
+        ])
         .fallback_cwd(Some(chaos_home.path().to_path_buf()))
         .build()
         .await
         .expect("load config with clamp CLI override");
 
     assert!(cfg.clamp);
+    assert_eq!(cfg.clamp_backend, super::ClampBackend::Antigravity);
 }
 
 #[test]
@@ -908,6 +922,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(None),
         clamp: false,
+        clamp_backend: Default::default(),
         user_instructions: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),

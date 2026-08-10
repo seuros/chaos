@@ -1,7 +1,17 @@
-# chaos-storage
+# chaos-vfs
 
-Backend-agnostic persistence layer. SQLite for the common case; Postgres when the
-operator needs it. Everything that needs to survive a restart goes through here.
+The virtual filesystem over the two persistence backends. SQLite for the common
+case, PostgreSQL when the operator asks for it. Everything that must survive a
+restart goes through here.
+
+One backend is resolved at boot, mounted, and served to every consumer for the
+life of the process. Consumers read `chaos_vfs::root()` or `chaos_vfs::pool()`
+and match on `Vfs`; they do not resolve a backend of their own.
+`backend_dispatch!` writes the two-arm match for traits whose implementations
+differ per backend.
+
+Operator-facing setup — provisioning, `storage_url`, resolution order — is
+[chaos-storage(7)](../../man/chaos-storage.7.md).
 
 ## In-memory SQLite validation
 
@@ -16,30 +26,14 @@ individual parallel tests.
 
 ## Local Postgres validation
 
-ChaOS runtime storage can be pointed at Postgres directly from
-`~/.chaos/config.toml`:
-
-```toml
-storage_url = "postgres://USER:PASSWORD@HOST:5432/DBNAME"
-```
-
-Runtime resolution order is:
-
-1. `storage_url` in config
-2. `CHAOS_STORAGE_URL`
-3. `$CHAOS_SQLITE_HOME`
-4. the configured SQLite home / `$CHAOS_HOME`
-
-The bounded Postgres validation path is env-gated so the normal test suite stays
-cheap:
+The Postgres arms of the suite skip themselves unless `TEST_DATABASE_URL` names a
+reachable database. Point them at one with:
 
 ```sh
-cargo test -p chaos-storage postgres_ -- --nocapture
+just postgres-validate postgres://USER:PASSWORD@HOST:5432/DBNAME
 ```
 
-Point it at a local PostgreSQL 18 database by exporting `TEST_DATABASE_URL`,
-or use:
-
-```sh
-just postgres-validate-storage postgres://USER:PASSWORD@HOST:5432/DBNAME
-```
+That covers this crate along with `chaos-cron`, `chaos-proc`, and `chaos-recall`.
+Adding a migration under `var/proc/db/migrate/` does not invalidate the embedded
+migrator's build cache, so touch `var/proc/src/migrations.rs` before running, or
+the suite fails on a migration it has already applied.

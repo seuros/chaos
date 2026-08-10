@@ -156,6 +156,7 @@ current setting.
 - [Installing & building from source](./man/chaos-install.7.md)
 - [Adding LLM providers](./man/chaos-providers.7.md)
 - [MCP — connecting tools and services](./man/chaos-mcp.7.md)
+- [Storage — SQLite and PostgreSQL backends](./man/chaos-storage.7.md)
 - [Halluacinate — scripting engine](./man/chaos-halluacinate.7.md)
 - [Contributing](./docs/contributing.md)
 - [Comparison](./docs/comparison.md)

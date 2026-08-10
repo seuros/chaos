@@ -226,7 +226,7 @@ impl JournalStore for SqliteJournalStore {
         }
 
         for entry in &input.items {
-            let recorded_at = timestamp_text(entry.recorded_at);
+            let recorded_at = entry.recorded_at.as_second();
             let item_type = journal_item_type(&entry.item);
             let payload_json = serialize_item(&entry.item)?;
             sqlx::query(
@@ -254,7 +254,7 @@ impl JournalStore for SqliteJournalStore {
         .bind(create.process_id.to_string())
         .bind(&input.owner_id)
         .bind(&lease_token)
-        .bind(timestamp_text(lease_expires_at))
+        .bind(lease_expires_at.as_second())
         .bind(now.as_second())
         .execute(&mut *tx)
         .await?;
@@ -413,7 +413,7 @@ impl JournalStore for SqliteJournalStore {
 
         if let Some(row) = existing.as_ref() {
             let existing_owner_id: String = row.get("owner_id");
-            let existing_expires_at = parse_timestamp_text(row.get("expires_at"))?;
+            let existing_expires_at = timestamp_from_epoch_seconds(row.get("expires_at"))?;
             if existing_expires_at > now && existing_owner_id != *owner_id {
                 return Err(JournalError::LeaseConflict {
                     process_id: *process_id,
@@ -435,7 +435,7 @@ impl JournalStore for SqliteJournalStore {
         .bind(process_id.to_string())
         .bind(owner_id)
         .bind(&lease_token)
-        .bind(timestamp_text(expires_at))
+        .bind(expires_at.as_second())
         .bind(now.as_second())
         .execute(&self.pool)
         .await?;
@@ -465,7 +465,7 @@ impl JournalStore for SqliteJournalStore {
              SET expires_at = ?, updated_at = ?
              WHERE process_id = ?",
         )
-        .bind(timestamp_text(expires_at))
+        .bind(expires_at.as_second())
         .bind(now.as_second())
         .bind(process_id.to_string())
         .execute(&self.pool)
@@ -528,7 +528,7 @@ impl JournalStore for SqliteJournalStore {
 
         let mut updated_at = now;
         for entry in &input.items {
-            let recorded_at = timestamp_text(entry.recorded_at);
+            let recorded_at = entry.recorded_at.as_second();
             let item_type = journal_item_type(&entry.item);
             let payload_json = serialize_item(&entry.item)?;
             sqlx::query(
@@ -588,7 +588,7 @@ impl JournalStore for SqliteJournalStore {
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
             let seq: EntrySeq = row.get("seq");
-            let recorded_at = parse_timestamp_text(row.get("recorded_at"))?;
+            let recorded_at = timestamp_from_epoch_seconds(row.get("recorded_at"))?;
             let item = deserialize_item(row.get("payload_json"))?;
             items.push(JournalEntry {
                 seq,
@@ -756,7 +756,7 @@ async fn load_valid_lease(
 
     let stored_owner_id: String = row.get("owner_id");
     let stored_lease_token: String = row.get("lease_token");
-    let expires_at = parse_timestamp_text(row.get("expires_at"))?;
+    let expires_at = timestamp_from_epoch_seconds(row.get("expires_at"))?;
 
     if expires_at <= now {
         return Err(JournalError::LeaseExpired {
@@ -836,19 +836,6 @@ fn timestamp_from_epoch_seconds(seconds: i64) -> Result<jiff::Timestamp, Journal
         value: seconds.to_string(),
         message: err.to_string(),
     })
-}
-
-fn timestamp_text(timestamp: jiff::Timestamp) -> String {
-    timestamp.to_string()
-}
-
-fn parse_timestamp_text(value: String) -> Result<jiff::Timestamp, JournalError> {
-    value
-        .parse::<jiff::Timestamp>()
-        .map_err(|err| JournalError::InvalidTimestamp {
-            value,
-            message: err.to_string(),
-        })
 }
 
 #[cfg(test)]

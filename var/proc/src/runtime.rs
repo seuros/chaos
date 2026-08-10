@@ -2640,7 +2640,7 @@ mod tests {
         )
         .bind("process-1")
         .bind(0_i64)
-        .bind("2026-04-08T00:00:00Z")
+        .bind(1_775_606_400_i64)
         .bind("response_item")
         .bind("{\"ok\":true}")
         .execute(&pool)

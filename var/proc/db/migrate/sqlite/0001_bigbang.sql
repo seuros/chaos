@@ -68,7 +68,7 @@ CREATE TABLE process_leases (
     process_id TEXT PRIMARY KEY NOT NULL REFERENCES processes(id) ON DELETE CASCADE,
     owner_id TEXT NOT NULL,
     lease_token TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
 
@@ -77,7 +77,7 @@ CREATE INDEX idx_process_leases_expires_at ON process_leases(expires_at);
 CREATE TABLE journal_entries (
     process_id TEXT NOT NULL REFERENCES processes(id) ON DELETE CASCADE,
     seq INTEGER NOT NULL,
-    recorded_at TEXT NOT NULL,
+    recorded_at INTEGER NOT NULL,
     item_type TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     PRIMARY KEY (process_id, seq)
@@ -387,7 +387,7 @@ CREATE VIEW active_process_leases AS
     FROM process_leases pl
     JOIN processes p ON p.id = pl.process_id
     WHERE p.archived_at IS NULL
-      AND pl.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+      AND pl.expires_at > CAST(strftime('%s', 'now') AS INTEGER)
     ORDER BY pl.expires_at ASC, pl.process_id ASC;
 
 CREATE VIEW process_message_counts AS

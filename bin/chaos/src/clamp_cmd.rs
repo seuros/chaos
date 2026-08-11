@@ -76,7 +76,7 @@ async fn run_antigravity(cli: AntigravityCli) -> anyhow::Result<()> {
                     "  Authentication: {}",
                     status["authentication_state"].as_str().unwrap_or("unknown")
                 );
-                println!("  Tool authority: model-only-sandboxed");
+                println!("  Tool authority: chaos-session-bridge");
             }
             Ok(())
         }
@@ -116,7 +116,7 @@ fn antigravity_status() -> serde_json::Value {
         } else {
             "none"
         },
-        "tool_authority": "model-only-sandboxed",
+        "tool_authority": "chaos-session-bridge",
         "capabilities": {
             "exec": true,
             "chaos_resume": true,
@@ -124,7 +124,7 @@ fn antigravity_status() -> serde_json::Value {
             "connect": true,
             "disconnect": true,
             "incremental_output": false,
-            "chaos_tool_bridge": false,
+            "chaos_tool_bridge": true,
         }
     })
 }
@@ -132,8 +132,8 @@ fn antigravity_status() -> serde_json::Value {
 async fn antigravity_connect() -> anyhow::Result<()> {
     let cli_path = antigravity_cli_path()
         .context("Antigravity CLI not found; set CHAOS_AGY_PATH or install agy in PATH")?;
-    let home =
-        antigravity_home().context("Antigravity home unavailable; set CHAOS_AGY_HOME or HOME")?;
+    let home = antigravity_home()
+        .context("Antigravity home unavailable; set CHAOS_AGY_HOME to a dedicated directory")?;
     std::fs::create_dir_all(&home)
         .with_context(|| format!("create Antigravity home {}", home.display()))?;
     #[cfg(unix)]
@@ -159,8 +159,8 @@ async fn antigravity_connect() -> anyhow::Result<()> {
 }
 
 fn antigravity_disconnect() -> anyhow::Result<()> {
-    let home =
-        antigravity_home().context("Antigravity home unavailable; set CHAOS_AGY_HOME or HOME")?;
+    let home = antigravity_home()
+        .context("Antigravity home unavailable; set CHAOS_AGY_HOME to a dedicated directory")?;
     let token_path = antigravity_token_path(&home);
     match std::fs::remove_file(&token_path) {
         Ok(()) => {}
@@ -197,9 +197,7 @@ fn antigravity_cli_path() -> Option<PathBuf> {
 }
 
 fn antigravity_home() -> Option<PathBuf> {
-    std::env::var_os("CHAOS_AGY_HOME")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
+    std::env::var_os("CHAOS_AGY_HOME").map(PathBuf::from)
 }
 
 fn antigravity_token_path(home: &Path) -> PathBuf {

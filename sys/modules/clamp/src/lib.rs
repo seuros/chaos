@@ -3,15 +3,16 @@
 //! First-party model CLI subprocess transports for Chaos.
 //!
 //! Claude Code is driven through its bidirectional stream-JSON control
-//! protocol. Antigravity currently provides a model-only, sandboxed turn
-//! transport through the official `agy` CLI while its Chaos-owned tool bridge
-//! remains under development.
+//! protocol. Antigravity uses the official OAuth-authenticated `agy` CLI with
+//! native tools denied and the session-scoped Chaos MCP bridge as its action
+//! surface.
 
 mod antigravity;
 mod protocol;
 mod proxy;
 mod transport;
 
+pub use antigravity::AntigravityBridgeConfig;
 pub use antigravity::AntigravityConfig;
 pub use antigravity::AntigravityError;
 pub use antigravity::AntigravityEvent;

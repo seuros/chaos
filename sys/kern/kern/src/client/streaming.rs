@@ -799,6 +799,7 @@ impl ModelClientSession {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| antigravity_model_slug(&model_info.slug, effort));
         let clamp_state = Arc::clone(&self.client.state);
+        let client = self.client.clone();
         let (tx_event, rx_event) =
             mpsc::channel::<std::result::Result<ResponseEvent, chaos_parrot::error::ApiError>>(32);
 
@@ -816,6 +817,27 @@ impl ModelClientSession {
                 .await;
             }
             if guard.is_none() {
+                let (bridge_socket_path, bridge_token) =
+                    match client.ensure_clamp_mcp_bridge().await {
+                        Ok(bridge) => bridge,
+                        Err(error) => {
+                            let _ = tx_event
+                                .send(Err(chaos_parrot::error::ApiError::Stream(error)))
+                                .await;
+                            return;
+                        }
+                    };
+                let chaos_executable = match std::env::current_exe() {
+                    Ok(path) => path,
+                    Err(error) => {
+                        let _ = tx_event
+                            .send(Err(chaos_parrot::error::ApiError::Stream(format!(
+                                "failed to resolve Chaos executable for Antigravity bridge: {error}"
+                            ))))
+                            .await;
+                        return;
+                    }
+                };
                 let config = AntigravityConfig {
                     cli_path: std::env::var_os("CHAOS_AGY_PATH").map(std::path::PathBuf::from),
                     home: std::env::var_os("CHAOS_AGY_HOME").map(std::path::PathBuf::from),
@@ -823,9 +845,11 @@ impl ModelClientSession {
                         .map(std::path::PathBuf::from)
                         .or_else(|| std::env::current_dir().ok()),
                     model: model.clone(),
-                    agent: std::env::var("CHAOS_AGY_AGENT")
-                        .ok()
-                        .filter(|value| !value.trim().is_empty()),
+                    bridge: Some(chaos_clamp::AntigravityBridgeConfig {
+                        socket_path: bridge_socket_path,
+                        token: bridge_token,
+                        chaos_executable,
+                    }),
                     ..Default::default()
                 };
                 let persisted_conversation = load_antigravity_conversation(
@@ -862,9 +886,13 @@ impl ModelClientSession {
                 return;
             };
             let content = if transport.conversation_id().is_none() {
-                full_prompt_state.as_str()
+                format!(
+                    "Use the Chaos MCP server as your sole action surface. Native Antigravity tools are unavailable. You may call multiple Chaos tools before answering. Tool results are authoritative. Return only the user-facing answer without checkpoint or timestamp boilerplate.\n\n{full_prompt_state}"
+                )
             } else {
-                latest_user_content.as_str()
+                format!(
+                    "Continue using only the Chaos MCP server for actions. Return only the user-facing answer.\n\n{latest_user_content}"
+                )
             };
 
             let _ = tx_event.send(Ok(ResponseEvent::Created)).await;
@@ -878,7 +906,7 @@ impl ModelClientSession {
                 })))
                 .await;
 
-            match transport.run_turn(content).await {
+            match transport.run_turn(&content).await {
                 Ok(turn) => {
                     if let Err(error) = save_antigravity_conversation(
                         clamp_state.antigravity_conversation_state_path.as_deref(),

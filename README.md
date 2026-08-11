@@ -85,9 +85,11 @@ The clamp module also has an experimental Google Antigravity backend. It invokes
 the official `agy` CLI in sandboxed print mode, keeps authentication in an
 isolated `agy` home, and removes `GEMINI_API_KEY` and `GOOGLE_API_KEY` from the
 subprocess environment so a failed subscription connection cannot silently
-fall back to metered API billing. This first implementation is model-only:
-Antigravity's built-in tools are not yet bridged through Chaos, and Chaos does
-not auto-approve them.
+fall back to metered API billing. Chaos writes a managed MCP configuration for
+each dedicated home, denies Antigravity's native command, filesystem, and URL
+tools, and exposes the session-scoped Chaos tool bridge as `agy`'s sole action
+surface. The bridge socket and capability token are inherited through the
+invocation environment and are never persisted in Antigravity configuration.
 
 API key users connect directly through the kernel — no clamping needed.
 
@@ -122,9 +124,11 @@ sessions must pass both `-c clamp=true` and any non-default
 `-c clamp_backend=...` selection again. Antigravity resumes must also pass the
 same `-m` model selection used for the original process. `CHAOS_AGY_PATH` can
 pin an explicit `agy` binary, while `CHAOS_AGY_HOME` selects its private
-authenticated state. If the selected CLI is missing, unauthenticated, or fails
-during a turn, the exec command fails instead of falling back to direct API
-billing.
+authenticated state. The home must be dedicated to Chaos because each turn
+replaces its effective MCP server list and permission policy with the
+fail-closed Chaos configuration. If the selected CLI is missing,
+unauthenticated, cannot establish the managed bridge, or fails during a turn,
+the exec command fails instead of falling back to direct API billing.
 
 Operators are responsible for confirming that their subscription and chosen
 first-party CLI usage comply with the provider terms that apply to them.

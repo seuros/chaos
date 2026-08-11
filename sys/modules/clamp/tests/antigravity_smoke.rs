@@ -4,11 +4,15 @@
 //!   CHAOS_AGY_SMOKE=1 \
 //!   CHAOS_AGY_PATH=/path/to/agy \
 //!   CHAOS_AGY_HOME=/path/to/isolated/home \
+//!   CHAOS_CLAMP_MCP_SOCKET=/path/to/live/bridge.sock \
+//!   CHAOS_CLAMP_MCP_TOKEN=ephemeral-capability \
+//!   CHAOS_PATH=/path/to/chaos \
 //!   cargo test -p chaos-clamp --test antigravity_smoke -- --ignored --nocapture
 
 use std::path::PathBuf;
 use std::time::Duration;
 
+use chaos_clamp::AntigravityBridgeConfig;
 use chaos_clamp::AntigravityConfig;
 use chaos_clamp::AntigravityToolAuthority;
 use chaos_clamp::AntigravityTransport;
@@ -27,6 +31,14 @@ async fn antigravity_round_trip_and_resume() {
     let home = std::env::var_os("CHAOS_AGY_HOME")
         .map(PathBuf::from)
         .expect("CHAOS_AGY_HOME must point to an authenticated isolated home");
+    let socket_path = std::env::var_os("CHAOS_CLAMP_MCP_SOCKET")
+        .map(PathBuf::from)
+        .expect("CHAOS_CLAMP_MCP_SOCKET must point to a live Chaos session bridge");
+    let token = std::env::var("CHAOS_CLAMP_MCP_TOKEN")
+        .expect("CHAOS_CLAMP_MCP_TOKEN must contain the bridge capability");
+    let chaos_executable = std::env::var_os("CHAOS_PATH")
+        .map(PathBuf::from)
+        .expect("CHAOS_PATH must point to the matching Chaos executable");
     let model =
         std::env::var("CHAOS_AGY_MODEL").unwrap_or_else(|_| "gemini-3.1-pro-low".to_string());
 
@@ -35,14 +47,18 @@ async fn antigravity_round_trip_and_resume() {
         home: Some(home),
         cwd: Some(std::env::current_dir().expect("current directory")),
         model,
-        agent: Some("souls-house-clamp".to_string()),
         print_timeout: Duration::from_secs(120),
+        bridge: Some(AntigravityBridgeConfig {
+            socket_path,
+            token,
+            chaos_executable,
+        }),
         ..Default::default()
     };
     let mut transport = AntigravityTransport::new(config).expect("create transport");
     assert_eq!(
         transport.tool_authority(),
-        AntigravityToolAuthority::ModelOnlySandboxed
+        AntigravityToolAuthority::ChaosSessionBridge
     );
 
     let fresh = transport

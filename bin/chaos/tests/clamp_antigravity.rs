@@ -29,6 +29,14 @@ case "${1:-}" in
     printf 'test credential\n' > "$HOME/.gemini/antigravity-cli/antigravity-oauth-token"
     ;;
   *)
+    test -n "${CHAOS_CLAMP_MCP_SOCKET:-}"
+    test -n "${CHAOS_CLAMP_MCP_TOKEN:-}"
+    test -f "$HOME/.gemini/config/mcp_config.json"
+    test -f "$HOME/.gemini/antigravity-cli/settings.json"
+    grep -q '"clamp-session-bridge"' "$HOME/.gemini/config/mcp_config.json"
+    ! grep -q 'CHAOS_CLAMP_MCP_' "$HOME/.gemini/config/mcp_config.json"
+    grep -q 'mcp(chaos/\*)' "$HOME/.gemini/antigravity-cli/settings.json"
+    grep -q 'command(\*)' "$HOME/.gemini/antigravity-cli/settings.json"
     case "$*" in
       *"--conversation conversation-e2e"*) response=CHAOS_AGY_RESUMED ;;
       *) response=CHAOS_AGY_FRESH ;;
@@ -73,10 +81,10 @@ fn status_reports_cli_version_and_isolated_credential_state() -> Result<()> {
     assert_eq!(status["available"], true);
     assert_eq!(status["version"], "agy-test 1.2.3");
     assert_eq!(status["authentication_state"], "credential-present");
-    assert_eq!(status["tool_authority"], "model-only-sandboxed");
+    assert_eq!(status["tool_authority"], "chaos-session-bridge");
     assert_eq!(status["capabilities"]["provider_conversation_resume"], true);
     assert_eq!(status["capabilities"]["incremental_output"], false);
-    assert_eq!(status["capabilities"]["chaos_tool_bridge"], false);
+    assert_eq!(status["capabilities"]["chaos_tool_bridge"], true);
     Ok(())
 }
 
@@ -104,6 +112,35 @@ fn connect_uses_isolated_home_and_removes_metered_api_keys() -> Result<()> {
             .join("antigravity-cli")
             .join("antigravity-oauth-token")
             .is_file()
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn connect_requires_an_explicit_dedicated_home() -> Result<()> {
+    let fixture = TempDir::new()?;
+    let chaos_home = fixture.path().join("chaos");
+    let agy_path = fixture.path().join("agy");
+    write_fake_agy(&agy_path)?;
+
+    let output = common::chaos_command(&chaos_home)?
+        .args(["clamp", "antigravity", "connect"])
+        .env("CHAOS_AGY_PATH", &agy_path)
+        .env_remove("CHAOS_AGY_HOME")
+        .output()?;
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("set CHAOS_AGY_HOME to a dedicated directory")
+    );
+    assert!(
+        !chaos_home
+            .join(".gemini")
+            .join("antigravity-cli")
+            .join("antigravity-oauth-token")
+            .exists()
     );
     Ok(())
 }

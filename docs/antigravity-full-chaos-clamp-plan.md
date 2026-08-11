@@ -1,11 +1,11 @@
 # Antigravity full-Chaos clamp plan
 
-**Date:** 2026-08-11  
-**Branch:** `feat/antigravity-clamp`  
-**Issue:** #26  
-**Withdrawn proof-of-concept:** #25  
-**Status:** MCP feasibility proven outside the repository; real Chaos bridge
-integration not yet proven
+**Date:** 2026-08-11
+**Branch:** `feat/antigravity-clamp`
+**Issue:** #26
+**Withdrawn proof-of-concept:** #25
+**Status:** real Chaos bridge proven for fresh and cross-process resumed turns;
+implementation and regression review in progress
 
 ## Purpose
 
@@ -49,9 +49,10 @@ The runnable development evidence lives outside Git worktrees at:
 
 Do not move OAuth state, browser return codes, or tokens into the repository.
 
-Tested artifact:
+Tested artifacts:
 
-- `agy 1.1.11`
+- `agy 1.1.11` for the original standalone MCP spike
+- `agy 1.1.12` for environment inheritance and full-Chaos tests
 - macOS arm64
 - Google consumer OAuth account
 - `gemini-3.1-pro-low`
@@ -295,6 +296,122 @@ Run the actual Chaos binary and existing session MCP bridge:
 
 This is the minimum proof required before reopening a PR.
 
+## Implementation checkpoint — 2026-08-11
+
+The first full implementation pass now:
+
+- reuses the existing session-scoped `ClampSessionBridge`;
+- writes managed `mcp_config.json` and Antigravity permission settings inside
+  the dedicated `CHAOS_AGY_HOME`;
+- exposes only the `chaos` MCP server;
+- denies native command, filesystem, unsandboxed, and URL operations;
+- passes the bridge socket and capability token only through the `agy`
+  environment;
+- uses the default Antigravity agent rather than the dead-end transport-only
+  custom agent; the public transport configuration no longer permits callers
+  to select a custom agent and accidentally remove dynamic MCP tools;
+- removes metered Gemini API-key variables;
+- preserves provider conversation resume and normalized usage.
+
+Live proofs are stored outside Git worktrees. The environment inheritance proof
+is:
+
+```text
+~/.local/share/mira-antigravity-spike/mcp-env-inheritance.jsonl
+```
+
+The full-Chaos proofs are under:
+
+```text
+~/.local/share/mira-antigravity-spike/full-chaos-smoke
+```
+
+The following passed against OAuth-authenticated `agy 1.1.12`:
+
+1. `mcp-env-inheritance.jsonl` proves an `agy`-spawned MCP child inherited a
+   random parent-only environment marker and returned it to Gemini.
+2. `fresh.jsonl` proves a fresh `chaos exec` turn called the real Chaos
+   `read_file` tool and returned a file-only marker.
+3. `resume.jsonl` proves a new operating-system process resumed the same Chaos
+   and provider conversation, recreated tool access, and called `read_file`
+   again.
+4. `exec-tool.jsonl` proves a resumed turn called the real Chaos
+   `exec_command` tool and emitted canonical `item.started` and
+   `item.completed` command events before the final answer.
+5. All three full-Chaos turns emitted complete invocation and
+   process-cumulative usage without a `turn.failed` event.
+
+The `read_file` smoke turn did not emit a generic process item because Chaos
+does not currently publish one for that built-in tool on any provider path.
+The `exec_command` turn was used to verify canonical tool lifecycle events.
+
+Remaining before a new PR:
+
+- review the full branch diff against `master`;
+- split the implementation into atomic signed-off commits;
+- keep the PR withdrawn until those checks pass.
+
+Focused automated validation completed on 2026-08-11:
+
+```text
+cargo test -q -p chaos-clamp
+cargo test -q -p chaos-cli --test clamp_antigravity
+cargo check -q -p chaos-kern
+```
+
+Results:
+
+- `chaos-clamp`: 30 passed, 0 failed; live provider tests remained ignored;
+- `clamp_antigravity`: 5 passed, 0 failed;
+- `chaos-kern`: check passed.
+
+Final safety review removed the lifecycle command's fallback from
+`CHAOS_AGY_HOME` to ordinary `HOME`. Connect and disconnect now require an
+explicit dedicated home, matching turn execution and preventing managed
+Antigravity configuration or credential removal from touching a user's normal
+home accidentally. A regression test proves connect fails closed without the
+environment variable.
+
+Repository-wide contribution checks:
+
+```text
+just fmt
+cargo fmt --all -- --check
+just test
+```
+
+Formatting passed. The complete test run executed 2,734 tests: 2,730 passed,
+19 were skipped, and 4 failed for confirmed baseline/environment reasons:
+
+1. `review_diff_prefetch_disables_external_diff_helpers` and
+   `review_diff_prefetch_disables_textconv_helpers` receive ANSI-colored Git
+   output because Daniel's global Git configuration sets `color.ui=always`;
+   their assertions expect literal uncolored `-before\n` and `+after\n`.
+2. `undo_restores_untracked_file_edit` likewise expects literal uncolored
+   `git status --short` output and misses the ANSI-wrapped `?? notes.txt`.
+3. `unified_exec_emits_one_begin_and_one_end_event` reproduces identically when
+   run alone on the clean `master` checkout at `62ec36cbc`.
+
+The branch does not modify any of those tests or their implementation areas.
+Do not contaminate this focused change by fixing baseline test isolation here.
+
+The first focused run caught and corrected a stale model-only authority assertion
+in the ignored Antigravity smoke test. The live smoke now requires an explicit
+session bridge capability rather than pretending a model-only invocation is a
+valid full clamp.
+
+Observed tool-step review:
+
+- successful Chaos MCP calls are `step_type: "tool"`,
+  `tool_name: "call_mcp_tool"`, with `ACTIVE` then `DONE`;
+- a blocked native `view_file` attempt is `state: "ERROR"` and reports that it
+  matched the configured `read_file(...)` deny rule;
+- the existing Chaos MCP bridge already emits canonical tool/process events, so
+  `agy` tool steps must remain transport diagnostics and must not be translated
+  into duplicate Chaos lifecycle events;
+- unknown `step_type` values remain parseable because `step_type` is stored as
+  a string rather than a closed enum.
+
 ### Regression tests
 
 - Claude Code clamp behavior remains unchanged;
@@ -409,7 +526,13 @@ If context is compacted, resume here:
 
 1. read this file;
 2. inspect issue #26 and closed PR #25;
-3. inspect the external evidence file `mcp-bridge-smoke-6.jsonl`;
+3. inspect the uncommitted worktree diff and external full-Chaos evidence under
+   `~/.local/share/mira-antigravity-spike/full-chaos-smoke`;
 4. do not return to model-only work;
-5. begin with managed non-secret MCP configuration and environment inheritance;
-6. do not reopen a PR until the live full-Chaos tool-and-resume test passes.
+5. the next validation command is `just fmt`, followed by `just test`;
+6. formatting and the complete suite have already run; read the documented
+   baseline failures above rather than rediscovering them;
+7. review the complete `master...HEAD` plus worktree diff, scan for secrets,
+   then create atomic
+   signed-off commits;
+8. do not reopen a PR until Daniel has reviewed the finished diff.

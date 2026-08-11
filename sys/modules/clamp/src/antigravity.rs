@@ -8,19 +8,44 @@
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
+use std::time::SystemTime;
 
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::process::Command;
 
 const DEFAULT_PRINT_TIMEOUT: Duration = Duration::from_secs(300);
 const STDERR_CLASSIFICATION_LIMIT: usize = 16 * 1024;
+const BRIDGE_SOCKET_ENV: &str = "CHAOS_CLAMP_MCP_SOCKET";
+const BRIDGE_TOKEN_ENV: &str = "CHAOS_CLAMP_MCP_TOKEN";
+const CHAOS_MCP_SERVER_NAME: &str = "chaos";
+const CHAOS_MCP_ALLOW_RULE: &str = "mcp(chaos/*)";
+const NATIVE_TOOL_DENY_RULES: &[&str] = &[
+    "command(*)",
+    "unsandboxed(*)",
+    "read_file(*)",
+    "write_file(*)",
+    "read_url(*)",
+    "execute_url(*)",
+];
 
 /// Tool-authority level currently guaranteed by the Antigravity transport.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AntigravityToolAuthority {
-    /// `agy` runs sandboxed and without permission auto-approval, but its
-    /// built-in tools are not yet bridged through Chaos.
-    ModelOnlySandboxed,
+    /// `agy` runs sandboxed, native tools are denied, and its sole action
+    /// surface is the session-scoped Chaos MCP bridge.
+    ChaosSessionBridge,
+}
+
+/// Ephemeral Chaos bridge capability inherited by `agy` and its MCP child.
+///
+/// The socket path and token are intentionally exported only through the
+/// subprocess environment. Managed Antigravity configuration contains neither.
+#[derive(Debug, Clone)]
+pub struct AntigravityBridgeConfig {
+    pub socket_path: PathBuf,
+    pub token: String,
+    pub chaos_executable: PathBuf,
 }
 
 /// Configuration for invoking the official `agy` CLI.
@@ -36,11 +61,10 @@ pub struct AntigravityConfig {
     pub model: String,
     /// Optional Antigravity reasoning effort (`low`, `medium`, or `high`).
     pub effort: Option<String>,
-    /// Optional custom transport-only agent. Applied only to fresh
-    /// conversations; resumed conversations retain their original agent.
-    pub agent: Option<String>,
     /// Maximum wall-clock time for a single print-mode invocation.
     pub print_timeout: Duration,
+    /// Session-scoped Chaos MCP bridge. Required for a usable clamped turn.
+    pub bridge: Option<AntigravityBridgeConfig>,
 }
 
 impl Default for AntigravityConfig {
@@ -51,8 +75,8 @@ impl Default for AntigravityConfig {
             cwd: None,
             model: "gemini-3.1-pro-low".to_string(),
             effort: None,
-            agent: None,
             print_timeout: DEFAULT_PRINT_TIMEOUT,
+            bridge: None,
         }
     }
 }
@@ -100,6 +124,10 @@ pub struct AntigravityStepUpdate {
     pub duration_seconds: Option<f64>,
     #[serde(default)]
     pub usage: Option<AntigravityUsage>,
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    #[serde(default)]
+    pub tool_info: Option<Value>,
 }
 
 /// Final result emitted by a successful or failed Antigravity invocation.
@@ -203,13 +231,14 @@ impl AntigravityTransport {
     }
 
     pub fn tool_authority(&self) -> AntigravityToolAuthority {
-        AntigravityToolAuthority::ModelOnlySandboxed
+        AntigravityToolAuthority::ChaosSessionBridge
     }
 
     /// Run one prompt through `agy`, resuming the provider conversation when
     /// this transport has already completed a turn.
     pub async fn run_turn(&mut self, prompt: &str) -> Result<AntigravityTurn, AntigravityError> {
         let cli_path = find_agy_cli(&self.config)?;
+        prepare_managed_home(&self.config)?;
         let mut command = build_command(&cli_path, &self.config, self.conversation_id.as_deref());
         command.arg("--print").arg(prompt);
 
@@ -275,6 +304,21 @@ fn validate_config(config: &AntigravityConfig) -> Result<(), AntigravityError> {
             "unsupported Antigravity effort: {effort}"
         )));
     }
+    if config.home.is_none() {
+        return Err(AntigravityError::Protocol(
+            "Antigravity clamp requires a dedicated CHAOS_AGY_HOME".to_string(),
+        ));
+    }
+    let Some(bridge) = config.bridge.as_ref() else {
+        return Err(AntigravityError::Protocol(
+            "Antigravity clamp requires the Chaos session MCP bridge".to_string(),
+        ));
+    };
+    if bridge.token.is_empty() {
+        return Err(AntigravityError::Protocol(
+            "Antigravity clamp bridge token must not be empty".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -313,8 +357,6 @@ fn build_command(
 
     if let Some(conversation_id) = conversation_id {
         command.args(["--conversation", conversation_id]);
-    } else if let Some(agent) = config.agent.as_deref() {
-        command.args(["--agent", agent]);
     }
     if let Some(effort) = config.effort.as_deref() {
         command.args(["--effort", effort]);
@@ -322,6 +364,10 @@ fn build_command(
     if let Some(home) = &config.home {
         command.env("HOME", home);
         command.env("XDG_CONFIG_HOME", home.join(".config"));
+    }
+    if let Some(bridge) = &config.bridge {
+        command.env(BRIDGE_SOCKET_ENV, &bridge.socket_path);
+        command.env(BRIDGE_TOKEN_ENV, &bridge.token);
     }
     if let Some(cwd) = &config.cwd {
         command.current_dir(cwd);
@@ -335,6 +381,112 @@ fn build_command(
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     command
+}
+
+fn prepare_managed_home(config: &AntigravityConfig) -> Result<(), AntigravityError> {
+    let home = config.home.as_ref().ok_or_else(|| {
+        AntigravityError::Protocol(
+            "Antigravity clamp requires a dedicated CHAOS_AGY_HOME".to_string(),
+        )
+    })?;
+    let bridge = config.bridge.as_ref().ok_or_else(|| {
+        AntigravityError::Protocol(
+            "Antigravity clamp requires the Chaos session MCP bridge".to_string(),
+        )
+    })?;
+
+    let mcp_path = home.join(".gemini/config/mcp_config.json");
+    let mut mcp_config = read_json_object_or_empty(&mcp_path)?;
+    mcp_config["mcpServers"] = serde_json::json!({
+        CHAOS_MCP_SERVER_NAME: {
+            "command": bridge.chaos_executable,
+            "args": ["clamp-session-bridge"]
+        }
+    });
+    atomic_write_private_json(&mcp_path, &mcp_config)?;
+
+    let settings_path = home.join(".gemini/antigravity-cli/settings.json");
+    let mut settings = read_json_object_or_empty(&settings_path)?;
+    settings["permissions"] = serde_json::json!({
+        "allow": [CHAOS_MCP_ALLOW_RULE],
+        "deny": NATIVE_TOOL_DENY_RULES
+    });
+    atomic_write_private_json(&settings_path, &settings)?;
+    Ok(())
+}
+
+fn read_json_object_or_empty(path: &Path) -> Result<Value, AntigravityError> {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            let value: Value = serde_json::from_slice(&bytes).map_err(|error| {
+                AntigravityError::Protocol(format!(
+                    "invalid managed Antigravity configuration {}: {error}",
+                    path.display()
+                ))
+            })?;
+            if value.is_object() {
+                Ok(value)
+            } else {
+                Err(AntigravityError::Protocol(format!(
+                    "managed Antigravity configuration is not an object: {}",
+                    path.display()
+                )))
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(Value::Object(Default::default()))
+        }
+        Err(error) => Err(AntigravityError::Spawn(error)),
+    }
+}
+
+fn atomic_write_private_json(path: &Path, value: &Value) -> Result<(), AntigravityError> {
+    let parent = path.parent().ok_or_else(|| {
+        AntigravityError::Protocol(format!(
+            "managed Antigravity configuration has no parent: {}",
+            path.display()
+        ))
+    })?;
+    std::fs::create_dir_all(parent)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
+    }
+
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temporary_path = parent.join(format!(
+        ".{}.{}.{nonce}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("managed-config"),
+        std::process::id()
+    ));
+    let bytes = serde_json::to_vec_pretty(value).map_err(|error| {
+        AntigravityError::Protocol(format!(
+            "failed to encode managed Antigravity configuration: {error}"
+        ))
+    })?;
+    let mut options = std::fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    use std::io::Write;
+    let mut file = options.open(&temporary_path)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    drop(file);
+    if let Err(error) = std::fs::rename(&temporary_path, path) {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(AntigravityError::Spawn(error));
+    }
+    Ok(())
 }
 
 fn parse_events(stdout: &[u8]) -> Result<Vec<AntigravityEvent>, AntigravityError> {
@@ -378,6 +530,14 @@ fn text_indicates_auth_failure(text: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn test_bridge(dir: &Path) -> AntigravityBridgeConfig {
+        AntigravityBridgeConfig {
+            socket_path: dir.join("bridge.sock"),
+            token: "ephemeral-test-token".to_string(),
+            chaos_executable: dir.join("chaos"),
+        }
+    }
+
     #[test]
     fn parses_observed_stream_json() {
         let stdout = br#"{"event":"init","conversation_id":"conversation-1","init":{"model":"gemini-3.1-pro-low","permission_mode":"request-review","tools":["run_command"]}}
@@ -392,6 +552,26 @@ mod tests {
         assert_eq!(result.conversation_id, "conversation-1");
         assert_eq!(result.response, "hello\n");
         assert_eq!(result.usage.as_ref().expect("usage").thinking_tokens, 5);
+    }
+
+    #[test]
+    fn parses_tool_steps_and_unknown_step_types() {
+        let stdout = br#"{"event":"step_update","step_update":{"conversation_id":"conversation-1","step_index":4,"state":"DONE","step_type":"tool","tool_name":"call_mcp_tool","tool_info":{"parameters":{"ServerName":"chaos","ToolName":"read_file"},"output":"ok"}}}
+{"event":"step_update","step_update":{"conversation_id":"conversation-1","step_index":5,"state":"DONE","step_type":"future_checkpoint_kind"}}
+"#;
+        let events = parse_events(stdout).expect("events should parse");
+        let AntigravityEvent::StepUpdate { step_update } = &events[0] else {
+            panic!("expected tool step");
+        };
+        assert_eq!(step_update.tool_name.as_deref(), Some("call_mcp_tool"));
+        assert_eq!(
+            step_update.tool_info.as_ref().expect("tool info")["output"],
+            "ok"
+        );
+        let AntigravityEvent::StepUpdate { step_update } = &events[1] else {
+            panic!("expected unknown step");
+        };
+        assert_eq!(step_update.step_type, "future_checkpoint_kind");
     }
 
     #[test]
@@ -439,6 +619,13 @@ esac
 if [ -n "${GEMINI_API_KEY+x}" ] || [ -n "${GOOGLE_API_KEY+x}" ]; then
   exit 91
 fi
+case "$CHAOS_CLAMP_MCP_SOCKET" in
+  */bridge.sock) ;;
+  *) exit 92 ;;
+esac
+if [ "$CHAOS_CLAMP_MCP_TOKEN" != "ephemeral-test-token" ]; then
+  exit 92
+fi
 case "$*" in
   *"--conversation conversation-1"*)
     turns=2
@@ -466,8 +653,8 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
             home: Some(dir.join("home")),
             cwd: Some(dir.clone()),
             model: "gemini-test".to_string(),
-            agent: Some("transport-only".to_string()),
             print_timeout: Duration::from_secs(5),
+            bridge: Some(test_bridge(&dir)),
             ..Default::default()
         };
         let mut transport = AntigravityTransport::new(config).expect("create transport");
@@ -495,7 +682,12 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
 
     #[test]
     fn command_removes_metered_api_keys_and_never_auto_approves() {
-        let config = AntigravityConfig::default();
+        let dir = std::env::temp_dir();
+        let config = AntigravityConfig {
+            home: Some(dir.join("chaos-antigravity-command-test")),
+            bridge: Some(test_bridge(&dir)),
+            ..Default::default()
+        };
         let command = build_command(&PathBuf::from("/tmp/agy"), &config, None);
         let std_command = command.as_std();
         let args = std_command
@@ -512,5 +704,101 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
             .collect::<Vec<_>>();
         assert!(removed.iter().any(|name| name == "GEMINI_API_KEY"));
         assert!(removed.iter().any(|name| name == "GOOGLE_API_KEY"));
+        let envs = std_command
+            .get_envs()
+            .filter_map(|(name, value)| {
+                Some((
+                    name.to_string_lossy().into_owned(),
+                    value?.to_string_lossy().into_owned(),
+                ))
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            envs.get(BRIDGE_TOKEN_ENV).map(String::as_str),
+            Some("ephemeral-test-token")
+        );
+        assert_eq!(
+            envs.get(BRIDGE_SOCKET_ENV).map(String::as_str),
+            Some(dir.join("bridge.sock").to_string_lossy().as_ref())
+        );
+    }
+
+    #[test]
+    fn managed_config_exposes_only_chaos_mcp_without_persisting_capability() {
+        use std::time::SystemTime;
+
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "chaos-antigravity-config-test-{}-{unique}",
+            std::process::id()
+        ));
+        let settings_path = dir.join(".gemini/antigravity-cli/settings.json");
+        std::fs::create_dir_all(settings_path.parent().expect("settings parent"))
+            .expect("create settings parent");
+        std::fs::write(
+            &settings_path,
+            r#"{"theme":"dark","permissions":{"allow":["command(*)"]}}"#,
+        )
+        .expect("seed settings");
+
+        let config = AntigravityConfig {
+            home: Some(dir.clone()),
+            bridge: Some(test_bridge(&dir)),
+            ..Default::default()
+        };
+        prepare_managed_home(&config).expect("prepare managed home");
+
+        let mcp_bytes =
+            std::fs::read(dir.join(".gemini/config/mcp_config.json")).expect("read MCP config");
+        let mcp: Value = serde_json::from_slice(&mcp_bytes).expect("parse MCP config");
+        assert_eq!(
+            mcp["mcpServers"]["chaos"]["args"],
+            serde_json::json!(["clamp-session-bridge"])
+        );
+        assert_eq!(
+            mcp["mcpServers"]["chaos"]["command"],
+            dir.join("chaos").to_string_lossy().as_ref()
+        );
+        assert!(!String::from_utf8_lossy(&mcp_bytes).contains("ephemeral-test-token"));
+        assert!(!String::from_utf8_lossy(&mcp_bytes).contains("bridge.sock"));
+
+        let settings_bytes = std::fs::read(&settings_path).expect("read settings");
+        let settings: Value = serde_json::from_slice(&settings_bytes).expect("parse settings");
+        assert_eq!(settings["theme"], "dark");
+        assert_eq!(
+            settings["permissions"]["allow"],
+            serde_json::json!([CHAOS_MCP_ALLOW_RULE])
+        );
+        assert_eq!(
+            settings["permissions"]["deny"],
+            serde_json::json!(NATIVE_TOOL_DENY_RULES)
+        );
+        assert!(!String::from_utf8_lossy(&settings_bytes).contains("ephemeral-test-token"));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(dir.join(".gemini/config/mcp_config.json"))
+                    .expect("MCP metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+            assert_eq!(
+                std::fs::metadata(&settings_path)
+                    .expect("settings metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+
+        std::fs::remove_dir_all(dir).expect("remove test directory");
     }
 }

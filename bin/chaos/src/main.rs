@@ -29,12 +29,10 @@ use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use supports_color::Stream;
 
-mod clamp_cmd;
 mod debug_logging;
 mod mcp_cmd;
 mod models_cmd;
 
-use crate::clamp_cmd::ClampCli;
 use crate::mcp_cmd::McpCli;
 use crate::models_cmd::ModelsCli;
 
@@ -86,9 +84,6 @@ enum Subcommand {
     /// Manage provider accounts and connections.
     #[clap(visible_alias = "login")]
     Accounts(AccountsCommand),
-
-    /// Inspect and manage first-party clamp transports.
-    Clamp(ClampCli),
 
     /// Disconnect stored provider accounts.
     Logout(LogoutCommand),
@@ -419,9 +414,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     }
                 }
             }
-        }
-        Some(Subcommand::Clamp(clamp_cli)) => {
-            clamp_cli.run().await?;
         }
         Some(Subcommand::Logout(mut logout_cli)) => {
             prepend_root_flags!(logout_cli, root_config_overrides);

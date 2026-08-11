@@ -16,18 +16,22 @@ the full Antigravity security design, see
   bridge socket/token are inherited by the MCP child without being written to
   persistent configuration.
 
-Lifecycle commands:
+As with Claude Code, authentication remains an external responsibility of the
+official provider CLI:
 
 ```bash
-CHAOS_AGY_HOME=/private/antigravity-state chaos clamp antigravity connect
-CHAOS_AGY_HOME=/private/antigravity-state chaos clamp antigravity status --json
-CHAOS_AGY_HOME=/private/antigravity-state chaos clamp antigravity disconnect
+export CHAOS_AGY_HOME=/private/antigravity-state
+env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
+  HOME="$CHAOS_AGY_HOME" \
+  XDG_CONFIG_HOME="$CHAOS_AGY_HOME/.config" \
+  "${CHAOS_AGY_PATH:-agy}" models
 ```
 
 `CHAOS_AGY_HOME` must be a dedicated persistent private directory outside the
 source checkout. Chaos preserves OAuth and unrelated top-level settings but
 owns the effective MCP server list and permission policy inside this home.
-`CHAOS_AGY_PATH` may pin the official CLI binary. Service integrations must
-preserve the Chaos process ID and this home directory, and must pass the
-original `-m` model selection again, to resume the same provider conversation
-across operating-system processes.
+`CHAOS_AGY_PATH` may pin the official CLI binary. Chaos does not wrap provider
+login, status, or logout in a separate clamp command namespace. Service
+integrations must preserve the Chaos process ID and this home directory, and
+must pass the original `-m` model selection again, to resume the same provider
+conversation across operating-system processes.

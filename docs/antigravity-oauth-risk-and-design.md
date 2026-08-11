@@ -123,8 +123,12 @@ Chaos owns the effective MCP server list and permission policy within this
 home, while `agy` owns its OAuth state.
 
 Chaos does not fall back to the user's ordinary `HOME`. This prevents managed
-configuration and disconnect operations from modifying a non-dedicated
-Antigravity installation accidentally.
+MCP and permission configuration from modifying a non-dedicated Antigravity
+installation accidentally.
+
+As with Claude Code, the official provider CLI owns login, token refresh,
+account selection, and logout. Chaos does not expose a separate Antigravity
+account-management or clamp-lifecycle command namespace.
 
 The home must persist across operating-system processes when provider
 conversation resume is required.

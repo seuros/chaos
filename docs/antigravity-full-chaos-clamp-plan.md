@@ -365,15 +365,17 @@ cargo check -q -p chaos-kern
 Results:
 
 - `chaos-clamp`: 30 passed, 0 failed; live provider tests remained ignored;
-- `clamp_antigravity`: 5 passed, 0 failed;
+- `clamp_antigravity`: 1 passed, 0 failed after the provider-owned lifecycle
+  refactor described below;
 - `chaos-kern`: check passed.
 
-Final safety review removed the lifecycle command's fallback from
-`CHAOS_AGY_HOME` to ordinary `HOME`. Connect and disconnect now require an
-explicit dedicated home, matching turn execution and preventing managed
-Antigravity configuration or credential removal from touching a user's normal
-home accidentally. A regression test proves connect fails closed without the
-environment variable.
+Final architecture review removed the proposed `chaos clamp antigravity`
+lifecycle namespace entirely. Antigravity now follows the same boundary as
+Claude Code: the official provider CLI owns login, token refresh, account
+selection, and logout; Chaos only drives an already authenticated CLI as a clamp
+transport. Turn execution still requires an explicit dedicated
+`CHAOS_AGY_HOME`, preventing managed Antigravity MCP configuration from touching
+a user's ordinary provider installation.
 
 Repository-wide contribution checks:
 

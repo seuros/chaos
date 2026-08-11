@@ -108,16 +108,26 @@ CHAOS_AGY_HOME=/private/antigravity-state \
   "say ok"
 ```
 
-Authenticate and inspect the isolated Antigravity state through Chaos:
+As with Claude Code, authenticate with the official provider CLI before asking
+Chaos to use the transport. Point `agy` at the same dedicated home that Chaos
+will receive:
 
 ```bash
 export CHAOS_AGY_HOME=/private/antigravity-state
 export CHAOS_AGY_PATH=/opt/antigravity/bin/agy # optional when agy is in PATH
 
-chaos clamp antigravity connect
-chaos clamp antigravity status --json
-chaos clamp antigravity disconnect
+mkdir -p "$CHAOS_AGY_HOME"
+chmod 700 "$CHAOS_AGY_HOME"
+env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
+  HOME="$CHAOS_AGY_HOME" \
+  XDG_CONFIG_HOME="$CHAOS_AGY_HOME/.config" \
+  "${CHAOS_AGY_PATH:-agy}" models
 ```
+
+The official CLI owns login, token refresh, account selection, and logout.
+Chaos does not add a second account-management or clamp-lifecycle namespace.
+To discard an isolated account when the official CLI has no logout command,
+stop sessions using it and remove the dedicated home as one unit.
 
 The effective config for each invocation governs its transport, so resumed
 sessions must pass both `-c clamp=true` and any non-default
@@ -134,10 +144,11 @@ Operators are responsible for confirming that their subscription and chosen
 first-party CLI usage comply with the provider terms that apply to them.
 
 For a remote service such as souls.house, keep `CHAOS_AGY_HOME` on a persistent
-private volume, run `connect` once in an operator-controlled environment, and
-use `status --json` as the readiness boundary. Each worker must receive the
-same `CHAOS_AGY_HOME`, `CHAOS_AGY_PATH`, and clamp configuration. Preserve the
-Chaos process ID between requests and invoke `chaos exec ... resume
+private volume and run the official `agy` login ceremony once in an
+operator-controlled environment using that home. Readiness checks should invoke
+the official CLI with metered API-key variables removed. Each worker must
+receive the same `CHAOS_AGY_HOME`, `CHAOS_AGY_PATH`, and clamp configuration.
+Preserve the Chaos process ID between requests and invoke `chaos exec ... resume
 <process_id>` with the original `-m` selection so Chaos can restore the matching
 provider conversation. Do not copy browser authorization codes into
 configuration or logs; only the credential state produced by the official CLI

@@ -107,6 +107,15 @@ pub(crate) const DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
+/// First-party CLI transport selected when clamp mode is enabled.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClampBackend {
+    #[default]
+    ClaudeCode,
+    Antigravity,
+}
+
 #[cfg(test)]
 pub(crate) fn test_config() -> Config {
     let chaos_home = tempfile::tempdir().expect("create temp dir");
@@ -205,11 +214,14 @@ pub struct Config {
     /// users are only interested in the final agent responses.
     pub hide_agent_reasoning: bool,
 
-    /// Start `chaos exec` sessions using the Claude Code subprocess transport.
+    /// Start `chaos exec` sessions using a first-party CLI subprocess transport.
     ///
     /// Interactive sessions ignore this setting and retain their existing
     /// `/clamp` and `--clamp` controls.
     pub clamp: bool,
+
+    /// First-party CLI transport selected when clamp mode is enabled.
+    pub clamp_backend: ClampBackend,
 
     /// Optional user-provided instructions (currently always `None`; a
     /// schema-based replacement for the removed AGENTS.md loader will
@@ -624,9 +636,13 @@ pub struct ConfigToml {
     /// UI/output. Defaults to `false`.
     pub hide_agent_reasoning: Option<bool>,
 
-    /// Start `chaos exec` sessions using the Claude Code subprocess transport.
+    /// Start `chaos exec` sessions using a first-party CLI subprocess transport.
     /// Defaults to `false`.
     pub clamp: Option<bool>,
+
+    /// First-party CLI transport selected when clamp mode is enabled.
+    /// Defaults to `claude-code`.
+    pub clamp_backend: Option<ClampBackend>,
 
     pub model_reasoning_effort: Option<ReasoningEffort>,
     /// Allow the parent model to change its own reasoning effort for subsequent turns.

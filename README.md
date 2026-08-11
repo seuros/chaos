@@ -81,6 +81,16 @@ discovery disabled, strips its built-in tools, and connects through MCP. FreeCha
 provides the tools. FreeChaOS hooks into the lifecycle. Claude Code becomes the
 transport.
 
+The clamp module also has an experimental Google Antigravity backend. It invokes
+the official `agy` CLI in sandboxed print mode, keeps authentication in an
+isolated `agy` home, and removes `GEMINI_API_KEY` and `GOOGLE_API_KEY` from the
+subprocess environment so a failed subscription connection cannot silently
+fall back to metered API billing. Chaos writes a managed MCP configuration for
+each dedicated home, denies Antigravity's native command, filesystem, and URL
+tools, and exposes the session-scoped Chaos tool bridge as `agy`'s sole action
+surface. The bridge socket and capability token are inherited through the
+invocation environment and are never persisted in Antigravity configuration.
+
 API key users connect directly through the kernel — no clamping needed.
 
 Headless `chaos exec` sessions can request the clamped transport through the
@@ -89,14 +99,60 @@ layered configuration:
 ```bash
 chaos exec --json -c clamp=true -m claude-sonnet-4-5 "say ok"
 chaos exec --json -c clamp=true resume <process_id> "continue"
+
+CHAOS_AGY_HOME=/private/antigravity-state \
+  chaos exec --json \
+  -c clamp=true \
+  -c clamp_backend=antigravity \
+  -m gemini-3.1-pro-preview \
+  "say ok"
 ```
 
-The effective config for each invocation governs its transport, so resumed
-sessions must pass `-c clamp=true` again. If Claude Code is missing,
-unauthenticated, or fails during a turn, the exec command fails instead of
-falling back to direct API billing.
+As with Claude Code, authenticate with the official provider CLI before asking
+Chaos to use the transport. Point `agy` at the same dedicated home that Chaos
+will receive:
 
-This architecture is correct usage of both providers' terms of service.
+```bash
+export CHAOS_AGY_HOME=/private/antigravity-state
+export CHAOS_AGY_PATH=/opt/antigravity/bin/agy # optional when agy is in PATH
+
+mkdir -p "$CHAOS_AGY_HOME"
+chmod 700 "$CHAOS_AGY_HOME"
+env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
+  HOME="$CHAOS_AGY_HOME" \
+  XDG_CONFIG_HOME="$CHAOS_AGY_HOME/.config" \
+  "${CHAOS_AGY_PATH:-agy}" models
+```
+
+The official CLI owns login, token refresh, account selection, and logout.
+Chaos does not add a second account-management or clamp-lifecycle namespace.
+To discard an isolated account when the official CLI has no logout command,
+stop sessions using it and remove the dedicated home as one unit.
+
+The effective config for each invocation governs its transport, so resumed
+sessions must pass both `-c clamp=true` and any non-default
+`-c clamp_backend=...` selection again. Antigravity resumes must also pass the
+same `-m` model selection used for the original process. `CHAOS_AGY_PATH` can
+pin an explicit `agy` binary, while `CHAOS_AGY_HOME` selects its private
+authenticated state. The home must be dedicated to Chaos because each turn
+replaces its effective MCP server list and permission policy with the
+fail-closed Chaos configuration. If the selected CLI is missing,
+unauthenticated, cannot establish the managed bridge, or fails during a turn,
+the exec command fails instead of falling back to direct API billing.
+
+Operators are responsible for confirming that their subscription and chosen
+first-party CLI usage comply with the provider terms that apply to them.
+
+For a remote service such as souls.house, keep `CHAOS_AGY_HOME` on a persistent
+private volume and run the official `agy` login ceremony once in an
+operator-controlled environment using that home. Readiness checks should invoke
+the official CLI with metered API-key variables removed. Each worker must
+receive the same `CHAOS_AGY_HOME`, `CHAOS_AGY_PATH`, and clamp configuration.
+Preserve the Chaos process ID between requests and invoke `chaos exec ... resume
+<process_id>` with the original `-m` selection so Chaos can restore the matching
+provider conversation. Do not copy browser authorization codes into
+configuration or logs; only the credential state produced by the official CLI
+belongs on the private volume.
 
 ---
 

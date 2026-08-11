@@ -652,6 +652,7 @@ impl Config {
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
             clamp: cfg.clamp.unwrap_or(false),
+            clamp_backend: cfg.clamp_backend.unwrap_or_default(),
             model_reasoning_effort: config_profile
                 .model_reasoning_effort
                 .or(cfg.model_reasoning_effort),

@@ -7,6 +7,9 @@
 **Status:** real Chaos bridge proven for fresh and cross-process resumed turns;
 implementation and regression review in progress
 
+The user-facing provider-risk and architecture documentation is
+[`antigravity-oauth-risk-and-design.md`](antigravity-oauth-risk-and-design.md).
+
 ## Purpose
 
 The Antigravity clamp is useful only if a Gemini resident retains the practical

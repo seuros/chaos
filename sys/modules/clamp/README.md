@@ -2,6 +2,10 @@
 
 First-party model CLI subprocess transports.
 
+For Google policy restrictions, account-risk context, rejected approaches, and
+the full Antigravity security design, see
+[`docs/antigravity-oauth-risk-and-design.md`](../../../docs/antigravity-oauth-risk-and-design.md).
+
 - **Claude Code:** bidirectional stream-JSON control transport. Chaos owns
   tools and permissions through its MCP bridge.
 - **Google Antigravity (`agy`):** one subprocess per model turn with explicit

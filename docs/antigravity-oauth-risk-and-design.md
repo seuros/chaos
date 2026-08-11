@@ -60,7 +60,8 @@ approval.
 
 ## Why model-only subprocess output is insufficient
 
-A Chaos resident needs more than authenticated model text. It must retain:
+A functional Chaos model session needs more than authenticated model text. It
+must retain:
 
 - Chaos-owned tools;
 - permission and approval policy;
@@ -71,10 +72,10 @@ A Chaos resident needs more than authenticated model text. It must retain:
 
 An earlier proof of concept could send prompts through OAuth-authenticated
 `agy`, return text, and resume the provider conversation. It could not use Chaos
-tools and was therefore not a usable resident transport.
+tools and was therefore not a usable Chaos transport.
 
 Replacing Chaos with `agy` is also not sufficient. Antigravity does not own the
-Chaos trigger lifecycle, resident identity, tool policy, event protocol, or
+Chaos trigger lifecycle, session identity, tool policy, event protocol, or
 hosted-session orchestration.
 
 ## Implemented architecture
@@ -133,6 +134,11 @@ account-management or clamp-lifecycle command namespace.
 The home must persist across operating-system processes when provider
 conversation resume is required.
 
+Provider conversation state may persist across turns, but the Chaos bridge does
+not. Every invocation recreates the managed MCP configuration, permission
+policy, Unix socket, and random capability token. A resumed provider
+conversation must never retain a stale bridge endpoint or reusable capability.
+
 ## Permission boundary
 
 Prompt instructions tell Gemini to use the Chaos MCP server as its sole action
@@ -145,6 +151,14 @@ boundary.
 
 `--dangerously-skip-permissions` must not be added. Doing so would give
 Antigravity's native tools authority independent of Chaos and defeat the clamp.
+
+The default Antigravity agent is used because it discovers dynamically
+configured MCP tools. The model-only proof of concept declared `tools: []`,
+which prevented usable MCP calls even though Antigravity's initialization output
+could still list tool names. Declaring `call_mcp_tool` directly in custom-agent
+frontmatter also failed in the tested `agy` version. Custom agents should not be
+introduced without a live tool round-trip proving that their configuration
+preserves dynamic MCP access.
 
 ## Verified behavior
 
@@ -162,21 +176,27 @@ Live testing on macOS arm64 with consumer OAuth and `agy 1.1.12` demonstrated:
 These tests establish technical functionality. They do not remove the provider
 policy risk described above.
 
+Antigravity tool steps are retained as transport diagnostics. The existing
+Chaos MCP bridge already publishes canonical tool and process lifecycle events,
+so translating the same `agy` steps into additional Chaos events would
+duplicate them. Unknown Antigravity step types remain forward-compatible rather
+than failing the turn.
+
 ## Approaches intentionally rejected
 
 - **Direct OAuth-token reuse:** exposes credentials and directly matches the
   prohibited third-party OAuth pattern.
 - **Calling Google's private backend from Chaos:** undocumented, brittle, and
   indistinguishable from client impersonation.
-- **Model-only transport:** authenticates Gemini but removes the agency required
-  by Chaos residents.
+- **Model-only transport:** authenticates Gemini but omits the Chaos tools and
+  lifecycle required for useful operation.
 - **Native `agy` tools with auto-approval:** bypasses Chaos permissions,
   sandboxing, hooks, and canonical events.
 - **Prompt-only isolation:** the model can ignore instructions; permissions must
   enforce the boundary.
 - **Persistent bridge secrets:** turns an invocation-scoped capability into a
   reusable credential.
-- **Using `agy` as the resident runtime:** loses Chaos lifecycle and
+- **Using `agy` as the primary runtime:** loses Chaos lifecycle and
   orchestration semantics.
 
 ## Operational decision

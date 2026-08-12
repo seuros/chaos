@@ -57,7 +57,7 @@ async fn run_probe(
     let mut command = Command::new(&sandbox.program);
     command
         .args(args)
-        .arg0("alcatraz-linux")
+        .arg0(sandbox.arg0.as_deref().expect("sandbox arg0"))
         .current_dir(&cwd)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")

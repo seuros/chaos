@@ -724,9 +724,14 @@ impl ModelClientSession {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .clone();
-                let ca_directory = settings
-                    .conversation_dir()
-                    .unwrap_or_else(std::env::temp_dir);
+                // The bundle lands beside the conversation state, or in a
+                // directory of our own when there is none. Never the shared
+                // temporary root: the session CA is written owner-only, and
+                // tightening `/tmp` itself is neither permitted nor desirable.
+                let ca_directory = settings.conversation_dir().unwrap_or_else(|| {
+                    std::env::temp_dir()
+                        .join(format!("chaos-egress-{}", clamp_state.conversation_id))
+                });
                 if let Err(error) = std::fs::create_dir_all(&ca_directory) {
                     let _ = tx_event
                         .send(Err(chaos_parrot::error::ApiError::Stream(format!(

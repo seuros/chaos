@@ -82,6 +82,9 @@ pub struct AntigravityConfig {
 pub struct AntigravitySandbox {
     /// Sandbox helper executable.
     pub program: PathBuf,
+    /// Name the helper must see as `argv[0]`. Multicall builds dispatch on it,
+    /// so launching the same file under its own path selects the wrong tool.
+    pub arg0: Option<String>,
     /// Helper arguments, ending with the `--` separator.
     pub args: Vec<String>,
 }
@@ -420,6 +423,9 @@ fn build_command(
     let mut command = match &config.sandbox {
         Some(sandbox) => {
             let mut command = Command::new(&sandbox.program);
+            if let Some(arg0) = &sandbox.arg0 {
+                command.arg0(arg0);
+            }
             command.args(&sandbox.args);
             command.arg(cli_path);
             command
@@ -1036,6 +1042,7 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
             bridge: Some(test_bridge(dir)),
             sandbox: Some(AntigravitySandbox {
                 program: PathBuf::from("/usr/lib/chaos/alcatraz-linux"),
+                arg0: Some("alcatraz-linux".to_string()),
                 args: vec!["--allow-network-for-proxy".to_string(), "--".to_string()],
             }),
             egress: Some(AntigravityEgress {
@@ -1051,6 +1058,14 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
         assert_eq!(
             std_command.get_program().to_string_lossy(),
             "/usr/lib/chaos/alcatraz-linux"
+        );
+        // A multicall helper dispatches on argv[0]; the standard library has no
+        // getter for it, but its `Debug` output brackets the program path and
+        // renders an overridden argv[0] as the first argument.
+        assert!(
+            format!("{std_command:?}")
+                .contains("[\"/usr/lib/chaos/alcatraz-linux\"] \"alcatraz-linux\""),
+            "helper must be launched under its multicall name: {std_command:?}"
         );
         let args = std_command
             .get_args()

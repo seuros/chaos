@@ -25,6 +25,10 @@ use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsSpecialPath;
 use chaos_realpath::AbsolutePathBuf;
 
+/// The helper is the multicall Chaos executable, which selects the sandbox tool
+/// from `argv[0]` rather than a subcommand.
+const LINUX_SANDBOX_ARG0: &str = "alcatraz-linux";
+
 /// Starts the Antigravity egress proxy and returns the environment the CLI
 /// needs to route through it, along with the handle keeping it alive.
 pub async fn start_antigravity_egress(
@@ -88,6 +92,7 @@ pub fn antigravity_sandbox(
     );
     Ok(AntigravitySandbox {
         program: helper.to_path_buf(),
+        arg0: Some(LINUX_SANDBOX_ARG0.to_string()),
         args,
     })
 }

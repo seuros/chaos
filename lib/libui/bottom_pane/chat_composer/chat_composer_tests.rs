@@ -24,7 +24,8 @@ use crate::bottom_pane::textarea::TextArea;
 use crate::render::renderable::Renderable;
 use crate::test_support::render_test_backend_debug;
 
-pub(crate) fn chat_composer_suite() {
+/// Footer hints, draft retention, and raw key handling.
+pub(crate) fn chat_composer_input_suite() {
     footer_hint_row_is_separated_from_composer();
     footer_flash_overrides_footer_hint_override();
     footer_flash_expires_and_falls_back_to_hint_override();
@@ -54,6 +55,10 @@ pub(crate) fn chat_composer_suite() {
     oversized_submit_reports_error_and_restores_draft();
     oversized_queued_submission_reports_error_and_restores_draft();
     edit_clears_pending_paste();
+}
+
+/// Rendering snapshots and slash-command elementization.
+pub(crate) fn chat_composer_slash_suite() {
     ui_snapshots();
     image_placeholder_snapshots();
     remote_image_rows_snapshots();
@@ -76,6 +81,10 @@ pub(crate) fn chat_composer_suite() {
     tab_does_not_submit_for_bang_shell_command();
     slash_mention_dispatches_command_and_inserts_at();
     slash_plan_args_preserve_text_elements();
+}
+
+/// Large pastes, placeholders, and image attachments.
+pub(crate) fn chat_composer_paste_suite() {
     file_completion_preserves_large_paste_placeholder_elements();
     test_multiple_pastes_submission();
     test_placeholder_deletion();
@@ -100,6 +109,10 @@ pub(crate) fn chat_composer_suite() {
     deleting_reordered_image_one_renumbers_text_in_place();
     deleting_first_text_element_renumbers_following_text_element();
     pasting_filepath_attaches_image();
+}
+
+/// Custom prompts, argument expansion, and paste bursts.
+pub(crate) fn chat_composer_prompt_suite() {
     selecting_custom_prompt_without_args_submits_content();
     custom_prompt_submission_expands_arguments();
     custom_prompt_submission_accepts_quoted_values();

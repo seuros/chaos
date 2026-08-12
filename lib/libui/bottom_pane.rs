@@ -244,10 +244,27 @@ pub(crate) mod tests {
         }
     }
 
+    // The composer suites dominate this crate's test time, so they are exposed
+    // separately for the runner to schedule rather than folded in below.
+    pub(crate) fn chat_composer_input_suite() {
+        super::chat_composer::tests::chat_composer_input_suite();
+    }
+
+    pub(crate) fn chat_composer_slash_suite() {
+        super::chat_composer::tests::chat_composer_slash_suite();
+    }
+
+    pub(crate) fn chat_composer_paste_suite() {
+        super::chat_composer::tests::chat_composer_paste_suite();
+    }
+
+    pub(crate) fn chat_composer_prompt_suite() {
+        super::chat_composer::tests::chat_composer_prompt_suite();
+    }
+
     pub(crate) fn bottom_pane_suite() {
         super::app_link_view::tests::app_link_view_suite();
         super::approval_overlay::tests::approval_overlay_suite();
-        super::chat_composer::tests::chat_composer_suite();
         super::chat_composer_history::tests::chat_composer_history_suite();
         super::command_popup::tests::command_popup_suite();
         super::footer::tests::footer_suite();

@@ -25,14 +25,18 @@ pub(super) struct ResolvedVfsEntry {
     pub(super) access: VfsAccessMode,
 }
 
+/// Order-insensitive snapshot of the effective filesystem grants in a policy.
+///
+/// Root sets are compared as sets: declaration order does not change what the
+/// sandbox permits, so paths and carveouts are sorted before equality checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct VfsSemanticSignature {
-    pub(super) has_full_disk_read_access: bool,
-    pub(super) has_full_disk_write_access: bool,
-    pub(super) include_platform_defaults: bool,
-    pub(super) readable_roots: Vec<AbsolutePathBuf>,
-    pub(super) writable_roots: Vec<WritableRoot>,
-    pub(super) unreadable_roots: Vec<AbsolutePathBuf>,
+pub struct VfsSemanticSignature {
+    pub has_full_disk_read_access: bool,
+    pub has_full_disk_write_access: bool,
+    pub include_platform_defaults: bool,
+    pub readable_roots: Vec<AbsolutePathBuf>,
+    pub writable_roots: Vec<WritableRoot>,
+    pub unreadable_roots: Vec<AbsolutePathBuf>,
 }
 
 impl VfsPolicy {
@@ -514,10 +518,12 @@ impl VfsPolicy {
             .collect()
     }
 
-    pub(super) fn semantic_signature(&self, cwd: &Path) -> VfsSemanticSignature {
-        // Roots are a set: which paths are granted decides what the sandbox
-        // permits, and the order they were declared in does not. Sorting keeps
-        // two policies that grant the same access comparing equal.
+    /// Order-insensitive semantic snapshot used for policy equality.
+    ///
+    /// Roots are a set: which paths are granted decides what the sandbox
+    /// permits, and the order they were declared in does not. Sorting keeps
+    /// two policies that grant the same access comparing equal.
+    pub fn semantic_signature(&self, cwd: &Path) -> VfsSemanticSignature {
         let mut readable_roots = self.get_readable_roots_with_cwd(cwd);
         sort_absolute_paths(&mut readable_roots);
         let mut writable_roots = self.get_writable_roots_with_cwd(cwd);

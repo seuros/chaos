@@ -37,6 +37,7 @@ pub use crate::permissions::VfsEntry;
 pub use crate::permissions::VfsPath;
 pub use crate::permissions::VfsPolicy;
 pub use crate::permissions::VfsPolicyKind;
+pub use crate::permissions::VfsSemanticSignature;
 pub use crate::permissions::VfsSpecialPath;
 pub use crate::request_permissions::RequestPermissionsArgs;
 pub use crate::request_user_input::RequestUserInputEvent;

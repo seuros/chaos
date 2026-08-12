@@ -11,6 +11,7 @@ pub use paths::VfsSpecialPath;
 pub use policy::VfsEntry;
 pub use policy::VfsPolicy;
 pub use policy::VfsPolicyKind;
+pub use resolution::VfsSemanticSignature;
 pub use resolution::absolute_vfs_root_path_for_cwd;
 
 #[cfg(test)]

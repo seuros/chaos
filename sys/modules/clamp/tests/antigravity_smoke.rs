@@ -14,7 +14,6 @@ use std::time::Duration;
 
 use chaos_clamp::AntigravityBridgeConfig;
 use chaos_clamp::AntigravityConfig;
-use chaos_clamp::AntigravityToolAuthority;
 use chaos_clamp::AntigravityTransport;
 
 #[ignore = "requires an official local agy CLI and authenticated isolated home"]
@@ -56,15 +55,18 @@ async fn antigravity_round_trip_and_resume() {
         ..Default::default()
     };
     let mut transport = AntigravityTransport::new(config).expect("create transport");
-    assert_eq!(
-        transport.tool_authority(),
-        AntigravityToolAuthority::ChaosSessionBridge
-    );
 
+    let (events_tx, mut events_rx) = tokio::sync::mpsc::channel(64);
     let fresh = transport
-        .run_turn("Reply with exactly: CHAOS_AGY_OK")
+        .run_turn_streamed("Reply with exactly: CHAOS_AGY_OK", Some(&events_tx))
         .await
         .expect("fresh Antigravity turn");
+    drop(events_tx);
+    let mut streamed = 0usize;
+    while events_rx.recv().await.is_some() {
+        streamed += 1;
+    }
+    assert!(streamed > 0, "the live turn should stream events");
     assert_eq!(fresh.response.trim(), "CHAOS_AGY_OK");
     assert!(
         fresh

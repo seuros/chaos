@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::SystemTime;
 
 use chaos_abi::AbiError;
 use chaos_abi::FreeformToolDef;
@@ -124,125 +123,6 @@ fn antigravity_usage_to_token_usage(usage: chaos_clamp::AntigravityUsage) -> Tok
         // The session records provider_request_started separately, so response
         // usage must not count the same subprocess invocation a second time.
         provider_request_count: 0,
-    }
-}
-
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-struct PersistedAntigravityConversation {
-    version: u8,
-    model: String,
-    conversation_id: String,
-}
-
-async fn load_antigravity_conversation(
-    path: Option<&std::path::Path>,
-    model: &str,
-) -> Option<String> {
-    let path = path?;
-    let bytes = match tokio::fs::read(path).await {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(error) => {
-            warn!(
-                path = %path.display(),
-                "failed to read persisted Antigravity conversation state: {error}"
-            );
-            return None;
-        }
-    };
-    let state: PersistedAntigravityConversation = match serde_json::from_slice(&bytes) {
-        Ok(state) => state,
-        Err(error) => {
-            warn!(
-                path = %path.display(),
-                "ignoring invalid persisted Antigravity conversation state: {error}"
-            );
-            return None;
-        }
-    };
-    if state.version != 1 || state.model != model {
-        return None;
-    }
-    let conversation_id = state.conversation_id.trim();
-    if conversation_id.is_empty()
-        || conversation_id.len() > 256
-        || !conversation_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-    {
-        warn!(
-            path = %path.display(),
-            "ignoring invalid persisted Antigravity conversation id"
-        );
-        return None;
-    }
-    Some(conversation_id.to_string())
-}
-
-async fn save_antigravity_conversation(
-    path: Option<&std::path::Path>,
-    model: &str,
-    conversation_id: &str,
-) -> std::io::Result<()> {
-    let Some(path) = path else {
-        return Ok(());
-    };
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Antigravity conversation state path has no parent",
-        )
-    })?;
-    tokio::fs::create_dir_all(parent).await?;
-    #[cfg(unix)]
-    tokio::fs::set_permissions(parent, std::os::unix::fs::PermissionsExt::from_mode(0o700)).await?;
-
-    let state = PersistedAntigravityConversation {
-        version: 1,
-        model: model.to_string(),
-        conversation_id: conversation_id.to_string(),
-    };
-    let bytes = serde_json::to_vec(&state).map_err(std::io::Error::other)?;
-    let nonce = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let temporary_path = parent.join(format!(
-        ".{}.{}.{nonce}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("conversation"),
-        std::process::id()
-    ));
-    let mut options = tokio::fs::OpenOptions::new();
-    options.create_new(true).write(true);
-    #[cfg(unix)]
-    {
-        options.mode(0o600);
-    }
-    use tokio::io::AsyncWriteExt;
-    let mut file = options.open(&temporary_path).await?;
-    file.write_all(&bytes).await?;
-    file.sync_all().await?;
-    drop(file);
-    if let Err(error) = tokio::fs::rename(&temporary_path, path).await {
-        let _ = tokio::fs::remove_file(&temporary_path).await;
-        return Err(error);
-    }
-    Ok(())
-}
-
-async fn remove_antigravity_conversation(path: Option<&std::path::Path>) {
-    let Some(path) = path else {
-        return;
-    };
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => warn!(
-            path = %path.display(),
-            "failed to remove persisted Antigravity conversation state: {error}"
-        ),
     }
 }
 
@@ -792,16 +672,17 @@ impl ModelClientSession {
         use chaos_clamp::AntigravityConfig;
         use chaos_clamp::AntigravityTransport;
 
+        let settings = self.client.state.clamp_settings.antigravity.clone();
         let full_prompt_state = render_clamp_full_prompt(prompt);
         let latest_user_content = render_latest_clamp_user_message(prompt);
-        let model = std::env::var("CHAOS_AGY_MODEL")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
+        let model = settings
+            .model
+            .clone()
             .unwrap_or_else(|| antigravity_model_slug(&model_info.slug, effort));
         let clamp_state = Arc::clone(&self.client.state);
         let client = self.client.clone();
         let (tx_event, rx_event) =
-            mpsc::channel::<std::result::Result<ResponseEvent, chaos_parrot::error::ApiError>>(32);
+            mpsc::channel::<std::result::Result<ResponseEvent, chaos_parrot::error::ApiError>>(256);
 
         let session_telemetry = session_telemetry.clone();
         tokio::spawn(async move {
@@ -811,10 +692,7 @@ impl ModelClientSession {
                 .is_some_and(|transport| transport.model() != model)
             {
                 guard.take();
-                remove_antigravity_conversation(
-                    clamp_state.antigravity_conversation_state_path.as_deref(),
-                )
-                .await;
+                clamp_state.clear_antigravity_conversation();
             }
             if guard.is_none() {
                 let (bridge_socket_path, bridge_token) =
@@ -838,11 +716,78 @@ impl ModelClientSession {
                         return;
                     }
                 };
-                let config = AntigravityConfig {
-                    cli_path: std::env::var_os("CHAOS_AGY_PATH").map(std::path::PathBuf::from),
-                    home: std::env::var_os("CHAOS_AGY_HOME").map(std::path::PathBuf::from),
-                    cwd: std::env::var_os("CHAOS_AGY_CWD")
-                        .map(std::path::PathBuf::from)
+                // The subprocess gets a private CA and a loopback proxy; the
+                // sandbox then permits only that proxy's port, so an `agy` that
+                // ignores the proxy environment reaches nothing.
+                let session = clamp_state
+                    .session
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                let ca_directory = settings
+                    .conversation_dir()
+                    .unwrap_or_else(std::env::temp_dir);
+                if let Err(error) = std::fs::create_dir_all(&ca_directory) {
+                    let _ = tx_event
+                        .send(Err(chaos_parrot::error::ApiError::Stream(format!(
+                            "failed to create Antigravity egress directory: {error}"
+                        ))))
+                        .await;
+                    return;
+                }
+                let ca_bundle_path =
+                    ca_directory.join(format!("egress-ca-{}.pem", clamp_state.conversation_id));
+                let egress = match crate::clamp_egress::start_antigravity_egress(
+                    clamp_wiretap_sink(clamp_wiretap_mode(), &session),
+                    ca_bundle_path,
+                )
+                .await
+                {
+                    Ok((proxy, egress)) => {
+                        *clamp_state.antigravity_egress.lock().await = Some(proxy);
+                        egress
+                    }
+                    Err(error) => {
+                        let _ = tx_event
+                            .send(Err(chaos_parrot::error::ApiError::Stream(error)))
+                            .await;
+                        return;
+                    }
+                };
+
+                let sandbox_cwd = settings
+                    .cwd
+                    .clone()
+                    .or_else(|| std::env::current_dir().ok())
+                    .unwrap_or_else(std::env::temp_dir);
+                let sandbox = match clamp_state.clamp_settings.sandbox_helper.as_deref() {
+                    Some(helper) => match crate::clamp_egress::antigravity_sandbox(
+                        helper,
+                        settings.home.as_deref(),
+                        &sandbox_cwd,
+                    ) {
+                        Ok(sandbox) => Some(sandbox),
+                        Err(error) => {
+                            let _ = tx_event
+                                .send(Err(chaos_parrot::error::ApiError::Stream(error)))
+                                .await;
+                            return;
+                        }
+                    },
+                    None => {
+                        tracing::warn!(
+                            "no sandbox helper available; Antigravity runs proxied but unconfined"
+                        );
+                        None
+                    }
+                };
+
+                let mut config = AntigravityConfig {
+                    cli_path: settings.cli_path.clone(),
+                    home: settings.home.clone(),
+                    cwd: settings
+                        .cwd
+                        .clone()
                         .or_else(|| std::env::current_dir().ok()),
                     model: model.clone(),
                     bridge: Some(chaos_clamp::AntigravityBridgeConfig {
@@ -850,13 +795,17 @@ impl ModelClientSession {
                         token: bridge_token,
                         chaos_executable,
                     }),
+                    sandbox,
+                    egress: Some(egress),
                     ..Default::default()
                 };
-                let persisted_conversation = load_antigravity_conversation(
-                    clamp_state.antigravity_conversation_state_path.as_deref(),
-                    &model,
-                )
-                .await;
+                if let Some(seconds) = settings.print_timeout_seconds {
+                    config.print_timeout = std::time::Duration::from_secs(seconds.max(1));
+                }
+                let persisted_conversation = clamp_state
+                    .antigravity_conversations
+                    .as_ref()
+                    .and_then(|store| store.load(&model));
                 let transport = match persisted_conversation {
                     Some(conversation_id) => {
                         AntigravityTransport::with_conversation_id(config, conversation_id)
@@ -906,23 +855,71 @@ impl ModelClientSession {
                 })))
                 .await;
 
-            match transport.run_turn(&content).await {
+            // Forward each step update as the subprocess prints it, so a long
+            // turn renders progressively instead of landing in one block when
+            // `agy` exits.
+            let (tx_step, mut rx_step) = mpsc::channel::<chaos_clamp::AntigravityEvent>(256);
+            let forwarder_events = tx_event.clone();
+            let forwarder = tokio::spawn(async move {
+                let mut streamed_text = String::new();
+                while let Some(event) = rx_step.recv().await {
+                    let chaos_clamp::AntigravityEvent::StepUpdate { step_update } = event else {
+                        continue;
+                    };
+                    if let Some(tool_name) = step_update.tool_name.as_deref() {
+                        tracing::debug!(
+                            tool = tool_name,
+                            state = step_update.state,
+                            step = step_update.step_index,
+                            "antigravity tool step"
+                        );
+                    }
+                    let Some(delta) = step_update.text_delta.filter(|text| !text.is_empty()) else {
+                        continue;
+                    };
+                    let sent = if is_antigravity_reasoning_step(&step_update.step_type) {
+                        forwarder_events
+                            .send(Ok(ResponseEvent::ReasoningContentDelta {
+                                delta,
+                                content_index: 0,
+                            }))
+                            .await
+                    } else {
+                        streamed_text.push_str(&delta);
+                        forwarder_events
+                            .send(Ok(ResponseEvent::OutputTextDelta(delta)))
+                            .await
+                    };
+                    if sent.is_err() {
+                        break;
+                    }
+                }
+                streamed_text
+            });
+
+            let turn = transport.run_turn_streamed(&content, Some(&tx_step)).await;
+            drop(tx_step);
+            let streamed_text = forwarder.await.unwrap_or_default();
+
+            match turn {
                 Ok(turn) => {
-                    if let Err(error) = save_antigravity_conversation(
-                        clamp_state.antigravity_conversation_state_path.as_deref(),
-                        transport.model(),
-                        &turn.conversation_id,
-                    )
-                    .await
+                    if let Some(store) = clamp_state.antigravity_conversations.as_ref()
+                        && let Err(error) = store.save(transport.model(), &turn.conversation_id)
                     {
                         warn!("failed to persist Antigravity conversation state: {error}");
                     }
-                    let response = turn.response;
-                    if !response.is_empty() {
-                        let _ = tx_event
-                            .send(Ok(ResponseEvent::OutputTextDelta(response.clone())))
-                            .await;
-                    }
+                    // `agy` repeats the whole answer in its result event; the
+                    // deltas already carried it, so only emit what was missed.
+                    let response = if turn.response.is_empty() {
+                        streamed_text
+                    } else {
+                        if streamed_text.is_empty() && !turn.response.is_empty() {
+                            let _ = tx_event
+                                .send(Ok(ResponseEvent::OutputTextDelta(turn.response.clone())))
+                                .await;
+                        }
+                        turn.response
+                    };
                     let _ = tx_event
                         .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
                             id: None,
@@ -940,10 +937,7 @@ impl ModelClientSession {
                         .await;
                 }
                 Err(error) => {
-                    remove_antigravity_conversation(
-                        clamp_state.antigravity_conversation_state_path.as_deref(),
-                    )
-                    .await;
+                    clamp_state.clear_antigravity_conversation();
                     let _ = tx_event
                         .send(Err(chaos_parrot::error::ApiError::Stream(format!(
                             "{}: {error}",
@@ -1023,32 +1017,7 @@ impl ModelClientSession {
                 let anthropic_base_url = match clamp_wiretap_mode() {
                     WiretapMode::Off => None,
                     mode => {
-                        let sink: Arc<dyn chaos_clamp::WiretapSink> = match mode {
-                            WiretapMode::Db => {
-                                let upgraded = session.upgrade();
-                                let runtime_db = upgraded.as_ref().and_then(|s| s.runtime_db());
-                                match runtime_db {
-                                    Some(db) => {
-                                        let session_id = upgraded
-                                            .as_ref()
-                                            .map(|s| s.conversation_id.to_string());
-                                        Arc::new(crate::clamp_wiretap::DbWiretapSink::new(
-                                            db, session_id,
-                                        ))
-                                    }
-                                    None => {
-                                        tracing::warn!(
-                                            "clamp wiretap=db but no runtime db; logging to tracing"
-                                        );
-                                        Arc::new(chaos_clamp::FileWiretapSink::new(None))
-                                    }
-                                }
-                            }
-                            WiretapMode::File(path) => {
-                                Arc::new(chaos_clamp::FileWiretapSink::new(path))
-                            }
-                            WiretapMode::Off => unreachable!("Off handled above"),
-                        };
+                        let sink = clamp_wiretap_sink(mode, &session);
                         match chaos_clamp::WiretapProxy::start(sink).await {
                             Ok(proxy) => {
                                 let base_url = proxy.base_url();
@@ -1346,7 +1315,7 @@ impl ModelClientSession {
         );
 
         if self.client.state.clamped.load(Ordering::Relaxed) {
-            return match self.client.state.clamp_backend {
+            return match self.client.state.clamp_settings.backend {
                 crate::config::ClampBackend::ClaudeCode => {
                     self.stream_clamped(prompt, model_info, session_telemetry)
                         .await
@@ -1659,13 +1628,35 @@ fn antigravity_failure_marker(
     }
 }
 
+/// Antigravity reports thinking and answer text through the same field, so the
+/// step kind decides which Chaos stream a delta belongs on.
+fn is_antigravity_reasoning_step(step_type: &str) -> bool {
+    let step_type = step_type.to_ascii_lowercase();
+    step_type.contains("thinking") || step_type.contains("reasoning")
+}
+
+/// Derives the `agy` model slug from the session model.
+///
+/// Antigravity slugs carry the reasoning tier as a suffix. A slug that already
+/// names its tier is passed through, and anything that is not a Gemini slug is
+/// left alone for the CLI to accept or reject. `antigravity.model` in
+/// `config.toml` overrides this entirely when Google renames a model.
 fn antigravity_model_slug(model: &str, effort: Option<ReasoningEffortConfig>) -> String {
+    const TIERS: [&str; 3] = ["low", "medium", "high"];
+
     let model = model.rsplit('/').next().unwrap_or(model);
-    if model.ends_with("-low") || model.ends_with("-medium") || model.ends_with("-high") {
+    let model = model.strip_suffix("-preview").unwrap_or(model);
+    if TIERS
+        .iter()
+        .any(|tier| model.ends_with(&format!("-{tier}")))
+    {
+        return model.to_string();
+    }
+    if !model.starts_with("gemini-") {
         return model.to_string();
     }
 
-    let effort = match effort.unwrap_or(ReasoningEffortConfig::High) {
+    let tier = match effort.unwrap_or(ReasoningEffortConfig::High) {
         ReasoningEffortConfig::None
         | ReasoningEffortConfig::Minimal
         | ReasoningEffortConfig::Low => "low",
@@ -1675,15 +1666,13 @@ fn antigravity_model_slug(model: &str, effort: Option<ReasoningEffortConfig>) ->
         | ReasoningEffortConfig::Max
         | ReasoningEffortConfig::Ultra => "high",
     };
-
-    match model {
-        "gemini-3.1-pro" | "gemini-3.1-pro-preview" => {
-            let effort = if effort == "low" { "low" } else { "high" };
-            format!("gemini-3.1-pro-{effort}")
-        }
-        "gemini-3.5-flash" | "gemini-3.6-flash" => format!("{model}-{effort}"),
-        _ => model.to_string(),
-    }
+    // Pro models expose only the two extremes.
+    let tier = if model.contains("-pro") && tier == "medium" {
+        "high"
+    } else {
+        tier
+    };
+    format!("{model}-{tier}")
 }
 
 /// How the clamp wiretap records traffic, resolved from `CHAOS_CLAMP_WIRETAP`.
@@ -1714,13 +1703,39 @@ fn clamp_wiretap_mode() -> WiretapMode {
     }
 }
 
+/// Builds the recorder backing a clamp proxy. `Off` still yields a sink because
+/// the Antigravity egress proxy always runs; it simply records to the
+/// `chaos_clamp::wiretap` tracing target, which is silent unless enabled.
+fn clamp_wiretap_sink(
+    mode: WiretapMode,
+    session: &std::sync::Weak<crate::chaos::Session>,
+) -> Arc<dyn chaos_clamp::WiretapSink> {
+    match mode {
+        WiretapMode::Db => {
+            let upgraded = session.upgrade();
+            match upgraded.as_ref().and_then(|session| session.runtime_db()) {
+                Some(db) => {
+                    let session_id = upgraded
+                        .as_ref()
+                        .map(|session| session.conversation_id.to_string());
+                    Arc::new(crate::clamp_wiretap::DbWiretapSink::new(db, session_id))
+                }
+                None => {
+                    tracing::warn!("clamp wiretap=db but no runtime db; logging to tracing");
+                    Arc::new(chaos_clamp::FileWiretapSink::new(None))
+                }
+            }
+        }
+        WiretapMode::File(path) => Arc::new(chaos_clamp::FileWiretapSink::new(path)),
+        WiretapMode::Off => Arc::new(chaos_clamp::FileWiretapSink::new(None)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::antigravity_model_slug;
     use super::antigravity_usage_to_token_usage;
     use super::clamp_usage_to_token_usage;
-    use super::load_antigravity_conversation;
-    use super::save_antigravity_conversation;
     use chaos_clamp::AntigravityUsage;
     use chaos_clamp::Usage;
     use chaos_ipc::openai_models::ReasoningEffort;
@@ -1743,6 +1758,13 @@ mod tests {
             antigravity_model_slug("gemini-3.6-flash-low", Some(ReasoningEffort::High)),
             "gemini-3.6-flash-low"
         );
+        assert_eq!(
+            antigravity_model_slug("claude-opus-5", Some(ReasoningEffort::Low)),
+            "claude-opus-5"
+        );
+        assert!(super::is_antigravity_reasoning_step("thinking_delta"));
+        assert!(super::is_antigravity_reasoning_step("MODEL_REASONING"));
+        assert!(!super::is_antigravity_reasoning_step("text_delta"));
     }
 
     #[test]
@@ -1761,40 +1783,6 @@ mod tests {
         assert_eq!(usage.reasoning_output_tokens, 17);
         assert_eq!(usage.total_tokens, 60);
         assert_eq!(usage.provider_request_count, 0);
-    }
-
-    #[tokio::test]
-    async fn antigravity_conversation_state_round_trips_only_for_matching_model() {
-        let directory = tempfile::tempdir().expect("temporary state directory");
-        let path = directory.path().join("conversation.json");
-
-        save_antigravity_conversation(Some(&path), "gemini-3.1-pro-low", "conversation-123")
-            .await
-            .expect("save conversation state");
-
-        assert_eq!(
-            load_antigravity_conversation(Some(&path), "gemini-3.1-pro-low").await,
-            Some("conversation-123".to_string())
-        );
-        assert_eq!(
-            load_antigravity_conversation(Some(&path), "gemini-3.1-pro-high").await,
-            None
-        );
-    }
-
-    #[tokio::test]
-    async fn antigravity_conversation_state_rejects_unsafe_identifier() {
-        let directory = tempfile::tempdir().expect("temporary state directory");
-        let path = directory.path().join("conversation.json");
-
-        save_antigravity_conversation(Some(&path), "gemini-3.1-pro-low", "../other-session")
-            .await
-            .expect("save conversation state");
-
-        assert_eq!(
-            load_antigravity_conversation(Some(&path), "gemini-3.1-pro-low").await,
-            None
-        );
     }
 
     #[test]

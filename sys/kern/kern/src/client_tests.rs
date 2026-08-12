@@ -34,7 +34,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         false,
         None,
         false,
-        crate::config::ClampBackend::default(),
+        crate::config::ClampSettings::default(),
     )
 }
 
@@ -55,7 +55,7 @@ fn model_client_can_start_clamped_before_the_first_turn() {
         false,
         None,
         true,
-        crate::config::ClampBackend::default(),
+        crate::config::ClampSettings::default(),
     );
 
     assert!(client.is_clamped());
@@ -128,7 +128,7 @@ fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
         false,
         None,
         false,
-        crate::config::ClampBackend::default(),
+        crate::config::ClampSettings::default(),
     );
     let session = client.new_session();
 
@@ -155,7 +155,7 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
         false,
         None,
         false,
-        crate::config::ClampBackend::default(),
+        crate::config::ClampSettings::default(),
     );
     let session = client.new_session();
 

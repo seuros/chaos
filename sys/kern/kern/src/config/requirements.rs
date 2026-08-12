@@ -115,6 +115,20 @@ fn resolve_web_search_config_inner(
 }
 
 impl Config {
+    /// Clamp transport selection for a model client, with `CHAOS_AGY_*`
+    /// environment overrides already applied.
+    pub fn clamp_settings(&self) -> crate::config::ClampSettings {
+        crate::config::ClampSettings {
+            backend: self.clamp_backend,
+            antigravity: self.antigravity.resolved(),
+            sandbox_helper: if cfg!(target_os = "linux") {
+                self.alcatraz_linux_exe.clone()
+            } else {
+                None
+            },
+        }
+    }
+
     pub(crate) async fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
         let effective = crate::config::load_effective_mcp_servers(
             self.storage_url.as_deref(),
@@ -653,6 +667,7 @@ impl Config {
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
             clamp: cfg.clamp.unwrap_or(false),
             clamp_backend: cfg.clamp_backend.unwrap_or_default(),
+            antigravity: cfg.antigravity.clone().unwrap_or_default(),
             model_reasoning_effort: config_profile
                 .model_reasoning_effort
                 .or(cfg.model_reasoning_effort),

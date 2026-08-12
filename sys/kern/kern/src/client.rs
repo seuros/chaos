@@ -51,7 +51,7 @@ use rama::http::sse::Event;
 use crate::api_bridge::CoreAuthProvider;
 use crate::auth::AuthMode;
 use crate::auth::ChaosAuth;
-use crate::config::ClampBackend;
+use crate::config::ClampSettings;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::WireApi;
 use crate::response_debug_context::extract_response_debug_context;
@@ -91,15 +91,18 @@ pub(super) struct ModelClientState {
     pub(super) resolved_wire: OnceLock<WireApi>,
     /// When true, route all turns through the Claude Code subprocess (clamped mode).
     pub(super) clamped: AtomicBool,
-    /// First-party CLI transport selected for clamped turns.
-    pub(super) clamp_backend: ClampBackend,
+    /// First-party CLI transport selected for clamped turns, plus its settings.
+    pub(super) clamp_settings: ClampSettings,
     /// Persistent Claude Code subprocess for clamped mode.
     pub(super) clamp_transport: tokio::sync::Mutex<Option<chaos_clamp::ClampTransport>>,
     /// Session-scoped Antigravity conversation transport.
     pub(super) antigravity_transport: tokio::sync::Mutex<Option<chaos_clamp::AntigravityTransport>>,
     /// Per-Chaos-process record used to resume the provider conversation after
     /// a later `chaos exec resume` starts a new operating-system process.
-    pub(super) antigravity_conversation_state_path: Option<std::path::PathBuf>,
+    pub(super) antigravity_conversations: Option<chaos_clamp::AntigravityConversationStore>,
+    /// Allowlisting CONNECT proxy that is the Antigravity subprocess's only
+    /// route off the machine, held for the lifetime of its transport.
+    pub(super) antigravity_egress: tokio::sync::Mutex<Option<chaos_clamp::EgressProxy>>,
     /// Wiretap proxy recording subprocess traffic (opt-in via env), held for the
     /// lifetime of the clamp transport.
     pub(super) clamp_wiretap: tokio::sync::Mutex<Option<chaos_clamp::WiretapProxy>>,

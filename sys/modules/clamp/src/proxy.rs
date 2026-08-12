@@ -257,7 +257,7 @@ impl WiretapSink for FileWiretapSink {
 
 /// Request-side fields captured before the response body streams. Combined with
 /// the response into a [`WiretapExchange`] once the stream completes.
-struct RecordParts {
+pub(crate) struct RecordParts {
     method: String,
     path: String,
     headers: serde_json::Value,
@@ -265,7 +265,21 @@ struct RecordParts {
 }
 
 impl RecordParts {
-    fn into_exchange(
+    pub(crate) fn new(
+        method: String,
+        path: String,
+        headers: serde_json::Value,
+        request: Option<serde_json::Value>,
+    ) -> Self {
+        Self {
+            method,
+            path,
+            headers,
+            request,
+        }
+    }
+
+    pub(crate) fn into_exchange(
         self,
         status: Option<u16>,
         response: Option<String>,
@@ -366,7 +380,7 @@ async fn forward(
 
 /// Streams the upstream response body to the client while accumulating a copy.
 /// On stream completion (or drop) it records the full request+response envelope.
-struct TeeBody {
+pub(crate) struct TeeBody {
     inner: BodyDataStream,
     buf: Vec<u8>,
     truncated: bool,
@@ -377,7 +391,7 @@ struct TeeBody {
 }
 
 impl TeeBody {
-    fn new(
+    pub(crate) fn new(
         inner: BodyDataStream,
         record: RecordParts,
         status: u16,
@@ -436,7 +450,7 @@ impl Drop for TeeBody {
     }
 }
 
-fn redact_headers(headers: &rama::http::HeaderMap) -> serde_json::Value {
+pub(crate) fn redact_headers(headers: &rama::http::HeaderMap) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for (name, value) in headers {
         let key = name.as_str().to_ascii_lowercase();

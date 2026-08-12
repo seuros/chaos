@@ -123,6 +123,12 @@ API key.
 Chaos owns the effective MCP server list and permission policy within this
 home, while `agy` owns its OAuth state.
 
+The home, the CLI path, the working directory, the model slug, the conversation
+state directory, and the print timeout are all configurable under
+`[antigravity]` in `config.toml`; the `CHAOS_AGY_*` variables override the
+corresponding key for a single run. Conversation state files are written with
+owner-only permissions into a directory created owner-only.
+
 Chaos does not fall back to the user's ordinary `HOME`. This prevents managed
 MCP and permission configuration from modifying a non-dedicated Antigravity
 installation accidentally.
@@ -138,6 +144,37 @@ Provider conversation state may persist across turns, but the Chaos bridge does
 not. Every invocation recreates the managed MCP configuration, permission
 policy, Unix socket, and random capability token. A resumed provider
 conversation must never retain a stale bridge endpoint or reusable capability.
+
+## Network boundary
+
+The permission policy governs what the model may do; it says nothing about
+where the process may connect. A subprocess holding OAuth credentials can talk
+to any endpoint its binary knows about, so egress is confined separately.
+
+Every turn starts a loopback `CONNECT` proxy and launches `agy` under the
+platform sandbox helper. The helper permits exactly one TCP destination port,
+the one that proxy bound; the proxy refuses any host outside its allowlist with
+`403` before a tunnel exists. The split is forced by the kernel interface:
+Landlock network rules are scoped to a port rather than a host, so the helper
+cannot express a destination policy and the proxy cannot be the enforcement
+point. Together they leave one route out. Ignoring `HTTPS_PROXY` does not
+bypass the allowlist, it removes connectivity.
+
+The allowlist is exact-match and deliberately short: the Cloud Code agent
+backend, the OAuth token endpoint, and the generative-language surface. No
+wildcard is accepted, because a pattern over `googleapis.com` would readmit the
+telemetry and Play endpoints the list exists to exclude.
+
+The proxy terminates TLS using a per-session certificate authority written
+owner-only beside the conversation state and handed to the CLI as
+`SSL_CERT_FILE`. Bodies are therefore recordable through the existing wiretap
+sink rather than opaque. A future CLI build that pins certificates would fall
+back to verbatim relay, keeping the allowlist and losing body visibility.
+
+Two limits are worth stating plainly. UDP is not restricted, so a datagram
+covert channel remains available to a subprocess that wants one. And the CLI
+self-updates, so its installation tree must be read-only in the filesystem
+policy for the confinement to survive a version bump.
 
 ## Permission boundary
 

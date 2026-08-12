@@ -26,7 +26,7 @@ use crate::api_bridge::map_api_error;
 use crate::auth::ChaosAuth;
 use crate::client::auth_breaker;
 use crate::client_common::Prompt;
-use crate::config::ClampBackend;
+use crate::config::ClampSettings;
 use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::model_provider_info::ModelProviderInfo;
@@ -37,17 +37,6 @@ use super::{
     ApiTelemetry, AuthRequestTelemetryContext, CurrentClientSetup, ModelClient, ModelClientSession,
     ModelClientState, PendingUnauthorizedRetry, RESPONSES_COMPACT_ENDPOINT, RequestRouteTelemetry,
 };
-
-fn antigravity_conversation_state_path(conversation_id: &chaos_ipc::ProcessId) -> Option<PathBuf> {
-    let directory = std::env::var_os("CHAOS_AGY_CONVERSATION_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("CHAOS_AGY_HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join(".chaos-conversations"))
-        })?;
-    Some(directory.join(format!("{conversation_id}.json")))
-}
 
 impl ModelClient {
     /// Creates a new session-scoped `ModelClient`.
@@ -63,7 +52,7 @@ impl ModelClient {
         enable_request_compression: bool,
         beta_features_header: Option<String>,
         initial_clamped: bool,
-        clamp_backend: ClampBackend,
+        clamp_settings: ClampSettings,
     ) -> Self {
         let representer = if provider.is_openai() {
             chaos_parrot::SessionRepresenter::openai()
@@ -71,8 +60,15 @@ impl ModelClient {
             chaos_parrot::SessionRepresenter::wannabe()
         };
         let auth_breaker = auth_breaker::AuthBreaker::new(&provider_id);
-        let antigravity_conversation_state_path =
-            antigravity_conversation_state_path(&conversation_id);
+        let antigravity_conversations =
+            clamp_settings
+                .antigravity
+                .conversation_dir()
+                .map(|directory| {
+                    chaos_clamp::AntigravityConversationStore::new(
+                        directory.join(format!("{conversation_id}.json")),
+                    )
+                });
         Self {
             state: Arc::new(ModelClientState {
                 auth_manager,
@@ -86,10 +82,11 @@ impl ModelClient {
                 beta_features_header,
                 resolved_wire: std::sync::OnceLock::new(),
                 clamped: std::sync::atomic::AtomicBool::new(initial_clamped),
-                clamp_backend,
+                clamp_settings,
                 clamp_transport: tokio::sync::Mutex::new(None),
                 antigravity_transport: tokio::sync::Mutex::new(None),
-                antigravity_conversation_state_path,
+                antigravity_conversations,
+                antigravity_egress: tokio::sync::Mutex::new(None),
                 clamp_wiretap: tokio::sync::Mutex::new(None),
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),
                 session: std::sync::Mutex::new(Weak::new()),
@@ -170,10 +167,10 @@ impl ModelClient {
                 guard.take()
             };
             self.state.antigravity_transport.lock().await.take();
-            remove_antigravity_conversation_state(
-                self.state.antigravity_conversation_state_path.as_deref(),
-            )
-            .await;
+            if let Some(egress) = self.state.antigravity_egress.lock().await.take() {
+                egress.shutdown();
+            }
+            self.state.clear_antigravity_conversation();
             let bridge = {
                 let mut guard = self.state.clamp_mcp_bridge.lock().await;
                 guard.take()
@@ -211,10 +208,10 @@ impl ModelClient {
             guard.take()
         };
         self.state.antigravity_transport.lock().await.take();
-        remove_antigravity_conversation_state(
-            self.state.antigravity_conversation_state_path.as_deref(),
-        )
-        .await;
+        if let Some(egress) = self.state.antigravity_egress.lock().await.take() {
+            egress.shutdown();
+        }
+        self.state.clear_antigravity_conversation();
         if let Some(wiretap) = self.state.clamp_wiretap.lock().await.take() {
             wiretap.shutdown();
         }
@@ -432,18 +429,12 @@ impl ModelClient {
     }
 }
 
-async fn remove_antigravity_conversation_state(path: Option<&std::path::Path>) {
-    let Some(path) = path else {
-        return;
-    };
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            warn!(
-                path = %path.display(),
-                "failed to remove persisted Antigravity conversation state: {error}"
-            );
+impl ModelClientState {
+    /// Drops the persisted provider conversation, so the next clamped turn
+    /// starts a fresh Antigravity conversation instead of resuming a stale one.
+    pub(super) fn clear_antigravity_conversation(&self) {
+        if let Some(store) = self.antigravity_conversations.as_ref() {
+            store.clear();
         }
     }
 }

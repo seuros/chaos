@@ -116,6 +116,84 @@ pub enum ClampBackend {
     Antigravity,
 }
 
+/// Settings for the Antigravity clamp backend, read from `[antigravity]` in
+/// `config.toml`. Every field has a `CHAOS_AGY_*` environment override, applied
+/// by [`AntigravitySettings::resolved`], so a one-off run does not need an
+/// edited config file.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AntigravitySettings {
+    /// Path to the pinned official `agy` binary. Resolved from `PATH` when
+    /// unset. Override: `CHAOS_AGY_PATH`.
+    pub cli_path: Option<PathBuf>,
+    /// Dedicated home directory holding Antigravity-owned credentials and the
+    /// Chaos-managed CLI configuration. Override: `CHAOS_AGY_HOME`.
+    pub home: Option<PathBuf>,
+    /// Working directory presented to `agy`; defaults to the Chaos working
+    /// directory. Override: `CHAOS_AGY_CWD`.
+    pub cwd: Option<PathBuf>,
+    /// Antigravity model slug, bypassing the slug derived from the session
+    /// model. Override: `CHAOS_AGY_MODEL`.
+    pub model: Option<String>,
+    /// Directory holding per-session provider conversation ids, so
+    /// `chaos exec resume` continues the same Antigravity conversation.
+    /// Defaults to `<home>/.chaos-conversations`.
+    /// Override: `CHAOS_AGY_CONVERSATION_DIR`.
+    pub conversation_dir: Option<PathBuf>,
+    /// Wall-clock budget for one `agy` invocation. Override:
+    /// `CHAOS_AGY_PRINT_TIMEOUT_SECONDS`.
+    pub print_timeout_seconds: Option<u64>,
+}
+
+impl AntigravitySettings {
+    /// Returns these settings with `CHAOS_AGY_*` environment overrides applied.
+    pub fn resolved(&self) -> Self {
+        fn path_override(name: &str) -> Option<PathBuf> {
+            std::env::var_os(name)
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        }
+        fn text_override(name: &str) -> Option<String> {
+            std::env::var(name)
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        }
+
+        Self {
+            cli_path: path_override("CHAOS_AGY_PATH").or_else(|| self.cli_path.clone()),
+            home: path_override("CHAOS_AGY_HOME").or_else(|| self.home.clone()),
+            cwd: path_override("CHAOS_AGY_CWD").or_else(|| self.cwd.clone()),
+            model: text_override("CHAOS_AGY_MODEL").or_else(|| self.model.clone()),
+            conversation_dir: path_override("CHAOS_AGY_CONVERSATION_DIR")
+                .or_else(|| self.conversation_dir.clone()),
+            print_timeout_seconds: text_override("CHAOS_AGY_PRINT_TIMEOUT_SECONDS")
+                .and_then(|value| value.parse().ok())
+                .or(self.print_timeout_seconds),
+        }
+    }
+
+    /// Directory holding persisted provider conversation ids, if one can be
+    /// determined without guessing at a home directory.
+    pub fn conversation_dir(&self) -> Option<PathBuf> {
+        self.conversation_dir.clone().or_else(|| {
+            self.home
+                .as_ref()
+                .map(|home| home.join(".chaos-conversations"))
+        })
+    }
+}
+
+/// Clamp transport selection handed to the model client.
+#[derive(Debug, Clone, Default)]
+pub struct ClampSettings {
+    pub backend: ClampBackend,
+    pub antigravity: AntigravitySettings,
+    /// Sandbox helper executable used to confine clamp subprocesses. `None`
+    /// leaves the subprocess unconfined, which is the only option on platforms
+    /// without a helper build.
+    pub sandbox_helper: Option<PathBuf>,
+}
+
 #[cfg(test)]
 pub(crate) fn test_config() -> Config {
     let chaos_home = tempfile::tempdir().expect("create temp dir");
@@ -222,6 +300,9 @@ pub struct Config {
 
     /// First-party CLI transport selected when clamp mode is enabled.
     pub clamp_backend: ClampBackend,
+
+    /// Settings for the Antigravity clamp backend.
+    pub antigravity: AntigravitySettings,
 
     /// Optional user-provided instructions (currently always `None`; a
     /// schema-based replacement for the removed AGENTS.md loader will
@@ -643,6 +724,9 @@ pub struct ConfigToml {
     /// First-party CLI transport selected when clamp mode is enabled.
     /// Defaults to `claude-code`.
     pub clamp_backend: Option<ClampBackend>,
+
+    /// Settings for the Antigravity clamp backend.
+    pub antigravity: Option<AntigravitySettings>,
 
     pub model_reasoning_effort: Option<ReasoningEffort>,
     /// Allow the parent model to change its own reasoning effort for subsequent turns.

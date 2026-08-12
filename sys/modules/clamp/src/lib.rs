@@ -8,21 +8,27 @@
 //! surface.
 
 mod antigravity;
+mod egress;
 mod protocol;
 mod proxy;
 mod transport;
 
 pub use antigravity::AntigravityBridgeConfig;
 pub use antigravity::AntigravityConfig;
+pub use antigravity::AntigravityConversationStore;
+pub use antigravity::AntigravityEgress;
 pub use antigravity::AntigravityError;
 pub use antigravity::AntigravityEvent;
 pub use antigravity::AntigravityInit;
 pub use antigravity::AntigravityResult;
+pub use antigravity::AntigravitySandbox;
 pub use antigravity::AntigravityStepUpdate;
-pub use antigravity::AntigravityToolAuthority;
 pub use antigravity::AntigravityTransport;
 pub use antigravity::AntigravityTurn;
 pub use antigravity::AntigravityUsage;
+pub use egress::ANTIGRAVITY_ALLOWED_HOSTS;
+pub use egress::EgressPolicy;
+pub use egress::EgressProxy;
 pub use protocol::ControlRequest;
 pub use protocol::ControlResponse;
 pub use protocol::Message;

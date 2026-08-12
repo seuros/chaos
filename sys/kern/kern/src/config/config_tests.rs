@@ -923,6 +923,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         enforce_residency: Constrained::allow_any(None),
         clamp: false,
         clamp_backend: Default::default(),
+        antigravity: Default::default(),
         user_instructions: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),

@@ -10,6 +10,7 @@ description = "First-party model CLI subprocess transports for subscription-back
 workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 chaos-abi = { workspace = true }
 chaos-ipc = { workspace = true }
 futures = { workspace = true }
@@ -17,12 +18,13 @@ rama = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tracing = { workspace = true }
 which = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [package.metadata.cargo-shear]

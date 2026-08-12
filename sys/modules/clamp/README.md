@@ -16,6 +16,21 @@ the full Antigravity security design, see
   bridge socket/token are inherited by the MCP child without being written to
   persistent configuration.
 
+Every Antigravity turn also starts a loopback `CONNECT` proxy and runs `agy`
+under the platform sandbox helper. The helper permits exactly one TCP
+destination — the port the proxy bound — and the proxy answers `403` for any
+host outside its allowlist. Landlock network rules are port-scoped rather than
+host-scoped, which is why the destination policy lives in the proxy while the
+kernel supplies the enforcement. A CLI that ignores `HTTPS_PROXY` reaches
+nothing. When no sandbox helper is available the turn still runs proxied, and
+the missing confinement is logged.
+
+The proxy terminates TLS with a per-session certificate authority written
+owner-only next to the conversation state and exported as `SSL_CERT_FILE`, so
+request and response bodies land in the same wiretap sink as the Claude Code
+transport. A CLI that pins certificates would need the relay mode instead,
+which keeps the allowlist and loses body visibility.
+
 As with Claude Code, authentication remains an external responsibility of the
 official provider CLI:
 
@@ -26,6 +41,22 @@ env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
   XDG_CONFIG_HOME="$CHAOS_AGY_HOME/.config" \
   "${CHAOS_AGY_PATH:-agy}" models
 ```
+
+Every knob is settable in `config.toml`, and each key has an environment
+override for one-off runs:
+
+```toml
+[antigravity]
+cli_path = "/opt/antigravity/bin/agy"   # CHAOS_AGY_PATH
+home = "/private/antigravity-state"     # CHAOS_AGY_HOME
+cwd = "/srv/workspaces/agy"             # CHAOS_AGY_CWD
+model = "gemini-3.1-pro-high"           # CHAOS_AGY_MODEL
+conversation_dir = "/private/agy-state" # CHAOS_AGY_CONVERSATION_DIR
+print_timeout_seconds = 900             # CHAOS_AGY_PRINT_TIMEOUT_SECONDS
+```
+
+`model` bypasses the derived slug entirely, which is the escape hatch when
+Google renames a model or ships a tier this build does not know about.
 
 `CHAOS_AGY_HOME` must be a dedicated persistent private directory outside the
 source checkout. Chaos preserves OAuth and unrelated top-level settings but

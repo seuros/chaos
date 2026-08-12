@@ -189,6 +189,7 @@ name = "alcatraz-linux"
 version = "47.1.0"
 dependencies = [
  "alcatraz-base",
+ "chaos-clamp",
  "chaos-ipc",
  "chaos-kern",
  "chaos-parole",
@@ -1276,12 +1277,14 @@ dependencies = [
 name = "chaos-clamp"
 version = "47.1.0"
 dependencies = [
+ "base64",
  "chaos-abi",
  "chaos-ipc",
  "futures",
  "rama",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
  "tracing",
@@ -1330,7 +1333,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "which",
 ]
 
 [[package]]

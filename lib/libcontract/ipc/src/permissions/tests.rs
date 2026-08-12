@@ -437,6 +437,43 @@ fn split_only_nested_carveouts_need_direct_runtime_enforcement() {
 }
 
 #[test]
+fn writable_root_declaration_order_does_not_force_direct_runtime_enforcement() {
+    let cwd = TempDir::new().expect("tempdir");
+    let home =
+        AbsolutePathBuf::resolve_path_against_base("home", cwd.path()).expect("resolve home");
+    // A private writable root declared before the temporary directory: the
+    // projection back through `SandboxPolicy` emits the temporary directory
+    // first, and a policy that grants the same access must still be
+    // expressible without direct runtime enforcement.
+    let policy = VfsPolicy::restricted(vec![
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
+            },
+            access: VfsAccessMode::Read,
+        },
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::CurrentWorkingDirectory,
+            },
+            access: VfsAccessMode::Write,
+        },
+        VfsEntry {
+            path: VfsPath::Path { path: home },
+            access: VfsAccessMode::Write,
+        },
+        VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::SlashTmp,
+            },
+            access: VfsAccessMode::Write,
+        },
+    ]);
+
+    assert!(!policy.needs_direct_runtime_enforcement(SocketPolicy::Enabled, cwd.path()));
+}
+
+#[test]
 fn root_write_with_read_only_child_is_not_full_disk_write() {
     let cwd = TempDir::new().expect("tempdir");
     let docs =

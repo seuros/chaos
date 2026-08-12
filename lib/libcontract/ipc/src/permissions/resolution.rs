@@ -515,15 +515,44 @@ impl VfsPolicy {
     }
 
     pub(super) fn semantic_signature(&self, cwd: &Path) -> VfsSemanticSignature {
+        // Roots are a set: which paths are granted decides what the sandbox
+        // permits, and the order they were declared in does not. Sorting keeps
+        // two policies that grant the same access comparing equal.
+        let mut readable_roots = self.get_readable_roots_with_cwd(cwd);
+        sort_absolute_paths(&mut readable_roots);
+        let mut writable_roots = self.get_writable_roots_with_cwd(cwd);
+        for writable in &mut writable_roots {
+            sort_absolute_paths(&mut writable.read_only_subpaths);
+        }
+        writable_roots.sort_by(|left, right| {
+            left.root.as_path().cmp(right.root.as_path()).then_with(|| {
+                left.read_only_subpaths
+                    .iter()
+                    .map(AbsolutePathBuf::as_path)
+                    .cmp(
+                        right
+                            .read_only_subpaths
+                            .iter()
+                            .map(AbsolutePathBuf::as_path),
+                    )
+            })
+        });
+        let mut unreadable_roots = self.get_unreadable_roots_with_cwd(cwd);
+        sort_absolute_paths(&mut unreadable_roots);
+
         VfsSemanticSignature {
             has_full_disk_read_access: self.has_full_disk_read_access(),
             has_full_disk_write_access: self.has_full_disk_write_access(),
             include_platform_defaults: self.include_platform_defaults(),
-            readable_roots: self.get_readable_roots_with_cwd(cwd),
-            writable_roots: self.get_writable_roots_with_cwd(cwd),
-            unreadable_roots: self.get_unreadable_roots_with_cwd(cwd),
+            readable_roots,
+            writable_roots,
+            unreadable_roots,
         }
     }
+}
+
+fn sort_absolute_paths(paths: &mut [AbsolutePathBuf]) {
+    paths.sort_by(|left, right| left.as_path().cmp(right.as_path()));
 }
 
 fn resolve_vfs_path(path: &VfsPath, cwd: Option<&AbsolutePathBuf>) -> Option<AbsolutePathBuf> {

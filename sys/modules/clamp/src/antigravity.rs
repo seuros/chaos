@@ -312,12 +312,19 @@ impl AntigravityTransport {
             if text_indicates_auth_failure(&invocation.stderr_tail) {
                 return Err(AntigravityError::AuthenticationUnavailable);
             }
-            return Err(AntigravityError::InvocationFailed(
-                invocation.status.code().map_or_else(
-                    || "terminated by signal".to_string(),
-                    |code| code.to_string(),
-                ),
-            ));
+            // The tail is carried into the error: an exit code alone says
+            // nothing about which of the CLI, the sandbox helper, or the
+            // managed configuration rejected the invocation.
+            let status = invocation.status.code().map_or_else(
+                || "terminated by signal".to_string(),
+                |code| code.to_string(),
+            );
+            let tail = invocation.stderr_tail.trim();
+            return Err(AntigravityError::InvocationFailed(if tail.is_empty() {
+                status
+            } else {
+                format!("{status}: {tail}")
+            }));
         }
 
         let events = invocation.events;

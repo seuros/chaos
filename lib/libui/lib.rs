@@ -35,6 +35,7 @@ pub mod status;
 pub mod status_indicator_widget;
 pub mod streaming;
 pub mod style;
+mod table_detect;
 pub mod terminal_palette;
 pub mod text_formatting;
 pub mod theme;
@@ -126,6 +127,7 @@ mod tests {
         status_suite => run_async(crate::status::tests::status_tests_suite());
         status_indicator_widget_suite => crate::status_indicator_widget::tests::status_indicator_widget_suite();
         streaming_suite => run_async(crate::streaming::tests::streaming_suite());
+        table_detect_suite => crate::table_detect::tests::table_detect_suite();
         text_formatting_suite => crate::text_formatting::tests::text_formatting_suite();
         theme_picker_suite => crate::theme_picker::tests::theme_picker_suite();
         tool_badges_suite => crate::tool_badges::tests::tool_badges_suite();

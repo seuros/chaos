@@ -42,6 +42,11 @@ impl MarkdownStreamCollector {
     /// Render the full buffer and return only the newly completed logical lines
     /// since the last commit. When the buffer does not end with a newline, the
     /// final rendered line is considered incomplete and is not emitted.
+    ///
+    /// A table still taking on rows is incomplete in the same sense even though
+    /// its rows end in newlines: the renderer sizes columns from every row it
+    /// can see, so a later row can change how earlier ones should be drawn.
+    /// Those rows are withheld until the table closes or the stream finalizes.
     pub fn commit_complete_lines(&mut self) -> Vec<Line<'static>> {
         let source = self.buffer.clone();
         let last_newline_idx = source.rfind('\n');
@@ -49,6 +54,10 @@ impl MarkdownStreamCollector {
             source[..=last_newline_idx].to_string()
         } else {
             return Vec::new();
+        };
+        let source = match crate::table_detect::table_holdback_boundary(&source) {
+            Some(boundary) => source[..boundary].to_string(),
+            None => source,
         };
         let mut rendered: Vec<Line<'static>> = Vec::new();
         markdown::append_markdown(&source, self.width, Some(self.cwd.as_path()), &mut rendered);
@@ -153,6 +162,7 @@ pub(crate) mod tests {
         Box::pin(heading_starts_on_new_line_when_following_paragraph()).await;
         Box::pin(heading_not_inlined_when_split_across_chunks()).await;
         Box::pin(lists_and_fences_commit_without_duplication()).await;
+        Box::pin(growing_table_is_withheld_until_it_closes()).await;
         Box::pin(utf8_boundary_safety_and_wide_chars()).await;
         Box::pin(e2e_stream_deep_nested_third_level_marker_is_light_blue()).await;
         Box::pin(empty_fenced_block_is_dropped_and_separator_preserved_before_heading()).await;
@@ -427,6 +437,56 @@ pub(crate) mod tests {
 
         // Fenced code case: stream in small chunks
         assert_streamed_equals_full(&["```", "\nco", "de 1\ncode 2\n", "```\n"]).await;
+    }
+
+    /// A table that is still gaining rows must not reach scrollback one row at
+    /// a time, because each new row can change the column widths of the rows
+    /// above it. Nothing commits until the table closes, and what finally
+    /// commits matches a single render of the whole source.
+    #[cfg(test)]
+    async fn growing_table_is_withheld_until_it_closes() {
+        let mut collector = super::MarkdownStreamCollector::new(None, &super::test_cwd());
+
+        collector.push_delta("intro\n");
+        assert_eq!(
+            lines_to_plain_strings(&collector.commit_complete_lines()),
+            vec!["intro".to_string()],
+            "prose ahead of the table commits normally"
+        );
+
+        // The header alone could still turn into a table, so it waits for the
+        // delimiter rather than committing as prose.
+        collector.push_delta("| Col | Wider column |\n");
+        assert!(
+            collector.commit_complete_lines().is_empty(),
+            "a trailing header waits for its delimiter row"
+        );
+
+        collector.push_delta("| --- | --- |\n| a | b |\n");
+        assert!(
+            collector.commit_complete_lines().is_empty(),
+            "confirmed table rows stay mutable while more rows may arrive"
+        );
+
+        // This row is wider than every cell above it, which is exactly the case
+        // that would have left a seam had the earlier rows already committed.
+        collector.push_delta("| a much longer cell | b |\n\n");
+        let committed = lines_to_plain_strings(&collector.commit_complete_lines());
+        assert!(
+            committed.iter().any(|line| line.contains("much longer")),
+            "the closed table commits in one piece, got {committed:?}"
+        );
+
+        assert_streamed_equals_full(&[
+            "intro\n",
+            "| Col | Wider column |\n",
+            "| --- | --- |\n| a | b |\n",
+            "| a much longer cell | b |\n\n",
+        ])
+        .await;
+
+        // A stream ending mid-table still emits the table on finalize.
+        assert_streamed_equals_full(&["| A | B |\n", "| --- | --- |\n", "| 1 | 2 |\n"]).await;
     }
 
     #[cfg(test)]

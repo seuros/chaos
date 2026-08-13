@@ -7,3 +7,22 @@
 # Value of CARGO_TARGET_DIR when using .devcontainer/devcontainer.json.
 /target-arm64/
 libnull.rlib
+
+# Local secrets and operator env (never commit).
+.env
+.env.*
+!.env.example
+
+# Local release/dist artifacts.
+/chaos-dist.tar.gz
+*.tar.gz
+
+# Editor and OS noise.
+.DS_Store
+*.swp
+*~
+
+# Coverage / profiling leftovers.
+/coverage/
+/lcov.info
+/profdata/

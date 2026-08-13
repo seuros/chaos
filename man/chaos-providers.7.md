@@ -11,6 +11,8 @@ translate that to whatever wire format a given provider expects. New
 providers are added through `~/.chaos/config.toml` - no code changes, no
 rebuilds.
 
+For the condensed support matrix (bundled IDs, wire formats, OS/CI coverage, clamp backends), see [chaos-support(7)](./chaos-support.7.md).
+
 ## BUILT-IN PROVIDERS
 
 FreeChaOS ships with these providers preconfigured:

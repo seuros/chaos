@@ -62,14 +62,15 @@ with 1 GB of RAM, it's out of tree.
 Old hardware does not mean old software. FreeChaOS expects bleeding-edge operating systems
 and abuses every security primitive they offer:
 
-- **Linux**: landlock, seccomp
+- **Linux**: landlock, seccomp (kernel ≥ 6.10)
 - **FreeBSD**: capsicum
-- **OpenBSD**: pledge, unveil
-- **macOS**: sandbox profiles
+- **macOS**: seatbelt sandbox profiles
 
-No shims. No compatibility layers. If the OS gives us something, we use it.
-
+OpenBSD pledge/unveil is a design target, not an in-tree arch backend yet.
 Windows is not supported.
+
+For CI vs release coverage and provider wire formats, see
+[chaos-support(7)](./man/chaos-support.7.md).
 
 ---
 
@@ -211,6 +212,7 @@ current setting.
 
 - [Installing & building from source](./man/chaos-install.7.md)
 - [Adding LLM providers](./man/chaos-providers.7.md)
+- [Support matrix](./man/chaos-support.7.md)
 - [MCP — connecting tools and services](./man/chaos-mcp.7.md)
 - [Storage — SQLite and PostgreSQL backends](./man/chaos-storage.7.md)
 - [Halluacinate — scripting engine](./man/chaos-halluacinate.7.md)

@@ -15,6 +15,7 @@ installed manpage paths such as:
 
 - [chaos-install.7](./chaos-install.7.md) — build, install, and logging
 - [chaos-providers.7](./chaos-providers.7.md) — provider configuration
+- [chaos-support.7](./chaos-support.7.md) — support matrix (providers, OS, CI)
 - [chaos-mcp.7](./chaos-mcp.7.md) — MCP client and server usage
 - [chaos-storage.7](./chaos-storage.7.md) — runtime storage backend selection
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md) — Lua scripting engine

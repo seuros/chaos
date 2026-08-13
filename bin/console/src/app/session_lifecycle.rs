@@ -5,8 +5,9 @@ use super::{
     PROCESS_EVENT_CHANNEL_CAPACITY, ProcessEventChannel, ProcessEventSnapshot, ProcessId,
     ProcessTable, Rc, RefCell, RefreshStrategy, Result, SessionConfiguredEvent, SessionSelection,
     SessionSource, SessionTelemetry, StateRuntime, Stylize, TelemetryAuthMode, TileManager,
-    TomlValue, ToolListPane, VecDeque, WrapErr, emit_project_config_warnings,
-    normalize_harness_overrides_for_cwd, select, session_summary, tui, unbounded_channel,
+    TomlValue, ToolListPane, TranscriptReflowState, VecDeque, WrapErr,
+    emit_project_config_warnings, normalize_harness_overrides_for_cwd, select, session_summary,
+    tui, unbounded_channel,
 };
 use chaos_ipc::protocol::Op;
 use chaos_kern::ChaosAuth;
@@ -376,6 +377,7 @@ impl App {
             log_panel: LogPanelState::default(),
             enhanced_keys_supported,
             transcript_cells: Vec::new(),
+            transcript_reflow: TranscriptReflowState::default(),
             overlay: None,
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,

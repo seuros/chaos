@@ -54,6 +54,7 @@ use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::edit::ConfigEdit;
 use chaos_kern::config::edit::ConfigEditsBuilder;
+use libui::transcript_reflow::TranscriptReflowState;
 
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
 use chaos_kern::models_manager::manager::RefreshStrategy;
@@ -107,6 +108,7 @@ mod key_handling;
 mod log_panel;
 mod pending_interactive_replay;
 mod process_routing;
+mod resize_reflow;
 mod session_lifecycle;
 mod ui_helpers;
 
@@ -394,6 +396,8 @@ pub(crate) struct App {
     log_panel: LogPanelState,
 
     pub(crate) transcript_cells: Vec<Arc<dyn HistoryCell>>,
+    /// Tracks when terminal scrollback must be rebuilt from `transcript_cells` after a resize.
+    transcript_reflow: TranscriptReflowState,
 
     // Pager overlay state (Transcript or Static like Diff)
     pub(crate) overlay: Option<Overlay>,

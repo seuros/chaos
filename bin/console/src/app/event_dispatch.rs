@@ -17,9 +17,7 @@ impl App {
     ) -> Result<AppRunControl> {
         if matches!(event, TuiEvent::Draw) {
             let size = tui.terminal.size()?;
-            if size != tui.terminal.last_known_screen_size {
-                self.refresh_status_line();
-            }
+            self.handle_draw_pre_render(tui, size)?;
         }
 
         if self.overlay.is_some() {

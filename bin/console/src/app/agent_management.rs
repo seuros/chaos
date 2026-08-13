@@ -276,6 +276,7 @@ impl App {
     pub(super) fn reset_for_process_switch(&mut self, tui: &mut tui::Tui) -> Result<()> {
         self.close_overlay(tui);
         self.transcript_cells.clear();
+        self.reset_transcript_reflow();
         self.deferred_history_lines.clear();
         self.has_emitted_history_lines = false;
         self.backtrack = BacktrackState::default();

@@ -84,6 +84,7 @@ impl App {
     pub(super) fn reset_app_ui_state_after_clear(&mut self, tui: &mut tui::Tui) {
         self.close_overlay(tui);
         self.transcript_cells.clear();
+        self.reset_transcript_reflow();
         self.deferred_history_lines.clear();
         self.has_emitted_history_lines = false;
         self.backtrack = BacktrackState::default();

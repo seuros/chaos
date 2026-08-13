@@ -42,6 +42,7 @@ pub mod theme;
 pub mod theme_picker;
 pub mod tool_badges;
 pub mod top_bar;
+pub mod transcript_reflow;
 pub mod tui;
 pub mod ui_consts;
 pub mod version;
@@ -132,6 +133,7 @@ mod tests {
         theme_picker_suite => crate::theme_picker::tests::theme_picker_suite();
         tool_badges_suite => crate::tool_badges::tests::tool_badges_suite();
         top_bar_suite => crate::top_bar::tests::top_bar_suite();
+        transcript_reflow_suite => crate::transcript_reflow::tests::transcript_reflow_suite();
         tui_suite => crate::tui::tests::tui_suite();
         width_suite => crate::width::tests::width_suite();
         wrapping_suite => crate::wrapping::tests::wrapping_suite();

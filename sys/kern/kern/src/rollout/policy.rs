@@ -39,7 +39,7 @@ pub fn should_persist_response_item(item: &ResponseItem) -> bool {
         | ResponseItem::ImageGenerationCall { .. }
         | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::Compaction { .. } => true,
-        ResponseItem::Other => false,
+        ResponseItem::CompactionTrigger {} | ResponseItem::Other => false,
     }
 }
 

@@ -650,6 +650,7 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             Some("<ghost_snapshot>[omitted]</ghost_snapshot>".to_string())
         }
         ResponseItem::Compaction { .. } => Some("<compaction>[omitted]</compaction>".to_string()),
+        ResponseItem::CompactionTrigger {} => None,
         ResponseItem::Other => Some("<other_response_item />".to_string()),
     }
 }

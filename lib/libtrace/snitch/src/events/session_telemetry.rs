@@ -751,6 +751,7 @@ impl SessionTelemetry {
             ResponseItem::ImageGenerationCall { .. } => "image_generation_call".into(),
             ResponseItem::GhostSnapshot { .. } => "ghost_snapshot".into(),
             ResponseItem::Compaction { .. } => "compaction".into(),
+            ResponseItem::CompactionTrigger {} => "compaction_trigger".into(),
             ResponseItem::Other => "other".into(),
         }
     }

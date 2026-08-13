@@ -244,6 +244,12 @@ pub enum ResponseItem {
     Compaction {
         encrypted_content: String,
     },
+    /// Request control that asks the Responses API to emit an encrypted
+    /// compaction item. It is not durable response history by itself, and a
+    /// `compaction_trigger` received as response data is treated as an unknown
+    /// item ([`ResponseItem::Other`]) rather than trusted as model output.
+    #[serde(skip_deserializing)]
+    CompactionTrigger {},
     #[serde(other)]
     Other,
 }
@@ -305,5 +311,28 @@ impl From<ResponseInputItem> for ResponseItem {
                 tools,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResponseItem;
+
+    #[test]
+    fn compaction_trigger_serializes_as_request_control() {
+        let value = serde_json::to_value(ResponseItem::CompactionTrigger {})
+            .expect("compaction trigger should serialize");
+
+        assert_eq!(value, serde_json::json!({"type": "compaction_trigger"}));
+    }
+
+    #[test]
+    fn compaction_trigger_is_not_accepted_as_response_data() {
+        let item: ResponseItem = serde_json::from_value(serde_json::json!({
+            "type": "compaction_trigger"
+        }))
+        .expect("unknown response items should deserialize safely");
+
+        assert_eq!(item, ResponseItem::Other);
     }
 }

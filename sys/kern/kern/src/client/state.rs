@@ -1,42 +1,25 @@
 //! `ModelClient` session-state management: construction, clamp toggling, and
-//! unary compact requests.
+//! provider client state.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Weak;
 use std::sync::atomic::Ordering;
 
-use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
-use chaos_ipc::models::ResponseItem;
-use chaos_ipc::openai_models::ModelInfo;
-use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::SessionSource;
-use chaos_parrot::CompactClient as ApiCompactClient;
-use chaos_parrot::CompactionInput as ApiCompactionInput;
-use chaos_parrot::RamaTransport;
-use chaos_parrot::RequestTelemetry;
-use chaos_parrot::build_conversation_headers;
-use chaos_parrot::create_text_param_for_request;
-use chaos_snitch::SessionTelemetry;
 use rama::http::HeaderMap as ApiHeaderMap;
 use rama::http::HeaderValue;
 use tracing::warn;
 
-use crate::api_bridge::map_api_error;
 use crate::auth::ChaosAuth;
 use crate::client::auth_breaker;
-use crate::client_common::Prompt;
 use crate::config::ClampSettings;
 use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::protocol::SubAgentSource;
-use crate::tools::spec::create_tools_json_for_responses_api;
 
-use super::{
-    ApiTelemetry, AuthRequestTelemetryContext, CurrentClientSetup, ModelClient, ModelClientSession,
-    ModelClientState, PendingUnauthorizedRetry, RESPONSES_COMPACT_ENDPOINT, RequestRouteTelemetry,
-};
+use super::{CurrentClientSetup, ModelClient, ModelClientSession, ModelClientState};
 
 impl ModelClient {
     /// Creates a new session-scoped `ModelClient`.
@@ -248,77 +231,7 @@ impl ModelClient {
         guard.as_ref().and_then(|t| t.init_response().cloned())
     }
 
-    /// Compacts the current conversation history using the Compact endpoint.
-    pub async fn compact_conversation_history(
-        &self,
-        prompt: &Prompt,
-        model_info: &ModelInfo,
-        effort: Option<ReasoningEffortConfig>,
-        summary: ReasoningSummaryConfig,
-        session_telemetry: &SessionTelemetry,
-    ) -> Result<Vec<ResponseItem>> {
-        if prompt.input.is_empty() {
-            return Ok(Vec::new());
-        }
-        let client_setup = self.current_client_setup().await?;
-        let transport = RamaTransport::default_client();
-        let request_telemetry = Self::build_request_telemetry(
-            session_telemetry,
-            AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
-                &client_setup.api_auth,
-                PendingUnauthorizedRetry::default(),
-            ),
-            RequestRouteTelemetry::for_endpoint(RESPONSES_COMPACT_ENDPOINT),
-        );
-        let client =
-            ApiCompactClient::new(transport, client_setup.api_provider, client_setup.api_auth)
-                .with_telemetry(Some(request_telemetry));
-
-        let instructions = prompt.base_instructions.text.clone();
-        let input = prompt.get_formatted_input();
-        let mut tools = create_tools_json_for_responses_api(&prompt.tools)?;
-        for tool_name in &model_info.native_server_side_tools {
-            tools.push(serde_json::json!({"type": tool_name}));
-        }
-        let mut reasoning = Self::build_reasoning(model_info, effort, summary);
-        if let Some(reasoning) = reasoning.as_mut() {
-            reasoning.effort = reasoning
-                .effort
-                .map(|effort| self.state.representer.represent_reasoning_effort(effort));
-        }
-        let verbosity = if model_info.support_verbosity {
-            self.state.model_verbosity.or(model_info.default_verbosity)
-        } else {
-            if self.state.model_verbosity.is_some() {
-                warn!(
-                    "model_verbosity is set but ignored as the model does not support verbosity: {}",
-                    model_info.slug
-                );
-            }
-            None
-        };
-        let text = create_text_param_for_request(verbosity, &prompt.output_schema);
-        let payload = ApiCompactionInput {
-            model: &model_info.slug,
-            input: &input,
-            instructions: &instructions,
-            tools,
-            parallel_tool_calls: prompt.parallel_tool_calls,
-            reasoning,
-            text,
-        };
-
-        let mut extra_headers = self.build_subagent_headers();
-        extra_headers.extend(build_conversation_headers(Some(
-            self.state.conversation_id.to_string(),
-        )));
-        client
-            .compact_input(&payload, extra_headers)
-            .await
-            .map_err(map_api_error)
-    }
-
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn build_subagent_headers(&self) -> ApiHeaderMap {
         let mut extra_headers = crate::default_client::default_headers();
         if let SessionSource::SubAgent(sub) = &self.state.session_source {
@@ -334,39 +247,6 @@ impl ModelClient {
             }
         }
         extra_headers
-    }
-
-    pub(super) fn build_request_telemetry(
-        session_telemetry: &SessionTelemetry,
-        auth_context: AuthRequestTelemetryContext,
-        request_route_telemetry: RequestRouteTelemetry,
-    ) -> Arc<dyn RequestTelemetry> {
-        let telemetry = Arc::new(ApiTelemetry::new(
-            session_telemetry.clone(),
-            auth_context,
-            request_route_telemetry,
-        ));
-        let request_telemetry: Arc<dyn RequestTelemetry> = telemetry;
-        request_telemetry
-    }
-
-    pub(super) fn build_reasoning(
-        model_info: &ModelInfo,
-        effort: Option<ReasoningEffortConfig>,
-        summary: ReasoningSummaryConfig,
-    ) -> Option<chaos_parrot::common::Reasoning> {
-        if model_info.supports_reasoning_summaries {
-            Some(chaos_parrot::common::Reasoning {
-                effort: effort.or(model_info.default_reasoning_level),
-                summary: if summary == ReasoningSummaryConfig::None {
-                    None
-                } else {
-                    Some(summary)
-                },
-            })
-        } else {
-            None
-        }
     }
 
     pub(super) async fn current_client_setup(&self) -> Result<CurrentClientSetup> {

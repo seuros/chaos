@@ -29,7 +29,6 @@ pub mod telemetry;
 use chaos_abi::ModelAdapter;
 
 pub use crate::auth::AuthProvider;
-pub use crate::common::CompactionInput;
 pub use crate::common::MemorySummarizeInput;
 pub use crate::common::MemorySummarizeOutput;
 pub use crate::common::RawMemory;
@@ -39,7 +38,6 @@ pub use crate::common::ResponseEvent;
 pub use crate::common::ResponseStream;
 pub use crate::common::ResponsesApiRequest;
 pub use crate::common::create_text_param_for_request;
-pub use crate::endpoint::compact::CompactClient;
 pub use crate::endpoint::memories::MemoriesClient;
 pub use crate::endpoint::models::ModelsClient;
 pub use crate::endpoint::responses::ResponsesClient;

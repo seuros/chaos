@@ -384,6 +384,7 @@ impl ContextManager {
             | ResponseItem::ImageGenerationCall { .. }
             | ResponseItem::CustomToolCall { .. }
             | ResponseItem::Compaction { .. }
+            | ResponseItem::CompactionTrigger {}
             | ResponseItem::GhostSnapshot { .. }
             | ResponseItem::Other => item.clone(),
         }
@@ -431,8 +432,9 @@ fn is_api_message(message: &ResponseItem) -> bool {
         | ResponseItem::WebSearchCall { .. }
         | ResponseItem::ImageGenerationCall { .. }
         | ResponseItem::Compaction { .. } => true,
-        ResponseItem::GhostSnapshot { .. } => false,
-        ResponseItem::Other => false,
+        ResponseItem::CompactionTrigger {}
+        | ResponseItem::GhostSnapshot { .. }
+        | ResponseItem::Other => false,
     }
 }
 
@@ -626,6 +628,7 @@ fn is_model_generated_item(item: &ResponseItem) -> bool {
         | ResponseItem::ToolSearchOutput { .. }
         | ResponseItem::CustomToolCallOutput { .. }
         | ResponseItem::GhostSnapshot { .. }
+        | ResponseItem::CompactionTrigger {}
         | ResponseItem::Other => false,
     }
 }

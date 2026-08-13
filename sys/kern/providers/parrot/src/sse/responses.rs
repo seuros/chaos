@@ -741,6 +741,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn parses_compaction_item_followed_by_completed() {
+        let events = run_sse(vec![
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "compaction",
+                    "encrypted_content": "encrypted"
+                }
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp1" }
+            }),
+        ])
+        .await;
+
+        assert_eq!(events.len(), 2);
+        assert_matches!(
+            &events[0],
+            ResponseEvent::OutputItemDone(ResponseItem::Compaction {
+                encrypted_content
+            }) if encrypted_content == "encrypted"
+        );
+        assert_matches!(
+            &events[1],
+            ResponseEvent::Completed { response_id, .. } if response_id == "resp1"
+        );
+    }
+
+    #[tokio::test]
     async fn emits_completed_without_stream_end() {
         let completed = json!({
             "type": "response.completed",

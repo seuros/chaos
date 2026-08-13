@@ -47,7 +47,7 @@ pub trait Representer: Send + Sync {
 /// - `CustomToolCallOutput` → `FunctionCallOutput`
 /// - `LocalShellCall` → `FunctionCall("shell_command")`
 /// - Strips `tool_name` from output variants (ABI extension, not in OpenAI schema)
-/// - Drops: `ToolSearchCall`, `ToolSearchOutput`, `GhostSnapshot`, `Compaction`, `Other`
+/// - Drops: `ToolSearchCall`, `ToolSearchOutput`, `GhostSnapshot`, `Other`
 fn base_represent(item: ResponseItem) -> Option<ResponseItem> {
     match item {
         // Standard output — strip the ABI-internal tool_name field.
@@ -112,7 +112,6 @@ fn base_represent(item: ResponseItem) -> Option<ResponseItem> {
         ResponseItem::ToolSearchCall { .. }
         | ResponseItem::ToolSearchOutput { .. }
         | ResponseItem::GhostSnapshot { .. }
-        | ResponseItem::Compaction { .. }
         | ResponseItem::Other => None,
 
         // Everything else passes through to the per-representer stage.
@@ -185,7 +184,14 @@ impl Representer for OpenwAInnabeRepresenter {
         items
             .into_iter()
             .filter_map(base_represent)
-            .filter(|item| !matches!(item, ResponseItem::Reasoning { .. }))
+            .filter(|item| {
+                !matches!(
+                    item,
+                    ResponseItem::Reasoning { .. }
+                        | ResponseItem::Compaction { .. }
+                        | ResponseItem::CompactionTrigger {}
+                )
+            })
             .collect()
     }
 }
@@ -277,6 +283,20 @@ mod tests {
     }
 
     #[test]
+    fn openai_representer_passes_compaction_controls_through() {
+        let items = vec![
+            ResponseItem::CompactionTrigger {},
+            ResponseItem::Compaction {
+                encrypted_content: "encrypted".into(),
+            },
+        ];
+
+        let result = ResponsesRepresenter.represent(items.clone());
+
+        assert_eq!(result, items);
+    }
+
+    #[test]
     fn openai_representer_passes_assistant_role_unchanged() {
         let items = vec![ResponseItem::Message {
             id: None,
@@ -317,6 +337,20 @@ mod tests {
         }];
         let result = OpenwAInnabeRepresenter.represent(items);
         assert!(result.is_empty(), "wannabe must drop Reasoning items");
+    }
+
+    #[test]
+    fn wannabe_drops_compaction_controls() {
+        let items = vec![
+            ResponseItem::CompactionTrigger {},
+            ResponseItem::Compaction {
+                encrypted_content: "encrypted".into(),
+            },
+        ];
+
+        let result = OpenwAInnabeRepresenter.represent(items);
+
+        assert!(result.is_empty(), "wannabe must drop compaction controls");
     }
 
     #[test]

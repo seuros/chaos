@@ -1,11 +1,12 @@
 use ratatui::text::Line;
 use ratatui::text::Span;
-use unicode_width::UnicodeWidthChar;
-use unicode_width::UnicodeWidthStr;
+
+use crate::width::char_width;
+use crate::width::display_width;
 
 pub fn line_width(line: &Line<'_>) -> usize {
     line.iter()
-        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+        .map(|span| display_width(span.content.as_ref()))
         .sum()
 }
 
@@ -23,7 +24,7 @@ pub fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> Line<'st
     let mut spans_out: Vec<Span<'static>> = Vec::with_capacity(spans.len());
 
     for span in spans {
-        let span_width = UnicodeWidthStr::width(span.content.as_ref());
+        let span_width = display_width(span.content.as_ref());
 
         if span_width == 0 {
             spans_out.push(span);
@@ -44,7 +45,7 @@ pub fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> Line<'st
         let text = span.content.as_ref();
         let mut end_idx = 0usize;
         for (idx, ch) in text.char_indices() {
-            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+            let ch_width = char_width(ch);
             if used + ch_width > max_width {
                 break;
             }

@@ -44,6 +44,7 @@ pub mod top_bar;
 pub mod tui;
 pub mod ui_consts;
 pub mod version;
+pub mod width;
 pub mod wrapping;
 
 pub mod test_render;
@@ -130,6 +131,7 @@ mod tests {
         tool_badges_suite => crate::tool_badges::tests::tool_badges_suite();
         top_bar_suite => crate::top_bar::tests::top_bar_suite();
         tui_suite => crate::tui::tests::tui_suite();
+        width_suite => crate::width::tests::width_suite();
         wrapping_suite => crate::wrapping::tests::wrapping_suite();
     }
 }

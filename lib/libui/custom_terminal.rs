@@ -45,22 +45,21 @@ use ratatui::prelude::IntoCrossterm;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::widgets::WidgetRef;
-use unicode_width::UnicodeWidthStr;
 
 use crate::modifier_diff::ModifierDiff;
 
 /// Returns the display width of a cell symbol, ignoring OSC escape sequences.
 ///
 /// OSC sequences (e.g. OSC 8 hyperlinks: `\x1B]8;;URL\x07`) are terminal
-/// control sequences that don't consume display columns.  The standard
-/// `UnicodeWidthStr::width()` method incorrectly counts the printable
-/// characters inside OSC payloads (like `]`, `8`, `;`, and URL characters).
-/// This function strips them first so that only visible characters contribute
-/// to the width.
+/// control sequences that don't consume display columns, but a plain width
+/// measurement counts the printable characters inside the payload (like `]`,
+/// `8`, `;`, and the URL itself). This strips them first so only visible
+/// characters contribute, then measures with [`crate::width::display_width`]
+/// so the result agrees with how ratatui lays the symbol out.
 fn display_width(s: &str) -> usize {
     // Fast path: no escape sequences present.
     if !s.contains('\x1B') {
-        return s.width();
+        return crate::width::display_width(s);
     }
 
     // Strip OSC sequences: ESC ] ... BEL
@@ -79,7 +78,7 @@ fn display_width(s: &str) -> usize {
         }
         visible.push(ch);
     }
-    visible.width()
+    crate::width::display_width(&visible)
 }
 
 #[derive(Debug, Hash)]

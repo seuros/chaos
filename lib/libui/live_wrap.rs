@@ -1,4 +1,3 @@
-use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 /// A single visual row produced by RowBuilder.
@@ -191,7 +190,7 @@ pub fn take_prefix_by_width(text: &str, max_cols: usize) -> (String, &str, usize
     let mut cols = 0usize;
     let mut end_idx = 0usize;
     for (i, ch) in text.char_indices() {
-        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        let ch_width = crate::width::char_width(ch);
         if cols.saturating_add(ch_width) > max_cols {
             break;
         }

@@ -90,6 +90,16 @@ An explicit `model_context_window` disables the named preset. An explicit
 `model_auto_compact_token_limit` overrides the preset's 350,000-token
 compaction point.
 
+Before automatic compaction, Chaos uses the reserve between the compaction
+threshold and the hard context window to inject a once-per-window,
+model-visible continuity reflex. The agent receives the notice in ordinary
+conversation history and sees it on the next normal model iteration with its
+usual tools, allowing it to perform its configured journaling, memory, or
+operational continuity practices. If token usage has already crossed the soft
+compaction threshold while remaining below the 90% safety ceiling, Chaos grants
+one immediate iteration before compacting. The reflex is directed to the agent
+rather than emitted as a user-facing compaction warning.
+
 ### xAI (Grok)
 
 Bundled — no config needed. Just export the key:

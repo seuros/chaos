@@ -355,7 +355,9 @@ pub(crate) async fn run_turn(
                     needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
                 } = sampling_request_output;
-                let allotment = sess.allotment_status(turn_context.as_ref()).await;
+                let (allotment, compaction_reflex_injected, compaction_reflex_follow_up_allowed) =
+                    sess.maybe_inject_compaction_reflex(turn_context.as_ref())
+                        .await;
                 let token_limit_reached = allotment.limit_reached;
 
                 let estimated_token_count =
@@ -368,8 +370,21 @@ pub(crate) async fn run_turn(
                     estimated_token_count = ?estimated_token_count,
                     token_limit_reached,
                     needs_follow_up,
+                    compaction_reflex_injected,
+                    compaction_reflex_follow_up_allowed,
                     "post sampling token usage"
                 );
+
+                // Ordinarily the persisted reflex rides into the next natural
+                // sampling iteration or user turn. If this response already
+                // crossed the soft threshold, grant one immediate iteration
+                // so the agent sees the notice before automatic compaction.
+                if compaction_reflex_injected
+                    && token_limit_reached
+                    && compaction_reflex_follow_up_allowed
+                {
+                    continue;
+                }
 
                 // as long as compaction works well in getting us way below the token limit, we
                 // shouldn't worry about being in an infinite loop.

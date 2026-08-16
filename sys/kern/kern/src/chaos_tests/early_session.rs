@@ -408,6 +408,75 @@ async fn recompute_token_usage_updates_model_context_window() {
 }
 
 #[tokio::test]
+async fn compaction_reflex_is_model_visible_once_per_pressure_window() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.model_info.context_window = Some(400_000);
+    turn_context.model_info.auto_compact_token_limit = Some(350_000);
+    turn_context.model_info.effective_context_window_percent = 100;
+    {
+        let mut state = session.state.lock().await;
+        state.set_token_info(Some(TokenUsageInfo {
+            total_token_usage: TokenUsage::default(),
+            last_token_usage: TokenUsage {
+                total_tokens: 300_000,
+                ..Default::default()
+            },
+            model_context_window: Some(400_000),
+        }));
+    }
+
+    let (_, first_injected, first_follow_up_allowed) =
+        session.maybe_inject_compaction_reflex(&turn_context).await;
+    let (_, second_injected, _) = session.maybe_inject_compaction_reflex(&turn_context).await;
+
+    assert!(first_injected);
+    assert!(first_follow_up_allowed);
+    assert!(!second_injected);
+    let history = session.clone_history().await;
+    let prompt_items = history.for_prompt(&turn_context.model_info.input_modalities);
+    let reflex_count = prompt_items
+        .iter()
+        .filter(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "system" => {
+                content.iter().any(|content| {
+                    matches!(
+                        content,
+                        ContentItem::InputText { text }
+                            if text.starts_with("<compaction_reflex ")
+                    )
+                })
+            }
+            _ => false,
+        })
+        .count();
+    assert_eq!(reflex_count, 1);
+
+    {
+        let mut state = session.state.lock().await;
+        state.pressure.advance();
+    }
+    let (_, next_window_injected, _) = session.maybe_inject_compaction_reflex(&turn_context).await;
+    assert!(next_window_injected);
+
+    {
+        let mut state = session.state.lock().await;
+        state.pressure.advance();
+        state.set_token_info(Some(TokenUsageInfo {
+            total_token_usage: TokenUsage::default(),
+            last_token_usage: TokenUsage {
+                total_tokens: 400_000,
+                ..Default::default()
+            },
+            model_context_window: Some(400_000),
+        }));
+    }
+    let (_, hard_limit_injected, hard_limit_follow_up_allowed) =
+        session.maybe_inject_compaction_reflex(&turn_context).await;
+    assert!(!hard_limit_injected);
+    assert!(!hard_limit_follow_up_allowed);
+}
+
+#[tokio::test]
 async fn record_initial_history_reconstructs_forked_transcript() {
     let (session, turn_context) = make_session_and_context().await;
     let (rollout_items, mut expected) = sample_rollout(&session, &turn_context).await;

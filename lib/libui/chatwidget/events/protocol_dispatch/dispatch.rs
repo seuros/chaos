@@ -209,6 +209,13 @@ impl ChatWidget {
             }
             EventMsg::ExitedReviewMode(review) => self.on_exited_review_mode(review),
             EventMsg::ContextCompacted(_) => self.on_agent_message("Context compacted".to_owned()),
+            EventMsg::CompactionPending(event) => self.on_warning(format!(
+                "Automatic compaction is approaching: {} tokens remain ({} active, {} threshold, {} context window).",
+                event.tokens_until_compaction,
+                event.active_tokens,
+                event.compaction_token_limit,
+                event.context_window
+            )),
             EventMsg::CollabAgentSpawnBegin(CollabAgentSpawnBeginEvent {
                 call_id,
                 model,

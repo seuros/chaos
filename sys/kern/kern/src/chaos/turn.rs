@@ -355,7 +355,9 @@ pub(crate) async fn run_turn(
                     needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
                 } = sampling_request_output;
-                let allotment = sess.allotment_status(turn_context.as_ref()).await;
+                let allotment = sess
+                    .maybe_emit_compaction_pending(turn_context.as_ref())
+                    .await;
                 let token_limit_reached = allotment.limit_reached;
 
                 let estimated_token_count =

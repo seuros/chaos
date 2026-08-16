@@ -90,6 +90,13 @@ An explicit `model_context_window` disables the named preset. An explicit
 `model_auto_compact_token_limit` overrides the preset's 350,000-token
 compaction point.
 
+As a context window approaches automatic compaction, Chaos emits a durable
+`compaction_pending` event once for that pressure window. The TUI shows the
+remaining token count, active token count, configured compaction threshold, and
+hard context window. The warning begins when the session enters the reserve
+band between the automatic compaction threshold and the hard context limit. It
+does not itself change or defer compaction.
+
 ### xAI (Grok)
 
 Bundled — no config needed. Just export the key:

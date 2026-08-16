@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use chaos_ipc::models::BaseInstructions;
+use chaos_ipc::protocol::CompactionPendingEvent;
+use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::TokenCountEvent;
 use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::TokenUsageInfo;
@@ -9,6 +11,18 @@ use crate::context_manager::TotalTokenUsageBreakdown;
 
 use super::Session;
 use crate::chaos::TurnContext;
+
+fn compaction_warning_reserve(context_window: i64, compaction_token_limit: i64) -> i64 {
+    context_window.saturating_sub(compaction_token_limit).max(1)
+}
+
+fn compaction_warning_due(
+    remaining: i64,
+    context_window: i64,
+    compaction_token_limit: i64,
+) -> bool {
+    remaining <= compaction_warning_reserve(context_window, compaction_token_limit)
+}
 
 impl Session {
     /// Measures the current context load against the model's allotments,
@@ -32,6 +46,70 @@ impl Session {
                 context_window: turn_context.model_context_window(),
             },
         )
+    }
+
+    /// Emits at most one durable warning per pressure window when the session
+    /// enters the reserve band immediately before automatic compaction.
+    ///
+    /// The reserve band is the gap between the configured automatic
+    /// compaction threshold and the model's hard context window. For example,
+    /// a 350k threshold in a 400k window warns with 50k tokens remaining.
+    pub(crate) async fn maybe_emit_compaction_pending(
+        &self,
+        turn_context: &TurnContext,
+    ) -> chaos_context::allotment::AllotmentStatus {
+        let (allotment, pending) = {
+            let mut state = self.state.lock().await;
+            let active_tokens = state.get_total_token_usage(state.server_reasoning_included());
+            let baseline = state
+                .pressure
+                .baseline()
+                .map(chaos_context::pressure::Baseline::tokens);
+            let auto_compact_token_limit = turn_context.model_info.auto_compact_token_limit();
+            let context_window = turn_context.model_context_window();
+            let allotment = chaos_context::allotment::status(
+                turn_context.config.model_auto_compact_token_limit_scope,
+                active_tokens,
+                baseline,
+                chaos_context::allotment::Limits {
+                    auto_distill_token_limit: auto_compact_token_limit,
+                    context_window,
+                },
+            );
+
+            let pending = match (
+                auto_compact_token_limit,
+                context_window,
+                allotment.tokens_until_distillation,
+            ) {
+                (Some(compaction_token_limit), Some(context_window), Some(remaining)) => {
+                    if compaction_warning_due(remaining, context_window, compaction_token_limit)
+                        && state.pressure.claim_reminder()
+                    {
+                        Some(CompactionPendingEvent {
+                            window_id: state.pressure.window_id().to_string(),
+                            window_number: i64::try_from(state.pressure.window_number())
+                                .unwrap_or(i64::MAX),
+                            active_tokens,
+                            scope_tokens: allotment.scope_tokens,
+                            tokens_until_compaction: remaining,
+                            compaction_token_limit,
+                            context_window,
+                        })
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            (allotment, pending)
+        };
+
+        if let Some(pending) = pending {
+            self.send_event(turn_context, EventMsg::CompactionPending(pending))
+                .await;
+        }
+        allotment
     }
 
     pub(crate) async fn get_total_token_usage_breakdown(&self) -> TotalTokenUsageBreakdown {
@@ -217,5 +295,31 @@ impl Session {
             state.set_token_usage_full(context_window);
         }
         self.send_token_count_event(turn_context).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compaction_warning_due;
+    use super::compaction_warning_reserve;
+
+    #[test]
+    fn compaction_warning_uses_the_soft_to_hard_limit_gap() {
+        assert_eq!(compaction_warning_reserve(400_000, 350_000), 50_000);
+        assert_eq!(compaction_warning_reserve(272_000, 244_800), 27_200);
+        assert_eq!(compaction_warning_reserve(272_000, 217_600), 54_400);
+    }
+
+    #[test]
+    fn compaction_warning_keeps_a_minimum_reserve() {
+        assert_eq!(compaction_warning_reserve(100, 100), 1);
+        assert_eq!(compaction_warning_reserve(100, 110), 1);
+    }
+
+    #[test]
+    fn compaction_warning_starts_at_the_reserve_boundary() {
+        assert!(!compaction_warning_due(50_001, 400_000, 350_000));
+        assert!(compaction_warning_due(50_000, 400_000, 350_000));
+        assert!(compaction_warning_due(0, 400_000, 350_000));
     }
 }

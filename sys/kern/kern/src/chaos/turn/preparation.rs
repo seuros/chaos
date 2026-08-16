@@ -90,6 +90,10 @@ pub(super) async fn run_auto_compact(
     turn_context: &Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
 ) -> ChaosResult<()> {
+    // The ordinary post-sampling path emits this while there is still a reserve
+    // band available. This call is the last-resort path for resumed sessions,
+    // pre-turn compaction, and model switches that arrive already at the limit.
+    sess.maybe_emit_compaction_pending(turn_context).await;
     if should_use_remote_distill_task(&turn_context.provider) {
         run_inline_remote_auto_distill_task(
             Arc::clone(sess),

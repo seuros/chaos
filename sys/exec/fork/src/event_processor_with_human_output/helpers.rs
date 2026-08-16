@@ -132,6 +132,7 @@ impl EventProcessorWithHumanOutput {
             msg,
             EventMsg::Error(_)
                 | EventMsg::Warning(_)
+                | EventMsg::CompactionPending(_)
                 | EventMsg::DeprecationNotice(_)
                 | EventMsg::StreamError(_)
                 | EventMsg::TurnComplete(_)

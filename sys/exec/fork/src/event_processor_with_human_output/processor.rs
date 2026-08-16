@@ -121,6 +121,17 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     "warning:".style(self.yellow).style(self.bold)
                 );
             }
+            EventMsg::CompactionPending(event) => {
+                ts_msg!(
+                    self,
+                    "{} automatic compaction is approaching: {} tokens remain ({} active, {} threshold, {} context window)",
+                    "warning:".style(self.yellow).style(self.bold),
+                    event.tokens_until_compaction,
+                    event.active_tokens,
+                    event.compaction_token_limit,
+                    event.context_window
+                );
+            }
 
             EventMsg::ModelReroute(_) | EventMsg::ParentEffortChanged(_) => {}
             EventMsg::DeprecationNotice(DeprecationNoticeEvent { summary, details }) => {

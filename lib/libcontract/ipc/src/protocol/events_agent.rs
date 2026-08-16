@@ -34,6 +34,25 @@ pub struct ParentEffortChangedEvent {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ContextCompactedEvent;
 
+/// Advance notice that the current context window is approaching automatic
+/// compaction. Emitted at most once per pressure window.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct CompactionPendingEvent {
+    pub window_id: String,
+    #[ts(type = "number")]
+    pub window_number: i64,
+    #[ts(type = "number")]
+    pub active_tokens: i64,
+    #[ts(type = "number")]
+    pub scope_tokens: i64,
+    #[ts(type = "number")]
+    pub tokens_until_compaction: i64,
+    #[ts(type = "number")]
+    pub compaction_token_limit: i64,
+    #[ts(type = "number")]
+    pub context_window: i64,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct TurnCompleteEvent {
     pub turn_id: String,

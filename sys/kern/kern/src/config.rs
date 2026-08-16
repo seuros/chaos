@@ -107,6 +107,33 @@ pub(crate) const DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
+pub const OBSERVED_CHATGPT_CONTEXT_WINDOW_TOKENS: i64 = 400_000;
+pub const OBSERVED_CHATGPT_AUTO_COMPACT_TOKEN_LIMIT: i64 = 350_000;
+
+/// Selects whether Chaos trusts the provider catalog's ChatGPT context window
+/// or uses a larger empirically verified window for supported models.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChatgptContextWindow {
+    /// Use the context window and compaction threshold supplied by the model
+    /// catalog. This preserves the existing behavior.
+    #[default]
+    Catalog,
+    /// For GPT-5.6 Sol on the OpenAI provider, use the 400k window observed on
+    /// the ChatGPT OAuth route and compact conservatively at 350k.
+    #[serde(rename = "observed-400k")]
+    Observed400k,
+}
+
+impl ChatgptContextWindow {
+    pub const fn config_value(self) -> &'static str {
+        match self {
+            Self::Catalog => "catalog",
+            Self::Observed400k => "observed-400k",
+        }
+    }
+}
+
 /// First-party CLI transport selected when clamp mode is enabled.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -257,6 +284,9 @@ pub struct Config {
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
+
+    /// Context-window preset for GPT-5.6 Sol on the OpenAI ChatGPT route.
+    pub chatgpt_context_window: ChatgptContextWindow,
 
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
@@ -577,6 +607,16 @@ pub struct ConfigToml {
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
+
+    /// Context-window preset for GPT-5.6 Sol on the OpenAI ChatGPT route.
+    ///
+    /// `"catalog"` (the default) preserves provider-advertised behavior.
+    /// `"observed-400k"` uses a 400,000-token context window and a conservative
+    /// 350,000-token auto-compaction threshold. Explicit
+    /// `model_context_window` and `model_auto_compact_token_limit` values take
+    /// precedence.
+    #[serde(default)]
+    pub chatgpt_context_window: Option<ChatgptContextWindow>,
 
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,

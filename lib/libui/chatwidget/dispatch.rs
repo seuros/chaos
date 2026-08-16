@@ -6,6 +6,23 @@ use chaos_ipc::product::OS_NAME;
 
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContextWindowArg {
+    Status,
+    Preset(ChatgptContextWindow),
+}
+
+fn parse_context_window_arg(arg: &str) -> Result<ContextWindowArg, ()> {
+    match arg.trim().to_ascii_lowercase().as_str() {
+        "catalog" | "default" => Ok(ContextWindowArg::Preset(ChatgptContextWindow::Catalog)),
+        "observed-400k" | "400k" => {
+            Ok(ContextWindowArg::Preset(ChatgptContextWindow::Observed400k))
+        }
+        "status" => Ok(ContextWindowArg::Status),
+        _ => Err(()),
+    }
+}
+
 impl ChatWidget {
     pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
@@ -45,6 +62,9 @@ impl ChatWidget {
             }
             SlashCommand::Model => {
                 self.open_model_popup();
+            }
+            SlashCommand::ContextWindow => {
+                self.show_chatgpt_context_window_status();
             }
             SlashCommand::DynamicEffort => {
                 self.show_dynamic_effort_status();
@@ -344,6 +364,26 @@ impl ChatWidget {
                 );
                 self.bottom_pane.drain_pending_submission_state();
             }
+            SlashCommand::ContextWindow if !trimmed.is_empty() => {
+                let preset = match parse_context_window_arg(trimmed) {
+                    Ok(ContextWindowArg::Preset(preset)) => preset,
+                    Ok(ContextWindowArg::Status) => {
+                        self.show_chatgpt_context_window_status();
+                        self.bottom_pane.drain_pending_submission_state();
+                        return;
+                    }
+                    _ => {
+                        self.add_error_message(
+                            "Usage: /context-window catalog|observed-400k|status".to_string(),
+                        );
+                        self.bottom_pane.drain_pending_submission_state();
+                        return;
+                    }
+                };
+                self.app_event_tx
+                    .send(AppEvent::PersistChatgptContextWindow(preset));
+                self.bottom_pane.drain_pending_submission_state();
+            }
             SlashCommand::Review if !trimmed.is_empty() => {
                 let Some((prepared_args, _prepared_elements)) = self
                     .bottom_pane
@@ -410,5 +450,52 @@ impl ChatWidget {
             ),
             Some("Use /dynamic-effort on|off|status.".to_string()),
         );
+    }
+
+    fn show_chatgpt_context_window_status(&mut self) {
+        self.add_info_message(
+            format!(
+                "ChatGPT context window preset: {}.",
+                self.config.chatgpt_context_window.config_value()
+            ),
+            Some(
+                "Use /context-window catalog|observed-400k. Changes apply to new sessions."
+                    .to_string(),
+            ),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_window_arg_accepts_documented_presets_and_aliases() {
+        assert_eq!(
+            parse_context_window_arg("catalog"),
+            Ok(ContextWindowArg::Preset(ChatgptContextWindow::Catalog))
+        );
+        assert_eq!(
+            parse_context_window_arg("default"),
+            Ok(ContextWindowArg::Preset(ChatgptContextWindow::Catalog))
+        );
+        assert_eq!(
+            parse_context_window_arg("observed-400k"),
+            Ok(ContextWindowArg::Preset(ChatgptContextWindow::Observed400k))
+        );
+        assert_eq!(
+            parse_context_window_arg("400K"),
+            Ok(ContextWindowArg::Preset(ChatgptContextWindow::Observed400k))
+        );
+        assert_eq!(
+            parse_context_window_arg("status"),
+            Ok(ContextWindowArg::Status)
+        );
+    }
+
+    #[test]
+    fn context_window_arg_rejects_unknown_preset() {
+        assert_eq!(parse_context_window_arg("huge"), Err(()));
     }
 }

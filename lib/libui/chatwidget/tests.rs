@@ -108,6 +108,7 @@ use chaos_ipc::user_input::TextElement;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
 use chaos_kern::config::ApprovalsReviewer;
+use chaos_kern::config::ChatgptContextWindow;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
 #[cfg(feature = "vt100-tests")]
@@ -314,6 +315,8 @@ pub(crate) async fn chatwidget_suite() {
     Box::pin(set_reasoning_effort_updates_active_collaboration_mask()).await;
     Box::pin(backtab_mode_switch_refreshes_wpn_statusline_effort()).await;
     Box::pin(set_reasoning_effort_does_not_override_active_plan_override()).await;
+    Box::pin(slash_context_window_observed_400k_requests_persistence()).await;
+    Box::pin(slash_context_window_rejects_unknown_preset()).await;
     Box::pin(slash_quit_requests_exit()).await;
     Box::pin(slash_copy_state_tracks_turn_complete_final_reply()).await;
     Box::pin(slash_copy_state_tracks_plan_item_completion()).await;
@@ -5643,6 +5646,35 @@ async fn slash_quit_requests_exit() {
     chat.dispatch_command(SlashCommand::Quit);
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::ShutdownFirst)));
+}
+
+#[cfg(test)]
+async fn slash_context_window_observed_400k_requests_persistence() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::ContextWindow, "400k".to_string(), Vec::new());
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::PersistChatgptContextWindow(
+            ChatgptContextWindow::Observed400k
+        ))
+    );
+}
+
+#[cfg(test)]
+async fn slash_context_window_rejects_unknown_preset() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::ContextWindow, "huge".to_string(), Vec::new());
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one usage error");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Usage: /context-window catalog|observed-400k|status"),
+        "expected context-window usage, got {rendered:?}"
+    );
 }
 
 #[cfg(test)]

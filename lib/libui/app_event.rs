@@ -27,6 +27,7 @@ use chaos_ipc::config_types::Personality;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::config::ChatgptContextWindow;
 use chaos_kern::config::types::ApprovalsReviewer;
 
 /// Imperative UI commands sent over the app-event bus.
@@ -230,6 +231,9 @@ pub enum AppEvent {
 
     /// Persist the dynamic parent effort preference.
     PersistDynamicParentEffort(bool),
+
+    /// Persist the ChatGPT context-window preset for newly started sessions.
+    PersistChatgptContextWindow(ChatgptContextWindow),
 
     /// Re-open the approval presets popup.
     OpenApprovalsPopup,

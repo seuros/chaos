@@ -1948,7 +1948,7 @@ fn slash_tab_completion_moves_cursor_to_end() {
         false,
     );
 
-    type_chars_humanlike(&mut composer, &['/', 'c']);
+    type_chars_humanlike(&mut composer, &['/', 'c', 'o', 'm']);
 
     let (_result, _needs_redraw) =
         composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));

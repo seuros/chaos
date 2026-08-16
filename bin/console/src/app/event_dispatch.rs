@@ -726,6 +726,33 @@ impl App {
                     ));
                 }
             }
+            AppEvent::PersistChatgptContextWindow(preset) => {
+                let edit = ConfigEdit::SetPath {
+                    segments: vec!["chatgpt_context_window".to_string()],
+                    value: preset.config_value().into(),
+                };
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    tracing::error!(error = %err, "failed to persist ChatGPT context window");
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save ChatGPT context window preference: {err}"
+                    ));
+                } else {
+                    self.chat_widget.add_info_message(
+                        format!(
+                            "Saved ChatGPT context window preset: {}.",
+                            preset.config_value()
+                        ),
+                        Some(
+                            "The new context window applies when you start a new Chaos session."
+                                .to_string(),
+                        ),
+                    );
+                }
+            }
             AppEvent::OpenApprovalsPopup => {
                 self.chat_widget.open_approvals_popup();
             }

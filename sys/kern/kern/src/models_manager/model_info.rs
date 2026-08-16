@@ -1,6 +1,9 @@
 use chaos_ipc::openai_models::ModelInfo;
 
+use crate::config::ChatgptContextWindow;
 use crate::config::Config;
+use crate::config::OBSERVED_CHATGPT_AUTO_COMPACT_TOKEN_LIMIT;
+use crate::config::OBSERVED_CHATGPT_CONTEXT_WINDOW_TOKENS;
 use crate::truncate::approx_bytes_for_tokens;
 
 // Re-export pure ABI conversion from the catalog crate.
@@ -14,11 +17,20 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
     {
         model.supports_reasoning_summaries = true;
     }
+    let use_observed_chatgpt_window = config.model_context_window.is_none()
+        && config.chatgpt_context_window == ChatgptContextWindow::Observed400k
+        && config.model_provider.is_openai()
+        && model.slug == "gpt-5.6-sol";
+
     if let Some(context_window) = config.model_context_window {
         model.context_window = Some(context_window);
+    } else if use_observed_chatgpt_window {
+        model.context_window = Some(OBSERVED_CHATGPT_CONTEXT_WINDOW_TOKENS);
     }
     if let Some(auto_compact_token_limit) = config.model_auto_compact_token_limit {
         model.auto_compact_token_limit = Some(auto_compact_token_limit);
+    } else if use_observed_chatgpt_window {
+        model.auto_compact_token_limit = Some(OBSERVED_CHATGPT_AUTO_COMPACT_TOKEN_LIMIT);
     }
     if let Some(token_limit) = config.tool_output_token_limit {
         use chaos_ipc::openai_models::TruncationMode;

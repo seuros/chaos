@@ -47,6 +47,49 @@ environment, and go.
 
 ## EXAMPLES
 
+### OpenAI ChatGPT context window
+
+For GPT-5.6 Sol, Chaos uses the context window advertised by the provider
+catalog by default:
+
+```toml
+chatgpt_context_window = "catalog"
+```
+
+The ChatGPT OAuth route has also been observed accepting more context than its
+catalog advertises. Users who prefer the experimentally observed window can
+opt in:
+
+```toml
+chatgpt_context_window = "observed-400k"
+```
+
+You can also persist either choice from the TUI:
+
+```text
+/context-window catalog
+/context-window observed-400k
+```
+
+Run `/context-window` or `/context-window status` to show the active preset.
+Changes made through the command apply to newly started Chaos sessions.
+
+For `gpt-5.6-sol` on the built-in OpenAI provider, this selects a 400,000-token
+window and automatic compaction at 350,000 tokens. It does not change other
+models or providers. The provider may change its accepted limit independently
+of Chaos, so `catalog` remains the default.
+
+The lower-level numeric settings remain available for advanced use:
+
+```toml
+model_context_window = 400000
+model_auto_compact_token_limit = 350000
+```
+
+An explicit `model_context_window` disables the named preset. An explicit
+`model_auto_compact_token_limit` overrides the preset's 350,000-token
+compaction point.
+
 ### xAI (Grok)
 
 Bundled — no config needed. Just export the key:

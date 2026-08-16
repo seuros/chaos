@@ -14,6 +14,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    ContextWindow,
     DynamicEffort,
     Approvals,
     Permissions,
@@ -86,6 +87,9 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE".into(),
             SlashCommand::MemoryUpdate => "DO NOT USE".into(),
             SlashCommand::Model => "choose what model and reasoning effort to use".into(),
+            SlashCommand::ContextWindow => {
+                "choose the ChatGPT context window used for new sessions".into()
+            }
             SlashCommand::DynamicEffort => {
                 "allow or disallow model-controlled effort changes".into()
             }
@@ -130,6 +134,7 @@ impl SlashCommand {
             SlashCommand::Review
                 | SlashCommand::Rename
                 | SlashCommand::Plan
+                | SlashCommand::ContextWindow
                 | SlashCommand::DynamicEffort
                 | SlashCommand::SandboxReadRoot
         )
@@ -143,6 +148,7 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Compact
             | SlashCommand::Model
+            | SlashCommand::ContextWindow
             | SlashCommand::DynamicEffort
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
@@ -225,6 +231,7 @@ pub(crate) mod tests {
         stop_command_is_canonical_name();
         clean_alias_parses_to_stop_command();
         dynamic_effort_accepts_inline_args();
+        context_window_accepts_inline_args();
     }
     #[cfg(test)]
     fn stop_command_is_canonical_name() {
@@ -243,5 +250,14 @@ pub(crate) mod tests {
             Ok(SlashCommand::DynamicEffort)
         );
         assert!(SlashCommand::DynamicEffort.supports_inline_args());
+    }
+
+    #[test]
+    fn context_window_accepts_inline_args() {
+        assert_eq!(
+            SlashCommand::from_str("context-window"),
+            Ok(SlashCommand::ContextWindow)
+        );
+        assert!(SlashCommand::ContextWindow.supports_inline_args());
     }
 }

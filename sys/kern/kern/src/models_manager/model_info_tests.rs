@@ -1,4 +1,7 @@
 use super::*;
+use crate::config::ChatgptContextWindow;
+use crate::config::OBSERVED_CHATGPT_AUTO_COMPACT_TOKEN_LIMIT;
+use crate::config::OBSERVED_CHATGPT_CONTEXT_WINDOW_TOKENS;
 use crate::config::test_config;
 use chaos_abi::AbiModelInfo;
 
@@ -37,6 +40,75 @@ fn unknown_model() -> ModelInfo {
         supports_reasoning_effort: false,
         native_server_side_tools: vec![],
     })
+}
+
+fn sol_model() -> ModelInfo {
+    let mut model = unknown_model();
+    model.slug = "gpt-5.6-sol".to_string();
+    model.context_window = Some(272_000);
+    model.auto_compact_token_limit = None;
+    model
+}
+
+#[test]
+fn observed_chatgpt_window_expands_sol_and_sets_conservative_compaction() {
+    let model = sol_model();
+    let mut config = test_config();
+    config.chatgpt_context_window = ChatgptContextWindow::Observed400k;
+
+    let updated = with_config_overrides(model, &config);
+
+    assert_eq!(
+        updated.context_window,
+        Some(OBSERVED_CHATGPT_CONTEXT_WINDOW_TOKENS)
+    );
+    assert_eq!(
+        updated.auto_compact_token_limit,
+        Some(OBSERVED_CHATGPT_AUTO_COMPACT_TOKEN_LIMIT)
+    );
+}
+
+#[test]
+fn observed_chatgpt_window_does_not_change_other_models() {
+    let mut model = unknown_model();
+    model.context_window = Some(272_000);
+    model.auto_compact_token_limit = None;
+    let mut config = test_config();
+    config.chatgpt_context_window = ChatgptContextWindow::Observed400k;
+
+    let updated = with_config_overrides(model, &config);
+
+    assert_eq!(updated.context_window, Some(272_000));
+    assert_eq!(updated.auto_compact_token_limit, None);
+}
+
+#[test]
+fn explicit_context_window_disables_observed_chatgpt_preset() {
+    let model = sol_model();
+    let mut config = test_config();
+    config.chatgpt_context_window = ChatgptContextWindow::Observed400k;
+    config.model_context_window = Some(500_000);
+
+    let updated = with_config_overrides(model, &config);
+
+    assert_eq!(updated.context_window, Some(500_000));
+    assert_eq!(updated.auto_compact_token_limit, None);
+}
+
+#[test]
+fn explicit_compaction_limit_overrides_observed_chatgpt_preset() {
+    let model = sol_model();
+    let mut config = test_config();
+    config.chatgpt_context_window = ChatgptContextWindow::Observed400k;
+    config.model_auto_compact_token_limit = Some(340_000);
+
+    let updated = with_config_overrides(model, &config);
+
+    assert_eq!(
+        updated.context_window,
+        Some(OBSERVED_CHATGPT_CONTEXT_WINDOW_TOKENS)
+    );
+    assert_eq!(updated.auto_compact_token_limit, Some(340_000));
 }
 
 #[test]

@@ -913,6 +913,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         model: Some("o3".to_string()),
         review_model: None,
         model_context_window: None,
+        chatgpt_context_window: ChatgptContextWindow::Catalog,
         model_auto_compact_token_limit: None,
         model_auto_compact_token_limit_scope: Default::default(),
         service_tier: None,

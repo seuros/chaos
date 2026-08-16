@@ -1,6 +1,60 @@
 use super::*;
 
 #[test]
+fn chatgpt_context_window_defaults_to_catalog() -> std::io::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        chaos_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.chatgpt_context_window, ChatgptContextWindow::Catalog);
+    Ok(())
+}
+
+#[test]
+fn chatgpt_context_window_loads_observed_400k_preset() -> std::io::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            chatgpt_context_window: Some(ChatgptContextWindow::Observed400k),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        chaos_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(
+        config.chatgpt_context_window,
+        ChatgptContextWindow::Observed400k
+    );
+    Ok(())
+}
+
+#[test]
+fn chatgpt_context_window_deserializes_observed_400k_name() {
+    let config: ConfigToml =
+        toml::from_str(r#"chatgpt_context_window = "observed-400k""#).expect("valid preset");
+
+    assert_eq!(
+        config.chatgpt_context_window,
+        Some(ChatgptContextWindow::Observed400k)
+    );
+}
+
+#[test]
+fn config_schema_exposes_chatgpt_context_window_presets() {
+    let schema =
+        String::from_utf8(crate::config::schema::config_schema_json().expect("valid schema"))
+            .expect("UTF-8 schema");
+
+    assert!(schema.contains(r#""chatgpt_context_window""#));
+    assert!(schema.contains(r#""catalog""#));
+    assert!(schema.contains(r#""observed-400k""#));
+}
+
+#[test]
 fn cli_override_sets_compact_prompt() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let overrides = ConfigOverrides {

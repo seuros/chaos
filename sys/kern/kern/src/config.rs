@@ -859,6 +859,10 @@ pub struct ConfigToml {
     #[serde(default)]
     pub apps: Option<AppsConfigToml>,
 
+    /// Personal approval settings for tools exposed by MCP servers.
+    #[serde(default)]
+    pub mcp_tool_approvals: Option<crate::config::types::McpToolApprovalsToml>,
+
     /// OTEL configuration.
     pub otel: Option<crate::config::types::OtelConfigToml>,
 

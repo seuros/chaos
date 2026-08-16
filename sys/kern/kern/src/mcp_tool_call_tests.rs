@@ -10,7 +10,14 @@ use crate::config::types::AppConfig;
 use crate::config::types::AppToolConfig;
 use crate::config::types::AppToolsConfig;
 use crate::config::types::AppsConfigToml;
+use crate::config::types::McpToolApprovalServerConfig;
+use chaos_ipc::api::ConfigLayerSource;
+use chaos_realpath::AbsolutePathBuf;
 use chaos_sysctl::CONFIG_TOML_FILE;
+use chaos_sysctl::ConfigLayerEntry;
+use chaos_sysctl::ConfigLayerStack;
+use chaos_sysctl::ConfigRequirements;
+use chaos_sysctl::ConfigRequirementsToml;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serial_test::serial;
@@ -213,13 +220,13 @@ async fn approval_elicitation_request_uses_message_override_and_preserves_tool_p
 }
 
 #[test]
-fn custom_mcp_tool_question_mentions_server_name() {
+fn custom_mcp_tool_question_mentions_server_and_offers_persistence() {
     let question = build_mcp_tool_approval_question(
         "q".to_string(),
         "custom_server",
         "run_action",
         None,
-        prompt_options(false, false),
+        prompt_options(true, true),
         None,
     );
 
@@ -229,7 +236,7 @@ fn custom_mcp_tool_question_mentions_server_name() {
         "Allow the custom_server MCP server to run tool \"run_action\"?"
     );
     assert!(
-        !question
+        question
             .options
             .expect("options")
             .into_iter()
@@ -316,7 +323,7 @@ fn custom_mcp_tool_question_offers_session_remember_without_always_allow() {
 }
 
 #[test]
-fn custom_servers_keep_session_remember_without_persistent_approval() {
+fn custom_servers_support_persistent_approval() {
     let invocation = McpInvocation {
         server: "custom_server".to_string(),
         tool: "run_action".to_string(),
@@ -330,11 +337,171 @@ fn custom_servers_keep_session_remember_without_persistent_approval() {
 
     assert_eq!(
         session_mcp_tool_approval_key(&invocation, None, AppToolApproval::Auto),
-        Some(expected)
+        Some(expected.clone())
     );
     assert_eq!(
         persistent_mcp_tool_approval_key(&invocation, None, AppToolApproval::Auto),
-        None
+        Some(expected)
+    );
+}
+
+#[test]
+fn personal_and_connector_approval_modes_resolve_from_most_specific_to_default() {
+    let personal = McpToolApprovalServerConfig {
+        approval_mode: Some(AppToolApproval::Approve),
+        tools: HashMap::from([("evaluate".to_string(), AppToolApproval::Prompt)]),
+    };
+    let connector = AppConfig {
+        enabled: true,
+        destructive_enabled: None,
+        open_world_enabled: None,
+        default_tools_approval_mode: Some(AppToolApproval::Prompt),
+        default_tools_enabled: None,
+        tools: Some(AppToolsConfig {
+            tools: HashMap::from([(
+                "evaluate".to_string(),
+                AppToolConfig {
+                    enabled: None,
+                    approval_mode: Some(AppToolApproval::Auto),
+                },
+            )]),
+        }),
+    };
+
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(None, Some(&personal), "evaluate"),
+        AppToolApproval::Prompt
+    );
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(None, Some(&personal), "navigate"),
+        AppToolApproval::Approve
+    );
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(Some(&connector), Some(&personal), "evaluate"),
+        AppToolApproval::Auto
+    );
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(Some(&connector), Some(&personal), "navigate"),
+        AppToolApproval::Prompt
+    );
+}
+
+#[test]
+fn configured_approvals_are_read_from_user_config() {
+    let user_config: toml::Value = toml::from_str(
+        r#"
+        [apps.calendar]
+        default_tools_approval_mode = "prompt"
+
+        [apps.calendar.tools.create_event]
+        approval_mode = "approve"
+
+        [mcp_tool_approvals.chrome]
+        approval_mode = "approve"
+
+        [mcp_tool_approvals.chrome.tools]
+        evaluate = "prompt"
+        "#,
+    )
+    .expect("valid effective config");
+
+    let connector = configured_connector(&user_config, "calendar").expect("calendar connector");
+    let personal =
+        configured_personal_mcp_approval(&user_config, "chrome").expect("chrome approvals");
+
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(Some(&connector), None, "create_event"),
+        AppToolApproval::Approve
+    );
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(Some(&connector), None, "list_events"),
+        AppToolApproval::Prompt
+    );
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(None, Some(&personal), "evaluate"),
+        AppToolApproval::Prompt
+    );
+    assert_eq!(
+        resolve_mcp_tool_approval_mode(None, Some(&personal), "navigate"),
+        AppToolApproval::Approve
+    );
+}
+
+#[tokio::test]
+async fn personal_mcp_approvals_only_use_the_user_config_layer() {
+    let tmp = tempdir().expect("tempdir");
+    let user_config_path =
+        AbsolutePathBuf::try_from(tmp.path().join("config.toml")).expect("absolute user config");
+    let project_config_dir =
+        AbsolutePathBuf::try_from(tmp.path().join("project/.chaos")).expect("absolute project dir");
+    let user_config: toml::Value = toml::from_str(
+        r#"
+        [apps.calendar]
+        default_tools_approval_mode = "prompt"
+
+        [mcp_tool_approvals.chrome.tools]
+        navigate = "prompt"
+        "#,
+    )
+    .expect("valid user config");
+    let project_config: toml::Value = toml::from_str(
+        r#"
+        [apps.calendar]
+        default_tools_approval_mode = "approve"
+
+        [mcp_tool_approvals.chrome.tools]
+        navigate = "approve"
+        "#,
+    )
+    .expect("valid project config");
+    let stack = ConfigLayerStack::new(
+        vec![
+            ConfigLayerEntry::new(
+                ConfigLayerSource::User {
+                    file: user_config_path,
+                },
+                user_config,
+            ),
+            ConfigLayerEntry::new(
+                ConfigLayerSource::Project {
+                    dot_codex_folder: project_config_dir,
+                },
+                project_config,
+            ),
+        ],
+        ConfigRequirements::default(),
+        ConfigRequirementsToml::default(),
+    )
+    .expect("valid layer stack");
+
+    let (_, mut turn_context) = make_session_and_context().await;
+    let mut config = (*turn_context.config).clone();
+    config.config_layer_stack = stack;
+    turn_context.config = Arc::new(config);
+    let invocation = McpInvocation {
+        server: "chrome".to_string(),
+        tool: "navigate".to_string(),
+        arguments: None,
+    };
+
+    assert_eq!(
+        configured_mcp_tool_approval_mode(&turn_context, &invocation, None),
+        AppToolApproval::Prompt
+    );
+
+    let connector_metadata =
+        approval_metadata(Some("calendar"), Some("Calendar"), None, None, None);
+    assert_eq!(
+        configured_mcp_tool_approval_mode(
+            &turn_context,
+            &McpInvocation {
+                server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
+                tool: "create_event".to_string(),
+                arguments: None,
+            },
+            Some(&connector_metadata),
+        ),
+        AppToolApproval::Prompt
     );
 }
 
@@ -704,6 +871,31 @@ async fn persist_codex_app_tool_approval_writes_tool_override() {
         })
     );
     assert!(contents.contains("[apps.calendar.tools.\"calendar/list_events\"]"));
+}
+
+#[tokio::test]
+async fn persist_mcp_server_tool_approval_writes_personal_tool_override() {
+    let tmp = tempdir().expect("tempdir");
+
+    persist_mcp_server_tool_approval(tmp.path(), "chrome", "navigate")
+        .await
+        .expect("persist approval");
+
+    let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
+    let parsed: ConfigToml = toml::from_str(&contents).expect("parse config");
+    let chrome = parsed
+        .mcp_tool_approvals
+        .expect("MCP approvals")
+        .servers
+        .remove("chrome")
+        .expect("chrome approval");
+
+    assert_eq!(chrome.approval_mode, None);
+    assert_eq!(
+        chrome.tools,
+        HashMap::from([("navigate".to_string(), AppToolApproval::Approve)])
+    );
+    assert!(contents.contains("[mcp_tool_approvals.chrome.tools]"));
 }
 
 #[tokio::test]

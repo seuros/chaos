@@ -581,6 +581,27 @@ pub struct AppsConfigToml {
     pub apps: HashMap<String, AppConfig>,
 }
 
+/// Personal approval settings for tools exposed by one MCP server.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct McpToolApprovalServerConfig {
+    /// Approval mode for this server unless a per-tool override exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_mode: Option<AppToolApproval>,
+
+    /// Per-tool approval modes keyed by the name advertised by the server.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tools: HashMap<String, AppToolApproval>,
+}
+
+/// Personal MCP approval settings keyed by server name.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct McpToolApprovalsToml {
+    #[serde(default, flatten)]
+    pub servers: HashMap<String, McpToolApprovalServerConfig>,
+}
+
 // ===== OTEL configuration =====
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]

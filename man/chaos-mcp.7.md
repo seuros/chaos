@@ -61,6 +61,31 @@ with FreeChaOS, Claude Code, and other MCP-aware tools:
 }
 ```
 
+### Persistent tool approvals
+
+Personal MCP trust decisions belong in `~/.chaos/config.toml`, separate from
+shared project server definitions:
+
+```toml
+[mcp_tool_approvals.browser]
+approval_mode = "approve"
+
+[mcp_tool_approvals.browser.tools]
+evaluate = "prompt"
+```
+
+The modes are:
+
+- `auto` — use the tool's MCP annotations to decide whether to ask.
+- `prompt` — always ask before running the tool.
+- `approve` — skip the ordinary approval prompt. Safety monitoring can still
+  interrupt or ask for confirmation when it detects unusual risk.
+
+Per-tool settings take precedence over the server default. Selecting **Allow
+and don't ask me again** in an approval prompt persists `approve` for that
+specific server and tool in `~/.chaos/config.toml`. Connector/app approvals use
+their existing `[apps]` entries in the same file.
+
 #### Stdio server options
 
 ```bash

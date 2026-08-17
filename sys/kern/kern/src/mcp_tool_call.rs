@@ -15,7 +15,11 @@ use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
+use crate::config::types::AppConfig;
 use crate::config::types::AppToolApproval;
+use crate::config::types::AppsConfigToml;
+use crate::config::types::McpToolApprovalServerConfig;
+use crate::config::types::McpToolApprovalsToml;
 use crate::mcp_tool_approval_templates::RenderedMcpToolApprovalParam;
 use crate::mcp_tool_approval_templates::render_mcp_tool_approval_template;
 use crate::protocol::EventMsg;
@@ -89,6 +93,8 @@ pub(crate) async fn handle_mcp_tool_call(
     let metadata =
         lookup_mcp_tool_metadata(sess.as_ref(), turn_context.as_ref(), &server, &tool_name).await;
     let request_meta = build_mcp_tool_call_request_meta(&server, metadata.as_ref());
+    let approval_mode =
+        configured_mcp_tool_approval_mode(turn_context, &invocation, metadata.as_ref());
 
     let tool_call_begin_event = EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
         call_id: call_id.clone(),
@@ -102,7 +108,7 @@ pub(crate) async fn handle_mcp_tool_call(
         &call_id,
         &invocation,
         metadata.as_ref(),
-        AppToolApproval::Auto,
+        approval_mode,
     )
     .await
     {
@@ -564,7 +570,68 @@ fn persistent_mcp_tool_approval_key(
     approval_mode: AppToolApproval,
 ) -> Option<McpToolApprovalKey> {
     session_mcp_tool_approval_key(invocation, metadata, approval_mode)
-        .filter(|key| key.connector_id.is_some())
+}
+
+fn configured_mcp_tool_approval_mode(
+    turn_context: &TurnContext,
+    invocation: &McpInvocation,
+    metadata: Option<&McpToolApprovalMetadata>,
+) -> AppToolApproval {
+    let Some(user_config) = turn_context
+        .config
+        .config_layer_stack
+        .get_user_layer()
+        .map(|layer| &layer.config)
+    else {
+        return AppToolApproval::Auto;
+    };
+    let connector = metadata
+        .and_then(|metadata| metadata.connector_id.as_deref())
+        .and_then(|connector_id| configured_connector(user_config, connector_id));
+    let personal = configured_personal_mcp_approval(user_config, &invocation.server);
+    resolve_mcp_tool_approval_mode(connector.as_ref(), personal.as_ref(), &invocation.tool)
+}
+
+fn configured_connector(user_config: &toml::Value, connector_id: &str) -> Option<AppConfig> {
+    let apps: AppsConfigToml = user_config.get("apps")?.clone().try_into().ok()?;
+    apps.apps.get(connector_id).cloned()
+}
+
+fn configured_personal_mcp_approval(
+    user_config: &toml::Value,
+    server_name: &str,
+) -> Option<McpToolApprovalServerConfig> {
+    let approvals: McpToolApprovalsToml = user_config
+        .get("mcp_tool_approvals")?
+        .clone()
+        .try_into()
+        .ok()?;
+    approvals.servers.get(server_name).cloned()
+}
+
+fn resolve_mcp_tool_approval_mode(
+    connector: Option<&AppConfig>,
+    personal: Option<&McpToolApprovalServerConfig>,
+    tool_name: &str,
+) -> AppToolApproval {
+    connector
+        .and_then(|app| {
+            app.tools
+                .as_ref()
+                .and_then(|tools| tools.tools.get(tool_name))
+                .and_then(|tool| tool.approval_mode)
+                .or(app.default_tools_approval_mode)
+        })
+        .or_else(|| {
+            personal.and_then(|server| {
+                server
+                    .tools
+                    .get(tool_name)
+                    .copied()
+                    .or(server.approval_mode)
+            })
+        })
+        .unwrap_or_default()
 }
 
 fn is_full_access_mode(turn_context: &TurnContext) -> bool {
@@ -996,21 +1063,25 @@ async fn maybe_persist_mcp_tool_approval(
     turn_context: &TurnContext,
     key: McpToolApprovalKey,
 ) {
-    let Some(connector_id) = key.connector_id.clone() else {
-        remember_mcp_tool_approval(sess, key).await;
-        return;
-    };
+    let connector_id = key.connector_id.clone();
+    let server_name = key.server.clone();
     let tool_name = key.tool_name.clone();
 
-    if let Err(err) =
-        persist_codex_app_tool_approval(&turn_context.config.chaos_home, &connector_id, &tool_name)
+    let result = if let Some(connector_id) = connector_id.as_deref() {
+        persist_codex_app_tool_approval(&turn_context.config.chaos_home, connector_id, &tool_name)
             .await
-    {
+    } else {
+        persist_mcp_server_tool_approval(&turn_context.config.chaos_home, &server_name, &tool_name)
+            .await
+    };
+
+    if let Err(err) = result {
         error!(
             error = %err,
-            connector_id,
+            server_name,
+            connector_id = ?connector_id,
             tool_name,
-            "failed to persist chaos app tool approval"
+            "failed to persist MCP tool approval"
         );
         remember_mcp_tool_approval(sess, key).await;
         return;
@@ -1018,6 +1089,25 @@ async fn maybe_persist_mcp_tool_approval(
 
     sess.reload_user_config_layer().await;
     remember_mcp_tool_approval(sess, key).await;
+}
+
+async fn persist_mcp_server_tool_approval(
+    chaos_home: &Path,
+    server_name: &str,
+    tool_name: &str,
+) -> anyhow::Result<()> {
+    ConfigEditsBuilder::new(chaos_home)
+        .with_edits([ConfigEdit::SetPath {
+            segments: vec![
+                "mcp_tool_approvals".to_string(),
+                server_name.to_string(),
+                "tools".to_string(),
+                tool_name.to_string(),
+            ],
+            value: value("approve"),
+        }])
+        .apply()
+        .await
 }
 
 async fn persist_codex_app_tool_approval(
@@ -1111,6 +1201,8 @@ pub(crate) async fn handle_mcp_tool_call_async(
     let metadata =
         lookup_mcp_tool_metadata(sess.as_ref(), turn_context.as_ref(), &server, &tool).await;
     let request_meta = build_mcp_tool_call_request_meta(&server, metadata.as_ref());
+    let approval_mode =
+        configured_mcp_tool_approval_mode(turn_context, &invocation, metadata.as_ref());
 
     notify_mcp_tool_call_event(
         sess.as_ref(),
@@ -1128,7 +1220,7 @@ pub(crate) async fn handle_mcp_tool_call_async(
         &call_id,
         &invocation,
         metadata.as_ref(),
-        AppToolApproval::Auto,
+        approval_mode,
     )
     .await
     {

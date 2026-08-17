@@ -213,6 +213,31 @@ fn deserialize_required_server_config() {
 }
 
 #[test]
+fn deserialize_personal_mcp_tool_approval_modes() {
+    let cfg: McpToolApprovalsToml = toml::from_str(
+        r#"
+            [chrome]
+            approval_mode = "approve"
+
+            [chrome.tools]
+            navigate = "approve"
+            evaluate = "prompt"
+        "#,
+    )
+    .expect("should deserialize personal MCP approval modes");
+
+    let chrome = cfg.servers.get("chrome").expect("chrome config");
+    assert_eq!(chrome.approval_mode, Some(AppToolApproval::Approve));
+    assert_eq!(
+        chrome.tools,
+        HashMap::from([
+            ("navigate".to_string(), AppToolApproval::Approve),
+            ("evaluate".to_string(), AppToolApproval::Prompt),
+        ])
+    );
+}
+
+#[test]
 fn deserialize_streamable_http_server_config_variants() {
     for case in [
         SuccessfulServerCase {

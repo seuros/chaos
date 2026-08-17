@@ -10,6 +10,19 @@
     }
   },
   "properties": {
+    "agent_depth": {
+      "format": "int32",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "agent_id": {
+      "$ref": "#/definitions/NullableString"
+    },
+    "agent_type": {
+      "$ref": "#/definitions/NullableString"
+    },
     "cwd": {
       "type": "string"
     },
@@ -17,11 +30,17 @@
       "const": "Stop",
       "type": "string"
     },
+    "is_subagent": {
+      "type": "boolean"
+    },
     "last_assistant_message": {
       "$ref": "#/definitions/NullableString"
     },
     "model": {
       "type": "string"
+    },
+    "parent_session_id": {
+      "$ref": "#/definitions/NullableString"
     },
     "permission_mode": {
       "enum": [
@@ -41,10 +60,14 @@
     }
   },
   "required": [
+    "agent_id",
+    "agent_type",
     "cwd",
     "hook_event_name",
+    "is_subagent",
     "last_assistant_message",
     "model",
+    "parent_session_id",
     "permission_mode",
     "session_id",
     "stop_hook_active",

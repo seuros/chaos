@@ -1,9 +1,11 @@
+mod agent;
 mod engine;
 pub mod events;
 mod registry;
 mod schema;
 mod types;
 
+pub use agent::HookAgentContext;
 pub use events::before_turn::BeforeTurnOutcome;
 pub use events::before_turn::BeforeTurnRequest;
 pub use events::session_start::SessionStartOutcome;

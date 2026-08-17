@@ -8,6 +8,7 @@ use chaos_ipc::protocol::HookOutputEntryKind;
 use chaos_ipc::protocol::HookRunStatus;
 use chaos_ipc::protocol::HookRunSummary;
 
+use crate::HookAgentContext;
 use crate::engine::CommandShell;
 use crate::engine::ConfiguredHandler;
 use crate::engine::command_runner::CommandRunResult;
@@ -25,6 +26,7 @@ pub struct StopRequest {
     pub permission_mode: String,
     pub stop_hook_active: bool,
     pub last_assistant_message: Option<String>,
+    pub agent_context: HookAgentContext,
 }
 
 #[derive(Debug)]
@@ -82,6 +84,7 @@ pub(crate) async fn run(
         request.permission_mode.clone(),
         request.stop_hook_active,
         request.last_assistant_message.clone(),
+        request.agent_context.clone(),
     )) {
         Ok(input_json) => input_json,
         Err(error) => {

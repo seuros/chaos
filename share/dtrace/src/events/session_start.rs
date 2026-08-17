@@ -5,6 +5,7 @@ use chaos_ipc::protocol::HookCompletedEvent;
 use chaos_ipc::protocol::HookEventName;
 use chaos_ipc::protocol::HookRunSummary;
 
+use crate::HookAgentContext;
 use crate::engine::CommandShell;
 use crate::engine::ConfiguredHandler;
 use crate::engine::command_runner::CommandRunResult;
@@ -35,6 +36,7 @@ pub struct SessionStartRequest {
     pub model: String,
     pub permission_mode: String,
     pub source: SessionStartSource,
+    pub agent_context: HookAgentContext,
 }
 
 #[derive(Debug)]
@@ -93,6 +95,7 @@ pub(crate) async fn run(
         request.model.clone(),
         request.permission_mode.clone(),
         request.source.as_str().to_string(),
+        request.agent_context.clone(),
     )) {
         Ok(input_json) => input_json,
         Err(error) => {

@@ -5,6 +5,7 @@ use chaos_ipc::protocol::HookCompletedEvent;
 use chaos_ipc::protocol::HookEventName;
 use chaos_ipc::protocol::HookRunSummary;
 
+use crate::HookAgentContext;
 use crate::engine::CommandShell;
 use crate::engine::ConfiguredHandler;
 use crate::engine::command_runner::CommandRunResult;
@@ -21,6 +22,7 @@ pub struct BeforeTurnRequest {
     pub model: String,
     pub permission_mode: String,
     pub input_messages: Vec<String>,
+    pub agent_context: HookAgentContext,
 }
 
 #[derive(Debug)]
@@ -77,6 +79,7 @@ pub(crate) async fn run(
         request.model.clone(),
         request.permission_mode.clone(),
         request.input_messages.clone(),
+        request.agent_context.clone(),
     )) {
         Ok(input_json) => input_json,
         Err(error) => {
@@ -308,6 +311,7 @@ mod integration_tests {
             model: "test-model".to_string(),
             permission_mode: "default".to_string(),
             input_messages: vec!["hello".to_string()],
+            agent_context: crate::HookAgentContext::default(),
         }
     }
 

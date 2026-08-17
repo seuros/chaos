@@ -15,6 +15,8 @@ use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::HookCompletedEvent;
 use chaos_ipc::protocol::HookRunSummary;
+use chaos_ipc::protocol::SessionSource;
+use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::protocol::TurnStartedEvent;
 use chaos_ipc::protocol::WarningEvent;
 use chaos_ipc::user_input::UserInput;
@@ -62,6 +64,92 @@ struct ContextHookOutcome {
     completed_events: Vec<HookCompletedEvent>,
     should_stop: bool,
     additional_context: Option<String>,
+}
+
+fn hook_agent_context(
+    session_id: chaos_ipc::ProcessId,
+    session_source: &SessionSource,
+) -> chaos_dtrace::HookAgentContext {
+    let SessionSource::SubAgent(source) = session_source else {
+        return chaos_dtrace::HookAgentContext::default();
+    };
+
+    let mut context = chaos_dtrace::HookAgentContext {
+        is_subagent: true,
+        agent_id: Some(session_id.to_string()),
+        ..Default::default()
+    };
+
+    match source {
+        SubAgentSource::Review => context.agent_type = Some("review".to_string()),
+        SubAgentSource::Compact => context.agent_type = Some("compact".to_string()),
+        SubAgentSource::ProcessSpawn {
+            parent_process_id,
+            depth,
+            agent_nickname: _,
+            agent_role,
+        } => {
+            context.parent_session_id = Some(parent_process_id.to_string());
+            context.agent_depth = Some(*depth);
+            context.agent_type = agent_role
+                .clone()
+                .or_else(|| Some("process_spawn".to_string()));
+        }
+        SubAgentSource::MemoryConsolidation => {
+            context.agent_type = Some("memory_consolidation".to_string());
+        }
+        SubAgentSource::Other(agent_type) => {
+            context.agent_type = Some(agent_type.clone());
+        }
+    }
+
+    context
+}
+
+#[cfg(test)]
+mod hook_agent_context_tests {
+    use chaos_ipc::ProcessId;
+    use chaos_ipc::protocol::SessionSource;
+    use chaos_ipc::protocol::SubAgentSource;
+
+    use super::hook_agent_context;
+
+    #[test]
+    fn root_sessions_have_no_agent_identity() {
+        let context = hook_agent_context(ProcessId::default(), &SessionSource::Cli);
+
+        assert!(!context.is_subagent);
+        assert!(context.agent_id.is_none());
+        assert!(context.agent_type.is_none());
+        assert!(context.parent_session_id.is_none());
+        assert!(context.agent_depth.is_none());
+    }
+
+    #[test]
+    fn spawned_subagents_preserve_parent_role_and_depth() {
+        let child_id = ProcessId::default();
+        let parent_id = ProcessId::default();
+        let context = hook_agent_context(
+            child_id,
+            &SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id: parent_id,
+                depth: 2,
+                agent_nickname: Some("swift-otter".to_string()),
+                agent_role: Some("scout".to_string()),
+            }),
+        );
+        let child_id = child_id.to_string();
+        let parent_id = parent_id.to_string();
+
+        assert!(context.is_subagent);
+        assert_eq!(context.agent_id.as_deref(), Some(child_id.as_str()));
+        assert_eq!(context.agent_type.as_deref(), Some("scout"));
+        assert_eq!(
+            context.parent_session_id.as_deref(),
+            Some(parent_id.as_str())
+        );
+        assert_eq!(context.agent_depth, Some(2));
+    }
 }
 
 impl From<chaos_dtrace::SessionStartOutcome> for ContextHookOutcome {
@@ -221,6 +309,7 @@ pub(crate) async fn run_turn(
             _ => None,
         })
         .unwrap_or_default();
+    let agent_context = hook_agent_context(sess.conversation_id, &sess.session_source().await);
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
         .await;
     // Track the previous-turn baseline from the regular user-turn path only so
@@ -239,6 +328,7 @@ pub(crate) async fn run_turn(
         model: turn_context.model_info.slug.clone(),
         permission_mode: hook_permission_mode(turn_context.approval_policy.value()).to_string(),
         input_messages: before_turn_input_messages,
+        agent_context: agent_context.clone(),
     });
 
     sess.maybe_start_ghost_snapshot(Arc::clone(&turn_context), cancellation_token.child_token())
@@ -270,6 +360,7 @@ pub(crate) async fn run_turn(
                 permission_mode: hook_permission_mode(turn_context.approval_policy.value())
                     .to_string(),
                 source: session_start_source,
+                agent_context: agent_context.clone(),
             };
             let previews = sess.hooks().preview_session_start(&session_start_request);
             emit_hook_started_events(&sess, &turn_context, previews).await;
@@ -414,6 +505,7 @@ pub(crate) async fn run_turn(
                             .to_string(),
                         stop_hook_active,
                         last_assistant_message: last_agent_message.clone(),
+                        agent_context: agent_context.clone(),
                     };
                     for run in sess.hooks().preview_stop(&stop_request) {
                         sess.send_event(

@@ -11,6 +11,8 @@ use schemars::Schema;
 use schemars::SchemaGenerator;
 use schemars::generate::SchemaSettings;
 
+use crate::HookAgentContext;
+
 const GENERATED_DIR: &str = "generated";
 const BEFORE_TURN_INPUT_FIXTURE: &str = "before-turn.command.input.schema.json";
 const BEFORE_TURN_OUTPUT_FIXTURE: &str = "before-turn.command.output.schema.json";
@@ -30,6 +32,28 @@ impl NullableString {
 
     fn from_string(value: Option<String>) -> Self {
         Self(value)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HookAgentCommandInput {
+    pub is_subagent: bool,
+    pub agent_id: NullableString,
+    pub agent_type: NullableString,
+    pub parent_session_id: NullableString,
+    pub agent_depth: Option<i32>,
+}
+
+impl From<HookAgentContext> for HookAgentCommandInput {
+    fn from(value: HookAgentContext) -> Self {
+        Self {
+            is_subagent: value.is_subagent,
+            agent_id: NullableString::from_string(value.agent_id),
+            agent_type: NullableString::from_string(value.agent_type),
+            parent_session_id: NullableString::from_string(value.parent_session_id),
+            agent_depth: value.agent_depth,
+        }
     }
 }
 
@@ -150,6 +174,8 @@ pub(crate) struct SessionStartCommandInput {
     pub permission_mode: String,
     #[schemars(schema_with = "session_start_source_schema")]
     pub source: String,
+    #[serde(flatten)]
+    pub agent_context: HookAgentCommandInput,
 }
 
 impl SessionStartCommandInput {
@@ -160,6 +186,7 @@ impl SessionStartCommandInput {
         model: impl Into<String>,
         permission_mode: impl Into<String>,
         source: impl Into<String>,
+        agent_context: HookAgentContext,
     ) -> Self {
         Self {
             session_id: session_id.into(),
@@ -169,6 +196,7 @@ impl SessionStartCommandInput {
             model: model.into(),
             permission_mode: permission_mode.into(),
             source: source.into(),
+            agent_context: agent_context.into(),
         }
     }
 }
@@ -187,6 +215,8 @@ pub(crate) struct BeforeTurnCommandInput {
     #[schemars(schema_with = "permission_mode_schema")]
     pub permission_mode: String,
     pub input_messages: Vec<String>,
+    #[serde(flatten)]
+    pub agent_context: HookAgentCommandInput,
 }
 
 impl BeforeTurnCommandInput {
@@ -198,6 +228,7 @@ impl BeforeTurnCommandInput {
         model: impl Into<String>,
         permission_mode: impl Into<String>,
         input_messages: Vec<String>,
+        agent_context: HookAgentContext,
     ) -> Self {
         Self {
             session_id: session_id.into(),
@@ -208,6 +239,7 @@ impl BeforeTurnCommandInput {
             model: model.into(),
             permission_mode: permission_mode.into(),
             input_messages,
+            agent_context: agent_context.into(),
         }
     }
 }
@@ -226,6 +258,8 @@ pub(crate) struct StopCommandInput {
     pub permission_mode: String,
     pub stop_hook_active: bool,
     pub last_assistant_message: NullableString,
+    #[serde(flatten)]
+    pub agent_context: HookAgentCommandInput,
 }
 
 impl StopCommandInput {
@@ -237,6 +271,7 @@ impl StopCommandInput {
         permission_mode: impl Into<String>,
         stop_hook_active: bool,
         last_assistant_message: Option<String>,
+        agent_context: HookAgentContext,
     ) -> Self {
         Self {
             session_id: session_id.into(),
@@ -247,6 +282,7 @@ impl StopCommandInput {
             permission_mode: permission_mode.into(),
             stop_hook_active,
             last_assistant_message: NullableString::from_string(last_assistant_message),
+            agent_context: agent_context.into(),
         }
     }
 }
@@ -412,12 +448,17 @@ fn default_continue() -> bool {
 mod tests {
     use super::BEFORE_TURN_INPUT_FIXTURE;
     use super::BEFORE_TURN_OUTPUT_FIXTURE;
+    use super::BeforeTurnCommandInput;
     use super::SESSION_START_INPUT_FIXTURE;
     use super::SESSION_START_OUTPUT_FIXTURE;
     use super::STOP_INPUT_FIXTURE;
     use super::STOP_OUTPUT_FIXTURE;
+    use super::SessionStartCommandInput;
+    use super::StopCommandInput;
     use super::write_schema_fixtures;
+    use crate::HookAgentContext;
     use pretty_assertions::assert_eq;
+    use serde_json::Value;
     use tempfile::TempDir;
 
     fn expected_fixture(name: &str) -> &'static str {
@@ -471,5 +512,73 @@ mod tests {
             let actual = normalize_newlines(&actual);
             assert_eq!(expected, actual, "fixture should match generated schema");
         }
+    }
+
+    fn subagent_context() -> HookAgentContext {
+        HookAgentContext {
+            is_subagent: true,
+            agent_id: Some("child-session".to_string()),
+            agent_type: Some("scout".to_string()),
+            parent_session_id: Some("parent-session".to_string()),
+            agent_depth: Some(2),
+        }
+    }
+
+    fn assert_subagent_context(value: &Value) {
+        assert_eq!(value["is_subagent"], true);
+        assert_eq!(value["agent_id"], "child-session");
+        assert_eq!(value["agent_type"], "scout");
+        assert_eq!(value["parent_session_id"], "parent-session");
+        assert_eq!(value["agent_depth"], 2);
+    }
+
+    #[test]
+    fn session_start_input_serializes_structured_subagent_identity() {
+        let value = serde_json::to_value(SessionStartCommandInput::new(
+            "child-session",
+            None,
+            "/tmp/project",
+            "test-model",
+            "default",
+            "startup",
+            subagent_context(),
+        ))
+        .expect("serialize session start hook input");
+
+        assert_subagent_context(&value);
+    }
+
+    #[test]
+    fn before_turn_input_serializes_structured_subagent_identity() {
+        let value = serde_json::to_value(BeforeTurnCommandInput::new(
+            "child-session",
+            None,
+            "/tmp/project",
+            "turn-1",
+            "test-model",
+            "default",
+            vec!["hello".to_string()],
+            subagent_context(),
+        ))
+        .expect("serialize before turn hook input");
+
+        assert_subagent_context(&value);
+    }
+
+    #[test]
+    fn stop_input_serializes_structured_subagent_identity() {
+        let value = serde_json::to_value(StopCommandInput::new(
+            "child-session",
+            None,
+            "/tmp/project",
+            "test-model",
+            "default",
+            false,
+            Some("done".to_string()),
+            subagent_context(),
+        ))
+        .expect("serialize stop hook input");
+
+        assert_subagent_context(&value);
     }
 }

@@ -8,8 +8,6 @@ use alcatraz_freebsd::spawn_command as spawn_freebsd_command;
 #[cfg(target_os = "macos")]
 use alcatraz_macos::seatbelt::create_seatbelt_command_args;
 use std::path::PathBuf;
-#[cfg(target_os = "macos")]
-use std::process::Stdio;
 
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::config_types::SandboxMode;

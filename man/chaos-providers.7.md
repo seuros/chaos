@@ -123,6 +123,35 @@ pending decision made by the source agent.
 The user-facing term *compaction* corresponds to the kernel's internal
 *distillation* implementation.
 
+### Terminal session titles
+
+Chaos can mirror the active session's durable process name into the terminal
+title. This lets terminals such as WezTerm display descriptive tab labels:
+
+```toml
+# Never emit terminal-title changes.
+terminal_title = "off"
+
+# Mirror names set with /rename or restored on resume. This is the default.
+terminal_title = "process-name"
+
+# Also let the current root agent name the session.
+terminal_title = "agent"
+```
+
+Agent mode exposes `set_session_title` to the current root agent and gives it
+one private, persisted reminder on the first user turn of an unnamed session.
+The title remains the existing process name used by `/rename` and
+`chaos resume`; the separate database `title` field remains a first-message
+preview and is never used as the terminal fallback. An explicit `/rename`
+always marks the name as user-authored, preventing the agent from replacing it.
+Agent-generated names must also be distinct from other unarchived sessions.
+
+Chaos emits the portable OSC terminal-title sequence and clears it when the TUI
+exits. Terminal configuration can still override or transform the displayed
+tab title; for example, a custom WezTerm `format-tab-title` callback may choose
+not to show the pane title.
+
 ### xAI (Grok)
 
 Bundled — no config needed. Just export the key:

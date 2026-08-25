@@ -1365,7 +1365,9 @@ fn session_title_tool_is_opt_in() {
     );
 
     let (enabled, _) = build_specs(
-        &base.with_agent_session_title(true, &SessionSource::Cli),
+        &base
+            .clone()
+            .with_agent_session_title(true, &SessionSource::Cli),
         None,
         None,
         &[],
@@ -1373,6 +1375,21 @@ fn session_title_tool_is_opt_in() {
     .build();
     assert!(
         enabled
+            .iter()
+            .any(|tool| tool.spec.name() == "set_session_title")
+    );
+
+    let subagent_source =
+        SessionSource::SubAgent(SubAgentSource::Other("test-subagent".to_string()));
+    let (subagent, _) = build_specs(
+        &base.with_agent_session_title(true, &subagent_source),
+        None,
+        None,
+        &[],
+    )
+    .build();
+    assert!(
+        !subagent
             .iter()
             .any(|tool| tool.spec.name() == "set_session_title")
     );

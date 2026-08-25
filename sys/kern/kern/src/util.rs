@@ -180,7 +180,20 @@ pub fn resolve_path(base: &Path, path: &PathBuf) -> PathBuf {
 
 /// Trim a thread name and return `None` if it is empty after trimming.
 pub fn normalize_process_name(name: &str) -> Option<String> {
-    let trimmed = name.trim();
+    let mut sanitized = String::with_capacity(name.len());
+    let mut pending_space = false;
+    for ch in name.chars() {
+        if ch.is_control() || ch.is_whitespace() {
+            pending_space = !sanitized.is_empty();
+            continue;
+        }
+        if pending_space {
+            sanitized.push(' ');
+            pending_space = false;
+        }
+        sanitized.push(ch);
+    }
+    let trimmed = sanitized.trim();
     if trimmed.is_empty() {
         None
     } else {

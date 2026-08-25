@@ -435,6 +435,9 @@ async fn run_ratatui_app(
     } else {
         initial_config
     };
+    tui.set_terminal_title_enabled(
+        config.terminal_title != chaos_kern::config::TerminalTitleMode::Off,
+    );
 
     let mut missing_session_exit = |id_str: &str, action: &str| {
         error!("Error finding conversation path: {id_str}");

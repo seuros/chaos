@@ -349,6 +349,14 @@ fn normalize_process_name_trims_and_rejects_empty() {
 }
 
 #[test]
+fn normalize_process_name_strips_controls_and_collapses_whitespace() {
+    assert_eq!(
+        normalize_process_name("  Compaction\n\x1b]0;bad\x07  timing "),
+        Some("Compaction ]0;bad timing".to_string())
+    );
+}
+
+#[test]
 fn resume_command_prefers_name_over_id() {
     let process_id = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
     let command = resume_command(Some("my-thread"), Some(process_id));

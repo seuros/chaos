@@ -31,6 +31,12 @@ impl ChatWidget {
         self.session_network_proxy = event.network_proxy.clone();
         self.process_id = Some(event.session_id);
         self.process_name = event.process_name.clone();
+        if self.config.terminal_title != chaos_kern::config::TerminalTitleMode::Off {
+            self.app_event_tx
+                .send(crate::app_event::AppEvent::SetTerminalTitle(
+                    event.process_name.clone(),
+                ));
+        }
         self.forked_from = event.forked_from_id;
         self.current_cwd = Some(event.cwd.clone());
         self.config.cwd = event.cwd.clone();
@@ -112,7 +118,13 @@ impl ChatWidget {
         event: chaos_ipc::protocol::ProcessNameUpdatedEvent,
     ) {
         if self.process_id == Some(event.process_id) {
-            self.process_name = event.process_name;
+            self.process_name = event.process_name.clone();
+            if self.config.terminal_title != chaos_kern::config::TerminalTitleMode::Off {
+                self.app_event_tx
+                    .send(crate::app_event::AppEvent::SetTerminalTitle(
+                        event.process_name,
+                    ));
+            }
             self.request_redraw();
         }
     }

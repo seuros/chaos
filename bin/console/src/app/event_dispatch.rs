@@ -121,6 +121,11 @@ impl App {
 
                 self.start_fresh_session_with_summary_hint(tui).await;
             }
+            AppEvent::SetTerminalTitle(title) => {
+                if let Err(err) = tui.set_terminal_title(title.as_deref()) {
+                    tracing::warn!(%err, "failed to update terminal title");
+                }
+            }
             AppEvent::OpenResumePicker => {
                 match crate::resume_picker::run_resume_picker(
                     tui,

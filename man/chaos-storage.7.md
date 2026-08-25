@@ -16,6 +16,29 @@ process. Two backends exist. SQLite is the default and needs no configuration.
 PostgreSQL is opt-in, for operators who want several machines reading the same
 history, or who want the semantic recall store.
 
+## AGENT HISTORY ACCESS
+
+Agents can inspect a bounded view of their own canonical persisted transcript
+with two read-only tools:
+
+- `read_session_history` pages backward through transcript entries. With no
+  cursor it begins immediately before the latest compaction, or at the journal
+  end when the session has not compacted.
+- `search_session_history` performs bounded literal search across the current
+  session's canonical journal. ASCII matching is case-insensitive; other text
+  is matched exactly.
+
+Both tools flush already-queued journal writes before reading, preserve journal
+sequence numbers and timestamps, and return pagination cursors. They are
+restricted to the calling session and omit hidden reasoning, encrypted
+payloads, image data, turn-context records, and telemetry. Tool arguments and
+textual tool results remain visible because they are often necessary to recover
+operational context.
+
+This access does not automatically restore old history into the active context
+or require an agent to preserve anything. It gives the continuing agent a
+deliberate route back when a compaction summary proves incomplete.
+
 ## SQLITE
 
 The default. On first run FreeChaOS creates `chaos.sqlite` under the chaos

@@ -5,6 +5,8 @@ use crate::models_manager::model_info::with_config_overrides;
 use crate::tools::ToolRouter;
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
+use crate::tools::spec::tool_builders::create_read_session_history_tool;
+use crate::tools::spec::tool_builders::create_search_session_history_tool;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::permissions::VfsPolicy;
@@ -560,6 +562,8 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
         create_exec_command_tool(true, true),
         create_write_stdin_tool(),
         PLAN_TOOL.clone(),
+        create_read_session_history_tool(),
+        create_search_session_history_tool(),
         create_request_user_input_tool(CollaborationModesConfig::default()),
         create_apply_patch_freeform_tool(),
         ToolSpec::WebSearch {
@@ -1064,8 +1068,13 @@ impl ModelToolTail {
     }
 }
 
-const MODEL_TOOL_TAIL_PREFIX: &[&str] =
-    &["update_plan", "request_user_input", "request_permissions"];
+const MODEL_TOOL_TAIL_PREFIX: &[&str] = &[
+    "update_plan",
+    "read_session_history",
+    "search_session_history",
+    "request_user_input",
+    "request_permissions",
+];
 
 const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "grep_files",
@@ -1456,6 +1465,8 @@ fn test_parallel_support_flags() {
     assert!(find_tool(&tools, "grep_files").supports_parallel_tool_calls);
     assert!(find_tool(&tools, "list_dir").supports_parallel_tool_calls);
     assert!(find_tool(&tools, "read_file").supports_parallel_tool_calls);
+    assert!(find_tool(&tools, "read_session_history").supports_parallel_tool_calls);
+    assert!(find_tool(&tools, "search_session_history").supports_parallel_tool_calls);
 }
 
 #[test]

@@ -170,6 +170,27 @@ fn sanitize_rollout_item_for_persistence(
 }
 
 impl RolloutRecorder {
+    /// Load the canonical append-only journal for a process, preserving entry
+    /// sequence numbers and timestamps for bounded transcript inspection.
+    pub async fn get_journal_for_process(process_id: ProcessId) -> std::io::Result<LoadedJournal> {
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        match client.load_journal(process_id).await {
+            Ok(loaded) => Ok(loaded),
+            Err(JournalClientError::Remote(payload))
+                if payload.code == JournalErrorCode::NotFound =>
+            {
+                Err(IoError::other(format!(
+                    "journald has no process row for {process_id}"
+                )))
+            }
+            Err(err) => Err(IoError::other(format!(
+                "failed to load journal for {process_id}: {err}"
+            ))),
+        }
+    }
+
     /// List processes persisted in journald.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_processes(

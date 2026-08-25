@@ -42,6 +42,7 @@ pub(crate) fn initial_replay_event_msgs(
             }
             RolloutItem::SessionMeta(_)
             | RolloutItem::TurnContext(_)
+            | RolloutItem::CompactionControl(_)
             | RolloutItem::Compacted(_) => {}
         }
     }
@@ -324,6 +325,10 @@ pub(super) async fn spawn_review_thread(
         vfs_policy: &parent_turn_context.vfs_policy,
         collab_enabled: config.collab_enabled,
     })
+    .with_agent_compaction_control(matches!(
+        config.agent_compaction_control,
+        crate::config::AgentCompactionControl::Bounded
+    ))
     .with_web_search_config(/*web_search_config*/ None)
     .with_allow_login_shell(config.permissions.allow_login_shell)
     .with_agent_roles(config.agent_roles.clone());

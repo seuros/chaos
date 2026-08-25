@@ -12,18 +12,56 @@ use crate::context_manager::TotalTokenUsageBreakdown;
 use super::Session;
 use crate::chaos::TurnContext;
 
+pub(crate) const DISTILLATION_RESERVE_TOKENS: i64 = 20_000;
+
+fn deferral_ceiling_for_windows(
+    raw_context_window: i64,
+    effective_context_window: i64,
+) -> Option<i64> {
+    let raw_safety_ceiling = raw_context_window.saturating_mul(9).saturating_div(10);
+    let distillation_ceiling = effective_context_window.saturating_sub(DISTILLATION_RESERVE_TOKENS);
+    Some(raw_safety_ceiling.min(distillation_ceiling)).filter(|ceiling| *ceiling > 0)
+}
+
+pub(crate) fn compaction_deferral_ceiling(turn_context: &TurnContext) -> Option<i64> {
+    let raw_context_window = turn_context.model_info.context_window?;
+    let effective_context_window = turn_context.model_context_window()?;
+    deferral_ceiling_for_windows(raw_context_window, effective_context_window)
+}
+
 fn compaction_reflex_reserve(context_window: i64, compaction_token_limit: i64) -> i64 {
     let soft_to_hard_gap = context_window.saturating_sub(compaction_token_limit).max(1);
     let proportional_lead = compaction_token_limit.saturating_div(4).max(1);
     soft_to_hard_gap.min(proportional_lead)
 }
 
+#[cfg(test)]
+mod compaction_control_tests {
+    use super::deferral_ceiling_for_windows;
+
+    #[test]
+    fn observed_400k_window_keeps_distillation_reserve() {
+        assert_eq!(
+            deferral_ceiling_for_windows(400_000, 380_000),
+            Some(360_000)
+        );
+    }
+
+    #[test]
+    fn raw_window_safety_fraction_can_be_the_binding_ceiling() {
+        assert_eq!(
+            deferral_ceiling_for_windows(340_000, 320_000),
+            Some(300_000)
+        );
+    }
+}
+
 fn compaction_reflex_due(remaining: i64, context_window: i64, compaction_token_limit: i64) -> bool {
     remaining <= compaction_reflex_reserve(context_window, compaction_token_limit)
 }
 
-fn compaction_reflex_follow_up_allowed(active_tokens: i64, context_window: i64) -> bool {
-    active_tokens < context_window.saturating_mul(9).saturating_div(10)
+fn compaction_reflex_follow_up_allowed(active_tokens: i64, deferral_ceiling: i64) -> bool {
+    active_tokens < deferral_ceiling
 }
 
 fn compaction_reflex_instructions(
@@ -33,15 +71,24 @@ fn compaction_reflex_instructions(
     tokens_until_compaction: i64,
     compaction_token_limit: i64,
     context_window: i64,
+    bounded_control: bool,
 ) -> String {
+    let control_guidance = if bounded_control {
+        format!(
+            "You have bounded timing control for this pressure window. If you need a little more room after continuity work, call `compaction_control` with action `defer_once` and window_id `{window_id}`. You may instead request `compact_now`. Doing neither means normal automatic compaction will proceed. A deferral is one-time and cannot override Chaos's fixed safety ceiling.\n\n"
+        )
+    } else {
+        String::new()
+    };
     format!(
         "<compaction_reflex window_id=\"{window_id}\" window_number=\"{window_number}\">\n\
 Automatic context compaction is approaching. This notice is for you, the continuing agent, not merely for the user.\n\n\
 Current context: approximately {active_tokens} active tokens.\n\
 Automatic compaction threshold: {compaction_token_limit} tokens.\n\
-Hard context window: {context_window} tokens.\n\
+Effective input window: {context_window} tokens.\n\
 Estimated tokens remaining before automatic compaction: {tokens_until_compaction}.\n\n\
 Before continuing substantive work, pause and consider whether anything should be preserved across compaction. Use your normal tools now to perform any continuity practices required by your existing instructions: for example, recording current commitments or operational state, updating memory, or writing a personal journal entry when there is genuine narrative shape. Do not manufacture memories or journal entries when your instructions say no action is warranted. Do not substitute a generic user-facing summary for the practices available to you.\n\n\
+{control_guidance}\
 After completing or deliberately declining those actions, continue the current turn normally.\n\
 </compaction_reflex>"
     )
@@ -54,20 +101,44 @@ impl Session {
         &self,
         turn_context: &TurnContext,
     ) -> chaos_context::allotment::AllotmentStatus {
-        let state = self.state.lock().await;
+        let mut state = self.state.lock().await;
         let active_tokens = state.get_total_token_usage(state.server_reasoning_included());
         let baseline = state
             .pressure
             .baseline()
             .map(chaos_context::pressure::Baseline::tokens);
+        let effective_context_window = turn_context.model_context_window();
+        let control_is_current = match state.pressure.control() {
+            chaos_context::pressure::Control::Deferred(deferral) => {
+                deferral.model == turn_context.model_info.slug
+                    && Some(deferral.effective_context_window) == effective_context_window
+                    && Some(deferral.ceiling) == compaction_deferral_ceiling(turn_context)
+            }
+            chaos_context::pressure::Control::CompactRequested(request) => {
+                request.model == turn_context.model_info.slug
+                    && Some(request.effective_context_window) == effective_context_window
+            }
+            chaos_context::pressure::Control::Normal => true,
+        };
+        if !control_is_current {
+            state
+                .pressure
+                .restore_control(chaos_context::pressure::Control::Normal);
+        }
+        let deferred = matches!(
+            state.pressure.control(),
+            chaos_context::pressure::Control::Deferred(_)
+        );
         chaos_context::allotment::status(
             turn_context.config.model_auto_compact_token_limit_scope,
             active_tokens,
             baseline,
             chaos_context::allotment::Limits {
                 auto_distill_token_limit: turn_context.model_info.auto_compact_token_limit(),
-                context_window: turn_context.model_context_window(),
+                context_window: effective_context_window,
+                deferral_ceiling: compaction_deferral_ceiling(turn_context),
             },
+            deferred,
         )
     }
 
@@ -87,6 +158,14 @@ impl Session {
                 .map(chaos_context::pressure::Baseline::tokens);
             let compaction_token_limit = turn_context.model_info.auto_compact_token_limit();
             let context_window = turn_context.model_context_window();
+            let deferral_ceiling = compaction_deferral_ceiling(turn_context);
+            let deferred = matches!(
+                state.pressure.control(),
+                chaos_context::pressure::Control::Deferred(deferral)
+                    if deferral.model == turn_context.model_info.slug
+                        && Some(deferral.effective_context_window) == context_window
+                        && Some(deferral.ceiling) == deferral_ceiling
+            );
             let allotment = chaos_context::allotment::status(
                 turn_context.config.model_auto_compact_token_limit_scope,
                 active_tokens,
@@ -94,7 +173,9 @@ impl Session {
                 chaos_context::allotment::Limits {
                     auto_distill_token_limit: compaction_token_limit,
                     context_window,
+                    deferral_ceiling,
                 },
+                deferred,
             );
 
             let instructions = match (
@@ -104,7 +185,7 @@ impl Session {
             ) {
                 (Some(compaction_token_limit), Some(context_window), Some(remaining))
                     if compaction_reflex_due(remaining, context_window, compaction_token_limit)
-                        && active_tokens < context_window
+                        && deferral_ceiling.is_some_and(|ceiling| active_tokens < ceiling)
                         && state.pressure.claim_reminder() =>
                 {
                     Some(compaction_reflex_instructions(
@@ -114,13 +195,17 @@ impl Session {
                         remaining,
                         compaction_token_limit,
                         context_window,
+                        matches!(
+                            turn_context.config.agent_compaction_control,
+                            crate::config::AgentCompactionControl::Bounded
+                        ),
                     ))
                 }
                 _ => None,
             };
             let follow_up_allowed = instructions.is_some()
-                && context_window.is_some_and(|context_window| {
-                    compaction_reflex_follow_up_allowed(active_tokens, context_window)
+                && deferral_ceiling.is_some_and(|ceiling| {
+                    compaction_reflex_follow_up_allowed(active_tokens, ceiling)
                 });
             (allotment, instructions, follow_up_allowed)
         };
@@ -128,11 +213,36 @@ impl Session {
         let injected = if let Some(instructions) = instructions {
             let item: ResponseItem = DeveloperInstructions::new(instructions).into();
             self.record_conversation_items(turn_context, &[item]).await;
+            self.services
+                .session_telemetry
+                .counter("chaos.compaction.control_offered", 1, &[]);
             true
         } else {
             false
         };
         (allotment, injected, follow_up_allowed)
+    }
+
+    pub(crate) async fn compaction_requested(&self, turn_context: &TurnContext) -> bool {
+        let mut state = self.state.lock().await;
+        let effective_context_window = turn_context.model_context_window();
+        match state.pressure.control() {
+            chaos_context::pressure::Control::CompactRequested(request)
+                if request.model == turn_context.model_info.slug
+                    && Some(request.effective_context_window) == effective_context_window =>
+            {
+                true
+            }
+            chaos_context::pressure::Control::CompactRequested(_) => {
+                state.pressure.clear_compaction_request();
+                false
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) async fn clear_compaction_request(&self) {
+        self.state.lock().await.pressure.clear_compaction_request();
     }
 
     pub(crate) async fn get_total_token_usage_breakdown(&self) -> TotalTokenUsageBreakdown {
@@ -346,21 +456,23 @@ mod tests {
     }
 
     #[test]
-    fn compaction_reflex_follow_up_stays_below_the_ninety_percent_ceiling() {
-        assert!(compaction_reflex_follow_up_allowed(359_999, 400_000));
-        assert!(!compaction_reflex_follow_up_allowed(360_000, 400_000));
-        assert!(!compaction_reflex_follow_up_allowed(400_000, 400_000));
+    fn compaction_reflex_follow_up_stays_below_the_fixed_ceiling() {
+        assert!(compaction_reflex_follow_up_allowed(359_999, 360_000));
+        assert!(!compaction_reflex_follow_up_allowed(360_000, 360_000));
+        assert!(!compaction_reflex_follow_up_allowed(400_000, 360_000));
     }
 
     #[test]
     fn compaction_reflex_addresses_the_agent_and_preserves_choice() {
         let instructions =
-            compaction_reflex_instructions("window-1", 2, 300_000, 50_000, 350_000, 400_000);
+            compaction_reflex_instructions("window-1", 2, 300_000, 50_000, 350_000, 400_000, true);
 
         assert!(instructions.contains("for you, the continuing agent"));
         assert!(instructions.contains("Use your normal tools now"));
         assert!(instructions.contains("Do not manufacture memories"));
         assert!(instructions.contains("window_id=\"window-1\""));
         assert!(instructions.contains("window_number=\"2\""));
+        assert!(instructions.contains("compaction_control"));
+        assert!(instructions.contains("defer_once"));
     }
 }

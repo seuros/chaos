@@ -153,6 +153,10 @@ impl TurnContext {
             vfs_policy: &self.vfs_policy,
             collab_enabled: config.collab_enabled,
         })
+        .with_agent_compaction_control(matches!(
+            config.agent_compaction_control,
+            crate::config::AgentCompactionControl::Bounded
+        ))
         .with_dynamic_parent_effort(config.dynamic_parent_effort, &self.session_source)
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
@@ -428,6 +432,10 @@ pub(super) fn make_turn_context(
         vfs_policy: &session_configuration.vfs_policy,
         collab_enabled: per_turn_config.collab_enabled,
     })
+    .with_agent_compaction_control(matches!(
+        per_turn_config.agent_compaction_control,
+        crate::config::AgentCompactionControl::Bounded
+    ))
     .with_dynamic_parent_effort(per_turn_config.dynamic_parent_effort, &session_source)
     .with_web_search_config(per_turn_config.web_search_config.clone())
     .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)

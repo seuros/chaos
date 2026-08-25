@@ -1,4 +1,5 @@
 use chaos_ipc::models::ResponseItem;
+use chaos_ipc::protocol::CompactionControlItem;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::TurnContextItem;
@@ -18,6 +19,9 @@ pub(super) struct RolloutReconstruction {
     pub(super) history: Vec<ResponseItem>,
     pub(super) previous_turn_settings: Option<PreviousTurnSettings>,
     pub(super) reference_context_item: Option<TurnContextItem>,
+    pub(super) pressure_window_number: u64,
+    pub(super) compaction_control: Option<CompactionControlItem>,
+    pub(super) deferral_used: bool,
 }
 
 #[derive(Debug, Default)]
@@ -99,6 +103,27 @@ impl Session {
         turn_context: &TurnContext,
         rollout_items: &[RolloutItem],
     ) -> RolloutReconstruction {
+        let pressure_window_number = rollout_items
+            .iter()
+            .filter(|item| matches!(item, RolloutItem::Compacted(_)))
+            .count() as u64;
+        let compaction_control = rollout_items.iter().rev().find_map(|item| match item {
+            RolloutItem::CompactionControl(control)
+                if control.window_number == pressure_window_number =>
+            {
+                Some(control.clone())
+            }
+            _ => None,
+        });
+        let deferral_used = rollout_items.iter().any(|item| {
+            matches!(
+                item,
+                RolloutItem::CompactionControl(control)
+                    if control.window_number == pressure_window_number
+                        && control.action
+                            == chaos_ipc::protocol::CompactionControlAction::DeferOnce
+            )
+        });
         // Replay metadata should already match the shape of the future lazy reverse loader, even
         // while history materialization still uses an eager bridge. Scan newest-to-oldest,
         // stopping once a surviving replacement-history checkpoint and the required resume metadata
@@ -218,6 +243,7 @@ impl Session {
                 }
                 RolloutItem::ResponseItem(_)
                 | RolloutItem::EventMsg(_)
+                | RolloutItem::CompactionControl(_)
                 | RolloutItem::SessionMeta(_) => {}
             }
 
@@ -286,6 +312,7 @@ impl Session {
                     history.drop_last_n_user_turns(rollback.num_turns);
                 }
                 RolloutItem::EventMsg(_)
+                | RolloutItem::CompactionControl(_)
                 | RolloutItem::TurnContext(_)
                 | RolloutItem::SessionMeta(_) => {}
             }
@@ -307,6 +334,9 @@ impl Session {
             history: history.raw_items().to_vec(),
             previous_turn_settings,
             reference_context_item,
+            pressure_window_number,
+            compaction_control,
+            deferral_used,
         }
     }
 }

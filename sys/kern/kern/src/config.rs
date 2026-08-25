@@ -134,6 +134,15 @@ impl ChatgptContextWindow {
     }
 }
 
+/// Standing user policy for model-visible compaction timing controls.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentCompactionControl {
+    #[default]
+    Disabled,
+    Bounded,
+}
+
 /// First-party CLI transport selected when clamp mode is enabled.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -294,6 +303,10 @@ pub struct Config {
     /// How the auto-compaction token limit is measured: against the total
     /// active context, or only the tokens grown since the last compaction.
     pub model_auto_compact_token_limit_scope: chaos_context::allotment::Scope,
+
+    /// Whether the model may compact early or defer once within a
+    /// harness-computed safety band.
+    pub agent_compaction_control: AgentCompactionControl,
 
     /// Key into the model_providers map that specifies which provider to use.
     pub model_provider_id: String,
@@ -625,6 +638,12 @@ pub struct ConfigToml {
     /// active context ("total", the default), or only the tokens grown since
     /// the last compaction ("body-after-prefix").
     pub model_auto_compact_token_limit_scope: Option<chaos_context::allotment::Scope>,
+
+    /// Model-visible compaction timing control. `"disabled"` preserves normal
+    /// automatic behavior; `"bounded"` also exposes `compact_now` and one
+    /// harness-bounded deferral per pressure window.
+    #[serde(default)]
+    pub agent_compaction_control: Option<AgentCompactionControl>,
 
     /// Default approval policy for executing commands.
     pub approval_policy: Option<ApprovalPolicy>,

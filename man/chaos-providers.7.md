@@ -100,6 +100,29 @@ compaction threshold while remaining below the 90% safety ceiling, Chaos grants
 one immediate iteration before compacting. The reflex is directed to the agent
 rather than emitted as a user-facing compaction warning.
 
+Users can optionally give the agent bounded timing control:
+
+```toml
+agent_compaction_control = "bounded"
+```
+
+The default is `"disabled"`. In bounded mode, Chaos exposes a
+`compaction_control` tool. The agent may request immediate compaction at the
+next safe turn-loop boundary, or defer the current pressure window once after
+receiving its reflex. A deferral cannot stack or change its own limits: Chaos
+keeps an absolute ceiling equal to the smaller of 90% of the raw model window
+and the effective input window minus a 20,000-token distillation reserve.
+For the `observed-400k` preset, that ceiling is 360,000 tokens, so deferral
+extends the normal 350,000-token threshold by only 10,000 tokens. Models whose
+catalog window is reduced to an 80% effective input window can have a larger
+usable band.
+Doing nothing retains normal automatic compaction. Accepted decisions are
+persisted for resume continuity; forks inherit transcript history but not a
+pending decision made by the source agent.
+
+The user-facing term *compaction* corresponds to the kernel's internal
+*distillation* implementation.
+
 ### xAI (Grok)
 
 Bundled — no config needed. Just export the key:

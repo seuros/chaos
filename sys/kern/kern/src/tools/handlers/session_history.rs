@@ -333,7 +333,10 @@ fn render_journal_entry(entry: &JournalEntry) -> Option<TranscriptEntry> {
             Some("assistant".to_string()),
             compacted.message.clone(),
         ),
-        RolloutItem::SessionMeta(_) | RolloutItem::TurnContext(_) | RolloutItem::EventMsg(_) => {
+        RolloutItem::SessionMeta(_)
+        | RolloutItem::TurnContext(_)
+        | RolloutItem::CompactionControl(_)
+        | RolloutItem::EventMsg(_) => {
             return None;
         }
     };

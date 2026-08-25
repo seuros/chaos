@@ -266,8 +266,32 @@ pub enum RolloutItem {
     SessionMeta(SessionMetaLine),
     ResponseItem(ResponseItem),
     Compacted(CompactedItem),
+    CompactionControl(CompactionControlItem),
     TurnContext(TurnContextItem),
     EventMsg(EventMsg),
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum CompactionControlAction {
+    CompactNow,
+    DeferOnce,
+}
+
+/// Durable record of an accepted agent decision for one compaction-pressure
+/// window. The monotonically increasing window number is the resume-stable
+/// identity; the UUID is retained only for tracing and stale live-call checks.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+pub struct CompactionControlItem {
+    pub window_number: u64,
+    pub window_id: String,
+    pub action: CompactionControlAction,
+    pub model: String,
+    pub effective_context_window: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferral_ceiling: Option<i64>,
+    pub active_tokens: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]

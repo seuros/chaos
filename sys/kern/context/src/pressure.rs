@@ -6,6 +6,27 @@
 
 use uuid::Uuid;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Deferral {
+    pub model: String,
+    pub effective_context_window: i64,
+    pub ceiling: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactRequest {
+    pub model: String,
+    pub effective_context_window: i64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum Control {
+    #[default]
+    Normal,
+    Deferred(Deferral),
+    CompactRequested(CompactRequest),
+}
+
 /// Input-token baseline for the current window. A server-observed value comes
 /// from real usage reported by the provider and always wins over an estimate;
 /// once observed it is never overwritten within the same window.
@@ -31,6 +52,8 @@ pub struct Window {
     window_id: Uuid,
     baseline: Option<Baseline>,
     reminder_claimed: bool,
+    deferral_used: bool,
+    control: Control,
 }
 
 impl Window {
@@ -43,7 +66,17 @@ impl Window {
             window_id,
             baseline: None,
             reminder_claimed: false,
+            deferral_used: false,
+            control: Control::Normal,
         }
+    }
+
+    /// Reconstruct a pressure window after resume. UUID identity remains
+    /// process-local; the compaction count is the durable window identity.
+    pub fn from_number(window_number: u64) -> Self {
+        let mut window = Self::new();
+        window.window_number = window_number;
+        window
     }
 
     /// Rotates to a fresh window after a distillation installs replacement
@@ -54,6 +87,8 @@ impl Window {
         self.window_number += 1;
         self.baseline = None;
         self.reminder_claimed = false;
+        self.deferral_used = false;
+        self.control = Control::Normal;
     }
 
     /// Records the server-reported input-token prefill for this window. Only
@@ -79,6 +114,49 @@ impl Window {
     /// claim after each `advance`.
     pub fn claim_reminder(&mut self) -> bool {
         !std::mem::replace(&mut self.reminder_claimed, true)
+    }
+
+    pub fn reminder_claimed(&self) -> bool {
+        self.reminder_claimed
+    }
+
+    pub fn control(&self) -> &Control {
+        &self.control
+    }
+
+    pub fn defer(&mut self, deferral: Deferral) {
+        self.deferral_used = true;
+        self.control = Control::Deferred(deferral);
+    }
+
+    pub fn deferral_used(&self) -> bool {
+        self.deferral_used
+    }
+
+    pub fn request_compaction(&mut self, request: CompactRequest) {
+        self.control = Control::CompactRequested(request);
+    }
+
+    pub fn clear_compaction_request(&mut self) {
+        if matches!(self.control, Control::CompactRequested(_)) {
+            self.control = Control::Normal;
+        }
+    }
+
+    pub fn restore_control(&mut self, control: Control) {
+        if matches!(control, Control::Deferred(_)) {
+            self.deferral_used = true;
+        }
+        self.control = control;
+    }
+
+    pub fn mark_deferral_used(&mut self) {
+        self.deferral_used = true;
+    }
+
+    pub fn reset_control(&mut self) {
+        self.deferral_used = false;
+        self.control = Control::Normal;
     }
 
     pub fn window_number(&self) -> u64 {
@@ -135,6 +213,30 @@ mod tests {
         assert_eq!(window.first_window_id(), first_id);
         assert_ne!(window.window_id(), first_id);
         assert_eq!(window.baseline(), None);
+        assert_eq!(window.control(), &Control::Normal);
+        assert!(!window.deferral_used());
         assert!(window.claim_reminder());
+    }
+
+    #[test]
+    fn reconstructed_window_keeps_number_but_uses_fresh_uuid() {
+        let window = Window::from_number(7);
+        assert_eq!(window.window_number(), 7);
+        assert_eq!(window.first_window_id(), window.window_id());
+        assert_eq!(window.previous_window_id(), None);
+    }
+
+    #[test]
+    fn advance_resets_compaction_control() {
+        let mut window = Window::new();
+        window.defer(Deferral {
+            model: "model".to_string(),
+            effective_context_window: 100,
+            ceiling: 80,
+        });
+        assert!(window.deferral_used());
+        window.advance();
+        assert_eq!(window.control(), &Control::Normal);
+        assert!(!window.deferral_used());
     }
 }

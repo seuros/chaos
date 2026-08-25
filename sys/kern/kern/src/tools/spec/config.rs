@@ -42,6 +42,7 @@ pub(crate) struct ToolsConfig {
     pub experimental_supported_tools: Vec<String>,
     pub minion_jobs_tools: bool,
     pub minion_jobs_worker_tools: bool,
+    pub agent_compaction_control: bool,
     /// Native server-side tools declared by the model/provider ABI.
     pub native_server_side_tools: Vec<String>,
 }
@@ -121,12 +122,18 @@ impl ToolsConfig {
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
             minion_jobs_tools: include_minion_jobs,
             minion_jobs_worker_tools,
+            agent_compaction_control: false,
             native_server_side_tools: model_info.native_server_side_tools.clone(),
         }
     }
 
     pub fn with_agent_roles(mut self, agent_roles: BTreeMap<String, AgentRoleConfig>) -> Self {
         self.agent_roles = agent_roles;
+        self
+    }
+
+    pub fn with_agent_compaction_control(mut self, enabled: bool) -> Self {
+        self.agent_compaction_control = enabled;
         self
     }
 

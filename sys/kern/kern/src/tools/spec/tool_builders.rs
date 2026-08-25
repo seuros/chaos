@@ -20,6 +20,105 @@ use super::schemas::{
     unified_exec_output_schema, wait_output_schema,
 };
 
+pub(crate) fn create_read_session_history_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "before_seq".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Exclusive sequence cursor returned by an earlier call. When omitted, reads immediately before the latest compaction, or from the journal end if no compaction has occurred."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "max_items".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Maximum transcript entries to return. Defaults to 40 and is capped at 100."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "max_bytes".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Approximate maximum transcript text bytes to return. Defaults to 24000 and is capped at 64000."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: "read_session_history".to_string(),
+        description: "Read a bounded page of this agent's own canonical session transcript. By default it opens immediately before the latest compaction, preserving journal sequence provenance while omitting hidden reasoning, encrypted payloads, images, and telemetry. Use next_before_seq to page farther back."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+pub(crate) fn create_search_session_history_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "query".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Literal text to find in this agent's canonical session transcript."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "before_seq".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Exclusive sequence cursor returned by an earlier search. When omitted, searches the whole journal."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "max_results".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Maximum matching entries to return. Defaults to 20 and is capped at 50."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "max_bytes".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Approximate maximum excerpt bytes to return. Defaults to 24000 and is capped at 64000."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: "search_session_history".to_string(),
+        description: "Search this agent's own canonical persisted session transcript using bounded literal matching (ASCII case-insensitive; other text exact). Results are newest first and carry journal sequence numbers; hidden reasoning, encrypted payloads, images, and telemetry are omitted."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["query".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 pub(crate) fn create_set_parent_effort_tool() -> ToolSpec {
     let levels = "none, minimal, low, medium, high, xhigh, max, ultra";
     let properties = BTreeMap::from([

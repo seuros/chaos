@@ -1343,6 +1343,42 @@ fn compaction_control_tool_is_opt_in() {
 }
 
 #[test]
+fn session_title_tool_is_opt_in() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    let base = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    });
+    let (disabled, _) = build_specs(&base, None, None, &[]).build();
+    assert!(
+        !disabled
+            .iter()
+            .any(|tool| tool.spec.name() == "set_session_title")
+    );
+
+    let (enabled, _) = build_specs(
+        &base.with_agent_session_title(true, &SessionSource::Cli),
+        None,
+        None,
+        &[],
+    )
+    .build();
+    assert!(
+        enabled
+            .iter()
+            .any(|tool| tool.spec.name() == "set_session_title")
+    );
+}
+
+#[test]
 fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);

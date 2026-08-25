@@ -157,6 +157,13 @@ impl TurnContext {
             config.agent_compaction_control,
             crate::config::AgentCompactionControl::Bounded
         ))
+        .with_agent_session_title(
+            matches!(
+                config.terminal_title,
+                crate::config::TerminalTitleMode::Agent
+            ),
+            &self.session_source,
+        )
         .with_dynamic_parent_effort(config.dynamic_parent_effort, &self.session_source)
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
@@ -436,6 +443,13 @@ pub(super) fn make_turn_context(
         per_turn_config.agent_compaction_control,
         crate::config::AgentCompactionControl::Bounded
     ))
+    .with_agent_session_title(
+        matches!(
+            per_turn_config.terminal_title,
+            crate::config::TerminalTitleMode::Agent
+        ),
+        &session_source,
+    )
     .with_dynamic_parent_effort(per_turn_config.dynamic_parent_effort, &session_source)
     .with_web_search_config(per_turn_config.web_search_config.clone())
     .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)

@@ -56,6 +56,31 @@ pub(crate) fn create_compaction_control_tool() -> ToolSpec {
     })
 }
 
+pub(crate) fn create_set_session_title_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "title".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "A short, concrete, distinctive 2-6 word title naming the session's primary work."
+                    .to_string(),
+            ),
+        },
+    )]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: "set_session_title".to_string(),
+        description: "Name the current Chaos session so the user can identify its terminal tab and resume entry. Use this once the primary work is clear, and update it only when the session's purpose materially changes. Choose a distinctive title another session would not plausibly share. User-authored names cannot be replaced."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["title".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 pub(crate) fn create_read_session_history_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (

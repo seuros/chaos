@@ -12,8 +12,8 @@ pub(crate) use mcp::{
     reload_user_config, review, set_dynamic_parent_effort, shutdown, user_input_or_turn,
 };
 pub(crate) use tasks::{
-    add_to_history, compact, get_history_entry_request, process_rollback, run_user_shell_command,
-    set_process_name, undo,
+    add_to_history, compact, get_history_entry_request, persist_process_name, process_rollback,
+    run_user_shell_command, set_process_name, undo,
 };
 pub(crate) use tools::{
     dynamic_tool_response, list_all_tools, list_custom_prompts, list_mcp_tools,

@@ -41,6 +41,8 @@ use super::PreviousTurnSettings;
 use super::Session;
 use super::TurnContext;
 
+const SESSION_TITLE_REMINDER_MARKER: &str = "<session_title_reflex>";
+
 mod execution;
 mod preparation;
 mod progress;
@@ -214,6 +216,46 @@ async fn finalize_context_hook(
     false
 }
 
+async fn maybe_inject_session_title_reminder(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    if turn_context.config.terminal_title != crate::config::TerminalTitleMode::Agent {
+        return;
+    }
+    if matches!(sess.session_source().await, SessionSource::SubAgent(_)) {
+        return;
+    }
+    let unnamed = {
+        let state = sess.state.lock().await;
+        state.session_configuration.process_name.is_none()
+    };
+    if !unnamed {
+        return;
+    }
+    let already_injected = sess.clone_history().await.raw_items().iter().any(|item| {
+        let ResponseItem::Message { content, .. } = item else {
+            return false;
+        };
+        content.iter().any(|content| match content {
+            chaos_ipc::models::ContentItem::InputText { text }
+            | chaos_ipc::models::ContentItem::OutputText { text }
+            | chaos_ipc::models::ContentItem::Document { text, .. } => {
+                text.contains(SESSION_TITLE_REMINDER_MARKER)
+            }
+            chaos_ipc::models::ContentItem::InputImage { .. } => false,
+        })
+    });
+    if already_injected {
+        return;
+    }
+
+    let reminder = format!(
+        "{SESSION_TITLE_REMINDER_MARKER}\n\
+         This session has no descriptive title. If you can now name its primary work in a short, concrete, distinctive 2-6 word phrase, you may call `set_session_title`. Otherwise continue normally.\n\
+         </session_title_reflex>"
+    );
+    let item: ResponseItem = DeveloperInstructions::new(reminder).into();
+    sess.record_conversation_items(turn_context, &[item]).await;
+}
+
 /// Map the active approval policy onto the `permission_mode` string surfaced
 /// to hook scripts. There are only two execution modes: headless (no
 /// operator, nothing to approve) and interactive (operator on the wheel).
@@ -312,6 +354,7 @@ pub(crate) async fn run_turn(
     let agent_context = hook_agent_context(sess.conversation_id, &sess.session_source().await);
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
         .await;
+    maybe_inject_session_title_reminder(&sess, &turn_context).await;
     // Track the previous-turn baseline from the regular user-turn path only so
     // standalone tasks (compact/shell/review/undo) cannot suppress future
     // model injections.

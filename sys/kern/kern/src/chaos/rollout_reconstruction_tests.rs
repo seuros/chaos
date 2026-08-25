@@ -6,6 +6,8 @@ use crate::protocol::ResumedHistory;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
+use chaos_ipc::protocol::CompactionControlAction;
+use chaos_ipc::protocol::CompactionControlItem;
 use pretty_assertions::assert_eq;
 fn user_message(text: &str) -> ResponseItem {
     ResponseItem::Message {
@@ -29,6 +31,54 @@ fn assistant_message(text: &str) -> ResponseItem {
         end_turn: None,
         phase: None,
     }
+}
+
+#[tokio::test]
+async fn reconstruction_uses_compaction_count_as_durable_pressure_window_identity() {
+    let (session, turn_context) = make_session_and_context().await;
+    let current = CompactionControlItem {
+        window_number: 2,
+        window_id: "process-local-id".to_string(),
+        action: CompactionControlAction::DeferOnce,
+        model: turn_context.model_info.slug.clone(),
+        effective_context_window: turn_context.model_context_window().unwrap_or(128_000),
+        deferral_ceiling: Some(100_000),
+        active_tokens: 90_000,
+    };
+    let rollout_items = vec![
+        RolloutItem::CompactionControl(CompactionControlItem {
+            window_number: 0,
+            ..current.clone()
+        }),
+        RolloutItem::Compacted(CompactedItem {
+            message: "first".to_string(),
+            replacement_history: Some(Vec::new()),
+        }),
+        RolloutItem::Compacted(CompactedItem {
+            message: "second".to_string(),
+            replacement_history: Some(Vec::new()),
+        }),
+        RolloutItem::CompactionControl(current.clone()),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(&turn_context, &rollout_items)
+        .await;
+
+    assert_eq!(reconstructed.pressure_window_number, 2);
+    assert_eq!(reconstructed.compaction_control, Some(current));
+    assert!(reconstructed.deferral_used);
+
+    {
+        let mut state = session.state.lock().await;
+        assert!(state.pressure.claim_reminder());
+    }
+    session
+        .apply_rollout_reconstruction(&turn_context, &rollout_items)
+        .await;
+    let state = session.state.lock().await;
+    assert_eq!(state.pressure.window_number(), 2);
+    assert!(!state.pressure.reminder_claimed());
 }
 
 #[tokio::test]

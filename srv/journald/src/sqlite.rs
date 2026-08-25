@@ -810,6 +810,7 @@ fn journal_item_type(item: &RolloutItem) -> &'static str {
         RolloutItem::SessionMeta(_) => "session_meta",
         RolloutItem::ResponseItem(_) => "response_item",
         RolloutItem::Compacted(_) => "compacted",
+        RolloutItem::CompactionControl(_) => "compaction_control",
         RolloutItem::TurnContext(_) => "turn_context",
         RolloutItem::EventMsg(_) => "event_msg",
     }

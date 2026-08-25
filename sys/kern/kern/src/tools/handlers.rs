@@ -1,5 +1,6 @@
 pub mod apply_patch;
 mod catalog_module;
+mod compaction_control;
 mod dynamic;
 mod halluacinate;
 mod mcp;
@@ -33,6 +34,7 @@ pub use apply_patch::ApplyPatchHandler;
 pub use catalog_module::CatalogModuleHandler;
 use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::protocol::ApprovalPolicy;
+pub use compaction_control::CompactionControlHandler;
 pub use dynamic::DynamicToolHandler;
 pub use halluacinate::HalluacinateHandler;
 pub use mcp::McpHandler;

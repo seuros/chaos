@@ -446,6 +446,36 @@ pub(crate) async fn run_turn(
                     needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
                 } = sampling_request_output;
+
+                // The compaction-control handler records intent during tool
+                // dispatch. Because dispatch completes inside sampling, a
+                // defer_once decision affects the status calculation below
+                // immediately, while compact_now is acted on here at the next
+                // safe turn-loop boundary.
+                if sess.compaction_requested(turn_context.as_ref()).await {
+                    match run_auto_compact(
+                        &sess,
+                        &turn_context,
+                        InitialContextInjection::BeforeLastUserMessage,
+                    )
+                    .await
+                    {
+                        Ok(()) => continue,
+                        Err(err) => {
+                            sess.clear_compaction_request().await;
+                            warn!(%err, "agent-requested compaction failed; returning to normal automatic compaction");
+                            sess.send_event(
+                                &turn_context,
+                                EventMsg::Warning(WarningEvent {
+                                    message: format!(
+                                        "Agent-requested compaction failed; normal automatic compaction remains active: {err}"
+                                    ),
+                                }),
+                            )
+                            .await;
+                        }
+                    }
+                }
                 let (allotment, compaction_reflex_injected, compaction_reflex_follow_up_allowed) =
                     sess.maybe_inject_compaction_reflex(turn_context.as_ref())
                         .await;

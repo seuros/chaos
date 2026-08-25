@@ -15,6 +15,10 @@ pub(super) async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
 ) -> ChaosResult<()> {
+    if sess.compaction_requested(turn_context).await {
+        run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
+        return Ok(());
+    }
     if maybe_run_previous_model_inline_compact(sess, turn_context).await? {
         return Ok(());
     }

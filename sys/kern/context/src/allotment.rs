@@ -34,6 +34,9 @@ pub struct Limits {
     /// Full context window of the model; reaching it forces distillation
     /// regardless of scope.
     pub context_window: Option<i64>,
+    /// Absolute active-token ceiling used while the current pressure window is
+    /// under a one-time agent deferral.
+    pub deferral_ceiling: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -56,23 +59,27 @@ pub fn status(
     active_tokens: i64,
     baseline: Option<i64>,
     limits: Limits,
+    deferred: bool,
 ) -> AllotmentStatus {
     let scope_tokens = match scope {
         Scope::Total => active_tokens,
         Scope::BodyAfterPrefix => active_tokens.saturating_sub(baseline.unwrap_or(active_tokens)),
     };
-    let scope_limit_reached = limits
-        .auto_distill_token_limit
-        .is_some_and(|limit| scope_tokens >= limit);
-    let window_limit_reached = limits
-        .context_window
-        .is_some_and(|window| active_tokens >= window);
+    let scope_limit_reached = !deferred
+        && limits
+            .auto_distill_token_limit
+            .is_some_and(|limit| scope_tokens >= limit);
+    let active_limit = if deferred {
+        limits.deferral_ceiling.or(limits.context_window)
+    } else {
+        limits.context_window
+    };
+    let window_limit_reached = active_limit.is_some_and(|window| active_tokens >= window);
     let scope_remaining = limits
         .auto_distill_token_limit
         .map(|limit| limit.saturating_sub(scope_tokens).max(0));
-    let window_remaining = limits
-        .context_window
-        .map(|window| window.saturating_sub(active_tokens).max(0));
+    let window_remaining = active_limit.map(|window| window.saturating_sub(active_tokens).max(0));
+    let scope_remaining = (!deferred).then_some(scope_remaining).flatten();
     let tokens_until_distillation = match (scope_remaining, window_remaining) {
         (Some(scope), Some(window)) => Some(scope.min(window)),
         (scope, window) => scope.or(window),

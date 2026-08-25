@@ -1,6 +1,7 @@
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::CompactedItem;
+use chaos_ipc::protocol::CompactionControlAction;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::TurnContextItem;
 use tracing::error;
@@ -108,6 +109,9 @@ impl Session {
             InitialHistory::Forked(rollout_items) => {
                 self.apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
+                // Forks inherit transcript history, not a pending decision made
+                // by the source agent for the source process.
+                self.state.lock().await.pressure.reset_control();
 
                 if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
                     let mut state = self.state.lock().await;
@@ -144,11 +148,59 @@ impl Session {
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
         let previous_turn_settings = reconstructed_rollout.previous_turn_settings.clone();
+        let control = reconstructed_rollout
+            .compaction_control
+            .as_ref()
+            .and_then(|item| {
+                let effective_context_window = turn_context.model_context_window()?;
+                if turn_context.config.agent_compaction_control
+                    != crate::config::AgentCompactionControl::Bounded
+                    || item.model != turn_context.model_info.slug
+                    || item.effective_context_window != effective_context_window
+                {
+                    return None;
+                }
+                match item.action {
+                    CompactionControlAction::CompactNow => {
+                        Some(chaos_context::pressure::Control::CompactRequested(
+                            chaos_context::pressure::CompactRequest {
+                                model: item.model.clone(),
+                                effective_context_window,
+                            },
+                        ))
+                    }
+                    CompactionControlAction::DeferOnce => {
+                        let ceiling = crate::chaos::session::tokens::compaction_deferral_ceiling(
+                            turn_context,
+                        )?;
+                        (item.deferral_ceiling == Some(ceiling)).then(|| {
+                            chaos_context::pressure::Control::Deferred(
+                                chaos_context::pressure::Deferral {
+                                    model: item.model.clone(),
+                                    effective_context_window,
+                                    ceiling,
+                                },
+                            )
+                        })
+                    }
+                }
+            })
+            .unwrap_or(chaos_context::pressure::Control::Normal);
         self.replace_history(
             reconstructed_rollout.history,
             reconstructed_rollout.reference_context_item,
         )
         .await;
+        {
+            let mut state = self.state.lock().await;
+            state.pressure = chaos_context::pressure::Window::from_number(
+                reconstructed_rollout.pressure_window_number,
+            );
+            if reconstructed_rollout.deferral_used {
+                state.pressure.mark_deferral_used();
+            }
+            state.pressure.restore_control(control);
+        }
         self.set_previous_turn_settings(previous_turn_settings.clone())
             .await;
         previous_turn_settings

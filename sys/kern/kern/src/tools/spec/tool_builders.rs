@@ -20,6 +20,42 @@ use super::schemas::{
     unified_exec_output_schema, wait_output_schema,
 };
 
+pub(crate) fn create_compaction_control_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "action".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Action to request. Use `compact_now` to compact at the next safe turn-loop boundary, or `defer_once` to extend only the current pressure window to Chaos's fixed safety ceiling."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "window_id".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "The current compaction_reflex window_id. Required for `defer_once`; optional for `compact_now`, but if supplied it must be current."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: "compaction_control".to_string(),
+        description: "Exercise bounded control over this session's automatic compaction timing. `defer_once` is available only after the current compaction reflex, cannot stack, and never overrides Chaos's fixed safety ceiling. `compact_now` may be requested at any time. Doing nothing means continue with normal automatic compaction."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["action".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 pub(crate) fn create_read_session_history_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (

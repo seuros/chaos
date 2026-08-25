@@ -916,6 +916,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         chatgpt_context_window: ChatgptContextWindow::Catalog,
         model_auto_compact_token_limit: None,
         model_auto_compact_token_limit_scope: Default::default(),
+        agent_compaction_control: Default::default(),
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),

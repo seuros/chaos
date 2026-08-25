@@ -322,6 +322,7 @@ fn allotment_status_covers_scopes_limits_and_remaining_tokens() {
     let limits = Limits {
         auto_distill_token_limit: Some(1_000),
         context_window: Some(4_000),
+        deferral_ceiling: Some(3_500),
     };
 
     // Total scope: under, at, and over the distill limit.
@@ -329,18 +330,18 @@ fn allotment_status_covers_scopes_limits_and_remaining_tokens() {
         scope_tokens,
         limit_reached,
         tokens_until_distillation,
-    } = status(Scope::Total, 900, None, limits);
+    } = status(Scope::Total, 900, None, limits, false);
     assert_eq!((scope_tokens, limit_reached), (900, false));
     assert_eq!(tokens_until_distillation, Some(100));
-    assert!(status(Scope::Total, 1_000, None, limits).limit_reached);
+    assert!(status(Scope::Total, 1_000, None, limits, false).limit_reached);
 
     // BodyAfterPrefix: growth since the baseline is what counts; without a
     // baseline the growth measures zero.
-    let grown = status(Scope::BodyAfterPrefix, 3_200, Some(2_500), limits);
+    let grown = status(Scope::BodyAfterPrefix, 3_200, Some(2_500), limits, false);
     assert_eq!((grown.scope_tokens, grown.limit_reached), (700, false));
     assert_eq!(grown.tokens_until_distillation, Some(300));
-    assert!(status(Scope::BodyAfterPrefix, 3_600, Some(2_500), limits).limit_reached);
-    let no_baseline = status(Scope::BodyAfterPrefix, 3_600, None, limits);
+    assert!(status(Scope::BodyAfterPrefix, 3_600, Some(2_500), limits, false).limit_reached);
+    let no_baseline = status(Scope::BodyAfterPrefix, 3_600, None, limits, false);
     assert_eq!(
         (no_baseline.scope_tokens, no_baseline.limit_reached),
         (0, false)
@@ -348,17 +349,27 @@ fn allotment_status_covers_scopes_limits_and_remaining_tokens() {
 
     // Reaching the full context window forces distillation in any scope, and
     // the window can be the binding constraint on remaining tokens.
-    assert!(status(Scope::BodyAfterPrefix, 4_000, Some(3_900), limits).limit_reached);
+    assert!(status(Scope::BodyAfterPrefix, 4_000, Some(3_900), limits, false).limit_reached);
     let window_only = Limits {
         auto_distill_token_limit: None,
         context_window: Some(4_000),
+        deferral_ceiling: None,
     };
-    let window_bound = status(Scope::Total, 3_950, None, window_only);
+    let window_bound = status(Scope::Total, 3_950, None, window_only, false);
     assert_eq!(window_bound.tokens_until_distillation, Some(50));
     assert!(!window_bound.limit_reached);
 
     // No limits configured: never triggers, no countdown.
-    let unlimited = status(Scope::Total, 10_000, None, Limits::default());
+    let unlimited = status(Scope::Total, 10_000, None, Limits::default(), false);
     assert!(!unlimited.limit_reached);
     assert_eq!(unlimited.tokens_until_distillation, None);
+
+    // A one-time deferral suppresses the scoped soft limit, but never the
+    // absolute ceiling. This remains true for a prefix-relative scope.
+    let deferred = status(Scope::Total, 1_200, None, limits, true);
+    assert!(!deferred.limit_reached);
+    assert_eq!(deferred.tokens_until_distillation, Some(2_300));
+    assert!(status(Scope::Total, 3_500, None, limits, true).limit_reached);
+    assert!(!status(Scope::BodyAfterPrefix, 3_400, Some(3_300), limits, true).limit_reached);
+    assert!(status(Scope::BodyAfterPrefix, 3_500, Some(3_400), limits, true).limit_reached);
 }

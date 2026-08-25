@@ -34,6 +34,7 @@ pub(crate) fn builder_from_items(items: &[RolloutItem]) -> Option<ProcessMetadat
         RolloutItem::SessionMeta(meta_line) => builder_from_session_meta(meta_line),
         RolloutItem::ResponseItem(_)
         | RolloutItem::Compacted(_)
+        | RolloutItem::CompactionControl(_)
         | RolloutItem::TurnContext(_)
         | RolloutItem::EventMsg(_) => None,
     })

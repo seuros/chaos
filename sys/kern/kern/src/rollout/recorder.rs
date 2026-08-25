@@ -1208,6 +1208,7 @@ fn journal_process_item_from_loaded(
             }
             RolloutItem::ResponseItem(_)
             | RolloutItem::Compacted(_)
+            | RolloutItem::CompactionControl(_)
             | RolloutItem::TurnContext(_)
             | RolloutItem::EventMsg(_) => {}
         }

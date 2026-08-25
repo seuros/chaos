@@ -17,9 +17,10 @@ pub fn is_persisted_response_item(item: &RolloutItem, mode: EventPersistenceMode
         RolloutItem::ResponseItem(item) => should_persist_response_item(item),
         RolloutItem::EventMsg(ev) => should_persist_event_msg(ev, mode),
         // Persist structural markers so replay and rollback remain stable.
-        RolloutItem::Compacted(_) | RolloutItem::TurnContext(_) | RolloutItem::SessionMeta(_) => {
-            true
-        }
+        RolloutItem::Compacted(_)
+        | RolloutItem::CompactionControl(_)
+        | RolloutItem::TurnContext(_)
+        | RolloutItem::SessionMeta(_) => true,
     }
 }
 

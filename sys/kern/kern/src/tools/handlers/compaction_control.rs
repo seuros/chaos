@@ -46,6 +46,57 @@ struct Output {
     idempotent: bool,
 }
 
+fn validate_window_id(supplied: Option<&str>, live: &str) -> Result<(), String> {
+    if supplied.is_some_and(|window_id| window_id != live) {
+        Err(format!(
+            "stale compaction window: current window_id is {live}"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_defer_once(
+    existing_control: &Control,
+    reminder_claimed: bool,
+    deferral_used: bool,
+    active_tokens: i64,
+    soft_limit: i64,
+    deferral: &Deferral,
+) -> Result<bool, String> {
+    if matches!(existing_control, Control::CompactRequested(_)) {
+        return Err("compact_now is already pending for this pressure window".to_string());
+    }
+    if !reminder_claimed {
+        return Err(
+            "defer_once is only available after the current window's compaction reflex".to_string(),
+        );
+    }
+    let idempotent =
+        matches!(existing_control, Control::Deferred(existing) if existing == deferral);
+    if idempotent {
+        return Ok(true);
+    }
+    if deferral.ceiling <= soft_limit {
+        return Err(
+            "the current model has no safe extension beyond its automatic compaction threshold"
+                .to_string(),
+        );
+    }
+    if active_tokens >= deferral.ceiling {
+        return Err(format!(
+            "the safe deferral ceiling ({} tokens) has already been reached",
+            deferral.ceiling
+        ));
+    }
+    if deferral_used {
+        return Err(
+            "the one-time deferral for this pressure window has already been used".to_string(),
+        );
+    }
+    Ok(false)
+}
+
 impl ToolHandler for CompactionControlHandler {
     type Output = FunctionToolOutput;
 
@@ -92,13 +143,8 @@ impl ToolHandler for CompactionControlHandler {
                 state.pressure.deferral_used(),
             )
         };
-        if let Some(window_id) = args.window_id.as_deref()
-            && window_id != live_window_id
-        {
-            return Err(FunctionCallError::RespondToModel(format!(
-                "stale compaction window: current window_id is {live_window_id}"
-            )));
-        }
+        validate_window_id(args.window_id.as_deref(), &live_window_id)
+            .map_err(FunctionCallError::RespondToModel)?;
 
         let (action, action_name, deferral_ceiling, new_control, idempotent) = match args.action {
             Action::CompactNow => {
@@ -119,18 +165,12 @@ impl ToolHandler for CompactionControlHandler {
                 )
             }
             Action::DeferOnce => {
-                let supplied_window_id = args.window_id.as_deref().ok_or_else(|| {
+                args.window_id.as_deref().ok_or_else(|| {
                     FunctionCallError::RespondToModel(
                         "defer_once requires the window_id from the current compaction reflex"
                             .to_string(),
                     )
                 })?;
-                if supplied_window_id != live_window_id || !reminder_claimed {
-                    return Err(FunctionCallError::RespondToModel(
-                        "defer_once is only available after the current window's compaction reflex"
-                            .to_string(),
-                    ));
-                }
                 let ceiling = compaction_deferral_ceiling(&turn).ok_or_else(|| {
                     FunctionCallError::RespondToModel(
                         "no safe deferral ceiling is available for the current model".to_string(),
@@ -141,29 +181,20 @@ impl ToolHandler for CompactionControlHandler {
                         "the current model has no automatic compaction threshold".to_string(),
                     )
                 })?;
-                if ceiling <= soft_limit {
-                    return Err(FunctionCallError::RespondToModel(
-                        "the current model has no safe extension beyond its automatic compaction threshold"
-                            .to_string(),
-                    ));
-                }
-                if active_tokens >= ceiling {
-                    return Err(FunctionCallError::RespondToModel(format!(
-                        "the safe deferral ceiling ({ceiling} tokens) has already been reached"
-                    )));
-                }
                 let deferral = Deferral {
                     model: turn.model_info.slug.clone(),
                     effective_context_window,
                     ceiling,
                 };
-                let idempotent = matches!(&existing_control, Control::Deferred(existing) if existing == &deferral);
-                if deferral_used && !idempotent {
-                    return Err(FunctionCallError::RespondToModel(
-                        "the one-time deferral for this pressure window has already been used"
-                            .to_string(),
-                    ));
-                }
+                let idempotent = validate_defer_once(
+                    &existing_control,
+                    reminder_claimed,
+                    deferral_used,
+                    active_tokens,
+                    soft_limit,
+                    &deferral,
+                )
+                .map_err(FunctionCallError::RespondToModel)?;
                 (
                     CompactionControlAction::DeferOnce,
                     "defer_once",
@@ -196,6 +227,11 @@ impl ToolHandler for CompactionControlHandler {
             recorder.record_items(&[item]).await.map_err(|err| {
                 FunctionCallError::RespondToModel(format!(
                     "failed to persist compaction decision: {err}"
+                ))
+            })?;
+            recorder.flush().await.map_err(|err| {
+                FunctionCallError::RespondToModel(format!(
+                    "failed to commit compaction decision to the journal: {err}"
                 ))
             })?;
 
@@ -242,5 +278,99 @@ impl ToolHandler for CompactionControlHandler {
         })
         .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
         Ok(FunctionToolOutput::from_text(output, Some(true)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn deferral() -> Deferral {
+        Deferral {
+            model: "model".to_string(),
+            effective_context_window: 380_000,
+            ceiling: 360_000,
+        }
+    }
+
+    #[test]
+    fn stale_window_ids_are_rejected() {
+        assert!(validate_window_id(Some("old"), "current").is_err());
+        assert!(validate_window_id(Some("current"), "current").is_ok());
+        assert!(validate_window_id(None, "current").is_ok());
+    }
+
+    #[test]
+    fn defer_once_requires_the_reflex() {
+        assert!(
+            validate_defer_once(
+                &Control::Normal,
+                false,
+                false,
+                320_000,
+                350_000,
+                &deferral()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn repeated_defer_once_is_idempotent_even_at_the_ceiling() {
+        let deferral = deferral();
+        assert_eq!(
+            validate_defer_once(
+                &Control::Deferred(deferral.clone()),
+                true,
+                true,
+                deferral.ceiling,
+                350_000,
+                &deferral,
+            ),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn second_distinct_deferral_is_refused() {
+        assert!(
+            validate_defer_once(&Control::Normal, true, true, 320_000, 350_000, &deferral())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn defer_once_cannot_replace_pending_compaction() {
+        let request = CompactRequest {
+            model: "model".to_string(),
+            effective_context_window: 380_000,
+        };
+        assert!(
+            validate_defer_once(
+                &Control::CompactRequested(request),
+                true,
+                false,
+                320_000,
+                350_000,
+                &deferral(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn defer_once_is_refused_at_the_ceiling() {
+        let deferral = deferral();
+        assert!(
+            validate_defer_once(
+                &Control::Normal,
+                true,
+                false,
+                deferral.ceiling,
+                350_000,
+                &deferral,
+            )
+            .is_err()
+        );
     }
 }

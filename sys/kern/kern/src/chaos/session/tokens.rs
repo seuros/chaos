@@ -50,8 +50,8 @@ mod compaction_control_tests {
     #[test]
     fn raw_window_safety_fraction_can_be_the_binding_ceiling() {
         assert_eq!(
-            deferral_ceiling_for_windows(340_000, 320_000),
-            Some(300_000)
+            deferral_ceiling_for_windows(300_000, 295_000),
+            Some(270_000)
         );
     }
 }

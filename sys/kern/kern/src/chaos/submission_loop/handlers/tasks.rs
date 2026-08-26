@@ -244,7 +244,9 @@ pub(crate) async fn persist_process_name(
 
     {
         let mut state = sess.state.lock().await;
+        let active_tokens = state.get_total_token_usage(state.server_reasoning_included());
         state.session_configuration.process_name = Some(name.clone());
+        state.session_title_reflex.mark_title_changed(active_tokens);
     }
 
     sess.send_event_raw(Event {

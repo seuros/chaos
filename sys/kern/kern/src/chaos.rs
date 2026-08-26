@@ -18,6 +18,7 @@ pub(super) mod settings;
 pub(crate) mod session;
 pub(crate) mod spawn;
 pub(crate) mod submission_loop;
+pub(crate) mod title_reflex;
 pub(crate) mod turn;
 pub(crate) mod turn_context;
 

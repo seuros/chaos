@@ -43,7 +43,7 @@ pub(crate) fn create_compaction_control_tool() -> ToolSpec {
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: "compaction_control".to_string(),
-        description: "Exercise bounded control over this session's automatic compaction timing. `defer_once` is available only after the current compaction reflex, cannot stack, and never overrides Chaos's fixed safety ceiling. `compact_now` may be requested at any time. Doing nothing means continue with normal automatic compaction."
+        description: "Exercise bounded control over this session's automatic compaction timing. `defer_once` is available only after the current compaction reflex, cannot stack, and never overrides Chaos's fixed safety ceiling. `compact_now` may be requested at any time; when agent-managed titles are available, review whether the current session title is still accurate before requesting it. Doing nothing means continue with normal automatic compaction."
             .to_string(),
         strict: false,
         defer_loading: None,

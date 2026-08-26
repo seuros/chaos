@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use crate::chaos::PreviousTurnSettings;
 use crate::chaos::SessionConfiguration;
+use crate::chaos::title_reflex::SessionTitleReflex;
 use crate::context_manager::ContextManager;
 use crate::protocol::RateLimitSnapshot;
 use crate::protocol::TokenUsage;
@@ -30,6 +31,7 @@ pub(crate) struct SessionState {
     granted_permissions: Option<PermissionProfile>,
     /// Context-pressure window state; rotates on each distillation.
     pub(crate) pressure: Window,
+    pub(crate) session_title_reflex: SessionTitleReflex,
 }
 
 impl SessionState {
@@ -46,6 +48,7 @@ impl SessionState {
             pending_session_start_source: None,
             granted_permissions: None,
             pressure: Window::new(),
+            session_title_reflex: SessionTitleReflex::default(),
         }
     }
 

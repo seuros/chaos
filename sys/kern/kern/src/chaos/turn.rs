@@ -41,8 +41,6 @@ use super::PreviousTurnSettings;
 use super::Session;
 use super::TurnContext;
 
-const SESSION_TITLE_REMINDER_MARKER: &str = "<session_title_reflex>";
-
 mod execution;
 mod preparation;
 mod progress;
@@ -217,43 +215,31 @@ async fn finalize_context_hook(
 }
 
 async fn maybe_inject_session_title_reminder(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    if turn_context.config.terminal_title != crate::config::TerminalTitleMode::Agent {
-        return;
-    }
-    if matches!(sess.session_source().await, SessionSource::SubAgent(_)) {
-        return;
-    }
-    let unnamed = {
-        let state = sess.state.lock().await;
-        state.session_configuration.process_name.is_none()
+    let instructions = {
+        let mut state = sess.state.lock().await;
+        if !super::title_reflex::title_review_enabled(
+            turn_context.config.terminal_title,
+            &state.session_configuration.session_source,
+        ) {
+            return;
+        }
+        let active_tokens = state.get_total_token_usage(state.server_reasoning_included());
+        let resumed = matches!(
+            state.pending_session_start_source,
+            Some(chaos_dtrace::SessionStartSource::Resume)
+        );
+        let process_name = state.session_configuration.process_name.clone();
+        state
+            .session_title_reflex
+            .claim_for_turn(active_tokens, resumed)
+            .map(|trigger| {
+                super::title_reflex::title_review_instructions(process_name.as_deref(), trigger)
+            })
     };
-    if !unnamed {
-        return;
+    if let Some(instructions) = instructions {
+        let item: ResponseItem = DeveloperInstructions::new(instructions).into();
+        sess.record_conversation_items(turn_context, &[item]).await;
     }
-    let already_injected = sess.clone_history().await.raw_items().iter().any(|item| {
-        let ResponseItem::Message { content, .. } = item else {
-            return false;
-        };
-        content.iter().any(|content| match content {
-            chaos_ipc::models::ContentItem::InputText { text }
-            | chaos_ipc::models::ContentItem::OutputText { text }
-            | chaos_ipc::models::ContentItem::Document { text, .. } => {
-                text.contains(SESSION_TITLE_REMINDER_MARKER)
-            }
-            chaos_ipc::models::ContentItem::InputImage { .. } => false,
-        })
-    });
-    if already_injected {
-        return;
-    }
-
-    let reminder = format!(
-        "{SESSION_TITLE_REMINDER_MARKER}\n\
-         This session has no descriptive title. If you can now name its primary work in a short, concrete, distinctive 2-6 word phrase, you may call `set_session_title`. Otherwise continue normally.\n\
-         </session_title_reflex>"
-    );
-    let item: ResponseItem = DeveloperInstructions::new(reminder).into();
-    sess.record_conversation_items(turn_context, &[item]).await;
 }
 
 /// Map the active approval policy onto the `permission_mode` string surfaced

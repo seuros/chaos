@@ -72,6 +72,7 @@ fn compaction_reflex_instructions(
     compaction_token_limit: i64,
     context_window: i64,
     bounded_control: bool,
+    title_review_guidance: Option<&str>,
 ) -> String {
     let control_guidance = if bounded_control {
         format!(
@@ -80,6 +81,9 @@ fn compaction_reflex_instructions(
     } else {
         String::new()
     };
+    let title_review_guidance = title_review_guidance
+        .map(|guidance| format!("{guidance}\n\n"))
+        .unwrap_or_default();
     format!(
         "<compaction_reflex window_id=\"{window_id}\" window_number=\"{window_number}\">\n\
 Automatic context compaction is approaching. This notice is for you, the continuing agent, not merely for the user.\n\n\
@@ -88,6 +92,7 @@ Automatic compaction threshold: {compaction_token_limit} tokens.\n\
 Effective input window: {context_window} tokens.\n\
 Estimated tokens remaining before automatic compaction: {tokens_until_compaction}.\n\n\
 Before continuing substantive work, pause and consider whether anything should be preserved across compaction. Use your normal tools now to perform any continuity practices required by your existing instructions: for example, recording current commitments or operational state, updating memory, or writing a personal journal entry when there is genuine narrative shape. Do not manufacture memories or journal entries when your instructions say no action is warranted. Do not substitute a generic user-facing summary for the practices available to you.\n\n\
+{title_review_guidance}\
 {control_guidance}\
 After completing or deliberately declining those actions, continue the current turn normally.\n\
 </compaction_reflex>"
@@ -188,6 +193,23 @@ impl Session {
                         && deferral_ceiling.is_some_and(|ceiling| active_tokens < ceiling)
                         && state.pressure.claim_reminder() =>
                 {
+                    let title_review_guidance = if super::super::title_reflex::title_review_enabled(
+                        turn_context.config.terminal_title,
+                        &state.session_configuration.session_source,
+                    ) {
+                        let process_name = state.session_configuration.process_name.clone();
+                        state
+                            .session_title_reflex
+                            .claim_for_compaction(active_tokens)
+                            .map(|trigger| {
+                                super::super::title_reflex::title_review_instructions(
+                                    process_name.as_deref(),
+                                    trigger,
+                                )
+                            })
+                    } else {
+                        None
+                    };
                     Some(compaction_reflex_instructions(
                         &state.pressure.window_id().to_string(),
                         i64::try_from(state.pressure.window_number()).unwrap_or(i64::MAX),
@@ -199,6 +221,7 @@ impl Session {
                             turn_context.config.agent_compaction_control,
                             crate::config::AgentCompactionControl::Bounded
                         ),
+                        title_review_guidance.as_deref(),
                     ))
                 }
                 _ => None,
@@ -464,8 +487,9 @@ mod tests {
 
     #[test]
     fn compaction_reflex_addresses_the_agent_and_preserves_choice() {
-        let instructions =
-            compaction_reflex_instructions("window-1", 2, 300_000, 50_000, 350_000, 400_000, true);
+        let instructions = compaction_reflex_instructions(
+            "window-1", 2, 300_000, 50_000, 350_000, 400_000, true, None,
+        );
 
         assert!(instructions.contains("for you, the continuing agent"));
         assert!(instructions.contains("Use your normal tools now"));
@@ -474,5 +498,21 @@ mod tests {
         assert!(instructions.contains("window_number=\"2\""));
         assert!(instructions.contains("compaction_control"));
         assert!(instructions.contains("defer_once"));
+    }
+
+    #[test]
+    fn compaction_reflex_can_include_title_review_guidance() {
+        let instructions = compaction_reflex_instructions(
+            "window-1",
+            2,
+            300_000,
+            50_000,
+            350_000,
+            400_000,
+            true,
+            Some("<session_title_reflex>review title</session_title_reflex>"),
+        );
+
+        assert!(instructions.contains("<session_title_reflex>review title</session_title_reflex>"));
     }
 }

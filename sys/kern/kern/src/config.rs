@@ -143,6 +143,17 @@ pub enum AgentCompactionControl {
     Bounded,
 }
 
+/// Controls whether Chaos mirrors durable process names into the terminal title
+/// and whether the current agent may manage that name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TerminalTitleMode {
+    Off,
+    #[default]
+    ProcessName,
+    Agent,
+}
+
 /// First-party CLI transport selected when clamp mode is enabled.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -307,6 +318,9 @@ pub struct Config {
     /// Whether the model may compact early or defer once within a
     /// harness-computed safety band.
     pub agent_compaction_control: AgentCompactionControl,
+
+    /// Terminal title behavior for interactive sessions.
+    pub terminal_title: TerminalTitleMode,
 
     /// Key into the model_providers map that specifies which provider to use.
     pub model_provider_id: String,
@@ -644,6 +658,11 @@ pub struct ConfigToml {
     /// harness-bounded deferral per pressure window.
     #[serde(default)]
     pub agent_compaction_control: Option<AgentCompactionControl>,
+
+    /// Terminal title behavior. `process-name` mirrors `/rename`; `agent` also
+    /// lets the current model name the session.
+    #[serde(default)]
+    pub terminal_title: Option<TerminalTitleMode>,
 
     /// Default approval policy for executing commands.
     pub approval_policy: Option<ApprovalPolicy>,

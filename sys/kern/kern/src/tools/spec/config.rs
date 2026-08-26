@@ -43,6 +43,7 @@ pub(crate) struct ToolsConfig {
     pub minion_jobs_tools: bool,
     pub minion_jobs_worker_tools: bool,
     pub agent_compaction_control: bool,
+    pub agent_session_title: bool,
     /// Native server-side tools declared by the model/provider ABI.
     pub native_server_side_tools: Vec<String>,
 }
@@ -123,6 +124,7 @@ impl ToolsConfig {
             minion_jobs_tools: include_minion_jobs,
             minion_jobs_worker_tools,
             agent_compaction_control: false,
+            agent_session_title: false,
             native_server_side_tools: model_info.native_server_side_tools.clone(),
         }
     }
@@ -134,6 +136,15 @@ impl ToolsConfig {
 
     pub fn with_agent_compaction_control(mut self, enabled: bool) -> Self {
         self.agent_compaction_control = enabled;
+        self
+    }
+
+    pub fn with_agent_session_title(
+        mut self,
+        enabled: bool,
+        session_source: &SessionSource,
+    ) -> Self {
+        self.agent_session_title = enabled && !matches!(session_source, SessionSource::SubAgent(_));
         self
     }
 

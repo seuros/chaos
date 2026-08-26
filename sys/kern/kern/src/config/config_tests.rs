@@ -194,6 +194,34 @@ clamp_backend = "antigravity"
     assert_eq!(enabled_cfg.clamp_backend, super::ClampBackend::Antigravity);
 }
 
+#[test]
+fn runtime_config_defaults_terminal_title_to_process_name_and_parses_agent() {
+    let default_cfg = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").path().to_path_buf(),
+    )
+    .expect("load default config");
+    assert_eq!(
+        default_cfg.terminal_title,
+        super::TerminalTitleMode::ProcessName
+    );
+
+    let parsed = toml::from_str::<ConfigToml>(
+        r#"
+terminal_title = "agent"
+"#,
+    )
+    .expect("terminal title mode should deserialize from TOML");
+    let agent_cfg = Config::load_from_base_config_with_overrides(
+        parsed,
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").path().to_path_buf(),
+    )
+    .expect("load agent terminal title config");
+    assert_eq!(agent_cfg.terminal_title, super::TerminalTitleMode::Agent);
+}
+
 #[tokio::test]
 async fn config_builder_applies_clamp_cli_override() {
     let chaos_home = tempdir().expect("tempdir");
@@ -917,6 +945,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         model_auto_compact_token_limit: None,
         model_auto_compact_token_limit_scope: Default::default(),
         agent_compaction_control: Default::default(),
+        terminal_title: Default::default(),
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),

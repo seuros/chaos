@@ -139,7 +139,7 @@ pub(crate) async fn app_tests_suite() {
     clear_only_ui_reset_preserves_chat_session_state().await;
     session_summary_skip_zero_usage().await;
     session_summary_includes_resume_hint().await;
-    session_summary_prefers_name_over_id().await;
+    session_summary_includes_name_and_id().await;
 }
 
 fn normalize_harness_overrides_resolves_relative_add_dirs() -> Result<()> {
@@ -2483,12 +2483,12 @@ async fn session_summary_includes_resume_hint() {
         "Token usage: total=12 input=10 output=2"
     );
     assert_eq!(
-        summary.resume_command,
-        Some("chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string())
+        summary.resume_commands,
+        vec!["chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string()]
     );
 }
 
-async fn session_summary_prefers_name_over_id() {
+async fn session_summary_includes_name_and_id() {
     let usage = TokenUsage {
         input_tokens: 10,
         output_tokens: 2,
@@ -2500,7 +2500,10 @@ async fn session_summary_prefers_name_over_id() {
     let summary = session_summary(usage, Some(conversation), Some("my-session".to_string()))
         .expect("summary");
     assert_eq!(
-        summary.resume_command,
-        Some("chaos resume my-session".to_string())
+        summary.resume_commands,
+        vec![
+            "chaos resume my-session".to_string(),
+            "chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string(),
+        ]
     );
 }

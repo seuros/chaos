@@ -214,6 +214,34 @@ async fn finalize_context_hook(
     false
 }
 
+async fn maybe_inject_session_title_reminder(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    let instructions = {
+        let mut state = sess.state.lock().await;
+        if !super::title_reflex::title_review_enabled(
+            turn_context.config.terminal_title,
+            &state.session_configuration.session_source,
+        ) {
+            return;
+        }
+        let active_tokens = state.get_total_token_usage(state.server_reasoning_included());
+        let resumed = matches!(
+            state.pending_session_start_source,
+            Some(chaos_dtrace::SessionStartSource::Resume)
+        );
+        let process_name = state.session_configuration.process_name.clone();
+        state
+            .session_title_reflex
+            .claim_for_turn(active_tokens, resumed)
+            .map(|trigger| {
+                super::title_reflex::title_review_instructions(process_name.as_deref(), trigger)
+            })
+    };
+    if let Some(instructions) = instructions {
+        let item: ResponseItem = DeveloperInstructions::new(instructions).into();
+        sess.record_conversation_items(turn_context, &[item]).await;
+    }
+}
+
 /// Map the active approval policy onto the `permission_mode` string surfaced
 /// to hook scripts. There are only two execution modes: headless (no
 /// operator, nothing to approve) and interactive (operator on the wheel).
@@ -312,6 +340,7 @@ pub(crate) async fn run_turn(
     let agent_context = hook_agent_context(sess.conversation_id, &sess.session_source().await);
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
         .await;
+    maybe_inject_session_title_reminder(&sess, &turn_context).await;
     // Track the previous-turn baseline from the regular user-turn path only so
     // standalone tasks (compact/shell/review/undo) cannot suppress future
     // model injections.

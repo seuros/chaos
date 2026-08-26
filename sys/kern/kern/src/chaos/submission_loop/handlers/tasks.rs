@@ -195,20 +195,37 @@ pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String)
         return;
     };
 
+    if let Err(message) = persist_process_name(
+        sess,
+        sub_id.clone(),
+        name,
+        process_names::ProcessNameSource::User,
+    )
+    .await
+    {
+        let event = Event {
+            id: sub_id,
+            msg: EventMsg::Error(ErrorEvent {
+                message,
+                chaos_error_info: Some(ChaosErrorInfo::Other),
+            }),
+        };
+        sess.send_event_raw(event).await;
+    }
+}
+
+pub(crate) async fn persist_process_name(
+    sess: &Arc<Session>,
+    sub_id: String,
+    name: String,
+    source: process_names::ProcessNameSource,
+) -> Result<(), String> {
     let recorder = {
         let rollout = sess.services.rollout.lock().await;
         rollout.clone()
     };
     let Some(recorder) = recorder else {
-        let event = Event {
-            id: sub_id,
-            msg: EventMsg::Error(ErrorEvent {
-                message: "Session persistence is disabled; cannot rename process.".to_string(),
-                chaos_error_info: Some(ChaosErrorInfo::Other),
-            }),
-        };
-        sess.send_event_raw(event).await;
-        return;
+        return Err("Session persistence is disabled; cannot rename process.".to_string());
     };
 
     // Newly-created sessions defer materializing their process row until the
@@ -216,32 +233,20 @@ pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String)
     // turn, so ensure the recorder has written the SessionMeta/process row
     // before updating the `process_name` column below.
     if let Err(e) = recorder.persist().await {
-        let event = Event {
-            id: sub_id,
-            msg: EventMsg::Error(ErrorEvent {
-                message: format!("Failed to initialize session persistence for rename: {e}"),
-                chaos_error_info: Some(ChaosErrorInfo::Other),
-            }),
-        };
-        sess.send_event_raw(event).await;
-        return;
+        return Err(format!(
+            "Failed to initialize session persistence for rename: {e}"
+        ));
     }
 
-    if let Err(e) = process_names::append_process_name(sess.conversation_id, &name).await {
-        let event = Event {
-            id: sub_id,
-            msg: EventMsg::Error(ErrorEvent {
-                message: format!("Failed to set process name: {e}"),
-                chaos_error_info: Some(ChaosErrorInfo::Other),
-            }),
-        };
-        sess.send_event_raw(event).await;
-        return;
-    }
+    process_names::append_process_name_with_source(sess.conversation_id, &name, source)
+        .await
+        .map_err(|e| format!("Failed to set process name: {e}"))?;
 
     {
         let mut state = sess.state.lock().await;
+        let active_tokens = state.get_total_token_usage(state.server_reasoning_included());
         state.session_configuration.process_name = Some(name.clone());
+        state.session_title_reflex.mark_title_changed(active_tokens);
     }
 
     sess.send_event_raw(Event {
@@ -252,6 +257,7 @@ pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String)
         }),
     })
     .await;
+    Ok(())
 }
 
 pub async fn add_to_history(sess: &Arc<Session>, config: &Arc<Config>, text: String) {

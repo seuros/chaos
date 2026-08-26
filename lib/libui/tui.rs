@@ -27,6 +27,7 @@ use crossterm::event::PopKeyboardEnhancementFlags;
 use crossterm::event::PushKeyboardEnhancementFlags;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
+use crossterm::terminal::SetTitle;
 use crossterm::terminal::supports_keyboard_enhancement;
 use ratatui::backend::Backend;
 use ratatui::backend::CrosstermBackend;
@@ -49,6 +50,7 @@ use crate::tui::event_stream::EventBroker;
 use crate::tui::event_stream::TuiEventStream;
 use crate::tui::job_control::SuspendContext;
 use chaos_kern::config::types::NotificationMethod;
+use unicode_width::UnicodeWidthChar;
 
 mod event_stream;
 mod frame_rate_limiter;
@@ -111,10 +113,24 @@ pub(crate) mod tests {
 
         assert_eq!(resized, None);
     }
+
+    #[test]
+    fn terminal_title_sanitizer_strips_controls_collapses_space_and_truncates() {
+        assert_eq!(
+            super::sanitize_terminal_title("  Compaction\n\x1b]0;bad\x07  timing  "),
+            "Compaction ]0;bad timing"
+        );
+        assert_eq!(
+            super::sanitize_terminal_title(&"a".repeat(super::MAX_TERMINAL_TITLE_WIDTH + 5)),
+            "a".repeat(super::MAX_TERMINAL_TITLE_WIDTH)
+        );
+    }
 }
 
 /// Target frame interval for UI redraw scheduling.
 pub const TARGET_FRAME_INTERVAL: Duration = frame_rate_limiter::MIN_FRAME_INTERVAL;
+const MAX_TERMINAL_TITLE_WIDTH: usize = 64;
+static RESET_TERMINAL_TITLE_ON_RESTORE: AtomicBool = AtomicBool::new(false);
 
 /// A type alias for the terminal type used in this application
 pub type Terminal = CustomTerminal<CrosstermBackend<Stdout>>;
@@ -167,6 +183,9 @@ fn restore_common(should_disable_raw_mode: bool) -> Result<()> {
     let _ = execute!(stdout(), DisableMouseCapture);
     let _ = execute!(stdout(), DisableFocusChange);
     if should_disable_raw_mode {
+        if RESET_TERMINAL_TITLE_ON_RESTORE.load(Ordering::Relaxed) {
+            let _ = execute!(stdout(), SetTitle(""));
+        }
         disable_raw_mode()?;
     }
     let _ = execute!(stdout(), crossterm::cursor::Show);
@@ -267,6 +286,7 @@ pub struct Tui {
     /// Number of rows reserved at the top of the screen for a sticky top bar.
     /// These rows are never scrolled and the viewport starts below them.
     top_reserved_rows: u16,
+    terminal_title_enabled: bool,
 }
 
 impl Tui {
@@ -296,7 +316,21 @@ impl Tui {
             notification_backend: Some(detect_backend(NotificationMethod::default())),
             alt_screen_enabled: true,
             top_reserved_rows: 1,
+            terminal_title_enabled: false,
         }
+    }
+
+    pub fn set_terminal_title_enabled(&mut self, enabled: bool) {
+        self.terminal_title_enabled = enabled;
+        RESET_TERMINAL_TITLE_ON_RESTORE.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_terminal_title(&mut self, title: Option<&str>) -> Result<()> {
+        if !self.terminal_title_enabled {
+            return Ok(());
+        }
+        let title = title.map(sanitize_terminal_title).unwrap_or_default();
+        execute!(self.terminal.backend_mut(), SetTitle(title))
     }
 
     /// Set whether alternate screen is enabled. When false, overlays render inline but still
@@ -660,6 +694,33 @@ impl Tui {
         }
         Ok(None)
     }
+}
+
+fn sanitize_terminal_title(title: &str) -> String {
+    let mut sanitized = String::new();
+    let mut width = 0usize;
+    let mut pending_space = false;
+
+    for ch in title.chars() {
+        if ch.is_control() || ch.is_whitespace() {
+            pending_space = !sanitized.is_empty();
+            continue;
+        }
+        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        let space_width = usize::from(pending_space);
+        if width.saturating_add(space_width).saturating_add(char_width) > MAX_TERMINAL_TITLE_WIDTH {
+            break;
+        }
+        if pending_space {
+            sanitized.push(' ');
+            width += 1;
+            pending_space = false;
+        }
+        sanitized.push(ch);
+        width += char_width;
+    }
+
+    sanitized
 }
 
 /// Preserve the geometric bottom anchor across a terminal resize without relying on the

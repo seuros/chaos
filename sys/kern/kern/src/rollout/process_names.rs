@@ -10,14 +10,46 @@ use sqlx::Sqlite;
 use sqlx::SqlitePool;
 use sqlx::postgres::Postgres;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProcessNameSource {
+    User,
+    Agent,
+}
+
+impl ProcessNameSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Agent => "agent",
+        }
+    }
+
+    fn from_db(value: Option<&str>) -> Self {
+        match value {
+            Some("agent") => Self::Agent,
+            _ => Self::User,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProcessNameRecord {
+    pub name: String,
+    pub source: ProcessNameSource,
+}
+
 trait ProcessNameStore {
     async fn set_process_name(
         &self,
         process_id: ProcessId,
         process_name: Option<&str>,
+        source: ProcessNameSource,
     ) -> std::io::Result<bool>;
 
-    async fn get_process_name(&self, process_id: ProcessId) -> std::io::Result<Option<String>>;
+    async fn get_process_name(
+        &self,
+        process_id: ProcessId,
+    ) -> std::io::Result<Option<ProcessNameRecord>>;
 
     async fn get_process_names(
         &self,
@@ -25,6 +57,11 @@ trait ProcessNameStore {
     ) -> std::io::Result<HashMap<ProcessId, String>>;
 
     async fn find_process_id_by_name(&self, name: &str) -> std::io::Result<Option<ProcessId>>;
+
+    async fn find_unarchived_process_id_by_name(
+        &self,
+        name: &str,
+    ) -> std::io::Result<Option<ProcessId>>;
 }
 
 impl ProcessNameStore for SqlitePool {
@@ -32,27 +69,43 @@ impl ProcessNameStore for SqlitePool {
         &self,
         process_id: ProcessId,
         process_name: Option<&str>,
+        source: ProcessNameSource,
     ) -> std::io::Result<bool> {
-        let result =
-            sqlx::query("UPDATE processes SET process_name = ?, updated_at = ? WHERE id = ?")
-                .bind(process_name)
-                .bind(jiff::Timestamp::now().as_second())
-                .bind(process_id.to_string())
-                .execute(self)
-                .await
-                .map_err(std::io::Error::other)?;
+        let result = sqlx::query(
+            "UPDATE processes SET process_name = ?, process_name_source = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(process_name)
+        .bind(source.as_str())
+        .bind(jiff::Timestamp::now().as_second())
+        .bind(process_id.to_string())
+        .execute(self)
+        .await
+        .map_err(std::io::Error::other)?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn get_process_name(&self, process_id: ProcessId) -> std::io::Result<Option<String>> {
+    async fn get_process_name(
+        &self,
+        process_id: ProcessId,
+    ) -> std::io::Result<Option<ProcessNameRecord>> {
         let row = sqlx::query(
-            "SELECT process_name FROM processes WHERE id = ? AND process_name IS NOT NULL AND trim(process_name) <> ''",
+            "SELECT process_name, process_name_source FROM processes WHERE id = ? AND process_name IS NOT NULL AND trim(process_name) <> ''",
         )
         .bind(process_id.to_string())
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        Ok(row.and_then(|row| row.try_get("process_name").ok()))
+        row.map(|row| {
+            let name = row.try_get("process_name").map_err(std::io::Error::other)?;
+            let source: Option<String> = row
+                .try_get("process_name_source")
+                .map_err(std::io::Error::other)?;
+            Ok(ProcessNameRecord {
+                name,
+                source: ProcessNameSource::from_db(source.as_deref()),
+            })
+        })
+        .transpose()
     }
 
     async fn get_process_names(
@@ -111,6 +164,25 @@ impl ProcessNameStore for SqlitePool {
             .transpose()
             .map_err(std::io::Error::other)
     }
+
+    async fn find_unarchived_process_id_by_name(
+        &self,
+        name: &str,
+    ) -> std::io::Result<Option<ProcessId>> {
+        let row = sqlx::query(
+            "SELECT id FROM processes WHERE process_name = ? AND archived_at IS NULL ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+        )
+        .bind(name)
+        .fetch_optional(self)
+        .await
+        .map_err(std::io::Error::other)?;
+        row.map(|row| row.try_get::<String, _>("id"))
+            .transpose()
+            .map_err(std::io::Error::other)?
+            .map(ProcessId::try_from)
+            .transpose()
+            .map_err(std::io::Error::other)
+    }
 }
 
 impl ProcessNameStore for PgPool {
@@ -118,27 +190,43 @@ impl ProcessNameStore for PgPool {
         &self,
         process_id: ProcessId,
         process_name: Option<&str>,
+        source: ProcessNameSource,
     ) -> std::io::Result<bool> {
-        let result =
-            sqlx::query("UPDATE processes SET process_name = $1, updated_at = $2 WHERE id = $3")
-                .bind(process_name)
-                .bind(jiff::Timestamp::now().as_second())
-                .bind(process_id.to_string())
-                .execute(self)
-                .await
-                .map_err(std::io::Error::other)?;
+        let result = sqlx::query(
+            "UPDATE processes SET process_name = $1, process_name_source = $2, updated_at = $3 WHERE id = $4",
+        )
+        .bind(process_name)
+        .bind(source.as_str())
+        .bind(jiff::Timestamp::now().as_second())
+        .bind(process_id.to_string())
+        .execute(self)
+        .await
+        .map_err(std::io::Error::other)?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn get_process_name(&self, process_id: ProcessId) -> std::io::Result<Option<String>> {
+    async fn get_process_name(
+        &self,
+        process_id: ProcessId,
+    ) -> std::io::Result<Option<ProcessNameRecord>> {
         let row = sqlx::query(
-            "SELECT process_name FROM processes WHERE id = $1 AND process_name IS NOT NULL AND btrim(process_name) <> ''",
+            "SELECT process_name, process_name_source FROM processes WHERE id = $1 AND process_name IS NOT NULL AND btrim(process_name) <> ''",
         )
         .bind(process_id.to_string())
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        Ok(row.and_then(|row| row.try_get("process_name").ok()))
+        row.map(|row| {
+            let name = row.try_get("process_name").map_err(std::io::Error::other)?;
+            let source: Option<String> = row
+                .try_get("process_name_source")
+                .map_err(std::io::Error::other)?;
+            Ok(ProcessNameRecord {
+                name,
+                source: ProcessNameSource::from_db(source.as_deref()),
+            })
+        })
+        .transpose()
     }
 
     async fn get_process_names(
@@ -197,6 +285,25 @@ impl ProcessNameStore for PgPool {
             .transpose()
             .map_err(std::io::Error::other)
     }
+
+    async fn find_unarchived_process_id_by_name(
+        &self,
+        name: &str,
+    ) -> std::io::Result<Option<ProcessId>> {
+        let row = sqlx::query(
+            "SELECT id FROM processes WHERE process_name = $1 AND archived_at IS NULL ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+        )
+        .bind(name)
+        .fetch_optional(self)
+        .await
+        .map_err(std::io::Error::other)?;
+        row.map(|row| row.try_get::<String, _>("id"))
+            .transpose()
+            .map_err(std::io::Error::other)?
+            .map(ProcessId::try_from)
+            .transpose()
+            .map_err(std::io::Error::other)
+    }
 }
 
 /// Calls `op` with the pool of the mounted backend.
@@ -211,10 +318,18 @@ where
 
 /// Persist the explicit process name in the active runtime store.
 pub async fn append_process_name(process_id: ProcessId, name: &str) -> std::io::Result<()> {
+    append_process_name_with_source(process_id, name, ProcessNameSource::User).await
+}
+
+pub(crate) async fn append_process_name_with_source(
+    process_id: ProcessId,
+    name: &str,
+    source: ProcessNameSource,
+) -> std::io::Result<()> {
     let updated = with_store(|pool| async move {
         match pool {
-            Vfs::Sqlite(p) => p.set_process_name(process_id, Some(name)).await,
-            Vfs::Postgres(p) => p.set_process_name(process_id, Some(name)).await,
+            Vfs::Sqlite(p) => p.set_process_name(process_id, Some(name), source).await,
+            Vfs::Postgres(p) => p.set_process_name(process_id, Some(name), source).await,
         }
     })
     .await?;
@@ -230,6 +345,14 @@ pub async fn append_process_name(process_id: ProcessId, name: &str) -> std::io::
 
 /// Find the explicit process name for a process id, if any.
 pub async fn find_process_name_by_id(process_id: &ProcessId) -> std::io::Result<Option<String>> {
+    Ok(find_process_name_record_by_id(process_id)
+        .await?
+        .map(|record| record.name))
+}
+
+pub(crate) async fn find_process_name_record_by_id(
+    process_id: &ProcessId,
+) -> std::io::Result<Option<ProcessNameRecord>> {
     with_store(|pool| async move {
         match pool {
             Vfs::Sqlite(p) => p.get_process_name(*process_id).await,
@@ -261,4 +384,34 @@ pub async fn find_process_id_by_name(name: &str) -> std::io::Result<Option<Proce
         }
     })
     .await
+}
+
+pub(crate) async fn find_unarchived_process_id_by_name(
+    name: &str,
+) -> std::io::Result<Option<ProcessId>> {
+    with_store(|pool| async move {
+        match pool {
+            Vfs::Sqlite(p) => p.find_unarchived_process_id_by_name(name).await,
+            Vfs::Postgres(p) => p.find_unarchived_process_id_by_name(name).await,
+        }
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessNameSource;
+
+    #[test]
+    fn legacy_or_unknown_process_name_sources_are_user_pinned() {
+        assert_eq!(ProcessNameSource::from_db(None), ProcessNameSource::User);
+        assert_eq!(
+            ProcessNameSource::from_db(Some("unknown")),
+            ProcessNameSource::User
+        );
+        assert_eq!(
+            ProcessNameSource::from_db(Some("agent")),
+            ProcessNameSource::Agent
+        );
+    }
 }

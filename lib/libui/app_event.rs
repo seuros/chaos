@@ -93,6 +93,9 @@ pub enum AppEvent {
     /// Imperative command for refreshing derived UI presentation.
     UiCommand(UiCommand),
 
+    /// Set or clear the title of the terminal hosting the active process.
+    SetTerminalTitle(Option<String>),
+
     /// Reload the project `.mcp.json` layer for the given process and refresh
     /// the session's MCP registry using the canonical session path.
     ReloadProjectMcpForProcess(ProcessId),

@@ -23,9 +23,10 @@ use super::tool_builders::{
     create_read_mcp_resource_tool, create_read_session_history_tool,
     create_report_minion_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_search_session_history_tool,
-    create_send_input_tool, create_set_parent_effort_tool, create_shell_command_tool,
-    create_shell_tool, create_spawn_agent_tool, create_spawn_minions_on_csv_tool,
-    create_test_sync_tool, create_view_image_tool, create_wait_agent_tool, create_write_stdin_tool,
+    create_send_input_tool, create_set_parent_effort_tool, create_set_session_title_tool,
+    create_shell_command_tool, create_shell_tool, create_spawn_agent_tool,
+    create_spawn_minions_on_csv_tool, create_test_sync_tool, create_view_image_tool,
+    create_wait_agent_tool, create_write_stdin_tool,
 };
 
 pub(crate) fn push_tool_spec(
@@ -105,6 +106,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::RequestPermissionsHandler;
     use crate::tools::handlers::RequestUserInputHandler;
     use crate::tools::handlers::SessionHistoryHandler;
+    use crate::tools::handlers::SessionTitleHandler;
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
     use crate::tools::handlers::TestSyncHandler;
@@ -131,6 +133,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
         default_mode_request_user_input: config.default_mode_request_user_input,
     });
     let session_history_handler = Arc::new(SessionHistoryHandler);
+    let session_title_handler = Arc::new(SessionTitleHandler);
     let compaction_control_handler = Arc::new(CompactionControlHandler);
     let exec_permission_approvals_enabled = config.exec_permission_approvals_enabled;
 
@@ -249,6 +252,15 @@ pub(crate) fn build_specs_with_discoverable_tools(
             /*supports_parallel_tool_calls*/ false,
         );
         builder.register_handler("compaction_control", compaction_control_handler);
+    }
+
+    if config.agent_session_title {
+        push_tool_spec(
+            &mut builder,
+            create_set_session_title_tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        builder.register_handler("set_session_title", session_title_handler);
     }
 
     if config.request_user_input {

@@ -180,7 +180,20 @@ pub fn resolve_path(base: &Path, path: &PathBuf) -> PathBuf {
 
 /// Trim a thread name and return `None` if it is empty after trimming.
 pub fn normalize_process_name(name: &str) -> Option<String> {
-    let trimmed = name.trim();
+    let mut sanitized = String::with_capacity(name.len());
+    let mut pending_space = false;
+    for ch in name.chars() {
+        if ch.is_control() || ch.is_whitespace() {
+            pending_space = !sanitized.is_empty();
+            continue;
+        }
+        if pending_space {
+            sanitized.push(' ');
+            pending_space = false;
+        }
+        sanitized.push(ch);
+    }
+    let trimmed = sanitized.trim();
     if trimmed.is_empty() {
         None
     } else {
@@ -188,20 +201,29 @@ pub fn normalize_process_name(name: &str) -> Option<String> {
     }
 }
 
+fn resume_command_for_target(target: String) -> String {
+    let needs_double_dash = target.starts_with('-');
+    let escaped = shlex_join(&[target]);
+    if needs_double_dash {
+        format!("chaos resume -- {escaped}")
+    } else {
+        format!("chaos resume {escaped}")
+    }
+}
+
+pub fn resume_commands(process_name: Option<&str>, process_id: Option<ProcessId>) -> Vec<String> {
+    let mut commands = Vec::with_capacity(2);
+    if let Some(process_name) = process_name.filter(|name| !name.is_empty()) {
+        commands.push(resume_command_for_target(process_name.to_string()));
+    }
+    if let Some(process_id) = process_id {
+        commands.push(resume_command_for_target(process_id.to_string()));
+    }
+    commands
+}
+
 pub fn resume_command(process_name: Option<&str>, process_id: Option<ProcessId>) -> Option<String> {
-    let resume_target = process_name
-        .filter(|name| !name.is_empty())
-        .map(str::to_string)
-        .or_else(|| process_id.map(|process_id| process_id.to_string()));
-    resume_target.map(|target| {
-        let needs_double_dash = target.starts_with('-');
-        let escaped = shlex_join(&[target]);
-        if needs_double_dash {
-            format!("chaos resume -- {escaped}")
-        } else {
-            format!("chaos resume {escaped}")
-        }
-    })
+    resume_commands(process_name, process_id).into_iter().next()
 }
 
 #[cfg(test)]

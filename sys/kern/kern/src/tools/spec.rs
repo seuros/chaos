@@ -26,7 +26,6 @@ pub(crate) use chaos_ipc::openai_models::ConfigShellToolType;
 #[cfg(test)]
 pub(crate) use chaos_ipc::openai_models::WebSearchToolType;
 #[cfg(test)]
-#[cfg(test)]
 pub(crate) use chaos_ipc::protocol::SessionSource;
 #[cfg(test)]
 pub(crate) use chaos_ipc::protocol::SubAgentSource;

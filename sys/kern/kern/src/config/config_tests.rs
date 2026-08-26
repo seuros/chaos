@@ -141,6 +141,8 @@ fn config_toml_deserializes_model_availability_nux() {
             animations: true,
             alternate_screen: AltScreenMode::default(),
             status_line: None,
+            terminal_title_icon: None,
+            terminal_title_working_icon: None,
             theme: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from(
@@ -222,6 +224,51 @@ terminal_title = "agent"
     assert_eq!(agent_cfg.terminal_title, super::TerminalTitleMode::Agent);
 }
 
+#[test]
+fn terminal_title_icons_parse_normalize_and_reject_invalid_values() {
+    let parsed = toml::from_str::<ConfigToml>(
+        r#"
+[tui]
+terminal_title_icon = " ✦ "
+terminal_title_working_icon = "🧑‍💻"
+"#,
+    )
+    .expect("valid terminal title icons should deserialize");
+    let cfg = Config::load_from_base_config_with_overrides(
+        parsed,
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").path().to_path_buf(),
+    )
+    .expect("load terminal title icon config");
+    assert_eq!(cfg.tui_terminal_title_icon.as_deref(), Some("✦"));
+    assert_eq!(cfg.tui_terminal_title_working_icon.as_deref(), Some("🧑‍💻"));
+
+    let empty = toml::from_str::<ConfigToml>(
+        r#"
+[tui]
+terminal_title_icon = ""
+terminal_title_working_icon = "   "
+"#,
+    )
+    .expect("empty terminal title icons should deserialize");
+    let tui = empty.tui.expect("tui config");
+    assert_eq!(tui.terminal_title_icon, None);
+    assert_eq!(tui.terminal_title_working_icon, None);
+
+    for invalid in ["two icons", "✦✦", "\\u001b"] {
+        let input = format!(
+            r#"
+[tui]
+terminal_title_icon = "{invalid}"
+"#
+        );
+        assert!(
+            toml::from_str::<ConfigToml>(&input).is_err(),
+            "expected invalid terminal title icon to fail: {invalid:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn config_builder_applies_clamp_cli_override() {
     let chaos_home = tempdir().expect("tempdir");
@@ -283,6 +330,8 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             animations: true,
             alternate_screen: AltScreenMode::Auto,
             status_line: None,
+            terminal_title_icon: None,
+            terminal_title_working_icon: None,
             theme: None,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
@@ -1021,6 +1070,8 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         feedback_enabled: true,
         tui_alternate_screen: AltScreenMode::Auto,
         tui_theme: None,
+        tui_terminal_title_icon: None,
+        tui_terminal_title_working_icon: None,
         otel: OtelConfig::default(),
         disable_user_scripts: false,
     }

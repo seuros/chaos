@@ -137,23 +137,54 @@ terminal_title = "process-name"
 
 # Also let the current root agent name the session.
 terminal_title = "agent"
+
+# Optional identity and working markers are TUI presentation only.
+[tui]
+terminal_title_icon = "✦"
+terminal_title_working_icon = "◒"
 ```
+
+The idle icon prefixes both named sessions and the `new session` fallback. While
+a model turn or MCP startup is active, the working icon replaces it. If only
+`terminal_title_icon` is configured, that icon remains visible in both states.
+Icons must be one grapheme cluster and no more than four terminal cells; an
+empty string disables the corresponding icon.
 
 Agent mode exposes `set_session_title` to the current root agent and privately
 asks it to review the title at the start of a session, after resume or
 compaction, and periodically during longer work. A reminder does not require a
 rename: the agent is instructed to retain a title that still accurately names
-the session's primary work. The title remains the existing process name used by
-`/rename` and `chaos resume`; the separate database `title` field remains a
-first-message preview and is never used as the terminal fallback. An explicit
-`/rename` always marks the name as user-authored, preventing the agent from
-replacing it. Agent-generated names must also be distinct from other unarchived
-sessions.
+the session's primary work. Reconnecting also runs a hidden, title-only review
+against the restored conversation before accepting a new user turn, allowing an
+unnamed or stale tab to update immediately. The title remains the existing
+process name used by `/rename` and `chaos resume`; the separate database `title`
+field remains a first-message preview and is never used as the terminal
+fallback. An explicit `/rename` always marks the name as user-authored,
+preventing the agent from replacing it. Agent-generated names must also be
+distinct from other unarchived sessions.
 
 Chaos emits the portable OSC terminal-title sequence and clears it when the TUI
 exits. Terminal configuration can still override or transform the displayed
 tab title; for example, a custom WezTerm `format-tab-title` callback may choose
-not to show the pane title.
+not to show the pane title. OSC titles cannot independently color the icon, but
+WezTerm can style configured markers locally:
+
+```lua
+local wezterm = require("wezterm")
+
+wezterm.on("format-tab-title", function(tab)
+  local title = tab.active_pane.title
+  local color = title:match("^✦ ") and "#7bd88f"
+    or title:match("^◒ ") and "#f5c451"
+  if color then
+    return {
+      { Foreground = { Color = color } },
+      { Text = title },
+    }
+  end
+  return title
+end)
+```
 
 ### xAI (Grok)
 

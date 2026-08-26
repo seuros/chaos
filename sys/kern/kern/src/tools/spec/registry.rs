@@ -116,6 +116,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use chaos_traits::catalog::CatalogRegistration;
 
     let mut builder = ToolRegistryBuilder::new();
+    if config.model_tools_disabled {
+        return builder;
+    }
 
     let shell_handler = Arc::new(ShellHandler);
     let unified_exec_handler = Arc::new(UnifiedExecHandler);

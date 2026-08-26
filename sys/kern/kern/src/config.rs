@@ -399,6 +399,12 @@ pub struct Config {
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
 
+    /// Optional identity marker prefixed to terminal session titles while idle.
+    pub tui_terminal_title_icon: Option<String>,
+
+    /// Optional replacement marker shown while the active session is working.
+    pub tui_terminal_title_working_icon: Option<String>,
+
     /// The directory that should be treated as the current working directory
     /// for the session. All relative paths inside the business-logic layer are
     /// resolved against this path.

@@ -217,6 +217,10 @@ impl Chaos {
         } else {
             None
         };
+        let reconnect_title_history = match &conversation_history {
+            InitialHistory::Resumed(history) => Some(history.history.clone()),
+            InitialHistory::New | InitialHistory::Forked(_) => None,
+        };
         let dynamic_tools = if dynamic_tools.is_empty() {
             persisted_tools
                 .or_else(|| conversation_history.get_dynamic_tools())
@@ -293,6 +297,9 @@ impl Chaos {
                 .instrument(info_span!("session_loop", process_id = %process_id))
                 .await;
         });
+        if let Some(history) = reconnect_title_history {
+            super::title_reflex::review_title_after_reconnect(Arc::clone(&session), history).await;
+        }
         let chaos = Chaos {
             tx_sub,
             rx_event,

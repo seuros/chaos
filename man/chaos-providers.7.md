@@ -139,13 +139,16 @@ terminal_title = "process-name"
 terminal_title = "agent"
 ```
 
-Agent mode exposes `set_session_title` to the current root agent and gives it
-one private, persisted reminder on the first user turn of an unnamed session.
-The title remains the existing process name used by `/rename` and
-`chaos resume`; the separate database `title` field remains a first-message
-preview and is never used as the terminal fallback. An explicit `/rename`
-always marks the name as user-authored, preventing the agent from replacing it.
-Agent-generated names must also be distinct from other unarchived sessions.
+Agent mode exposes `set_session_title` to the current root agent and privately
+asks it to review the title at the start of a session, after resume or
+compaction, and periodically during longer work. A reminder does not require a
+rename: the agent is instructed to retain a title that still accurately names
+the session's primary work. The title remains the existing process name used by
+`/rename` and `chaos resume`; the separate database `title` field remains a
+first-message preview and is never used as the terminal fallback. An explicit
+`/rename` always marks the name as user-authored, preventing the agent from
+replacing it. Agent-generated names must also be distinct from other unarchived
+sessions.
 
 Chaos emits the portable OSC terminal-title sequence and clears it when the TUI
 exits. Terminal configuration can still override or transform the displayed

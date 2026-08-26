@@ -174,6 +174,7 @@ use self::session_header::SessionHeader;
 mod dispatch;
 mod popups;
 mod streaming;
+mod terminal_title;
 use crate::mention_codec::LinkedMention;
 use crate::mention_codec::encode_history_mentions;
 use crate::streaming::chunking::AdaptiveChunkingPolicy;

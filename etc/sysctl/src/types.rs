@@ -23,6 +23,8 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::de::Error as SerdeError;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub const DEFAULT_OTEL_ENVIRONMENT: &str = "dev";
 pub const DEFAULT_MEMORIES_MAX_ROLLOUTS_PER_STARTUP: usize = 16;
@@ -758,6 +760,19 @@ pub struct Tui {
     #[serde(default)]
     pub status_line: Option<Vec<String>>,
 
+    /// Optional identity marker prefixed to terminal session titles while idle.
+    ///
+    /// Empty strings disable the marker. Non-empty values must contain exactly
+    /// one grapheme cluster and occupy no more than four terminal cells.
+    #[serde(default, deserialize_with = "deserialize_terminal_title_icon")]
+    pub terminal_title_icon: Option<String>,
+
+    /// Optional replacement marker shown while the active session is working.
+    ///
+    /// When unset or empty, `terminal_title_icon` remains visible while working.
+    #[serde(default, deserialize_with = "deserialize_terminal_title_icon")]
+    pub terminal_title_working_icon: Option<String>,
+
     /// Syntax highlighting theme name (kebab-case).
     ///
     /// When set, overrides automatic light/dark theme detection.
@@ -768,6 +783,46 @@ pub struct Tui {
     /// Startup tooltip availability NUX state persisted by the TUI.
     #[serde(default)]
     pub model_availability_nux: ModelAvailabilityNuxConfig,
+}
+
+fn deserialize_terminal_title_icon<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    const MAX_TERMINAL_TITLE_ICON_WIDTH: usize = 4;
+
+    let value = Option::<String>::deserialize(deserializer)?;
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(D::Error::custom(
+            "terminal title icons cannot contain control characters",
+        ));
+    }
+
+    let mut graphemes = trimmed.graphemes(true);
+    let icon = graphemes
+        .next()
+        .ok_or_else(|| D::Error::custom("terminal title icon cannot be empty"))?;
+    if graphemes.next().is_some() {
+        return Err(D::Error::custom(
+            "terminal title icons must contain exactly one grapheme",
+        ));
+    }
+
+    let width = UnicodeWidthStr::width(icon);
+    if width == 0 || width > MAX_TERMINAL_TITLE_ICON_WIDTH {
+        return Err(D::Error::custom(format!(
+            "terminal title icons must occupy between 1 and {MAX_TERMINAL_TITLE_ICON_WIDTH} terminal cells"
+        )));
+    }
+
+    Ok(Some(icon.to_string()))
 }
 
 const fn default_true() -> bool {

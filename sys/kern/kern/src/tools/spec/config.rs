@@ -22,6 +22,7 @@ pub enum UnifiedExecShellMode {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ToolsConfig {
+    pub model_tools_disabled: bool,
     pub available_models: Vec<ModelPreset>,
     pub shell_type: ConfigShellToolType,
     pub unified_exec_shell_mode: UnifiedExecShellMode,
@@ -81,6 +82,11 @@ impl ToolsConfig {
         let include_default_mode_request_user_input = include_request_user_input;
         let include_original_image_detail = can_request_original_image_detail(model_info);
         let include_image_gen_tool = false;
+        let model_tools_disabled = matches!(
+            session_source,
+            SessionSource::SubAgent(SubAgentSource::Other(label))
+                if label == "session_title_review"
+        );
         let exec_permission_approvals_enabled = approval_policy.allows_escalation();
         let request_permissions_tool_enabled =
             approval_policy.advertises_request_permissions_tool();
@@ -103,6 +109,7 @@ impl ToolsConfig {
             );
 
         Self {
+            model_tools_disabled,
             available_models: available_models_ref.to_vec(),
             shell_type,
             unified_exec_shell_mode: UnifiedExecShellMode::Direct,

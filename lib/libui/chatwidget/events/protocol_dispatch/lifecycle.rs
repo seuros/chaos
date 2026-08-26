@@ -16,6 +16,12 @@ use super::super::super::core::ReplayKind;
 use super::super::super::core::UserMessage;
 use super::super::super::core::merge_user_messages;
 
+const DEFAULT_TERMINAL_TITLE: &str = "new session";
+
+fn terminal_title_for_process_name(process_name: Option<String>) -> String {
+    process_name.unwrap_or_else(|| DEFAULT_TERMINAL_TITLE.to_string())
+}
+
 impl ChatWidget {
     // ── Session / process events ──────────────────────────────────────────────
 
@@ -33,9 +39,9 @@ impl ChatWidget {
         self.process_name = event.process_name.clone();
         if self.config.terminal_title != chaos_kern::config::TerminalTitleMode::Off {
             self.app_event_tx
-                .send(crate::app_event::AppEvent::SetTerminalTitle(
-                    event.process_name.clone(),
-                ));
+                .send(crate::app_event::AppEvent::SetTerminalTitle(Some(
+                    terminal_title_for_process_name(event.process_name.clone()),
+                )));
         }
         self.forked_from = event.forked_from_id;
         self.current_cwd = Some(event.cwd.clone());
@@ -121,9 +127,9 @@ impl ChatWidget {
             self.process_name = event.process_name.clone();
             if self.config.terminal_title != chaos_kern::config::TerminalTitleMode::Off {
                 self.app_event_tx
-                    .send(crate::app_event::AppEvent::SetTerminalTitle(
-                        event.process_name,
-                    ));
+                    .send(crate::app_event::AppEvent::SetTerminalTitle(Some(
+                        terminal_title_for_process_name(event.process_name),
+                    )));
             }
             self.request_redraw();
         }
@@ -403,5 +409,23 @@ impl ChatWidget {
                 Some(ReplayKind::ResumeInitialMessages),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminal_title_for_process_name;
+
+    #[test]
+    fn unnamed_process_uses_new_session_terminal_title() {
+        assert_eq!(terminal_title_for_process_name(None), "new session");
+    }
+
+    #[test]
+    fn named_process_keeps_its_terminal_title() {
+        assert_eq!(
+            terminal_title_for_process_name(Some("Compaction Control Testing".to_string())),
+            "Compaction Control Testing"
+        );
     }
 }

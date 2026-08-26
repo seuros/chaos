@@ -113,7 +113,7 @@ impl ChatWidget {
         event: chaos_ipc::protocol::ProcessNameUpdatedEvent,
     ) {
         if self.process_id == Some(event.process_id) {
-            self.process_name = event.process_name.clone();
+            self.process_name = event.process_name;
             self.refresh_terminal_title();
             self.request_redraw();
         }

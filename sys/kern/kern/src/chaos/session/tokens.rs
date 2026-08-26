@@ -64,6 +64,7 @@ fn compaction_reflex_follow_up_allowed(active_tokens: i64, deferral_ceiling: i64
     active_tokens < deferral_ceiling
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compaction_reflex_instructions(
     window_id: &str,
     window_number: i64,

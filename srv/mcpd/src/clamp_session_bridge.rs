@@ -9,9 +9,14 @@ use std::sync::Arc;
 use chaos_ipc::clamp_bridge::ClampBridgeRequest;
 use chaos_ipc::clamp_bridge::ClampBridgeResponse;
 use chaos_ipc::mcp::Tool as BridgeToolSpec;
+use chaos_ipc::models::FunctionCallOutputBody;
+use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::product::OS_NAME;
+use mcp_host::content::types::Content;
+use mcp_host::content::types::ImageContent;
+use mcp_host::content::types::TextContent;
 use mcp_host::prelude::*;
 use mcp_host::registry::tools::Tool;
 use mcp_host::registry::tools::ToolError;
@@ -169,7 +174,7 @@ fn response_input_to_tool_output(
                 }))
                 .map_err(|err| ToolError::Internal(err.to_string()))
             } else {
-                Ok(ToolOutput::text(output.body.to_text().unwrap_or_default()))
+                function_call_output_body_to_tool_output(output.body)
             }
         }
         ResponseInputItem::McpToolCallOutput { output, .. } => {
@@ -202,6 +207,43 @@ fn response_input_to_tool_output(
     }
 }
 
+fn function_call_output_body_to_tool_output(
+    body: FunctionCallOutputBody,
+) -> Result<ToolOutput, ToolError> {
+    let FunctionCallOutputBody::ContentItems(items) = body else {
+        return Ok(ToolOutput::text(body.to_text().unwrap_or_default()));
+    };
+
+    let content = items
+        .into_iter()
+        .map(|item| match item {
+            FunctionCallOutputContentItem::InputText { text } => {
+                Ok(Box::new(TextContent::new(text)) as Box<dyn Content>)
+            }
+            FunctionCallOutputContentItem::InputImage { image_url, .. } => {
+                let Some(data_url) = image_url.strip_prefix("data:") else {
+                    return Err(ToolError::Execution(
+                        "clamp bridge image output must use a base64 data URL".to_string(),
+                    ));
+                };
+                let Some((metadata, data)) = data_url.split_once(',') else {
+                    return Err(ToolError::Execution(
+                        "clamp bridge image output contains an invalid data URL".to_string(),
+                    ));
+                };
+                let Some(mime_type) = metadata.strip_suffix(";base64") else {
+                    return Err(ToolError::Execution(
+                        "clamp bridge image output must be base64 encoded".to_string(),
+                    ));
+                };
+                Ok(Box::new(ImageContent::new(data, mime_type.to_string())) as Box<dyn Content>)
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(ToolOutput::content(content))
+}
+
 fn content_items_to_text(content: &[serde_json::Value]) -> String {
     content
         .iter()
@@ -213,4 +255,77 @@ fn content_items_to_text(content: &[serde_json::Value]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chaos_ipc::models::FunctionCallOutputPayload;
+
+    #[test]
+    fn clamp_bridge_preserves_image_only_function_output() {
+        let output = ResponseInputItem::FunctionCallOutput {
+            call_id: "view-image".to_string(),
+            output: FunctionCallOutputPayload::from_content_items(vec![
+                FunctionCallOutputContentItem::InputImage {
+                    image_url: "data:image/png;base64,Zm9v".to_string(),
+                    detail: None,
+                },
+            ]),
+            tool_name: Some("view_image".to_string()),
+        };
+
+        let response = response_input_to_tool_output(output, false)
+            .expect("image output should convert")
+            .into_response_value();
+
+        assert_eq!(
+            response,
+            serde_json::json!({
+                "content": [{
+                    "type": "image",
+                    "data": "Zm9v",
+                    "mimeType": "image/png"
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn clamp_bridge_preserves_mixed_text_and_image_function_output() {
+        let output = ResponseInputItem::FunctionCallOutput {
+            call_id: "mixed-output".to_string(),
+            output: FunctionCallOutputPayload::from_content_items(vec![
+                FunctionCallOutputContentItem::InputText {
+                    text: "preview".to_string(),
+                },
+                FunctionCallOutputContentItem::InputImage {
+                    image_url: "data:image/webp;base64,Zm9v".to_string(),
+                    detail: None,
+                },
+            ]),
+            tool_name: None,
+        };
+
+        let response = response_input_to_tool_output(output, false)
+            .expect("mixed output should convert")
+            .into_response_value();
+
+        assert_eq!(
+            response,
+            serde_json::json!({
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "preview"
+                    },
+                    {
+                        "type": "image",
+                        "data": "Zm9v",
+                        "mimeType": "image/webp"
+                    }
+                ]
+            })
+        );
+    }
 }

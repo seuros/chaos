@@ -215,9 +215,9 @@ mod tests {
         ));
         assert!(!title_review_enabled(
             crate::config::TerminalTitleMode::Agent,
-            &SessionSource::SubAgent(
-                chaos_ipc::protocol::SubAgentSource::Other("test".to_string()),
-            ),
+            &SessionSource::SubAgent(chaos_ipc::protocol::SubAgentSource::Other(
+                "test".to_string()
+            ),),
         ));
     }
 }

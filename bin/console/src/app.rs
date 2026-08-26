@@ -171,10 +171,10 @@ fn session_summary(
     }
 
     let usage_line = FinalOutput::from(token_usage).to_string();
-    let resume_command = chaos_kern::util::resume_command(process_name.as_deref(), process_id);
+    let resume_commands = chaos_kern::util::resume_commands(process_name.as_deref(), process_id);
     Some(SessionSummary {
         usage_line,
-        resume_command,
+        resume_commands,
     })
 }
 
@@ -224,7 +224,7 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SessionSummary {
     usage_line: String,
-    resume_command: Option<String>,
+    resume_commands: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

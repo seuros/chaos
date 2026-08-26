@@ -364,6 +364,19 @@ fn resume_command_prefers_name_over_id() {
 }
 
 #[test]
+fn resume_commands_include_name_and_id() {
+    let process_id = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
+    let commands = resume_commands(Some("my thread"), Some(process_id));
+    assert_eq!(
+        commands,
+        vec![
+            "chaos resume 'my thread'".to_string(),
+            "chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn resume_command_with_only_id() {
     let process_id = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
     let command = resume_command(None, Some(process_id));

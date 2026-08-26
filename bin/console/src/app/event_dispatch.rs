@@ -200,11 +200,18 @@ impl App {
                                 if let Some(summary) = summary {
                                     let mut lines: Vec<Line<'static>> =
                                         vec![summary.usage_line.clone().into()];
-                                    if let Some(command) = summary.resume_command {
-                                        let spans = vec![
-                                            "To continue this session, run ".into(),
-                                            command.cyan(),
-                                        ];
+                                    let has_name_and_id = summary.resume_commands.len() == 2;
+                                    for (index, command) in
+                                        summary.resume_commands.into_iter().enumerate()
+                                    {
+                                        let prefix = if index == 0 && has_name_and_id {
+                                            "To continue this session by name, run "
+                                        } else if index == 0 {
+                                            "To continue this session, run "
+                                        } else {
+                                            "Or by session ID, run "
+                                        };
+                                        let spans = vec![prefix.into(), command.cyan()];
                                         lines.push(spans.into());
                                     }
                                     self.chat_widget.add_plain_history_lines(lines);
@@ -267,11 +274,18 @@ impl App {
                             if let Some(summary) = summary {
                                 let mut lines: Vec<Line<'static>> =
                                     vec![summary.usage_line.clone().into()];
-                                if let Some(command) = summary.resume_command {
-                                    let spans = vec![
-                                        "To continue this session, run ".into(),
-                                        command.cyan(),
-                                    ];
+                                let has_name_and_id = summary.resume_commands.len() == 2;
+                                for (index, command) in
+                                    summary.resume_commands.into_iter().enumerate()
+                                {
+                                    let prefix = if index == 0 && has_name_and_id {
+                                        "To continue this session by name, run "
+                                    } else if index == 0 {
+                                        "To continue this session, run "
+                                    } else {
+                                        "Or by session ID, run "
+                                    };
+                                    let spans = vec![prefix.into(), command.cyan()];
                                     lines.push(spans.into());
                                 }
                                 self.chat_widget.add_plain_history_lines(lines);

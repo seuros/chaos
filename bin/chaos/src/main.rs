@@ -245,15 +245,23 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
         chaos_ipc::protocol::FinalOutput::from(token_usage)
     )];
 
-    if let Some(resume_cmd) =
-        chaos_kern::util::resume_command(process_name.as_deref(), conversation_id)
-    {
+    let resume_commands =
+        chaos_kern::util::resume_commands(process_name.as_deref(), conversation_id);
+    let has_name_and_id = resume_commands.len() == 2;
+    for (index, resume_cmd) in resume_commands.into_iter().enumerate() {
         let command = if color_enabled {
             resume_cmd.cyan().to_string()
         } else {
             resume_cmd
         };
-        lines.push(format!("To continue this session, run {command}"));
+        let prefix = if index == 0 && has_name_and_id {
+            "To continue this session by name, run "
+        } else if index == 0 {
+            "To continue this session, run "
+        } else {
+            "Or by session ID, run "
+        };
+        lines.push(format!("{prefix}{command}"));
     }
 
     lines
@@ -820,7 +828,9 @@ mod tests {
             lines,
             vec![
                 "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run chaos resume my-thread".to_string(),
+                "To continue this session by name, run chaos resume my-thread".to_string(),
+                "Or by session ID, run chaos resume 123e4567-e89b-12d3-a456-426614174000"
+                    .to_string(),
             ]
         );
     }

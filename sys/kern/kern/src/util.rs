@@ -201,20 +201,29 @@ pub fn normalize_process_name(name: &str) -> Option<String> {
     }
 }
 
+fn resume_command_for_target(target: String) -> String {
+    let needs_double_dash = target.starts_with('-');
+    let escaped = shlex_join(&[target]);
+    if needs_double_dash {
+        format!("chaos resume -- {escaped}")
+    } else {
+        format!("chaos resume {escaped}")
+    }
+}
+
+pub fn resume_commands(process_name: Option<&str>, process_id: Option<ProcessId>) -> Vec<String> {
+    let mut commands = Vec::with_capacity(2);
+    if let Some(process_name) = process_name.filter(|name| !name.is_empty()) {
+        commands.push(resume_command_for_target(process_name.to_string()));
+    }
+    if let Some(process_id) = process_id {
+        commands.push(resume_command_for_target(process_id.to_string()));
+    }
+    commands
+}
+
 pub fn resume_command(process_name: Option<&str>, process_id: Option<ProcessId>) -> Option<String> {
-    let resume_target = process_name
-        .filter(|name| !name.is_empty())
-        .map(str::to_string)
-        .or_else(|| process_id.map(|process_id| process_id.to_string()));
-    resume_target.map(|target| {
-        let needs_double_dash = target.starts_with('-');
-        let escaped = shlex_join(&[target]);
-        if needs_double_dash {
-            format!("chaos resume -- {escaped}")
-        } else {
-            format!("chaos resume {escaped}")
-        }
-    })
+    resume_commands(process_name, process_id).into_iter().next()
 }
 
 #[cfg(test)]

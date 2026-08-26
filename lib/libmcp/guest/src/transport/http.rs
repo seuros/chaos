@@ -727,7 +727,6 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use rama::bytes::Bytes;
-    use rama::http::body::util::BodyExt as _;
     use rama::service::service_fn;
     use serde_json::json;
     use tokio::sync::Mutex as AsyncMutex;

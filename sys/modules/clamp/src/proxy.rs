@@ -349,6 +349,7 @@ async fn forward(
         .with_proxy_support()
         .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
         .with_default_http_connector(Executor::default())
+        .without_connection_pool()
         .build_client();
     let client = (
         RemoveRequestHeaderLayer::hop_by_hop(),
@@ -640,6 +641,7 @@ mod tests {
                 .with_proxy_support()
                 .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
                 .with_default_http_connector(Executor::default())
+                .without_connection_pool()
                 .build_client(),
         );
         let req = Request::builder()

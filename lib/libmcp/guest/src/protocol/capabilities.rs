@@ -133,8 +133,6 @@ pub struct ClientCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub experimental: Option<HashMap<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<HashMap<String, Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub roots: Option<RootsCapability>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sampling: Option<SamplingCapability>,
@@ -149,8 +147,6 @@ pub struct ClientCapabilities {
 pub struct ServerCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub experimental: Option<HashMap<String, Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<HashMap<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logging: Option<LoggingCapability>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "completion")]

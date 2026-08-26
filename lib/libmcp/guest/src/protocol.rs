@@ -7,9 +7,7 @@ use serde_json::Value;
 
 pub use mcp_host::content::annotations::Annotations;
 pub use mcp_host::logging::LogLevel;
-pub use mcp_host::prelude::ProtocolMode;
 pub use mcp_host::protocol::methods::McpMethod;
-pub use mcp_host::protocol::stateless::UNSUPPORTED_PROTOCOL_VERSION;
 pub use mcp_host::protocol::types::CancelTaskParams;
 pub use mcp_host::protocol::types::ErrorCode;
 pub use mcp_host::protocol::types::GetTaskParams;
@@ -27,13 +25,15 @@ pub use mcp_host::protocol::types::TaskStatus;
 pub use mcp_host::protocol::types::TaskSupport;
 pub use mcp_host::protocol::types::ToolAnnotations;
 pub use mcp_host::protocol::types::ToolExecution;
-pub use mcp_host::protocol::version::ALL_SUPPORTED_PROTOCOL_VERSIONS;
 pub use mcp_host::protocol::version::JSON_RPC_VERSION;
 pub use mcp_host::protocol::version::LATEST_PROTOCOL_VERSION;
 pub use mcp_host::protocol::version::ProtocolVersion;
-pub use mcp_host::protocol::version::STATELESS_PROTOCOL_VERSION;
 pub use mcp_host::protocol::version::SUPPORTED_PROTOCOL_VERSIONS;
 pub use mcp_host::protocol::version::is_supported_protocol_version;
+
+/// JSON-RPC error code a server returns when it refuses the protocol version
+/// the client asked for.
+pub const UNSUPPORTED_PROTOCOL_VERSION: i32 = -32022;
 
 pub mod capabilities;
 pub mod elicitation;
@@ -296,46 +296,16 @@ pub fn latest_supported_protocol_version() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
 
     #[test]
-    fn test_supported_versions_cover_both_protocol_modes() {
+    fn test_supported_versions_cover_the_negotiable_range() {
         assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, ["2025-11-25", "2025-06-18"]);
-        assert_eq!(
-            ALL_SUPPORTED_PROTOCOL_VERSIONS,
-            ["2026-07-28", "2025-11-25", "2025-06-18"]
-        );
-        assert_eq!(STATELESS_PROTOCOL_VERSION, "2026-07-28");
+        assert_eq!(latest_supported_protocol_version(), "2025-11-25");
         assert!(is_supported_protocol_version("2025-11-25"));
         assert!(is_supported_protocol_version("2025-06-18"));
         assert!(!is_supported_protocol_version("2026-07-28"));
-        assert!(ProtocolVersion::new("2026-07-28").is_supported());
         assert!(!is_supported_protocol_version("2025-03-26"));
-    }
-
-    #[test]
-    fn test_capability_extensions_roundtrip() {
-        let capabilities = ClientCapabilities {
-            extensions: Some(HashMap::from([(
-                "io.modelcontextprotocol/example".to_string(),
-                serde_json::json!({"enabled": true}),
-            )])),
-            ..Default::default()
-        };
-
-        let json = serde_json::to_value(&capabilities).unwrap();
-        assert_eq!(
-            json["extensions"]["io.modelcontextprotocol/example"]["enabled"],
-            true
-        );
-
-        let decoded: ClientCapabilities = serde_json::from_value(json).unwrap();
-        assert_eq!(
-            decoded.extensions.unwrap()["io.modelcontextprotocol/example"]["enabled"],
-            true
-        );
     }
 
     #[test]

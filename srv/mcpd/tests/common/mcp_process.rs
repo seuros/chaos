@@ -120,7 +120,6 @@ impl McpProcess {
                         url: None,
                     }),
                     experimental: None,
-                    extensions: None,
                     roots: None,
                     sampling: None,
                     tasks: None,
@@ -189,7 +188,6 @@ impl McpProcess {
                     url: None,
                 }),
                 experimental: None,
-                extensions: None,
                 roots: None,
                 sampling: None,
                 tasks: None,
@@ -205,7 +203,6 @@ impl McpProcess {
                 ClientCapabilities {
                     elicitation: None,
                     experimental: None,
-                    extensions: None,
                     roots: None,
                     sampling: None,
                     tasks: None,

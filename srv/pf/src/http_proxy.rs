@@ -62,7 +62,7 @@ async fn run_http_proxy_with_listener(
     // handling runs at all.
     let http_service = HttpServer::new_http1(Executor::default()).service(
         (
-            UpgradeLayer::new(
+            UpgradeLayer::new_with_services(
                 Executor::default(),
                 MethodMatcher::CONNECT,
                 service_fn({

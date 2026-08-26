@@ -3,8 +3,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-use serde::Deserialize;
-use serde_json::Map;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -27,11 +25,8 @@ use crate::protocol::JsonRpcResponse;
 use crate::protocol::LogMessageNotificationParams;
 use crate::protocol::McpMethod;
 use crate::protocol::ProgressNotificationParams;
-use crate::protocol::ProtocolMode;
 use crate::protocol::RequestId;
 use crate::protocol::ResourceUpdatedNotificationParams;
-use crate::protocol::STATELESS_PROTOCOL_VERSION;
-use crate::protocol::ServerCapabilities;
 use crate::protocol::ServerInfo;
 use crate::protocol::Task;
 use crate::protocol::latest_supported_protocol_version;
@@ -45,48 +40,14 @@ pub(crate) struct ConnectionOptions {
     pub capabilities: ClientCapabilities,
     pub handler: Arc<dyn ClientHandler>,
     pub default_timeout: Duration,
-    pub protocol_mode: ProtocolMode,
-}
-
-#[derive(Debug, Clone)]
-struct StatelessRequestContext {
-    client_info: Implementation,
-    capabilities: ClientCapabilities,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ServerDiscoverResult {
-    supported_versions: Vec<String>,
-    capabilities: ServerCapabilities,
-    #[serde(default)]
-    instructions: Option<String>,
-    #[serde(rename = "_meta", default)]
-    meta: Option<Value>,
 }
 
 pub(crate) async fn connect_with_transport(
     transport: Arc<dyn MessageTransport>,
     options: ConnectionOptions,
 ) -> Result<McpSession, GuestError> {
-    let stateless_context = options
-        .protocol_mode
-        .is_stateless()
-        .then(|| StatelessRequestContext {
-            client_info: options.client_info.clone(),
-            capabilities: options.capabilities.clone(),
-        });
-    let info = match stateless_context.as_ref() {
-        Some(context) => {
-            perform_stateless_discovery(Arc::clone(&transport), context, &options).await?
-        }
-        None => perform_handshake(Arc::clone(&transport), &options).await?,
-    };
-    let shared = Arc::new(SharedState::new(
-        info,
-        options.default_timeout,
-        options.protocol_mode,
-    ));
+    let info = perform_handshake(Arc::clone(&transport), &options).await?;
+    let shared = Arc::new(SharedState::new(info, options.default_timeout));
     let next_id = Arc::new(AtomicU64::new(2));
     let (command_tx, command_rx) = mpsc::channel(64);
 
@@ -94,7 +55,6 @@ pub(crate) async fn connect_with_transport(
         transport,
         Arc::clone(&shared),
         Arc::clone(&options.handler),
-        stateless_context,
         command_rx,
     ));
 
@@ -171,82 +131,10 @@ async fn perform_handshake(
     })
 }
 
-async fn perform_stateless_discovery(
-    transport: Arc<dyn MessageTransport>,
-    context: &StatelessRequestContext,
-    options: &ConnectionOptions,
-) -> Result<ServerInfo, GuestError> {
-    let params = with_stateless_metadata(None, context)?;
-    transport
-        .send(JsonRpcMessage::Request(JsonRpcRequest::new(
-            serde_json::json!(1),
-            "server/discover",
-            params,
-        )))
-        .await?;
-
-    let discovery: ServerDiscoverResult = loop {
-        match transport.recv().await? {
-            JsonRpcMessage::Response(response) => {
-                if response.id != Some(serde_json::json!(1)) {
-                    continue;
-                }
-                if let Some(error) = response.error {
-                    return Err(GuestError::server_from_error(error));
-                }
-                let result = response.result.ok_or_else(|| {
-                    GuestError::Protocol("server/discover returned no result".to_string())
-                })?;
-                break serde_json::from_value(result)?;
-            }
-            JsonRpcMessage::Notification(notification) => {
-                dispatch_preinit_notification(notification, Arc::clone(&options.handler)).await;
-            }
-            JsonRpcMessage::Request(request) => {
-                let response =
-                    handle_server_request_message(request, Arc::clone(&options.handler)).await;
-                transport.send(JsonRpcMessage::Response(response)).await?;
-            }
-        }
-    };
-
-    if !discovery
-        .supported_versions
-        .iter()
-        .any(|version| version == STATELESS_PROTOCOL_VERSION)
-    {
-        return Err(GuestError::UnsupportedProtocolVersion(
-            STATELESS_PROTOCOL_VERSION.to_string(),
-        ));
-    }
-
-    let server_info = discovery
-        .meta
-        .as_ref()
-        .and_then(Value::as_object)
-        .and_then(|meta| meta.get("io.modelcontextprotocol/serverInfo"))
-        .cloned()
-        .ok_or_else(|| {
-            GuestError::Protocol(
-                "server/discover result is missing _meta.io.modelcontextprotocol/serverInfo"
-                    .to_string(),
-            )
-        })
-        .and_then(|server_info| serde_json::from_value(server_info).map_err(GuestError::from))?;
-
-    Ok(ServerInfo {
-        server_info,
-        protocol_version: STATELESS_PROTOCOL_VERSION.to_string(),
-        capabilities: discovery.capabilities,
-        instructions: discovery.instructions,
-    })
-}
-
 async fn run_runtime(
     transport: Arc<dyn MessageTransport>,
     shared: Arc<SharedState>,
     handler: Arc<dyn ClientHandler>,
-    stateless_context: Option<StatelessRequestContext>,
     mut command_rx: mpsc::Receiver<RuntimeCommand>,
 ) {
     let (server_response_tx, mut server_response_rx) =
@@ -263,7 +151,6 @@ async fn run_runtime(
                     command,
                     &mut pending_outgoing,
                     &mut inbound_requests,
-                    stateless_context.as_ref(),
                 ).await {
                     break;
                 }
@@ -330,7 +217,6 @@ async fn handle_runtime_command(
     command: RuntimeCommand,
     pending_outgoing: &mut HashMap<RequestId, oneshot::Sender<Result<Value, GuestError>>>,
     inbound_requests: &mut HashMap<RequestId, JoinHandle<()>>,
-    stateless_context: Option<&StatelessRequestContext>,
 ) -> bool {
     match command {
         RuntimeCommand::Request {
@@ -339,16 +225,6 @@ async fn handle_runtime_command(
             params,
             response_tx,
         } => {
-            let params = match stateless_context {
-                Some(context) => match with_stateless_metadata(params, context) {
-                    Ok(params) => params,
-                    Err(error) => {
-                        let _ = response_tx.send(Err(error));
-                        return false;
-                    }
-                },
-                None => params,
-            };
             pending_outgoing.insert(request_id.clone(), response_tx);
             let request = JsonRpcRequest::new(request_id.to_value(), method, params);
             if let Err(error) = transport.send(JsonRpcMessage::Request(request)).await
@@ -390,56 +266,6 @@ async fn handle_runtime_command(
             let _ = response_tx.send(());
             true
         }
-    }
-}
-
-fn with_stateless_metadata(
-    params: Option<Value>,
-    context: &StatelessRequestContext,
-) -> Result<Option<Value>, GuestError> {
-    let mut params = match params.unwrap_or_else(|| Value::Object(Map::new())) {
-        Value::Object(params) => params,
-        other => {
-            return Err(GuestError::InvalidParams(format!(
-                "stateless MCP requests require object params, got {}",
-                value_kind(&other)
-            )));
-        }
-    };
-
-    let meta = params
-        .entry("_meta".to_string())
-        .or_insert_with(|| Value::Object(Map::new()))
-        .as_object_mut()
-        .ok_or_else(|| {
-            GuestError::InvalidParams(
-                "stateless MCP requests require params._meta to be an object".to_string(),
-            )
-        })?;
-    meta.insert(
-        "io.modelcontextprotocol/protocolVersion".to_string(),
-        Value::String(STATELESS_PROTOCOL_VERSION.to_string()),
-    );
-    meta.insert(
-        "io.modelcontextprotocol/clientCapabilities".to_string(),
-        serde_json::to_value(&context.capabilities)?,
-    );
-    meta.insert(
-        "io.modelcontextprotocol/clientInfo".to_string(),
-        serde_json::to_value(&context.client_info)?,
-    );
-
-    Ok(Some(Value::Object(params)))
-}
-
-fn value_kind(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "boolean",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
     }
 }
 
@@ -803,7 +629,6 @@ mod tests {
                 capabilities: ClientCapabilities::default(),
                 handler: Arc::new(NoopClientHandler),
                 default_timeout: Duration::from_secs(30),
-                protocol_mode: ProtocolMode::Stateful,
             },
         )
         .await
@@ -821,102 +646,6 @@ mod tests {
         );
         assert!(
             matches!(&sent[2], JsonRpcMessage::Notification(notification) if notification.method == "notifications/initialized")
-        );
-    }
-
-    #[tokio::test]
-    async fn stateless_discovery_uses_request_metadata_without_initialize() {
-        let transport =
-            MockTransport::new(vec![JsonRpcMessage::Response(JsonRpcResponse::success(
-                serde_json::json!(1),
-                serde_json::json!({
-                    "supportedVersions": [STATELESS_PROTOCOL_VERSION],
-                    "capabilities": {
-                        "tools": {
-                            "listChanged": false
-                        }
-                    },
-                    "instructions": "Use the tools.",
-                    "resultType": "complete",
-                    "ttlMs": 0,
-                    "cacheScope": "private",
-                    "_meta": {
-                        "io.modelcontextprotocol/serverInfo": {
-                            "name": "stateless-server",
-                            "version": "1.0.0"
-                        }
-                    }
-                }),
-            ))]);
-        let options = ConnectionOptions {
-            client_info: Implementation::new("test-client", "1.0.0"),
-            capabilities: ClientCapabilities::default(),
-            handler: Arc::new(NoopClientHandler),
-            default_timeout: Duration::from_secs(30),
-            protocol_mode: ProtocolMode::Stateless,
-        };
-        let context = StatelessRequestContext {
-            client_info: options.client_info.clone(),
-            capabilities: options.capabilities.clone(),
-        };
-
-        let info = perform_stateless_discovery(
-            Arc::clone(&transport) as Arc<dyn MessageTransport>,
-            &context,
-            &options,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(info.name(), "stateless-server");
-        assert_eq!(info.protocol_version, STATELESS_PROTOCOL_VERSION);
-        assert_eq!(info.instructions.as_deref(), Some("Use the tools."));
-
-        let sent = transport.sent.lock().await;
-        assert_eq!(sent.len(), 1);
-        let JsonRpcMessage::Request(request) = &sent[0] else {
-            panic!("expected server/discover request");
-        };
-        assert_eq!(request.method, "server/discover");
-        let meta = &request.params.as_ref().unwrap()["_meta"];
-        assert_eq!(
-            meta["io.modelcontextprotocol/protocolVersion"],
-            STATELESS_PROTOCOL_VERSION
-        );
-        assert_eq!(
-            meta["io.modelcontextprotocol/clientInfo"]["name"],
-            "test-client"
-        );
-        assert_eq!(
-            meta["io.modelcontextprotocol/clientCapabilities"],
-            serde_json::json!({})
-        );
-    }
-
-    #[test]
-    fn stateless_metadata_preserves_caller_metadata() {
-        let context = StatelessRequestContext {
-            client_info: Implementation::new("test-client", "1.0.0"),
-            capabilities: ClientCapabilities::default(),
-        };
-
-        let params = with_stateless_metadata(
-            Some(serde_json::json!({
-                "name": "echo",
-                "_meta": {
-                    "progressToken": "progress-1"
-                }
-            })),
-            &context,
-        )
-        .unwrap()
-        .unwrap();
-
-        assert_eq!(params["name"], "echo");
-        assert_eq!(params["_meta"]["progressToken"], "progress-1");
-        assert_eq!(
-            params["_meta"]["io.modelcontextprotocol/protocolVersion"],
-            STATELESS_PROTOCOL_VERSION
         );
     }
 }

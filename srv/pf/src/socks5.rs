@@ -24,8 +24,8 @@ use rama::Service;
 use rama::error::BoxError;
 use rama::extensions::ExtensionsRef;
 use rama::layer::AddInputExtensionLayer;
+use rama::net::client::ConnectRequest as TcpRequest;
 use rama::net::client::EstablishedClientConnection;
-use rama::net::client::Request as TcpRequest;
 use rama::net::stream::SocketInfo;
 use rama::proxy::socks5::Socks5Acceptor;
 use rama::proxy::socks5::server::DefaultConnector;
@@ -290,7 +290,7 @@ async fn handle_socks5_tcp(
         }
     }
 
-    tcp_connector.serve(req).await
+    tcp_connector.serve(req).await.map_err(Into::into)
 }
 
 async fn inspect_socks5_udp(

@@ -20,10 +20,12 @@ use rama::http::client::proxy::layer::HttpProxyConnector;
 use rama::http::layer::upgrade::Upgraded;
 use rama::net::Protocol;
 use rama::net::address::ProxyAddress;
+use rama::net::client::ConnectRequest as TcpRequest;
+use rama::net::client::ConnectionError;
 use rama::net::client::ConnectorService;
 use rama::net::client::ConnectorTarget;
 use rama::net::client::EstablishedClientConnection;
-use rama::net::client::Request as TcpRequest;
+use rama::net::client::ProxyRoute;
 use rama::net::proxy::IoForwardService;
 use rama::rt::Executor;
 use rama::tcp::client::service::TcpConnector;
@@ -47,7 +49,7 @@ where
     C: ConnectorService<TcpRequest> + Clone,
 {
     type Output = EstablishedClientConnection<C::Connection, TcpRequest>;
-    type Error = C::Error;
+    type Error = ConnectionError;
 
     async fn serve(&self, req: TcpRequest) -> Result<Self::Output, Self::Error> {
         self.inner
@@ -126,12 +128,13 @@ pub(super) async fn forward_connect_tunnel(
         .into_layer(proxy_connector);
     let connector = HttpsTunnelConnector { inner: connector };
     if let Some(proxy) = proxy {
-        upgraded.extensions().insert(proxy);
+        upgraded.extensions().insert(ProxyRoute::from(proxy));
     }
     IoToProxyBridgeIoLayer::extension_connector_target_with_connector(connector)
         .into_layer(IoForwardService::new(Executor::default()))
         .serve(upgraded)
         .await
+        .map(drop)
         .map_err(|err| err.with_context(|| format!("forward CONNECT tunnel to {authority}")))
 }
 

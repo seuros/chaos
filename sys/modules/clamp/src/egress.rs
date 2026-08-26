@@ -34,7 +34,7 @@ use rama::{
         layer::{
             map_response_body::MapResponseBodyLayer,
             remove_header::{RemoveRequestHeaderLayer, RemoveResponseHeaderLayer},
-            upgrade::{DefaultHttpProxyConnectReplyService, UpgradeLayer, Upgraded},
+            upgrade::{LazyHttpProxyConnectReplyService, UpgradeLayer, Upgraded},
         },
         matcher::MethodMatcher,
         server::HttpServer,
@@ -46,7 +46,10 @@ use rama::{
     tcp::server::TcpListener,
     tls::client::TlsClientConfig,
     tls::rustls::server::TlsAcceptorLayer,
-    tls::server::{SelfSignedData, ServerAuthData, TlsServerConfig},
+    tls::server::{
+        CertificateIdentity, CertificateSubject, LeafCertConfig, LeafCertRequest,
+        SelfSignedCaConfig, ServerAuthData, TlsServerConfig,
+    },
 };
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
@@ -196,7 +199,7 @@ impl EgressProxy {
         let http = HttpServer::auto(exec).service(Arc::new(
             (
                 ConsumeErrLayer::default(),
-                UpgradeLayer::new(
+                UpgradeLayer::new_with_services(
                     Executor::default(),
                     MethodMatcher::CONNECT,
                     AllowlistConnectReply,
@@ -257,7 +260,7 @@ impl<Body_> Service<Request<Body_>> for AllowlistConnectReply
 where
     Body_: Send + 'static,
 {
-    type Output = <DefaultHttpProxyConnectReplyService as Service<Request<Body_>>>::Output;
+    type Output = <LazyHttpProxyConnectReplyService as Service<Request<Body_>>>::Output;
     type Error = Response;
 
     async fn serve(&self, req: Request<Body_>) -> Result<Self::Output, Self::Error> {
@@ -272,7 +275,7 @@ where
         match host {
             Some(host) if state.policy.permits(&host) => {
                 debug!(host = %host, "egress: CONNECT permitted");
-                DefaultHttpProxyConnectReplyService::new().serve(req).await
+                LazyHttpProxyConnectReplyService::new().serve(req).await
             }
             other => {
                 let host = other.unwrap_or_else(|| target.clone());
@@ -400,6 +403,7 @@ async fn inspect_and_forward(
         .with_proxy_support()
         .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
         .with_default_http_connector(state.exec.clone())
+        .without_connection_pool()
         .build_client();
     let client = (
         RemoveRequestHeaderLayer::hop_by_hop(),
@@ -442,13 +446,27 @@ fn session_authority(allowed_hosts: &[String]) -> Result<ServerAuthData, BoxErro
                 .map_err(|err| BoxError::from(format!("invalid allowlist host {host}: {err}")))?,
         );
     }
-    let common_name = sans.first().cloned();
-    ServerAuthData::new_self_signed(SelfSignedData {
-        organisation_name: Some("Chaos Clamp Egress".to_owned()),
-        common_name,
-        subject_alternative_names: Some(sans),
-        ..Default::default()
-    })
+    let organisation_name = Some("Chaos Clamp Egress".to_owned());
+    let leaf = LeafCertRequest {
+        config: LeafCertConfig {
+            subject: CertificateSubject {
+                organisation_name: organisation_name.clone(),
+                common_name: sans.first().map(ToString::to_string),
+            },
+            ..Default::default()
+        },
+        identities: sans.into_iter().map(CertificateIdentity::from).collect(),
+    };
+    ServerAuthData::new_generated_ca(
+        SelfSignedCaConfig {
+            subject: CertificateSubject {
+                organisation_name,
+                common_name: Some("Chaos Clamp Egress CA".to_owned()),
+            },
+            ..Default::default()
+        },
+        leaf,
+    )
 }
 
 /// Writes the CA (the last entry of the generated chain) as a PEM bundle with
@@ -641,5 +659,43 @@ mod tests {
             .nth(1)
             .and_then(|code| code.parse().ok())
             .unwrap_or(0)
+    }
+
+    #[test]
+    fn session_authority_mints_a_ca_backed_leaf_covering_every_allowlisted_host() {
+        let hosts: Vec<String> = ANTIGRAVITY_ALLOWED_HOSTS
+            .iter()
+            .map(|host| (*host).to_owned())
+            .collect();
+        let auth = session_authority(&hosts).expect("mint session authority");
+
+        // The chain is leaf-first with the session CA last: `write_ca_bundle`
+        // publishes that last entry as the trust root the child process pins.
+        assert_eq!(auth.cert_chain.len(), 2);
+        let leaf = auth.cert_chain.first().unwrap().as_ref();
+        let ca = auth.cert_chain.last().unwrap().as_ref();
+        assert_ne!(leaf, ca);
+
+        // Every allowlisted name is a SAN on the single leaf, and none of them
+        // leak into the CA.
+        for host in &hosts {
+            assert!(
+                leaf.windows(host.len()).any(|w| w == host.as_bytes()),
+                "leaf is missing SAN {host}"
+            );
+            assert!(
+                !ca.windows(host.len()).any(|w| w == host.as_bytes()),
+                "CA unexpectedly carries {host}"
+            );
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ca.pem");
+        write_ca_bundle(&path, &auth).expect("write ca bundle");
+        let pem = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(pem, pem_encode("CERTIFICATE", ca));
+
+        session_authority(&["not a domain".to_owned()])
+            .expect_err("non-domain allowlist entry must be rejected");
     }
 }

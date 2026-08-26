@@ -9,6 +9,7 @@ use rama::http::client::EasyHttpWebClient;
 use rama::net::Protocol;
 use rama::net::ProtocolInputExt;
 use rama::net::address::ProxyAddress;
+use rama::net::client::ProxyRoute;
 use rama::rt::Executor;
 use rama::service::BoxService;
 use tracing::warn;
@@ -122,7 +123,7 @@ impl Service<Request<Body>> for UpstreamClient {
 
     async fn serve(&self, req: Request<Body>) -> Result<Self::Output, Self::Error> {
         if let Some(proxy) = self.proxy_config.proxy_for_request(&req) {
-            req.extensions().insert(proxy);
+            req.extensions().insert(ProxyRoute::from(proxy));
         }
 
         let uri = req.uri().clone();
@@ -147,6 +148,7 @@ fn build_unix_client(path: &str) -> RamaHttpClient {
         .without_proxy_support()
         .without_tls_support()
         .with_default_http_connector::<Body>(Executor::default())
+        .without_connection_pool()
         .build_client()
         .boxed()
 }

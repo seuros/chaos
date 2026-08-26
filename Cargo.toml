@@ -235,7 +235,7 @@ chaos-auth-test-fixtures = { path = "lib/libutil/auth-test-fixtures" }
 chaos-check = { path = "tests/check" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.1.90", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.1.93", default-features = false, features = ["stdio", "macros"] }
 
 # External
 age = "0.12.1"
@@ -309,9 +309,9 @@ portable-pty = "0.9.0"
 predicates = "3"
 pretty_assertions = "1.4.1"
 pulldown-cmark = "0.13"
-rama = { version = "0.3.0", features = ["http-full", "rustls", "ring", "compression", "socks5", "opentelemetry", "unix"] }
-rama-http-hyperium = { version = "0.3.0" }
-rama-http-types = { version = "0.3.0" }
+rama = { version = "0.4.0", features = ["http-full", "rustls", "ring", "compression", "socks5", "opentelemetry", "unix"] }
+rama-http-hyperium = { version = "0.4.0" }
+rama-http-types = { version = "0.4.0" }
 rand = "0.10"
 ratatui = "0.30.2"
 ratatui-hypertile = "0.4.0"

@@ -36,7 +36,7 @@ use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
 use rama::http::header;
-use rama::http::layer::upgrade::DefaultHttpProxyConnectReplyService;
+use rama::http::layer::upgrade::LazyHttpProxyConnectReplyService;
 use rama::http::layer::upgrade::UpgradeResponse;
 use rama::net::ConnectorTargetInputExt;
 use rama::net::Protocol;
@@ -202,7 +202,7 @@ pub(super) async fn http_connect_accept(
         req.extensions().insert_arc(mitm_state);
     }
 
-    DefaultHttpProxyConnectReplyService::new().serve(req).await
+    LazyHttpProxyConnectReplyService::new().serve(req).await
 }
 
 pub(super) async fn http_plain_proxy(

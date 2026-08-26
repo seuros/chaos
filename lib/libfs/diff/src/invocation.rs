@@ -340,10 +340,7 @@ fn extract_apply_patch_from_bash(
                         .node
                         .utf8_text(bytes)
                         .map_err(ExtractHeredocError::HeredocNotUtf8)?;
-                    let trimmed = raw
-                        .strip_prefix('\'')
-                        .and_then(|s| s.strip_suffix('\''))
-                        .unwrap_or(raw);
+                    let trimmed = raw.strip_circumfix('\'', '\'').unwrap_or(raw);
                     cd_path = Some(trimmed.to_string());
                 }
                 _ => {}

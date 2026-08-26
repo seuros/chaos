@@ -284,9 +284,7 @@ fn parse_double_quoted_string(node: Node, src: &str) -> Option<String> {
         }
     }
     let raw = node.utf8_text(src.as_bytes()).ok()?;
-    let stripped = raw
-        .strip_prefix('"')
-        .and_then(|text| text.strip_suffix('"'))?;
+    let stripped = raw.strip_circumfix('"', '"')?;
     Some(stripped.to_string())
 }
 
@@ -296,9 +294,7 @@ fn parse_raw_string(node: Node, src: &str) -> Option<String> {
     }
 
     let raw_string = node.utf8_text(src.as_bytes()).ok()?;
-    let stripped = raw_string
-        .strip_prefix('\'')
-        .and_then(|s| s.strip_suffix('\''));
+    let stripped = raw_string.strip_circumfix('\'', '\'');
     stripped.map(str::to_owned)
 }
 

@@ -139,9 +139,8 @@ pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImag
 pub fn normalize_pasted_path(pasted: &str) -> Option<PathBuf> {
     let pasted = pasted.trim();
     let unquoted = pasted
-        .strip_prefix('"')
-        .and_then(|s| s.strip_suffix('"'))
-        .or_else(|| pasted.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        .strip_circumfix('"', '"')
+        .or_else(|| pasted.strip_circumfix('\'', '\''))
         .unwrap_or(pasted);
 
     // file:// URL → filesystem path

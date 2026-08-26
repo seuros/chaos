@@ -275,9 +275,7 @@ fn has_rate_limit_data(snapshot: &RateLimitSnapshot) -> bool {
 }
 
 fn header_name_to_limit_id(header_name: &str) -> Option<String> {
-    let suffix = "-primary-used-percent";
-    let prefix = header_name.strip_suffix(suffix)?;
-    let limit = prefix.strip_prefix("x-")?;
+    let limit = header_name.strip_circumfix("x-", "-primary-used-percent")?;
     Some(normalize_limit_id(limit.to_string()))
 }
 

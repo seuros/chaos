@@ -187,16 +187,13 @@ pub struct ToolInfo {
     pub connector_description: Option<String>,
 }
 
-async fn emit_update(
-    tx_event: &Sender<Event>,
-    update: McpStartupUpdateEvent,
-) -> Result<(), async_channel::SendError<Event>> {
-    tx_event
+async fn emit_update(tx_event: &Sender<Event>, update: McpStartupUpdateEvent) {
+    let _ = tx_event
         .send(Event {
             id: INITIAL_SUBMIT_ID.to_owned(),
             msg: EventMsg::McpStartupUpdate(update),
         })
-        .await
+        .await;
 }
 
 /// A thin wrapper around a set of running [`mcp_guest::McpSession`] instances.
@@ -258,7 +255,7 @@ impl McpConnectionManager {
                 server_origins.insert(server_name.clone(), origin);
             }
             let cancel_token = cancel_token.child_token();
-            let _ = emit_update(
+            emit_update(
                 &tx_event,
                 McpStartupUpdateEvent {
                     server: server_name.clone(),
@@ -308,7 +305,7 @@ impl McpConnectionManager {
                     }
                 };
 
-                let _ = emit_update(
+                emit_update(
                     &tx_event,
                     McpStartupUpdateEvent {
                         server: server_name.clone(),

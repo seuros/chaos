@@ -798,11 +798,15 @@ fn decode_prompt_bytes(input: &[u8]) -> Result<String, PromptDecodeError> {
     }
 
     if let Some(rest) = input.strip_prefix(&[0xFF, 0xFE]) {
-        return decode_utf16(rest, "UTF-16LE", u16::from_le_bytes);
+        return String::from_utf16le(rest).map_err(|_| PromptDecodeError::InvalidUtf16 {
+            encoding: "UTF-16LE",
+        });
     }
 
     if let Some(rest) = input.strip_prefix(&[0xFE, 0xFF]) {
-        return decode_utf16(rest, "UTF-16BE", u16::from_be_bytes);
+        return String::from_utf16be(rest).map_err(|_| PromptDecodeError::InvalidUtf16 {
+            encoding: "UTF-16BE",
+        });
     }
 
     std::str::from_utf8(input)
@@ -810,23 +814,6 @@ fn decode_prompt_bytes(input: &[u8]) -> Result<String, PromptDecodeError> {
         .map_err(|e| PromptDecodeError::InvalidUtf8 {
             valid_up_to: e.valid_up_to(),
         })
-}
-
-fn decode_utf16(
-    input: &[u8],
-    encoding: &'static str,
-    decode_unit: fn([u8; 2]) -> u16,
-) -> Result<String, PromptDecodeError> {
-    if !input.len().is_multiple_of(2) {
-        return Err(PromptDecodeError::InvalidUtf16 { encoding });
-    }
-
-    let units: Vec<u16> = input
-        .chunks_exact(2)
-        .map(|chunk| decode_unit([chunk[0], chunk[1]]))
-        .collect();
-
-    String::from_utf16(&units).map_err(|_| PromptDecodeError::InvalidUtf16 { encoding })
 }
 
 fn resolve_prompt(prompt_arg: Option<String>) -> String {
@@ -1067,6 +1054,45 @@ mod tests {
             err,
             PromptDecodeError::UnsupportedBom {
                 encoding: "UTF-32BE"
+            }
+        );
+    }
+
+    #[test]
+    fn decode_prompt_bytes_rejects_malformed_utf16() {
+        // UTF-16LE BOM + odd trailing byte.
+        let odd_le = [0xFF, 0xFE, b'h', 0x00, 0x00];
+        assert_eq!(
+            decode_prompt_bytes(&odd_le).unwrap_err(),
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16LE"
+            }
+        );
+
+        // UTF-16BE BOM + odd trailing byte.
+        let odd_be = [0xFE, 0xFF, 0x00, b'h', 0x00];
+        assert_eq!(
+            decode_prompt_bytes(&odd_be).unwrap_err(),
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16BE"
+            }
+        );
+
+        // UTF-16LE BOM + lone surrogate.
+        let lone_surrogate_le = [0xFF, 0xFE, 0x00, 0xD8, b'x', 0x00];
+        assert_eq!(
+            decode_prompt_bytes(&lone_surrogate_le).unwrap_err(),
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16LE"
+            }
+        );
+
+        // UTF-16BE BOM + lone surrogate.
+        let lone_surrogate_be = [0xFE, 0xFF, 0xD8, 0x00, 0x00, b'x'];
+        assert_eq!(
+            decode_prompt_bytes(&lone_surrogate_be).unwrap_err(),
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16BE"
             }
         );
     }

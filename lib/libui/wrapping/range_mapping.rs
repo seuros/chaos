@@ -15,8 +15,14 @@ where
     for (line_index, line) in textwrap::wrap(text, &opts).iter().enumerate() {
         match line {
             Cow::Borrowed(slice) => {
-                let start = unsafe { slice.as_ptr().offset_from(text.as_ptr()) as usize };
-                let end = start + slice.len();
+                let Some(borrowed) = text.substr_range(slice) else {
+                    tracing::warn!(
+                        line = %slice,
+                        "wrap_ranges: borrowed line does not point into text; skipping"
+                    );
+                    continue;
+                };
+                let (start, end) = (borrowed.start, borrowed.end);
                 let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
                 lines.push(start..end + trailing_spaces + 1);
                 cursor = end + trailing_spaces;
@@ -50,10 +56,15 @@ where
     for (line_index, line) in textwrap::wrap(text, &opts).iter().enumerate() {
         match line {
             Cow::Borrowed(slice) => {
-                let start = unsafe { slice.as_ptr().offset_from(text.as_ptr()) as usize };
-                let end = start + slice.len();
-                lines.push(start..end);
-                cursor = end;
+                let Some(borrowed) = text.substr_range(slice) else {
+                    tracing::warn!(
+                        line = %slice,
+                        "wrap_ranges_trim: borrowed line does not point into text; skipping"
+                    );
+                    continue;
+                };
+                lines.push(borrowed.start..borrowed.end);
+                cursor = borrowed.end;
             }
             Cow::Owned(slice) => {
                 let synthetic_prefix = if line_index == 0 {

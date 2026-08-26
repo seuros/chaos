@@ -220,6 +220,7 @@ pub(crate) struct BeforeTurnCommandInput {
 }
 
 impl BeforeTurnCommandInput {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         session_id: impl Into<String>,
         transcript_path: Option<PathBuf>,
@@ -263,6 +264,7 @@ pub(crate) struct StopCommandInput {
 }
 
 impl StopCommandInput {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         session_id: impl Into<String>,
         transcript_path: Option<PathBuf>,

@@ -153,10 +153,6 @@ const CF_RAY_HEADER: &str = "cf-ray";
 const X_OPENAI_AUTHORIZATION_ERROR_HEADER: &str = "x-openai-authorization-error";
 const X_ERROR_JSON_HEADER: &str = "x-error-json";
 
-#[cfg(test)]
-#[path = "api_bridge_tests.rs"]
-mod tests;
-
 fn extract_request_tracking_id(headers: Option<&HeaderMap>) -> Option<String> {
     extract_request_id(headers).or_else(|| extract_header(headers, CF_RAY_HEADER))
 }
@@ -331,3 +327,7 @@ impl ApiAuthProvider for CoreAuthProvider {
         self.account_id.clone()
     }
 }
+
+#[cfg(test)]
+#[path = "api_bridge_tests.rs"]
+mod tests;

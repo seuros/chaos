@@ -106,52 +106,6 @@ fn hook_agent_context(
     context
 }
 
-#[cfg(test)]
-mod hook_agent_context_tests {
-    use chaos_ipc::ProcessId;
-    use chaos_ipc::protocol::SessionSource;
-    use chaos_ipc::protocol::SubAgentSource;
-
-    use super::hook_agent_context;
-
-    #[test]
-    fn root_sessions_have_no_agent_identity() {
-        let context = hook_agent_context(ProcessId::default(), &SessionSource::Cli);
-
-        assert!(!context.is_subagent);
-        assert!(context.agent_id.is_none());
-        assert!(context.agent_type.is_none());
-        assert!(context.parent_session_id.is_none());
-        assert!(context.agent_depth.is_none());
-    }
-
-    #[test]
-    fn spawned_subagents_preserve_parent_role_and_depth() {
-        let child_id = ProcessId::default();
-        let parent_id = ProcessId::default();
-        let context = hook_agent_context(
-            child_id,
-            &SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-                parent_process_id: parent_id,
-                depth: 2,
-                agent_nickname: Some("swift-otter".to_string()),
-                agent_role: Some("scout".to_string()),
-            }),
-        );
-        let child_id = child_id.to_string();
-        let parent_id = parent_id.to_string();
-
-        assert!(context.is_subagent);
-        assert_eq!(context.agent_id.as_deref(), Some(child_id.as_str()));
-        assert_eq!(context.agent_type.as_deref(), Some("scout"));
-        assert_eq!(
-            context.parent_session_id.as_deref(),
-            Some(parent_id.as_str())
-        );
-        assert_eq!(context.agent_depth, Some(2));
-    }
-}
-
 impl From<chaos_dtrace::SessionStartOutcome> for ContextHookOutcome {
     fn from(value: chaos_dtrace::SessionStartOutcome) -> Self {
         Self {
@@ -781,4 +735,50 @@ pub(crate) async fn built_tools(
             plan_mode,
         },
     )))
+}
+
+#[cfg(test)]
+mod hook_agent_context_tests {
+    use chaos_ipc::ProcessId;
+    use chaos_ipc::protocol::SessionSource;
+    use chaos_ipc::protocol::SubAgentSource;
+
+    use super::hook_agent_context;
+
+    #[test]
+    fn root_sessions_have_no_agent_identity() {
+        let context = hook_agent_context(ProcessId::default(), &SessionSource::Cli);
+
+        assert!(!context.is_subagent);
+        assert!(context.agent_id.is_none());
+        assert!(context.agent_type.is_none());
+        assert!(context.parent_session_id.is_none());
+        assert!(context.agent_depth.is_none());
+    }
+
+    #[test]
+    fn spawned_subagents_preserve_parent_role_and_depth() {
+        let child_id = ProcessId::default();
+        let parent_id = ProcessId::default();
+        let context = hook_agent_context(
+            child_id,
+            &SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id: parent_id,
+                depth: 2,
+                agent_nickname: Some("swift-otter".to_string()),
+                agent_role: Some("scout".to_string()),
+            }),
+        );
+        let child_id = child_id.to_string();
+        let parent_id = parent_id.to_string();
+
+        assert!(context.is_subagent);
+        assert_eq!(context.agent_id.as_deref(), Some(child_id.as_str()));
+        assert_eq!(context.agent_type.as_deref(), Some("scout"));
+        assert_eq!(
+            context.parent_session_id.as_deref(),
+            Some(parent_id.as_str())
+        );
+        assert_eq!(context.agent_depth, Some(2));
+    }
 }

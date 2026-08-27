@@ -615,31 +615,15 @@ impl RolloutRecorder {
         let client = journal_client_from_env_or_bootstrap()
             .await
             .map_err(IoError::other)?;
-        let loaded = match client.load_journal(process_id).await {
-            Ok(loaded) => loaded,
-            Err(JournalClientError::Remote(payload))
-                if payload.code == JournalErrorCode::NotFound =>
-            {
-                return Ok(None);
-            }
-            Err(err) => {
-                return Err(IoError::other(format!(
-                    "failed to load journal history for cwd lookup on {process_id}: {err}"
-                )));
-            }
-        };
-
-        for entry in loaded.items.iter().rev() {
-            if let RolloutItem::TurnContext(item) = &entry.item {
-                return Ok(Some(item.cwd.clone()));
-            }
-        }
-        for entry in loaded.items {
-            if let RolloutItem::SessionMeta(item) = entry.item {
-                return Ok(Some(item.meta.cwd));
-            }
-        }
-        Ok(None)
+        client
+            .get_process(process_id)
+            .await
+            .map(|process| process.map(|record| record.cwd))
+            .map_err(|err| {
+                IoError::other(format!(
+                    "failed to load journal process metadata for cwd lookup on {process_id}: {err}"
+                ))
+            })
     }
 
     pub async fn shutdown(&self) -> std::io::Result<()> {
@@ -1088,11 +1072,15 @@ async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, Stri
             .hello("chaos-kern")
             .await
             .map_err(|err| format!("env-provided journald hello failed: {err}"))?;
-        if hello.protocol_version < chaos_journald::JOURNAL_PROTOCOL_VERSION {
+        if !chaos_journald::hello_is_compatible(&hello) {
             return Err(format!(
-                "env-provided journald at {} speaks protocol {}, this client requires {}",
+                "env-provided journald at {} reports server {} version {} protocol {}; this client requires {} version {} protocol {}",
                 client.socket_path().display(),
+                hello.server_name,
+                hello.server_version,
                 hello.protocol_version,
+                chaos_journald::JOURNAL_SERVER_NAME,
+                chaos_journald::JOURNAL_SERVER_VERSION,
                 chaos_journald::JOURNAL_PROTOCOL_VERSION,
             ));
         }

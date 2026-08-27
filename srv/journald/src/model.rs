@@ -114,5 +114,7 @@ pub struct HelloRequest {
 pub struct HelloResponse {
     pub server_name: String,
     pub protocol_version: u32,
+    #[serde(default)]
+    pub server_version: String,
     pub backend: String,
 }

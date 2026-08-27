@@ -37,7 +37,9 @@ use crate::protocol::SetDefaultProcessRequest;
 use crate::protocol::SetDefaultProcessResponse;
 
 pub const JOURNAL_RPC_PATH: &str = "/rpc";
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const SERVER_NAME: &str = "chaos_journald";
+pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const PROTOCOL_VERSION: u32 = 4;
 
 pub struct JournalRpcServer<S> {
     store: Arc<S>,
@@ -122,8 +124,9 @@ where
         let request_id = envelope.id;
         let outcome = match envelope.request {
             JournalRequest::Hello(_request) => Ok(JournalResponse::Hello(HelloResponse {
-                server_name: "chaos_journald".to_string(),
+                server_name: SERVER_NAME.to_string(),
                 protocol_version: PROTOCOL_VERSION,
+                server_version: SERVER_VERSION.to_string(),
                 backend: self.backend.to_string(),
             })),
             JournalRequest::CreateProcess(input) => {
@@ -331,6 +334,9 @@ mod tests {
 
     use super::JOURNAL_RPC_PATH;
     use super::JournalRpcServer;
+    use super::PROTOCOL_VERSION;
+    use super::SERVER_NAME;
+    use super::SERVER_VERSION;
     use crate::CreateProcessInput;
     use crate::HelloRequest;
     use crate::JournalRequest;
@@ -375,7 +381,9 @@ mod tests {
         assert!(envelope.ok);
         match envelope.result {
             Some(JournalResponse::Hello(hello)) => {
-                assert_eq!(hello.server_name, "chaos_journald");
+                assert_eq!(hello.server_name, SERVER_NAME);
+                assert_eq!(hello.protocol_version, PROTOCOL_VERSION);
+                assert_eq!(hello.server_version, SERVER_VERSION);
                 assert_eq!(hello.backend, "sqlite");
             }
             other => panic!("unexpected result: {other:?}"),

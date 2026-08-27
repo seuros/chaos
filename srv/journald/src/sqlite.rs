@@ -293,21 +293,31 @@ impl JournalStore for SqliteJournalStore {
     ) -> Result<Option<ProcessRecord>, JournalError> {
         let row = sqlx::query(
             "SELECT
-                id,
-                parent_process_id,
-                fork_at_seq,
-                source_json,
-                cwd,
-                created_at,
-                updated_at,
-                archived_at,
-                title,
-                model_provider,
-                cli_version,
-                agent_nickname,
-                agent_role
-             FROM processes
-             WHERE id = ?",
+                p.id,
+                p.parent_process_id,
+                p.fork_at_seq,
+                p.source_json,
+                COALESCE(
+                    (
+                        SELECT json_extract(j.payload_json, '$.payload.cwd')
+                        FROM journal_entries AS j
+                        WHERE j.process_id = p.id
+                          AND j.item_type = 'turn_context'
+                        ORDER BY j.seq DESC
+                        LIMIT 1
+                    ),
+                    p.cwd
+                ) AS cwd,
+                p.created_at,
+                p.updated_at,
+                p.archived_at,
+                p.title,
+                p.model_provider,
+                p.cli_version,
+                p.agent_nickname,
+                p.agent_role
+             FROM processes AS p
+             WHERE p.id = ?",
         )
         .bind(process_id.to_string())
         .fetch_optional(&self.pool)
@@ -324,21 +334,31 @@ impl JournalStore for SqliteJournalStore {
             Some(true) => {
                 sqlx::query(
                     "SELECT
-                        id,
-                        parent_process_id,
-                        fork_at_seq,
-                        source_json,
-                        cwd,
-                        created_at,
-                        updated_at,
-                        archived_at,
-                        title,
-                        model_provider,
-                        cli_version,
-                        agent_nickname,
-                        agent_role
-                     FROM processes
-                     WHERE archived_at IS NOT NULL",
+                        p.id,
+                        p.parent_process_id,
+                        p.fork_at_seq,
+                        p.source_json,
+                        COALESCE(
+                            (
+                                SELECT json_extract(j.payload_json, '$.payload.cwd')
+                                FROM journal_entries AS j
+                                WHERE j.process_id = p.id
+                                  AND j.item_type = 'turn_context'
+                                ORDER BY j.seq DESC
+                                LIMIT 1
+                            ),
+                            p.cwd
+                        ) AS cwd,
+                        p.created_at,
+                        p.updated_at,
+                        p.archived_at,
+                        p.title,
+                        p.model_provider,
+                        p.cli_version,
+                        p.agent_nickname,
+                        p.agent_role
+                     FROM processes AS p
+                     WHERE p.archived_at IS NOT NULL",
                 )
                 .fetch_all(&self.pool)
                 .await?
@@ -346,21 +366,31 @@ impl JournalStore for SqliteJournalStore {
             Some(false) => {
                 sqlx::query(
                     "SELECT
-                        id,
-                        parent_process_id,
-                        fork_at_seq,
-                        source_json,
-                        cwd,
-                        created_at,
-                        updated_at,
-                        archived_at,
-                        title,
-                        model_provider,
-                        cli_version,
-                        agent_nickname,
-                        agent_role
-                     FROM processes
-                     WHERE archived_at IS NULL",
+                        p.id,
+                        p.parent_process_id,
+                        p.fork_at_seq,
+                        p.source_json,
+                        COALESCE(
+                            (
+                                SELECT json_extract(j.payload_json, '$.payload.cwd')
+                                FROM journal_entries AS j
+                                WHERE j.process_id = p.id
+                                  AND j.item_type = 'turn_context'
+                                ORDER BY j.seq DESC
+                                LIMIT 1
+                            ),
+                            p.cwd
+                        ) AS cwd,
+                        p.created_at,
+                        p.updated_at,
+                        p.archived_at,
+                        p.title,
+                        p.model_provider,
+                        p.cli_version,
+                        p.agent_nickname,
+                        p.agent_role
+                     FROM processes AS p
+                     WHERE p.archived_at IS NULL",
                 )
                 .fetch_all(&self.pool)
                 .await?
@@ -368,20 +398,30 @@ impl JournalStore for SqliteJournalStore {
             None => {
                 sqlx::query(
                     "SELECT
-                        id,
-                        parent_process_id,
-                        fork_at_seq,
-                        source_json,
-                        cwd,
-                        created_at,
-                        updated_at,
-                        archived_at,
-                        title,
-                        model_provider,
-                        cli_version,
-                        agent_nickname,
-                        agent_role
-                     FROM processes",
+                        p.id,
+                        p.parent_process_id,
+                        p.fork_at_seq,
+                        p.source_json,
+                        COALESCE(
+                            (
+                                SELECT json_extract(j.payload_json, '$.payload.cwd')
+                                FROM journal_entries AS j
+                                WHERE j.process_id = p.id
+                                  AND j.item_type = 'turn_context'
+                                ORDER BY j.seq DESC
+                                LIMIT 1
+                            ),
+                            p.cwd
+                        ) AS cwd,
+                        p.created_at,
+                        p.updated_at,
+                        p.archived_at,
+                        p.title,
+                        p.model_provider,
+                        p.cli_version,
+                        p.agent_nickname,
+                        p.agent_role
+                     FROM processes AS p",
                 )
                 .fetch_all(&self.pool)
                 .await?
@@ -849,6 +889,7 @@ mod tests {
     use chaos_ipc::protocol::CompactedItem;
     use chaos_ipc::protocol::RolloutItem;
     use chaos_ipc::protocol::SessionSource;
+    use serde_json::json;
     use tempfile::tempdir;
 
     use super::SqliteJournalStore;
@@ -959,6 +1000,84 @@ mod tests {
         let first_item_json = serde_json::to_string(&first_item)
             .unwrap_or_else(|err| panic!("serialize item: {err}"));
         assert_eq!(loaded_item_json, first_item_json);
+    }
+
+    #[tokio::test]
+    async fn process_metadata_uses_latest_turn_context_cwd() {
+        let temp_dir = tempdir().unwrap_or_else(|err| panic!("tempdir: {err}"));
+        let db_path = temp_dir.path().join("journal.sqlite");
+        let initial_cwd = temp_dir.path().join("initial");
+        let latest_cwd = temp_dir.path().join("latest");
+        let store = SqliteJournalStore::open(&db_path)
+            .await
+            .unwrap_or_else(|err| panic!("open: {err}"));
+        let process_id = ProcessId::new();
+
+        store
+            .create_process(CreateProcessInput {
+                process_id,
+                parent: None,
+                source: SessionSource::Cli,
+                cwd: initial_cwd,
+                created_at: jiff::Timestamp::now(),
+                title: Some("cwd metadata".to_string()),
+                model_provider: Some("openai".to_string()),
+                cli_version: Some("47.1.0".to_string()),
+            })
+            .await
+            .unwrap_or_else(|err| panic!("create_process: {err}"));
+        let lease = store
+            .acquire_lease(
+                &process_id,
+                &"cwd-owner".to_string(),
+                Duration::from_secs(30),
+            )
+            .await
+            .unwrap_or_else(|err| panic!("acquire_lease: {err}"));
+        let turn_context: RolloutItem = serde_json::from_value(json!({
+            "type": "turn_context",
+            "payload": {
+                "cwd": latest_cwd,
+                "approval_policy": "headless",
+                "vfs_policy": { "kind": "unrestricted" },
+                "socket_policy": "restricted",
+                "model": "gpt-5",
+                "summary": "auto"
+            }
+        }))
+        .unwrap_or_else(|err| panic!("turn context: {err}"));
+
+        store
+            .append_batch(AppendBatchInput {
+                process_id,
+                owner_id: "cwd-owner".to_string(),
+                lease_token: lease.lease_token,
+                expected_next_seq: 0,
+                items: vec![JournalEntry {
+                    seq: 0,
+                    recorded_at: jiff::Timestamp::now(),
+                    item: turn_context,
+                }],
+            })
+            .await
+            .unwrap_or_else(|err| panic!("append_batch: {err}"));
+
+        let process = store
+            .get_process(&process_id)
+            .await
+            .unwrap_or_else(|err| panic!("get_process: {err}"))
+            .expect("process row missing");
+        assert_eq!(process.cwd, latest_cwd);
+
+        let listed = store
+            .list_processes(Some(false))
+            .await
+            .unwrap_or_else(|err| panic!("list_processes: {err}"));
+        let listed_process = listed
+            .into_iter()
+            .find(|process| process.process_id == process_id)
+            .expect("listed process missing");
+        assert_eq!(listed_process.cwd, latest_cwd);
     }
 
     #[tokio::test]

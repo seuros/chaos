@@ -182,7 +182,10 @@ pub(crate) fn detect_locale() -> String {
 
 /// Detect IANA timezone.
 pub(crate) fn detect_timezone() -> String {
-    iana_time_zone::get_timezone().unwrap_or_else(|_| "unknown".into())
+    jiff::tz::TimeZone::system()
+        .iana_name()
+        .unwrap_or("unknown")
+        .to_owned()
 }
 
 /// Hostname via libc `uname`.

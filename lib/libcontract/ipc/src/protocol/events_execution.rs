@@ -2,10 +2,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::parse_command::ParsedCommand;
+use base64::Engine as _;
+use base64::alphabet;
+use base64::engine::DecodePaddingMode;
+use base64::engine::GeneralPurpose;
+use base64::engine::GeneralPurposeConfig;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_with::serde_as;
 use strum_macros::Display;
 use ts_rs::TS;
 
@@ -101,7 +105,6 @@ pub enum ExecOutputStream {
     Stderr,
 }
 
-#[serde_as]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct ExecCommandOutputDeltaEvent {
     /// Identifier for the ExecCommandBegin that produced this chunk.
@@ -109,13 +112,12 @@ pub struct ExecCommandOutputDeltaEvent {
     /// Which stream produced this chunk.
     pub stream: ExecOutputStream,
     /// Raw bytes from the stream (may not be valid UTF-8).
-    #[serde_as(as = "serde_with::base64::Base64")]
+    #[serde(with = "base64_bytes")]
     #[schemars(with = "String")]
     #[ts(type = "string")]
     pub chunk: Vec<u8>,
 }
 
-#[serde_as]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct TerminalInteractionEvent {
     /// Identifier for the ExecCommandBegin that produced this chunk.
@@ -132,4 +134,57 @@ pub struct ViewImageToolCallEvent {
     pub call_id: String,
     /// Local filesystem path provided to the tool.
     pub path: PathBuf,
+}
+
+mod base64_bytes {
+    use serde::Deserializer;
+    use serde::Serializer;
+    use serde::de::Error as _;
+
+    use super::*;
+
+    fn engine() -> GeneralPurpose {
+        GeneralPurpose::new(
+            &alphabet::STANDARD,
+            GeneralPurposeConfig::new()
+                .with_encode_padding(true)
+                .with_decode_padding_mode(DecodePaddingMode::Indifferent),
+        )
+    }
+
+    pub(super) fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&engine().encode(bytes))
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = String::deserialize(deserializer)?;
+        engine().decode(encoded).map_err(D::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_delta_uses_padded_base64_and_accepts_unpadded_input() {
+        let event = ExecCommandOutputDeltaEvent {
+            call_id: "call-1".to_owned(),
+            stream: ExecOutputStream::Stdout,
+            chunk: b"Hello World".to_vec(),
+        };
+
+        let mut value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["chunk"], "SGVsbG8gV29ybGQ=");
+
+        value["chunk"] = "SGVsbG8gV29ybGQ".into();
+        let decoded: ExecCommandOutputDeltaEvent = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, event);
+    }
 }

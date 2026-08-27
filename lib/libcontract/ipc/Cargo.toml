@@ -13,6 +13,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 chaos-scm = { workspace = true }
 chaos-realpath = { workspace = true }
 icu_decimal = { workspace = true }
@@ -21,7 +22,6 @@ icu_provider = { workspace = true, features = ["sync"] }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_with = { workspace = true, features = ["macros", "base64"] }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 sys-locale = { workspace = true }

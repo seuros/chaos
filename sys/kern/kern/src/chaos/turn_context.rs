@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use jiff::Zoned;
+use jiff::tz::TimeZone;
 use serde_json::Value;
 
 use chaos_ipc::config_types::ApprovalsReviewer;
@@ -262,11 +262,18 @@ impl TurnContext {
 }
 
 pub(super) fn local_time_context() -> (String, String) {
-    match iana_time_zone::get_timezone() {
-        Ok(timezone) => (Zoned::now().strftime("%Y-%m-%d").to_string(), timezone),
-        Err(_) => (
+    let time_zone = TimeZone::system();
+    match time_zone.iana_name() {
+        Some(timezone) => (
             Timestamp::now()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned(time_zone.clone())
+                .strftime("%Y-%m-%d")
+                .to_string(),
+            timezone.to_owned(),
+        ),
+        None => (
+            Timestamp::now()
+                .to_zoned(TimeZone::UTC)
                 .strftime("%Y-%m-%d")
                 .to_string(),
             "Etc/UTC".to_string(),

@@ -40,6 +40,22 @@ fn assistant_text_stream_splits_citations_across_chunks_and_streams_plan_segment
     assert!(tail.visible_text.is_empty());
     assert!(tail.citations.is_empty());
 
+    // Responses following a native web search can contain private-use
+    // citation markers. They must be hidden just like memory citations.
+    let mut parser = AssistantTextStreamParser::new(false);
+    let seeded = parser
+        .push_str("GLM-5.3-Flash is available and cheap enough for this boundary check. \u{e200}");
+    let parsed = parser.push_str("cite\u{e202}turn0search1\u{e201} I'll benchmark it.");
+    let tail = parser.finish();
+    assert_eq!(
+        seeded.visible_text,
+        "GLM-5.3-Flash is available and cheap enough for this boundary check. "
+    );
+    assert!(seeded.citations.is_empty());
+    assert_eq!(parsed.visible_text, " I'll benchmark it.");
+    assert_eq!(parsed.citations, vec!["turn0search1".to_string()]);
+    assert!(tail.is_empty());
+
     // With proposed-plan parsing enabled, a nested citation inside a
     // plan block should be reported as a citation AND the plan block
     // should emit start/delta/end segments in order.
@@ -91,6 +107,21 @@ fn citation_parser_streams_partial_tags_and_handles_finish_semantics() {
     assert_eq!(out.visible_text, "Hello  world");
     assert_eq!(out.extracted, vec!["source A".to_string()]);
 
+    // Private-use web citation markers can also straddle arbitrary
+    // streamed text boundaries, including inside the opener.
+    let mut parser = CitationStreamParser::new();
+    let out = collect_chunks(
+        &mut parser,
+        &[
+            "Before \u{e200}",
+            "cit",
+            "e\u{e202}turn0search1",
+            "\u{e201} after",
+        ],
+    );
+    assert_eq!(out.visible_text, "Before  after");
+    assert_eq!(out.extracted, vec!["turn0search1".to_string()]);
+
     // A partial open-tag prefix at the end of a chunk must be buffered,
     // not emitted — otherwise half a tag leaks into the visible stream.
     let mut parser = CitationStreamParser::new();
@@ -123,6 +154,17 @@ fn citation_parser_streams_partial_tags_and_handles_finish_semantics() {
     );
     assert_eq!(visible, "abc");
     assert_eq!(citations, vec!["one".to_string(), "two".to_string()]);
+
+    // Batch parsing supports memory and web citation forms in the same
+    // response while preserving their source order.
+    let (visible, citations) = strip_citations(
+        "a<oai-mem-citation>memory</oai-mem-citation>b\u{e200}cite\u{e202}turn0search1\u{e201}c",
+    );
+    assert_eq!(visible, "abc");
+    assert_eq!(
+        citations,
+        vec!["memory".to_string(), "turn0search1".to_string()]
+    );
 
     // Batch helper also auto-closes a dangling open tag at EOF.
     let (visible, citations) = strip_citations("x<oai-mem-citation>y");

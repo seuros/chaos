@@ -9,17 +9,19 @@ enum CitationTag {
     Citation,
 }
 
-const CITATION_OPEN: &str = "<oai-mem-citation>";
-const CITATION_CLOSE: &str = "</oai-mem-citation>";
+const MEMORY_CITATION_OPEN: &str = "<oai-mem-citation>";
+const MEMORY_CITATION_CLOSE: &str = "</oai-mem-citation>";
+const WEB_CITATION_OPEN: &str = "\u{e200}cite\u{e202}";
+const WEB_CITATION_CLOSE: &str = "\u{e201}";
 
-/// Stream parser for `<oai-mem-citation>...</oai-mem-citation>` tags.
+/// Stream parser for hidden citation markup.
 ///
 /// This is a thin convenience wrapper around [`InlineHiddenTagParser`]. It returns citation bodies
-/// as plain strings and omits the citation tags from visible text.
+/// as plain strings and omits both `<oai-mem-citation>...</oai-mem-citation>` memory citations and
+/// `\u{e200}cite\u{e202}...\u{e201}` web citations from visible text.
 ///
 /// Matching is literal and non-nested. If EOF is reached before a closing
-/// `</oai-mem-citation>`, the parser auto-closes the tag and returns the buffered body as an
-/// extracted citation.
+/// delimiter, the parser auto-closes the citation and returns the buffered body as extracted data.
 #[derive(Debug)]
 pub struct CitationStreamParser {
     inner: InlineHiddenTagParser<CitationTag>,
@@ -28,11 +30,18 @@ pub struct CitationStreamParser {
 impl CitationStreamParser {
     pub fn new() -> Self {
         Self {
-            inner: InlineHiddenTagParser::new(vec![InlineTagSpec {
-                tag: CitationTag::Citation,
-                open: CITATION_OPEN,
-                close: CITATION_CLOSE,
-            }]),
+            inner: InlineHiddenTagParser::new(vec![
+                InlineTagSpec {
+                    tag: CitationTag::Citation,
+                    open: MEMORY_CITATION_OPEN,
+                    close: MEMORY_CITATION_CLOSE,
+                },
+                InlineTagSpec {
+                    tag: CitationTag::Citation,
+                    open: WEB_CITATION_OPEN,
+                    close: WEB_CITATION_CLOSE,
+                },
+            ]),
         }
     }
 }

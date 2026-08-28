@@ -1,9 +1,8 @@
 //! Runtime data for persisted session metadata.
 //!
-//! This crate owns the local process metadata, memories, and log indexes derived
-//! from persisted session history. Session replay itself lives in journald.
-//! SQLite remains the primary runtime implementation today; Postgres bootstrap
-//! helpers are exposed for backend-aware consumers.
+//! This crate owns process metadata, memories, log indexes, and the database
+//! schema used by session journals. SQLite journal access is mediated by
+//! journald; PostgreSQL journal access uses the mounted database directly.
 
 pub mod backfill;
 mod extract;

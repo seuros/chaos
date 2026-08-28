@@ -1,24 +1,26 @@
 #![warn(rust_2024_compatibility, clippy::all)]
 
-//! Session journal service — canonical append-only process history with SQLite default.
+//! Session journal storage — canonical append-only process history.
 //!
-//! This crate is the starting point for moving Chaos session persistence from
-//! file-primary rollout JSONL into a backend-neutral journal service:
+//! Callers use the mounted PostgreSQL database directly when PostgreSQL is the
+//! active backend. SQLite uses the journald Unix-socket sidecar:
 //! - the journal is append-only and replayable
 //! - per-process writer ownership is enforced with leases
-//! - SQLite is the default backend today
-//! - the API is shaped so Postgres can be added later without changing callers
+//! - SQLite and PostgreSQL implement the same store contract
 
+mod backend_client;
 mod bootstrap;
 mod client;
 mod error;
 mod model;
+mod postgres;
 mod protocol;
 mod rama_http;
 mod server;
 mod sqlite;
 mod store;
 
+pub use backend_client::JournalClient;
 pub use bootstrap::BootstrapPaths;
 pub use bootstrap::DEFAULT_BOOTSTRAP_TIMEOUT;
 pub use bootstrap::ensure_sqlite_journald_running;
@@ -42,6 +44,7 @@ pub use model::LoadedJournal;
 pub use model::OwnerId;
 pub use model::ParentRef;
 pub use model::ProcessRecord;
+pub use postgres::PostgresJournalStore;
 pub use protocol::AcquireLeaseRequest;
 pub use protocol::CreateProcessResponse;
 pub use protocol::ErrorCode;

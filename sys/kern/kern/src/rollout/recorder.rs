@@ -1,4 +1,4 @@
-//! Persist session history into journald so sessions can be replayed later.
+//! Persist session history into the active journal backend for later replay.
 
 use std::io::Error as IoError;
 use std::path::Path;
@@ -16,6 +16,7 @@ use chaos_journald::AppendBatchInput as JournalAppendBatchInput;
 use chaos_journald::CreateProcessInput as JournalCreateProcessInput;
 use chaos_journald::ErrorCode as JournalErrorCode;
 use chaos_journald::InitializeProcessInput as JournalInitializeProcessInput;
+use chaos_journald::JournalClient;
 use chaos_journald::JournalClientError;
 use chaos_journald::JournalEntry;
 use chaos_journald::JournalRpcClient;
@@ -173,7 +174,7 @@ impl RolloutRecorder {
     /// Load the canonical append-only journal for a process, preserving entry
     /// sequence numbers and timestamps for bounded transcript inspection.
     pub async fn get_journal_for_process(process_id: ProcessId) -> std::io::Result<LoadedJournal> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         match client.load_journal(process_id).await {
@@ -182,7 +183,7 @@ impl RolloutRecorder {
                 if payload.code == JournalErrorCode::NotFound =>
             {
                 Err(IoError::other(format!(
-                    "journald has no process row for {process_id}"
+                    "the active journal backend has no process row for {process_id}"
                 )))
             }
             Err(err) => Err(IoError::other(format!(
@@ -191,7 +192,7 @@ impl RolloutRecorder {
         }
     }
 
-    /// List processes persisted in journald.
+    /// List processes persisted in the active journal backend.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_processes(
         config: &impl RolloutConfig,
@@ -215,7 +216,7 @@ impl RolloutRecorder {
         .await
     }
 
-    /// List archived processes persisted in journald.
+    /// List archived processes persisted in the active journal backend.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_archived_processes(
         config: &impl RolloutConfig,
@@ -250,7 +251,7 @@ impl RolloutRecorder {
         archived: bool,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         let mut records = client
@@ -313,7 +314,7 @@ impl RolloutRecorder {
         allowed_sources: &[SessionSource],
         filter_cwd: Option<&Path>,
     ) -> std::io::Result<Option<ProcessId>> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         let mut records = client
@@ -456,7 +457,7 @@ impl RolloutRecorder {
         // Fire-and-forget: update the default session pointer in the DB.
         tokio::task::spawn(async move {
             if let Err(err) = RolloutRecorder::set_default_session(session_id_for_default).await {
-                warn!(%err, "failed to update default session in journald");
+                warn!(%err, "failed to update default session in journal backend");
             }
         });
 
@@ -532,7 +533,7 @@ impl RolloutRecorder {
     pub async fn get_rollout_history_for_process(
         process_id: ProcessId,
     ) -> std::io::Result<InitialHistory> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         let loaded = match client.load_journal(process_id).await {
@@ -541,12 +542,12 @@ impl RolloutRecorder {
                 if payload.code == JournalErrorCode::NotFound =>
             {
                 return Err(IoError::other(format!(
-                    "journald has no process row for resume target {process_id}; import this session into the journal before resuming it"
+                    "the active journal backend has no process row for resume target {process_id}"
                 )));
             }
             Err(err) => {
                 return Err(IoError::other(format!(
-                    "failed to load resume history from journald for {process_id}: {err}"
+                    "failed to load resume history from the active journal backend for {process_id}: {err}"
                 )));
             }
         };
@@ -559,10 +560,10 @@ impl RolloutRecorder {
         });
         if !has_transcript {
             return Err(IoError::other(format!(
-                "journald has a process row for {process_id} but no transcript \
+                "the active journal backend has a process row for {process_id} but no transcript \
                  entries ({} item(s), none of them response or compacted history). \
-                 The prior session was interrupted before its rollout flushed, or \
-                 the journald sidecar was not recording. Refusing to resume from \
+                 The prior session was interrupted before its rollout flushed to this backend. \
+                 Refusing to resume from \
                  an empty/unusable journal — silently continuing would discard \
                  the conversation context the model needs.",
                 history.len()
@@ -581,7 +582,7 @@ impl RolloutRecorder {
 
     /// Returns the default session ID stored in the DB, if any.
     pub async fn get_default_session() -> std::io::Result<Option<ProcessId>> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         client.get_default_process().await.map_err(IoError::other)
@@ -589,7 +590,7 @@ impl RolloutRecorder {
 
     /// Sets the default session ID in the DB.
     pub async fn set_default_session(process_id: ProcessId) -> std::io::Result<()> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         client
@@ -599,7 +600,7 @@ impl RolloutRecorder {
     }
 
     pub async fn journal_contains_process(process_id: ProcessId) -> std::io::Result<bool> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         client
@@ -612,7 +613,7 @@ impl RolloutRecorder {
     pub async fn read_process_cwd_from_journal(
         process_id: ProcessId,
     ) -> std::io::Result<Option<PathBuf>> {
-        let client = journal_client_from_env_or_bootstrap()
+        let client = journal_client_for_mounted_backend()
             .await
             .map_err(IoError::other)?;
         client
@@ -680,7 +681,7 @@ enum JournalSink {
 }
 
 struct ActiveJournalWriter {
-    client: JournalRpcClient,
+    client: JournalClient,
     process_id: ProcessId,
     owner_id: String,
     lease_token: String,
@@ -716,7 +717,7 @@ impl JournalSink {
                         *self = Self::Active(writer);
                     }
                     Err(err) => {
-                        warn!("failed to initialize journald dual-write sink: {err}");
+                        warn!("failed to initialize journal sink: {err}");
                         health::set_persistence_health(PersistenceHealth::Failed);
                         *self = Self::Disabled;
                     }
@@ -724,7 +725,7 @@ impl JournalSink {
             }
             Self::Active(mut writer) => {
                 if let Err(err) = writer.append_items(items).await {
-                    warn!("journald dual-write disabled after append failure: {err}");
+                    warn!("journal sink disabled after append failure: {err}");
                     health::set_persistence_health(PersistenceHealth::Failed);
                     *self = Self::Disabled;
                 } else {
@@ -741,10 +742,10 @@ impl JournalSink {
         let state = std::mem::replace(self, Self::Disabled);
         if let Self::Active(mut writer) = state {
             if let Err(err) = writer.flush_pending_items().await {
-                warn!("failed to flush pending journald items during shutdown: {err}");
+                warn!("failed to flush pending journal items during shutdown: {err}");
             }
             if let Err(err) = writer.release_lease().await {
-                warn!("failed to release journald lease: {err}");
+                warn!("failed to release journal lease: {err}");
             }
         }
     }
@@ -763,7 +764,7 @@ impl ActiveJournalWriter {
         items: &[RolloutItem],
     ) -> Result<Self, String> {
         debug_assert!(matches!(config.mode, JournalSinkMode::Create));
-        let client = journal_client_from_env_or_bootstrap().await?;
+        let client = journal_client_for_mounted_backend().await?;
 
         let create_input = JournalCreateProcessInput {
             process_id: config.process_id,
@@ -828,7 +829,7 @@ impl ActiveJournalWriter {
         items: &[RolloutItem],
     ) -> Result<Self, String> {
         debug_assert!(matches!(config.mode, JournalSinkMode::Resume));
-        let client = journal_client_from_env_or_bootstrap().await?;
+        let client = journal_client_for_mounted_backend().await?;
         let mut writer = Self::connect_existing(client, &config).await?;
         writer.append_items(items).await?;
         Ok(writer)
@@ -838,7 +839,7 @@ impl ActiveJournalWriter {
     /// Tolerates the redundant `create_process` because journald is the source of
     /// truth for whether the row exists.
     async fn connect_existing(
-        client: JournalRpcClient,
+        client: JournalClient,
         config: &PendingJournalConfig,
     ) -> Result<Self, String> {
         let create_input = JournalCreateProcessInput {
@@ -935,7 +936,7 @@ impl ActiveJournalWriter {
                         attempt,
                         max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,
                         error = ?payload,
-                        "retrying journald append after retryable failure"
+                        "retrying journal append after retryable failure"
                     );
                     tokio::time::sleep(delay).await;
                 }
@@ -945,7 +946,7 @@ impl ActiveJournalWriter {
                         process_id = %self.process_id,
                         max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,
                         error = ?payload,
-                        "journald append retry budget exhausted; retaining batch for next flush"
+                        "journal append retry budget exhausted; retaining batch for next flush"
                     );
                     self.pending_items = batch;
                     return Ok(());
@@ -1063,7 +1064,13 @@ fn retry_delay(attempt: usize) -> Duration {
     JOURNAL_APPEND_RETRY_BASE_DELAY * multiplier
 }
 
-async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, String> {
+async fn journal_client_for_mounted_backend() -> Result<JournalClient, String> {
+    if let Ok(vfs) = chaos_vfs::pool()
+        && let Some(client) = direct_journal_client_for_vfs(vfs)
+    {
+        return Ok(client);
+    }
+
     if let Some(socket_path) = std::env::var_os(JOURNALD_SOCKET_ENV)
         && !socket_path.is_empty()
     {
@@ -1084,7 +1091,7 @@ async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, Stri
                 chaos_journald::JOURNAL_PROTOCOL_VERSION,
             ));
         }
-        return Ok(client);
+        return Ok(JournalClient::rpc(client));
     }
 
     let binary_path = std::env::var_os(JOURNALD_BIN_ENV)
@@ -1093,7 +1100,14 @@ async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, Stri
     let (client, _paths) = JournalRpcClient::default_or_bootstrap(binary_path.as_deref())
         .await
         .map_err(|err| err.to_string())?;
-    Ok(client)
+    Ok(JournalClient::rpc(client))
+}
+
+fn direct_journal_client_for_vfs(vfs: chaos_vfs::Vfs) -> Option<JournalClient> {
+    match vfs {
+        chaos_vfs::Vfs::Postgres(pool) => Some(JournalClient::postgres_pool(pool)),
+        chaos_vfs::Vfs::Sqlite(_) => None,
+    }
 }
 
 fn journal_record_matches_filters(
@@ -1456,6 +1470,19 @@ fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
 #[cfg(test)]
 mod picker_preview_tests {
     use super::cleanup_user_message_preview;
+    use super::direct_journal_client_for_vfs;
+    use chaos_journald::JournalClient;
+    use sqlx::postgres::PgPoolOptions;
+
+    #[tokio::test]
+    async fn postgres_vfs_selects_direct_journal_client() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/chaos")
+            .expect("create lazy PostgreSQL pool");
+        let client = direct_journal_client_for_vfs(chaos_vfs::Vfs::Postgres(pool))
+            .expect("PostgreSQL should have a direct journal client");
+        assert!(matches!(client, JournalClient::Postgres(_)));
+    }
 
     #[test]
     fn strips_environment_context_and_request_marker() {

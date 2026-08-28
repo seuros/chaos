@@ -62,7 +62,7 @@ pub enum JournalClientError {
         actual: &'static str,
     },
 
-    #[error("remote: {0:?}")]
+    #[error("journal: {0:?}")]
     Remote(ErrorPayload),
 }
 

@@ -228,7 +228,7 @@ fn duration_from_millis(value: u64) -> Duration {
     Duration::from_millis(value)
 }
 
-fn error_payload_for(error: JournalError) -> ErrorPayload {
+pub(crate) fn error_payload_for(error: JournalError) -> ErrorPayload {
     match error {
         JournalError::ProcessNotFound(_) => ErrorPayload {
             code: ErrorCode::NotFound,
@@ -286,12 +286,14 @@ fn error_payload_for(error: JournalError) -> ErrorPayload {
 fn is_retryable_db_error(error: &sqlx::Error) -> bool {
     match error {
         sqlx::Error::Database(db_error) => {
-            db_error
-                .code()
-                .as_deref()
-                .is_some_and(|code| code == "5" || code == "SQLITE_BUSY" || code == "SQLITE_LOCKED")
-                || db_error.message().contains("database is locked")
+            db_error.code().as_deref().is_some_and(|code| {
+                matches!(
+                    code,
+                    "5" | "SQLITE_BUSY" | "SQLITE_LOCKED" | "40001" | "40P01" | "55P03"
+                )
+            }) || db_error.message().contains("database is locked")
         }
+        sqlx::Error::Io(_) | sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed => true,
         _ => false,
     }
 }

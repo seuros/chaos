@@ -1,4 +1,11 @@
 #![warn(clippy::all)]
+#![cfg_attr(
+    all(test, target_os = "macos"),
+    allow(
+        linker_messages,
+        reason = "the monolithic libui test binary exceeds ld64's 16 MiB compact-unwind table"
+    )
+)]
 
 pub mod app_event;
 pub mod app_event_sender;

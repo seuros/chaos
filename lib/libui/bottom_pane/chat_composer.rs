@@ -267,7 +267,6 @@ impl ChatComposer {
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
-            allow_elevate_sandbox: false,
             login_required: self.login_required,
         }
     }

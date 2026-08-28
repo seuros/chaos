@@ -340,8 +340,6 @@ pub(crate) async fn chatwidget_suite() {
     Box::pin(slash_stop_submits_background_terminal_cleanup()).await;
     Box::pin(slash_clear_requests_ui_clear_when_idle()).await;
     Box::pin(slash_clear_is_disabled_while_task_running()).await;
-    Box::pin(slash_memory_drop_submits_drop_memories_op()).await;
-    Box::pin(slash_memory_update_submits_update_memories_op()).await;
     Box::pin(slash_resume_opens_picker()).await;
     Box::pin(slash_fork_requests_current_fork()).await;
     Box::pin(undo_success_events_render_info_messages()).await;
@@ -5943,24 +5941,6 @@ async fn slash_clear_is_disabled_while_task_running() {
         other => panic!("expected InsertHistoryCell error, got {other:?}"),
     }
     assert!(rx.try_recv().is_err(), "expected no follow-up events");
-}
-
-#[cfg(test)]
-async fn slash_memory_drop_submits_drop_memories_op() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-
-    chat.dispatch_command(SlashCommand::MemoryDrop);
-
-    assert_matches!(op_rx.try_recv(), Ok(Op::DropMemories));
-}
-
-#[cfg(test)]
-async fn slash_memory_update_submits_update_memories_op() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-
-    chat.dispatch_command(SlashCommand::MemoryUpdate);
-
-    assert_matches!(op_rx.try_recv(), Ok(Op::UpdateMemories));
 }
 
 #[cfg(test)]

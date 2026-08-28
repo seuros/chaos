@@ -99,24 +99,13 @@ impl ChatWidget {
             SlashCommand::Agent | SlashCommand::MultiAgents => {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
             }
-            SlashCommand::Approvals => {
-                self.open_permissions_popup();
-            }
             SlashCommand::Permissions => {
                 self.open_permissions_popup();
-            }
-            SlashCommand::ElevateSandbox => {
-                // Not supported on Linux.
-            }
-            SlashCommand::SandboxReadRoot => {
-                self.add_error_message(
-                    "Usage: /sandbox-add-read-dir <absolute-directory-path>".to_string(),
-                );
             }
             SlashCommand::Quit | SlashCommand::Exit => {
                 self.request_quit_without_confirmation();
             }
-            SlashCommand::Accounts | SlashCommand::Login => {
+            SlashCommand::Accounts => {
                 self.app_event_tx.send(AppEvent::OpenAccountsPopup);
             }
             SlashCommand::Diff => {
@@ -169,9 +158,6 @@ impl ChatWidget {
             SlashCommand::Status => {
                 self.add_status_output();
             }
-            SlashCommand::DebugConfig => {
-                self.add_debug_config_output();
-            }
             SlashCommand::Theme => {
                 self.open_theme_picker();
             }
@@ -180,12 +166,6 @@ impl ChatWidget {
             }
             SlashCommand::Stop => {
                 self.clean_background_terminals();
-            }
-            SlashCommand::MemoryDrop => {
-                self.submit_op(Op::DropMemories);
-            }
-            SlashCommand::MemoryUpdate => {
-                self.submit_op(Op::UpdateMemories);
             }
             SlashCommand::Mcp => {
                 self.add_mcp_output();
@@ -220,44 +200,6 @@ impl ChatWidget {
                     // Force a full screen repaint so the green theme takes effect
                     // on all chrome (borders, status bar, input prompt).
                 }
-            }
-            SlashCommand::TestApproval => {
-                use chaos_ipc::protocol::EventMsg;
-                use std::collections::HashMap;
-
-                use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
-                use chaos_ipc::protocol::FileChange;
-
-                self.app_event_tx.send(AppEvent::ChaosEvent(Event {
-                    id: "1".to_string(),
-                    // msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
-                    //     call_id: "1".to_string(),
-                    //     command: vec!["git".into(), "apply".into()],
-                    //     cwd: self.config.cwd.clone(),
-                    //     reason: Some("test".to_string()),
-                    // }),
-                    msg: EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
-                        call_id: "1".to_string(),
-                        turn_id: "turn-1".to_string(),
-                        changes: HashMap::from([
-                            (
-                                PathBuf::from("/tmp/test.txt"),
-                                FileChange::Add {
-                                    content: "test".to_string(),
-                                },
-                            ),
-                            (
-                                PathBuf::from("/tmp/test2.txt"),
-                                FileChange::Update {
-                                    unified_diff: "+test\n-test2".to_string(),
-                                    move_path: None,
-                                },
-                            ),
-                        ]),
-                        reason: None,
-                        grant_root: Some(PathBuf::from("/tmp")),
-                    }),
-                }));
             }
         }
     }

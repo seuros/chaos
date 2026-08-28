@@ -16,12 +16,7 @@ pub enum SlashCommand {
     Model,
     ContextWindow,
     DynamicEffort,
-    Approvals,
     Permissions,
-    #[strum(serialize = "setup-default-sandbox")]
-    ElevateSandbox,
-    #[strum(serialize = "sandbox-add-read-dir")]
-    SandboxReadRoot,
     Review,
     Rename,
     New,
@@ -35,7 +30,6 @@ pub enum SlashCommand {
     Copy,
     Mention,
     Status,
-    DebugConfig,
     Theme,
     Mcp,
     #[strum(serialize = "mcp-add")]
@@ -43,21 +37,14 @@ pub enum SlashCommand {
     Tools,
     Clamp,
     Accounts,
-    Login,
     Quit,
     Exit,
     Ps,
     #[strum(to_string = "stop", serialize = "clean")]
     Stop,
     Clear,
-    TestApproval,
     #[strum(serialize = "subagents")]
     MultiAgents,
-    // Debugging commands.
-    #[strum(serialize = "debug-m-drop")]
-    MemoryDrop,
-    #[strum(serialize = "debug-m-update")]
-    MemoryUpdate,
 }
 
 impl SlashCommand {
@@ -78,14 +65,9 @@ impl SlashCommand {
             SlashCommand::Copy => format!("copy the latest {OS_NAME} output to your clipboard"),
             SlashCommand::Mention => "mention a file".into(),
             SlashCommand::Status => "show current session configuration and token usage".into(),
-            SlashCommand::DebugConfig => {
-                "show config layers and requirement sources for debugging".into()
-            }
             SlashCommand::Theme => "choose a syntax highlighting theme".into(),
             SlashCommand::Ps => "list background terminals".into(),
             SlashCommand::Stop => "stop all background terminals".into(),
-            SlashCommand::MemoryDrop => "DO NOT USE".into(),
-            SlashCommand::MemoryUpdate => "DO NOT USE".into(),
             SlashCommand::Model => "choose what model and reasoning effort to use".into(),
             SlashCommand::ContextWindow => {
                 "choose the ChatGPT context window used for new sessions".into()
@@ -98,13 +80,7 @@ impl SlashCommand {
             SlashCommand::Agent | SlashCommand::MultiAgents => {
                 "switch the active agent thread".into()
             }
-            SlashCommand::Approvals | SlashCommand::Permissions => {
-                format!("choose what {OS_NAME} is allowed to do")
-            }
-            SlashCommand::ElevateSandbox => "set up elevated agent sandbox".into(),
-            SlashCommand::SandboxReadRoot => {
-                "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>".into()
-            }
+            SlashCommand::Permissions => format!("choose what {OS_NAME} is allowed to do"),
             SlashCommand::Mcp => "list configured MCP tools".into(),
             SlashCommand::McpAdd => "add a new MCP server".into(),
             SlashCommand::Tools => "show all tools visible to the model".into(),
@@ -112,19 +88,13 @@ impl SlashCommand {
             SlashCommand::Accounts => {
                 "manage provider accounts and connections (disconnect via CLI)".into()
             }
-            SlashCommand::Login => "manage provider accounts and connections".into(),
-            SlashCommand::TestApproval => "test approval request".into(),
         }
     }
 
     /// Command string without the leading '/'. Provided for compatibility with
     /// existing code that expects a method named `command()`.
     pub fn command(self) -> &'static str {
-        match self {
-            SlashCommand::Accounts => "accounts",
-            SlashCommand::Login => "login",
-            _ => self.into(),
-        }
+        self.into()
     }
 
     /// Whether this command supports inline args (for example `/review ...`).
@@ -136,7 +106,6 @@ impl SlashCommand {
                 | SlashCommand::Plan
                 | SlashCommand::ContextWindow
                 | SlashCommand::DynamicEffort
-                | SlashCommand::SandboxReadRoot
         )
     }
 
@@ -150,23 +119,16 @@ impl SlashCommand {
             | SlashCommand::Model
             | SlashCommand::ContextWindow
             | SlashCommand::DynamicEffort
-            | SlashCommand::ElevateSandbox
-            | SlashCommand::SandboxReadRoot
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear
-            | SlashCommand::Accounts
-            | SlashCommand::Login
-            | SlashCommand::MemoryDrop
-            | SlashCommand::MemoryUpdate => false,
-            SlashCommand::Approvals
-            | SlashCommand::Permissions
+            | SlashCommand::Accounts => false,
+            SlashCommand::Permissions
             | SlashCommand::Diff
             | SlashCommand::Copy
             | SlashCommand::Rename
             | SlashCommand::Mention
             | SlashCommand::Status
-            | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::Mcp
@@ -174,7 +136,6 @@ impl SlashCommand {
             | SlashCommand::Tools
             | SlashCommand::Quit
             | SlashCommand::Exit => true,
-            SlashCommand::TestApproval => true,
             SlashCommand::Collab => true,
             SlashCommand::Clamp => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
@@ -191,16 +152,12 @@ impl SlashCommand {
     pub fn available_when_logged_out(self) -> bool {
         matches!(
             self,
-            SlashCommand::Accounts | SlashCommand::Login | SlashCommand::Quit | SlashCommand::Exit
+            SlashCommand::Accounts | SlashCommand::Quit | SlashCommand::Exit
         )
     }
 
     fn is_visible(self) -> bool {
         match self {
-            SlashCommand::SandboxReadRoot => false,
-            SlashCommand::Login => false,
-            SlashCommand::Copy => true,
-            SlashCommand::TestApproval => cfg!(debug_assertions),
             SlashCommand::Clamp => std::process::Command::new("claude")
                 .arg("-v")
                 .stdout(std::process::Stdio::null())
@@ -232,6 +189,7 @@ pub(crate) mod tests {
         clean_alias_parses_to_stop_command();
         dynamic_effort_accepts_inline_args();
         context_window_accepts_inline_args();
+        removed_commands_do_not_parse();
     }
     #[cfg(test)]
     fn stop_command_is_canonical_name() {
@@ -259,5 +217,24 @@ pub(crate) mod tests {
             Ok(SlashCommand::ContextWindow)
         );
         assert!(SlashCommand::ContextWindow.supports_inline_args());
+    }
+
+    #[test]
+    fn removed_commands_do_not_parse() {
+        for command in [
+            "approvals",
+            "setup-default-sandbox",
+            "sandbox-add-read-dir",
+            "debug-config",
+            "login",
+            "test-approval",
+            "debug-m-drop",
+            "debug-m-update",
+        ] {
+            assert!(
+                SlashCommand::from_str(command).is_err(),
+                "removed command should not parse: /{command}"
+            );
+        }
     }
 }

@@ -13,7 +13,6 @@ use crate::slash_command::built_in_slash_commands;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BuiltinCommandFlags {
     pub collaboration_modes_enabled: bool,
-    pub allow_elevate_sandbox: bool,
     /// No account is connected, so only logged-out-safe commands are offered.
     pub login_required: bool,
 }
@@ -23,7 +22,6 @@ pub fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static str, Slas
     built_in_slash_commands()
         .into_iter()
         .filter(|(_, cmd)| !flags.login_required || cmd.available_when_logged_out())
-        .filter(|(_, cmd)| flags.allow_elevate_sandbox || *cmd != SlashCommand::ElevateSandbox)
         .filter(|(_, cmd)| {
             flags.collaboration_modes_enabled
                 || !matches!(*cmd, SlashCommand::Collab | SlashCommand::Plan)
@@ -55,14 +53,12 @@ pub(crate) mod tests {
     fn all_enabled_flags() -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: true,
-            allow_elevate_sandbox: true,
             login_required: false,
         }
     }
 
     pub(crate) fn slash_commands_suite() {
         login_required_hides_all_but_logged_out_safe_commands();
-        debug_command_still_resolves_for_dispatch();
         clear_command_resolves_for_dispatch();
         stop_command_resolves_for_dispatch();
         clean_command_alias_resolves_for_dispatch();
@@ -86,11 +82,6 @@ pub(crate) mod tests {
             Some(SlashCommand::Accounts)
         );
         assert_eq!(find_builtin_command("model", flags), None);
-    }
-
-    fn debug_command_still_resolves_for_dispatch() {
-        let cmd = find_builtin_command("debug-config", all_enabled_flags());
-        assert_eq!(cmd, Some(SlashCommand::DebugConfig));
     }
 
     fn clear_command_resolves_for_dispatch() {

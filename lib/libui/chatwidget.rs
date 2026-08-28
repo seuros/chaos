@@ -42,7 +42,6 @@ use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Personality;
 
 use chaos_ipc::config_types::Settings;
-use chaos_ipc::protocol::Event;
 
 use chaos_ipc::protocol::ListCustomPromptsResponseEvent;
 use chaos_ipc::protocol::McpListToolsResponseEvent;

@@ -20,6 +20,30 @@ use super::schemas::{
     unified_exec_output_schema, wait_output_schema,
 };
 
+pub(crate) fn create_switch_mode_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "mode_id".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Target mode id from the caller-filtered chaos://modes resource.".to_string(),
+            ),
+        },
+    )]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: "switch_mode".to_string(),
+        description: "Switch this ChaOS session to another allowed mode. Read chaos://modes for the caller-filtered catalog. The next model sample in the same user turn uses the new mode. The switch is session-scoped and cannot change parent, sibling, or global modes."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["mode_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 pub(crate) fn create_compaction_control_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
@@ -591,6 +615,34 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             JsonSchema::String {
                 description: Some(
                     "Optional reasoning effort override for the new agent. Replaces the inherited reasoning effort."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "mode".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional initial mode id for the child. When allowed_modes is omitted, this creates a fixed single-mode child with no switch_mode tool. Use mode `plan` for a fixed planner minion."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "allowed_modes".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some(
+                    "Optional child-visible mode catalog. It must be a subset of the caller's catalog and cannot elevate capabilities beyond the active parent mode."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "allow_mode_switching".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "Whether the child may switch among allowed_modes. The kernel rejects switching with fewer than two allowed modes."
                         .to_string(),
                 ),
             },

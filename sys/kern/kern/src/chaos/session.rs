@@ -3,6 +3,7 @@ mod context;
 mod event;
 mod history;
 mod init;
+mod modes;
 pub(crate) mod tokens;
 mod turn;
 

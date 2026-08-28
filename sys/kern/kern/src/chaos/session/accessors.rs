@@ -50,17 +50,22 @@ impl Session {
     /// When no turn is active, rebuild from the latest `SessionConfiguration`
     /// so session-level updates are still reflected.
     pub(crate) async fn effective_config_for_spawn(&self) -> crate::config::Config {
-        {
+        let active_config = {
             let active_turn = self.active_turn.lock().await;
             if let Some(active_turn) = active_turn.as_ref()
                 && let Some((_, task)) = active_turn.tasks.first()
             {
-                return (*task.turn_context.config).clone();
+                Some((*task.turn_context.config).clone())
+            } else {
+                None
             }
-        }
+        };
 
         let state = self.state.lock().await;
-        Self::build_per_turn_config(&state.session_configuration)
+        let mut config = active_config
+            .unwrap_or_else(|| Self::build_per_turn_config(&state.session_configuration));
+        config.mode_policy_override = Some(state.session_configuration.mode_policy.clone());
+        config
     }
 
     /// The session's own `SessionSource`. Used to derive a

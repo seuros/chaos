@@ -656,6 +656,7 @@ impl Config {
             agent_roles,
             minion_job_max_runtime_seconds,
             chaos_home,
+            mode_policy_override: None,
             sqlite_home,
             storage_url,
             log_dir,

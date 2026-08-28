@@ -122,7 +122,9 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 );
             }
 
-            EventMsg::ModelReroute(_) | EventMsg::ParentEffortChanged(_) => {}
+            EventMsg::ModelReroute(_)
+            | EventMsg::ParentEffortChanged(_)
+            | EventMsg::SessionModeChanged(_) => {}
             EventMsg::DeprecationNotice(DeprecationNoticeEvent { summary, details }) => {
                 ts_msg!(
                     self,

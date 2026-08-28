@@ -25,8 +25,8 @@ use super::tool_builders::{
     create_request_user_input_tool, create_resume_agent_tool, create_search_session_history_tool,
     create_send_input_tool, create_set_parent_effort_tool, create_set_session_title_tool,
     create_shell_command_tool, create_shell_tool, create_spawn_agent_tool,
-    create_spawn_minions_on_csv_tool, create_test_sync_tool, create_view_image_tool,
-    create_wait_agent_tool, create_write_stdin_tool,
+    create_spawn_minions_on_csv_tool, create_switch_mode_tool, create_test_sync_tool,
+    create_view_image_tool, create_wait_agent_tool, create_write_stdin_tool,
 };
 
 pub(crate) fn push_tool_spec(
@@ -109,6 +109,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::SessionTitleHandler;
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
+    use crate::tools::handlers::SwitchModeHandler;
     use crate::tools::handlers::TestSyncHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
@@ -228,12 +229,23 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("cancel_mcp_task", mcp_task_handler);
     }
 
-    push_tool_spec(
-        &mut builder,
-        PLAN_TOOL.clone(),
-        /*supports_parallel_tool_calls*/ false,
-    );
-    builder.register_handler("update_plan", plan_handler);
+    if config.mode_allow_update_plan {
+        push_tool_spec(
+            &mut builder,
+            PLAN_TOOL.clone(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        builder.register_handler("update_plan", plan_handler);
+    }
+
+    if config.mode_switching {
+        push_tool_spec(
+            &mut builder,
+            create_switch_mode_tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        builder.register_handler("switch_mode", Arc::new(SwitchModeHandler));
+    }
 
     push_tool_spec(
         &mut builder,
@@ -572,7 +584,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
         }
     }
 
-    if !dynamic_tools.is_empty() {
+    if config.mode_allow_dynamic_tools && !dynamic_tools.is_empty() {
         for tool in dynamic_tools {
             match dynamic_tool_to_model_tool(tool) {
                 Ok(converted_tool) => {

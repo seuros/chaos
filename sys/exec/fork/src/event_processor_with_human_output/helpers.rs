@@ -92,6 +92,7 @@ impl EventProcessorWithHumanOutput {
             _ => matches!(
                 msg,
                 EventMsg::ProcessNameUpdated(_)
+                    | EventMsg::SessionModeChanged(_)
                     | EventMsg::TokenCount(_)
                     | EventMsg::TurnProgress(_)
                     | EventMsg::TurnStarted(_)

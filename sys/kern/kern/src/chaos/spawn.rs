@@ -231,7 +231,7 @@ impl Chaos {
 
         // TODO (aibrahim): Consolidate config.model and config.model_reasoning_effort into config.collaboration_mode
         // to avoid extracting these fields separately and constructing CollaborationMode here.
-        let collaboration_mode = CollaborationMode {
+        let base_collaboration_mode = CollaborationMode {
             mode: ModeKind::Default,
             settings: Settings {
                 model: model.clone(),
@@ -239,9 +239,29 @@ impl Chaos {
                 minion_instructions: None,
             },
         };
+        let mode_registry = Arc::new(
+            crate::modes::ModeRegistry::load(
+                &config.chaos_home,
+                crate::collaboration_modes::CollaborationModesConfig::default(),
+            )
+            .map_err(|err| ChaosErr::InvalidRequest(err.to_string()))?,
+        );
+        let mode_policy = config
+            .mode_policy_override
+            .clone()
+            .unwrap_or_else(|| crate::modes::ModePolicy::root(&mode_registry));
+        mode_policy
+            .validate(&mode_registry)
+            .map_err(ChaosErr::InvalidRequest)?;
+        let collaboration_mode = mode_registry
+            .apply_mode(&mode_policy.active_mode, &base_collaboration_mode)
+            .map_err(ChaosErr::InvalidRequest)?;
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             collaboration_mode,
+            mode_registry,
+            mode_policy,
+            mode_base_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier: config.service_tier,
             minion_instructions: config.minion_instructions.clone(),

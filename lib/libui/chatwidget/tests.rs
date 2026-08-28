@@ -93,6 +93,7 @@ use chaos_ipc::protocol::ProcessRolledBackEvent;
 use chaos_ipc::protocol::RateLimitWindow;
 use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
+use chaos_ipc::protocol::SessionModeChangedEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::StreamErrorEvent;
 use chaos_ipc::protocol::TerminalInteractionEvent;
@@ -2281,6 +2282,66 @@ async fn worked_elapsed_from_resets_when_timer_restarts() {
     // Simulate status timer resetting (e.g., status indicator recreated for a new task).
     assert_eq!(chat.worked_elapsed_from(3), 3);
     assert_eq!(chat.worked_elapsed_from(7), 4);
+}
+
+#[tokio::test]
+async fn session_mode_changed_updates_only_the_displayed_process() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    let session_id = ProcessId::new();
+    chat.process_id = Some(session_id);
+
+    chat.handle_codex_event(Event {
+        id: "mode-plan".to_string(),
+        msg: EventMsg::SessionModeChanged(SessionModeChangedEvent {
+            session_id,
+            mode_id: "plan".to_string(),
+            mode_title: "Plan".to_string(),
+            mode_kind: ModeKind::Plan,
+            model: "gpt-5.6".to_string(),
+            reasoning_effort: Some(ReasoningEffortConfig::Medium),
+        }),
+    });
+
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+    assert_eq!(chat.current_model(), "gpt-5.6");
+    assert_eq!(
+        chat.current_reasoning_effort(),
+        Some(ReasoningEffortConfig::Medium)
+    );
+    assert_eq!(chat.collaboration_mode_label(), Some("Plan"));
+
+    chat.handle_codex_event(Event {
+        id: "wrong-process".to_string(),
+        msg: EventMsg::SessionModeChanged(SessionModeChangedEvent {
+            session_id: ProcessId::new(),
+            mode_id: "default".to_string(),
+            mode_title: "Default".to_string(),
+            mode_kind: ModeKind::Default,
+            model: "ignored-model".to_string(),
+            reasoning_effort: None,
+        }),
+    });
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+    assert_eq!(chat.current_model(), "gpt-5.6");
+
+    chat.handle_codex_event(Event {
+        id: "mode-custom".to_string(),
+        msg: EventMsg::SessionModeChanged(SessionModeChangedEvent {
+            session_id,
+            mode_id: "research".to_string(),
+            mode_title: "Research".to_string(),
+            mode_kind: ModeKind::Default,
+            model: "gpt-5.6".to_string(),
+            reasoning_effort: Some(ReasoningEffortConfig::High),
+        }),
+    });
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
+    assert_eq!(chat.collaboration_mode_label(), Some("Research"));
+    assert_eq!(
+        chat.current_reasoning_effort(),
+        Some(ReasoningEffortConfig::High)
+    );
+    assert_no_submit_op(&mut op_rx);
 }
 
 pub async fn make_chatwidget_manual_with_sender() -> (

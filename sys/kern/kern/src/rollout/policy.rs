@@ -92,6 +92,7 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::Warning(_)
         | EventMsg::ModelReroute(_)
         | EventMsg::ParentEffortChanged(_)
+        | EventMsg::SessionModeChanged(_)
         | EventMsg::TurnProgress(_)
         | EventMsg::AgentReasoningSectionBreak(_)
         | EventMsg::RawResponseItem(_)

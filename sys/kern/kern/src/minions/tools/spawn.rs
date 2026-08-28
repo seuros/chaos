@@ -106,6 +106,17 @@ impl ToolHandler for Handler {
             .map_err(FunctionCallError::RespondToModel)?;
         apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
         apply_spawn_agent_overrides(&mut config, child_depth);
+        config.mode_policy_override = Some(
+            session
+                .child_mode_policy(
+                    turn.as_ref(),
+                    args.mode.as_deref(),
+                    args.allowed_modes.as_deref(),
+                    args.allow_mode_switching,
+                )
+                .await
+                .map_err(FunctionCallError::RespondToModel)?,
+        );
 
         let result = session
             .services
@@ -189,6 +200,9 @@ struct SpawnAgentArgs {
     topics: Option<Vec<String>>,
     model: Option<String>,
     reasoning_effort: Option<ReasoningEffort>,
+    mode: Option<String>,
+    allowed_modes: Option<Vec<String>>,
+    allow_mode_switching: Option<bool>,
     #[serde(default)]
     fork_context: bool,
 }

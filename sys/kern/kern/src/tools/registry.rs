@@ -259,6 +259,12 @@ impl ToolRegistry {
         }
 
         let is_mutating = handler.is_mutating(&invocation).await;
+        if is_mutating && !invocation.turn.mode_capabilities.mutation {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "tool `{tool_name}` would mutate state, but mutation is disabled in mode `{}`",
+                invocation.turn.mode_id
+            )));
+        }
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
 

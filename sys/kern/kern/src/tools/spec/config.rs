@@ -13,6 +13,7 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 
 use crate::config::AgentRoleConfig;
+use crate::modes::ModeCapabilities;
 use crate::original_image_detail::can_request_original_image_detail;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -45,6 +46,9 @@ pub(crate) struct ToolsConfig {
     pub minion_jobs_worker_tools: bool,
     pub agent_compaction_control: bool,
     pub agent_session_title: bool,
+    pub mode_switching: bool,
+    pub mode_allow_update_plan: bool,
+    pub mode_allow_dynamic_tools: bool,
     /// Native server-side tools declared by the model/provider ABI.
     pub native_server_side_tools: Vec<String>,
 }
@@ -132,6 +136,9 @@ impl ToolsConfig {
             minion_jobs_worker_tools,
             agent_compaction_control: false,
             agent_session_title: false,
+            mode_switching: false,
+            mode_allow_update_plan: true,
+            mode_allow_dynamic_tools: true,
             native_server_side_tools: model_info.native_server_side_tools.clone(),
         }
     }
@@ -180,6 +187,24 @@ impl ToolsConfig {
     ) -> Self {
         self.dynamic_parent_effort =
             enabled && !matches!(session_source, SessionSource::SubAgent(_));
+        self
+    }
+
+    pub fn with_mode_policy(
+        mut self,
+        capabilities: ModeCapabilities,
+        switching_allowed: bool,
+    ) -> Self {
+        self.mode_switching = switching_allowed;
+        self.mode_allow_update_plan = capabilities.update_plan;
+        self.mode_allow_dynamic_tools = capabilities.mutation;
+        self.request_user_input &= capabilities.request_user_input;
+        if !capabilities.mutation {
+            self.apply_patch_tool_type = None;
+            self.request_permissions_tool_enabled = false;
+            self.exec_permission_approvals_enabled = false;
+            self.agent_session_title = false;
+        }
         self
     }
 }

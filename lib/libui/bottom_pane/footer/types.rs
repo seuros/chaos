@@ -56,14 +56,30 @@ pub enum FooterMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CollaborationModeIndicator {
     pub kind: ModeKind,
+    pub mode_label: String,
     pub model_label: String,
     pub effort_label: Option<String>,
 }
 
 impl CollaborationModeIndicator {
     pub fn new(kind: ModeKind, model_label: String, effort_label: Option<String>) -> Self {
+        Self::new_with_label(
+            kind,
+            kind.display_name().to_string(),
+            model_label,
+            effort_label,
+        )
+    }
+
+    pub fn new_with_label(
+        kind: ModeKind,
+        mode_label: String,
+        model_label: String,
+        effort_label: Option<String>,
+    ) -> Self {
         Self {
             kind,
+            mode_label,
             model_label,
             effort_label,
         }

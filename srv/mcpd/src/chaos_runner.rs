@@ -402,6 +402,7 @@ async fn run_event_loop(
                     | EventMsg::ContextCompacted(_)
                     | EventMsg::ModelReroute(_)
                     | EventMsg::ParentEffortChanged(_)
+                    | EventMsg::SessionModeChanged(_)
                     | EventMsg::ProcessRolledBack(_)
                     | EventMsg::CollabAgentSpawnBegin(_)
                     | EventMsg::CollabAgentSpawnEnd(_)

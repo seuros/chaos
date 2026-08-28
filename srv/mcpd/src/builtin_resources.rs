@@ -103,6 +103,16 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
             .await;
         builtin_mcp_resources::models_json_from_provider_models(&groups)
     }
+
+    async fn modes_json(&self) -> Result<String, String> {
+        let config = chaos_kern::config::Config::load_with_cli_overrides_and_harness_overrides(
+            Vec::new(),
+            chaos_kern::config::ConfigOverrides::default(),
+        )
+        .await
+        .map_err(|err| format!("failed to load config for mode listing: {err}"))?;
+        builtin_mcp_resources::modes_json_from_chaos_home(&config.chaos_home)
+    }
 }
 
 async fn read_builtin_resource_json(
@@ -160,6 +170,14 @@ fn models_list_handler<'a>(
 ) -> ResourceReadFuture<'a> {
     let _ = ctx;
     read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MODELS_URI)
+}
+
+fn modes_list_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    let _ = ctx;
+    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MODES_URI)
 }
 
 fn session_detail_handler<'a>(
@@ -221,6 +239,7 @@ pub(crate) fn resource_router() -> McpResourceRouter<ChaosMcpServer> {
             builtin_mcp_resources::ChaosBuiltinResourceKind::Crons => crons_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Spool => spool_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Models => models_list_handler,
+            builtin_mcp_resources::ChaosBuiltinResourceKind::Modes => modes_list_handler,
         };
         router = router.with_resource(resource_info(spec), handler, None);
     }

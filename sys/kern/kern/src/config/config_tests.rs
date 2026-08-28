@@ -1019,6 +1019,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         memories: MemoriesConfig::default(),
         minion_job_max_runtime_seconds: DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
         chaos_home: fixture.chaos_home(),
+        mode_policy_override: None,
         sqlite_home: fixture.chaos_home(),
         storage_url: None,
         log_dir: fixture.chaos_home().join("log"),

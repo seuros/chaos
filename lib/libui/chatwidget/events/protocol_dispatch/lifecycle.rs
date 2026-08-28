@@ -4,6 +4,7 @@ use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::McpStartupCompleteEvent;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
+use chaos_ipc::protocol::SessionModeChangedEvent;
 use chaos_ipc::protocol::TurnAbortReason;
 use chaos_ipc::protocol::TurnProgressEvent;
 use chaos_kern::config::Constrained;
@@ -117,6 +118,19 @@ impl ChatWidget {
             self.refresh_terminal_title();
             self.request_redraw();
         }
+    }
+
+    pub(crate) fn on_session_mode_changed(&mut self, event: SessionModeChangedEvent) {
+        if self.process_id != Some(event.session_id) {
+            return;
+        }
+        self.sync_collaboration_mask(chaos_ipc::config_types::CollaborationModeMask {
+            name: event.mode_title,
+            mode: Some(event.mode_kind),
+            model: Some(event.model),
+            reasoning_effort: Some(event.reasoning_effort),
+            minion_instructions: None,
+        });
     }
 
     // ── Turn lifecycle events ─────────────────────────────────────────────────

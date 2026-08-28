@@ -280,6 +280,10 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourc
             .await;
         builtin_mcp_resources::models_json_from_provider_models(&groups)
     }
+
+    async fn modes_json(&self) -> Result<String, String> {
+        self.session.modes_json().await
+    }
 }
 
 async fn read_inline_resource(

@@ -384,9 +384,23 @@ fn make_test_session_config(
     model_info: &ModelInfo,
     collaboration_mode: CollaborationMode,
 ) -> SessionConfiguration {
+    let mode_registry = Arc::new(
+        crate::modes::ModeRegistry::load(
+            &config.chaos_home,
+            crate::collaboration_modes::CollaborationModesConfig::default(),
+        )
+        .expect("load test mode registry"),
+    );
+    let mode_policy = crate::modes::ModePolicy::root(&mode_registry);
+    let collaboration_mode = mode_registry
+        .apply_mode(&mode_policy.active_mode, &collaboration_mode)
+        .expect("apply test mode");
     SessionConfiguration {
         provider: config.model_provider.clone(),
         collaboration_mode,
+        mode_registry,
+        mode_policy,
+        mode_base_reasoning_effort: config.model_reasoning_effort,
         model_reasoning_summary: config.model_reasoning_summary,
         minion_instructions: config.minion_instructions.clone(),
         user_instructions: config.user_instructions.clone(),

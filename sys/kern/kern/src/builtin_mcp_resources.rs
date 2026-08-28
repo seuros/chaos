@@ -4,6 +4,7 @@ use chaos_ipc::openai_models::ModelPreset;
 use crate::models_manager::manager::ProviderModels;
 use serde::Serialize;
 use serde_json::json;
+use std::path::Path;
 
 use crate::runtime_db::RuntimeDbHandle;
 
@@ -13,6 +14,7 @@ pub const CHAOS_SESSIONS_URI_TEMPLATE: &str = "chaos://sessions/{id}";
 pub const CHAOS_CRONS_URI: &str = "chaos://crons";
 pub const CHAOS_SPOOL_URI: &str = "chaos://spool";
 pub const CHAOS_MODELS_URI: &str = "chaos://models";
+pub const CHAOS_MODES_URI: &str = "chaos://modes";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChaosBuiltinResourceKind {
@@ -20,6 +22,7 @@ pub enum ChaosBuiltinResourceKind {
     Crons,
     Spool,
     Models,
+    Modes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +48,7 @@ pub struct ChaosBuiltinResourceTemplateSpec {
     pub mime_type: &'static str,
 }
 
-const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 4] = [
+const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 5] = [
     ChaosBuiltinResourceSpec {
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
@@ -74,6 +77,13 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 4] = [
         description: "List every model preset available to this ChaOS installation",
         mime_type: JSON_MIME_TYPE,
     },
+    ChaosBuiltinResourceSpec {
+        kind: ChaosBuiltinResourceKind::Modes,
+        uri: CHAOS_MODES_URI,
+        name: "modes",
+        description: "List the ChaOS collaboration modes visible to this caller",
+        mime_type: JSON_MIME_TYPE,
+    },
 ];
 
 const RESOURCE_TEMPLATE_SPECS: [ChaosBuiltinResourceTemplateSpec; 1] =
@@ -100,6 +110,7 @@ pub enum ResolvedChaosBuiltinResource {
     Crons,
     Spool,
     Models,
+    Modes,
 }
 
 pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinResource>, String> {
@@ -108,6 +119,7 @@ pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinReso
         CHAOS_CRONS_URI => Ok(Some(ResolvedChaosBuiltinResource::Crons)),
         CHAOS_SPOOL_URI => Ok(Some(ResolvedChaosBuiltinResource::Spool)),
         CHAOS_MODELS_URI => Ok(Some(ResolvedChaosBuiltinResource::Models)),
+        CHAOS_MODES_URI => Ok(Some(ResolvedChaosBuiltinResource::Modes)),
         _ => {
             let Some(id) = uri.strip_prefix("chaos://sessions/") else {
                 return Ok(None);
@@ -239,6 +251,16 @@ pub fn models_json_from_provider_models(groups: &[ProviderModels]) -> Result<Str
     to_pretty_json(&providers, "ChaOS models")
 }
 
+pub fn modes_json_from_chaos_home(chaos_home: &Path) -> Result<String, String> {
+    let registry = crate::modes::ModeRegistry::load(
+        chaos_home,
+        crate::collaboration_modes::CollaborationModesConfig::default(),
+    )
+    .map_err(|err| format!("failed to load ChaOS mode catalog: {err}"))?;
+    let policy = crate::modes::ModePolicy::root(&registry);
+    registry.installation_resource_json(&policy)
+}
+
 pub async fn crons_json() -> Result<String, String> {
     chaos_cron::resource::list_crons().await
 }
@@ -254,6 +276,7 @@ pub trait ChaosBuiltinResourceBackend {
     async fn crons_json(&self) -> Result<String, String>;
     async fn spool_json(&self) -> Result<String, String>;
     async fn models_json(&self) -> Result<String, String>;
+    async fn modes_json(&self) -> Result<String, String>;
 }
 
 pub async fn read_resource_json<B: ChaosBuiltinResourceBackend + Sync>(
@@ -268,6 +291,7 @@ pub async fn read_resource_json<B: ChaosBuiltinResourceBackend + Sync>(
         Some(ResolvedChaosBuiltinResource::Crons) => backend.crons_json().await.map(Some),
         Some(ResolvedChaosBuiltinResource::Spool) => backend.spool_json().await.map(Some),
         Some(ResolvedChaosBuiltinResource::Models) => backend.models_json().await.map(Some),
+        Some(ResolvedChaosBuiltinResource::Modes) => backend.modes_json().await.map(Some),
         None => Ok(None),
     }
 }
@@ -293,6 +317,10 @@ mod tests {
         assert_eq!(
             resolve_resource_uri(CHAOS_MODELS_URI).expect("resolve models"),
             Some(ResolvedChaosBuiltinResource::Models)
+        );
+        assert_eq!(
+            resolve_resource_uri(CHAOS_MODES_URI).expect("resolve modes"),
+            Some(ResolvedChaosBuiltinResource::Modes)
         );
     }
 

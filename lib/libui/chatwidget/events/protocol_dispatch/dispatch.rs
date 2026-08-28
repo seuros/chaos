@@ -68,6 +68,7 @@ impl ChatWidget {
 
         match msg {
             EventMsg::SessionConfigured(e) => self.on_session_configured(e),
+            EventMsg::SessionModeChanged(e) => self.on_session_mode_changed(e),
             EventMsg::ProcessNameUpdated(e) => self.on_process_name_updated(e),
             EventMsg::AgentMessage(AgentMessageEvent { .. })
                 if matches!(replay_kind, Some(ReplayKind::ProcessSnapshot))

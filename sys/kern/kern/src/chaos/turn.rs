@@ -6,7 +6,6 @@ use chaos_dtrace::HookEventAfterAgent;
 use chaos_dtrace::HookPayload;
 use chaos_dtrace::HookResult;
 use chaos_epoll::OrCancelExt;
-use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::models::ResponseInputItem;
@@ -395,11 +394,16 @@ pub(crate) async fn run_turn(
             }
         }
 
+        // A tool call can switch the session mode during this user turn. Re-read
+        // the mutable session policy before every sample so the immediate
+        // follow-up request receives the new instructions and tool surface.
+        let sampling_turn_context = sess.effective_turn_context(&turn_context).await;
+
         // Construct the input that we will send to the model.
         let sampling_request_input: Vec<ResponseItem> = {
             sess.clone_history()
                 .await
-                .for_prompt(&turn_context.model_info.input_modalities)
+                .for_prompt(&sampling_turn_context.model_info.input_modalities)
         };
 
         let sampling_request_input_messages = sampling_request_input
@@ -410,10 +414,12 @@ pub(crate) async fn run_turn(
             })
             .map(|user_message| user_message.message())
             .collect::<Vec<String>>();
-        let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
+        let turn_metadata_header = sampling_turn_context
+            .turn_metadata_state
+            .current_header_value();
         match run_sampling_request(
             Arc::clone(&sess),
-            Arc::clone(&turn_context),
+            Arc::clone(&sampling_turn_context),
             Arc::clone(&turn_diff_tracker),
             &mut client_session,
             &mut turn_progress,
@@ -718,7 +724,7 @@ pub(crate) async fn built_tools(
         }
     }
 
-    let plan_mode = turn_context.collaboration_mode.mode == ModeKind::Plan;
+    let plan_mode = !turn_context.mode_capabilities.mutation;
     Ok(Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
         ToolRouterParams {

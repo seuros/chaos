@@ -159,6 +159,7 @@ single unified `chaos` tool.
 | `chaos://sessions/{id}` | Read session details |
 | `chaos://crons` | List scheduled jobs |
 | `chaos://spool` | List persisted spool jobs |
+| `chaos://modes` | List the caller-visible collaboration mode catalog |
 
 ### Events and approvals
 
@@ -248,5 +249,6 @@ restarted if they crash.
 ## SEE ALSO
 
 - [chaos-install.7](./chaos-install.7.md)
+- [chaos-modes.7](./chaos-modes.7.md)
 - [chaos-providers.7](./chaos-providers.7.md)
 - [chaos-httpd.8](./chaos-httpd.8.md)

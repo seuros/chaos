@@ -31,6 +31,16 @@ pub struct ParentEffortChangedEvent {
     pub effort: ReasoningEffort,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct SessionModeChangedEvent {
+    pub session_id: ProcessId,
+    pub mode_id: String,
+    pub mode_title: String,
+    pub mode_kind: ModeKind,
+    pub model: String,
+    pub reasoning_effort: Option<ReasoningEffort>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ContextCompactedEvent;
 

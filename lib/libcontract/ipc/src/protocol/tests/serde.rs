@@ -162,6 +162,34 @@ fn turn_progress_event_serializes_as_approximate_progress() -> Result<()> {
 }
 
 #[test]
+fn session_mode_changed_event_serializes_display_safe_mode_state() -> Result<()> {
+    let session_id = ProcessId::new();
+    let event = EventMsg::SessionModeChanged(SessionModeChangedEvent {
+        session_id,
+        mode_id: "research".to_string(),
+        mode_title: "Research".to_string(),
+        mode_kind: crate::config_types::ModeKind::Default,
+        model: "gpt-5.6".to_string(),
+        reasoning_effort: Some(crate::openai_models::ReasoningEffort::High),
+    });
+
+    assert_eq!(
+        serde_json::to_value(event)?,
+        json!({
+            "type": "session_mode_changed",
+            "session_id": session_id,
+            "mode_id": "research",
+            "mode_title": "Research",
+            "mode_kind": "default",
+            "model": "gpt-5.6",
+            "reasoning_effort": "high",
+        })
+    );
+
+    Ok(())
+}
+
+#[test]
 fn turn_context_item_deserializes_without_network() -> Result<()> {
     let item: TurnContextItem = serde_json::from_value(json!({
         "cwd": "/tmp",

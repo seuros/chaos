@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use chaos_ipc::config_types::ApprovalsReviewer;
 use chaos_ipc::config_types::CollaborationMode;
+use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
@@ -35,6 +36,9 @@ use crate::config::types::ShellEnvironmentPolicy;
 use crate::distill;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
+use crate::modes::ModeCapabilities;
+use crate::modes::ModePolicy;
+use crate::modes::ModeRegistry;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::tools::spec::ToolsConfig;
 use crate::tools::spec::ToolsConfigParams;
@@ -55,7 +59,7 @@ pub(crate) struct PreviousTurnSettings {
 }
 
 /// The context needed for a single turn of the thread.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct TurnContext {
     pub(crate) sub_id: String,
     pub(crate) trace_id: Option<String>,
@@ -78,6 +82,9 @@ pub(crate) struct TurnContext {
     pub(crate) compact_prompt: Option<String>,
     pub(crate) user_instructions: Option<String>,
     pub(crate) collaboration_mode: CollaborationMode,
+    pub(crate) mode_id: String,
+    pub(crate) mode_capabilities: ModeCapabilities,
+    pub(crate) mode_policy: ModePolicy,
     pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: Constrained<ApprovalPolicy>,
     pub(crate) vfs_policy: VfsPolicy,
@@ -135,6 +142,7 @@ impl TurnContext {
                 .or(model_info.default_reasoning_level)
         };
         config.model_reasoning_effort = reasoning_effort;
+        config.mode_policy_override = Some(self.mode_policy.clone());
 
         let collaboration_mode = self.collaboration_mode.with_updates(
             Some(model.clone()),
@@ -168,7 +176,8 @@ impl TurnContext {
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
-        .with_agent_roles(config.agent_roles.clone());
+        .with_agent_roles(config.agent_roles.clone())
+        .with_mode_policy(self.mode_capabilities, self.mode_policy.switching_allowed);
 
         Self {
             sub_id: self.sub_id.clone(),
@@ -192,6 +201,9 @@ impl TurnContext {
             compact_prompt: self.compact_prompt.clone(),
             user_instructions: self.user_instructions.clone(),
             collaboration_mode,
+            mode_id: self.mode_id.clone(),
+            mode_capabilities: self.mode_capabilities,
+            mode_policy: self.mode_policy.clone(),
             personality: self.personality,
             approval_policy: self.approval_policy.clone(),
             vfs_policy: self.vfs_policy.clone(),
@@ -287,6 +299,11 @@ pub(crate) struct SessionConfiguration {
     pub(super) provider: ModelProviderInfo,
 
     pub(super) collaboration_mode: CollaborationMode,
+    pub(super) mode_registry: Arc<ModeRegistry>,
+    pub(super) mode_policy: ModePolicy,
+    /// Mode-neutral reasoning effort restored when the active mode does not
+    /// define its own override.
+    pub(super) mode_base_reasoning_effort: Option<ReasoningEffortConfig>,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(super) service_tier: Option<ServiceTier>,
 
@@ -361,7 +378,33 @@ impl SessionConfiguration {
     pub(crate) fn apply(&self, updates: &SessionSettingsUpdate) -> ConstraintResult<Self> {
         let mut next_configuration = self.clone();
         if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
-            next_configuration.collaboration_mode = collaboration_mode;
+            let current_mode_has_reasoning_override = self
+                .mode_registry
+                .get(&self.mode_policy.active_mode)
+                .is_some_and(|definition| definition.reasoning_effort.is_some());
+            if collaboration_mode.mode == ModeKind::Default && !current_mode_has_reasoning_override
+            {
+                next_configuration.mode_base_reasoning_effort =
+                    collaboration_mode.reasoning_effort();
+            }
+            let requested_mode = self
+                .mode_registry
+                .mode_for_legacy_update(&self.mode_policy.active_mode, &collaboration_mode);
+            let active_mode = if self.mode_policy.allowed_modes.contains(requested_mode) {
+                requested_mode
+            } else {
+                &self.mode_policy.active_mode
+            };
+            next_configuration.mode_policy.active_mode = active_mode.to_string();
+            let base_collaboration_mode = collaboration_mode.with_updates(
+                /*model*/ None,
+                Some(next_configuration.mode_base_reasoning_effort),
+                /*minion_instructions*/ None,
+            );
+            next_configuration.collaboration_mode = self
+                .mode_registry
+                .apply_mode(active_mode, &base_collaboration_mode)
+                .expect("validated mode policy must reference a registered mode");
         }
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = Some(summary);
@@ -423,6 +466,11 @@ pub(super) fn make_turn_context(
     sub_id: String,
 ) -> TurnContext {
     let reasoning_effort = session_configuration.collaboration_mode.reasoning_effort();
+    let mode_definition = session_configuration
+        .mode_registry
+        .get(&session_configuration.mode_policy.active_mode)
+        .expect("validated session mode policy must reference a registered mode");
+    let mode_capabilities = mode_definition.capabilities;
     let reasoning_summary = session_configuration
         .model_reasoning_summary
         .unwrap_or(model_info.default_reasoning_summary);
@@ -460,7 +508,11 @@ pub(super) fn make_turn_context(
     .with_dynamic_parent_effort(per_turn_config.dynamic_parent_effort, &session_source)
     .with_web_search_config(per_turn_config.web_search_config.clone())
     .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
-    .with_agent_roles(per_turn_config.agent_roles.clone());
+    .with_agent_roles(per_turn_config.agent_roles.clone())
+    .with_mode_policy(
+        mode_capabilities,
+        session_configuration.mode_policy.switching_allowed,
+    );
 
     let cwd = session_configuration.cwd.clone();
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
@@ -488,6 +540,9 @@ pub(super) fn make_turn_context(
         compact_prompt: session_configuration.compact_prompt.clone(),
         user_instructions: session_configuration.user_instructions.clone(),
         collaboration_mode: session_configuration.collaboration_mode.clone(),
+        mode_id: session_configuration.mode_policy.active_mode.clone(),
+        mode_capabilities,
+        mode_policy: session_configuration.mode_policy.clone(),
         personality: session_configuration.personality,
         approval_policy: session_configuration.approval_policy.clone(),
         vfs_policy: session_configuration.vfs_policy.clone(),

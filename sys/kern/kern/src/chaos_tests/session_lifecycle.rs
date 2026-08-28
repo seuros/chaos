@@ -70,6 +70,176 @@ async fn session_configuration_apply_rederives_projected_file_system_policy_on_c
     );
 }
 
+#[tokio::test]
+async fn legacy_collaboration_mode_updates_keep_mode_policy_in_sync() {
+    let session_configuration = make_session_configuration_for_tests().await;
+    let plan_mode = session_configuration
+        .mode_registry
+        .apply_mode(
+            crate::modes::PLAN_MODE_ID,
+            &session_configuration.collaboration_mode,
+        )
+        .expect("build plan collaboration mode");
+
+    let plan_configuration = session_configuration
+        .apply(&SessionSettingsUpdate {
+            collaboration_mode: Some(plan_mode),
+            ..Default::default()
+        })
+        .expect("apply plan mode");
+    assert_eq!(
+        plan_configuration.mode_policy.active_mode,
+        crate::modes::PLAN_MODE_ID
+    );
+    assert_eq!(
+        plan_configuration.collaboration_mode.reasoning_effort(),
+        Some(chaos_ipc::openai_models::ReasoningEffort::Medium)
+    );
+
+    let default_mode = plan_configuration
+        .mode_registry
+        .apply_mode(
+            crate::modes::DEFAULT_MODE_ID,
+            &plan_configuration.collaboration_mode,
+        )
+        .expect("build default collaboration mode");
+    let default_configuration = plan_configuration
+        .apply(&SessionSettingsUpdate {
+            collaboration_mode: Some(default_mode),
+            ..Default::default()
+        })
+        .expect("apply default mode");
+    assert_eq!(
+        default_configuration.mode_policy.active_mode,
+        crate::modes::DEFAULT_MODE_ID
+    );
+    assert_eq!(
+        default_configuration.collaboration_mode.reasoning_effort(),
+        session_configuration.mode_base_reasoning_effort
+    );
+}
+
+#[tokio::test]
+async fn switch_mode_changes_the_next_sample_context_in_the_same_session() {
+    let (session, turn_context) = make_session_and_context().await;
+    let turn_context = Arc::new(turn_context);
+    let base_reasoning_effort = turn_context.reasoning_effort;
+
+    let result = session
+        .switch_mode(crate::modes::PLAN_MODE_ID, turn_context.as_ref())
+        .await
+        .expect("switch to plan");
+    assert!(result.changed);
+    assert_eq!(turn_context.mode_id, crate::modes::DEFAULT_MODE_ID);
+
+    let plan_context = session.effective_turn_context(&turn_context).await;
+    assert_eq!(plan_context.mode_id, crate::modes::PLAN_MODE_ID);
+    assert!(!plan_context.mode_capabilities.mutation);
+    assert!(plan_context.tools_config.apply_patch_tool_type.is_none());
+    assert!(!plan_context.tools_config.mode_allow_update_plan);
+    assert!(plan_context.tools_config.mode_switching);
+
+    session
+        .switch_mode(crate::modes::DEFAULT_MODE_ID, plan_context.as_ref())
+        .await
+        .expect("switch back to default");
+    let default_context = session.effective_turn_context(&turn_context).await;
+    assert_eq!(default_context.mode_id, crate::modes::DEFAULT_MODE_ID);
+    assert!(default_context.mode_capabilities.mutation);
+    assert!(default_context.tools_config.mode_allow_update_plan);
+    assert_eq!(default_context.reasoning_effort, base_reasoning_effort);
+}
+
+#[tokio::test]
+async fn switch_mode_emits_ui_sync_only_for_main_sessions() {
+    let (session, turn_context, rx) = make_session_and_context_with_rx().await;
+
+    session
+        .switch_mode(crate::modes::PLAN_MODE_ID, turn_context.as_ref())
+        .await
+        .expect("switch main session to plan");
+    let event = loop {
+        let event = tokio::time::timeout(StdDuration::from_secs(1), rx.recv())
+            .await
+            .expect("mode change event timed out")
+            .expect("mode change event missing");
+        if let EventMsg::SessionModeChanged(event) = event.msg {
+            break event;
+        }
+    };
+    assert_eq!(event.session_id, session.conversation_id);
+    assert_eq!(event.mode_id, crate::modes::PLAN_MODE_ID);
+    assert_eq!(event.mode_title, "Plan");
+    assert_eq!(event.mode_kind, chaos_ipc::config_types::ModeKind::Plan);
+    assert_eq!(
+        event.reasoning_effort,
+        Some(chaos_ipc::openai_models::ReasoningEffort::Medium)
+    );
+
+    session
+        .switch_mode(crate::modes::PLAN_MODE_ID, turn_context.as_ref())
+        .await
+        .expect("repeat active mode");
+    assert_no_session_mode_changed(&rx).await;
+
+    let (minion, minion_turn, minion_rx) = make_session_and_context_with_rx().await;
+    {
+        let mut state = minion.state.lock().await;
+        state.session_configuration.session_source = crate::protocol::SessionSource::SubAgent(
+            crate::protocol::SubAgentSource::Other("test-minion".to_string()),
+        );
+    }
+    minion
+        .switch_mode(crate::modes::PLAN_MODE_ID, minion_turn.as_ref())
+        .await
+        .expect("switch minion to plan");
+    assert_no_session_mode_changed(&minion_rx).await;
+}
+
+async fn assert_no_session_mode_changed(rx: &async_channel::Receiver<Event>) {
+    let deadline = std::time::Instant::now() + StdDuration::from_millis(100);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return;
+        }
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Err(_) => return,
+            Ok(Err(_)) => return,
+            Ok(Ok(event)) => assert!(
+                !matches!(event.msg, EventMsg::SessionModeChanged(_)),
+                "unexpected session_mode_changed event"
+            ),
+        }
+    }
+}
+
+#[tokio::test]
+async fn switch_mode_is_scoped_to_one_session() {
+    let (first_session, first_turn) = make_session_and_context().await;
+    let (second_session, second_turn) = make_session_and_context().await;
+    let first_turn = Arc::new(first_turn);
+    let second_turn = Arc::new(second_turn);
+
+    first_session
+        .switch_mode(crate::modes::PLAN_MODE_ID, first_turn.as_ref())
+        .await
+        .expect("switch first session");
+
+    let first_effective = first_session.effective_turn_context(&first_turn).await;
+    let second_effective = second_session.effective_turn_context(&second_turn).await;
+    assert_eq!(first_effective.mode_id, crate::modes::PLAN_MODE_ID);
+    assert_eq!(second_effective.mode_id, crate::modes::DEFAULT_MODE_ID);
+
+    let second_resource = second_session.modes_json().await.expect("modes resource");
+    let second_resource: serde_json::Value =
+        serde_json::from_str(&second_resource).expect("parse modes resource");
+    assert_eq!(
+        second_resource["active_mode"],
+        crate::modes::DEFAULT_MODE_ID
+    );
+}
+
 // todo: use online model info
 
 #[tokio::test]

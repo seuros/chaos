@@ -400,6 +400,48 @@ fn plan_mode_hides_destructive_mcp_tools_using_spec_defaults() {
     assert_lacks_tool_name(&tools, "mcp__server__default_destructive");
 }
 
+#[test]
+fn non_mutating_mode_hides_mutating_tools_but_keeps_mode_switching() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    })
+    .with_mode_policy(
+        crate::modes::ModeCapabilities {
+            mutation: false,
+            request_user_input: true,
+            update_plan: false,
+        },
+        /*switching_allowed*/ true,
+    );
+    let dynamic_tool = DynamicToolSpec {
+        name: "external_mutation".to_string(),
+        description: "Potentially mutating external tool".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+        defer_loading: false,
+    };
+
+    let (tools, _) = build_specs(&tools_config, None, None, &[dynamic_tool]).build();
+
+    assert_contains_tool_names(&tools, &["switch_mode"]);
+    assert_lacks_tool_name(&tools, "update_plan");
+    assert_lacks_tool_name(&tools, "apply_patch");
+    assert_lacks_tool_name(&tools, "request_permissions");
+    assert_lacks_tool_name(&tools, "external_mutation");
+}
+
 fn tool_name(tool: &ToolSpec) -> &str {
     match tool {
         ToolSpec::Function(ResponsesApiTool { name, .. }) => name,

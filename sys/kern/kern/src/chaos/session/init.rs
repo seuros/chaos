@@ -118,6 +118,7 @@ impl Session {
         per_turn_config.service_tier = session_configuration.service_tier;
         per_turn_config.personality = session_configuration.personality;
         per_turn_config.approvals_reviewer = session_configuration.approvals_reviewer;
+        per_turn_config.mode_policy_override = Some(session_configuration.mode_policy.clone());
         let resolved_web_search_mode = resolve_web_search_mode_for_turn(
             &per_turn_config.web_search_mode,
             &session_configuration.vfs_policy,

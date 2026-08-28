@@ -16,11 +16,10 @@ impl CollaborationModeIndicator {
     }
 
     pub(super) fn label(&self, detail: ModeBadgeDetail, show_cycle_hint: bool) -> String {
-        let mode = self.kind.display_name();
         let base = match detail {
-            ModeBadgeDetail::Full => mode.to_string(),
-            ModeBadgeDetail::Compact => mode.to_string(),
-            ModeBadgeDetail::ModeOnly => mode.to_string(),
+            ModeBadgeDetail::Full => self.mode_label.clone(),
+            ModeBadgeDetail::Compact => self.mode_label.clone(),
+            ModeBadgeDetail::ModeOnly => self.mode_label.clone(),
         };
         format!("{base}{}", Self::suffix(show_cycle_hint))
     }

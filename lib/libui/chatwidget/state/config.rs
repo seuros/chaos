@@ -248,14 +248,18 @@ impl ChatWidget {
     }
 
     /// Get the label for the current collaboration mode.
-    pub(crate) fn collaboration_mode_label(&self) -> Option<&'static str> {
+    pub(crate) fn collaboration_mode_label(&self) -> Option<&str> {
         if !self.collaboration_modes_enabled() {
             return None;
         }
         let active_mode = self.active_mode_kind();
-        active_mode
-            .is_tui_visible()
-            .then_some(active_mode.display_name())
+        if !active_mode.is_tui_visible() {
+            return None;
+        }
+        self.active_collaboration_mask
+            .as_ref()
+            .map(|mask| mask.name.as_str())
+            .or_else(|| Some(active_mode.display_name()))
     }
 
     fn collaboration_mode_indicator(&self) -> Option<CollaborationModeIndicator> {
@@ -267,6 +271,11 @@ impl ChatWidget {
         if !kind.is_tui_visible() {
             return None;
         }
+        let mode_label = self
+            .active_collaboration_mask
+            .as_ref()
+            .map(|mask| mask.name.clone())
+            .unwrap_or_else(|| kind.display_name().to_string());
         let effort_label = match effective_mode.reasoning_effort() {
             Some(ReasoningEffortConfig::None) | None => None,
             Some(effort) => Some(effort.to_string()),
@@ -278,8 +287,9 @@ impl ChatWidget {
         } else {
             effective_mode.model().to_string()
         };
-        Some(CollaborationModeIndicator::new(
+        Some(CollaborationModeIndicator::new_with_label(
             kind,
+            mode_label,
             model_label,
             effort_label,
         ))
@@ -333,6 +343,17 @@ impl ChatWidget {
         {
             mask.reasoning_effort = Some(Some(effort));
         }
+        self.apply_collaboration_mask(mask);
+    }
+
+    pub(crate) fn sync_collaboration_mask(&mut self, mask: CollaborationModeMask) {
+        if !self.collaboration_modes_enabled() {
+            return;
+        }
+        self.apply_collaboration_mask(mask);
+    }
+
+    fn apply_collaboration_mask(&mut self, mask: CollaborationModeMask) {
         self.active_collaboration_mask = Some(mask);
         self.update_collaboration_mode_indicator();
         self.refresh_model_display();

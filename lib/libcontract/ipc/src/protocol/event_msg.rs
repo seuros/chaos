@@ -52,6 +52,7 @@ use super::ReasoningContentDeltaEvent;
 use super::ReasoningRawContentDeltaEvent;
 use super::ReviewRequest;
 use super::SessionConfiguredEvent;
+use super::SessionModeChangedEvent;
 use super::StreamErrorEvent;
 use super::TerminalInteractionEvent;
 use super::TokenCountEvent;
@@ -117,6 +118,9 @@ pub enum EventMsg {
 
     /// The model changed the parent session's reasoning effort for future turns.
     ParentEffortChanged(ParentEffortChangedEvent),
+
+    /// The active collaboration mode changed for this live session.
+    SessionModeChanged(SessionModeChangedEvent),
 
     /// Conversation history was compacted (either automatically or manually).
     ContextCompacted(ContextCompactedEvent),

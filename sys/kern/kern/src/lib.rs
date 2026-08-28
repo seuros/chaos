@@ -68,6 +68,7 @@ mod mcp_tool_call;
 pub mod mention_syntax;
 mod message_history;
 mod model_provider_info;
+pub(crate) mod modes;
 pub mod path_utils;
 pub mod personality_migration;
 mod sandbox_tags;

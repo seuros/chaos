@@ -120,6 +120,39 @@ async fn legacy_collaboration_mode_updates_keep_mode_policy_in_sync() {
 }
 
 #[tokio::test]
+async fn legacy_collaboration_mode_aliases_use_the_current_live_mode() {
+    let session_configuration = make_session_configuration_for_tests().await;
+
+    for legacy_mode in [
+        chaos_ipc::config_types::ModeKind::Execute,
+        chaos_ipc::config_types::ModeKind::PairProgramming,
+    ] {
+        let updated = session_configuration
+            .apply(&SessionSettingsUpdate {
+                collaboration_mode: Some(chaos_ipc::config_types::CollaborationMode {
+                    mode: legacy_mode,
+                    settings: chaos_ipc::config_types::Settings {
+                        model: session_configuration.collaboration_mode.model().to_string(),
+                        reasoning_effort: None,
+                        minion_instructions: None,
+                    },
+                }),
+                ..Default::default()
+            })
+            .expect("apply legacy collaboration mode alias");
+
+        assert_eq!(
+            updated.mode_policy.active_mode,
+            crate::modes::DEFAULT_MODE_ID
+        );
+        assert_eq!(
+            updated.collaboration_mode.mode,
+            chaos_ipc::config_types::ModeKind::Default
+        );
+    }
+}
+
+#[tokio::test]
 async fn switch_mode_changes_the_next_sample_context_in_the_same_session() {
     let (session, turn_context) = make_session_and_context().await;
     let turn_context = Arc::new(turn_context);

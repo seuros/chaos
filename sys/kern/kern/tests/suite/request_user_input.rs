@@ -46,27 +46,6 @@ fn call_output(req: &ResponsesRequest, call_id: &str) -> String {
     }
 }
 
-fn call_output_content_and_success(
-    req: &ResponsesRequest,
-    call_id: &str,
-) -> (String, Option<bool>) {
-    let raw = req.function_call_output(call_id);
-    assert_eq!(
-        raw.get("call_id").and_then(Value::as_str),
-        Some(call_id),
-        "mismatched call_id in function_call_output"
-    );
-    let (content_opt, success) = match req.function_call_output_content_and_success(call_id) {
-        Some(values) => values,
-        None => panic!("function_call_output present"),
-    };
-    let content = match content_opt {
-        Some(content) => content,
-        None => panic!("function_call_output content present"),
-    };
-    (content, success)
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_round_trip_resolves_pending() -> anyhow::Result<()> {
     request_user_input_round_trip_for_mode(ModeKind::Plan).await
@@ -185,115 +164,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
     Ok(())
 }
 
-async fn assert_request_user_input_rejected<F>(mode_name: &str, build_mode: F) -> anyhow::Result<()>
-where
-    F: FnOnce(String) -> CollaborationMode,
-{
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-
-    let mut builder = test_chaos();
-    let TestChaos {
-        process: chaos,
-        cwd,
-        session_configured,
-        ..
-    } = builder.build(&server).await?;
-
-    let mode_slug = mode_name.to_lowercase().replace(' ', "-");
-    let call_id = format!("user-input-{mode_slug}-call");
-    let request_args = json!({
-        "questions": [{
-            "id": "confirm_path",
-            "header": "Confirm",
-            "question": "Proceed with the plan?",
-            "options": [{
-                "label": "Yes (Recommended)",
-                "description": "Continue the current plan."
-            }, {
-                "label": "No",
-                "description": "Stop and revisit the approach."
-            }]
-        }]
-    })
-    .to_string();
-
-    let first_response = sse(vec![
-        ev_response_created("resp-1"),
-        ev_function_call(&call_id, "request_user_input", &request_args),
-        ev_completed("resp-1"),
-    ]);
-    responses::mount_sse_once(&server, first_response).await;
-
-    let second_response = sse(vec![
-        ev_assistant_message("msg-1", "thanks"),
-        ev_completed("resp-2"),
-    ]);
-    let second_mock = responses::mount_sse_once(&server, second_response).await;
-
-    let session_model = session_configured.model.clone();
-    let collaboration_mode = build_mode(session_model.clone());
-
-    chaos
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "please confirm".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: cwd.path().to_path_buf(),
-            approval_policy: ApprovalPolicy::Headless,
-            sandbox_policy: SandboxPolicy::RootAccess,
-            model: session_model,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: Some(collaboration_mode),
-            personality: None,
-        })
-        .await?;
-
-    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
-
-    let req = second_mock.single_request();
-    let (output, success) = call_output_content_and_success(&req, &call_id);
-    assert_eq!(success, None);
-    assert_eq!(
-        output,
-        format!("request_user_input is unavailable in {mode_name} mode")
-    );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn request_user_input_rejected_in_execute_mode_alias() -> anyhow::Result<()> {
-    assert_request_user_input_rejected("Execute", |model| CollaborationMode {
-        mode: ModeKind::Execute,
-        settings: Settings {
-            model,
-            reasoning_effort: None,
-            minion_instructions: None,
-        },
-    })
-    .await
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_round_trip_in_default_mode() -> anyhow::Result<()> {
     request_user_input_round_trip_for_mode(ModeKind::Default).await
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn request_user_input_rejected_in_pair_mode_alias() -> anyhow::Result<()> {
-    assert_request_user_input_rejected("Pair Programming", |model| CollaborationMode {
-        mode: ModeKind::PairProgramming,
-        settings: Settings {
-            model,
-            reasoning_effort: None,
-            minion_instructions: None,
-        },
-    })
-    .await
 }

@@ -58,14 +58,18 @@ fn build_collaboration_mode_update_item(
     next: &TurnContext,
 ) -> Option<DeveloperInstructions> {
     let prev = previous?;
-    if prev.collaboration_mode.as_ref() != Some(&next.collaboration_mode) {
+    let previous_instructions = prev
+        .collaboration_mode
+        .as_ref()
+        .and_then(DeveloperInstructions::from_collaboration_mode);
+    let next_instructions =
+        DeveloperInstructions::from_collaboration_mode(&next.collaboration_mode);
+    if previous_instructions == next_instructions {
+        None
+    } else {
         // If the next mode has empty developer instructions, this returns None and we emit no
         // update, so prior collaboration instructions remain in the prompt history.
-        Some(DeveloperInstructions::from_collaboration_mode(
-            &next.collaboration_mode,
-        )?)
-    } else {
-        None
+        next_instructions
     }
 }
 

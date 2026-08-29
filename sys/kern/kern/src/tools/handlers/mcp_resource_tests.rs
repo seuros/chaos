@@ -126,14 +126,14 @@ fn template_with_server_serializes_server_field() {
 }
 
 #[test]
-fn merge_inline_resources_adds_local_chaos_crons_resource() {
+fn merge_inline_resources_adds_local_chaos_resources() {
     let merged = merge_inline_resources(HashMap::new());
 
     let resources = merged
         .get(INTERNAL_TASK_SERVER_NAME)
         .expect("inline chaos resources should exist");
 
-    assert_eq!(resources.len(), 4);
+    assert_eq!(resources.len(), 5);
     assert_eq!(resources[0].uri, builtin_mcp_resources::CHAOS_SESSIONS_URI);
     assert_eq!(resources[0].name, "sessions");
     assert_eq!(
@@ -156,6 +156,12 @@ fn merge_inline_resources_adds_local_chaos_crons_resource() {
     assert_eq!(resources[3].name, "models");
     assert_eq!(
         resources[3].mime_type.as_deref(),
+        Some(builtin_mcp_resources::JSON_MIME_TYPE)
+    );
+    assert_eq!(resources[4].uri, builtin_mcp_resources::CHAOS_MODES_URI);
+    assert_eq!(resources[4].name, "modes");
+    assert_eq!(
+        resources[4].mime_type.as_deref(),
         Some(builtin_mcp_resources::JSON_MIME_TYPE)
     );
 }

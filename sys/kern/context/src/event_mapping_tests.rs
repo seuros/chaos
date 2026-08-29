@@ -52,6 +52,54 @@ fn parses_user_message_with_text_and_two_images() {
 }
 
 #[test]
+fn skips_contextual_fragments_but_keeps_user_content() {
+    let item = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![
+            ContentItem::InputText {
+                text: "<environment_context>\ncwd=/tmp\n</environment_context>".to_string(),
+            },
+            ContentItem::InputText {
+                text: "Keep this visible".to_string(),
+            },
+        ],
+        end_turn: None,
+        phase: None,
+    };
+
+    let turn_item = parse_turn_item(&item).expect("expected visible user content");
+
+    match turn_item {
+        TurnItem::UserMessage(user) => {
+            assert_eq!(
+                user.content,
+                vec![UserInput::Text {
+                    text: "Keep this visible".to_string(),
+                    text_elements: Vec::new(),
+                }]
+            );
+        }
+        other => panic!("expected TurnItem::UserMessage, got {other:?}"),
+    }
+}
+
+#[test]
+fn skips_context_only_user_message() {
+    let item = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "<environment_context>\ncwd=/tmp\n</environment_context>".to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    };
+
+    assert!(parse_turn_item(&item).is_none());
+}
+
+#[test]
 fn skips_local_image_label_text() {
     let image_url = "data:image/png;base64,abc".to_string();
     let label = chaos_ipc::models::local_image_open_tag_text(1);

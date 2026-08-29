@@ -168,6 +168,44 @@ fn initial_replay_event_msgs_converts_response_items_for_resume() {
 }
 
 #[test]
+fn initial_replay_event_msgs_keeps_user_content_after_contextual_fragment() {
+    let process_id = ProcessId::new();
+    let initial_history = InitialHistory::Resumed(ResumedHistory {
+        conversation_id: process_id,
+        history: vec![
+            RolloutItem::ResponseItem(ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![
+                    ContentItem::InputText {
+                        text: "<environment_context>\ncwd=/tmp\n</environment_context>".to_string(),
+                    },
+                    ContentItem::InputText {
+                        text: "hello from user".to_string(),
+                    },
+                ],
+                end_turn: None,
+                phase: None,
+            }),
+            RolloutItem::ResponseItem(assistant_message("assistant reply")),
+        ],
+    });
+
+    let replay = super::initial_replay_event_msgs(&initial_history, process_id)
+        .expect("expected replay events");
+
+    assert_eq!(replay.len(), 2);
+    let EventMsg::ItemCompleted(ItemCompletedEvent {
+        item: TurnItem::UserMessage(user),
+        ..
+    }) = &replay[0]
+    else {
+        panic!("expected replayed user message, got {:?}", replay[0]);
+    };
+    assert_eq!(user.message(), "hello from user");
+}
+
+#[test]
 fn initial_replay_event_msgs_preserves_non_message_response_items() {
     let process_id = ProcessId::new();
     let initial_history = InitialHistory::Resumed(ResumedHistory {

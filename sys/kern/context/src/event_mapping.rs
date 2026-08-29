@@ -26,13 +26,13 @@ pub fn is_contextual_user_message_content(message: &[ContentItem]) -> bool {
 }
 
 fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
-    if is_contextual_user_message_content(message) {
-        return None;
-    }
-
     let mut content: Vec<UserInput> = Vec::new();
 
     for (idx, content_item) in message.iter().enumerate() {
+        if is_contextual_user_fragment(content_item) {
+            continue;
+        }
+
         match content_item {
             ContentItem::InputText { text } => {
                 if (is_local_image_open_tag_text(text) || is_image_open_tag_text(text))
@@ -70,7 +70,7 @@ fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
         }
     }
 
-    Some(UserMessageItem::new(&content))
+    (!content.is_empty()).then(|| UserMessageItem::new(&content))
 }
 
 fn parse_agent_message(

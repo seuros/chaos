@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -294,19 +295,52 @@ impl AntigravityTransport {
             self.managed_home_prepared = true;
         }
         let mut command = build_command(&cli_path, &self.config, self.conversation_id.as_deref());
-        command.arg("--print").arg(prompt);
+        command.args(["--print", "--input-format", "stream-json"]);
 
         let mut child = command.spawn().map_err(AntigravityError::Spawn)?;
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            AntigravityError::Protocol("Antigravity stdin was not captured".to_string())
+        })?;
+        let mut input = serde_json::to_vec(&serde_json::json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": prompt
+                }]
+            }
+        }))
+        .map_err(|error| {
+            AntigravityError::Protocol(format!(
+                "failed to encode Antigravity stream input: {error}"
+            ))
+        })?;
+        input.push(b'\n');
         let deadline = self.config.print_timeout + PRINT_TIMEOUT_GRACE;
-        let invocation =
-            match tokio::time::timeout(deadline, drive_invocation(&mut child, sink)).await {
-                Ok(invocation) => invocation?,
-                Err(_) => {
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
-                    return Err(AntigravityError::Timeout);
-                }
+        let invocation = match tokio::time::timeout(deadline, async {
+            let write_input = async {
+                let result = stdin.write_all(&input).await;
+                drop(stdin);
+                result
             };
+            let (input_result, invocation_result) =
+                tokio::join!(write_input, drive_invocation(&mut child, sink));
+            let invocation = invocation_result?;
+            if invocation.status.success() {
+                input_result.map_err(AntigravityError::Spawn)?;
+            }
+            Ok::<_, AntigravityError>(invocation)
+        })
+        .await
+        {
+            Ok(invocation) => invocation?,
+            Err(_) => {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                return Err(AntigravityError::Timeout);
+            }
+        };
 
         if !invocation.status.success() {
             if text_indicates_auth_failure(&invocation.stderr_tail) {
@@ -485,7 +519,7 @@ fn build_command(
     command.env_remove("GEMINI_API_KEY");
     command.env_remove("GOOGLE_API_KEY");
     command.kill_on_drop(true);
-    command.stdin(std::process::Stdio::null());
+    command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     command
@@ -970,6 +1004,10 @@ mod tests {
 case "$*" in
   *--dangerously-skip-permissions*) exit 90 ;;
 esac
+case "$*" in
+  *"--print --input-format stream-json"*) ;;
+  *) exit 93 ;;
+esac
 if [ -n "${GEMINI_API_KEY+x}" ] || [ -n "${GOOGLE_API_KEY+x}" ]; then
   exit 91
 fi
@@ -980,6 +1018,7 @@ esac
 if [ "$CHAOS_CLAMP_MCP_TOKEN" != "ephemeral-test-token" ]; then
   exit 92
 fi
+cat >> "$HOME/inputs.jsonl"
 case "$*" in
   *"--conversation conversation-1"*)
     turns=2
@@ -1014,8 +1053,9 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
         let mut transport = AntigravityTransport::new(config).expect("create transport");
 
         let (tx, mut rx) = mpsc::channel(16);
+        let first_prompt = "x".repeat(150_000);
         let fresh = transport
-            .run_turn_streamed("first prompt", Some(&tx))
+            .run_turn_streamed(&first_prompt, Some(&tx))
             .await
             .expect("fresh turn");
         let resumed = transport
@@ -1032,6 +1072,19 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
             panic!("expected result event");
         };
         assert_eq!(result.num_turns, Some(2));
+
+        let input_lines =
+            std::fs::read_to_string(dir.join("home/inputs.jsonl")).expect("read captured stdin");
+        let messages = input_lines
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).expect("valid stream input"))
+            .collect::<Vec<_>>();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["message"]["content"][0]["text"], first_prompt);
+        assert_eq!(
+            messages[1]["message"]["content"][0]["text"],
+            "second prompt"
+        );
 
         let mut streamed = Vec::new();
         while let Some(event) = rx.recv().await {

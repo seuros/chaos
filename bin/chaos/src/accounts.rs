@@ -27,8 +27,13 @@ use chaos_pam::XaiDeviceCodeOptions;
 use chaos_pam::complete_xai_device_code_login;
 use chaos_pam::request_xai_device_code;
 use chaos_pam::spawn_login_flow;
+use codex_client::ChaosHttpClient;
+use serde::Serialize;
+use serde_json::Value;
 use std::io::IsTerminal;
 use std::io::Read;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -46,6 +51,8 @@ const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_snitch=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_halluacinate=debug,\
 mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
+const OPENAI_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+const XAI_USAGE_URL: &str = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
 
 /// Installs file-backed tracing for direct `chaos accounts` flows.
 ///
@@ -582,6 +589,479 @@ pub async fn run_accounts_status(cli_config_overrides: CliConfigOverrides) -> ! 
     std::process::exit(0);
 }
 
+#[derive(Debug, Serialize)]
+struct AccountUsageSnapshot {
+    provider: String,
+    plan: Option<String>,
+    windows: Vec<AccountUsageWindow>,
+    observed_at: i64,
+    source: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct AccountUsageWindow {
+    id: String,
+    label: String,
+    used_percent: f64,
+    resets_at: Option<i64>,
+}
+
+pub async fn run_accounts_usage(cli_config_overrides: CliConfigOverrides, json: bool) -> ! {
+    if !json {
+        eprintln!("`chaos accounts usage` is machine-readable; pass --json.");
+        std::process::exit(2);
+    }
+
+    let config = load_config_or_exit(cli_config_overrides).await;
+    let provider = config.model_provider_id.clone();
+    if !matches!(provider.as_str(), "openai" | "xai") {
+        eprintln!("Subscription usage is not supported for provider `{provider}`.");
+        std::process::exit(2);
+    }
+
+    let manager = chaos_kern::AuthManager::shared(
+        config.chaos_home.clone(),
+        /*enable_codex_api_key_env*/ false,
+        config.cli_auth_credentials_store_mode,
+    )
+    .for_provider(&provider);
+
+    let result = fetch_account_usage(&provider, &manager).await;
+    match result {
+        Ok(snapshot) => match serde_json::to_string(&snapshot) {
+            Ok(output) => {
+                println!("{output}");
+                std::process::exit(0);
+            }
+            Err(err) => {
+                eprintln!("Failed to encode subscription usage: {err}");
+                std::process::exit(1);
+            }
+        },
+        Err(err) => {
+            eprintln!("Failed to read {provider} subscription usage: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn fetch_account_usage(
+    provider: &str,
+    manager: &std::sync::Arc<chaos_kern::AuthManager>,
+) -> anyhow::Result<AccountUsageSnapshot> {
+    let auth = manager
+        .auth()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("no connected subscription account"))?;
+    if auth.is_api_key_auth() {
+        anyhow::bail!("the selected provider is connected with an API key");
+    }
+
+    let first_token = auth.get_token()?;
+    let account_id = auth.get_account_id();
+    let first = request_account_usage(provider, &first_token, account_id.as_deref()).await;
+    let payload = match first {
+        Ok(payload) => payload,
+        Err(AccountUsageFetchError::Unauthorized) if auth.is_managed_oauth_auth() => {
+            manager
+                .refresh_token()
+                .await
+                .map_err(|err| anyhow::anyhow!("provider authentication expired: {err}"))?;
+            let refreshed = manager
+                .auth()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("provider authentication expired"))?;
+            request_account_usage(
+                provider,
+                &refreshed.get_token()?,
+                refreshed.get_account_id().as_deref(),
+            )
+            .await
+            .map_err(anyhow::Error::from)?
+        }
+        Err(err) => return Err(err.into()),
+    };
+
+    match provider {
+        "openai" => parse_openai_usage(&payload),
+        "xai" => parse_xai_usage(&payload),
+        _ => unreachable!("provider validated above"),
+    }
+}
+
+#[derive(Debug)]
+enum AccountUsagePayload {
+    Json(Value),
+    Bytes(Vec<u8>),
+}
+
+#[derive(Debug, thiserror::Error)]
+enum AccountUsageFetchError {
+    #[error("provider authentication expired")]
+    Unauthorized,
+    #[error("provider returned HTTP {0}")]
+    Http(u16),
+    #[error("provider returned an invalid response")]
+    Invalid,
+    #[error("provider request failed: {0}")]
+    Request(String),
+}
+
+async fn request_account_usage(
+    provider: &str,
+    token: &str,
+    account_id: Option<&str>,
+) -> Result<AccountUsagePayload, AccountUsageFetchError> {
+    let client = ChaosHttpClient::default_client();
+    let response = if provider == "openai" {
+        let mut request = client
+            .get(OPENAI_USAGE_URL)
+            .bearer_auth(token)
+            .header("Accept", "application/json")
+            .header("User-Agent", "chaos");
+        if let Some(account_id) = account_id {
+            request = request.header("ChatGPT-Account-Id", account_id);
+        }
+        request
+            .send()
+            .await
+            .map_err(|err| AccountUsageFetchError::Request(err.to_string()))?
+    } else {
+        client
+            .post(XAI_USAGE_URL)
+            .bearer_auth(token)
+            .header("Accept", "*/*")
+            .header("Content-Type", "application/grpc-web+proto")
+            .header("Origin", "https://grok.com")
+            .header("Referer", "https://grok.com/?_s=usage")
+            .header("x-grpc-web", "1")
+            .header("x-user-agent", "connect-es/2.1.1")
+            .header("User-Agent", "chaos")
+            .body(vec![0_u8; 5])
+            .send()
+            .await
+            .map_err(|err| AccountUsageFetchError::Request(err.to_string()))?
+    };
+
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err(AccountUsageFetchError::Unauthorized);
+    }
+    if !response.status().is_success() {
+        return Err(AccountUsageFetchError::Http(response.status().as_u16()));
+    }
+
+    if provider == "openai" {
+        Ok(AccountUsagePayload::Json(response.json().await.map_err(
+            |err| AccountUsageFetchError::Request(err.to_string()),
+        )?))
+    } else {
+        let header_grpc_status = response
+            .headers()
+            .get("grpc-status")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u8>().ok());
+        if header_grpc_status.is_some_and(|status| status != 0) {
+            return Err(if header_grpc_status == Some(16) {
+                AccountUsageFetchError::Unauthorized
+            } else {
+                AccountUsageFetchError::Invalid
+            });
+        }
+        let body = response
+            .bytes()
+            .await
+            .map_err(|err| AccountUsageFetchError::Request(err.to_string()))?
+            .to_vec();
+        let trailer_grpc_status = grpc_web_status(&body);
+        if trailer_grpc_status.is_some_and(|status| status != 0) {
+            return Err(if trailer_grpc_status == Some(16) {
+                AccountUsageFetchError::Unauthorized
+            } else {
+                AccountUsageFetchError::Invalid
+            });
+        }
+        Ok(AccountUsagePayload::Bytes(body))
+    }
+}
+
+fn parse_openai_usage(payload: &AccountUsagePayload) -> anyhow::Result<AccountUsageSnapshot> {
+    let AccountUsagePayload::Json(root) = payload else {
+        anyhow::bail!("provider returned an invalid response");
+    };
+    let mut windows = Vec::new();
+    if let Some(rate_limit) = root.get("rate_limit") {
+        append_openai_window(
+            &mut windows,
+            "session",
+            "Session",
+            rate_limit.get("primary_window"),
+        );
+        append_openai_window(
+            &mut windows,
+            "weekly",
+            "Weekly",
+            rate_limit.get("secondary_window"),
+        );
+    }
+    if let Some(additional) = root.get("additional_rate_limits").and_then(Value::as_array) {
+        for (index, entry) in additional.iter().enumerate() {
+            let label = entry
+                .get("limit_name")
+                .and_then(Value::as_str)
+                .or_else(|| entry.get("metered_feature").and_then(Value::as_str))
+                .unwrap_or("Additional limit");
+            let id = slugify_usage_id(label, index);
+            let rate_limit = entry.get("rate_limit");
+            append_openai_window(
+                &mut windows,
+                &format!("{id}-session"),
+                &format!("{label} session"),
+                rate_limit.and_then(|value| value.get("primary_window")),
+            );
+            append_openai_window(
+                &mut windows,
+                &format!("{id}-weekly"),
+                &format!("{label} weekly"),
+                rate_limit.and_then(|value| value.get("secondary_window")),
+            );
+        }
+    }
+    if windows.is_empty() {
+        anyhow::bail!("provider returned no subscription windows");
+    }
+    Ok(AccountUsageSnapshot {
+        provider: "openai".to_string(),
+        plan: root
+            .get("plan_type")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        windows,
+        observed_at: unix_now(),
+        source: "chatgpt-wham",
+    })
+}
+
+fn append_openai_window(
+    windows: &mut Vec<AccountUsageWindow>,
+    id: &str,
+    label: &str,
+    value: Option<&Value>,
+) {
+    let Some(value) = value else { return };
+    let Some(used_percent) = value.get("used_percent").and_then(Value::as_f64) else {
+        return;
+    };
+    windows.push(AccountUsageWindow {
+        id: id.to_string(),
+        label: label.to_string(),
+        used_percent: used_percent.clamp(0.0, 100.0),
+        resets_at: value.get("reset_at").and_then(Value::as_i64),
+    });
+}
+
+fn parse_xai_usage(payload: &AccountUsagePayload) -> anyhow::Result<AccountUsageSnapshot> {
+    let AccountUsagePayload::Bytes(body) = payload else {
+        anyhow::bail!("provider returned an invalid response");
+    };
+    let frames = grpc_web_data_frames(body);
+    let data = frames.first().map(Vec::as_slice).unwrap_or(body.as_slice());
+    let mut fixed32 = Vec::new();
+    let mut varints = Vec::new();
+    scan_protobuf(data, &mut Vec::new(), 0, &mut fixed32, &mut varints);
+    let used_percent = fixed32
+        .iter()
+        .filter(|(_, value)| value.is_finite() && *value >= 0.0 && *value <= 100.0)
+        .map(|(_, value)| f64::from(*value))
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("provider returned no subscription percentage"))?;
+    let now = unix_now();
+    let resets_at = varints
+        .iter()
+        .filter_map(|(path, value)| {
+            let timestamp = i64::try_from(*value).ok()?;
+            (timestamp > now && timestamp < 4_102_444_800).then_some((path, timestamp))
+        })
+        .min_by_key(|(path, timestamp)| (path.as_slice() != [1, 5, 1], *timestamp))
+        .map(|(_, timestamp)| timestamp);
+
+    Ok(AccountUsageSnapshot {
+        provider: "xai".to_string(),
+        plan: None,
+        windows: vec![AccountUsageWindow {
+            id: "subscription".to_string(),
+            label: "Subscription".to_string(),
+            used_percent,
+            resets_at,
+        }],
+        observed_at: now,
+        source: "grok-oauth",
+    })
+}
+
+fn grpc_web_data_frames(data: &[u8]) -> Vec<Vec<u8>> {
+    let mut frames = Vec::new();
+    let mut index = 0;
+    while index + 5 <= data.len() {
+        let flags = data[index];
+        let length = u32::from_be_bytes([
+            data[index + 1],
+            data[index + 2],
+            data[index + 3],
+            data[index + 4],
+        ]) as usize;
+        let start = index + 5;
+        let Some(end) = start.checked_add(length) else {
+            return Vec::new();
+        };
+        if end > data.len() {
+            return Vec::new();
+        }
+        if flags & 0x80 == 0 {
+            frames.push(data[start..end].to_vec());
+        }
+        index = end;
+    }
+    frames
+}
+
+fn grpc_web_status(data: &[u8]) -> Option<u8> {
+    let mut index = 0;
+    while index + 5 <= data.len() {
+        let flags = data[index];
+        let length = u32::from_be_bytes([
+            data[index + 1],
+            data[index + 2],
+            data[index + 3],
+            data[index + 4],
+        ]) as usize;
+        let start = index + 5;
+        let end = start.checked_add(length)?;
+        if end > data.len() {
+            return None;
+        }
+        if flags & 0x80 != 0 {
+            let trailers = std::str::from_utf8(&data[start..end]).ok()?;
+            for line in trailers.lines() {
+                if let Some(value) = line
+                    .strip_prefix("grpc-status:")
+                    .or_else(|| line.strip_prefix("Grpc-Status:"))
+                {
+                    return value.trim().parse().ok();
+                }
+            }
+        }
+        index = end;
+    }
+    None
+}
+
+fn scan_protobuf(
+    data: &[u8],
+    path: &mut Vec<u64>,
+    depth: usize,
+    fixed32: &mut Vec<(Vec<u64>, f32)>,
+    varints: &mut Vec<(Vec<u64>, u64)>,
+) {
+    let mut index = 0;
+    while index < data.len() {
+        let field_start = index;
+        let Some(key) = read_varint(data, &mut index) else {
+            break;
+        };
+        if key == 0 {
+            index = field_start + 1;
+            continue;
+        }
+        let field = key >> 3;
+        let wire = key & 7;
+        path.push(field);
+        match wire {
+            0 => {
+                if let Some(value) = read_varint(data, &mut index) {
+                    varints.push((path.clone(), value));
+                }
+            }
+            1 => index = index.saturating_add(8).min(data.len()),
+            2 => {
+                let Some(length) =
+                    read_varint(data, &mut index).and_then(|value| usize::try_from(value).ok())
+                else {
+                    path.pop();
+                    break;
+                };
+                let Some(end) = index.checked_add(length) else {
+                    path.pop();
+                    break;
+                };
+                if end > data.len() {
+                    path.pop();
+                    break;
+                }
+                if depth < 4 {
+                    scan_protobuf(&data[index..end], path, depth + 1, fixed32, varints);
+                }
+                index = end;
+            }
+            5 if index + 4 <= data.len() => {
+                let bits = u32::from_le_bytes([
+                    data[index],
+                    data[index + 1],
+                    data[index + 2],
+                    data[index + 3],
+                ]);
+                fixed32.push((path.clone(), f32::from_bits(bits)));
+                index += 4;
+            }
+            _ => index = field_start + 1,
+        }
+        path.pop();
+    }
+}
+
+fn read_varint(data: &[u8], index: &mut usize) -> Option<u64> {
+    let mut value = 0_u64;
+    let mut shift = 0_u32;
+    while *index < data.len() && shift < 64 {
+        let byte = data[*index];
+        *index += 1;
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+        shift += 7;
+    }
+    None
+}
+
+fn slugify_usage_id(label: &str, fallback: usize) -> String {
+    let slug = label
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.is_empty() {
+        format!("additional-{fallback}")
+    } else {
+        slug
+    }
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
+        .unwrap_or_default()
+}
+
 pub async fn run_login_status(cli_config_overrides: CliConfigOverrides) -> ! {
     run_accounts_status(cli_config_overrides).await
 }
@@ -661,7 +1141,11 @@ fn safe_format_key(key: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_format_key;
+    use super::{
+        AccountUsagePayload, grpc_web_status, parse_openai_usage, parse_xai_usage, safe_format_key,
+        unix_now,
+    };
+    use serde_json::json;
 
     #[test]
     fn formats_long_key() {
@@ -673,5 +1157,68 @@ mod tests {
     fn short_key_returns_stars() {
         let key = "sk-proj-12345";
         assert_eq!(safe_format_key(key), "***");
+    }
+
+    #[test]
+    fn parses_openai_subscription_windows() {
+        let snapshot = parse_openai_usage(&AccountUsagePayload::Json(json!({
+            "plan_type": "pro",
+            "rate_limit": {
+                "primary_window": { "used_percent": 80.0, "reset_at": 1_800_000_000 },
+                "secondary_window": { "used_percent": 25.5, "reset_at": 1_800_100_000 }
+            }
+        })))
+        .expect("usage should parse");
+
+        assert_eq!(snapshot.provider, "openai");
+        assert_eq!(snapshot.plan.as_deref(), Some("pro"));
+        assert_eq!(snapshot.windows.len(), 2);
+        assert_eq!(snapshot.windows[0].id, "session");
+        assert_eq!(snapshot.windows[0].used_percent, 80.0);
+        assert_eq!(snapshot.windows[1].id, "weekly");
+        assert_eq!(snapshot.windows[1].used_percent, 25.5);
+    }
+
+    #[test]
+    fn parses_xai_subscription_percentage_and_reset() {
+        let reset_at = unix_now() + 3_600;
+        let mut protobuf = vec![0x0d];
+        protobuf.extend_from_slice(&100.0_f32.to_bits().to_le_bytes());
+        protobuf.push(0x10);
+        append_varint(&mut protobuf, reset_at as u64);
+
+        let mut body = vec![0];
+        body.extend_from_slice(&(protobuf.len() as u32).to_be_bytes());
+        body.extend_from_slice(&protobuf);
+        let snapshot =
+            parse_xai_usage(&AccountUsagePayload::Bytes(body)).expect("usage should parse");
+
+        assert_eq!(snapshot.provider, "xai");
+        assert_eq!(snapshot.windows[0].used_percent, 100.0);
+        assert_eq!(snapshot.windows[0].resets_at, Some(reset_at));
+    }
+
+    #[test]
+    fn reads_grpc_status_from_trailer_frame() {
+        let trailers = b"grpc-status: 16\r\ngrpc-message: unauthenticated\r\n";
+        let mut body = vec![0x80];
+        body.extend_from_slice(&(trailers.len() as u32).to_be_bytes());
+        body.extend_from_slice(trailers);
+
+        assert_eq!(grpc_web_status(&body), Some(16));
+    }
+
+    fn append_varint(bytes: &mut Vec<u8>, mut value: u64) {
+        loop {
+            let mut byte = (value & 0x7f) as u8;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0x80;
+            }
+            bytes.push(byte);
+            if value == 0 {
+                break;
+            }
+        }
     }
 }

@@ -34,12 +34,15 @@ chaos-pwd = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-console = { workspace = true }
 chaos-snitch = { workspace = true }
+codex-client = { workspace = true }
 rama = { workspace = true }
 libc = { workspace = true }
 mimalloc = { workspace = true }
 owo-colors = { workspace = true }
 regex-lite = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 supports-color = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [

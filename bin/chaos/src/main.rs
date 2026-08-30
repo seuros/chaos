@@ -8,6 +8,7 @@ use chaos_argv::Arg0DispatchPaths;
 use chaos_argv::arg0_dispatch_or_else;
 use chaos_boot::accounts::read_api_key_from_stdin;
 use chaos_boot::accounts::run_accounts_status;
+use chaos_boot::accounts::run_accounts_usage;
 use chaos_boot::accounts::run_connect_with_api_key;
 use chaos_boot::accounts::run_connect_with_chatgpt_account;
 use chaos_boot::accounts::run_connect_with_device_code;
@@ -214,6 +215,13 @@ enum AccountsSubcommand {
     /// Show provider account status.
     Status,
 
+    /// Print subscription usage for the selected provider.
+    Usage {
+        /// Emit the stable machine-readable JSON response.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+
     /// Disconnect stored provider accounts.
     Disconnect {
         /// Disconnect every stored provider account instead of only the active provider.
@@ -402,6 +410,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             match accounts_cli.action {
                 Some(AccountsSubcommand::Status) => {
                     run_accounts_status(accounts_cli.config_overrides).await;
+                }
+                Some(AccountsSubcommand::Usage { json }) => {
+                    run_accounts_usage(accounts_cli.config_overrides, json).await;
                 }
                 Some(AccountsSubcommand::Disconnect { all }) => {
                     run_disconnect(accounts_cli.config_overrides, all).await;

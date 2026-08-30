@@ -295,20 +295,19 @@ impl AntigravityTransport {
             self.managed_home_prepared = true;
         }
         let mut command = build_command(&cli_path, &self.config, self.conversation_id.as_deref());
-        command.args(["--print", "--input-format", "stream-json"]);
+        // Stream input activates non-interactive mode by itself. A bare
+        // `--print` is an optional-value flag in agy 1.1.22 and consumes the
+        // following `--input-format` as its prompt.
+        command.args(["--input-format", "stream-json"]);
 
         let mut child = command.spawn().map_err(AntigravityError::Spawn)?;
         let mut stdin = child.stdin.take().ok_or_else(|| {
             AntigravityError::Protocol("Antigravity stdin was not captured".to_string())
         })?;
         let mut input = serde_json::to_vec(&serde_json::json!({
-            "type": "user",
+            "event": "user",
             "message": {
-                "role": "user",
-                "content": [{
-                    "type": "text",
-                    "text": prompt
-                }]
+                "content": prompt
             }
         }))
         .map_err(|error| {
@@ -1004,8 +1003,13 @@ mod tests {
 case "$*" in
   *--dangerously-skip-permissions*) exit 90 ;;
 esac
+for argument in "$@"; do
+  case "$argument" in
+    --print|--print=*) exit 93 ;;
+  esac
+done
 case "$*" in
-  *"--print --input-format stream-json"*) ;;
+  *"--input-format stream-json"*) ;;
   *) exit 93 ;;
 esac
 if [ -n "${GEMINI_API_KEY+x}" ] || [ -n "${GOOGLE_API_KEY+x}" ]; then
@@ -1080,11 +1084,10 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
             .map(|line| serde_json::from_str::<Value>(line).expect("valid stream input"))
             .collect::<Vec<_>>();
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0]["message"]["content"][0]["text"], first_prompt);
-        assert_eq!(
-            messages[1]["message"]["content"][0]["text"],
-            "second prompt"
-        );
+        assert_eq!(messages[0]["event"], "user");
+        assert_eq!(messages[0]["message"]["content"], first_prompt);
+        assert_eq!(messages[1]["event"], "user");
+        assert_eq!(messages[1]["message"]["content"], "second prompt");
 
         let mut streamed = Vec::new();
         while let Some(event) = rx.recv().await {

@@ -59,6 +59,15 @@ fn assert_mcp_success(result_is_error: Option<bool>) {
     );
 }
 
+fn response_tool_names(body: &Value) -> Vec<&str> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+        .collect()
+}
+
 /// Validates the test echo tool's response payload.
 ///
 /// Structured tool results should expose only `structuredContent` to the model;
@@ -230,6 +239,180 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
 
     server.verify().await;
 
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[serial(process_env)]
+async fn stdio_dynamic_tools_reach_immediate_follow_up_request() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let server_name = "mcp_test";
+    let select_tool_name = format!("mcp__{server_name}__select_project");
+    let project_tool_name = format!("mcp__{server_name}__project_task");
+    let call_id = "select-project-1";
+
+    let first_mock = mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_response_created("resp-1"),
+            responses::ev_function_call(call_id, &select_tool_name, "{}"),
+            responses::ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up_mock = mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_assistant_message("msg-1", "project selected"),
+            responses::ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+    let next_turn_mock = mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_assistant_message("msg-2", "project tools available"),
+            responses::ev_completed("resp-3"),
+        ]),
+    )
+    .await;
+
+    let mcp_test_test_server_bin = stdio_server_bin()?;
+    let fixture = test_chaos()
+        .with_config(move |config| {
+            let mut servers = config.mcp_servers.get().clone();
+            servers.insert(
+                server_name.to_string(),
+                McpServerConfig {
+                    transport: McpServerTransportConfig::Stdio {
+                        command: mcp_test_test_server_bin,
+                        args: Vec::new(),
+                        env: Some(HashMap::from([(
+                            "MCP_TEST_DYNAMIC_TOOLS".to_string(),
+                            "1".to_string(),
+                        )])),
+                        env_vars: Vec::new(),
+                        cwd: None,
+                    },
+                    enabled: true,
+                    required: false,
+                    disabled_reason: None,
+                    startup_timeout_sec: Some(Duration::from_secs(10)),
+                    tool_timeout_sec: None,
+                    enabled_tools: None,
+                    disabled_tools: None,
+                    scopes: None,
+                    oauth_resource: None,
+                    r#type: None,
+                    oauth: None,
+                },
+            );
+            config
+                .mcp_servers
+                .set(servers)
+                .expect("test mcp servers should accept any configuration");
+        })
+        .build(&server)
+        .await?;
+    let session_model = fixture.session_configured.model.clone();
+
+    let tools_ready_deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        fixture.process.submit(Op::ListMcpTools).await?;
+        let list_event = wait_for_event_with_timeout(
+            &fixture.process,
+            |ev| matches!(ev, EventMsg::McpListToolsResponse(_)),
+            Duration::from_secs(10),
+        )
+        .await;
+        let EventMsg::McpListToolsResponse(tool_list) = list_event else {
+            unreachable!("event guard guarantees McpListToolsResponse");
+        };
+        if tool_list.tools.contains_key(&select_tool_name) {
+            assert!(
+                !tool_list.tools.contains_key(&project_tool_name),
+                "project_task must start disabled"
+            );
+            break;
+        }
+        if Instant::now() >= tools_ready_deadline {
+            panic!("timed out waiting for dynamic MCP test tools");
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+
+    fixture
+        .process
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "select the project".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: fixture.cwd.path().to_path_buf(),
+            approval_policy: ApprovalPolicy::Headless,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            model: session_model.clone(),
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    wait_for_event(&fixture.process, |ev| {
+        matches!(ev, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let first_body = first_mock.single_request().body_json();
+    let first_tools = response_tool_names(&first_body);
+    assert!(first_tools.contains(&select_tool_name.as_str()));
+    assert!(!first_tools.contains(&project_tool_name.as_str()));
+
+    let follow_up_body = follow_up_mock.single_request().body_json();
+    let follow_up_tools = response_tool_names(&follow_up_body);
+    assert!(
+        follow_up_tools.contains(&project_tool_name.as_str()),
+        "new MCP schema was not injected into the immediate follow-up request; tools: {follow_up_tools:?}"
+    );
+
+    fixture
+        .process
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "use the selected project".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: fixture.cwd.path().to_path_buf(),
+            approval_policy: ApprovalPolicy::Headless,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            model: session_model,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    wait_for_event(&fixture.process, |ev| {
+        matches!(ev, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let next_turn_body = next_turn_mock.single_request().body_json();
+    let next_turn_tools = response_tool_names(&next_turn_body);
+    assert!(
+        next_turn_tools.contains(&project_tool_name.as_str()),
+        "new MCP schema was not preserved for the next user turn; tools: {next_turn_tools:?}"
+    );
+
+    server.verify().await;
     Ok(())
 }
 

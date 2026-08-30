@@ -10,7 +10,9 @@ use mcp_host::registry::router::McpToolRouter;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-struct TestStdioServer;
+struct TestStdioServer {
+    tool_registry: ToolRegistry,
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -23,6 +25,16 @@ struct EchoParams {
 #[serde(deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
 struct ImageParams {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+struct SelectProjectParams {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+struct ProjectTaskParams {}
 
 impl TestStdioServer {
     #[mcp_tool(name = "echo", read_only = true, open_world = false)]
@@ -49,6 +61,31 @@ impl TestStdioServer {
             mime_type.to_owned(),
         ))]))
     }
+
+    #[mcp_tool(name = "select_project", read_only = false, open_world = false)]
+    async fn select_project(
+        &self,
+        _ctx: Ctx<'_>,
+        _params: Parameters<SelectProjectParams>,
+    ) -> ToolResult {
+        self.tool_registry.enable_tool("project_task");
+        Ok(ToolOutput::json(serde_json::Map::from_iter([(
+            "selected".to_string(),
+            serde_json::Value::Bool(true),
+        )])))
+    }
+
+    #[mcp_tool(name = "project_task", read_only = true, open_world = false)]
+    async fn project_task(
+        &self,
+        _ctx: Ctx<'_>,
+        _params: Parameters<ProjectTaskParams>,
+    ) -> ToolResult {
+        Ok(ToolOutput::json(serde_json::Map::from_iter([(
+            "task".to_string(),
+            serde_json::Value::String("available".to_string()),
+        )])))
+    }
 }
 
 fn parse_data_url(data_url: &str) -> Result<(&str, &str), String> {
@@ -71,7 +108,7 @@ fn parse_data_url(data_url: &str) -> Result<(&str, &str), String> {
 }
 
 fn tool_router() -> McpToolRouter<TestStdioServer> {
-    McpToolRouter::new()
+    let router = McpToolRouter::new()
         .with_tool(
             TestStdioServer::echo_tool_info(),
             TestStdioServer::echo_handler,
@@ -81,7 +118,23 @@ fn tool_router() -> McpToolRouter<TestStdioServer> {
             TestStdioServer::image_tool_info(),
             TestStdioServer::image_handler,
             None,
-        )
+        );
+
+    if std::env::var_os("MCP_TEST_DYNAMIC_TOOLS").is_some() {
+        router
+            .with_tool(
+                TestStdioServer::select_project_tool_info(),
+                TestStdioServer::select_project_handler,
+                None,
+            )
+            .with_tool(
+                TestStdioServer::project_task_tool_info(),
+                TestStdioServer::project_task_handler,
+                None,
+            )
+    } else {
+        router
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -89,8 +142,20 @@ async fn main() -> io::Result<()> {
     let mcp_server = server("test-stdio-server", CHAOS_VERSION)
         .with_tools(true)
         .build();
-    let server = Arc::new(TestStdioServer);
-    tool_router().register_all(mcp_server.tool_registry(), server);
+    let tool_registry = mcp_server.tool_registry().clone();
+    let server = Arc::new(TestStdioServer {
+        tool_registry: tool_registry.clone(),
+    });
+    for tool in tool_router().into_tools(server) {
+        if tool.name() == "project_task" {
+            tool_registry.register_boxed_with_policy(
+                tool,
+                ToolPolicy::new().initial_state(ToolLifecycleState::Disabled),
+            );
+        } else {
+            tool_registry.register_boxed(tool);
+        }
+    }
     mcp_server
         .run(StdioTransport::new())
         .await

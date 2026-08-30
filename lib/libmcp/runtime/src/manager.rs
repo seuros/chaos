@@ -576,6 +576,12 @@ impl McpConnectionManager {
             }
         };
 
+        if let Err(err) = client.refresh_listed_tools(server).await {
+            warn!(
+                "Failed to refresh MCP tools after successful call to '{server}/{tool}': {err:#}"
+            );
+        }
+
         let structured_content = result.structured_content;
         let has_structured_content = structured_content
             .as_ref()

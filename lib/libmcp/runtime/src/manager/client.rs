@@ -239,7 +239,7 @@ pub(super) struct ManagedClient {
     pub(super) session: McpSession,
     pub(super) tools: Arc<StdRwLock<Vec<ToolInfo>>>,
     pub(super) tool_filter: ToolFilter,
-    pub(super) _tool_timeout: Option<Duration>,
+    pub(super) tool_timeout: Option<Duration>,
     /// Shared cwd for roots/list — updated when the workspace root changes.
     pub(super) cwd: Arc<StdRwLock<PathBuf>>,
 }
@@ -252,6 +252,21 @@ impl ManagedClient {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         filter_tools(in_memory_tools, &self.tool_filter)
+    }
+
+    /// Re-list tools without using the guest cache and update the store read by
+    /// the next model sampling request.
+    pub(super) async fn refresh_listed_tools(&self, server_name: &str) -> Result<()> {
+        let fetch_start = Instant::now();
+        let tools =
+            list_tools_for_session_uncached(server_name, &self.session, self.tool_timeout).await?;
+        emit_duration(
+            MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC,
+            fetch_start.elapsed(),
+            &[("server", server_name)],
+        );
+        store_managed_tools(&self.tool_filter, &self.tools, tools);
+        Ok(())
     }
 
     /// Updates the shared cwd and sends `notifications/roots/list_changed` to the server.
@@ -555,7 +570,7 @@ pub(super) async fn make_managed_client(
     Ok(ManagedClient {
         session,
         tools: tools_arc,
-        _tool_timeout: Some(tool_timeout),
+        tool_timeout: Some(tool_timeout),
         tool_filter,
         cwd: cwd_arc,
     })

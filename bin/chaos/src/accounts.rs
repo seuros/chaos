@@ -864,7 +864,10 @@ fn parse_xai_usage(payload: &AccountUsagePayload) -> anyhow::Result<AccountUsage
         anyhow::bail!("provider returned an invalid response");
     };
     let frames = grpc_web_data_frames(body);
-    let data = frames.first().map(Vec::as_slice).unwrap_or(body.as_slice());
+    let data = frames
+        .first()
+        .map(Vec::as_slice)
+        .ok_or_else(|| anyhow::anyhow!("provider returned an invalid response"))?;
     let mut fixed32 = Vec::new();
     let mut varints = Vec::new();
     scan_protobuf(data, &mut Vec::new(), 0, &mut fixed32, &mut varints);
@@ -873,7 +876,9 @@ fn parse_xai_usage(payload: &AccountUsagePayload) -> anyhow::Result<AccountUsage
         .filter(|(_, value)| value.is_finite() && *value >= 0.0 && *value <= 100.0)
         .map(|(_, value)| f64::from(*value))
         .next()
-        .ok_or_else(|| anyhow::anyhow!("provider returned no subscription percentage"))?;
+        // Proto3 omits scalar fields at their default value. Grok therefore
+        // sends no fixed32 percentage at the start of a fresh usage period.
+        .unwrap_or(0.0);
     let now = unix_now();
     let resets_at = varints
         .iter()
@@ -1195,6 +1200,25 @@ mod tests {
 
         assert_eq!(snapshot.provider, "xai");
         assert_eq!(snapshot.windows[0].used_percent, 100.0);
+        assert_eq!(snapshot.windows[0].resets_at, Some(reset_at));
+    }
+
+    #[test]
+    fn parses_omitted_xai_percentage_as_zero_usage() {
+        let reset_at = unix_now() + 3_600;
+        let mut timestamp = vec![0x08];
+        append_varint(&mut timestamp, reset_at as u64);
+        let mut protobuf = vec![0x0a, (timestamp.len() + 2) as u8, 0x2a, timestamp.len() as u8];
+        protobuf.extend_from_slice(&timestamp);
+
+        let mut body = vec![0];
+        body.extend_from_slice(&(protobuf.len() as u32).to_be_bytes());
+        body.extend_from_slice(&protobuf);
+        let snapshot =
+            parse_xai_usage(&AccountUsagePayload::Bytes(body)).expect("usage should parse");
+
+        assert_eq!(snapshot.provider, "xai");
+        assert_eq!(snapshot.windows[0].used_percent, 0.0);
         assert_eq!(snapshot.windows[0].resets_at, Some(reset_at));
     }
 

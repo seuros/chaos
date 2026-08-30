@@ -6,6 +6,7 @@ use crate::tools::ToolRouter;
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::spec::tool_builders::create_read_session_history_tool;
+use crate::tools::spec::tool_builders::create_run_synopsis_tool;
 use crate::tools::spec::tool_builders::create_search_session_history_tool;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::ModelInfo;
@@ -617,6 +618,7 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
         },
         create_view_image_tool(config.can_request_original_image_detail),
         create_spawn_agent_tool(&config),
+        create_run_synopsis_tool(&config),
         create_send_input_tool(),
         create_resume_agent_tool(),
         create_wait_agent_tool(),
@@ -837,7 +839,13 @@ fn test_build_specs_collab_tools_enabled() {
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(
         &tools,
-        &["spawn_agent", "send_input", "wait_agent", "close_agent"],
+        &[
+            "spawn_agent",
+            "run_synopsis",
+            "send_input",
+            "wait_agent",
+            "close_agent",
+        ],
     );
     assert_lacks_tool_name(&tools, "spawn_minions_on_csv");
 }
@@ -863,6 +871,7 @@ fn test_build_specs_minion_jobs_allowed_enables_minion_jobs_and_collab_tools() {
         &tools,
         &[
             "spawn_agent",
+            "run_synopsis",
             "send_input",
             "wait_agent",
             "close_agent",
@@ -930,6 +939,7 @@ fn test_build_specs_minion_job_worker_tools_enabled() {
         &tools,
         &[
             "spawn_agent",
+            "run_synopsis",
             "send_input",
             "resume_agent",
             "wait_agent",
@@ -1140,6 +1150,7 @@ const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "web_search",
     "view_image",
     "spawn_agent",
+    "run_synopsis",
     "send_input",
     "resume_agent",
     "wait_agent",
@@ -1492,6 +1503,63 @@ fn spawn_agent_tool_description_uses_current_role_names() {
     assert!(description.contains("scout analysis"));
     assert!(!description.contains("worker subtasks"));
     assert!(!description.contains("explorer analysis"));
+}
+
+#[test]
+fn run_synopsis_tool_exposes_agent_jobs_and_control_flow_modes() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    });
+
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        ..
+    }) = create_run_synopsis_tool(&tools_config)
+    else {
+        panic!("expected function tool");
+    };
+
+    assert!(description.contains("parallel_all"));
+    assert!(description.contains("automatically closes"));
+    let JsonSchema::Object {
+        properties,
+        required,
+        additional_properties,
+    } = parameters
+    else {
+        panic!("run_synopsis should use an object schema");
+    };
+    assert_eq!(required, Some(vec!["mode".to_string(), "jobs".to_string()]));
+    assert_eq!(additional_properties, Some(false.into()));
+    assert!(properties.contains_key("timeout_ms"));
+    let Some(JsonSchema::Array { items, .. }) = properties.get("jobs") else {
+        panic!("jobs should be an array schema");
+    };
+    let JsonSchema::Object {
+        properties,
+        required,
+        additional_properties,
+    } = items.as_ref()
+    else {
+        panic!("jobs should contain object items");
+    };
+    assert_eq!(
+        required,
+        &Some(vec!["id".to_string(), "message".to_string()])
+    );
+    assert_eq!(additional_properties, &Some(false.into()));
+    assert!(properties.contains_key("agent_type"));
 }
 
 #[test]

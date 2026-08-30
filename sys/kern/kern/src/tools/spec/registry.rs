@@ -22,11 +22,11 @@ use super::tool_builders::{
     create_list_mcp_resource_templates_tool, create_list_mcp_resources_tool,
     create_read_mcp_resource_tool, create_read_session_history_tool,
     create_report_minion_job_result_tool, create_request_permissions_tool,
-    create_request_user_input_tool, create_resume_agent_tool, create_search_session_history_tool,
-    create_send_input_tool, create_set_parent_effort_tool, create_set_session_title_tool,
-    create_shell_command_tool, create_shell_tool, create_spawn_agent_tool,
-    create_spawn_minions_on_csv_tool, create_switch_mode_tool, create_test_sync_tool,
-    create_view_image_tool, create_wait_agent_tool, create_write_stdin_tool,
+    create_request_user_input_tool, create_resume_agent_tool, create_run_synopsis_tool,
+    create_search_session_history_tool, create_send_input_tool, create_set_parent_effort_tool,
+    create_set_session_title_tool, create_shell_command_tool, create_shell_tool,
+    create_spawn_agent_tool, create_spawn_minions_on_csv_tool, create_switch_mode_tool,
+    create_test_sync_tool, create_view_image_tool, create_wait_agent_tool, create_write_stdin_tool,
 };
 
 pub(crate) fn push_tool_spec(
@@ -89,6 +89,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
 ) -> ToolRegistryBuilder {
     use crate::minions::tools::CloseAgentHandler;
     use crate::minions::tools::ResumeAgentHandler;
+    use crate::minions::tools::RunSynopsisHandler;
     use crate::minions::tools::SendInputHandler;
     use crate::minions::tools::SpawnAgentHandler;
     use crate::minions::tools::WaitAgentHandler;
@@ -505,6 +506,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
         );
         push_tool_spec(
             &mut builder,
+            create_run_synopsis_tool(config),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        push_tool_spec(
+            &mut builder,
             create_send_input_tool(),
             /*supports_parallel_tool_calls*/ false,
         );
@@ -524,6 +530,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
             /*supports_parallel_tool_calls*/ false,
         );
         builder.register_handler("spawn_agent", Arc::new(SpawnAgentHandler));
+        builder.register_handler("run_synopsis", Arc::new(RunSynopsisHandler));
         builder.register_handler("send_input", Arc::new(SendInputHandler));
         builder.register_handler("resume_agent", Arc::new(ResumeAgentHandler));
         builder.register_handler("wait_agent", Arc::new(WaitAgentHandler));

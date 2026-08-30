@@ -214,6 +214,7 @@ current setting.
 - [Adding LLM providers](./man/chaos-providers.7.md)
 - [Support matrix](./man/chaos-support.7.md)
 - [MCP — connecting tools and services](./man/chaos-mcp.7.md)
+- [Synopsis — how FreeChaOS coordinates sub-agents](./man/chaos-synopsis.7.md)
 - [Storage — SQLite and PostgreSQL backends](./man/chaos-storage.7.md)
 - [Halluacinate — scripting engine](./man/chaos-halluacinate.7.md)
 - [Contributing](./docs/contributing.md)

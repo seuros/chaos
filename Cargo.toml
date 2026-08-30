@@ -78,6 +78,7 @@ members = [
     "lib/libmisc/pam",
     "lib/libmisc/keyring",
     "lib/libmisc/minions",
+    "lib/libmisc/synopsis",
     "lib/libmisc/init",
     "lib/libmisc/session",
     "lib/libmisc/sysinfo",
@@ -201,6 +202,7 @@ chaos-argv = { path = "lib/libmisc/argv" }
 chaos-pam = { path = "lib/libmisc/pam" }
 chaos-keyring = { path = "lib/libmisc/keyring" }
 chaos-minions = { path = "lib/libmisc/minions" }
+chaos-synopsis = { path = "lib/libmisc/synopsis" }
 chaos-coreboot = { path = "lib/libmisc/init" }
 chaos-session = { path = "lib/libmisc/session" }
 chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
@@ -247,6 +249,7 @@ assert_matches = "1.5.0"
 async-channel = "2.5.0"
 async-stream = "0.3.6"
 base64 = "0.22.1"
+bonsai-bt = { version = "0.13.1", default-features = false }
 bytes = "1.12.1"
 chardetng = "1.0.0"
 clap = "4"

@@ -774,6 +774,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bonsai-bt"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b3683bbf8b962ae40dc2ea0e63422badfc99de9d36a398a383facf36cb8000c"
+
+[[package]]
 name = "borrow-or-share"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1612,6 +1618,7 @@ dependencies = [
  "chaos-services",
  "chaos-sh",
  "chaos-snitch",
+ "chaos-synopsis",
  "chaos-sysctl",
  "chaos-tmpfs",
  "chaos-traits",
@@ -2124,6 +2131,18 @@ name = "chaos-sudoers"
 version = "47.1.0"
 dependencies = [
  "chaos-ipc",
+]
+
+[[package]]
+name = "chaos-synopsis"
+version = "47.1.0"
+dependencies = [
+ "bonsai-bt",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -4738,7 +4757,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -11453,7 +11472,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",

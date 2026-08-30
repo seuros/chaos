@@ -50,6 +50,7 @@ pub(crate) use close_agent::Handler as CloseAgentHandler;
 pub(crate) use resume_agent::Handler as ResumeAgentHandler;
 pub(crate) use send_input::Handler as SendInputHandler;
 pub(crate) use spawn::Handler as SpawnAgentHandler;
+pub(crate) use synopsis::Handler as RunSynopsisHandler;
 pub(crate) use wait::Handler as WaitAgentHandler;
 
 /// Minimum wait timeout to prevent tight polling loops from burning CPU.
@@ -104,6 +105,8 @@ mod resume_agent;
 mod send_input;
 #[path = "tools/spawn.rs"]
 mod spawn;
+#[path = "tools/synopsis.rs"]
+mod synopsis;
 #[path = "tools/wait.rs"]
 pub(crate) mod wait;
 

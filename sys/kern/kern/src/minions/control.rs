@@ -38,6 +38,7 @@ const FORKED_SPAWN_AGENT_OUTPUT_MESSAGE: &str = "You are the newly spawned agent
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SpawnAgentOptions {
     pub(crate) fork_parent_spawn_call_id: Option<String>,
+    pub(crate) suppress_parent_completion_notification: bool,
 }
 
 /// Strip tool traffic and interim narration from a forked child's history so it
@@ -330,8 +331,18 @@ impl AgentControl {
         // TODO(jif) add helper for drain
         state.notify_process_created(process_id);
 
-        self.send_input(process_id, items).await?;
-        self.maybe_start_completion_watcher(process_id, notification_source);
+        if let Err(error) = self.send_input(process_id, items).await {
+            // Once the spawn reservation is committed, callers only learn the process ID after
+            // the initial prompt is accepted. Clean up here so an input failure cannot leave an
+            // unreachable child process behind.
+            if !matches!(&error, ChaosErr::InternalAgentDied) {
+                let _ = self.shutdown_agent(process_id).await;
+            }
+            return Err(error);
+        }
+        if !options.suppress_parent_completion_notification {
+            self.maybe_start_completion_watcher(process_id, notification_source);
+        }
 
         Ok(process_id)
     }

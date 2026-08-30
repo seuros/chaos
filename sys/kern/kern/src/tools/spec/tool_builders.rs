@@ -699,6 +699,79 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
     })
 }
 
+pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
+    let available_roles = crate::minions::role::spawn_tool_spec::build(&config.agent_roles);
+    let job_properties = BTreeMap::from([
+        (
+            "id".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Synopsis-wide unique job id used to correlate the result.".to_string(),
+                ),
+            },
+        ),
+        (
+            "message".to_string(),
+            JsonSchema::String {
+                description: Some("Plain-text task for this agent.".to_string()),
+            },
+        ),
+        (
+            "agent_type".to_string(),
+            JsonSchema::String {
+                description: Some(available_roles),
+            },
+        ),
+    ]);
+    let properties = BTreeMap::from([
+        (
+            "mode".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Control-flow mode: sequence, parallel_all, fallback, or race.".to_string(),
+                ),
+            },
+        ),
+        (
+            "jobs".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::Object {
+                    properties: job_properties,
+                    required: Some(vec!["id".to_string(), "message".to_string()]),
+                    additional_properties: Some(false.into()),
+                }),
+                description: Some(
+                    "One to sixteen agent jobs. Each id must be unique within the synopsis."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "timeout_ms".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Overall timeout in milliseconds. Defaults to 1800000 and is clamped between 10000 and 3600000."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "run_synopsis".to_string(),
+        description: "Only use `run_synopsis` when the user explicitly authorizes sub-agents, delegation, or parallel agent work. Execute a small behavior-tree workflow over real ChaOS agents. `sequence` runs jobs in order and stops on failure; `parallel_all` requires every job to succeed; `fallback` tries jobs until one succeeds; `race` returns the first terminal result and cancels the rest. The call blocks until the workflow terminates, returns each agent's final status/message, and automatically closes all agents it spawned."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["mode".to_string(), "jobs".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 pub(crate) fn spawn_agent_models_description(models: &[ModelPreset]) -> String {
     let visible_models: Vec<&ModelPreset> =
         models.iter().filter(|model| model.show_in_picker).collect();

@@ -39,30 +39,14 @@ impl Session {
         sub_id: String,
         updates: SessionSettingsUpdate,
     ) -> crate::config::ConstraintResult<Arc<TurnContext>> {
-        let (
-            session_configuration,
-            sandbox_policy_changed,
-            previous_cwd,
-            chaos_home,
-            session_source,
-        ) = {
+        let (session_configuration, previous_cwd, session_source) = {
             let mut state = self.state.lock().await;
             match state.session_configuration.clone().apply(&updates) {
                 Ok(next) => {
                     let previous_cwd = state.session_configuration.cwd.clone();
-                    let sandbox_policy_changed = state.session_configuration.vfs_policy
-                        != next.vfs_policy
-                        || state.session_configuration.socket_policy != next.socket_policy;
-                    let chaos_home = next.chaos_home.clone();
                     let session_source = next.session_source.clone();
                     state.session_configuration = next.clone();
-                    (
-                        next,
-                        sandbox_policy_changed,
-                        previous_cwd,
-                        chaos_home,
-                        session_source,
-                    )
+                    (next, previous_cwd, session_source)
                 }
                 Err(err) => {
                     drop(state);
@@ -79,19 +63,22 @@ impl Session {
             }
         };
 
+        self.permission_actor
+            .set_session_defaults(&session_configuration)
+            .await
+            .expect("permission actor stopped while the session is running");
+
         self.maybe_refresh_shell_snapshot_for_cwd(
             &previous_cwd,
             &session_configuration.cwd,
-            &chaos_home,
             &session_source,
-        );
+        )
+        .await;
 
         if previous_cwd != session_configuration.cwd
             && let Err(e) = self
                 .services
-                .mcp_connection_manager
-                .read()
-                .await
+                .mcp_registry
                 .notify_roots_changed(&session_configuration.cwd)
                 .await
         {
@@ -103,7 +90,6 @@ impl Session {
                 sub_id,
                 session_configuration,
                 updates.final_output_json_schema,
-                sandbox_policy_changed,
             )
             .await)
     }
@@ -113,35 +99,8 @@ impl Session {
         sub_id: String,
         session_configuration: SessionConfiguration,
         final_output_json_schema: Option<Option<serde_json::Value>>,
-        sandbox_policy_changed: bool,
     ) -> Arc<TurnContext> {
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .set_approval_policy(&session_configuration.approval_policy);
-
-        if sandbox_policy_changed {
-            let sandbox_state = SandboxState {
-                vfs_policy: session_configuration.vfs_policy.clone(),
-                socket_policy: session_configuration.socket_policy,
-                alcatraz_macos_exe: per_turn_config.alcatraz_macos_exe.clone(),
-                alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
-                alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),
-                sandbox_cwd: per_turn_config.cwd.clone(),
-            };
-            if let Err(e) = self
-                .services
-                .mcp_connection_manager
-                .read()
-                .await
-                .notify_sandbox_state_change(&sandbox_state)
-                .await
-            {
-                warn!("Failed to notify sandbox state change to MCP servers: {e:#}");
-            }
-        }
 
         let model_info = self
             .services
@@ -170,8 +129,23 @@ impl Session {
             turn_context.final_output_json_schema = final_schema;
         }
         let turn_context = Arc::new(turn_context);
+        self.permission_actor
+            .register_turn(&turn_context)
+            .await
+            .expect("permission actor stopped while registering a turn");
+        self.sync_mcp_permission_state(&turn_context).await;
         turn_context.turn_metadata_state.spawn_git_enrichment_task();
         turn_context
+    }
+
+    pub(crate) async fn permission_snapshot(
+        &self,
+        turn_context: &TurnContext,
+    ) -> crate::chaos::PermissionSnapshot {
+        self.permission_actor
+            .snapshot(turn_context.sub_id.clone())
+            .await
+            .expect("permission actor stopped while reading turn permissions")
     }
 
     pub(crate) async fn new_default_turn(&self) -> Arc<TurnContext> {
@@ -188,9 +162,31 @@ impl Session {
             sub_id,
             session_configuration,
             /*final_output_json_schema*/ None,
-            /*sandbox_policy_changed*/ false,
         )
         .await
+    }
+
+    pub(crate) async fn sync_mcp_permission_state(&self, turn_context: &TurnContext) {
+        let permission_snapshot = self.permission_snapshot(turn_context).await;
+        let sandbox_state = SandboxState {
+            vfs_policy: permission_snapshot.effective_vfs_policy(),
+            socket_policy: permission_snapshot.effective_socket_policy(),
+            alcatraz_macos_exe: turn_context.alcatraz_macos_exe.clone(),
+            alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
+            alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),
+            sandbox_cwd: turn_context.cwd.clone(),
+        };
+        if let Err(err) = self
+            .services
+            .mcp_registry
+            .sync_permission_state(
+                chaos_sysctl::Constrained::allow_any(permission_snapshot.approval_policy),
+                sandbox_state,
+            )
+            .await
+        {
+            warn!("Failed to synchronize MCP sandbox state: {err:#}");
+        }
     }
 
     /// Inject additional user input into the currently active turn.

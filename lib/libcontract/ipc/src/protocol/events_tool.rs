@@ -95,6 +95,21 @@ pub struct McpStartupCompleteEvent {
     pub cancelled: Vec<String>,
 }
 
+/// Result of an explicit live MCP refresh request.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct McpServersRefreshedEvent {
+    pub revision: u64,
+    pub applied: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub updated: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+    pub ready: Vec<String>,
+    pub failed: Vec<McpStartupFailure>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct McpStartupFailure {
     pub server: String,

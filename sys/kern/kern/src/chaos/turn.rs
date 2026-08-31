@@ -268,9 +268,8 @@ pub(crate) async fn run_turn(
     let _mcp_tools = if turn_context.apps_enabled() {
         match sess
             .services
-            .mcp_connection_manager
-            .read()
-            .await
+            .mcp_registry
+            .current_manager()
             .list_all_tools()
             .or_cancel(&cancellation_token)
             .await
@@ -667,13 +666,14 @@ pub(crate) async fn built_tools(
     _input: &[ResponseItem],
     cancellation_token: &CancellationToken,
 ) -> ChaosResult<Arc<ToolRouter>> {
-    let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
-    let has_mcp_servers = mcp_connection_manager.has_servers();
-    let mcp_tools = mcp_connection_manager
+    let has_mcp_servers = sess.services.mcp_registry.has_servers();
+    let mcp_tools = sess
+        .services
+        .mcp_registry
+        .current_manager()
         .list_all_tools()
         .or_cancel(cancellation_token)
         .await?;
-    drop(mcp_connection_manager);
 
     // Read static module tools from the catalog.
     let mut catalog_tools = {

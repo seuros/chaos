@@ -10,6 +10,7 @@ use serde::Serialize;
 use super::Session;
 use crate::chaos::TurnContext;
 use crate::config::AgentCompactionControl;
+use crate::config::Constrained;
 use crate::config::TerminalTitleMode;
 use crate::modes::ModePolicy;
 use crate::tools::spec::ToolsConfig;
@@ -139,9 +140,17 @@ impl Session {
                 state.session_configuration.mode_policy.clone(),
             )
         };
+        let permission_snapshot = self.permission_snapshot(base).await;
+        let effective_vfs_policy = permission_snapshot.effective_vfs_policy();
+        let effective_socket_policy = permission_snapshot.effective_socket_policy();
+        let permissions_unchanged = base.approval_policy.value()
+            == permission_snapshot.approval_policy
+            && base.vfs_policy == effective_vfs_policy
+            && base.socket_policy == effective_socket_policy;
         if base.mode_id == mode_policy.active_mode
             && base.mode_policy == mode_policy
             && base.collaboration_mode == collaboration_mode
+            && permissions_unchanged
         {
             return Arc::clone(base);
         }
@@ -160,11 +169,11 @@ impl Session {
                 .models_manager
                 .try_list_models()
                 .unwrap_or_default(),
-            approval_policy: base.approval_policy.value(),
+            approval_policy: permission_snapshot.approval_policy,
             minion_jobs_allowed: config.minion_jobs_allowed,
             web_search_mode: base.tools_config.web_search_mode,
             session_source: base.session_source.clone(),
-            vfs_policy: &base.vfs_policy,
+            vfs_policy: &effective_vfs_policy,
             collab_enabled: config.collab_enabled,
         })
         .with_agent_compaction_control(matches!(
@@ -189,6 +198,15 @@ impl Session {
         effective.mode_id = mode_policy.active_mode.clone();
         effective.mode_capabilities = mode_capabilities;
         effective.mode_policy = mode_policy;
+        if effective
+            .approval_policy
+            .set(permission_snapshot.approval_policy)
+            .is_err()
+        {
+            effective.approval_policy = Constrained::allow_any(permission_snapshot.approval_policy);
+        }
+        effective.vfs_policy = effective_vfs_policy;
+        effective.socket_policy = effective_socket_policy;
         effective.tools_config = tools_config;
         Arc::new(effective)
     }

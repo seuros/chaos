@@ -309,7 +309,7 @@ impl ShellHandler {
 
         let prepared_exec_permissions = prepare_effective_exec_permissions(
             session.as_ref(),
-            turn.approval_policy.value(),
+            turn.as_ref(),
             exec_params.sandbox_permissions,
             additional_permissions,
             &exec_params.cwd,
@@ -324,6 +324,7 @@ impl ShellHandler {
         let effective_additional_permissions = prepared_exec_permissions.effective;
         let normalized_additional_permissions =
             prepared_exec_permissions.normalized_additional_permissions;
+        let permission_snapshot = prepared_exec_permissions.permission_snapshot;
 
         // Intercept apply_patch if present.
         if let Some(output) = intercept_apply_patch(
@@ -361,8 +362,8 @@ impl ShellHandler {
             .exec_policy
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &exec_params.command,
-                approval_policy: turn.approval_policy.value(),
-                vfs_policy: &turn.vfs_policy,
+                approval_policy: permission_snapshot.approval_policy,
+                vfs_policy: &permission_snapshot.vfs_policy,
                 sandbox_permissions: if effective_additional_permissions.permissions_preapproved {
                     chaos_ipc::models::SandboxPermissions::UseDefault
                 } else {
@@ -399,13 +400,7 @@ impl ShellHandler {
             tool_name,
         };
         let out = orchestrator
-            .run(
-                &mut runtime,
-                &req,
-                &tool_ctx,
-                &turn,
-                turn.approval_policy.value(),
-            )
+            .run(&mut runtime, &req, &tool_ctx, &turn)
             .await
             .map(|result| result.output);
         let event_ctx = ToolEventCtx::new(

@@ -16,6 +16,7 @@ use tokio::sync::watch;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
 
+use crate::chaos::permissions::PermissionActor;
 use crate::minions::AgentStatus;
 use crate::state::ActiveTurn;
 use crate::state::SessionServices;
@@ -31,9 +32,8 @@ pub(crate) struct Session {
     pub(super) agent_status: watch::Sender<AgentStatus>,
     pub(super) out_of_band_elicitation_paused: watch::Sender<bool>,
     pub(crate) state: Mutex<SessionState>,
-    pub(crate) pending_mcp_server_refresh_config:
-        Mutex<Option<chaos_ipc::protocol::McpServerRefreshConfig>>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
+    pub(crate) permission_actor: PermissionActor,
 
     pub(crate) services: SessionServices,
     pub(super) next_internal_sub_id: AtomicU64,

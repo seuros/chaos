@@ -149,7 +149,28 @@ pub(crate) async fn collect_mcp_snapshot_from_manager(
         mcp_connection_manager.list_all_resources(),
         mcp_connection_manager.list_all_resource_templates(),
     );
+    build_mcp_snapshot(tools, resources, resource_templates, auth_status_entries)
+}
 
+pub(crate) async fn collect_mcp_snapshot_from_registry(
+    registry: &crate::mcp_registry::McpRegistryActor,
+    auth_status_entries: HashMap<String, crate::mcp::auth::McpAuthStatusEntry>,
+) -> McpListToolsResponseEvent {
+    let manager = registry.current_manager();
+    let (tools, resources, resource_templates) = tokio::join!(
+        manager.list_all_tools(),
+        registry.list_all_resources(),
+        registry.list_all_resource_templates(),
+    );
+    build_mcp_snapshot(tools, resources, resource_templates, auth_status_entries)
+}
+
+fn build_mcp_snapshot(
+    tools: HashMap<String, chaos_mcp_runtime::manager::ToolInfo>,
+    resources: HashMap<String, Vec<chaos_mcp_runtime::ResourceInfo>>,
+    resource_templates: HashMap<String, Vec<chaos_mcp_runtime::ResourceTemplateInfo>>,
+    auth_status_entries: HashMap<String, crate::mcp::auth::McpAuthStatusEntry>,
+) -> McpListToolsResponseEvent {
     let auth_statuses = auth_status_entries
         .iter()
         .map(|(name, entry)| (name.clone(), entry.auth_status))

@@ -9,7 +9,7 @@ use chaos_ipc::protocol::ListCustomPromptsResponseEvent;
 use crate::chaos::Session;
 use crate::config::Config;
 use crate::mcp::auth::compute_auth_statuses;
-use crate::mcp::collect_mcp_snapshot_from_manager;
+use crate::mcp::collect_mcp_snapshot_from_registry;
 
 pub async fn list_all_tools(sess: &Session, _config: &Arc<Config>, sub_id: String) {
     use chaos_ipc::protocol::AllToolsResponseEvent;
@@ -83,12 +83,11 @@ pub async fn list_all_tools(sess: &Session, _config: &Arc<Config>, sub_id: Strin
 }
 
 pub async fn list_mcp_tools(sess: &Session, _config: &Arc<Config>, sub_id: String) {
-    let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
     let _auth = sess.services.auth_manager.auth().await;
     let config = sess.get_config().await;
     let mcp_servers = sess.services.mcp_manager.effective_servers(&config);
-    let snapshot = collect_mcp_snapshot_from_manager(
-        &mcp_connection_manager,
+    let snapshot = collect_mcp_snapshot_from_registry(
+        &sess.services.mcp_registry,
         compute_auth_statuses(mcp_servers.iter(), config.mcp_oauth_credentials_store_mode).await,
     )
     .await;

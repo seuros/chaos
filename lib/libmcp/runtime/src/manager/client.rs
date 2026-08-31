@@ -312,6 +312,8 @@ pub(in crate::manager) struct AsyncManagedClient {
     pub(in crate::manager) startup_snapshot: Option<Vec<ToolInfo>>,
     pub(in crate::manager) startup_complete: Arc<AtomicBool>,
     pub(in crate::manager) cwd: Arc<StdRwLock<PathBuf>>,
+    sandbox_state: Arc<StdRwLock<SandboxState>>,
+    sandbox_notification_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AsyncManagedClient {
@@ -324,14 +326,15 @@ impl AsyncManagedClient {
         tx_event: async_channel::Sender<chaos_ipc::protocol::Event>,
         elicitation_requests: ElicitationRequestManager,
         catalog: Arc<dyn chaos_traits::McpCatalogSink>,
-        cwd: PathBuf,
+        initial_sandbox_state: SandboxState,
     ) -> Self {
         let tool_filter = ToolFilter::from_config(&config);
         let startup_tool_filter = tool_filter;
         let startup_complete = Arc::new(AtomicBool::new(false));
         let startup_complete_for_fut = Arc::clone(&startup_complete);
-        let cwd = Arc::new(StdRwLock::new(cwd));
+        let cwd = Arc::new(StdRwLock::new(initial_sandbox_state.sandbox_cwd.clone()));
         let cwd_for_client = Arc::clone(&cwd);
+        let sandbox_state = Arc::new(StdRwLock::new(initial_sandbox_state));
         let fut = async move {
             let outcome = async {
                 if let Err(error) = validate_mcp_server_name(&server_name) {
@@ -365,11 +368,38 @@ impl AsyncManagedClient {
             startup_snapshot: None,
             startup_complete,
             cwd,
+            sandbox_state,
+            sandbox_notification_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
     pub(super) async fn client(&self) -> Result<ManagedClient, StartupOutcomeError> {
         self.client.clone().await
+    }
+
+    #[cfg(test)]
+    pub(in crate::manager) fn for_tests(
+        client: Shared<BoxFuture<'static, Result<ManagedClient, StartupOutcomeError>>>,
+        startup_snapshot: Option<Vec<ToolInfo>>,
+        startup_complete: Arc<AtomicBool>,
+        cwd: Arc<StdRwLock<PathBuf>>,
+    ) -> Self {
+        let sandbox_cwd = cwd.read().expect("MCP root lock poisoned").clone();
+        Self {
+            client,
+            startup_snapshot,
+            startup_complete,
+            cwd,
+            sandbox_state: Arc::new(StdRwLock::new(SandboxState {
+                vfs_policy: VfsPolicy::default(),
+                socket_policy: SocketPolicy::default(),
+                alcatraz_macos_exe: None,
+                alcatraz_linux_exe: None,
+                alcatraz_freebsd_exe: None,
+                sandbox_cwd,
+            })),
+            sandbox_notification_lock: Arc::new(tokio::sync::Mutex::new(())),
+        }
     }
 
     fn startup_snapshot_while_initializing(&self) -> Option<Vec<ToolInfo>> {
@@ -392,10 +422,7 @@ impl AsyncManagedClient {
 
     pub(super) async fn notify_roots_changed(&self, new_cwd: &Path) -> Result<()> {
         {
-            let mut cwd = self
-                .cwd
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut cwd = self.cwd.write().expect("MCP root lock poisoned");
             *cwd = new_cwd.to_path_buf();
         }
         if !self.startup_complete.load(Ordering::Acquire) {
@@ -409,8 +436,35 @@ impl AsyncManagedClient {
         &self,
         sandbox_state: &SandboxState,
     ) -> Result<()> {
+        {
+            let mut current = self
+                .sandbox_state
+                .write()
+                .expect("MCP sandbox state lock poisoned");
+            *current = sandbox_state.clone();
+        }
+        if !self.startup_complete.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let Ok(managed) = self.client().await else {
+            return Ok(());
+        };
+        self.notify_sandbox_state(&managed).await
+    }
+
+    pub(super) async fn notify_current_sandbox_state(&self) -> Result<()> {
         let managed = self.client().await?;
-        managed.notify_sandbox_state_change(sandbox_state).await
+        self.notify_sandbox_state(&managed).await
+    }
+
+    async fn notify_sandbox_state(&self, managed: &ManagedClient) -> Result<()> {
+        let _notification_guard = self.sandbox_notification_lock.lock().await;
+        let sandbox_state = self
+            .sandbox_state
+            .read()
+            .expect("MCP sandbox state lock poisoned")
+            .clone();
+        managed.notify_sandbox_state_change(&sandbox_state).await
     }
 }
 
@@ -574,4 +628,66 @@ pub(super) async fn make_managed_client(
         tool_filter,
         cwd: cwd_arc,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future;
+
+    fn sandbox_state(cwd: &str) -> SandboxState {
+        SandboxState {
+            vfs_policy: VfsPolicy::default(),
+            socket_policy: SocketPolicy::default(),
+            alcatraz_macos_exe: None,
+            alcatraz_linux_exe: None,
+            alcatraz_freebsd_exe: None,
+            sandbox_cwd: PathBuf::from(cwd),
+        }
+    }
+
+    fn async_client(
+        initial: SandboxState,
+        startup_complete: bool,
+        client: Result<ManagedClient, StartupOutcomeError>,
+    ) -> AsyncManagedClient {
+        AsyncManagedClient::for_tests(
+            future::ready(client).boxed().shared(),
+            None,
+            Arc::new(AtomicBool::new(startup_complete)),
+            Arc::new(StdRwLock::new(initial.sandbox_cwd)),
+        )
+    }
+
+    #[tokio::test]
+    async fn sandbox_update_is_retained_while_server_is_starting() {
+        let initial = sandbox_state("/initial");
+        let client = async_client(initial, false, Err(StartupOutcomeError::Cancelled));
+        let updated = sandbox_state("/updated");
+
+        client
+            .notify_sandbox_state_change(&updated)
+            .await
+            .expect("queue sandbox state");
+
+        assert_eq!(
+            client
+                .sandbox_state
+                .read()
+                .expect("MCP sandbox state lock poisoned")
+                .sandbox_cwd,
+            PathBuf::from("/updated")
+        );
+    }
+
+    #[tokio::test]
+    async fn sandbox_update_ignores_already_reported_startup_failure() {
+        let initial = sandbox_state("/initial");
+        let client = async_client(initial, true, Err(StartupOutcomeError::Cancelled));
+
+        client
+            .notify_sandbox_state_change(&sandbox_state("/updated"))
+            .await
+            .expect("failed optional server should not reject permission updates");
+    }
 }

@@ -15,6 +15,8 @@ use chaos_ipc::api::McpServerElicitationRequestParams;
 use chaos_ipc::approvals::ElicitationRequestEvent;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::McpServersRefreshedEvent;
+use chaos_ipc::protocol::McpStartupFailure;
 use chaos_mcp_runtime::ElicitationResponse;
 use chaos_mcp_runtime::ListResourceTemplatesResult;
 use chaos_mcp_runtime::ListResourcesResult;
@@ -27,7 +29,6 @@ use chaos_mcp_runtime::ReadResourceRequestParams;
 use chaos_mcp_runtime::ReadResourceResult;
 use chaos_mcp_runtime::manager::McpConnectionManager;
 use tokio::sync::oneshot;
-use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use super::Session;
@@ -163,9 +164,15 @@ macro_rules! mcp_delegate {
             server: &str,
             $($arg: $arg_ty),*
         ) -> anyhow::Result<$ret> {
-            let mgr = self.services.mcp_connection_manager.clone();
-            with_circuit_breaker(server, move || async move {
-                mgr.read().await.$mgr_method(server, $($arg),*).await
+            let registry = self.services.mcp_registry.clone();
+            let breaker_server = server.to_string();
+            let dispatch_server = breaker_server.clone();
+            with_circuit_breaker(&breaker_server, move || async move {
+                registry
+                    .execute(&dispatch_server, move |manager, server| async move {
+                        manager.$mgr_method(&server, $($arg),*).await
+                    })
+                    .await
             })
             .await
         }
@@ -186,11 +193,17 @@ impl Session {
         meta: Option<serde_json::Value>,
         ttl: Option<u64>,
     ) -> anyhow::Result<McpTask> {
-        let mgr = self.services.mcp_connection_manager.clone();
-        with_circuit_breaker(server, move || async move {
-            mgr.read()
-                .await
-                .call_tool_async(server, tool, arguments, meta, ttl)
+        let registry = self.services.mcp_registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        let tool = tool.to_string();
+        with_circuit_breaker(&breaker_server, move || async move {
+            registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager
+                        .call_tool_async(&server, &tool, arguments, meta, ttl)
+                        .await
+                })
                 .await
         })
         .await
@@ -201,9 +214,16 @@ impl Session {
         server: &str,
         task_id: &str,
     ) -> anyhow::Result<McpTask> {
-        let mgr = self.services.mcp_connection_manager.clone();
-        with_circuit_breaker(server, move || async move {
-            mgr.read().await.get_task(server, task_id).await
+        let registry = self.services.mcp_registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        let task_id = task_id.to_string();
+        with_circuit_breaker(&breaker_server, move || async move {
+            registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager.get_task(&server, &task_id).await
+                })
+                .await
         })
         .await
     }
@@ -213,17 +233,31 @@ impl Session {
         server: &str,
         task_id: &str,
     ) -> anyhow::Result<McpToolCallResult> {
-        let mgr = self.services.mcp_connection_manager.clone();
-        with_circuit_breaker(server, move || async move {
-            mgr.read().await.get_task_result(server, task_id).await
+        let registry = self.services.mcp_registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        let task_id = task_id.to_string();
+        with_circuit_breaker(&breaker_server, move || async move {
+            registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager.get_task_result(&server, &task_id).await
+                })
+                .await
         })
         .await
     }
 
     pub async fn cancel_mcp_task(&self, server: &str, task_id: &str) -> anyhow::Result<McpTask> {
-        let mgr = self.services.mcp_connection_manager.clone();
-        with_circuit_breaker(server, move || async move {
-            mgr.read().await.cancel_task(server, task_id).await
+        let registry = self.services.mcp_registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        let task_id = task_id.to_string();
+        with_circuit_breaker(&breaker_server, move || async move {
+            registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager.cancel_task(&server, &task_id).await
+                })
+                .await
         })
         .await
     }
@@ -235,11 +269,15 @@ impl Session {
         arguments: Option<serde_json::Value>,
         meta: Option<serde_json::Value>,
     ) -> anyhow::Result<CallToolResult> {
-        let mgr = self.services.mcp_connection_manager.clone();
-        with_circuit_breaker(server, move || async move {
-            mgr.read()
-                .await
-                .call_tool(server, tool, arguments, meta)
+        let registry = self.services.mcp_registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        let tool = tool.to_string();
+        with_circuit_breaker(&breaker_server, move || async move {
+            registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager.call_tool(&server, &tool, arguments, meta).await
+                })
                 .await
         })
         .await
@@ -260,9 +298,8 @@ impl Session {
             name
         };
         self.services
-            .mcp_connection_manager
-            .read()
-            .await
+            .mcp_registry
+            .current_manager()
             .parse_tool_name(tool_name)
             .await
     }
@@ -372,10 +409,10 @@ impl Session {
         }
 
         self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .resolve_elicitation(server_name, id, response)
+            .mcp_registry
+            .execute(&server_name.clone(), move |manager, server| async move {
+                manager.resolve_elicitation(server, id, response).await
+            })
             .await
     }
 
@@ -384,65 +421,104 @@ impl Session {
         turn_context: &TurnContext,
         mcp_servers: HashMap<String, McpServerConfig>,
         store_mode: OAuthCredentialsStoreMode,
-    ) {
+    ) -> anyhow::Result<McpServersRefreshedEvent> {
         let config = self.get_config().await;
         let auth_statuses = compute_auth_statuses(mcp_servers.iter(), store_mode).await;
+        let permission_snapshot = self.permission_snapshot(turn_context).await;
         let sandbox_state = SandboxState {
-            vfs_policy: turn_context.vfs_policy.clone(),
-            socket_policy: turn_context.socket_policy,
+            vfs_policy: permission_snapshot.effective_vfs_policy(),
+            socket_policy: permission_snapshot.effective_socket_policy(),
             alcatraz_macos_exe: turn_context.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),
             sandbox_cwd: turn_context.cwd.clone(),
         };
-        self.reset_mcp_startup_cancellation_token().await;
+        let approval_policy =
+            chaos_sysctl::Constrained::allow_any(permission_snapshot.approval_policy);
+        let mcp_catalog_gate = Arc::new(crate::catalog::McpCatalogGate::staging(Arc::clone(
+            &self.services.catalog,
+        )));
         let (refreshed_manager, cancel_token) = McpConnectionManager::new(
             &mcp_servers,
             store_mode,
             auth_statuses,
-            &turn_context.config.permissions.approval_policy,
+            &approval_policy,
             self.get_tx_event(),
             sandbox_state,
             config.chaos_home.clone(),
-            Arc::clone(&self.services.catalog) as Arc<dyn chaos_traits::McpCatalogSink>,
+            Arc::clone(&mcp_catalog_gate) as Arc<dyn chaos_traits::McpCatalogSink>,
         )
         .await;
-        {
-            let mut guard = self.services.mcp_startup_cancellation_token.lock().await;
-            if guard.is_cancelled() {
-                cancel_token.cancel();
-            }
-            *guard = cancel_token;
-        }
-
-        let mut manager = self.services.mcp_connection_manager.write().await;
-        *manager = refreshed_manager;
-
-        // Re-sync MCP tools into catalog after refresh.
-        let mcp_tools = manager.list_all_tools().await;
-        {
-            let mut catalog = self
-                .services
-                .catalog
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            // Clear all previous MCP entries and re-register.
-            catalog.clear_all_mcp();
-            for tool_info in mcp_tools.values() {
-                catalog.register_mcp_tools(
-                    &tool_info.server_name,
-                    vec![chaos_mcp_runtime::catalog_conv::mcp_tool_info_to_catalog_tool(tool_info)],
-                );
+        let mut ready = Vec::new();
+        let mut failed = Vec::new();
+        for (server_name, server_config) in mcp_servers.iter().filter(|(_, cfg)| cfg.enabled) {
+            let timeout = server_config
+                .startup_timeout_sec
+                .unwrap_or(chaos_mcp_runtime::manager::DEFAULT_STARTUP_TIMEOUT);
+            if refreshed_manager
+                .wait_for_server_ready(server_name, timeout)
+                .await
+            {
+                ready.push(server_name.clone());
+            } else {
+                failed.push(McpStartupFailure {
+                    server: server_name.clone(),
+                    error: "server did not become ready during staged refresh".to_string(),
+                });
             }
         }
+        ready.sort();
+        failed.sort_by(|a, b| a.server.cmp(&b.server));
+
+        if !failed.is_empty() {
+            cancel_token.cancel();
+            return Ok(McpServersRefreshedEvent {
+                revision: self.services.mcp_registry.revision(),
+                applied: false,
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+                ready,
+                failed,
+            });
+        }
+        let mcp_tools = refreshed_manager.list_all_tools().await;
+        let catalog_tools = mcp_tools
+            .values()
+            .map(|tool_info| {
+                (
+                    tool_info.server_name.clone(),
+                    chaos_mcp_runtime::catalog_conv::mcp_tool_info_to_catalog_tool(tool_info),
+                )
+            })
+            .collect();
+        let diff = self
+            .services
+            .mcp_registry
+            .reconcile(
+                refreshed_manager,
+                mcp_servers,
+                cancel_token,
+                mcp_catalog_gate,
+                catalog_tools,
+            )
+            .await?;
+        Ok(McpServersRefreshedEvent {
+            revision: diff.revision,
+            applied: true,
+            added: diff.added,
+            updated: diff.updated,
+            removed: diff.removed,
+            ready,
+            failed,
+        })
     }
 
-    pub(super) async fn refresh_mcp_servers_if_requested(&self, turn_context: &TurnContext) {
-        let refresh_config = { self.pending_mcp_server_refresh_config.lock().await.take() };
-        let Some(refresh_config) = refresh_config else {
-            return;
-        };
-
+    pub(super) async fn refresh_mcp_servers_now(
+        &self,
+        turn_context: &TurnContext,
+        refresh_config: McpServerRefreshConfig,
+    ) -> anyhow::Result<McpServersRefreshedEvent> {
         let McpServerRefreshConfig {
             mcp_servers,
             mcp_oauth_credentials_store_mode,
@@ -452,8 +528,9 @@ impl Session {
             match serde_json::from_value::<HashMap<String, McpServerConfig>>(mcp_servers) {
                 Ok(servers) => servers,
                 Err(err) => {
-                    warn!("failed to parse MCP server refresh config: {err}");
-                    return;
+                    return Err(anyhow::anyhow!(
+                        "failed to parse MCP server refresh config: {err}"
+                    ));
                 }
             };
         let store_mode = match serde_json::from_value::<OAuthCredentialsStoreMode>(
@@ -461,37 +538,29 @@ impl Session {
         ) {
             Ok(mode) => mode,
             Err(err) => {
-                warn!("failed to parse MCP OAuth refresh config: {err}");
-                return;
+                return Err(anyhow::anyhow!(
+                    "failed to parse MCP OAuth refresh config: {err}"
+                ));
             }
         };
 
         self.refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
-            .await;
+            .await
     }
 
     #[cfg(test)]
     #[expect(dead_code, reason = "test helper available for future tests")]
-    pub(super) async fn mcp_startup_cancellation_token(&self) -> CancellationToken {
-        self.services
-            .mcp_startup_cancellation_token
-            .lock()
-            .await
-            .clone()
+    pub(super) async fn mcp_startup_cancellation_token(
+        &self,
+    ) -> tokio_util::sync::CancellationToken {
+        self.services.mcp_registry.cancellation_token().await
     }
 
     pub(super) async fn cancel_mcp_startup(&self) {
         self.services
-            .mcp_startup_cancellation_token
-            .lock()
+            .mcp_registry
+            .cancel()
             .await
-            .cancel();
-    }
-
-    /// Cancels the current MCP startup token and replaces it with a fresh one.
-    pub(crate) async fn reset_mcp_startup_cancellation_token(&self) {
-        let mut token = self.services.mcp_startup_cancellation_token.lock().await;
-        token.cancel();
-        *token = CancellationToken::new();
+            .expect("MCP registry actor stopped while cancelling startup");
     }
 }

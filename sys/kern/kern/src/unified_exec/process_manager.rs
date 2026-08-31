@@ -639,14 +639,15 @@ impl UnifiedExecProcessManager {
         ));
         let mut orchestrator = ToolOrchestrator::new();
         let mut runtime = UnifiedExecRuntime::new(self);
+        let permission_snapshot = context.session.permission_snapshot(&context.turn).await;
         let exec_approval_requirement = context
             .session
             .services
             .exec_policy
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &request.command,
-                approval_policy: context.turn.approval_policy.value(),
-                vfs_policy: &context.turn.vfs_policy,
+                approval_policy: permission_snapshot.approval_policy,
+                vfs_policy: &permission_snapshot.vfs_policy,
                 sandbox_permissions: if request.additional_permissions_preapproved {
                     crate::sandboxing::SandboxPermissions::UseDefault
                 } else {
@@ -674,13 +675,7 @@ impl UnifiedExecProcessManager {
             tool_name: "exec_command".to_string(),
         };
         orchestrator
-            .run(
-                &mut runtime,
-                &req,
-                &tool_ctx,
-                &context.turn,
-                context.turn.approval_policy.value(),
-            )
+            .run(&mut runtime, &req, &tool_ctx, &context.turn)
             .await
             .map(|result| (result.output, result.deferred_network_approval))
             .map_err(|e| UnifiedExecError::create_process(format!("{e:?}")))

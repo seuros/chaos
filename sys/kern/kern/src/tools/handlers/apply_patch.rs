@@ -19,7 +19,6 @@ use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_granted_turn_permissions;
-use crate::tools::handlers::get_merged_granted_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::ToolHandler;
@@ -98,14 +97,19 @@ async fn effective_patch_permissions(
     chaos_ipc::permissions::VfsPolicy,
 ) {
     let file_paths = file_paths_for_action(action);
-    let granted_permissions = get_merged_granted_permissions(session).await;
+    let permission_snapshot = session.permission_snapshot(turn).await;
+    let granted_permissions = permission_snapshot.granted_permissions.clone();
     let effective_additional_permissions = apply_granted_turn_permissions(
         session,
+        turn,
         crate::sandboxing::SandboxPermissions::UseDefault,
         write_permissions_for_paths(&file_paths),
     )
     .await;
-    let vfs_policy = effective_vfs_policy(&turn.vfs_policy, granted_permissions.as_ref());
+    let vfs_policy = effective_vfs_policy(
+        &permission_snapshot.vfs_policy,
+        granted_permissions.as_ref(),
+    );
 
     (file_paths, effective_additional_permissions, vfs_policy)
 }
@@ -201,13 +205,7 @@ impl ToolHandler for ApplyPatchHandler {
                             tool_name: tool_name.to_string(),
                         };
                         let out = orchestrator
-                            .run(
-                                &mut runtime,
-                                &req,
-                                &tool_ctx,
-                                turn.as_ref(),
-                                turn.approval_policy.value(),
-                            )
+                            .run(&mut runtime, &req, &tool_ctx, turn.as_ref())
                             .await
                             .map(|result| result.output);
                         let event_ctx = ToolEventCtx::new(
@@ -301,13 +299,7 @@ pub(crate) async fn intercept_apply_patch(
                         tool_name: tool_name.to_string(),
                     };
                     let out = orchestrator
-                        .run(
-                            &mut runtime,
-                            &req,
-                            &tool_ctx,
-                            turn.as_ref(),
-                            turn.approval_policy.value(),
-                        )
+                        .run(&mut runtime, &req, &tool_ctx, turn.as_ref())
                         .await
                         .map(|result| result.output);
                     let event_ctx = ToolEventCtx::new(

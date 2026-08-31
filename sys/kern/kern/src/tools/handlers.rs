@@ -27,6 +27,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::function_tool::FunctionCallError;
 use crate::sandboxing::SandboxPermissions;
 use crate::sandboxing::merge_permission_profiles;
@@ -129,13 +130,9 @@ pub(super) fn parse_json_arguments(
 
 pub(super) async fn get_merged_granted_permissions(
     session: &Session,
+    turn: &TurnContext,
 ) -> Option<chaos_ipc::models::PermissionProfile> {
-    let granted_session_permissions = session.granted_session_permissions().await;
-    let granted_turn_permissions = session.granted_turn_permissions().await;
-    merge_permission_profiles(
-        granted_session_permissions.as_ref(),
-        granted_turn_permissions.as_ref(),
-    )
+    session.permission_snapshot(turn).await.granted_permissions
 }
 
 fn resolve_workdir_base_path(
@@ -224,20 +221,26 @@ pub(super) struct EffectiveAdditionalPermissions {
 pub(super) struct PreparedExecPermissions {
     pub effective: EffectiveAdditionalPermissions,
     pub normalized_additional_permissions: Option<PermissionProfile>,
+    pub permission_snapshot: crate::chaos::PermissionSnapshot,
 }
 
 pub(super) async fn prepare_effective_exec_permissions(
     session: &Session,
-    approval_policy: ApprovalPolicy,
+    turn: &TurnContext,
     sandbox_permissions: SandboxPermissions,
     additional_permissions: Option<PermissionProfile>,
     cwd: &Path,
     escalation_rejection_message: impl FnOnce(ApprovalPolicy) -> String,
 ) -> Result<PreparedExecPermissions, String> {
+    let permission_snapshot = session.permission_snapshot(turn).await;
+    let approval_policy = permission_snapshot.approval_policy;
     let exec_permission_approvals_enabled = approval_policy.allows_escalation();
     let requested_additional_permissions = additional_permissions.clone();
-    let effective =
-        apply_granted_turn_permissions(session, sandbox_permissions, additional_permissions).await;
+    let effective = apply_granted_permissions(
+        permission_snapshot.granted_permissions.clone(),
+        sandbox_permissions,
+        additional_permissions,
+    );
     let additional_permissions_allowed = exec_permission_approvals_enabled
         || (approval_policy.advertises_request_permissions_tool()
             && effective.permissions_preapproved);
@@ -273,6 +276,7 @@ pub(super) async fn prepare_effective_exec_permissions(
     Ok(PreparedExecPermissions {
         effective,
         normalized_additional_permissions,
+        permission_snapshot,
     })
 }
 
@@ -295,6 +299,20 @@ pub(super) fn implicit_granted_permissions(
 
 pub(super) async fn apply_granted_turn_permissions(
     session: &Session,
+    turn: &TurnContext,
+    sandbox_permissions: SandboxPermissions,
+    additional_permissions: Option<PermissionProfile>,
+) -> EffectiveAdditionalPermissions {
+    let granted_permissions = get_merged_granted_permissions(session, turn).await;
+    apply_granted_permissions(
+        granted_permissions,
+        sandbox_permissions,
+        additional_permissions,
+    )
+}
+
+fn apply_granted_permissions(
+    granted_permissions: Option<PermissionProfile>,
     sandbox_permissions: SandboxPermissions,
     additional_permissions: Option<PermissionProfile>,
 ) -> EffectiveAdditionalPermissions {
@@ -306,7 +324,6 @@ pub(super) async fn apply_granted_turn_permissions(
         };
     }
 
-    let granted_permissions = get_merged_granted_permissions(session).await;
     let effective_permissions = merge_permission_profiles(
         additional_permissions.as_ref(),
         granted_permissions.as_ref(),

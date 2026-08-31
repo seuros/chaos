@@ -15,6 +15,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecApprovalRequestEvent;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::NetworkApprovalContext;
+use chaos_ipc::protocol::PermissionUpdateScope;
 use chaos_ipc::protocol::RequestUserInputEvent;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::request_permissions::PermissionGrantScope;
@@ -330,7 +331,7 @@ impl Session {
         call_id: String,
         args: RequestPermissionsArgs,
     ) -> Option<RequestPermissionsResponse> {
-        match turn_context.approval_policy.value() {
+        match self.permission_snapshot(turn_context).await.approval_policy {
             ApprovalPolicy::Headless => {
                 return Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
@@ -413,16 +414,21 @@ impl Session {
         response: RequestPermissionsResponse,
     ) {
         let mut granted_for_session = None;
+        let mut granted_for_turn = None;
+        let mut active_turn_id = None;
         let entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
+                    active_turn_id = at.tasks.first().map(|(turn_id, _)| turn_id.clone());
                     let mut ts = at.turn_state.lock().await;
                     let entry = ts.remove_pending_request_permissions(call_id);
                     if entry.is_some() && !response.permissions.is_empty() {
                         match response.scope {
                             PermissionGrantScope::Turn => {
-                                ts.record_granted_permissions(response.permissions.clone().into());
+                                let permissions = response.permissions.clone();
+                                ts.record_granted_permissions(permissions.clone().into());
+                                granted_for_turn = Some(permissions);
                             }
                             PermissionGrantScope::Session => {
                                 granted_for_session = Some(response.permissions.clone());
@@ -434,9 +440,35 @@ impl Session {
                 None => None,
             }
         };
+        let permissions_changed = granted_for_session.is_some() || granted_for_turn.is_some();
         if let Some(permissions) = granted_for_session {
             let mut state = self.state.lock().await;
-            state.record_granted_permissions(permissions.into());
+            state.record_granted_permissions(permissions.clone().into());
+            drop(state);
+            if let Err(err) = self
+                .permission_actor
+                .merge_grant(PermissionUpdateScope::Session, permissions.into())
+                .await
+            {
+                warn!("failed to record session permission grant in actor: {err}");
+            }
+        }
+        if let (Some(turn_id), Some(permissions)) = (active_turn_id.clone(), granted_for_turn)
+            && let Err(err) = self
+                .permission_actor
+                .merge_grant(
+                    PermissionUpdateScope::ActiveTurn { turn_id },
+                    permissions.into(),
+                )
+                .await
+        {
+            warn!("failed to record turn permission grant in actor: {err}");
+        }
+        if permissions_changed
+            && let Some(turn_id) = active_turn_id
+            && let Some(turn_context) = self.turn_context_for_sub_id(&turn_id).await
+        {
+            self.sync_mcp_permission_state(&turn_context).await;
         }
         match entry {
             Some(tx_response) => {

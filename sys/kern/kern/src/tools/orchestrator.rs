@@ -100,7 +100,6 @@ impl ToolOrchestrator {
         req: &Rq,
         tool_ctx: &ToolCtx,
         turn_ctx: &crate::chaos::TurnContext,
-        approval_policy: ApprovalPolicy,
     ) -> Result<OrchestratorRunResult<Out>, ToolError>
     where
         T: ToolRuntime<Rq, Out>,
@@ -110,12 +109,16 @@ impl ToolOrchestrator {
         let otel_ci = &tool_ctx.call_id;
         let otel_user = ToolDecisionSource::User;
         let otel_cfg = ToolDecisionSource::Config;
+        let initial_permissions = tool_ctx.session.permission_snapshot(turn_ctx).await;
+        let approval_policy = initial_permissions.approval_policy;
+        let initial_vfs_policy = initial_permissions.effective_vfs_policy();
+        let initial_socket_policy = initial_permissions.effective_socket_policy();
 
         // 1) Approval
         let mut already_approved = false;
 
         let requirement = tool.exec_approval_requirement(req).unwrap_or_else(|| {
-            default_exec_approval_requirement(approval_policy, &turn_ctx.vfs_policy)
+            default_exec_approval_requirement(approval_policy, &initial_vfs_policy)
         });
         match requirement {
             ExecApprovalRequirement::Skip { .. } => {
@@ -167,8 +170,8 @@ impl ToolOrchestrator {
         let initial_sandbox = match tool.sandbox_mode_for_first_attempt(req) {
             SandboxOverride::BypassSandboxFirstAttempt => crate::exec::SandboxType::None,
             SandboxOverride::NoOverride => self.sandbox.select_initial(
-                &turn_ctx.vfs_policy,
-                turn_ctx.socket_policy,
+                &initial_vfs_policy,
+                initial_socket_policy,
                 tool.sandbox_preference(),
                 has_managed_network_requirements,
             ),
@@ -178,8 +181,8 @@ impl ToolOrchestrator {
         // via crate::safety::get_platform_sandbox(..).
         let initial_attempt = SandboxAttempt {
             sandbox: initial_sandbox,
-            file_system_policy: &turn_ctx.vfs_policy,
-            network_policy: turn_ctx.socket_policy,
+            file_system_policy: &initial_vfs_policy,
+            network_policy: initial_socket_policy,
             enforce_managed_network: has_managed_network_requirements,
             manager: &self.sandbox,
             sandbox_cwd: &turn_ctx.cwd,
@@ -208,6 +211,10 @@ impl ToolOrchestrator {
                 output,
                 network_policy_decision,
             }))) => {
+                let retry_permissions = tool_ctx.session.permission_snapshot(turn_ctx).await;
+                let approval_policy = retry_permissions.approval_policy;
+                let retry_vfs_policy = retry_permissions.effective_vfs_policy();
+                let retry_socket_policy = retry_permissions.effective_socket_policy();
                 let network_approval_context = if has_managed_network_requirements {
                     network_policy_decision
                         .as_ref()
@@ -243,7 +250,7 @@ impl ToolOrchestrator {
                             && matches!(
                                 default_exec_approval_requirement(
                                     approval_policy,
-                                    &turn_ctx.vfs_policy
+                                    &retry_vfs_policy
                                 ),
                                 ExecApprovalRequirement::NeedsApproval { .. }
                             );
@@ -301,8 +308,8 @@ impl ToolOrchestrator {
 
                 let escalated_attempt = SandboxAttempt {
                     sandbox: crate::exec::SandboxType::None,
-                    file_system_policy: &turn_ctx.vfs_policy,
-                    network_policy: turn_ctx.socket_policy,
+                    file_system_policy: &retry_vfs_policy,
+                    network_policy: retry_socket_policy,
                     enforce_managed_network: has_managed_network_requirements,
                     manager: &self.sandbox,
                     sandbox_cwd: &turn_ctx.cwd,

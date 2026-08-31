@@ -653,9 +653,8 @@ pub(crate) async fn lookup_mcp_tool_metadata(
 ) -> Option<McpToolApprovalMetadata> {
     let tools = sess
         .services
-        .mcp_connection_manager
-        .read()
-        .await
+        .mcp_registry
+        .current_manager()
         .list_all_tools()
         .await;
 

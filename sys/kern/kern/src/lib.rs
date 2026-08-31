@@ -55,6 +55,7 @@ mod internal_tasks;
 pub mod landlock;
 pub mod mcp;
 mod mcp_manage_tools;
+mod mcp_registry;
 mod mcp_tool_approval_templates;
 mod minions;
 pub mod models_manager;

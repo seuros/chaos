@@ -13,8 +13,6 @@ use super::TurnContext;
 use crate::config::Config;
 use crate::config::ConstraintResult;
 
-use crate::shell_snapshot::ShellSnapshot;
-
 /// Convenience wrapper used by `new_turn_with_sub_id`.
 pub(super) use super::SessionSettingsUpdate;
 
@@ -27,11 +25,10 @@ impl Session {
 
     /// Refresh the shell snapshot when the working directory changes, unless
     /// this session is a sub-agent process spawn (which inherits from parent).
-    pub(super) fn maybe_refresh_shell_snapshot_for_cwd(
+    pub(super) async fn maybe_refresh_shell_snapshot_for_cwd(
         &self,
         previous_cwd: &Path,
         next_cwd: &Path,
-        chaos_home: &Path,
         session_source: &SessionSource,
     ) {
         if previous_cwd == next_cwd {
@@ -45,14 +42,11 @@ impl Session {
             return;
         }
 
-        ShellSnapshot::refresh_snapshot(
-            chaos_home.to_path_buf(),
-            self.conversation_id,
-            next_cwd.to_path_buf(),
-            self.services.user_shell.as_ref().clone(),
-            self.services.shell_snapshot_tx.clone(),
-            self.services.session_telemetry.clone(),
-        );
+        self.services
+            .shell_snapshot
+            .refresh(next_cwd.to_path_buf())
+            .await
+            .expect("shell snapshot actor stopped while the session is running");
     }
 
     pub(crate) async fn update_settings(
@@ -65,24 +59,26 @@ impl Session {
             Ok(updated) => {
                 let previous_cwd = state.session_configuration.cwd.clone();
                 let next_cwd = updated.cwd.clone();
-                let chaos_home = updated.chaos_home.clone();
                 let session_source = updated.session_source.clone();
-                state.session_configuration = updated;
+                state.session_configuration = updated.clone();
                 drop(state);
+
+                self.permission_actor
+                    .set_session_defaults(&updated)
+                    .await
+                    .expect("permission actor stopped while the session is running");
 
                 self.maybe_refresh_shell_snapshot_for_cwd(
                     &previous_cwd,
                     &next_cwd,
-                    &chaos_home,
                     &session_source,
-                );
+                )
+                .await;
 
                 if previous_cwd != next_cwd
                     && let Err(e) = self
                         .services
-                        .mcp_connection_manager
-                        .read()
-                        .await
+                        .mcp_registry
                         .notify_roots_changed(&next_cwd)
                         .await
                 {
@@ -155,7 +151,24 @@ impl Session {
         state.session_configuration.original_config_do_not_use = Arc::new(config);
     }
 
-    pub(crate) async fn reload_project_mcp_layer_and_refresh(&self, turn_context: &TurnContext) {
+    pub(crate) async fn reload_project_mcp_layer_and_refresh(
+        self: &Arc<Self>,
+        turn_context: &TurnContext,
+    ) {
+        let session = Arc::clone(self);
+        let turn_context = turn_context.clone();
+        self.services
+            .mcp_refresh
+            .run(async move {
+                session
+                    .reload_project_mcp_layer_and_refresh_now(&turn_context)
+                    .await;
+            })
+            .await
+            .expect("MCP refresh actor stopped while the session is running");
+    }
+
+    async fn reload_project_mcp_layer_and_refresh_now(&self, turn_context: &TurnContext) {
         let project_mcp_json_path = {
             let state = self.state.lock().await;
             let session_config = &state.session_configuration;
@@ -210,7 +223,11 @@ impl Session {
             (mcp_servers, store_mode)
         };
 
-        self.refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
-            .await;
+        if let Err(err) = self
+            .refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
+            .await
+        {
+            warn!("failed to refresh MCP servers from project configuration: {err:#}");
+        }
     }
 }

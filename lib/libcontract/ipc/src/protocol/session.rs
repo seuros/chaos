@@ -10,6 +10,7 @@ use crate::config_types::ServiceTier;
 use crate::dynamic_tools::DynamicToolSpec;
 use crate::models::BaseInstructions;
 use crate::models::ContentItem;
+use crate::models::PermissionProfile;
 use crate::models::ResponseItem;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -19,10 +20,24 @@ use ts_rs::TS;
 
 use super::ApprovalPolicy;
 use super::EventMsg;
+use super::PermissionUpdateScope;
 use super::ReasoningEffortConfig;
 use super::SandboxPolicy;
 use super::SocketPolicy;
 use super::VfsPolicy;
+
+/// Acknowledges a live permission update.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct PermissionsUpdatedEvent {
+    pub scope: PermissionUpdateScope,
+    pub revision: u64,
+    pub approval_policy: ApprovalPolicy,
+    pub vfs_policy: VfsPolicy,
+    pub socket_policy: SocketPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub granted_permissions: Option<PermissionProfile>,
+}
 
 // Conversation kept for backward compatibility.
 /// Response payload for `Op::GetHistory` containing the current session's

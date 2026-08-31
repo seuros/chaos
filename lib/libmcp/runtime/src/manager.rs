@@ -271,12 +271,11 @@ impl McpConnectionManager {
                 tx_event.clone(),
                 elicitation_requests.clone(),
                 Arc::clone(&catalog),
-                initial_sandbox_state.sandbox_cwd.clone(),
+                initial_sandbox_state.clone(),
             );
             clients.insert(server_name.clone(), async_managed_client.clone());
             let tx_event = tx_event.clone();
             let auth_entry = auth_entries.get(&server_name).cloned();
-            let sandbox_state = initial_sandbox_state.clone();
             join_set.spawn(async move {
                 let outcome = async_managed_client.client().await;
                 if cancel_token.is_cancelled() {
@@ -285,10 +284,7 @@ impl McpConnectionManager {
                 let status = match &outcome {
                     Ok(_) => {
                         // Send sandbox state notification immediately after Ready
-                        if let Err(e) = async_managed_client
-                            .notify_sandbox_state_change(&sandbox_state)
-                            .await
-                        {
+                        if let Err(e) = async_managed_client.notify_current_sandbox_state().await {
                             warn!(
                                 "Failed to notify sandbox state to MCP server {server_name}: {e:#}",
                             );
@@ -831,6 +827,15 @@ impl McpConnectionManager {
         Ok(())
     }
 
+    /// Notifies one MCP server that the workspace root has changed.
+    pub async fn notify_server_roots_changed(&self, server: &str, new_cwd: &Path) -> Result<()> {
+        let managed = self
+            .clients
+            .get(server)
+            .ok_or_else(|| anyhow!("unknown MCP server '{server}'"))?;
+        managed.notify_roots_changed(new_cwd).await
+    }
+
     pub async fn notify_sandbox_state_change(&self, sandbox_state: &SandboxState) -> Result<()> {
         let mut join_set = JoinSet::new();
 
@@ -857,6 +862,19 @@ impl McpConnectionManager {
         }
 
         Ok(())
+    }
+
+    /// Sends the current sandbox state to one MCP server.
+    pub async fn notify_server_sandbox_state_change(
+        &self,
+        server: &str,
+        sandbox_state: &SandboxState,
+    ) -> Result<()> {
+        let managed = self
+            .clients
+            .get(server)
+            .ok_or_else(|| anyhow!("unknown MCP server '{server}'"))?;
+        managed.notify_sandbox_state_change(sandbox_state).await
     }
 }
 

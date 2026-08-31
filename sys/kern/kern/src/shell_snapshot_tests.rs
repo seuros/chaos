@@ -1,6 +1,7 @@
 use super::*;
+use chaos_ipc::protocol::SessionSource;
+use chaos_journald::CreateProcessInput;
 use pretty_assertions::assert_eq;
-use std::os::unix::ffi::OsStrExt;
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::process::Command as StdCommand;
@@ -169,10 +170,150 @@ async fn try_new_creates_and_deletes_snapshot_file() -> Result<()> {
     let path = snapshot.path.clone();
     assert!(path.exists());
     assert_eq!(snapshot.cwd, dir.path().to_path_buf());
+    let snapshot_dir = dir.path().join(SNAPSHOT_DIR);
+    let mut entries = fs::read_dir(&snapshot_dir).await?;
+    let mut paths = Vec::new();
+    while let Some(entry) = entries.next_entry().await? {
+        paths.push(entry.path());
+    }
+    assert_eq!(
+        paths,
+        vec![path.clone()],
+        "successful finalization must not leave a temporary snapshot behind"
+    );
 
     drop(snapshot);
 
     assert!(!path.exists());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn refreshed_snapshot_survives_old_generation_drop() -> Result<()> {
+    let dir = tempdir()?;
+    let session_id = ProcessId::new();
+    let shell = Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+    };
+
+    let first = ShellSnapshot::try_new(dir.path(), session_id, dir.path(), &shell)
+        .await
+        .expect("first snapshot should be created");
+    let second = ShellSnapshot::try_new(dir.path(), session_id, dir.path(), &shell)
+        .await
+        .expect("second snapshot should be created");
+
+    assert_ne!(first.path, second.path);
+    assert!(first.path.exists());
+    assert!(second.path.exists());
+
+    let first_path = first.path.clone();
+    let second_path = second.path.clone();
+    drop(first);
+
+    assert!(!first_path.exists());
+    assert!(
+        second_path.exists(),
+        "dropping the old generation must not delete the current snapshot"
+    );
+
+    drop(second);
+    assert!(!second_path.exists());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn snapshot_actor_replaces_generations_without_cross_deletion() -> Result<()> {
+    let dir = tempdir()?;
+    let first_cwd = dir.path().join("first");
+    let second_cwd = dir.path().join("second");
+    fs::create_dir_all(&first_cwd).await?;
+    fs::create_dir_all(&second_cwd).await?;
+    let mut shell = Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+    };
+    let actor = ShellSnapshotActor::spawn_inner(
+        dir.path().to_path_buf(),
+        ProcessId::new(),
+        ShellSnapshotStartup::Idle,
+        &mut shell,
+        None,
+    );
+
+    actor
+        .refresh_and_wait(first_cwd.clone())
+        .await
+        .expect("first refresh");
+    let first = shell.shell_snapshot().expect("first snapshot published");
+    let first_path = first.path.clone();
+    assert_eq!(first.cwd, first_cwd);
+    assert!(first_path.exists());
+
+    actor
+        .refresh_and_wait(second_cwd.clone())
+        .await
+        .expect("second refresh");
+    let second = shell.shell_snapshot().expect("second snapshot published");
+    let second_path = second.path.clone();
+    assert_eq!(second.cwd, second_cwd);
+    assert_ne!(first_path, second_path);
+    assert!(
+        first_path.exists(),
+        "the retained old handle still owns its file"
+    );
+    assert!(second_path.exists());
+
+    drop(first);
+    assert!(!first_path.exists());
+    assert!(
+        second_path.exists(),
+        "releasing a previous generation must not delete the current snapshot"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn snapshot_actor_keeps_last_valid_snapshot_after_refresh_failure() -> Result<()> {
+    let dir = tempdir()?;
+    let valid_cwd = dir.path().join("valid");
+    fs::create_dir_all(&valid_cwd).await?;
+    let mut shell = Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+    };
+    let actor = ShellSnapshotActor::spawn_inner(
+        dir.path().to_path_buf(),
+        ProcessId::new(),
+        ShellSnapshotStartup::Idle,
+        &mut shell,
+        None,
+    );
+
+    actor
+        .refresh_and_wait(valid_cwd.clone())
+        .await
+        .expect("valid refresh");
+    let valid = shell.shell_snapshot().expect("valid snapshot published");
+    let valid_path = valid.path.clone();
+
+    actor
+        .refresh_and_wait(dir.path().join("does-not-exist"))
+        .await
+        .expect("failed generation is still acknowledged");
+    let current = shell
+        .shell_snapshot()
+        .expect("the last valid snapshot must remain published");
+    assert_eq!(current.path, valid_path);
+    assert_eq!(current.cwd, valid_cwd);
+    assert!(valid_path.exists());
 
     Ok(())
 }
@@ -297,16 +438,27 @@ async fn linux_sh_snapshot_includes_sections() -> Result<()> {
     Ok(())
 }
 
-async fn write_session_file_stub(chaos_home: &Path, session_id: ProcessId) -> Result<PathBuf> {
-    let dir = chaos_home
-        .join("sessions")
-        .join("2025")
-        .join("01")
-        .join("01");
-    fs::create_dir_all(&dir).await?;
-    let path = dir.join(format!("rollout-2025-01-01T00-00-00-{session_id}.jsonl"));
-    fs::write(&path, "").await?;
-    Ok(path)
+async fn create_journal_process_stub(
+    chaos_home: &Path,
+    session_id: ProcessId,
+    age: Duration,
+) -> Result<()> {
+    let store = SqliteJournalStore::open(&chaos_proc::runtime_db_path(chaos_home)).await?;
+    let age_secs = i64::try_from(age.as_secs())?;
+    let created_at = jiff::Timestamp::from_second(jiff::Timestamp::now().as_second() - age_secs)?;
+    store
+        .create_process(CreateProcessInput {
+            process_id: session_id,
+            parent: None,
+            source: SessionSource::Exec,
+            cwd: chaos_home.to_path_buf(),
+            created_at,
+            title: Some("shell snapshot test".to_string()),
+            model_provider: Some("test".to_string()),
+            cli_version: None,
+        })
+        .await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -318,11 +470,11 @@ async fn cleanup_stale_snapshots_removes_orphans_and_keeps_live() -> Result<()> 
 
     let live_session = ProcessId::new();
     let orphan_session = ProcessId::new();
-    let live_snapshot = snapshot_dir.join(format!("{live_session}.sh"));
-    let orphan_snapshot = snapshot_dir.join(format!("{orphan_session}.sh"));
+    let live_snapshot = snapshot_dir.join(format!("{live_session}.123.sh"));
+    let orphan_snapshot = snapshot_dir.join(format!("{orphan_session}.123.sh"));
     let invalid_snapshot = snapshot_dir.join("not-a-snapshot.txt");
 
-    write_session_file_stub(chaos_home, live_session).await?;
+    create_journal_process_stub(chaos_home, live_session, Duration::ZERO).await?;
     fs::write(&live_snapshot, "live").await?;
     fs::write(&orphan_snapshot, "orphan").await?;
     fs::write(&invalid_snapshot, "invalid").await?;
@@ -343,11 +495,14 @@ async fn cleanup_stale_snapshots_removes_stale_sessions() -> Result<()> {
     fs::create_dir_all(&snapshot_dir).await?;
 
     let stale_session = ProcessId::new();
-    let stale_snapshot = snapshot_dir.join(format!("{stale_session}.sh"));
-    let session_file = write_session_file_stub(chaos_home, stale_session).await?;
+    let stale_snapshot = snapshot_dir.join(format!("{stale_session}.123.sh"));
+    create_journal_process_stub(
+        chaos_home,
+        stale_session,
+        SNAPSHOT_RETENTION + Duration::from_secs(60),
+    )
+    .await?;
     fs::write(&stale_snapshot, "stale").await?;
-
-    set_file_mtime(&session_file, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
 
     cleanup_stale_snapshots(chaos_home, ProcessId::new()).await?;
 
@@ -363,32 +518,11 @@ async fn cleanup_stale_snapshots_skips_active_session() -> Result<()> {
     fs::create_dir_all(&snapshot_dir).await?;
 
     let active_session = ProcessId::new();
-    let active_snapshot = snapshot_dir.join(format!("{active_session}.sh"));
-    let session_file = write_session_file_stub(chaos_home, active_session).await?;
+    let active_snapshot = snapshot_dir.join(format!("{active_session}.123.sh"));
     fs::write(&active_snapshot, "active").await?;
-
-    set_file_mtime(&session_file, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
 
     cleanup_stale_snapshots(chaos_home, active_session).await?;
 
     assert_eq!(active_snapshot.exists(), true);
-    Ok(())
-}
-
-fn set_file_mtime(path: &Path, age: Duration) -> Result<()> {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)?
-        .as_secs()
-        .saturating_sub(age.as_secs());
-    let tv_sec = now
-        .try_into()
-        .map_err(|_| anyhow!("Snapshot mtime is out of range for libc::timespec"))?;
-    let ts = libc::timespec { tv_sec, tv_nsec: 0 };
-    let times = [ts, ts];
-    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
-    let result = unsafe { libc::utimensat(libc::AT_FDCWD, c_path.as_ptr(), times.as_ptr(), 0) };
-    if result != 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
     Ok(())
 }

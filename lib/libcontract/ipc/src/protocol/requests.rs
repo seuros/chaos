@@ -8,6 +8,7 @@ use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::ServiceTier;
 use crate::dynamic_tools::DynamicToolResponse;
 use crate::mcp::RequestId;
+use crate::models::PermissionProfile;
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use crate::request_permissions::RequestPermissionsResponse;
 use crate::request_user_input::RequestUserInputResponse;
@@ -50,6 +51,39 @@ pub struct W3cTraceContext {
 pub struct McpServerRefreshConfig {
     pub mcp_servers: Value,
     pub mcp_oauth_credentials_store_mode: Value,
+}
+
+/// Selects the live permission layer updated by [`Op::UpdatePermissions`].
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(tag = "type")]
+pub enum PermissionUpdateScope {
+    /// Update the session-wide permission layer. Existing turns observe the
+    /// new value before their next tool call or retry.
+    Session,
+    /// Update only the named active turn.
+    ActiveTurn { turn_id: String },
+}
+
+/// Describes how an update changes sticky permission grants.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(tag = "action", content = "permissions", rename_all = "snake_case")]
+#[ts(tag = "action", content = "permissions")]
+pub enum PermissionGrantUpdate {
+    /// Preserve the existing grants.
+    Unchanged,
+    /// Add the supplied grants to the existing grants.
+    Merge(PermissionProfile),
+    /// Replace the existing grants with the supplied grants.
+    Replace(PermissionProfile),
+    /// Remove all existing grants from the selected scope.
+    Clear,
+}
+
+impl Default for PermissionGrantUpdate {
+    fn default() -> Self {
+        Self::Unchanged
+    }
 }
 
 /// Submission operation
@@ -184,6 +218,24 @@ pub enum Op {
         /// Updated personality preference.
         #[serde(skip_serializing_if = "Option::is_none")]
         personality: Option<Personality>,
+    },
+
+    /// Update permissions for the live session or active turn.
+    ///
+    /// Updates are revisioned. When `expected_revision` is supplied, the
+    /// operation is rejected unless it matches the current revision for the
+    /// selected scope. Already-running tool attempts keep the snapshot they
+    /// started with; queued calls and retries observe the new revision.
+    UpdatePermissions {
+        scope: PermissionUpdateScope,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approval_policy: Option<ApprovalPolicy>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sandbox_policy: Option<SandboxPolicy>,
+        #[serde(default)]
+        grants: PermissionGrantUpdate,
     },
 
     /// Enable or disable the model-callable parent effort control for future turns.
@@ -339,6 +391,7 @@ impl Op {
             Self::UserInput { .. } => "user_input",
             Self::UserTurn { .. } => "user_turn",
             Self::OverrideTurnContext { .. } => "override_turn_context",
+            Self::UpdatePermissions { .. } => "update_permissions",
             Self::SetDynamicParentEffort { .. } => "set_dynamic_parent_effort",
             Self::SetClamped { .. } => "set_clamped",
             Self::ExecApproval { .. } => "exec_approval",

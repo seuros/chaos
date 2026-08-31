@@ -120,6 +120,25 @@ pub(super) async fn submission_loop(
                     .await;
                     false
                 }
+                Op::UpdatePermissions {
+                    scope,
+                    expected_revision,
+                    approval_policy,
+                    sandbox_policy,
+                    grants,
+                } => {
+                    handlers::update_permissions(
+                        &sess,
+                        sub.id.clone(),
+                        scope,
+                        expected_revision,
+                        approval_policy,
+                        sandbox_policy,
+                        grants,
+                    )
+                    .await;
+                    false
+                }
                 Op::SetDynamicParentEffort { enabled } => {
                     handlers::set_dynamic_parent_effort(&sess, sub.id.clone(), enabled).await;
                     false
@@ -193,7 +212,7 @@ pub(super) async fn submission_loop(
                     false
                 }
                 Op::RefreshMcpServers { config } => {
-                    handlers::refresh_mcp_servers(&sess, config).await;
+                    handlers::refresh_mcp_servers(&sess, sub.id.clone(), config).await;
                     false
                 }
                 Op::ReloadUserConfig => {

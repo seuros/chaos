@@ -7,6 +7,7 @@
 // ── Existing submodules (untouched) ─────────────────────────────────────────
 pub(super) mod approvals;
 pub(super) mod mcp_integration;
+pub(crate) mod permissions;
 pub(super) mod response_parsing;
 mod rollout_reconstruction;
 #[cfg(test)]
@@ -32,6 +33,7 @@ pub(crate) use spawn::INITIAL_SUBMIT_ID;
 pub(crate) use spawn::SUBMISSION_CHANNEL_CAPACITY;
 
 // Session
+pub(crate) use permissions::PermissionSnapshot;
 pub(crate) use session::Session;
 
 // Turn context / configuration types
@@ -186,8 +188,6 @@ pub(crate) use submission_loop::handlers;
 pub(crate) use submission_loop::submission_dispatch_span;
 #[cfg(test)]
 pub(crate) use tokio::sync::Mutex;
-#[cfg(test)]
-pub(crate) use tokio::sync::RwLock;
 #[cfg(test)]
 pub(crate) use tokio::sync::watch;
 #[cfg(test)]

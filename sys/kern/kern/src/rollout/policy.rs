@@ -63,6 +63,7 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::EnteredReviewMode(_)
         | EventMsg::ExitedReviewMode(_)
         | EventMsg::ProcessRolledBack(_)
+        | EventMsg::PermissionsUpdated(_)
         | EventMsg::UndoCompleted(_)
         | EventMsg::TurnAborted(_)
         | EventMsg::TurnStarted(_)
@@ -119,6 +120,7 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::AllToolsResponse(_)
         | EventMsg::McpStartupUpdate(_)
         | EventMsg::McpStartupComplete(_)
+        | EventMsg::McpServersRefreshed(_)
         | EventMsg::ListCustomPromptsResponse(_)
         | EventMsg::PlanUpdate(_)
         | EventMsg::ShutdownComplete

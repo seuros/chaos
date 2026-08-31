@@ -197,13 +197,11 @@ impl ToolRegistry {
         ];
         let (mcp_server, mcp_server_origin) = match &invocation.payload {
             ToolPayload::Mcp { server, .. } => {
-                let manager = invocation
+                let origin = invocation
                     .session
                     .services
-                    .mcp_connection_manager
-                    .read()
-                    .await;
-                let origin = manager.server_origin(server).map(str::to_owned);
+                    .mcp_registry
+                    .server_origin(server);
                 (Some(server.clone()), origin)
             }
             _ => (None, None),

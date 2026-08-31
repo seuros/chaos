@@ -36,6 +36,7 @@ use super::ItemCompletedEvent;
 use super::ItemStartedEvent;
 use super::ListCustomPromptsResponseEvent;
 use super::McpListToolsResponseEvent;
+use super::McpServersRefreshedEvent;
 use super::McpStartupCompleteEvent;
 use super::McpStartupUpdateEvent;
 use super::McpToolCallBeginEvent;
@@ -44,6 +45,7 @@ use super::ModelRerouteEvent;
 use super::ParentEffortChangedEvent;
 use super::PatchApplyBeginEvent;
 use super::PatchApplyEndEvent;
+use super::PermissionsUpdatedEvent;
 use super::PlanDeltaEvent;
 use super::ProcessNameUpdatedEvent;
 use super::ProcessRolledBackEvent;
@@ -169,11 +171,17 @@ pub enum EventMsg {
     #[serde(rename = "process_name_updated")]
     ProcessNameUpdated(ProcessNameUpdatedEvent),
 
+    /// A live session/turn permission update was accepted.
+    PermissionsUpdated(PermissionsUpdatedEvent),
+
     /// Incremental MCP startup progress updates.
     McpStartupUpdate(McpStartupUpdateEvent),
 
     /// Aggregate MCP startup completion summary.
     McpStartupComplete(McpStartupCompleteEvent),
+
+    /// An explicit MCP refresh completed and the live catalog was reconciled.
+    McpServersRefreshed(McpServersRefreshedEvent),
 
     McpToolCallBegin(McpToolCallBeginEvent),
 

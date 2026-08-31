@@ -481,22 +481,24 @@ fn make_test_session_services(
     let mcp_manager = Arc::new(McpManager::new());
     let network_approval = Arc::new(NetworkApprovalService::default());
     let file_watcher = Arc::new(FileWatcher::noop());
+    let user_shell = default_user_shell();
     SessionServices {
         catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),
-        mcp_connection_manager: Arc::new(RwLock::new(McpConnectionManager::new_uninitialized(
-            &config.permissions.approval_policy,
-        ))),
-        mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
+        mcp_registry: crate::mcp_registry::McpRegistryActor::spawn(
+            McpConnectionManager::new_uninitialized(&config.permissions.approval_policy),
+            CancellationToken::new(),
+        ),
+        mcp_refresh: crate::mcp_registry::McpRefreshActor::spawn(),
         internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
         ),
         hooks: Hooks::new(HooksConfig::default()),
         rollout: Mutex::new(None),
-        user_shell: Arc::new(default_user_shell()),
-        shell_snapshot_tx: watch::channel(None).0,
+        user_shell: Arc::new(user_shell),
+        shell_snapshot: crate::shell_snapshot::ShellSnapshotActor::for_tests(),
 
         exec_policy,
         auth_manager: auth_manager.clone(),
@@ -595,13 +597,16 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),
-        pending_mcp_server_refresh_config: Mutex::new(None),
-
         active_turn: Mutex::new(None),
-
+        permission_actor: crate::chaos::permissions::PermissionActor::spawn(&session_configuration),
         services,
         next_internal_sub_id: AtomicU64::new(0),
     };
+    session
+        .permission_actor
+        .register_turn(&turn_context)
+        .await
+        .expect("register test turn permissions");
 
     (session, turn_context)
 }
@@ -675,13 +680,16 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),
-        pending_mcp_server_refresh_config: Mutex::new(None),
-
         active_turn: Mutex::new(None),
-
+        permission_actor: crate::chaos::permissions::PermissionActor::spawn(&session_configuration),
         services,
         next_internal_sub_id: AtomicU64::new(0),
     });
+    session
+        .permission_actor
+        .register_turn(&turn_context)
+        .await
+        .expect("register test turn permissions");
 
     (session, turn_context, rx_event)
 }

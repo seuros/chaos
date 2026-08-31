@@ -422,13 +422,7 @@ async fn handle_list_resources(
                 ));
             }
 
-            let resources = session
-                .services
-                .mcp_connection_manager
-                .read()
-                .await
-                .list_all_resources()
-                .await;
+            let resources = session.services.mcp_registry.list_all_resources().await;
             Ok(ListResourcesPayload::from_all_servers(
                 merge_inline_resources(resources),
             ))
@@ -501,9 +495,7 @@ async fn handle_list_resource_templates(
 
             let templates = session
                 .services
-                .mcp_connection_manager
-                .read()
-                .await
+                .mcp_registry
                 .list_all_resource_templates()
                 .await;
             Ok(ListResourceTemplatesPayload::from_all_servers(

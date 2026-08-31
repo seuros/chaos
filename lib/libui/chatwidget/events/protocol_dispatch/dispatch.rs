@@ -135,6 +135,7 @@ impl ChatWidget {
             }
             EventMsg::McpStartupUpdate(ev) => self.on_mcp_startup_update(ev),
             EventMsg::McpStartupComplete(ev) => self.on_mcp_startup_complete(ev),
+            EventMsg::PermissionsUpdated(_) | EventMsg::McpServersRefreshed(_) => {}
             EventMsg::TurnAborted(ev) => match ev.reason {
                 TurnAbortReason::Interrupted => {
                     self.on_interrupted_turn(ev.reason);

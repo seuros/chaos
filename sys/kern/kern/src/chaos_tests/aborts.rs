@@ -325,9 +325,8 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
     let tools = {
         session
             .services
-            .mcp_connection_manager
-            .read()
-            .await
+            .mcp_registry
+            .current_manager()
             .list_all_tools()
             .await
     };

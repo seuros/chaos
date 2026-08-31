@@ -352,6 +352,8 @@ async fn run_event_loop(
                     | EventMsg::SessionConfigured(_)
                     | EventMsg::McpStartupUpdate(_)
                     | EventMsg::McpStartupComplete(_)
+                    | EventMsg::PermissionsUpdated(_)
+                    | EventMsg::McpServersRefreshed(_)
                     | EventMsg::AgentMessage(AgentMessageEvent { .. })
                     | EventMsg::AgentReasoningRawContent(_)
                     | EventMsg::TurnStarted(_)

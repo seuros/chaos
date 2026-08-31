@@ -1,10 +1,11 @@
+//! Shell snapshot actor.
+
 use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::SystemTime;
 
 use crate::shell::Shell;
 use crate::shell::ShellType;
@@ -17,6 +18,9 @@ use chaos_ipc::ProcessId;
 use chaos_journald::JournalStore;
 use chaos_journald::SqliteJournalStore;
 use chaos_snitch::SessionTelemetry;
+use chaos_traits::router::Adapter;
+use chaos_traits::router::AdapterError;
+use chaos_traits::router::DEFAULT_ADAPTER_CAPACITY;
 use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::watch;
@@ -31,120 +35,182 @@ pub struct ShellSnapshot {
 }
 
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(10);
-const SNAPSHOT_RETENTION: Duration = Duration::from_secs(60 * 60 * 24 * 3); // 3 days retention.
+const SNAPSHOT_RETENTION: Duration = Duration::from_secs(60 * 60 * 24 * 3);
 const SNAPSHOT_DIR: &str = "shell_snapshots";
 const EXCLUDED_EXPORT_VARS: &[&str] = &["PWD", "OLDPWD"];
 
-impl ShellSnapshot {
-    pub fn start_snapshotting(
+enum ShellSnapshotOp {
+    Refresh { cwd: PathBuf },
+}
+
+pub(crate) enum ShellSnapshotStartup {
+    Inherited(Arc<ShellSnapshot>),
+    Capture(PathBuf),
+    #[cfg(test)]
+    Idle,
+}
+
+#[derive(Clone)]
+pub(crate) struct ShellSnapshotActor {
+    mailbox: Adapter<ShellSnapshotOp, ()>,
+}
+
+impl ShellSnapshotActor {
+    pub(crate) fn spawn(
         chaos_home: PathBuf,
         session_id: ProcessId,
-        session_cwd: PathBuf,
+        startup: ShellSnapshotStartup,
         shell: &mut Shell,
         session_telemetry: SessionTelemetry,
-    ) -> watch::Sender<Option<Arc<ShellSnapshot>>> {
-        let (shell_snapshot_tx, shell_snapshot_rx) = watch::channel(None);
-        shell.shell_snapshot = shell_snapshot_rx;
-
-        Self::spawn_snapshot_task(
+    ) -> Self {
+        Self::spawn_inner(
             chaos_home,
             session_id,
-            session_cwd,
-            shell.clone(),
-            shell_snapshot_tx.clone(),
-            session_telemetry,
-        );
-
-        shell_snapshot_tx
-    }
-
-    pub fn refresh_snapshot(
-        chaos_home: PathBuf,
-        session_id: ProcessId,
-        session_cwd: PathBuf,
-        shell: Shell,
-        shell_snapshot_tx: watch::Sender<Option<Arc<ShellSnapshot>>>,
-        session_telemetry: SessionTelemetry,
-    ) {
-        Self::spawn_snapshot_task(
-            chaos_home,
-            session_id,
-            session_cwd,
+            startup,
             shell,
-            shell_snapshot_tx,
-            session_telemetry,
-        );
+            Some(session_telemetry),
+        )
     }
 
-    fn spawn_snapshot_task(
+    fn spawn_inner(
         chaos_home: PathBuf,
         session_id: ProcessId,
-        session_cwd: PathBuf,
-        snapshot_shell: Shell,
-        shell_snapshot_tx: watch::Sender<Option<Arc<ShellSnapshot>>>,
-        session_telemetry: SessionTelemetry,
-    ) {
-        let snapshot_span = info_span!("shell_snapshot", process_id = %session_id);
-        tokio::spawn(
-            async move {
-                let timer = session_telemetry.start_timer("chaos.shell_snapshot.duration_ms", &[]);
-                let snapshot = ShellSnapshot::try_new(
+        startup: ShellSnapshotStartup,
+        shell: &mut Shell,
+        session_telemetry: Option<SessionTelemetry>,
+    ) -> Self {
+        let (initial_snapshot, initial_cwd) = match startup {
+            ShellSnapshotStartup::Inherited(snapshot) => (Some(snapshot), None),
+            ShellSnapshotStartup::Capture(cwd) => (None, Some(cwd)),
+            #[cfg(test)]
+            ShellSnapshotStartup::Idle => (None, None),
+        };
+
+        let (shell_snapshot_tx, shell_snapshot_rx) = watch::channel(initial_snapshot);
+        shell.shell_snapshot = shell_snapshot_rx;
+        let snapshot_shell = shell.clone();
+        let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
+
+        tokio::spawn(async move {
+            if let Some(initial_cwd) = initial_cwd {
+                create_and_publish_snapshot(
                     &chaos_home,
                     session_id,
-                    session_cwd.as_path(),
+                    initial_cwd.as_path(),
                     &snapshot_shell,
+                    &shell_snapshot_tx,
+                    session_telemetry.as_ref(),
                 )
-                .await
-                .map(Arc::new);
-                let success = snapshot.is_ok();
-                let success_tag = if success { "true" } else { "false" };
-                let _ = timer.map(|timer| timer.record(&[("success", success_tag)]));
-                let mut counter_tags = vec![("success", success_tag)];
-                if let Some(failure_reason) = snapshot.as_ref().err() {
-                    counter_tags.push(("failure_reason", *failure_reason));
-                }
-                session_telemetry.counter("chaos.shell_snapshot", /*inc*/ 1, &counter_tags);
-                let _ = shell_snapshot_tx.send(snapshot.ok());
+                .await;
             }
-            .instrument(snapshot_span),
-        );
+
+            if let Err(err) = cleanup_stale_snapshots(&chaos_home, session_id).await {
+                tracing::warn!("Failed to clean up shell snapshots: {err:?}");
+            }
+
+            while let Some(packet) = receiver.recv().await {
+                let ShellSnapshotOp::Refresh { mut cwd } = packet.op;
+                let mut replies = packet.reply.into_iter().collect::<Vec<_>>();
+
+                while let Ok(queued) = receiver.try_recv() {
+                    let ShellSnapshotOp::Refresh { cwd: queued_cwd } = queued.op;
+                    cwd = queued_cwd;
+                    replies.extend(queued.reply);
+                }
+
+                create_and_publish_snapshot(
+                    &chaos_home,
+                    session_id,
+                    cwd.as_path(),
+                    &snapshot_shell,
+                    &shell_snapshot_tx,
+                    session_telemetry.as_ref(),
+                )
+                .await;
+
+                for reply in replies {
+                    let _ = reply.send(());
+                }
+            }
+        });
+
+        Self { mailbox }
     }
 
+    pub(crate) async fn refresh(&self, cwd: PathBuf) -> Result<(), AdapterError> {
+        self.mailbox.send(ShellSnapshotOp::Refresh { cwd }).await
+    }
+
+    #[cfg(test)]
+    async fn refresh_and_wait(&self, cwd: PathBuf) -> Result<(), AdapterError> {
+        self.mailbox.call(ShellSnapshotOp::Refresh { cwd }).await
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_tests() -> Self {
+        let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
+        tokio::spawn(async move {
+            while let Some(packet) = receiver.recv().await {
+                if let Some(reply) = packet.reply {
+                    let _ = reply.send(());
+                }
+            }
+        });
+        Self { mailbox }
+    }
+}
+
+async fn create_and_publish_snapshot(
+    chaos_home: &Path,
+    session_id: ProcessId,
+    session_cwd: &Path,
+    shell: &Shell,
+    shell_snapshot_tx: &watch::Sender<Option<Arc<ShellSnapshot>>>,
+    session_telemetry: Option<&SessionTelemetry>,
+) {
+    let timer = session_telemetry
+        .map(|telemetry| telemetry.start_timer("chaos.shell_snapshot.duration_ms", &[]));
+    let snapshot = ShellSnapshot::try_new(chaos_home, session_id, session_cwd, shell)
+        .instrument(info_span!("shell_snapshot", process_id = %session_id))
+        .await
+        .map(Arc::new);
+    let success = snapshot.is_ok();
+    let success_tag = if success { "true" } else { "false" };
+    if let Some(timer) = timer {
+        let _ = timer.map(|timer| timer.record(&[("success", success_tag)]));
+    }
+    if let Some(session_telemetry) = session_telemetry {
+        let mut counter_tags = vec![("success", success_tag)];
+        if let Some(failure_reason) = snapshot.as_ref().err() {
+            counter_tags.push(("failure_reason", *failure_reason));
+        }
+        session_telemetry.counter("chaos.shell_snapshot", 1, &counter_tags);
+    }
+
+    if let Ok(snapshot) = snapshot {
+        drop(shell_snapshot_tx.send_replace(Some(snapshot)));
+    }
+}
+
+impl ShellSnapshot {
     async fn try_new(
         chaos_home: &Path,
         session_id: ProcessId,
         session_cwd: &Path,
         shell: &Shell,
     ) -> std::result::Result<Self, &'static str> {
-        // File to store the snapshot
         let extension = "sh";
+        let generation_id = ProcessId::new();
         let path = chaos_home
             .join(SNAPSHOT_DIR)
-            .join(format!("{session_id}.{extension}"));
-        let nonce = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0);
+            .join(format!("{session_id}.{generation_id}.{extension}"));
         let temp_path = chaos_home
             .join(SNAPSHOT_DIR)
-            .join(format!("{session_id}.tmp-{nonce}"));
+            .join(format!("{session_id}.{generation_id}.tmp"));
 
-        // Clean the (unlikely) leaked snapshot files.
-        let chaos_home = chaos_home.to_path_buf();
-        let cleanup_session_id = session_id;
-        tokio::spawn(async move {
-            if let Err(err) = cleanup_stale_snapshots(&chaos_home, cleanup_session_id).await {
-                tracing::warn!("Failed to clean up shell snapshots: {err:?}");
-            }
-        });
-
-        // Make the new snapshot.
         let temp_path =
             match write_shell_snapshot(shell.shell_type.clone(), &temp_path, session_cwd).await {
-                Ok(path) => {
-                    tracing::info!("Shell snapshot successfully created: {}", path.display());
-                    path
-                }
+                Ok(path) => path,
                 Err(err) => {
                     tracing::warn!(
                         "Failed to create shell snapshot for {}: {err:?}",
@@ -153,23 +219,19 @@ impl ShellSnapshot {
                     return Err("write_failed");
                 }
             };
+        let mut temp_file = TemporarySnapshotFile::new(temp_path);
 
-        let temp_snapshot = Self {
-            path: temp_path.clone(),
-            cwd: session_cwd.to_path_buf(),
-        };
-
-        if let Err(err) = validate_snapshot(shell, &temp_snapshot.path, session_cwd).await {
+        if let Err(err) = validate_snapshot(shell, temp_file.path(), session_cwd).await {
             tracing::error!("Shell snapshot validation failed: {err:?}");
-            remove_snapshot_file(&temp_snapshot.path).await;
             return Err("validation_failed");
         }
 
-        if let Err(err) = fs::rename(&temp_snapshot.path, &path).await {
+        if let Err(err) = fs::rename(temp_file.path(), &path).await {
             tracing::warn!("Failed to finalize shell snapshot: {err:?}");
-            remove_snapshot_file(&temp_snapshot.path).await;
             return Err("write_failed");
         }
+        temp_file.disarm();
+        tracing::info!("Shell snapshot successfully created: {}", path.display());
 
         Ok(Self {
             path,
@@ -178,9 +240,47 @@ impl ShellSnapshot {
     }
 }
 
+struct TemporarySnapshotFile {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TemporarySnapshotFile {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TemporarySnapshotFile {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        if let Err(err) = std::fs::remove_file(&self.path)
+            && err.kind() != ErrorKind::NotFound
+        {
+            tracing::warn!(
+                "Failed to delete temporary shell snapshot at {:?}: {err:?}",
+                self.path
+            );
+        }
+    }
+}
+
 impl Drop for ShellSnapshot {
     fn drop(&mut self) {
         if let Err(err) = std::fs::remove_file(&self.path) {
+            if err.kind() == ErrorKind::NotFound {
+                return;
+            }
             tracing::warn!(
                 "Failed to delete shell snapshot at {:?}: {err:?}",
                 self.path
@@ -200,12 +300,11 @@ async fn write_shell_snapshot(
     let raw_snapshot = capture_snapshot(&shell, cwd).await?;
     let snapshot = strip_snapshot_preamble(&raw_snapshot)?;
 
-    if let Some(parent) = output_path.parent() {
-        let parent_display = parent.display();
-        fs::create_dir_all(parent)
-            .await
-            .with_context(|| format!("Failed to create snapshot parent {parent_display}"))?;
-    }
+    let parent = output_path.parent().expect("snapshot path has a parent");
+    let parent_display = parent.display();
+    fs::create_dir_all(parent)
+        .await
+        .with_context(|| format!("Failed to create snapshot parent {parent_display}"))?;
 
     let snapshot_path = output_path.display();
     fs::write(output_path, snapshot)
@@ -490,7 +589,7 @@ pub async fn cleanup_stale_snapshots(
 
         let file_name = entry.file_name();
         let file_name = file_name.to_string_lossy();
-        let (session_id, _) = match file_name.rsplit_once('.') {
+        let (session_id, _) = match file_name.split_once('.') {
             Some((stem, ext)) => (stem, ext),
             None => {
                 remove_snapshot_file(&path).await;
@@ -520,12 +619,8 @@ pub async fn cleanup_stale_snapshots(
             continue;
         };
 
-        let updated_at = process.updated_at.as_second();
-        let age_secs = now.saturating_sub(updated_at);
-        if u64::try_from(age_secs)
-            .ok()
-            .is_some_and(|age| age >= SNAPSHOT_RETENTION.as_secs())
-        {
+        let age_secs = now - process.updated_at.as_second();
+        if age_secs >= SNAPSHOT_RETENTION.as_secs() as i64 {
             remove_snapshot_file(&path).await;
         }
     }
@@ -535,6 +630,13 @@ pub async fn cleanup_stale_snapshots(
 
 async fn remove_snapshot_file(path: &Path) {
     if let Err(err) = fs::remove_file(path).await {
+        if err.kind() == ErrorKind::NotFound {
+            return;
+        }
         tracing::warn!("Failed to delete shell snapshot at {:?}: {err:?}", path);
     }
 }
+
+#[cfg(test)]
+#[path = "shell_snapshot_tests.rs"]
+mod tests;

@@ -93,6 +93,8 @@ impl EventProcessorWithHumanOutput {
                 msg,
                 EventMsg::ProcessNameUpdated(_)
                     | EventMsg::SessionModeChanged(_)
+                    | EventMsg::PermissionsUpdated(_)
+                    | EventMsg::McpServersRefreshed(_)
                     | EventMsg::TokenCount(_)
                     | EventMsg::TurnProgress(_)
                     | EventMsg::TurnStarted(_)

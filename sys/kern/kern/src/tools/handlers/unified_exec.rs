@@ -166,7 +166,7 @@ impl ToolHandler for UnifiedExecHandler {
                 let cwd = workdir.clone().unwrap_or(cwd);
                 let prepared_exec_permissions = match prepare_effective_exec_permissions(
                     context.session.as_ref(),
-                    turn.approval_policy.value(),
+                    turn.as_ref(),
                     sandbox_permissions,
                     additional_permissions,
                     &cwd,

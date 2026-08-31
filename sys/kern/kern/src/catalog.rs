@@ -4,6 +4,8 @@
 //! MCP servers register dynamically at runtime. All consumers query
 //! the same `Catalog` instance on `SessionServices`.
 
+use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::RwLock as StdRwLock;
 
 use chaos_traits::McpCatalogSink;
@@ -239,6 +241,191 @@ impl McpCatalogSink for CatalogSink {
     }
 }
 
+enum CatalogMutation {
+    RegisterTools {
+        server: String,
+        tools: Vec<CatalogTool>,
+    },
+    RegisterResources {
+        server: String,
+        resources: Vec<CatalogResource>,
+        templates: Vec<CatalogResourceTemplate>,
+    },
+    RegisterPrompts {
+        server: String,
+        prompts: Vec<CatalogPrompt>,
+    },
+    Unregister {
+        server: String,
+    },
+    UnregisterResources {
+        server: String,
+    },
+    UnregisterPrompts {
+        server: String,
+    },
+    ClearAll,
+}
+
+impl CatalogMutation {
+    fn apply(self, catalog: &mut Catalog) {
+        match self {
+            Self::RegisterTools { server, tools } => {
+                catalog.register_mcp_tools(&server, tools);
+            }
+            Self::RegisterResources {
+                server,
+                resources,
+                templates,
+            } => {
+                catalog.register_mcp_resources(&server, resources);
+                catalog.register_mcp_resource_templates(&server, templates);
+            }
+            Self::RegisterPrompts { server, prompts } => {
+                catalog.register_mcp_prompts(&server, prompts);
+            }
+            Self::Unregister { server } => catalog.unregister_mcp(&server),
+            Self::UnregisterResources { server } => {
+                catalog.unregister_mcp_resources(&server);
+            }
+            Self::UnregisterPrompts { server } => {
+                catalog.unregister_mcp_prompts(&server);
+            }
+            Self::ClearAll => catalog.clear_all_mcp(),
+        }
+    }
+}
+
+enum McpCatalogGateState {
+    Staging(Vec<CatalogMutation>),
+    Active,
+    Retired,
+}
+
+/// Generation-scoped MCP catalog sink.
+///
+/// A newly-created MCP manager receives a staging gate, so startup and
+/// list-changed callbacks cannot mutate the live catalog before the registry
+/// actor commits that generation. At cutover, the registry retires the old
+/// gate, installs the new generation's complete tool snapshot, replays any
+/// staged callbacks, and activates forwarding while dispatch remains paused in
+/// the registry mailbox.
+pub(crate) struct McpCatalogGate {
+    live: Arc<CatalogSink>,
+    state: StdMutex<McpCatalogGateState>,
+}
+
+impl McpCatalogGate {
+    pub(crate) fn staging(live: Arc<CatalogSink>) -> Self {
+        Self {
+            live,
+            state: StdMutex::new(McpCatalogGateState::Staging(Vec::new())),
+        }
+    }
+
+    pub(crate) fn activate(&self, tools: Vec<(String, CatalogTool)>) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let McpCatalogGateState::Staging(mutations) = &mut *state else {
+            return;
+        };
+        let staged = std::mem::take(mutations);
+        {
+            let mut catalog = self
+                .live
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            catalog.clear_all_mcp();
+            for (server, tool) in tools {
+                catalog.register_mcp_tools(&server, vec![tool]);
+            }
+            for mutation in staged {
+                mutation.apply(&mut catalog);
+            }
+        }
+        *state = McpCatalogGateState::Active;
+    }
+
+    pub(crate) fn retire(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *state = McpCatalogGateState::Retired;
+    }
+
+    fn submit(&self, mutation: CatalogMutation) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match &mut *state {
+            McpCatalogGateState::Staging(mutations) => mutations.push(mutation),
+            McpCatalogGateState::Active => {
+                let mut catalog = self
+                    .live
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                mutation.apply(&mut catalog);
+            }
+            McpCatalogGateState::Retired => {}
+        }
+    }
+}
+
+impl McpCatalogSink for McpCatalogGate {
+    fn register_mcp_tools(&self, server: &str, tools: Vec<CatalogTool>) {
+        self.submit(CatalogMutation::RegisterTools {
+            server: server.to_string(),
+            tools,
+        });
+    }
+
+    fn register_mcp_resources(
+        &self,
+        server: &str,
+        resources: Vec<CatalogResource>,
+        templates: Vec<CatalogResourceTemplate>,
+    ) {
+        self.submit(CatalogMutation::RegisterResources {
+            server: server.to_string(),
+            resources,
+            templates,
+        });
+    }
+
+    fn register_mcp_prompts(&self, server: &str, prompts: Vec<CatalogPrompt>) {
+        self.submit(CatalogMutation::RegisterPrompts {
+            server: server.to_string(),
+            prompts,
+        });
+    }
+
+    fn unregister_mcp(&self, server: &str) {
+        self.submit(CatalogMutation::Unregister {
+            server: server.to_string(),
+        });
+    }
+
+    fn unregister_mcp_resources(&self, server: &str) {
+        self.submit(CatalogMutation::UnregisterResources {
+            server: server.to_string(),
+        });
+    }
+
+    fn unregister_mcp_prompts(&self, server: &str) {
+        self.submit(CatalogMutation::UnregisterPrompts {
+            server: server.to_string(),
+        });
+    }
+
+    fn clear_all_mcp(&self) {
+        self.submit(CatalogMutation::ClearAll);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,5 +583,54 @@ mod tests {
         assert_eq!(catalog.tools().len(), tool_count - 1);
         assert!(catalog.resources().is_empty());
         assert!(catalog.prompts().is_empty());
+    }
+
+    #[test]
+    fn staged_mcp_catalog_gate_isolated_until_activation() {
+        let live = Arc::new(CatalogSink::new(Catalog::from_inventory()));
+        let initial_count = live
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tools()
+            .len();
+        let gate = McpCatalogGate::staging(Arc::clone(&live));
+
+        gate.register_mcp_tools(
+            "staged",
+            vec![CatalogTool {
+                name: "dynamic".to_string(),
+                description: "dynamic".to_string(),
+                input_schema: json!({"type": "object"}),
+                annotations: None,
+                read_only_hint: None,
+                supports_parallel_tool_calls: true,
+            }],
+        );
+        assert_eq!(
+            live.read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .tools()
+                .len(),
+            initial_count
+        );
+
+        gate.activate(Vec::new());
+        assert_eq!(
+            live.read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .tools()
+                .len(),
+            initial_count + 1
+        );
+
+        gate.retire();
+        gate.unregister_mcp("staged");
+        assert_eq!(
+            live.read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .tools()
+                .len(),
+            initial_count + 1
+        );
     }
 }

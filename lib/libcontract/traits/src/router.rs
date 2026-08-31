@@ -1,41 +1,13 @@
-//! Router scaffolding — minimal typed mailbox primitives for satellite
-//! routers in the chaos domain.
-//!
-//! Naming borrows directly from Thunderbolt / USB4 topology. A **router**
-//! is a logical node that owns state and routes inbound traffic. An
-//! **adapter** is a typed port on a router. A **packet** is one quantum
-//! of traffic across an adapter, optionally carrying a reply channel and
-//! a W3C trace `path`.
-//!
-//! This module is deliberately minimal — it is not an actor framework,
-//! and there is no `Router` trait: callers construct an mpsc pair, spawn
-//! a router task that consumes `Packet<Op>`, and hand the corresponding
-//! [`Adapter`] to collaborators. A trait is only worth adding once two
-//! or more routers share concrete surface.
-//!
-//! # Invariants
-//!
-//! - Adapters use **bounded** channels. Full mailboxes must block the
-//!   sender; silent drops are disallowed in new router code.
-//! - A packet carries at most one `reply` sender. The router must either
-//!   consume it or return an error; leaking a oneshot hangs the caller.
-//! - The `path` field propagates W3C trace context across the mailbox
-//!   hop so OTel spans remain linked through the handoff.
+//! Actor mailboxes for kernel services.
 
 use chaos_ipc::protocol::W3cTraceContext;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
-/// Default capacity for router mailboxes. Matches the rollout recorder
-/// order of magnitude (256) scaled down for typical router fan-in.
+/// Default mailbox capacity.
 pub const DEFAULT_ADAPTER_CAPACITY: usize = 64;
 
-/// One quantum of inbound traffic to a router.
-///
-/// `op` is the typed command payload. `reply` is an optional oneshot
-/// the router fulfils once the op is processed; omit it for
-/// fire-and-forget packets. `path` carries the caller's W3C trace
-/// context so the router's span can re-parent to the originating span.
+/// Actor message.
 #[derive(Debug)]
 pub struct Packet<Op, Reply = ()> {
     pub op: Op,
@@ -44,7 +16,7 @@ pub struct Packet<Op, Reply = ()> {
 }
 
 impl<Op, Reply> Packet<Op, Reply> {
-    /// Fire-and-forget packet with no reply channel.
+    /// Builds a message without a reply.
     pub fn fire(op: Op) -> Self {
         Self {
             op,
@@ -53,7 +25,7 @@ impl<Op, Reply> Packet<Op, Reply> {
         }
     }
 
-    /// Packet paired with a oneshot reply channel.
+    /// Builds a message with a reply.
     pub fn call(op: Op) -> (Self, oneshot::Receiver<Reply>) {
         let (tx, rx) = oneshot::channel();
         (
@@ -66,7 +38,7 @@ impl<Op, Reply> Packet<Op, Reply> {
         )
     }
 
-    /// Attach a W3C trace carrier for propagation across the mailbox hop.
+    /// Sets the trace context.
     #[must_use]
     pub fn with_path(mut self, path: Option<W3cTraceContext>) -> Self {
         self.path = path;
@@ -74,11 +46,7 @@ impl<Op, Reply> Packet<Op, Reply> {
     }
 }
 
-/// Error returned when a packet cannot be delivered to its router.
-///
-/// `Closed` means the router is gone (channel dropped). `ReplyDropped`
-/// means the router consumed the packet but never fulfilled the reply
-/// (a router bug the caller should surface rather than hide).
+/// Mailbox error.
 #[derive(Debug)]
 pub enum AdapterError {
     Closed,
@@ -96,11 +64,7 @@ impl std::fmt::Display for AdapterError {
 
 impl std::error::Error for AdapterError {}
 
-/// Typed send handle for a router.
-///
-/// Cheap to clone; each clone shares the same underlying mpsc sender.
-/// `send` applies backpressure when the mailbox is full and yields
-/// until capacity is available — it never drops silently.
+/// Actor mailbox.
 #[derive(Debug)]
 pub struct Adapter<Op, Reply = ()> {
     tx: mpsc::Sender<Packet<Op, Reply>>,
@@ -115,19 +79,18 @@ impl<Op, Reply> Clone for Adapter<Op, Reply> {
 }
 
 impl<Op, Reply> Adapter<Op, Reply> {
-    /// Wrap an existing sender. Prefer [`Adapter::bounded`] for new routers.
+    /// Wraps a sender.
     pub fn new(tx: mpsc::Sender<Packet<Op, Reply>>) -> Self {
         Self { tx }
     }
 
-    /// Build a bounded adapter + receiver pair. The receiver is handed
-    /// to the router task; the adapter is cloned to collaborators.
+    /// Builds a bounded mailbox.
     pub fn bounded(capacity: usize) -> (Self, mpsc::Receiver<Packet<Op, Reply>>) {
         let (tx, rx) = mpsc::channel(capacity);
         (Self { tx }, rx)
     }
 
-    /// Send a fire-and-forget packet. Back-pressures on a full mailbox.
+    /// Sends a message.
     pub async fn send(&self, op: Op) -> Result<(), AdapterError> {
         self.tx
             .send(Packet::fire(op))
@@ -135,8 +98,7 @@ impl<Op, Reply> Adapter<Op, Reply> {
             .map_err(|_| AdapterError::Closed)
     }
 
-    /// Send a packet and await its typed reply. Back-pressures on a full
-    /// mailbox, then waits for the router to fulfil the oneshot.
+    /// Sends a message and waits for its reply.
     pub async fn call(&self, op: Op) -> Result<Reply, AdapterError> {
         let (packet, rx) = Packet::call(op);
         self.tx
@@ -146,7 +108,7 @@ impl<Op, Reply> Adapter<Op, Reply> {
         rx.await.map_err(|_| AdapterError::ReplyDropped)
     }
 
-    /// Send a packet with an explicit W3C trace carrier.
+    /// Sends a traced message.
     pub async fn send_traced(
         &self,
         op: Op,
@@ -158,7 +120,7 @@ impl<Op, Reply> Adapter<Op, Reply> {
             .map_err(|_| AdapterError::Closed)
     }
 
-    /// Send a request-reply packet with an explicit W3C trace carrier.
+    /// Sends a traced message and waits for its reply.
     pub async fn call_traced(
         &self,
         op: Op,
@@ -172,13 +134,12 @@ impl<Op, Reply> Adapter<Op, Reply> {
         rx.await.map_err(|_| AdapterError::ReplyDropped)
     }
 
-    /// Current free capacity — useful for health metrics, not for
-    /// load shedding (load shedding is explicitly disallowed).
+    /// Returns free mailbox capacity.
     pub fn capacity(&self) -> usize {
         self.tx.capacity()
     }
 
-    /// `true` if the router task is gone.
+    /// Returns whether the mailbox is closed.
     pub fn is_closed(&self) -> bool {
         self.tx.is_closed()
     }

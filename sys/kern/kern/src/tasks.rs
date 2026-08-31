@@ -278,6 +278,10 @@ impl Session {
             *active = None;
         }
         drop(active);
+        self.permission_actor
+            .remove_turn(turn_context.sub_id.clone())
+            .await
+            .expect("permission actor stopped while removing a completed turn");
         if !pending_input.is_empty() {
             let pending_response_items = pending_input
                 .into_iter()
@@ -418,6 +422,10 @@ impl Session {
     async fn handle_task_abort(self: &Arc<Self>, task: RunningTask, reason: TurnAbortReason) {
         let sub_id = task.turn_context.sub_id.clone();
         if task.cancellation_token.is_cancelled() {
+            self.permission_actor
+                .remove_turn(sub_id)
+                .await
+                .expect("permission actor stopped while removing an aborted turn");
             return;
         }
 
@@ -471,5 +479,9 @@ impl Session {
             reason,
         });
         self.send_event(task.turn_context.as_ref(), event).await;
+        self.permission_actor
+            .remove_turn(task.turn_context.sub_id.clone())
+            .await
+            .expect("permission actor stopped while removing an aborted turn");
     }
 }

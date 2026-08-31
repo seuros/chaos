@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
+use anyhow::Context;
 use async_channel::Sender;
 use chaos_dtrace::Hooks;
 use chaos_dtrace::HooksConfig;
@@ -46,7 +47,8 @@ use crate::rollout::policy::EventPersistenceMode;
 use crate::rollout::process_names;
 use crate::runtime_db;
 use crate::shell;
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_snapshot::ShellSnapshotActor;
+use crate::shell_snapshot::ShellSnapshotStartup;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 use crate::tools::network_approval::NetworkApprovalService;
@@ -216,7 +218,10 @@ impl Session {
             ),
         };
         let state_builder = match &initial_history {
-            InitialHistory::Resumed(_) | InitialHistory::New | InitialHistory::Forked(_) => None,
+            InitialHistory::Resumed(resumed) => {
+                crate::rollout::metadata::builder_from_items(&resumed.history)
+            }
+            InitialHistory::New | InitialHistory::Forked(_) => None,
         };
 
         let rollout_fut = async {
@@ -353,20 +358,17 @@ impl Session {
         );
 
         let mut default_shell = shell::default_user_shell();
-        let shell_snapshot_tx =
-            if let Some(snapshot) = session_configuration.inherited_shell_snapshot.clone() {
-                let (tx, rx) = watch::channel(Some(snapshot));
-                default_shell.shell_snapshot = rx;
-                tx
-            } else {
-                ShellSnapshot::start_snapshotting(
-                    config.chaos_home.clone(),
-                    conversation_id,
-                    session_configuration.cwd.clone(),
-                    &mut default_shell,
-                    session_telemetry.clone(),
-                )
-            };
+        let shell_snapshot_startup = match session_configuration.inherited_shell_snapshot.clone() {
+            Some(snapshot) => ShellSnapshotStartup::Inherited(snapshot),
+            None => ShellSnapshotStartup::Capture(session_configuration.cwd.clone()),
+        };
+        let shell_snapshot = ShellSnapshotActor::spawn(
+            config.chaos_home.clone(),
+            conversation_id,
+            shell_snapshot_startup,
+            &mut default_shell,
+            session_telemetry.clone(),
+        );
         let process_name = match process_names::find_process_name_by_id(&conversation_id)
             .instrument(info_span!(
                 "session_init.process_name_lookup",
@@ -474,10 +476,11 @@ impl Session {
             catalog: Arc::new(crate::catalog::CatalogSink::new(
                 crate::catalog::Catalog::from_inventory(),
             )),
-            mcp_connection_manager: Arc::new(RwLock::new(McpConnectionManager::new_uninitialized(
-                &config.permissions.approval_policy,
-            ))),
-            mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
+            mcp_registry: crate::mcp_registry::McpRegistryActor::spawn(
+                McpConnectionManager::new_uninitialized(&config.permissions.approval_policy),
+                CancellationToken::new(),
+            ),
+            mcp_refresh: crate::mcp_registry::McpRefreshActor::spawn(),
             internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
             unified_exec_manager: crate::unified_exec::UnifiedExecProcessManager::new(
                 config.background_terminal_max_timeout,
@@ -485,7 +488,7 @@ impl Session {
             hooks,
             rollout: Mutex::new(rollout_recorder),
             user_shell: Arc::new(default_shell),
-            shell_snapshot_tx,
+            shell_snapshot,
             exec_policy,
             auth_manager: Arc::clone(&auth_manager),
             session_telemetry,
@@ -517,6 +520,8 @@ impl Session {
         };
         let (out_of_band_elicitation_paused, _out_of_band_elicitation_paused_rx) =
             watch::channel(false);
+        let permission_actor =
+            crate::chaos::permissions::PermissionActor::spawn(&session_configuration);
 
         let sess = Arc::new(Session {
             conversation_id,
@@ -524,8 +529,8 @@ impl Session {
             agent_status,
             out_of_band_elicitation_paused,
             state: Mutex::new(state),
-            pending_mcp_server_refresh_config: Mutex::new(None),
             active_turn: Mutex::new(None),
+            permission_actor,
             services,
             next_internal_sub_id: AtomicU64::new(0),
         });
@@ -590,7 +595,9 @@ impl Session {
         required_mcp_servers.sort();
         let enabled_mcp_server_count = mcp_servers.values().filter(|server| server.enabled).count();
         let required_mcp_server_count = required_mcp_servers.len();
-        sess.reset_mcp_startup_cancellation_token().await;
+        let mcp_catalog_gate = Arc::new(crate::catalog::McpCatalogGate::staging(Arc::clone(
+            &sess.services.catalog,
+        )));
         let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(
             &mcp_servers,
             config.mcp_oauth_credentials_store_mode,
@@ -599,7 +606,7 @@ impl Session {
             tx_event.clone(),
             sandbox_state,
             config.chaos_home.clone(),
-            Arc::clone(&sess.services.catalog) as Arc<dyn chaos_traits::McpCatalogSink>,
+            Arc::clone(&mcp_catalog_gate) as Arc<dyn chaos_traits::McpCatalogSink>,
         )
         .instrument(info_span!(
             "session_init.mcp_manager_init",
@@ -608,38 +615,8 @@ impl Session {
             session_init.required_mcp_server_count = required_mcp_server_count,
         ))
         .await;
-        {
-            let mut manager_guard = sess.services.mcp_connection_manager.write().await;
-            *manager_guard = mcp_connection_manager;
-        }
-        {
-            let mcp_mgr = sess.services.mcp_connection_manager.read().await;
-            let mcp_tools = mcp_mgr.list_all_tools().await;
-            let mut catalog = sess
-                .services
-                .catalog
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for tool_info in mcp_tools.values() {
-                catalog.register_mcp_tools(
-                    &tool_info.server_name,
-                    vec![chaos_mcp_runtime::catalog_conv::mcp_tool_info_to_catalog_tool(tool_info)],
-                );
-            }
-        }
-        {
-            let mut cancel_guard = sess.services.mcp_startup_cancellation_token.lock().await;
-            if cancel_guard.is_cancelled() {
-                cancel_token.cancel();
-            }
-            *cancel_guard = cancel_token;
-        }
         if !required_mcp_servers.is_empty() {
-            let failures = sess
-                .services
-                .mcp_connection_manager
-                .read()
-                .await
+            let failures = mcp_connection_manager
                 .required_startup_failures(&required_mcp_servers)
                 .instrument(info_span!(
                     "session_init.required_mcp_wait",
@@ -648,6 +625,7 @@ impl Session {
                 ))
                 .await;
             if !failures.is_empty() {
+                cancel_token.cancel();
                 let details = failures
                     .iter()
                     .map(|failure| format!("{}: {}", failure.server, failure.error))
@@ -658,6 +636,27 @@ impl Session {
                 ));
             }
         }
+        let mcp_tools = mcp_connection_manager.list_all_tools().await;
+        let catalog_tools = mcp_tools
+            .values()
+            .map(|tool_info| {
+                (
+                    tool_info.server_name.clone(),
+                    chaos_mcp_runtime::catalog_conv::mcp_tool_info_to_catalog_tool(tool_info),
+                )
+            })
+            .collect();
+        sess.services
+            .mcp_registry
+            .bootstrap(
+                mcp_connection_manager,
+                mcp_servers.clone(),
+                cancel_token,
+                mcp_catalog_gate,
+                catalog_tools,
+            )
+            .await
+            .context("failed to bootstrap MCP registry actor")?;
         let session_start_source = match &initial_history {
             InitialHistory::Resumed(_) => chaos_dtrace::SessionStartSource::Resume,
             InitialHistory::New | InitialHistory::Forked(_) => {

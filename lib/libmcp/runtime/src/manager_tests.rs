@@ -227,12 +227,12 @@ async fn list_all_tools_uses_startup_snapshot_while_client_is_pending() {
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
         "test_server".to_string(),
-        AsyncManagedClient {
-            client: pending_client,
-            startup_snapshot: Some(startup_tools),
-            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        },
+        AsyncManagedClient::for_tests(
+            pending_client,
+            Some(startup_tools),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+        ),
     );
 
     let tools = manager.list_all_tools().await;
@@ -252,12 +252,12 @@ async fn list_all_tools_blocks_while_client_is_pending_without_startup_snapshot(
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
         "test_server".to_string(),
-        AsyncManagedClient {
-            client: pending_client,
-            startup_snapshot: None,
-            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        },
+        AsyncManagedClient::for_tests(
+            pending_client,
+            None,
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+        ),
     );
 
     let timeout_result =
@@ -274,12 +274,12 @@ async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty(
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
         "test_server".to_string(),
-        AsyncManagedClient {
-            client: pending_client,
-            startup_snapshot: Some(Vec::new()),
-            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        },
+        AsyncManagedClient::for_tests(
+            pending_client,
+            Some(Vec::new()),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+        ),
     );
 
     let timeout_result =
@@ -303,12 +303,12 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
     let startup_complete = Arc::new(std::sync::atomic::AtomicBool::new(true));
     manager.clients.insert(
         "test_server".to_string(),
-        AsyncManagedClient {
-            client: failed_client,
-            startup_snapshot: Some(startup_tools),
+        AsyncManagedClient::for_tests(
+            failed_client,
+            Some(startup_tools),
             startup_complete,
-            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        },
+            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+        ),
     );
 
     let tools = manager.list_all_tools().await;
@@ -459,12 +459,12 @@ async fn notify_roots_changed_does_not_block_while_client_is_starting() {
         .boxed()
         .shared();
     let cwd = Arc::new(StdRwLock::new(PathBuf::from("/before")));
-    let async_client = AsyncManagedClient {
-        client: pending_client,
-        startup_snapshot: None,
-        startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        cwd: Arc::clone(&cwd),
-    };
+    let async_client = AsyncManagedClient::for_tests(
+        pending_client,
+        None,
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        Arc::clone(&cwd),
+    );
 
     tokio::time::timeout(
         Duration::from_millis(10),

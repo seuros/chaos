@@ -153,6 +153,7 @@ pub trait McpCatalogSink: Send + Sync {
     );
     fn register_mcp_prompts(&self, server: &str, prompts: Vec<CatalogPrompt>);
     fn unregister_mcp(&self, server: &str);
+    fn unregister_mcp_tools(&self, server: &str);
     fn unregister_mcp_resources(&self, server: &str);
     fn unregister_mcp_prompts(&self, server: &str);
     fn clear_all_mcp(&self);

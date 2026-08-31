@@ -115,6 +115,12 @@ impl Catalog {
         self.prompts.retain(|(s, _)| *s != mcp_source);
     }
 
+    /// Remove only tools for an MCP server (tools/list_changed).
+    pub(crate) fn unregister_mcp_tools(&mut self, server: &str) {
+        let mcp_source = CatalogSource::Mcp(server.to_string());
+        self.tools.retain(|(s, _)| *s != mcp_source);
+    }
+
     /// Remove only resources and templates for an MCP server (resources/list_changed).
     pub(crate) fn unregister_mcp_resources(&mut self, server: &str) {
         let mcp_source = CatalogSource::Mcp(server.to_string());
@@ -222,6 +228,12 @@ impl McpCatalogSink for CatalogSink {
         }
     }
 
+    fn unregister_mcp_tools(&self, server: &str) {
+        if let Ok(mut c) = self.0.write() {
+            c.unregister_mcp_tools(server);
+        }
+    }
+
     fn unregister_mcp_resources(&self, server: &str) {
         if let Ok(mut c) = self.0.write() {
             c.unregister_mcp_resources(server);
@@ -258,6 +270,9 @@ enum CatalogMutation {
     Unregister {
         server: String,
     },
+    UnregisterTools {
+        server: String,
+    },
     UnregisterResources {
         server: String,
     },
@@ -285,6 +300,7 @@ impl CatalogMutation {
                 catalog.register_mcp_prompts(&server, prompts);
             }
             Self::Unregister { server } => catalog.unregister_mcp(&server),
+            Self::UnregisterTools { server } => catalog.unregister_mcp_tools(&server),
             Self::UnregisterResources { server } => {
                 catalog.unregister_mcp_resources(&server);
             }
@@ -409,6 +425,12 @@ impl McpCatalogSink for McpCatalogGate {
         });
     }
 
+    fn unregister_mcp_tools(&self, server: &str) {
+        self.submit(CatalogMutation::UnregisterTools {
+            server: server.to_string(),
+        });
+    }
+
     fn unregister_mcp_resources(&self, server: &str) {
         self.submit(CatalogMutation::UnregisterResources {
             server: server.to_string(),
@@ -472,6 +494,63 @@ mod tests {
 
         catalog.unregister_mcp("test-server");
         assert_eq!(catalog.tools().len(), initial_count);
+    }
+
+    #[test]
+    fn unregister_mcp_tools_preserves_other_capability_types() {
+        let mut catalog = Catalog::from_inventory();
+        let initial_tool_count = catalog.tools().len();
+        let initial_resource_count = catalog.resources().len();
+        let initial_template_count = catalog.resource_templates().len();
+        let initial_prompt_count = catalog.prompts().len();
+
+        catalog.register_mcp_tools(
+            "test-server",
+            vec![CatalogTool {
+                name: "test_tool".to_string(),
+                description: "A test tool".to_string(),
+                input_schema: json!({"type": "object"}),
+                annotations: None,
+                read_only_hint: None,
+                supports_parallel_tool_calls: true,
+            }],
+        );
+        catalog.register_mcp_resources(
+            "test-server",
+            vec![CatalogResource {
+                uri: "test://resource".to_string(),
+                name: "resource".to_string(),
+                description: None,
+                mime_type: None,
+            }],
+        );
+        catalog.register_mcp_resource_templates(
+            "test-server",
+            vec![CatalogResourceTemplate {
+                uri_template: "test://{name}".to_string(),
+                name: "template".to_string(),
+                description: None,
+                mime_type: None,
+            }],
+        );
+        catalog.register_mcp_prompts(
+            "test-server",
+            vec![CatalogPrompt {
+                name: "prompt".to_string(),
+                description: None,
+                arguments: vec![],
+            }],
+        );
+
+        catalog.unregister_mcp_tools("test-server");
+
+        assert_eq!(catalog.tools().len(), initial_tool_count);
+        assert_eq!(catalog.resources().len(), initial_resource_count + 1);
+        assert_eq!(
+            catalog.resource_templates().len(),
+            initial_template_count + 1
+        );
+        assert_eq!(catalog.prompts().len(), initial_prompt_count + 1);
     }
 
     #[test]

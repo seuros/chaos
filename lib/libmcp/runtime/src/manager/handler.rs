@@ -245,7 +245,7 @@ async fn refresh_tools(
                     .iter()
                     .map(crate::catalog_conv::mcp_tool_info_to_catalog_tool)
                     .collect();
-                catalog.unregister_mcp(server_name);
+                catalog.unregister_mcp_tools(server_name);
                 catalog.register_mcp_tools(server_name, catalog_tools);
             }
         }

@@ -187,6 +187,12 @@ pub struct ToolInfo {
     pub connector_description: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServerInstructions {
+    pub server_name: String,
+    pub instructions: String,
+}
+
 async fn emit_update(tx_event: &Sender<Event>, update: McpStartupUpdateEvent) {
     let _ = tx_event
         .send(Event {
@@ -412,6 +418,39 @@ impl McpConnectionManager {
             tools.extend(qualify_tools(server_tools));
         }
         tools
+    }
+
+    /// Returns non-empty instructions advertised by initialized MCP servers.
+    ///
+    /// Results are sorted by configured server name so model instructions are
+    /// stable across requests despite the manager's `HashMap` storage.
+    pub async fn server_instructions(&self) -> Vec<McpServerInstructions> {
+        let mut clients: Vec<_> = self
+            .clients
+            .iter()
+            .map(|(server_name, client)| (server_name.clone(), client.clone()))
+            .collect();
+        clients.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+        let mut instructions = Vec::new();
+        for (server_name, async_managed_client) in clients {
+            let Ok(managed_client) = async_managed_client.client().await else {
+                continue;
+            };
+            let server_info = managed_client.session.server_info();
+            let Some(server_instructions) = server_info.instructions else {
+                continue;
+            };
+            let server_instructions = server_instructions.trim();
+            if server_instructions.is_empty() {
+                continue;
+            }
+            instructions.push(McpServerInstructions {
+                server_name,
+                instructions: server_instructions.to_string(),
+            });
+        }
+        instructions
     }
 
     /// Returns a single map that contains all resources. Each key is the

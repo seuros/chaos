@@ -13,12 +13,33 @@ use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::util::backoff;
+use chaos_mcp_runtime::McpServerInstructions;
 
 use super::super::Session;
 use super::super::TurnContext;
 use super::SamplingRequestResult;
 use super::execution::try_run_sampling_request;
 use super::progress::TurnProgressTracker;
+
+fn append_mcp_server_instructions(
+    base_instructions: &mut chaos_ipc::models::BaseInstructions,
+    server_instructions: &[McpServerInstructions],
+) {
+    if server_instructions.is_empty() {
+        return;
+    }
+
+    base_instructions.text.push_str(
+        "\n\n# MCP server instructions\n\n\
+         The following instructions were provided by configured MCP servers. \
+         Apply each section when using that server's tools or resources.",
+    );
+    for entry in server_instructions {
+        base_instructions
+            .text
+            .push_str(&format!("\n\n## {}\n\n{}", entry.server_name, entry.instructions));
+    }
+}
 
 pub(super) fn build_prompt(
     input: Vec<chaos_ipc::models::ResponseItem>,
@@ -80,7 +101,14 @@ pub(super) async fn run_sampling_request(
     )
     .await?;
 
-    let base_instructions = sess.get_base_instructions().await;
+    let mut base_instructions = sess.get_base_instructions().await;
+    let server_instructions = sess
+        .services
+        .mcp_registry
+        .current_manager()
+        .server_instructions()
+        .await;
+    append_mcp_server_instructions(&mut base_instructions, &server_instructions);
 
     let prompt = build_prompt(
         input,
@@ -160,5 +188,47 @@ pub(super) async fn run_sampling_request(
         } else {
             return Err(err);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appends_labeled_mcp_server_instructions() {
+        let mut base = chaos_ipc::models::BaseInstructions {
+            text: "Base instructions.".to_string(),
+        };
+
+        append_mcp_server_instructions(
+            &mut base,
+            &[
+                McpServerInstructions {
+                    server_name: "alpha".to_string(),
+                    instructions: "Use alpha carefully.".to_string(),
+                },
+                McpServerInstructions {
+                    server_name: "beta".to_string(),
+                    instructions: "Prefer beta resources.".to_string(),
+                },
+            ],
+        );
+
+        assert!(base.text.starts_with("Base instructions."));
+        assert!(base.text.contains("# MCP server instructions"));
+        assert!(base.text.contains("## alpha\n\nUse alpha carefully."));
+        assert!(base.text.contains("## beta\n\nPrefer beta resources."));
+    }
+
+    #[test]
+    fn leaves_base_instructions_unchanged_without_mcp_instructions() {
+        let mut base = chaos_ipc::models::BaseInstructions {
+            text: "Base instructions.".to_string(),
+        };
+
+        append_mcp_server_instructions(&mut base, &[]);
+
+        assert_eq!(base.text, "Base instructions.");
     }
 }

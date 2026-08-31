@@ -14,6 +14,7 @@ pub mod manager;
 pub mod types;
 
 pub use manager::McpConnectionManager;
+pub use manager::McpServerInstructions;
 pub use manager::McpToolInfo;
 pub use manager::SandboxState;
 pub use manager::ToolFilter;

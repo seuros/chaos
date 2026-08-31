@@ -131,6 +131,60 @@ struct ExecRunArgs {
     stderr_with_ansi: bool,
 }
 
+struct ExecConfigOverrideInputs {
+    model: Option<String>,
+    config_profile: Option<String>,
+    sandbox_mode: Option<SandboxMode>,
+    cwd: Option<PathBuf>,
+    ephemeral: bool,
+    additional_writable_roots: Vec<PathBuf>,
+    model_provider: Option<String>,
+    alcatraz_linux_exe: Option<PathBuf>,
+    alcatraz_freebsd_exe: Option<PathBuf>,
+    alcatraz_macos_exe: Option<PathBuf>,
+}
+
+fn exec_sandbox_mode(
+    full_auto: bool,
+    headless: bool,
+    cli_sandbox_mode: Option<chaos_getopt::SandboxModeCliArg>,
+) -> Option<SandboxMode> {
+    if full_auto {
+        Some(SandboxMode::WorkspaceWrite)
+    } else if headless {
+        Some(SandboxMode::RootAccess)
+    } else {
+        cli_sandbox_mode.map(Into::<SandboxMode>::into)
+    }
+}
+
+fn exec_config_overrides(inputs: ExecConfigOverrideInputs) -> ConfigOverrides {
+    let provider_user_override = inputs.model_provider.is_some();
+    ConfigOverrides {
+        model: inputs.model,
+        review_model: None,
+        config_profile: inputs.config_profile,
+        approval_policy: Some(ApprovalPolicy::Headless),
+        approvals_reviewer: None,
+        sandbox_mode: inputs.sandbox_mode,
+        cwd: inputs.cwd,
+        service_tier: None,
+        alcatraz_linux_exe: inputs.alcatraz_linux_exe,
+        alcatraz_freebsd_exe: inputs.alcatraz_freebsd_exe,
+        alcatraz_macos_exe: inputs.alcatraz_macos_exe,
+        base_instructions: None,
+        minion_instructions: None,
+        personality: None,
+        compact_prompt: None,
+        ephemeral: inputs.ephemeral.then_some(true),
+        mcp_servers: None,
+        active_project_trust: None,
+        additional_writable_roots: inputs.additional_writable_roots,
+        provider_user_override,
+        model_provider: inputs.model_provider,
+    }
+}
+
 fn exec_root_span() -> tracing::Span {
     info_span!(
         "chaos.exec",
@@ -204,13 +258,11 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         .with_writer(std::io::stderr)
         .with_filter(env_filter);
 
-    let sandbox_mode = if auto_exec.full_auto {
-        Some(SandboxMode::WorkspaceWrite)
-    } else if auto_exec.headless {
-        Some(SandboxMode::RootAccess)
-    } else {
-        sandbox_mode_cli_arg.map(Into::<SandboxMode>::into)
-    };
+    let sandbox_mode = exec_sandbox_mode(
+        auto_exec.full_auto,
+        auto_exec.headless,
+        sandbox_mode_cli_arg,
+    );
 
     // Parse `-c` overrides from the CLI.
     let cli_kv_overrides = match config_overrides.parse_overrides() {
@@ -275,30 +327,18 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         .and_then(|(_, value)| value.as_str().map(ToString::to_string));
 
     // Load configuration and determine approval policy
-    let overrides = ConfigOverrides {
+    let overrides = exec_config_overrides(ExecConfigOverrideInputs {
         model,
-        review_model: None,
         config_profile,
-        // Default to never ask for approvals in headless mode.
-        approval_policy: Some(ApprovalPolicy::Headless),
-        approvals_reviewer: None,
         sandbox_mode,
         cwd: resolved_cwd,
-        service_tier: None,
+        ephemeral,
+        additional_writable_roots: add_dir,
+        model_provider: cli_model_provider,
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
         alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
-        base_instructions: None,
-        minion_instructions: None,
-        personality: None,
-        compact_prompt: None,
-        ephemeral: ephemeral.then_some(true),
-        mcp_servers: None,
-        active_project_trust: None,
-        additional_writable_roots: add_dir,
-        provider_user_override: cli_model_provider.is_some(),
-        model_provider: cli_model_provider,
-    };
+    });
 
     let config = ConfigBuilder::default()
         .cli_overrides(cli_kv_overrides)
@@ -496,7 +536,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 // CLI input doesn't track UI element ranges, so none are available here.
                 text_elements: Vec::new(),
             }];
-            let output_schema = load_output_schema(output_schema_path.clone());
+            let output_schema = load_output_schema(output_schema_path.clone())?;
             (
                 InitialOperation::UserTurn {
                     items,
@@ -512,7 +552,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 // CLI input doesn't track UI element ranges, so none are available here.
                 text_elements: Vec::new(),
             }];
-            let output_schema = load_output_schema(output_schema_path);
+            let output_schema = load_output_schema(output_schema_path)?;
             (
                 InitialOperation::UserTurn {
                     items,
@@ -600,6 +640,49 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExecEventDecision {
+    Ignore,
+    Dispatch {
+        fatal: bool,
+    },
+    Stop {
+        fatal: bool,
+        interrupt: bool,
+        message: Option<String>,
+    },
+}
+
+fn exec_event_decision(
+    event: &EventMsg,
+    task_id: &str,
+    required_mcp_servers: &HashSet<String>,
+) -> ExecEventDecision {
+    match event {
+        EventMsg::Error(_) => ExecEventDecision::Dispatch { fatal: true },
+        EventMsg::TurnComplete(payload) if payload.turn_id != task_id => ExecEventDecision::Ignore,
+        EventMsg::TurnAborted(payload) if payload.turn_id.as_deref() != Some(task_id) => {
+            ExecEventDecision::Ignore
+        }
+        EventMsg::McpStartupUpdate(update) if required_mcp_servers.contains(&update.server) => {
+            if let chaos_ipc::protocol::McpStartupStatus::Failed { error } = &update.status {
+                ExecEventDecision::Stop {
+                    fatal: true,
+                    interrupt: true,
+                    message: Some(format!(
+                        "Required MCP server '{}' failed to initialize: {error}",
+                        update.server
+                    )),
+                }
+            } else {
+                ExecEventDecision::Dispatch { fatal: false }
+            }
+        }
+        EventMsg::SessionConfigured(_) => ExecEventDecision::Ignore,
+        _ => ExecEventDecision::Dispatch { fatal: false },
+    }
+}
+
 /// Core event loop: reads events from the process and dispatches them
 /// to the event processor, handling interrupts and shutdown.
 async fn run_event_loop(
@@ -634,42 +717,25 @@ async fn run_event_loop(
             }
         };
 
-        // Check for fatal errors.
-        if matches!(&event.msg, EventMsg::Error(_)) {
-            *error_seen = true;
-        }
-
-        // Filter events not relevant to our turn.
-        match &event.msg {
-            EventMsg::TurnComplete(payload) if payload.turn_id != task_id => {
-                continue;
+        match exec_event_decision(&event.msg, task_id, required_mcp_servers) {
+            ExecEventDecision::Ignore => continue,
+            ExecEventDecision::Dispatch { fatal } => {
+                *error_seen |= fatal;
             }
-            EventMsg::TurnComplete(_) => {}
-            EventMsg::TurnAborted(payload) if payload.turn_id.as_deref() != Some(task_id) => {
-                continue;
-            }
-            EventMsg::TurnAborted(_) => {}
-            EventMsg::McpStartupUpdate(update) => {
-                if required_mcp_servers.contains(&update.server)
-                    && let chaos_ipc::protocol::McpStartupStatus::Failed { error } = &update.status
-                {
-                    *error_seen = true;
-                    eprintln!(
-                        "Required MCP server '{}' failed to initialize: {error}",
-                        update.server
-                    );
-                    if let Err(err) = thread.submit(Op::Interrupt).await {
-                        warn!("interrupt submit failed during MCP shutdown: {err}");
-                    }
-                    break;
+            ExecEventDecision::Stop {
+                fatal,
+                interrupt,
+                message,
+            } => {
+                *error_seen |= fatal;
+                if let Some(message) = message {
+                    eprintln!("{message}");
                 }
+                if interrupt && let Err(err) = thread.submit(Op::Interrupt).await {
+                    warn!("interrupt submit failed during event-loop shutdown: {err}");
+                }
+                break;
             }
-            // Skip redundant SessionConfigured events from the stream --
-            // we already have the authoritative one from start/resume.
-            EventMsg::SessionConfigured(_) => {
-                continue;
-            }
-            _ => {}
         }
 
         match event_processor.process_event(event) {
@@ -730,30 +796,25 @@ async fn resolve_resume_process_id(
     }
 }
 
-fn load_output_schema(path: Option<PathBuf>) -> Option<Value> {
-    let path = path?;
-
-    let schema_str = match std::fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(err) => {
-            eprintln!(
-                "Failed to read output schema file {}: {err}",
-                path.display()
-            );
-            std::process::exit(1);
-        }
+fn load_output_schema(path: Option<PathBuf>) -> anyhow::Result<Option<Value>> {
+    let Some(path) = path else {
+        return Ok(None);
     };
 
-    match serde_json::from_str::<Value>(&schema_str) {
-        Ok(value) => Some(value),
-        Err(err) => {
-            eprintln!(
-                "Output schema file {} is not valid JSON: {err}",
-                path.display()
-            );
-            std::process::exit(1);
-        }
-    }
+    let schema_str = std::fs::read_to_string(&path).map_err(|err| {
+        anyhow::anyhow!(
+            "Failed to read output schema file {}: {err}",
+            path.display()
+        )
+    })?;
+    let schema = serde_json::from_str::<Value>(&schema_str).map_err(|err| {
+        anyhow::anyhow!(
+            "Output schema file {} is not valid JSON: {err}",
+            path.display()
+        )
+    })?;
+
+    Ok(Some(schema))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -890,12 +951,18 @@ fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_ipc::protocol::ErrorEvent;
+    use chaos_ipc::protocol::McpStartupStatus;
+    use chaos_ipc::protocol::McpStartupUpdateEvent;
+    use chaos_ipc::protocol::TurnCompleteEvent;
     use chaos_snitch::set_parent_from_w3c_trace_context;
+    use clap::Parser;
     use pretty_assertions::assert_eq;
     use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
     use rama::telemetry::opentelemetry::trace::TraceContextExt;
     use rama::telemetry::opentelemetry::trace::TraceId;
     use rama::telemetry::opentelemetry::trace::TracerProvider as _;
+    use serde_json::json;
     use tracing_opentelemetry::OpenTelemetrySpanExt;
 
     fn test_tracing_subscriber() -> impl tracing::Subscriber + Send + Sync {
@@ -926,6 +993,142 @@ mod tests {
             trace_id,
             TraceId::from_hex("00000000000000000000000000000077").expect("trace id")
         );
+    }
+
+    #[test]
+    fn exec_cli_preparation_covers_config_features_without_starting_a_session() -> anyhow::Result<()>
+    {
+        let temp = tempfile::tempdir()?;
+        let cwd = temp.path().join("cwd");
+        let extra_a = temp.path().join("extra-a");
+        let extra_b = temp.path().join("extra-b");
+        std::fs::create_dir_all(&cwd)?;
+        std::fs::create_dir_all(&extra_a)?;
+        std::fs::create_dir_all(&extra_b)?;
+        let schema_path = temp.path().join("schema.json");
+        let expected_schema = json!({
+            "type": "object",
+            "properties": {
+                "answer": { "type": "string" }
+            },
+            "required": ["answer"]
+        });
+        std::fs::write(&schema_path, serde_json::to_vec(&expected_schema)?)?;
+
+        let cli = Cli::parse_from(vec![
+            "chaos-exec".to_string(),
+            "--sandbox".to_string(),
+            "workspace-write".to_string(),
+            "--profile".to_string(),
+            "ci".to_string(),
+            "--add-dir".to_string(),
+            extra_a.display().to_string(),
+            "--add-dir".to_string(),
+            extra_b.display().to_string(),
+            "--ephemeral".to_string(),
+            "--output-schema".to_string(),
+            schema_path.display().to_string(),
+            "--json".to_string(),
+            "-C".to_string(),
+            cwd.display().to_string(),
+            "-m".to_string(),
+            "test-model".to_string(),
+            "return structured output".to_string(),
+        ]);
+        let Cli {
+            config_profile,
+            model,
+            auto_exec,
+            cwd,
+            add_dir,
+            ephemeral,
+            json,
+            sandbox_mode,
+            prompt,
+            output_schema,
+            ..
+        } = cli;
+        let expected_cwd = cwd.clone();
+
+        let overrides = exec_config_overrides(ExecConfigOverrideInputs {
+            model,
+            config_profile,
+            sandbox_mode: exec_sandbox_mode(auto_exec.full_auto, auto_exec.headless, sandbox_mode),
+            cwd,
+            ephemeral,
+            additional_writable_roots: add_dir,
+            model_provider: Some("test-provider".to_string()),
+            alcatraz_linux_exe: None,
+            alcatraz_freebsd_exe: None,
+            alcatraz_macos_exe: None,
+        });
+
+        assert!(json);
+        assert_eq!(prompt.as_deref(), Some("return structured output"));
+        assert_eq!(overrides.model.as_deref(), Some("test-model"));
+        assert_eq!(overrides.config_profile.as_deref(), Some("ci"));
+        assert_eq!(overrides.cwd.as_deref(), expected_cwd.as_deref());
+        assert_eq!(overrides.sandbox_mode, Some(SandboxMode::WorkspaceWrite));
+        assert_eq!(overrides.approval_policy, Some(ApprovalPolicy::Headless));
+        assert_eq!(overrides.ephemeral, Some(true));
+        assert_eq!(overrides.additional_writable_roots, vec![extra_a, extra_b]);
+        assert_eq!(overrides.model_provider.as_deref(), Some("test-provider"));
+        assert!(overrides.provider_user_override);
+        assert_eq!(load_output_schema(output_schema)?, Some(expected_schema));
+
+        Ok(())
+    }
+
+    #[test]
+    fn event_policy_covers_success_and_fatal_boundaries() {
+        let task_id = "turn-1";
+        let required_mcp_servers = HashSet::from(["required".to_string()]);
+        let cases = [
+            (
+                EventMsg::TurnComplete(TurnCompleteEvent {
+                    turn_id: "other-turn".to_string(),
+                    last_agent_message: None,
+                }),
+                ExecEventDecision::Ignore,
+            ),
+            (
+                EventMsg::TurnComplete(TurnCompleteEvent {
+                    turn_id: task_id.to_string(),
+                    last_agent_message: Some("done".to_string()),
+                }),
+                ExecEventDecision::Dispatch { fatal: false },
+            ),
+            (
+                EventMsg::Error(ErrorEvent {
+                    message: "server failed".to_string(),
+                    chaos_error_info: None,
+                }),
+                ExecEventDecision::Dispatch { fatal: true },
+            ),
+            (
+                EventMsg::McpStartupUpdate(McpStartupUpdateEvent {
+                    server: "required".to_string(),
+                    status: McpStartupStatus::Failed {
+                        error: "not found".to_string(),
+                    },
+                }),
+                ExecEventDecision::Stop {
+                    fatal: true,
+                    interrupt: true,
+                    message: Some(
+                        "Required MCP server 'required' failed to initialize: not found"
+                            .to_string(),
+                    ),
+                },
+            ),
+        ];
+
+        for (event, expected) in cases {
+            assert_eq!(
+                exec_event_decision(&event, task_id, &required_mcp_servers),
+                expected
+            );
+        }
     }
 
     #[test]

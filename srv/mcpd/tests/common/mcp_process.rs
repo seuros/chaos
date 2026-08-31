@@ -35,10 +35,6 @@ pub struct McpProcess {
     process: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    /// Messages read from the stream that were skipped by one reader but may be
-    /// needed by the next (e.g. a Response that arrived while waiting for a
-    /// notification). Checked first by every read helper.
-    pending: Vec<JsonRpcMessage>,
 }
 
 impl McpProcess {
@@ -105,7 +101,6 @@ impl McpProcess {
             process,
             stdin,
             stdout,
-            pending: Vec::new(),
         })
     }
 
@@ -194,26 +189,6 @@ impl McpProcess {
             },
         )
         .await
-    }
-
-    pub async fn initialize_without_elicitation(&mut self) -> anyhow::Result<()> {
-        let initialized = self
-            .initialize_with_protocol_version_and_capabilities(
-                "2025-11-25",
-                ClientCapabilities {
-                    elicitation: None,
-                    experimental: None,
-                    roots: None,
-                    sampling: None,
-                    tasks: None,
-                },
-            )
-            .await?;
-        let JsonRpcMessage::Response(_) = initialized else {
-            anyhow::bail!("expected initialize response message, got: {initialized:?}")
-        };
-        self.send_initialized_notification().await?;
-        Ok(())
     }
 
     pub async fn initialize_with_protocol_version_and_capabilities(
@@ -326,21 +301,11 @@ impl McpProcess {
     }
 
     async fn read_jsonrpc_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
-        // Drain pending buffer before hitting the stream.
-        if !self.pending.is_empty() {
-            let message = self.pending.remove(0);
-            eprintln!("read message from pending: {message:?}");
-            return Ok(message);
-        }
         let mut line = String::new();
         self.stdout.read_line(&mut line).await?;
         let message = serde_json::from_str::<JsonRpcMessage>(&line)?;
         eprintln!("read message from stdout: {message:?}");
         Ok(message)
-    }
-
-    pub async fn read_next_jsonrpc_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
-        self.read_jsonrpc_message().await
     }
 
     pub async fn read_stream_until_request_message(&mut self) -> anyhow::Result<JsonRpcRequest> {
@@ -416,66 +381,6 @@ impl McpProcess {
                 JsonRpcMessage::Response(_) => {}
             }
         }
-    }
-
-    /// Reads notifications until a legacy TurnComplete event is observed:
-    /// Method "chaos/event" with params.msg.type == "task_complete".
-    pub async fn read_stream_until_legacy_task_complete_notification(
-        &mut self,
-    ) -> anyhow::Result<JsonRpcRequest> {
-        eprintln!("in read_stream_until_legacy_task_complete_notification()");
-
-        loop {
-            // Read only from the wire (not pending), buffering anything that is
-            // not the task_complete notification so other read helpers can still
-            // find it.
-            let message = self.read_wire_message().await?;
-            match message {
-                JsonRpcMessage::Notification(notification) => {
-                    let is_match = if notification.method == "chaos/event" {
-                        if let Some(params) = &notification.params {
-                            params
-                                .get("msg")
-                                .and_then(|m| m.get("type"))
-                                .and_then(|t| t.as_str())
-                                == Some("task_complete")
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
-
-                    if is_match {
-                        return Ok(notification);
-                    } else {
-                        eprintln!("ignoring notification: {notification:?}");
-                    }
-                }
-                JsonRpcMessage::Request(_) => {
-                    anyhow::bail!("unexpected JSONRPCMessage::Request: {message:?}");
-                }
-                JsonRpcMessage::Response(ref resp) if resp.error.is_some() => {
-                    anyhow::bail!("unexpected JSONRPCMessage error response: {message:?}");
-                }
-                JsonRpcMessage::Response(_) => {
-                    // A non-error Response (e.g. the tool call result) may race ahead of
-                    // the task_complete notification. Buffer it so the next read helper
-                    // can still find it.
-                    eprintln!("buffering response while waiting for task_complete: {message:?}");
-                    self.pending.push(message);
-                }
-            }
-        }
-    }
-
-    /// Read exactly one message from the stdio wire (never from the pending buffer).
-    async fn read_wire_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
-        let mut line = String::new();
-        self.stdout.read_line(&mut line).await?;
-        let message = serde_json::from_str::<JsonRpcMessage>(&line)?;
-        eprintln!("read wire message: {message:?}");
-        Ok(message)
     }
 }
 

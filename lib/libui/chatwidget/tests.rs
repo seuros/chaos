@@ -145,12 +145,18 @@ use tempfile::tempdir;
 use tokio::sync::mpsc::error::TryRecvError;
 
 async fn test_config() -> Config {
-    // Use base defaults to avoid depending on host state.
-    let chaos_home_dir = tempdir().expect("create temp chaos home");
-    let chaos_home = chaos_home_dir.path().to_path_buf();
-    std::mem::forget(chaos_home_dir);
+    // Reuse one home for the whole mega-suite. Runtime VFS mounts are
+    // process-global and intentionally retained, so using a fresh directory for
+    // every widget would permanently consume file descriptors until the suite
+    // hits macOS's default 256-descriptor limit.
+    static TEST_CHAOS_HOME: OnceLock<PathBuf> = OnceLock::new();
+    let chaos_home = TEST_CHAOS_HOME
+        .get_or_init(|| tempdir().expect("create temp chaos home").keep())
+        .clone();
     ConfigBuilder::default()
-        .chaos_home(chaos_home)
+        .chaos_home(chaos_home.clone())
+        // Avoid loading repository-local config in otherwise hermetic UI tests.
+        .fallback_cwd(Some(chaos_home))
         .build()
         .await
         .expect("config")

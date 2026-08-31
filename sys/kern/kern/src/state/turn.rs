@@ -50,7 +50,7 @@ pub(crate) struct RunningTask {
     pub(crate) kind: TaskKind,
     pub(crate) task: Arc<dyn SessionTask>,
     pub(crate) cancellation_token: CancellationToken,
-    pub(crate) handle: Arc<AbortOnDropHandle<()>>,
+    pub(crate) handle: AbortOnDropHandle<()>,
     pub(crate) turn_context: Arc<TurnContext>,
     // Timer recorded when the task drops to capture the full turn duration.
     pub(crate) _timer: Option<chaos_snitch::Timer>,
@@ -62,8 +62,10 @@ impl ActiveTurn {
         self.tasks.insert(sub_id, task);
     }
 
-    pub(crate) fn remove_task(&mut self, sub_id: &str) -> bool {
-        self.tasks.swap_remove(sub_id);
+    pub(crate) fn remove_completed_task(&mut self, sub_id: &str) -> bool {
+        if let Some(task) = self.tasks.swap_remove(sub_id) {
+            task.handle.detach();
+        }
         self.tasks.is_empty()
     }
 

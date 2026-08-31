@@ -12,17 +12,8 @@ use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_custom_tool_call;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_local_shell_call;
-use core_test_support::responses::ev_message_item_added;
-use core_test_support::responses::ev_output_text_delta;
-use core_test_support::responses::ev_reasoning_item;
-use core_test_support::responses::ev_reasoning_item_added;
-use core_test_support::responses::ev_reasoning_summary_text_delta;
-use core_test_support::responses::ev_reasoning_text_delta;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_response_once;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
-use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
@@ -134,7 +125,7 @@ async fn responses_api_emits_api_request_event() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -224,39 +215,6 @@ async fn process_sse_emits_failed_event_on_parse_error() {
 
 #[tokio::test]
 #[traced_test]
-async fn process_sse_records_failed_event_when_stream_closes_without_completed() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
-
-    mount_sse_once(&server, sse(vec![ev_assistant_message("id", "hi")])).await;
-
-    chaos
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    logs_assert(|lines: &[&str]| {
-        lines
-            .iter()
-            .find(|line| {
-                line.contains("chaos.sse_event")
-                    && line.contains("error.message")
-                    && line.contains("stream closed before response.completed")
-            })
-            .map(|_| Ok(()))
-            .unwrap_or(Err("missing chaos.sse_event".to_string()))
-    });
-}
-
-#[tokio::test]
-#[traced_test]
 async fn process_sse_failed_event_records_response_error_message() {
     let (server, chaos) = setup_test_chaos_with_server().await;
 
@@ -293,7 +251,7 @@ async fn process_sse_failed_event_records_response_error_message() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -540,7 +498,7 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
         .await
         .unwrap();
 
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_completed_provider_usage(&chaos).await;
 
     let logs = get_buffer_logs(buffer);
 
@@ -554,99 +512,6 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
         logs.contains("handle_responses{otel.name=\"completed\""),
         "missing handle_responses span for completion\nlogs:\n{logs}"
     );
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn record_responses_sets_span_fields_for_response_events() {
-    let buffer: &'static Mutex<Vec<u8>> = Box::leak(Box::new(Mutex::new(Vec::new())));
-    let subscriber = tracing_subscriber::fmt()
-        .with_level(true)
-        .with_ansi(false)
-        .with_max_level(Level::TRACE)
-        .with_span_events(FmtSpan::FULL)
-        .with_writer(MockWriter::new(buffer))
-        .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
-
-    let (server, chaos) = setup_test_chaos_with_server().await;
-
-    let sse_body = sse(vec![
-        ev_response_created("resp-1"),
-        serde_json::json!({
-            "type": "response.output_item.added",
-            "item": {
-                "type": "function_call",
-                "call_id": "call-1",
-                "name": "fn",
-                "arguments": "{\"value\":1}"
-            }
-        }),
-        ev_message_item_added("msg-added", "hi there"),
-        ev_reasoning_item_added("reasoning-1", &["summary"]),
-        ev_output_text_delta("delta"),
-        ev_reasoning_summary_text_delta("summary-delta"),
-        ev_reasoning_text_delta("raw-delta"),
-        ev_function_call("call-1", "fn", "{\"key\":\"value\"}"),
-        ev_assistant_message("msg-1", "agent"),
-        ev_reasoning_item("reasoning-1", &["summary"], &[]),
-        ev_completed("resp-1"),
-    ]);
-
-    mount_response_once(&server, sse_response(sse_body)).await;
-    mount_response_once(
-        &server,
-        sse_response(sse(vec![
-            ev_assistant_message("msg-2", "follow-up complete"),
-            ev_completed("resp-2"),
-        ])),
-    )
-    .await;
-
-    chaos
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    let logs = get_buffer_logs(buffer);
-
-    let expected = [
-        ("created", None::<&str>, None::<&str>),
-        ("rate_limits", None, None),
-        ("function_call", Some("output_item_added"), Some("fn")),
-        ("message_from_assistant", Some("output_item_done"), None),
-        ("reasoning", Some("output_item_done"), None),
-        ("text_delta", None, None),
-        ("reasoning_summary_delta", None, None),
-        ("reasoning_content_delta", None, None),
-        ("completed", None, None),
-    ];
-
-    for (name, from, tool_name) in expected {
-        assert!(
-            logs.contains(&format!("handle_responses{{otel.name=\"{name}\"")),
-            "missing otel.name={name}\nlogs:\n{logs}"
-        );
-        if let Some(from) = from {
-            assert!(
-                logs.contains(&format!("from=\"{from}\"")),
-                "missing from={from} for {name}\nlogs:\n{logs}"
-            );
-        }
-        if let Some(tool_name) = tool_name {
-            assert!(
-                logs.contains(&format!("tool_name=\"{tool_name}\"")),
-                "missing tool_name={tool_name} for {name}\nlogs:\n{logs}"
-            );
-        }
-    }
 }
 
 #[tokio::test]

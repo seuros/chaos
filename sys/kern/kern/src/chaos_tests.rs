@@ -46,12 +46,6 @@ use crate::state::TaskKind;
 use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
 use crate::tools::ToolRouter;
-use crate::tools::context::FunctionToolOutput;
-use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolPayload;
-use crate::tools::handlers::ShellHandler;
-use crate::tools::handlers::UnifiedExecHandler;
-use crate::tools::registry::ToolHandler;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use chaos_ipc::models::BaseInstructions;
@@ -79,17 +73,10 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::prelude::*;
 
 use chaos_ipc::mcp::CallToolResult as McpCallToolResult;
-use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::Once;
 use std::time::Duration as StdDuration;
-
-use chaos_ipc::models::function_call_output_content_items_to_text;
-
-fn expect_text_tool_output(output: &FunctionToolOutput) -> String {
-    function_call_output_content_items_to_text(&output.body).unwrap_or_default()
-}
 
 struct InstructionsTestCase {
     slug: &'static str,

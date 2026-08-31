@@ -1453,7 +1453,6 @@ dependencies = [
  "tracing-subscriber",
  "ts-rs",
  "uuid",
- "wiremock",
 ]
 
 [[package]]
@@ -2784,7 +2783,6 @@ name = "core_test_support"
 version = "47.2.0"
 dependencies = [
  "anyhow",
- "assert_cmd",
  "base64 0.22.1",
  "chaos-auth-test-fixtures",
  "chaos-ipc",

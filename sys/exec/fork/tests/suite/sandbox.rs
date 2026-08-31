@@ -16,10 +16,30 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitStatus;
+use std::time::Duration;
 use tokio::fs::create_dir_all;
 use tokio::process::Child;
 #[cfg(target_os = "macos")]
 use tokio::process::Command;
+
+const CHILD_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+async fn wait_for_child(child: &mut Child) -> io::Result<ExitStatus> {
+    match tokio::time::timeout(CHILD_WAIT_TIMEOUT, child.wait()).await {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "sandbox child did not exit within {} seconds",
+                    CHILD_WAIT_TIMEOUT.as_secs()
+                ),
+            ))
+        }
+    }
+}
 
 #[cfg(target_os = "macos")]
 async fn spawn_command_under_sandbox(
@@ -146,8 +166,7 @@ async fn can_apply_linux_sandbox_policy(
     let Ok(mut child) = spawn_result else {
         return false;
     };
-    child
-        .wait()
+    wait_for_child(&mut child)
         .await
         .map(|status| status.success())
         .unwrap_or(false)
@@ -212,7 +231,9 @@ if __name__ == '__main__':
     .await
     .expect("should be able to spawn python under sandbox");
 
-    let status = child.wait().await.expect("should wait for child process");
+    let status = wait_for_child(&mut child)
+        .await
+        .expect("should wait for child process");
     assert!(status.success(), "python exited with {status:?}");
 }
 
@@ -255,8 +276,7 @@ async fn python_getpwuid_works_under_sandbox() {
     .await
     .expect("should be able to spawn python under sandbox");
 
-    let status = child
-        .wait()
+    let status = wait_for_child(&mut child)
         .await
         .expect("should be able to wait for child process");
     assert!(status.success(), "python exited with {status:?}");
@@ -311,8 +331,7 @@ async fn sandbox_distinguishes_command_and_policy_cwds() {
     .await
     .expect("should spawn command writing to forbidden path");
 
-    let status = child
-        .wait()
+    let status = wait_for_child(&mut child)
         .await
         .expect("should wait for forbidden command");
     assert!(
@@ -342,7 +361,9 @@ async fn sandbox_distinguishes_command_and_policy_cwds() {
     .await
     .expect("should spawn command writing to sandbox root");
 
-    let status = child.wait().await.expect("should wait for allowed command");
+    let status = wait_for_child(&mut child)
+        .await
+        .expect("should wait for allowed command");
     assert!(
         status.success(),
         "sandbox blocked allowed write: {status:?}"
@@ -473,7 +494,7 @@ where
         )
         .await?;
 
-        let status = child.wait().await?;
+        let status = wait_for_child(&mut child).await?;
         Ok(Some(status))
     } else {
         // Child branch: run the provided body.

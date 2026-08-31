@@ -358,6 +358,7 @@ mod tests {
     #[tokio::test]
     async fn elicitation_suite() {
         approval_elicitation_response_maps_to_core_action_and_review_decision();
+        unsupported_approval_elicitation_runs_denial_callback().await;
         forwarded_elicitation_preserves_request_fields();
         url_elicitation_support_requires_declared_url_capability();
         forwarded_url_elicitation_completion_sends_notification().await;
@@ -372,6 +373,28 @@ mod tests {
 
         assert_eq!(response.core_action(), CoreElicitationAction::Cancel);
         assert_eq!(response.review_decision(), ReviewDecision::Denied);
+    }
+
+    async fn unsupported_approval_elicitation_runs_denial_callback() {
+        let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
+        let outgoing = OutgoingMessageSender::new(outgoing_tx);
+        let denied = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let denied_for_callback = std::sync::Arc::clone(&denied);
+
+        let response = create_approval_elicitation_or_deny(
+            &outgoing,
+            RequestId::Number(1.into()),
+            &serde_json::json!({"message": "approve?"}),
+            "test approval",
+            move || async move {
+                denied_for_callback.store(true, std::sync::atomic::Ordering::Relaxed);
+            },
+        )
+        .await;
+
+        assert!(response.is_none());
+        assert!(denied.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(outgoing_rx.try_recv().is_err());
     }
 
     fn forwarded_elicitation_preserves_request_fields() {

@@ -169,7 +169,7 @@ mod tests {
             kind: TaskKind::Regular,
             task: Arc::new(NoopTask),
             cancellation_token: CancellationToken::new(),
-            handle: Arc::new(AbortOnDropHandle::new(tokio::spawn(async {}))),
+            handle: AbortOnDropHandle::new(tokio::spawn(async {})),
             turn_context: Arc::new(turn),
             _timer: None,
         });

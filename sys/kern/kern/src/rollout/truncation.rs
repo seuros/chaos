@@ -46,7 +46,3 @@ pub(crate) fn truncate_rollout_before_nth_user_message_from_start(
     let cut_idx = user_positions[n_from_start];
     items[..cut_idx].to_vec()
 }
-
-#[cfg(test)]
-#[path = "truncation_tests.rs"]
-mod tests;

@@ -137,7 +137,7 @@ fn filters_non_api_messages() {
             ResponseItem::Message {
                 id: None,
                 role: "user".to_string(),
-                content: vec![ContentItem::OutputText {
+                content: vec![ContentItem::InputText {
                     text: "hi".to_string()
                 }],
                 end_turn: None,

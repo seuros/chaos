@@ -44,6 +44,39 @@ pub struct ExecApprovalElicitRequestMeta {
 pub type ExecApprovalResponse = ApprovalElicitationResponse;
 
 #[allow(clippy::too_many_arguments)]
+fn exec_approval_elicitation_params(
+    command: Vec<String>,
+    cwd: PathBuf,
+    tool_call_id: String,
+    event_id: String,
+    call_id: String,
+    codex_parsed_cmd: Vec<ParsedCommand>,
+    process_id: ProcessId,
+) -> ExecApprovalElicitRequestParams {
+    let escaped_command =
+        shlex::try_join(command.iter().map(String::as_str)).unwrap_or_else(|_| command.join(" "));
+    let message = format!(
+        "Allow Chaos to run `{escaped_command}` in `{cwd}`?",
+        cwd = cwd.to_string_lossy()
+    );
+
+    ExecApprovalElicitRequestParams {
+        message,
+        requested_schema: json!({"type":"object","properties":{}}),
+        meta: ExecApprovalElicitRequestMeta {
+            process_id,
+            codex_elicitation: "exec-approval".to_string(),
+            codex_mcp_tool_call_id: tool_call_id,
+            chaos_event_id: event_id,
+            codex_call_id: call_id,
+            codex_command: command,
+            codex_cwd: cwd,
+            codex_parsed_cmd,
+        },
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_exec_approval_request(
     command: Vec<String>,
     cwd: PathBuf,
@@ -57,27 +90,15 @@ pub(crate) async fn handle_exec_approval_request(
     codex_parsed_cmd: Vec<ParsedCommand>,
     process_id: ProcessId,
 ) {
-    let escaped_command =
-        shlex::try_join(command.iter().map(String::as_str)).unwrap_or_else(|_| command.join(" "));
-    let message = format!(
-        "Allow Chaos to run `{escaped_command}` in `{cwd}`?",
-        cwd = cwd.to_string_lossy()
+    let params = exec_approval_elicitation_params(
+        command,
+        cwd,
+        tool_call_id.clone(),
+        event_id.clone(),
+        call_id,
+        codex_parsed_cmd,
+        process_id,
     );
-
-    let params = ExecApprovalElicitRequestParams {
-        message,
-        requested_schema: json!({"type":"object","properties":{}}),
-        meta: ExecApprovalElicitRequestMeta {
-            process_id,
-            codex_elicitation: "exec-approval".to_string(),
-            codex_mcp_tool_call_id: tool_call_id.clone(),
-            chaos_event_id: event_id.clone(),
-            codex_call_id: call_id,
-            codex_command: command,
-            codex_cwd: cwd,
-            codex_parsed_cmd,
-        },
-    };
     let Some(on_response) = create_approval_elicitation_or_deny(
         outgoing.as_ref(),
         request_id.clone(),
@@ -123,5 +144,52 @@ async fn submit_exec_approval(
         .await
     {
         error!("failed to submit ExecApproval: {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn exec_approval_params_preserve_command_context() -> anyhow::Result<()> {
+        let process_id = ProcessId::new();
+        let command = vec!["touch".to_string(), "created.txt".to_string()];
+        let cwd = PathBuf::from("/tmp/chaos-mcpd-test");
+        let parsed = chaos_sh::parse_command::parse_command(&command);
+
+        let params = exec_approval_elicitation_params(
+            command.clone(),
+            cwd.clone(),
+            "tool-call".to_string(),
+            "event-id".to_string(),
+            "exec-call".to_string(),
+            parsed.clone(),
+            process_id,
+        );
+
+        assert_eq!(
+            serde_json::to_value(params)?,
+            json!({
+                "message": "Allow Chaos to run `touch created.txt` in `/tmp/chaos-mcpd-test`?",
+                "requestedSchema": {
+                    "type": "object",
+                    "properties": {}
+                },
+                "_meta": {
+                    "processId": process_id,
+                    "codex_elicitation": "exec-approval",
+                    "codex_mcp_tool_call_id": "tool-call",
+                    "chaos_event_id": "event-id",
+                    "codex_call_id": "exec-call",
+                    "codex_command": command,
+                    "codex_cwd": cwd,
+                    "codex_parsed_cmd": parsed
+                }
+            })
+        );
+        Ok(())
     }
 }

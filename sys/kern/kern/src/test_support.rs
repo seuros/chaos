@@ -292,12 +292,12 @@ impl Drop for EnvVarGuard {
     }
 }
 
-/// Build a simple user [`ResponseItem::Message`] with a single `OutputText` content item.
+/// Build a simple user [`ResponseItem::Message`] with a single `InputText` content item.
 pub fn user_msg(text: &str) -> ResponseItem {
     ResponseItem::Message {
         id: None,
         role: "user".to_string(),
-        content: vec![ContentItem::OutputText {
+        content: vec![ContentItem::InputText {
             text: text.to_string(),
         }],
         end_turn: None,

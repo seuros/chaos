@@ -1,10 +1,12 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use assert_cmd::prelude::*;
+use assert_cmd::Command;
 use chaos_diff::CHAOS_CORE_APPLY_PATCH_ARG1;
 use std::fs;
-use std::process::Command;
+use std::time::Duration;
 use tempfile::tempdir;
+
+const APPLY_PATCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// While we may add an `apply-patch` subcommand to the `chaos` CLI multitool
 /// at some point, we must ensure that the main binary can still emulate the
@@ -27,6 +29,7 @@ fn test_standalone_exec_cli_can_use_apply_patch() -> anyhow::Result<()> {
 *** End Patch"#,
         )
         .current_dir(tmp.path())
+        .timeout(APPLY_PATCH_TIMEOUT)
         .assert()
         .success()
         .stdout("Success. Updated the following files:\nM source.txt\n")

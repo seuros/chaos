@@ -10,7 +10,6 @@ path = "lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-assert_cmd = { workspace = true }
 base64 = { workspace = true }
 chaos-auth-test-fixtures = { workspace = true }
 chaos-kern = { workspace = true }

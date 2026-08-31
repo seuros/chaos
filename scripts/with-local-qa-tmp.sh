@@ -21,6 +21,7 @@ case "${1:-}" in
 esac
 
 mkdir -p "$tmp_root"
+ulimit -n "${CHAOS_QA_NOFILE_LIMIT:-4096}" 2>/dev/null || true
 export TMPDIR="$tmp_root"
 export TMP="$TMPDIR"
 export TEMP="$TMPDIR"

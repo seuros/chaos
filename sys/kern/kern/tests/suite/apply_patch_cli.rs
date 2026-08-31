@@ -84,9 +84,6 @@ fn apply_patch_responses(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
 async fn apply_patch_cli_multiple_operations_integration(
     output_type: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -131,10 +128,6 @@ D (?:.+/)?delete\.txt
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_multiple_chunks(model_output: ApplyPatchModelOutput) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -158,10 +151,6 @@ async fn apply_patch_cli_multiple_chunks(model_output: ApplyPatchModelOutput) ->
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_moves_file_to_new_directory(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -187,10 +176,6 @@ async fn apply_patch_cli_moves_file_to_new_directory(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_updates_file_appends_trailing_newline(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -215,10 +200,6 @@ async fn apply_patch_cli_updates_file_appends_trailing_newline(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_insert_only_hunk_modifies_file(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -241,10 +222,6 @@ async fn apply_patch_cli_insert_only_hunk_modifies_file(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_move_overwrites_existing_destination(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -272,10 +249,6 @@ async fn apply_patch_cli_move_overwrites_existing_destination(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_move_without_content_change_has_no_turn_diff(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -360,10 +333,6 @@ async fn apply_patch_cli_add_overwrites_existing_file(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_rejects_invalid_hunk_header(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -392,10 +361,6 @@ async fn apply_patch_cli_rejects_invalid_hunk_header(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_reports_missing_context(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -426,10 +391,6 @@ async fn apply_patch_cli_reports_missing_context(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_reports_missing_target_file(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -462,10 +423,6 @@ async fn apply_patch_cli_reports_missing_target_file(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_delete_missing_file_reports_error(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -499,10 +456,6 @@ async fn apply_patch_cli_delete_missing_file_reports_error(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_rejects_empty_patch(model_output: ApplyPatchModelOutput) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -524,10 +477,6 @@ async fn apply_patch_cli_rejects_empty_patch(model_output: ApplyPatchModelOutput
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_delete_directory_reports_verification_error(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -551,10 +500,6 @@ async fn apply_patch_cli_delete_directory_reports_verification_error(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_rejects_path_traversal_outside_workspace(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -605,10 +550,6 @@ async fn apply_patch_cli_rejects_path_traversal_outside_workspace(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_rejects_move_path_traversal_outside_workspace(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -660,10 +601,6 @@ async fn apply_patch_cli_rejects_move_path_traversal_outside_workspace(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_verification_failure_has_no_side_effects(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -1037,10 +974,6 @@ async fn apply_patch_function_accepts_lenient_heredoc_wrapped_patch(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_end_of_file_anchor(model_output: ApplyPatchModelOutput) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -1060,10 +993,6 @@ async fn apply_patch_cli_end_of_file_anchor(model_output: ApplyPatchModelOutput)
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_cli_missing_second_chunk_context_rejected(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -1095,10 +1024,6 @@ async fn apply_patch_cli_missing_second_chunk_context_rejected(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_emits_turn_diff_event_with_unified_diff(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -1155,10 +1080,6 @@ async fn apply_patch_emits_turn_diff_event_with_unified_diff(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_turn_diff_for_rename_with_content_change(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
@@ -1382,10 +1303,6 @@ async fn apply_patch_aggregates_diff_preserves_success_after_failure() -> Result
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-#[test_case(ApplyPatchModelOutput::Function)]
-#[test_case(ApplyPatchModelOutput::Shell)]
-#[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
-#[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
 async fn apply_patch_change_context_disambiguates_target(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {

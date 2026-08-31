@@ -218,7 +218,7 @@ impl Session {
 
         let running_task = RunningTask {
             done,
-            handle: Arc::new(AbortOnDropHandle::new(handle)),
+            handle: AbortOnDropHandle::new(handle),
             kind: task_kind,
             task,
             cancellation_token,
@@ -265,7 +265,7 @@ impl Session {
         let mut token_usage_at_turn_start = None;
         let mut turn_tool_calls = 0_u64;
         if let Some(at) = active.as_mut()
-            && at.remove_task(&turn_context.sub_id)
+            && at.remove_completed_task(&turn_context.sub_id)
         {
             let mut ts = at.turn_state.lock().await;
             pending_input = ts.take_pending_input();

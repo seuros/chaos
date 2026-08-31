@@ -8,13 +8,9 @@ use chaos_ipc::protocol::FileChange;
 use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_mcpd::ApprovalElicitationAction;
 use chaos_mcpd::ChaosToolParams;
-use chaos_mcpd::ExecApprovalElicitRequestMeta;
-use chaos_mcpd::ExecApprovalElicitRequestParams;
-use chaos_mcpd::ExecApprovalResponse;
 use chaos_mcpd::PatchApprovalElicitRequestMeta;
 use chaos_mcpd::PatchApprovalElicitRequestParams;
 use chaos_mcpd::PatchApprovalResponse;
-use chaos_sh::parse_command;
 use mcp_host::protocol::types::JsonRpcMessage;
 use mcp_host::protocol::types::JsonRpcRequest;
 use mcp_host::protocol::types::RequestId;
@@ -29,148 +25,9 @@ use mcp_test_support::McpProcess;
 use mcp_test_support::create_apply_patch_sse_response;
 use mcp_test_support::create_final_assistant_message_sse_response;
 use mcp_test_support::create_mock_responses_server;
-use mcp_test_support::create_shell_command_sse_response;
-use mcp_test_support::format_with_current_shell;
 
 // Allow ample time on slower CI or under load to avoid flakes.
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
-
-/// Test that a shell command that is not on the "trusted" list triggers an
-/// elicitation request to the MCP and that sending the approval runs the
-/// command, as expected.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_shell_command_approval_triggers_elicitation() {
-    if env::var(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok() {
-        println!(
-            "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
-        );
-        return;
-    }
-
-    // Apparently `#[tokio::test]` must return `()`, so we create a helper
-    // function that returns `Result` so we can use `?` in favor of `unwrap`.
-    if let Err(err) = shell_command_approval_triggers_elicitation().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
-    // Use a simple, untrusted command that creates a file so we can
-    // observe a side-effect.
-    let workdir_for_shell_function_call = TempDir::new()?;
-    let created_filename = "created_by_shell_tool.txt";
-    let created_file = workdir_for_shell_function_call
-        .path()
-        .join(created_filename);
-
-    let shell_command = vec!["touch".to_string(), created_filename.to_string()];
-    let expected_shell_command =
-        format_with_current_shell(&shlex::try_join(shell_command.iter().map(String::as_str))?);
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(vec![
-        create_shell_command_sse_response(
-            shell_command.clone(),
-            Some(workdir_for_shell_function_call.path()),
-            Some(5_000),
-            "call1234",
-        )?,
-        create_final_assistant_message_sse_response("File created!")?,
-    ])
-    .await?;
-
-    // Send a "chaos" tool request, which should hit the responses endpoint.
-    // In turn, it should reply with a tool call, which the MCP should forward
-    // as an elicitation.
-    let (codex_request_id, elicitation_request, request_params) =
-        send_tool_call_and_read_elicitation(
-            &mut mcp_process,
-            ChaosToolParams {
-                prompt: "run `git init`".to_string(),
-                ..Default::default()
-            },
-        )
-        .await?;
-    let params = serde_json::from_value::<ExecApprovalElicitRequestParams>(request_params.clone())?;
-    assert_eq!(
-        request_params,
-        create_expected_elicitation_request_params(
-            expected_shell_command,
-            workdir_for_shell_function_call.path(),
-            codex_request_id.to_string(),
-            params.meta.chaos_event_id.clone(),
-            params.meta.process_id,
-        )?
-    );
-
-    // Accept the `git init` request by responding to the elicitation.
-    accept_elicitation_response(
-        &mut mcp_process,
-        &elicitation_request,
-        &ExecApprovalResponse {
-            action: ApprovalElicitationAction::Accept,
-            content: Some(json!({})),
-            meta: None,
-        },
-    )
-    .await?;
-
-    // Verify task_complete notification arrives before the tool call completes.
-    #[expect(clippy::expect_used)]
-    let _task_complete = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_legacy_task_complete_notification(),
-    )
-    .await
-    .expect("task_complete_notification timeout")
-    .expect("task_complete_notification resp");
-
-    // Verify the original `chaos` tool call completes and that the file was created.
-    assert_tool_response_content(
-        &mut mcp_process,
-        codex_request_id,
-        params.meta.process_id,
-        "File created!",
-    )
-    .await?;
-
-    assert!(created_file.is_file(), "created file should exist");
-
-    Ok(())
-}
-
-fn create_expected_elicitation_request_params(
-    command: Vec<String>,
-    workdir: &Path,
-    codex_mcp_tool_call_id: String,
-    chaos_event_id: String,
-    process_id: chaos_ipc::ProcessId,
-) -> anyhow::Result<serde_json::Value> {
-    let expected_message = format!(
-        "Allow Chaos to run `{}` in `{}`?",
-        shlex::try_join(command.iter().map(std::convert::AsRef::as_ref))?,
-        workdir.to_string_lossy()
-    );
-    let codex_parsed_cmd = parse_command::parse_command(&command);
-    let params_json = serde_json::to_value(ExecApprovalElicitRequestParams {
-        message: expected_message,
-        requested_schema: json!({"type":"object","properties":{}}),
-        meta: ExecApprovalElicitRequestMeta {
-            process_id,
-            codex_elicitation: "exec-approval".to_string(),
-            codex_mcp_tool_call_id,
-            chaos_event_id,
-            codex_command: command,
-            codex_cwd: workdir.to_path_buf(),
-            codex_call_id: "call1234".to_string(),
-            codex_parsed_cmd,
-        },
-    })?;
-    Ok(params_json)
-}
 
 /// Test that patch approval triggers an elicitation request to the MCP and that
 /// sending the approval applies the patch, as expected.
@@ -496,91 +353,6 @@ fn create_expected_patch_approval_elicitation_request_params(
     Ok(params_json)
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_shell_command_without_elicitation_capability_is_denied() {
-    if env::var(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok() {
-        println!(
-            "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
-        );
-        return;
-    }
-
-    if let Err(err) = shell_command_without_elicitation_capability_is_denied().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Result<()> {
-    let workdir_for_shell_function_call = TempDir::new()?;
-    let created_filename = "created_by_shell_tool.txt";
-    let created_file = workdir_for_shell_function_call
-        .path()
-        .join(created_filename);
-    let shell_command = vec!["touch".to_string(), created_filename.to_string()];
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process_without_elicitation(vec![
-        create_shell_command_sse_response(
-            shell_command,
-            Some(workdir_for_shell_function_call.path()),
-            Some(5_000),
-            "call1234",
-        )?,
-        create_final_assistant_message_sse_response("Command rejected.")?,
-    ])
-    .await?;
-
-    let codex_request_id = mcp_process
-        .send_chaos_tool_call(ChaosToolParams {
-            prompt: "run `git init`".to_string(),
-            ..Default::default()
-        })
-        .await?;
-
-    let final_response = loop {
-        let message = timeout(
-            DEFAULT_READ_TIMEOUT,
-            mcp_process.read_next_jsonrpc_message(),
-        )
-        .await??;
-        match message {
-            JsonRpcMessage::Notification(_) => {}
-            JsonRpcMessage::Request(request) => {
-                panic!("unexpected elicitation request: {request:?}");
-            }
-            JsonRpcMessage::Response(ref resp) if resp.error.is_some() => {
-                panic!("unexpected json-rpc error: {resp:?}");
-            }
-            JsonRpcMessage::Response(response) if response.id == Some(json!(codex_request_id)) => {
-                break response;
-            }
-            JsonRpcMessage::Response(_) => {}
-        }
-    };
-
-    assert!(
-        !created_file.exists(),
-        "command should not have been executed"
-    );
-
-    let result = final_response
-        .result
-        .ok_or_else(|| anyhow::anyhow!("denied shell command should return a result"))?;
-    assert!(
-        result
-            .get("structuredContent")
-            .and_then(|value| value.get("content"))
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|content| content.contains("rejected")),
-        "expected denied tool response content, got {result:?}"
-    );
-
-    Ok(())
-}
-
 /// The `provider` argument has to do two things: reach `ConfigOverrides` so the
 /// session actually runs against the chosen provider, and reject ids that are
 /// not configured instead of silently falling back to the default.
@@ -721,25 +493,6 @@ async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle>
     create_config_toml(chaos_home.path(), &server.uri())?;
     let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
-    Ok(McpHandle {
-        process: mcp_process,
-        server,
-        dir: chaos_home,
-    })
-}
-
-async fn create_mcp_process_without_elicitation(
-    responses: Vec<String>,
-) -> anyhow::Result<McpHandle> {
-    let server = create_mock_responses_server(responses).await;
-    let chaos_home = TempDir::new()?;
-    create_config_toml(chaos_home.path(), &server.uri())?;
-    let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
-    timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.initialize_without_elicitation(),
-    )
-    .await??;
     Ok(McpHandle {
         process: mcp_process,
         server,

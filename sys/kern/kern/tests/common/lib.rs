@@ -18,7 +18,6 @@ pub mod process;
 pub mod responses;
 pub mod streaming_sse;
 pub mod test_chaos;
-pub mod test_chaos_fork;
 
 /// Re-exports of the shared OAuth/JWT test fixtures so existing kernel test
 /// modules keep importing them from `core_test_support` without caring where

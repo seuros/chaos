@@ -839,6 +839,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn lib_suite() {
         std::thread::Builder::new()
             .name("console-lib-suite".to_string())

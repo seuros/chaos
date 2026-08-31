@@ -26,3 +26,5 @@ libnull.rlib
 /coverage/
 /lcov.info
 /profdata/
+!/.config/
+!/.config/nextest.toml

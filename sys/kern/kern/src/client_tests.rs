@@ -18,14 +18,18 @@ use chaos_ipc::protocol::SubAgentSource;
 use chaos_parrot::anthropic::AnthropicAuth;
 use pretty_assertions::assert_eq;
 
-fn test_model_client(session_source: SessionSource) -> ModelClient {
+fn test_model_client_for_process(
+    session_source: SessionSource,
+    process_id: ProcessId,
+    clamp_settings: crate::config::ClampSettings,
+) -> ModelClient {
     let provider = crate::model_provider_info::create_oss_provider_with_base_url(
         "https://example.com/v1",
         crate::model_provider_info::WireApi::Responses,
     );
     ModelClient::new(
         None,
-        ProcessId::new(),
+        process_id,
         "gpt-oss".to_string(),
         provider,
         session_source,
@@ -34,6 +38,14 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         false,
         None,
         false,
+        clamp_settings,
+    )
+}
+
+fn test_model_client(session_source: SessionSource) -> ModelClient {
+    test_model_client_for_process(
+        session_source,
+        ProcessId::new(),
         crate::config::ClampSettings::default(),
     )
 }
@@ -59,6 +71,49 @@ fn model_client_can_start_clamped_before_the_first_turn() {
     );
 
     assert!(client.is_clamped());
+}
+
+#[test]
+fn antigravity_conversation_state_resumes_across_model_clients() {
+    let home = tempfile::tempdir().expect("temporary Antigravity home");
+    let process_id = ProcessId::new();
+    let clamp_settings = crate::config::ClampSettings {
+        backend: crate::config::ClampBackend::Antigravity,
+        antigravity: crate::config::AntigravitySettings {
+            home: Some(home.path().to_path_buf()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let expected_path = home
+        .path()
+        .join(".chaos-conversations")
+        .join(format!("{process_id}.json"));
+
+    let initial =
+        test_model_client_for_process(SessionSource::Exec, process_id, clamp_settings.clone());
+    let initial_store = initial
+        .state
+        .antigravity_conversations
+        .as_ref()
+        .expect("Antigravity conversation store");
+    assert_eq!(initial_store.path(), expected_path.as_path());
+    initial_store
+        .save("gemini-3.1-pro-low", "conversation-e2e")
+        .expect("persist provider conversation");
+    drop(initial);
+
+    let resumed = test_model_client_for_process(SessionSource::Exec, process_id, clamp_settings);
+    let resumed_store = resumed
+        .state
+        .antigravity_conversations
+        .as_ref()
+        .expect("Antigravity conversation store");
+    assert_eq!(resumed_store.path(), expected_path.as_path());
+    assert_eq!(
+        resumed_store.load("gemini-3.1-pro-low"),
+        Some("conversation-e2e".to_string())
+    );
 }
 
 fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {

@@ -35,9 +35,10 @@ fn append_mcp_server_instructions(
          Apply each section when using that server's tools or resources.",
     );
     for entry in server_instructions {
-        base_instructions
-            .text
-            .push_str(&format!("\n\n## {}\n\n{}", entry.server_name, entry.instructions));
+        base_instructions.text.push_str(&format!(
+            "\n\n## {}\n\n{}",
+            entry.server_name, entry.instructions
+        ));
     }
 }
 

@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 
+use crate::async_breaker::BreakerError;
 use crate::config::ConfigToml;
 use crate::git_info::resolve_root_git_project_for_trust;
 use chaos_ipc::api::ConfigLayerSource;
@@ -18,6 +19,7 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use toml::Value as TomlValue;
+use tracing::warn;
 
 pub use chaos_sysctl::AppRequirementToml;
 pub use chaos_sysctl::AppsRequirementsToml;
@@ -613,21 +615,46 @@ async fn project_trust_context(
         trust_candidates.insert(repo_root.as_path().to_path_buf());
     }
 
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
+    let mut trust_levels_by_path = std::collections::HashMap::new();
+    let runtime = match crate::runtime_db::open_or_create_runtime_db_with_config(
         storage_url,
         sqlite_home,
         "unknown",
     )
     .await
-    .map_err(|err| io::Error::other(format!("failed to open runtime storage: {err}")))?;
-    let mut trust_levels_by_path = std::collections::HashMap::new();
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            warn!(
+                error = %err,
+                "runtime storage unavailable while loading project trust; treating the project as untrusted"
+            );
+            return Ok(ProjectTrustContext {
+                project_root,
+                project_root_key,
+                repo_root_key,
+                trust_levels_by_path,
+            });
+        }
+    };
     for candidate in trust_candidates {
-        if let Some(trust_level) = runtime
-            .get_project_trust(candidate.as_path())
-            .await
-            .map_err(|err| io::Error::other(format!("failed to read project trust: {err}")))?
+        match crate::runtime_db::with_runtime_storage_breaker(|| {
+            runtime.get_project_trust(candidate.as_path())
+        })
+        .await
         {
-            trust_levels_by_path.insert(candidate.to_string_lossy().to_string(), trust_level);
+            Ok(Some(trust_level)) => {
+                trust_levels_by_path.insert(candidate.to_string_lossy().to_string(), trust_level);
+            }
+            Ok(None) => {}
+            Err(BreakerError::Open) => break,
+            Err(BreakerError::Operation(err)) => {
+                warn!(
+                    error = %err,
+                    "runtime storage failed while loading project trust; treating unresolved paths as untrusted"
+                );
+                break;
+            }
         }
     }
 

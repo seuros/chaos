@@ -16,6 +16,7 @@ extern crate chaos_git;
 pub mod api_bridge;
 mod apply_patch;
 mod arc_monitor;
+mod async_breaker;
 pub mod auth;
 pub mod builtin_mcp_resources;
 pub(crate) mod catalog;

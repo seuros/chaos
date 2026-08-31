@@ -1,3 +1,5 @@
+use crate::async_breaker::AsyncCircuitBreaker;
+use crate::async_breaker::BreakerError;
 use crate::config::Config;
 use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::health::RuntimeStorageBackend;
@@ -22,9 +24,30 @@ use serde_json::Value;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tracing::warn;
 use uuid::Uuid;
+
+const RUNTIME_STORAGE_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+
+static RUNTIME_STORAGE_BREAKER: LazyLock<AsyncCircuitBreaker> = LazyLock::new(|| {
+    AsyncCircuitBreaker::new(
+        "runtime-storage",
+        1,
+        Duration::from_secs(60),
+        RUNTIME_STORAGE_HALF_OPEN_TIMEOUT,
+        1,
+    )
+});
+
+pub(crate) async fn with_runtime_storage_breaker<T, E, F, Fut>(op: F) -> Result<T, BreakerError<E>>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+{
+    RUNTIME_STORAGE_BREAKER.call(op).await
+}
 
 /// Initialize the runtime DB for thread persistence. To only be used
 /// inside `core`. The initialization should not be done anywhere else.
@@ -151,6 +174,23 @@ pub async fn mount_vfs(config: &Config) -> anyhow::Result<&'static ChaosVfs> {
     mount_root_for(config.storage_url.as_deref(), config.sqlite_home.as_path()).await
 }
 
+/// Attempt to mount runtime storage without making application boot depend on it.
+///
+/// Frontends use this during startup; session-local persistence will remain
+/// unavailable or degraded until a later breaker probe succeeds.
+pub async fn mount_vfs_best_effort(config: &Config) -> Option<&'static ChaosVfs> {
+    match mount_vfs(config).await {
+        Ok(vfs) => Some(vfs),
+        Err(err) => {
+            warn!(
+                error = %err,
+                "runtime storage is unavailable; continuing without database-backed services"
+            );
+            None
+        }
+    }
+}
+
 /// Trait-friendly variant: accepts only the fields needed to mount.
 pub async fn mount_root_for(
     storage_url: Option<&str>,
@@ -172,7 +212,13 @@ pub async fn mount_vfs_for(
         return Ok(vfs);
     }
 
-    let vfs = ChaosVfs::from_config(config.clone()).await?;
+    let vfs = match with_runtime_storage_breaker(|| ChaosVfs::from_config(config.clone())).await {
+        Ok(vfs) => vfs,
+        Err(BreakerError::Open) => {
+            anyhow::bail!("runtime storage circuit is open; database probe is backing off")
+        }
+        Err(BreakerError::Operation(err)) => return Err(err.into()),
+    };
     Ok(chaos_vfs::mount(config, vfs))
 }
 
@@ -416,9 +462,9 @@ pub async fn apply_rollout_items(
     stage: &str,
     new_process_memory_mode: Option<&str>,
     updated_at_override: Option<Timestamp>,
-) {
+) -> bool {
     let Some(ctx) = context else {
-        return;
+        return false;
     };
     let mut builder = match builder {
         Some(builder) => builder.clone(),
@@ -429,44 +475,62 @@ pub async fn apply_rollout_items(
                 warn!(
                     "runtime db discrepancy during apply_rollout_items: {stage}, missing_builder"
                 );
-                return;
+                return false;
             }
         },
     };
     builder.cwd = normalize_cwd_for_runtime_db(&builder.cwd);
-    if let Err(err) = ctx
-        .apply_rollout_items(
+    match with_runtime_storage_breaker(|| {
+        ctx.apply_rollout_items(
             &builder,
             items,
             new_process_memory_mode,
             updated_at_override,
         )
-        .await
+    })
+    .await
     {
-        warn!("runtime db apply_rollout_items failed during {stage}: {err}");
+        Ok(()) => true,
+        Err(BreakerError::Open) => false,
+        Err(BreakerError::Operation(err)) => {
+            warn!("runtime db apply_rollout_items failed during {stage}: {err}");
+            false
+        }
     }
 }
 
-pub async fn touch_process_updated_at(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TouchProcessResult {
+    Updated,
+    Missing,
+    Unavailable,
+}
+
+pub(crate) async fn touch_process_updated_at(
     context: Option<&RuntimeDbHandle>,
     process_id: Option<ProcessId>,
     updated_at: Timestamp,
     stage: &str,
-) -> bool {
+) -> TouchProcessResult {
     let Some(ctx) = context else {
-        return false;
+        return TouchProcessResult::Unavailable;
     };
     let Some(process_id) = process_id else {
-        return false;
+        return TouchProcessResult::Missing;
     };
-    ctx.touch_process_updated_at(process_id, updated_at)
+    match with_runtime_storage_breaker(|| ctx.touch_process_updated_at(process_id, updated_at))
         .await
-        .unwrap_or_else(|err| {
+    {
+        Ok(true) => TouchProcessResult::Updated,
+        Ok(false) => TouchProcessResult::Missing,
+        Err(BreakerError::Open) => TouchProcessResult::Unavailable,
+        Err(BreakerError::Operation(err)) => {
             warn!(
                 "runtime db touch_process_updated_at failed during {stage} for {process_id}: {err}"
             );
-            false
-        })
+            TouchProcessResult::Unavailable
+        }
+    }
 }
 
 #[cfg(test)]

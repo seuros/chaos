@@ -24,7 +24,7 @@ use jiff::Timestamp;
 use time::OffsetDateTime;
 use time::format_description::FormatItem;
 use time::macros::format_description;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::{self};
 use tokio::sync::oneshot;
 use tracing::info;
@@ -40,6 +40,8 @@ use super::list::ProcessesPage;
 use super::metadata;
 use super::policy::EventPersistenceMode;
 use super::policy::is_persisted_response_item;
+use crate::async_breaker::AsyncCircuitBreaker;
+use crate::async_breaker::BreakerError;
 use crate::default_client::originator;
 use crate::git_info::collect_git_info;
 use crate::path_utils;
@@ -63,7 +65,7 @@ use chaos_traits::RolloutConfig;
 
 #[derive(Clone)]
 pub struct RolloutRecorder {
-    tx: Sender<RolloutCmd>,
+    tx: UnboundedSender<RolloutCmd>,
     runtime_db: Option<RuntimeDbHandle>,
     event_persistence_mode: EventPersistenceMode,
     live_rollout_items: Arc<Mutex<Vec<RolloutItem>>>,
@@ -438,10 +440,11 @@ impl RolloutRecorder {
         // Clone the cwd for the spawned task to collect git info asynchronously
         let cwd = config.cwd().to_path_buf();
 
-        // A reasonably-sized bounded channel. If the buffer fills up the send
-        // future will yield, which is fine – we only need to ensure we do not
-        // perform *blocking* I/O on the caller's thread.
-        let (tx, rx) = mpsc::channel::<RolloutCmd>(256);
+        // Persistence is a scribe, not a turn dependency. An unbounded command
+        // queue keeps database latency and outages from applying backpressure
+        // to event delivery; the in-memory rollout snapshot remains the source
+        // for live recovery while the writer catches up.
+        let (tx, rx) = mpsc::unbounded_channel::<RolloutCmd>();
         tokio::task::spawn(rollout_writer(
             persisted,
             rx,
@@ -495,7 +498,6 @@ impl RolloutRecorder {
             .extend(filtered.iter().cloned());
         self.tx
             .send(RolloutCmd::AddItems(filtered))
-            .await
             .map_err(|e| IoError::other(format!("failed to queue rollout items: {e}")))
     }
 
@@ -513,10 +515,17 @@ impl RolloutRecorder {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RolloutCmd::Persist { ack: tx })
-            .await
             .map_err(|e| IoError::other(format!("failed to queue rollout persist: {e}")))?;
         rx.await
             .map_err(|e| IoError::other(format!("failed waiting for rollout persist: {e}")))
+    }
+
+    /// Queue first materialization without waiting for storage.
+    pub(crate) fn request_persist(&self) -> std::io::Result<()> {
+        let (ack, _rx) = oneshot::channel();
+        self.tx
+            .send(RolloutCmd::Persist { ack })
+            .map_err(|e| IoError::other(format!("failed to queue rollout persist: {e}")))
     }
 
     /// Flush all queued writes and wait until they are committed by the writer task.
@@ -524,7 +533,6 @@ impl RolloutRecorder {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(RolloutCmd::Flush { ack: tx })
-            .await
             .map_err(|e| IoError::other(format!("failed to queue rollout flush: {e}")))?;
         rx.await
             .map_err(|e| IoError::other(format!("failed waiting for rollout flush: {e}")))
@@ -629,10 +637,18 @@ impl RolloutRecorder {
 
     pub async fn shutdown(&self) -> std::io::Result<()> {
         let (tx_done, rx_done) = oneshot::channel();
-        match self.tx.send(RolloutCmd::Shutdown { ack: tx_done }).await {
-            Ok(_) => rx_done
-                .await
-                .map_err(|e| IoError::other(format!("failed waiting for rollout shutdown: {e}")))?,
+        match self.tx.send(RolloutCmd::Shutdown { ack: tx_done }) {
+            Ok(_) => match tokio::time::timeout(Duration::from_millis(250), rx_done).await {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => {
+                    return Err(IoError::other(format!(
+                        "failed waiting for rollout shutdown: {err}"
+                    )));
+                }
+                Err(_) => {
+                    warn!("rollout shutdown is still draining in the background");
+                }
+            },
             Err(e) => {
                 warn!("failed to send rollout shutdown command: {e}");
                 return Err(IoError::other(format!(
@@ -650,6 +666,7 @@ const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
 const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
 const JOURNAL_APPEND_MAX_ATTEMPTS: usize = 8;
 const JOURNAL_APPEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(25);
+const JOURNAL_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JournalSinkMode {
@@ -674,9 +691,23 @@ struct PendingJournalConfig {
     mode: JournalSinkMode,
 }
 
-enum JournalSink {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum JournalAppendOutcome {
+    Persisted,
+    Deferred,
+}
+
+struct JournalSink {
+    state: JournalSinkState,
+    breaker: AsyncCircuitBreaker,
+}
+
+enum JournalSinkState {
     Disabled,
-    Pending(PendingJournalConfig),
+    Pending {
+        config: PendingJournalConfig,
+        items: Vec<RolloutItem>,
+    },
     Active(ActiveJournalWriter),
 }
 
@@ -692,66 +723,131 @@ struct ActiveJournalWriter {
 
 impl JournalSink {
     fn pending(config: PendingJournalConfig) -> Self {
-        Self::Pending(config)
+        let process_id = config.process_id;
+        Self {
+            state: JournalSinkState::Pending {
+                config,
+                items: Vec::new(),
+            },
+            breaker: AsyncCircuitBreaker::new(
+                format!("rollout-scribe:{process_id}"),
+                1,
+                Duration::from_secs(60),
+                JOURNAL_HALF_OPEN_TIMEOUT,
+                1,
+            ),
+        }
     }
 
-    async fn append_items(&mut self, items: &[RolloutItem]) {
+    async fn append_items(&mut self, items: &[RolloutItem]) -> JournalAppendOutcome {
         if items.is_empty() {
-            return;
+            return JournalAppendOutcome::Persisted;
         }
 
-        match std::mem::replace(self, Self::Disabled) {
-            Self::Disabled => {
-                *self = Self::Disabled;
+        match std::mem::replace(&mut self.state, JournalSinkState::Disabled) {
+            JournalSinkState::Disabled => {
+                self.state = JournalSinkState::Disabled;
+                JournalAppendOutcome::Deferred
             }
-            Self::Pending(config) => {
-                let connect_result = match config.mode {
-                    JournalSinkMode::Create => ActiveJournalWriter::initialize(config, items).await,
-                    JournalSinkMode::Resume => {
-                        ActiveJournalWriter::attach_resumed(config, items).await
-                    }
-                };
+            JournalSinkState::Pending {
+                config,
+                items: mut pending_items,
+            } => {
+                pending_items.extend(items.iter().cloned());
+                let config_for_call = config.clone();
+                let connect_result = self
+                    .breaker
+                    .call(|| async {
+                        match config_for_call.mode {
+                            JournalSinkMode::Create => {
+                                ActiveJournalWriter::initialize(
+                                    config_for_call,
+                                    pending_items.as_slice(),
+                                )
+                                .await
+                            }
+                            JournalSinkMode::Resume => {
+                                ActiveJournalWriter::attach_resumed(
+                                    config_for_call,
+                                    pending_items.as_slice(),
+                                )
+                                .await
+                            }
+                        }
+                    })
+                    .await;
                 match connect_result {
                     Ok(writer) => {
                         health::set_persistence_health(PersistenceHealth::Healthy);
-                        *self = Self::Active(writer);
+                        self.state = JournalSinkState::Active(writer);
+                        JournalAppendOutcome::Persisted
                     }
-                    Err(err) => {
+                    Err(BreakerError::Open) => {
+                        self.state = JournalSinkState::Pending {
+                            config,
+                            items: pending_items,
+                        };
+                        JournalAppendOutcome::Deferred
+                    }
+                    Err(BreakerError::Operation(err)) => {
                         warn!("failed to initialize journal sink: {err}");
                         health::set_persistence_health(PersistenceHealth::Failed);
-                        *self = Self::Disabled;
+                        self.state = JournalSinkState::Pending {
+                            config,
+                            items: pending_items,
+                        };
+                        JournalAppendOutcome::Deferred
                     }
                 }
             }
-            Self::Active(mut writer) => {
-                if let Err(err) = writer.append_items(items).await {
-                    warn!("journal sink disabled after append failure: {err}");
-                    health::set_persistence_health(PersistenceHealth::Failed);
-                    *self = Self::Disabled;
-                } else {
-                    if writer.pending_items.is_empty() {
+            JournalSinkState::Active(mut writer) => {
+                match self.breaker.call(|| writer.append_items(items)).await {
+                    Ok(()) => {
                         health::set_persistence_health(PersistenceHealth::Healthy);
+                        self.state = JournalSinkState::Active(writer);
+                        JournalAppendOutcome::Persisted
                     }
-                    *self = Self::Active(writer);
+                    Err(BreakerError::Open) => {
+                        writer.defer_items(items);
+                        self.state = JournalSinkState::Active(writer);
+                        JournalAppendOutcome::Deferred
+                    }
+                    Err(BreakerError::Operation(err)) => {
+                        warn!("journal append deferred after failure: {err}");
+                        health::set_persistence_health(PersistenceHealth::Failed);
+                        self.state = JournalSinkState::Active(writer);
+                        JournalAppendOutcome::Deferred
+                    }
                 }
             }
         }
     }
 
     async fn shutdown(&mut self) {
-        let state = std::mem::replace(self, Self::Disabled);
-        if let Self::Active(mut writer) = state {
-            if let Err(err) = writer.flush_pending_items().await {
-                warn!("failed to flush pending journal items during shutdown: {err}");
+        let state = std::mem::replace(&mut self.state, JournalSinkState::Disabled);
+        if let JournalSinkState::Active(mut writer) = state {
+            match self.breaker.call(|| writer.flush_pending_items()).await {
+                Ok(()) => {}
+                Err(BreakerError::Open) => return,
+                Err(BreakerError::Operation(err)) => {
+                    warn!("failed to flush pending journal items during shutdown: {err}");
+                    return;
+                }
             }
-            if let Err(err) = writer.release_lease().await {
-                warn!("failed to release journal lease: {err}");
+            match self.breaker.call(|| writer.release_lease()).await {
+                Ok(()) | Err(BreakerError::Open) => {}
+                Err(BreakerError::Operation(err)) => {
+                    warn!("failed to release journal lease: {err}");
+                }
             }
         }
     }
 }
 
 impl ActiveJournalWriter {
+    fn defer_items(&mut self, items: &[RolloutItem]) {
+        self.pending_items.extend(items.iter().cloned());
+    }
     /// Atomically create the process row, acquire the writer lease, and append the first
     /// batch of items in one journald transaction. Used only for `JournalSinkMode::Create`
     /// — readers will never observe a process row that lacks transcript entries via this path.
@@ -894,7 +990,10 @@ impl ActiveJournalWriter {
 
         let mut attempt = 0usize;
         loop {
-            self.ensure_lease().await?;
+            if let Err(err) = self.ensure_lease().await {
+                self.pending_items = batch;
+                return Err(err);
+            }
 
             let expected_next_seq = self.next_seq;
             let journal_items = batch
@@ -928,8 +1027,10 @@ impl ActiveJournalWriter {
                 {
                     health::set_persistence_health(PersistenceHealth::Degraded);
                     attempt += 1;
-                    self.reconcile_after_retryable_append_error(&payload)
-                        .await?;
+                    if let Err(err) = self.reconcile_after_retryable_append_error(&payload).await {
+                        self.pending_items = batch;
+                        return Err(err);
+                    }
                     let delay = retry_delay(attempt);
                     warn!(
                         process_id = %self.process_id,
@@ -949,9 +1050,12 @@ impl ActiveJournalWriter {
                         "journal append retry budget exhausted; retaining batch for next flush"
                     );
                     self.pending_items = batch;
-                    return Ok(());
+                    return Err("journal append retry budget exhausted".to_string());
                 }
-                Err(err) => return Err(format!("append_batch failed: {err}")),
+                Err(err) => {
+                    self.pending_items = batch;
+                    return Err(format!("append_batch failed: {err}"));
+                }
             }
         }
     }
@@ -1283,7 +1387,7 @@ fn cleanup_user_message_preview(mut text: String) -> Option<String> {
 #[allow(clippy::too_many_arguments)]
 async fn rollout_writer(
     mut persisted: bool,
-    mut rx: mpsc::Receiver<RolloutCmd>,
+    mut rx: mpsc::UnboundedReceiver<RolloutCmd>,
     mut meta: Option<SessionMeta>,
     cwd: std::path::PathBuf,
     runtime_db_ctx: Option<RuntimeDbHandle>,
@@ -1338,15 +1442,18 @@ async fn rollout_writer(
                     };
                     first_batch.append(&mut buffered_items);
                     if !first_batch.is_empty() {
-                        journal_sink.append_items(first_batch.as_slice()).await;
-                        sync_process_state_after_write(
-                            runtime_db_ctx.as_ref(),
-                            state_builder.as_ref(),
-                            first_batch.as_slice(),
-                            default_provider.as_str(),
-                            memory_mode,
-                        )
-                        .await;
+                        if journal_sink.append_items(first_batch.as_slice()).await
+                            == JournalAppendOutcome::Persisted
+                        {
+                            sync_process_state_after_write(
+                                runtime_db_ctx.as_ref(),
+                                state_builder.as_ref(),
+                                first_batch.as_slice(),
+                                default_provider.as_str(),
+                                memory_mode,
+                            )
+                            .await;
+                        }
                     }
                     persisted = true;
                 }
@@ -1358,6 +1465,7 @@ async fn rollout_writer(
             RolloutCmd::Shutdown { ack } => {
                 journal_sink.shutdown().await;
                 let _ = ack.send(());
+                return Ok(());
             }
         }
     }
@@ -1394,15 +1502,16 @@ async fn write_and_reconcile_items(
     default_provider: &str,
     journal_sink: &mut JournalSink,
 ) -> std::io::Result<()> {
-    journal_sink.append_items(items).await;
-    sync_process_state_after_write(
-        runtime_db_ctx,
-        state_builder,
-        items,
-        default_provider,
-        /*new_process_memory_mode*/ None,
-    )
-    .await;
+    if journal_sink.append_items(items).await == JournalAppendOutcome::Persisted {
+        sync_process_state_after_write(
+            runtime_db_ctx,
+            state_builder,
+            items,
+            default_provider,
+            /*new_process_memory_mode*/ None,
+        )
+        .await;
+    }
     Ok(())
 }
 
@@ -1435,7 +1544,7 @@ async fn sync_process_state_after_write(
     let process_id = state_builder
         .map(|builder| builder.id)
         .or_else(|| metadata::builder_from_items(items).map(|builder| builder.id));
-    if runtime_db::touch_process_updated_at(
+    match runtime_db::touch_process_updated_at(
         runtime_db_ctx,
         process_id,
         updated_at,
@@ -1443,7 +1552,10 @@ async fn sync_process_state_after_write(
     )
     .await
     {
-        return;
+        runtime_db::TouchProcessResult::Updated | runtime_db::TouchProcessResult::Unavailable => {
+            return;
+        }
+        runtime_db::TouchProcessResult::Missing => {}
     }
     runtime_db::apply_rollout_items(
         runtime_db_ctx,

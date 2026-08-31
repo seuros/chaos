@@ -205,7 +205,6 @@ impl Session {
                         )
                         .await;
                     let sess = session_ctx.clone_session();
-                    sess.flush_rollout().await;
                     if !task_cancellation_token.is_cancelled() {
                         // Emit completion uniformly from spawn site so all tasks share the same lifecycle.
                         sess.on_task_finished(Arc::clone(&ctx_for_finish), last_agent_message)
@@ -469,9 +468,8 @@ impl Session {
                 .await;
             self.persist_rollout_items(&[RolloutItem::ResponseItem(marker)])
                 .await;
-            // Ensure the marker is durably visible before emitting TurnAborted: some clients
-            // synchronously re-read the rollout on receipt of the abort event.
-            self.flush_rollout().await;
+            // The recorder preserves command ordering, so the marker is queued
+            // before TurnAborted without making interruption wait on storage.
         }
 
         let event = EventMsg::TurnAborted(TurnAbortedEvent {

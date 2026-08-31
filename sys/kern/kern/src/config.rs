@@ -1,3 +1,4 @@
+use crate::async_breaker::BreakerError;
 use crate::auth::AuthCredentialsStoreMode;
 use crate::config::types::AppsConfigToml;
 use crate::config::types::History;
@@ -47,6 +48,7 @@ use std::path::PathBuf;
 
 use crate::config::profile::ConfigProfile;
 use toml::Value as TomlValue;
+use tracing::warn;
 
 pub(crate) mod agent_roles;
 pub mod edit;
@@ -1144,10 +1146,17 @@ pub(crate) async fn load_effective_mcp_servers(
     sqlite_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> std::io::Result<HashMap<String, McpServerConfig>> {
-    let mut effective = load_global_mcp_servers_from_runtime_db(storage_url, sqlite_home)
-        .await?
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+    let global = match load_global_mcp_servers_from_runtime_db(storage_url, sqlite_home).await {
+        Ok(servers) => servers,
+        Err(err) => {
+            warn!(
+                error = %err,
+                "runtime storage unavailable while loading global MCP servers; continuing without them"
+            );
+            BTreeMap::new()
+        }
+    };
+    let mut effective = global.into_iter().collect::<HashMap<_, _>>();
 
     for layer in config_layer_stack.get_layers(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
@@ -1183,10 +1192,17 @@ async fn load_global_mcp_servers_from_runtime_db(
     )
     .await
     .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
-    runtime
-        .list_global_mcp_servers()
+    match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_global_mcp_servers())
         .await
-        .map_err(|err| std::io::Error::other(format!("failed to load global MCP servers: {err}")))
+    {
+        Ok(servers) => Ok(servers),
+        Err(BreakerError::Open) => Err(std::io::Error::other(
+            "runtime storage circuit is open while loading global MCP servers",
+        )),
+        Err(BreakerError::Operation(err)) => Err(std::io::Error::other(format!(
+            "failed to load global MCP servers: {err}"
+        ))),
+    }
 }
 
 async fn load_global_mcp_server_from_runtime_db(
@@ -1201,10 +1217,17 @@ async fn load_global_mcp_server_from_runtime_db(
     )
     .await
     .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
-    runtime
-        .get_global_mcp_server(name)
+    match crate::runtime_db::with_runtime_storage_breaker(|| runtime.get_global_mcp_server(name))
         .await
-        .map_err(|err| std::io::Error::other(format!("failed to load MCP server '{name}': {err}")))
+    {
+        Ok(server) => Ok(server),
+        Err(BreakerError::Open) => Err(std::io::Error::other(format!(
+            "runtime storage circuit is open while loading MCP server '{name}'"
+        ))),
+        Err(BreakerError::Operation(err)) => Err(std::io::Error::other(format!(
+            "failed to load MCP server '{name}': {err}"
+        ))),
+    }
 }
 
 pub async fn upsert_global_mcp_server(

@@ -117,14 +117,7 @@ pub async fn run_main(
 
     // Init runtime database singleton — same DB as TUI/CLI.
     let config = Arc::new(config);
-    chaos_kern::runtime_db::mount_vfs(&config)
-        .await
-        .map_err(|e| {
-            std::io::Error::new(
-                ErrorKind::InvalidData,
-                format!("error mounting runtime storage: {e}"),
-            )
-        })?;
+    chaos_kern::runtime_db::mount_vfs_best_effort(&config).await;
     let runtime_db = chaos_kern::runtime_db::get_runtime_db(&config);
 
     // Build ProcessTable.

@@ -32,7 +32,7 @@ impl Session {
             guard.clone()
         };
         if let Some(rec) = recorder
-            && let Err(e) = rec.persist().await
+            && let Err(e) = rec.request_persist()
         {
             warn!("failed to materialize rollout recorder: {e}");
         }

@@ -252,9 +252,7 @@ pub async fn run_main(
 
     let config = load_config_or_exit(cli_kv_overrides.clone(), overrides.clone()).await;
 
-    chaos_kern::runtime_db::mount_vfs(&config)
-        .await
-        .map_err(std::io::Error::other)?;
+    chaos_kern::runtime_db::mount_vfs_best_effort(&config).await;
 
     #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack).await {

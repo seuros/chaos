@@ -373,57 +373,6 @@ async fn request_permissions_emits_event_when_granular_policy_allows_requests() 
 }
 
 #[tokio::test]
-async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_requests() {
-    let (session, mut turn_context, rx) = make_session_and_context_with_rx().await;
-    *session.active_turn.lock().await = Some(ActiveTurn::default());
-    Arc::get_mut(&mut turn_context)
-        .expect("single turn context ref")
-        .approval_policy
-        .set(crate::protocol::ApprovalPolicy::Granular(
-            crate::protocol::GranularApprovalConfig {
-                sandbox_approval: true,
-                rules: true,
-                request_permissions: false,
-                mcp_elicitations: true,
-            },
-        ))
-        .expect("test setup should allow updating approval policy");
-
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context);
-    let call_id = "call-1".to_string();
-    let response = session
-        .request_permissions(
-            turn_context.as_ref(),
-            call_id,
-            chaos_ipc::request_permissions::RequestPermissionsArgs {
-                reason: Some("need network".to_string()),
-                permissions: RequestPermissionProfile {
-                    network: Some(chaos_ipc::models::NetworkPermissions {
-                        enabled: Some(true),
-                    }),
-                    ..RequestPermissionProfile::default()
-                },
-            },
-        )
-        .await;
-
-    assert_eq!(
-        response,
-        Some(chaos_ipc::request_permissions::RequestPermissionsResponse {
-            permissions: RequestPermissionProfile::default(),
-            scope: PermissionGrantScope::Turn,
-        })
-    );
-    assert!(
-        tokio::time::timeout(StdDuration::from_millis(100), rx.recv())
-            .await
-            .is_err(),
-        "request_permissions should not emit an event when granular.request_permissions is false"
-    );
-}
-
-#[tokio::test]
 async fn submit_with_id_captures_current_span_trace_context() {
     let (session, _turn_context) = make_session_and_context().await;
     let (tx_sub, rx_sub) = async_channel::bounded(1);

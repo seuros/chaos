@@ -1,8 +1,11 @@
 #![allow(clippy::expect_used)]
 use chaos_kern::auth::CHAOS_API_KEY_ENV_VAR;
 use std::path::Path;
+use std::time::Duration;
 use tempfile::TempDir;
 use wiremock::MockServer;
+
+const CHAOS_EXEC_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct TestChaosExecBuilder {
     home: TempDir,
@@ -17,7 +20,8 @@ impl TestChaosExecBuilder {
         cmd.current_dir(self.cwd.path())
             .arg("exec")
             .env("CHAOS_HOME", self.home.path())
-            .env(CHAOS_API_KEY_ENV_VAR, "dummy");
+            .env(CHAOS_API_KEY_ENV_VAR, "dummy")
+            .timeout(CHAOS_EXEC_TEST_TIMEOUT);
         cmd
     }
     pub fn cmd_with_server(&self, server: &MockServer) -> assert_cmd::Command {

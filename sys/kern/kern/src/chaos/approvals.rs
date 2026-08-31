@@ -38,6 +38,28 @@ use crate::protocol::ApprovalPolicy;
 use crate::state::turn::ApprovalKind;
 use crate::state::turn::PendingInsert;
 
+fn automatic_request_permissions_response(
+    approval_policy: ApprovalPolicy,
+) -> Option<RequestPermissionsResponse> {
+    match approval_policy {
+        ApprovalPolicy::Headless => Some(RequestPermissionsResponse {
+            permissions: RequestPermissionProfile::default(),
+            scope: PermissionGrantScope::Turn,
+        }),
+        ApprovalPolicy::Granular(granular_config)
+            if !granular_config.allows_request_permissions() =>
+        {
+            Some(RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+            })
+        }
+        ApprovalPolicy::Interactive | ApprovalPolicy::Supervised | ApprovalPolicy::Granular(_) => {
+            None
+        }
+    }
+}
+
 impl Session {
     /// Adds an execpolicy amendment to both the in-memory and on-disk policies
     /// so future commands can use the newly approved prefix.
@@ -331,24 +353,17 @@ impl Session {
         call_id: String,
         args: RequestPermissionsArgs,
     ) -> Option<RequestPermissionsResponse> {
-        match self.permission_snapshot(turn_context).await.approval_policy {
-            ApprovalPolicy::Headless => {
-                return Some(RequestPermissionsResponse {
-                    permissions: RequestPermissionProfile::default(),
-                    scope: PermissionGrantScope::Turn,
-                });
-            }
-            ApprovalPolicy::Granular(granular_config)
-                if !granular_config.allows_request_permissions() =>
-            {
-                return Some(RequestPermissionsResponse {
-                    permissions: RequestPermissionProfile::default(),
-                    scope: PermissionGrantScope::Turn,
-                });
-            }
-            ApprovalPolicy::Interactive
-            | ApprovalPolicy::Supervised
-            | ApprovalPolicy::Granular(_) => {}
+        if let Some(response) =
+            automatic_request_permissions_response(turn_context.approval_policy.value())
+        {
+            return Some(response);
+        }
+
+        let permission_snapshot = self.permission_snapshot(turn_context).await;
+        if let Some(response) =
+            automatic_request_permissions_response(permission_snapshot.approval_policy)
+        {
+            return Some(response);
         }
 
         let (tx_response, rx_response) = oneshot::channel();
@@ -565,5 +580,36 @@ impl Session {
         });
         self.send_event(turn_context, event).await;
         rx_response.await.ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn granular_policy_without_permission_requests_is_auto_denied() {
+        let policy = ApprovalPolicy::Granular(crate::protocol::GranularApprovalConfig {
+            sandbox_approval: true,
+            rules: true,
+            request_permissions: false,
+            mcp_elicitations: true,
+        });
+
+        assert_eq!(
+            automatic_request_permissions_response(policy),
+            Some(RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+            })
+        );
+    }
+
+    #[test]
+    fn interactive_policy_requires_a_client_response() {
+        assert_eq!(
+            automatic_request_permissions_response(ApprovalPolicy::Interactive),
+            None
+        );
     }
 }

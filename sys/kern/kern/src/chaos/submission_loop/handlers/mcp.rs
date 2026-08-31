@@ -70,7 +70,9 @@ async fn refresh_mcp_servers_now(
         sess.permission_actor
             .remove_turn(turn_context.sub_id.clone())
             .await
-            .expect("permission actor stopped while removing the refresh turn");
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while removing the refresh turn");
+            });
     }
     match result {
         Ok(event) => {
@@ -201,9 +203,9 @@ pub async fn update_permissions(
         let config = Session::build_per_turn_config(next);
         (
             next.cwd.clone(),
-            config.alcatraz_macos_exe.clone(),
-            config.alcatraz_linux_exe.clone(),
-            config.alcatraz_freebsd_exe.clone(),
+            config.alcatraz_macos_exe,
+            config.alcatraz_linux_exe,
+            config.alcatraz_freebsd_exe,
         )
     });
 
@@ -263,8 +265,15 @@ pub async fn update_permissions(
                         )
                     })
                     .or(fallback_mcp_runtime);
-                let (sandbox_cwd, alcatraz_macos_exe, alcatraz_linux_exe, alcatraz_freebsd_exe) =
-                    runtime.expect("permission update always has an MCP runtime context");
+                let Some((
+                    sandbox_cwd,
+                    alcatraz_macos_exe,
+                    alcatraz_linux_exe,
+                    alcatraz_freebsd_exe,
+                )) = runtime
+                else {
+                    panic!("permission update always has an MCP runtime context");
+                };
                 let sandbox_state = crate::SandboxState {
                     vfs_policy,
                     socket_policy,
@@ -280,7 +289,9 @@ pub async fn update_permissions(
                         sandbox_state,
                     )
                     .await
-                    .expect("MCP registry actor stopped while updating permissions");
+                    .unwrap_or_else(|_| {
+                        panic!("MCP registry actor stopped while updating permissions");
+                    });
             }
             sess.send_event_raw(Event {
                 id: sub_id,

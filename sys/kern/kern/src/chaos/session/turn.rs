@@ -66,7 +66,9 @@ impl Session {
         self.permission_actor
             .set_session_defaults(&session_configuration)
             .await
-            .expect("permission actor stopped while the session is running");
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while the session is running");
+            });
 
         self.maybe_refresh_shell_snapshot_for_cwd(
             &previous_cwd,
@@ -132,7 +134,9 @@ impl Session {
         self.permission_actor
             .register_turn(&turn_context)
             .await
-            .expect("permission actor stopped while registering a turn");
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while registering a turn");
+            });
         self.sync_mcp_permission_state(&turn_context).await;
         turn_context.turn_metadata_state.spawn_git_enrichment_task();
         turn_context
@@ -145,7 +149,9 @@ impl Session {
         self.permission_actor
             .snapshot(turn_context.sub_id.clone())
             .await
-            .expect("permission actor stopped while reading turn permissions")
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while reading turn permissions");
+            })
     }
 
     pub(crate) async fn new_default_turn(&self) -> Arc<TurnContext> {

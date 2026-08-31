@@ -561,6 +561,8 @@ impl Session {
             .mcp_registry
             .cancel()
             .await
-            .expect("MCP registry actor stopped while cancelling startup");
+            .unwrap_or_else(|_| {
+                panic!("MCP registry actor stopped while cancelling startup");
+            });
     }
 }

@@ -216,7 +216,7 @@ impl PermissionLayer {
         self.revision = self
             .revision
             .checked_add(1)
-            .expect("permission revision overflow");
+            .unwrap_or_else(|| panic!("permission revision overflow"));
     }
 }
 

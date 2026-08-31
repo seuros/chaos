@@ -300,7 +300,9 @@ async fn write_shell_snapshot(
     let raw_snapshot = capture_snapshot(&shell, cwd).await?;
     let snapshot = strip_snapshot_preamble(&raw_snapshot)?;
 
-    let parent = output_path.parent().expect("snapshot path has a parent");
+    let parent = output_path
+        .parent()
+        .with_context(|| format!("snapshot path {} has no parent", output_path.display()))?;
     let parent_display = parent.display();
     fs::create_dir_all(parent)
         .await

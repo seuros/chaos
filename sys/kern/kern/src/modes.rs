@@ -322,10 +322,10 @@ impl ModePolicy {
                 }
                 requested
             }
-            None if requested_mode.is_some() => {
-                BTreeSet::from([requested_mode.unwrap().to_string()])
-            }
-            None => capability_limited_parent_modes.clone(),
+            None => match requested_mode {
+                Some(mode) => BTreeSet::from([mode.to_string()]),
+                None => capability_limited_parent_modes.clone(),
+            },
         };
 
         let active_mode = match requested_mode {
@@ -350,7 +350,7 @@ impl ModePolicy {
                 .iter()
                 .next()
                 .cloned()
-                .expect("allowed mode set was validated as non-empty"),
+                .ok_or_else(|| "allowed mode set must not be empty".to_string())?,
         };
 
         let switching_allowed = requested_switching.unwrap_or_else(|| {

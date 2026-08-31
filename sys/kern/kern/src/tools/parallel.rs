@@ -73,7 +73,7 @@ impl ToolCallRuntime {
         let session = Arc::clone(&self.session);
         let turn = Arc::clone(&self.turn_context);
         let tracker = Arc::clone(&self.tracker);
-        let scheduler = self.scheduler.clone();
+        let scheduler = self.scheduler;
         let started = Instant::now();
 
         let dispatch_span = trace_span!(
@@ -193,7 +193,9 @@ impl ToolSchedule {
                 return;
             }
 
-            let next = self.queue.pop_front().expect("queued tool call exists");
+            let Some(next) = self.queue.pop_front() else {
+                return;
+            };
             if next.permit.send(()).is_err() {
                 continue;
             }
@@ -236,10 +238,10 @@ impl ToolSchedulerActor {
                             supports_parallel,
                             permit,
                         });
-                        let _ = packet
-                            .reply
-                            .expect("tool scheduler enqueue requires a reply")
-                            .send(());
+                        let Some(reply) = packet.reply else {
+                            panic!("tool scheduler enqueue requires a reply");
+                        };
+                        let _ = reply.send(());
                     }
                     Some(call_id) = released_calls.recv() => schedule.release(&call_id),
                     else => break,
@@ -279,9 +281,31 @@ struct ToolExecutionLease {
 
 impl Drop for ToolExecutionLease {
     fn drop(&mut self) {
-        self.releases
-            .send(self.call_id.take().expect("tool lease already released"))
-            .expect("tool scheduler actor stopped while a call was active");
+        if let Some(call_id) = self.call_id.take() {
+            let _ = self.releases.send(call_id);
+        }
+    }
+}
+
+impl ToolCallRuntime {
+    fn aborted_response(call: &ToolCall, secs: f32) -> AnyToolResult {
+        AnyToolResult {
+            call_id: call.call_id.clone(),
+            tool_name: call.tool_name.clone(),
+            payload: call.payload.clone(),
+            result: Box::new(AbortedToolOutput {
+                message: Self::abort_message(call, secs),
+            }),
+        }
+    }
+
+    fn abort_message(call: &ToolCall, secs: f32) -> String {
+        match call.tool_name.as_str() {
+            "shell" | "container.exec" | "local_shell" | "shell_command" | "unified_exec" => {
+                format!("Wall time: {secs:.1} seconds\naborted by user")
+            }
+            _ => format!("aborted by user after {secs:.1}s"),
+        }
     }
 }
 
@@ -365,27 +389,5 @@ mod scheduler_tests {
             schedule.active.get("second"),
             Some(&ToolExecutionMode::Exclusive)
         );
-    }
-}
-
-impl ToolCallRuntime {
-    fn aborted_response(call: &ToolCall, secs: f32) -> AnyToolResult {
-        AnyToolResult {
-            call_id: call.call_id.clone(),
-            tool_name: call.tool_name.clone(),
-            payload: call.payload.clone(),
-            result: Box::new(AbortedToolOutput {
-                message: Self::abort_message(call, secs),
-            }),
-        }
-    }
-
-    fn abort_message(call: &ToolCall, secs: f32) -> String {
-        match call.tool_name.as_str() {
-            "shell" | "container.exec" | "local_shell" | "shell_command" | "unified_exec" => {
-                format!("Wall time: {secs:.1} seconds\naborted by user")
-            }
-            _ => format!("aborted by user after {secs:.1}s"),
-        }
     }
 }

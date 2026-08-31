@@ -16,8 +16,6 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitStatus;
-#[cfg(target_os = "macos")]
-use std::process::Stdio;
 use tokio::fs::create_dir_all;
 use tokio::process::Child;
 #[cfg(target_os = "macos")]

@@ -81,7 +81,7 @@ impl Session {
             let mode_title = session_configuration
                 .mode_registry
                 .get(mode_id)
-                .expect("allowed mode must be registered")
+                .unwrap_or_else(|| panic!("allowed mode must be registered"))
                 .title
                 .clone();
             let collaboration_mode = session_configuration.mode_registry.apply_mode(
@@ -157,7 +157,9 @@ impl Session {
 
         let mode_capabilities = mode_registry
             .get(&mode_policy.active_mode)
-            .expect("validated session mode policy must reference a registered mode")
+            .unwrap_or_else(|| {
+                panic!("validated session mode policy must reference a registered mode");
+            })
             .capabilities;
         let mut config = (*base.config).clone();
         config.model_reasoning_effort = collaboration_mode.reasoning_effort();

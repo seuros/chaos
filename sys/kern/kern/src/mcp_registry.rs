@@ -177,10 +177,9 @@ impl McpRegistryActor {
                     McpRegistryCommand::Dispatch { server, job, reply } => {
                         match server_actors.get(&server) {
                             Some(actor) => {
-                                actor
-                                    .execute(job, reply)
-                                    .await
-                                    .expect("MCP server actor stopped during dispatch");
+                                actor.execute(job, reply).await.unwrap_or_else(|_| {
+                                    panic!("MCP server actor stopped during dispatch");
+                                });
                             }
                             None => {
                                 let _ = reply.send(Err(anyhow::anyhow!(
@@ -222,7 +221,7 @@ impl McpRegistryActor {
                             actor_revision
                                 .fetch_add(1, Ordering::SeqCst)
                                 .checked_add(1)
-                                .expect("MCP registry revision overflow")
+                                .unwrap_or_else(|| panic!("MCP registry revision overflow"))
                         } else {
                             actor_revision.load(Ordering::SeqCst)
                         };
@@ -561,7 +560,9 @@ async fn queue_sandbox_state(actors: &HashMap<String, McpServerActor>, state: &M
         actor
             .apply_sandbox_state(state.sandbox_state.clone())
             .await
-            .expect("new MCP server actor stopped during generation cutover");
+            .unwrap_or_else(|_| {
+                panic!("new MCP server actor stopped during generation cutover");
+            });
     }
 }
 
@@ -635,10 +636,9 @@ fn drain_generation(
 ) {
     tokio::spawn(async move {
         let drains = actors.into_values().map(|actor| async move {
-            actor
-                .shutdown()
-                .await
-                .expect("retired MCP server actor stopped before drain");
+            actor.shutdown().await.unwrap_or_else(|_| {
+                panic!("retired MCP server actor stopped before drain");
+            });
         });
         join_all(drains).await;
         cancellation_token.cancel();

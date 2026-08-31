@@ -280,7 +280,9 @@ impl Session {
         self.permission_actor
             .remove_turn(turn_context.sub_id.clone())
             .await
-            .expect("permission actor stopped while removing a completed turn");
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while removing a completed turn");
+            });
         if !pending_input.is_empty() {
             let pending_response_items = pending_input
                 .into_iter()
@@ -424,7 +426,9 @@ impl Session {
             self.permission_actor
                 .remove_turn(sub_id)
                 .await
-                .expect("permission actor stopped while removing an aborted turn");
+                .unwrap_or_else(|_| {
+                    panic!("permission actor stopped while removing an aborted turn");
+                });
             return;
         }
 
@@ -480,6 +484,8 @@ impl Session {
         self.permission_actor
             .remove_turn(task.turn_context.sub_id.clone())
             .await
-            .expect("permission actor stopped while removing an aborted turn");
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while removing an aborted turn");
+            });
     }
 }

@@ -7,7 +7,6 @@ use alcatraz_macos::seatbelt::create_seatbelt_command_args;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Stdio;
 
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::protocol::SandboxPolicy;

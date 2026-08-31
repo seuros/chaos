@@ -66,11 +66,12 @@ pub enum PermissionUpdateScope {
 }
 
 /// Describes how an update changes sticky permission grants.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(tag = "action", content = "permissions", rename_all = "snake_case")]
 #[ts(tag = "action", content = "permissions")]
 pub enum PermissionGrantUpdate {
     /// Preserve the existing grants.
+    #[default]
     Unchanged,
     /// Add the supplied grants to the existing grants.
     Merge(PermissionProfile),
@@ -78,12 +79,6 @@ pub enum PermissionGrantUpdate {
     Replace(PermissionProfile),
     /// Remove all existing grants from the selected scope.
     Clear,
-}
-
-impl Default for PermissionGrantUpdate {
-    fn default() -> Self {
-        Self::Unchanged
-    }
 }
 
 /// Submission operation

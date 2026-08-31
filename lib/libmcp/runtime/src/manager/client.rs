@@ -422,7 +422,10 @@ impl AsyncManagedClient {
 
     pub(super) async fn notify_roots_changed(&self, new_cwd: &Path) -> Result<()> {
         {
-            let mut cwd = self.cwd.write().expect("MCP root lock poisoned");
+            let mut cwd = self
+                .cwd
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *cwd = new_cwd.to_path_buf();
         }
         if !self.startup_complete.load(Ordering::Acquire) {
@@ -440,7 +443,7 @@ impl AsyncManagedClient {
             let mut current = self
                 .sandbox_state
                 .write()
-                .expect("MCP sandbox state lock poisoned");
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *current = sandbox_state.clone();
         }
         if !self.startup_complete.load(Ordering::Acquire) {
@@ -462,7 +465,7 @@ impl AsyncManagedClient {
         let sandbox_state = self
             .sandbox_state
             .read()
-            .expect("MCP sandbox state lock poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         managed.notify_sandbox_state_change(&sandbox_state).await
     }

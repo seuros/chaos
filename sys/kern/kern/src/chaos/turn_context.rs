@@ -404,7 +404,9 @@ impl SessionConfiguration {
             next_configuration.collaboration_mode = self
                 .mode_registry
                 .apply_mode(active_mode, &base_collaboration_mode)
-                .expect("validated mode policy must reference a registered mode");
+                .unwrap_or_else(|_| {
+                    panic!("validated mode policy must reference a registered mode");
+                });
         }
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = Some(summary);
@@ -469,7 +471,9 @@ pub(super) fn make_turn_context(
     let mode_definition = session_configuration
         .mode_registry
         .get(&session_configuration.mode_policy.active_mode)
-        .expect("validated session mode policy must reference a registered mode");
+        .unwrap_or_else(|| {
+            panic!("validated session mode policy must reference a registered mode");
+        });
     let mode_capabilities = mode_definition.capabilities;
     let reasoning_summary = session_configuration
         .model_reasoning_summary

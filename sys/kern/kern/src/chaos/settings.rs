@@ -46,7 +46,9 @@ impl Session {
             .shell_snapshot
             .refresh(next_cwd.to_path_buf())
             .await
-            .expect("shell snapshot actor stopped while the session is running");
+            .unwrap_or_else(|_| {
+                panic!("shell snapshot actor stopped while the session is running");
+            });
     }
 
     pub(crate) async fn update_settings(
@@ -66,7 +68,9 @@ impl Session {
                 self.permission_actor
                     .set_session_defaults(&updated)
                     .await
-                    .expect("permission actor stopped while the session is running");
+                    .unwrap_or_else(|_| {
+                        panic!("permission actor stopped while the session is running");
+                    });
 
                 self.maybe_refresh_shell_snapshot_for_cwd(
                     &previous_cwd,
@@ -165,7 +169,9 @@ impl Session {
                     .await;
             })
             .await
-            .expect("MCP refresh actor stopped while the session is running");
+            .unwrap_or_else(|_| {
+                panic!("MCP refresh actor stopped while the session is running");
+            });
     }
 
     async fn reload_project_mcp_layer_and_refresh_now(&self, turn_context: &TurnContext) {

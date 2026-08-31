@@ -739,8 +739,40 @@ impl JournalSink {
         }
     }
 
+    fn has_pending_items(&self) -> bool {
+        match &self.state {
+            JournalSinkState::Disabled => false,
+            JournalSinkState::Pending { items, .. } => !items.is_empty(),
+            JournalSinkState::Active(writer) => !writer.pending_items.is_empty(),
+        }
+    }
+
+    fn pending_items_snapshot(&self) -> Vec<RolloutItem> {
+        match &self.state {
+            JournalSinkState::Disabled => Vec::new(),
+            JournalSinkState::Pending { items, .. } => items.clone(),
+            JournalSinkState::Active(writer) => writer.pending_items.clone(),
+        }
+    }
+
+    fn retry_after(&self) -> Option<Duration> {
+        if !self.has_pending_items() {
+            return None;
+        }
+        self.breaker.retry_after()
+    }
+
+    async fn retry_pending(&mut self) -> Option<Vec<RolloutItem>> {
+        let pending_items = self.pending_items_snapshot();
+        if pending_items.is_empty() {
+            return None;
+        }
+
+        (self.append_items(&[]).await == JournalAppendOutcome::Persisted).then_some(pending_items)
+    }
+
     async fn append_items(&mut self, items: &[RolloutItem]) -> JournalAppendOutcome {
-        if items.is_empty() {
+        if items.is_empty() && !self.has_pending_items() {
             return JournalAppendOutcome::Persisted;
         }
 
@@ -1397,8 +1429,45 @@ async fn rollout_writer(
     mut journal_sink: JournalSink,
 ) -> std::io::Result<()> {
     let mut buffered_items = Vec::<RolloutItem>::new();
+    let mut deferred_memory_mode: Option<&'static str> = None;
 
-    while let Some(cmd) = rx.recv().await {
+    enum RolloutWriterEvent {
+        Command(Option<RolloutCmd>),
+        RetryDeferred,
+    }
+
+    loop {
+        let event = if let Some(delay) = journal_sink.retry_after() {
+            tokio::select! {
+                cmd = rx.recv() => RolloutWriterEvent::Command(cmd),
+                _ = tokio::time::sleep(delay) => RolloutWriterEvent::RetryDeferred,
+            }
+        } else {
+            RolloutWriterEvent::Command(rx.recv().await)
+        };
+
+        let cmd = match event {
+            RolloutWriterEvent::RetryDeferred => {
+                if let Some(items) = journal_sink.retry_pending().await {
+                    info!(
+                        deferred_items = items.len(),
+                        "journal circuit probe succeeded; persisted deferred rollout items"
+                    );
+                    sync_process_state_after_write(
+                        runtime_db_ctx.as_ref(),
+                        state_builder.as_ref(),
+                        items.as_slice(),
+                        default_provider.as_str(),
+                        deferred_memory_mode.take(),
+                    )
+                    .await;
+                }
+                continue;
+            }
+            RolloutWriterEvent::Command(Some(cmd)) => cmd,
+            RolloutWriterEvent::Command(None) => break,
+        };
+
         match cmd {
             RolloutCmd::AddItems(items) => {
                 if items.is_empty() {
@@ -1416,6 +1485,7 @@ async fn rollout_writer(
                     state_builder.as_ref(),
                     default_provider.as_str(),
                     &mut journal_sink,
+                    &mut deferred_memory_mode,
                 )
                 .await?;
             }
@@ -1427,7 +1497,8 @@ async fn rollout_writer(
                     // together via the atomic initialize_process op, or nothing does.
                     let mut first_batch: Vec<RolloutItem> =
                         Vec::with_capacity(buffered_items.len() + 1);
-                    let memory_mode = if let Some(session_meta) = meta.take() {
+                    let memory_mode: Option<&'static str> = if let Some(session_meta) = meta.take()
+                    {
                         let session_meta_line = build_session_meta_line(
                             session_meta,
                             &cwd,
@@ -1442,17 +1513,24 @@ async fn rollout_writer(
                     };
                     first_batch.append(&mut buffered_items);
                     if !first_batch.is_empty() {
-                        if journal_sink.append_items(first_batch.as_slice()).await
-                            == JournalAppendOutcome::Persisted
-                        {
-                            sync_process_state_after_write(
-                                runtime_db_ctx.as_ref(),
-                                state_builder.as_ref(),
-                                first_batch.as_slice(),
-                                default_provider.as_str(),
-                                memory_mode,
-                            )
-                            .await;
+                        let mut reconcile_items = journal_sink.pending_items_snapshot();
+                        reconcile_items.extend(first_batch.iter().cloned());
+                        match journal_sink.append_items(first_batch.as_slice()).await {
+                            JournalAppendOutcome::Persisted => {
+                                sync_process_state_after_write(
+                                    runtime_db_ctx.as_ref(),
+                                    state_builder.as_ref(),
+                                    reconcile_items.as_slice(),
+                                    default_provider.as_str(),
+                                    memory_mode.or_else(|| deferred_memory_mode.take()),
+                                )
+                                .await;
+                            }
+                            JournalAppendOutcome::Deferred => {
+                                if memory_mode.is_some() {
+                                    deferred_memory_mode = memory_mode;
+                                }
+                            }
                         }
                     }
                     persisted = true;
@@ -1501,14 +1579,17 @@ async fn write_and_reconcile_items(
     state_builder: Option<&ProcessMetadataBuilder>,
     default_provider: &str,
     journal_sink: &mut JournalSink,
+    deferred_memory_mode: &mut Option<&'static str>,
 ) -> std::io::Result<()> {
+    let mut reconcile_items = journal_sink.pending_items_snapshot();
+    reconcile_items.extend(items.iter().cloned());
     if journal_sink.append_items(items).await == JournalAppendOutcome::Persisted {
         sync_process_state_after_write(
             runtime_db_ctx,
             state_builder,
-            items,
+            reconcile_items.as_slice(),
             default_provider,
-            /*new_process_memory_mode*/ None,
+            deferred_memory_mode.take(),
         )
         .await;
     }

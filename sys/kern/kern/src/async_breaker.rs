@@ -75,6 +75,24 @@ impl AsyncCircuitBreaker {
         }
     }
 
+    /// Return the delay before the next half-open probe may run.
+    ///
+    /// Callers that own a background actor can sleep for this duration and
+    /// invoke [`Self::call`] when it elapses instead of waiting for new traffic.
+    pub(crate) fn retry_after(&self) -> Option<Duration> {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if !state.breaker.is_open() {
+            return None;
+        }
+
+        Some(
+            state
+                .opened_at
+                .map(|opened_at| self.half_open_timeout.saturating_sub(opened_at.elapsed()))
+                .unwrap_or(Duration::ZERO),
+        )
+    }
+
     pub(crate) async fn call<T, E, F, Fut>(&self, op: F) -> Result<T, BreakerError<E>>
     where
         F: FnOnce() -> Fut,
@@ -151,5 +169,26 @@ mod tests {
             .await;
         assert!(matches!(second, Err(BreakerError::Open)));
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn timeout_allows_a_probe_that_closes_the_breaker() {
+        let breaker = AsyncCircuitBreaker::new(
+            "test-recovery",
+            1,
+            Duration::from_secs(60),
+            Duration::from_millis(10),
+            1,
+        );
+
+        let first = breaker.call(|| async { Err::<(), _>("down") }).await;
+        assert!(matches!(first, Err(BreakerError::Operation("down"))));
+        assert!(breaker.retry_after().is_some());
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let recovered = breaker.call(|| async { Ok::<_, &str>("up") }).await;
+
+        assert!(matches!(recovered, Ok("up")));
+        assert_eq!(breaker.retry_after(), None);
     }
 }

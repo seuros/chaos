@@ -1,7 +1,7 @@
-//! `chaos-git` — pure-Rust read-only git introspection.
+//! `chaos-git` — pure-Rust git inspection, staging, and commits.
 //!
 //! Provides structured access to repository state without shelling out to
-//! `git(1)`. Built on `gix` (gitoxide). All operations are read-only.
+//! `git(1)`. Built on `gix` (gitoxide).
 //!
 //! ## MCP surface
 //!
@@ -17,9 +17,13 @@
 //! - `log` — commit history with optional limit and branch
 //! - `show` — full commit details with subject, body, and trailers
 //! - `blame` — per-line attribution for a file
+//! - `add` — stage explicit repository-relative file paths
+//! - `commit` — create an unsigned commit from the staged index without hooks
 
+mod add;
 mod blame;
 mod branches;
+mod commit;
 mod diff;
 mod error;
 mod ext;
@@ -30,15 +34,20 @@ mod show;
 mod status;
 mod tools;
 
+pub use add::AddResult;
+pub use add::add;
 pub use blame::BlameLine;
 pub use blame::blame;
 pub use branches::BranchInfo;
 use chaos_traits::catalog::CatalogRegistration;
+use chaos_traits::catalog::CatalogTool;
 use chaos_traits::catalog::CatalogToolDriver;
 use chaos_traits::catalog::CatalogToolDriverFuture;
 use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
 use chaos_traits::catalog::tool_infos_to_catalog_tools;
+pub use commit::CommitResult;
+pub use commit::commit;
 pub use diff::diff;
 pub use error::GitError;
 pub use log::LogEntry;
@@ -107,6 +116,16 @@ impl CatalogToolDriver for GitToolDriver {
                     tools::execute_blocking(cwd, params, tools::execute_git_remotes_structured)
                         .await
                 }
+                "git_add" => {
+                    let params = serde_json::from_value(request.arguments)
+                        .map_err(|e| format!("invalid arguments: {e}"))?;
+                    tools::execute_blocking(cwd, params, tools::execute_git_add_structured).await
+                }
+                "git_commit" => {
+                    let params = serde_json::from_value(request.arguments)
+                        .map_err(|e| format!("invalid arguments: {e}"))?;
+                    tools::execute_blocking(cwd, params, tools::execute_git_commit_structured).await
+                }
                 other => Err(format!("unknown git tool: {other}")),
             };
             let output = result?.to_string();
@@ -123,10 +142,23 @@ fn git_tool_driver() -> Arc<dyn CatalogToolDriver> {
     Arc::new(GitToolDriver)
 }
 
+fn git_catalog_tools() -> Vec<CatalogTool> {
+    tool_infos_to_catalog_tools(tools::tool_infos())
+        .into_iter()
+        .map(|mut tool| {
+            if matches!(tool.name.as_str(), "git_add" | "git_commit") {
+                tool.read_only_hint = Some(false);
+                tool.supports_parallel_tool_calls = false;
+            }
+            tool
+        })
+        .collect()
+}
+
 inventory::submit! {
     CatalogRegistration {
         name: "git",
-        tools: || tool_infos_to_catalog_tools(tools::tool_infos()),
+        tools: git_catalog_tools,
         resources: || vec![],
         resource_templates: || vec![],
         prompts: || vec![],
@@ -160,4 +192,27 @@ pub fn branches(cwd: &Path) -> Result<BranchInfo, GitError> {
 /// `git://remotes` — remote name→url map.
 pub fn remotes(cwd: &Path) -> Result<RemoteInfo, GitError> {
     remotes::collect(cwd)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn mutation_tools_are_marked_mutating_and_non_parallel() {
+        let tools = super::git_catalog_tools();
+        for name in ["git_add", "git_commit"] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap_or_else(|| panic!("missing {name}"));
+            assert_eq!(tool.read_only_hint, Some(false));
+            assert!(!tool.supports_parallel_tool_calls);
+        }
+
+        let status = tools
+            .iter()
+            .find(|tool| tool.name == "git_status")
+            .expect("git_status");
+        assert_eq!(status.read_only_hint, Some(true));
+        assert!(status.supports_parallel_tool_calls);
+    }
 }

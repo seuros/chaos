@@ -103,6 +103,22 @@ pub struct GitBranchesParams {}
 #[schemars(deny_unknown_fields)]
 pub struct GitRemotesParams {}
 
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct GitAddParams {
+    /// Explicit repository-relative file paths to stage.
+    paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct GitCommitParams {
+    /// Commit message. The first line becomes the commit subject.
+    message: String,
+}
+
 impl GitServer {
     #[mcp_tool(
         name = "git_diff",
@@ -216,6 +232,36 @@ impl GitServer {
             execute_blocking(PathBuf::from("."), params.0, execute_git_remotes_structured).await,
         )
     }
+
+    #[mcp_tool(
+        name = "git_add",
+        description = "Stage explicit repository-relative files or deletions. Directories, ignored new files, conflicts, and submodules are rejected.",
+        read_only = false,
+        destructive = false,
+        open_world = false
+    )]
+    async fn git_add(&self, _ctx: GitCtx<'_>, params: Parameters<GitAddParams>) -> ToolResult {
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_add_structured).await,
+        )
+    }
+
+    #[mcp_tool(
+        name = "git_commit",
+        description = "Create an unsigned commit from the staged index using configured identity. Git hooks are not run.",
+        read_only = false,
+        destructive = false,
+        open_world = false
+    )]
+    async fn git_commit(
+        &self,
+        _ctx: GitCtx<'_>,
+        params: Parameters<GitCommitParams>,
+    ) -> ToolResult {
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_commit_structured).await,
+        )
+    }
 }
 
 pub fn tool_infos() -> Vec<ToolInfo> {
@@ -228,6 +274,8 @@ pub fn tool_infos() -> Vec<ToolInfo> {
         GitServer::git_status_tool_info(),
         GitServer::git_branches_tool_info(),
         GitServer::git_remotes_tool_info(),
+        GitServer::git_add_tool_info(),
+        GitServer::git_commit_tool_info(),
     ]
 }
 
@@ -368,6 +416,22 @@ pub fn execute_git_remotes_structured(
     serde_json::to_value(info).map_err(|e| e.to_string())
 }
 
+pub fn execute_git_add_structured(
+    cwd: &Path,
+    params: GitAddParams,
+) -> Result<serde_json::Value, String> {
+    let result = crate::add(cwd, &params.paths).map_err(|e| e.to_string())?;
+    serde_json::to_value(result).map_err(|e| e.to_string())
+}
+
+pub fn execute_git_commit_structured(
+    cwd: &Path,
+    params: GitCommitParams,
+) -> Result<serde_json::Value, String> {
+    let result = crate::commit(cwd, &params.message).map_err(|e| e.to_string())?;
+    serde_json::to_value(result).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -376,10 +440,14 @@ mod tests {
 
     use tempfile::tempdir;
 
+    use super::GitAddParams;
     use super::GitBlameParams;
+    use super::GitCommitParams;
     use super::GitDiffParams;
     use super::GitShowParams;
+    use super::execute_git_add_structured;
     use super::execute_git_blame;
+    use super::execute_git_commit_structured;
     use super::execute_git_diff;
     use super::execute_git_show;
     use crate::BlameLine;
@@ -396,6 +464,21 @@ mod tests {
             "git command failed: git {}",
             args.join(" ")
         );
+    }
+
+    fn git_output(dir: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("failed to run git");
+        assert!(
+            output.status.success(),
+            "git command failed: git {}\nstderr: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).expect("git output is utf8")
     }
 
     #[test]
@@ -498,5 +581,243 @@ mod tests {
         assert_eq!(shown.trailers.len(), 1);
         assert_eq!(shown.trailers[0].token, "Signed-off-by");
         assert_eq!(shown.trailers[0].value, "Test User <test@example.com>");
+    }
+
+    #[test]
+    fn execute_git_add_and_commit_create_initial_and_followup_commits() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+
+        let file = dir.join("file.txt");
+        fs::write(&file, "alpha\n").expect("write file");
+
+        let added = execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec!["file.txt".to_string()],
+            },
+        )
+        .expect("add");
+        assert_eq!(added["staged"], serde_json::json!(["file.txt"]));
+        assert_eq!(added["removed"], serde_json::json!([]));
+
+        let status = crate::status(dir).expect("status");
+        assert_eq!(status.staged.len(), 1);
+        assert_eq!(status.staged[0].path, "file.txt");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let hook = dir.join(".git/hooks/pre-commit");
+            fs::create_dir_all(hook.parent().expect("hook parent")).expect("create hooks dir");
+            fs::write(
+                &hook,
+                "#!/bin/sh\necho hook-ran > \"$PWD/hook-ran\"\nexit 1\n",
+            )
+            .expect("write hook");
+            let mut permissions = fs::metadata(&hook).expect("hook metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&hook, permissions).expect("make hook executable");
+        }
+
+        let committed = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "initial commit".to_string(),
+            },
+        )
+        .expect("commit");
+        assert_eq!(committed["subject"], "initial commit");
+        assert_eq!(
+            committed["committed_paths"],
+            serde_json::json!(["file.txt"])
+        );
+        assert!(!committed["sha"].as_str().unwrap_or_default().is_empty());
+        assert_eq!(git_output(dir, &["show", "HEAD:file.txt"]), "alpha\n");
+        assert!(!dir.join("hook-ran").exists(), "Git hooks must not run");
+
+        fs::write(&file, "beta\n").expect("modify tracked file");
+        fs::write(dir.join("untracked.txt"), "leave me out\n").expect("write untracked file");
+
+        execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec!["file.txt".to_string()],
+            },
+        )
+        .expect("stage tracked file");
+        execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "update tracked file".to_string(),
+            },
+        )
+        .expect("followup commit");
+
+        assert_eq!(git_output(dir, &["show", "HEAD:file.txt"]), "beta\n");
+        assert!(
+            git_output(dir, &["status", "--porcelain"]).contains("?? untracked.txt"),
+            "unrequested files must remain untracked"
+        );
+
+        let empty = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "empty".to_string(),
+            },
+        )
+        .expect_err("empty commit must fail");
+        assert!(empty.contains("nothing staged to commit"));
+    }
+
+    #[test]
+    fn execute_git_add_stages_deletions_and_rejects_unsafe_paths() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+
+        fs::write(dir.join("tracked.txt"), "tracked\n").expect("write tracked file");
+        git(dir, &["add", "tracked.txt"]);
+        git(dir, &["commit", "-m", "initial"]);
+
+        fs::remove_file(dir.join("tracked.txt")).expect("remove tracked file");
+        let deleted = execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec!["tracked.txt".to_string()],
+            },
+        )
+        .expect("stage deletion");
+        assert_eq!(deleted["removed"], serde_json::json!(["tracked.txt"]));
+
+        fs::write(dir.join(".gitignore"), "*.log\n").expect("write ignore file");
+        fs::write(dir.join("ignored.log"), "ignored\n").expect("write ignored file");
+        let ignored = execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec!["ignored.log".to_string()],
+            },
+        )
+        .expect_err("ignored file must fail");
+        assert!(ignored.contains("path is ignored: ignored.log"));
+
+        let traversal = execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec!["../outside.txt".to_string()],
+            },
+        )
+        .expect_err("path traversal must fail");
+        assert!(traversal.contains("may not escape the repository"));
+
+        let directory = execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec![".git".to_string()],
+            },
+        )
+        .expect_err("git directory must fail");
+        assert!(directory.contains("Git directory"));
+    }
+
+    #[test]
+    fn execute_git_add_paths_are_relative_to_repository_root() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        fs::create_dir(dir.join("nested")).expect("create nested directory");
+        fs::write(dir.join("root.txt"), "root\n").expect("write root file");
+
+        let added = execute_git_add_structured(
+            &dir.join("nested"),
+            GitAddParams {
+                paths: vec!["root.txt".to_string()],
+            },
+        )
+        .expect("stage root-relative path from nested cwd");
+
+        assert_eq!(added["staged"], serde_json::json!(["root.txt"]));
+        assert_eq!(
+            git_output(dir, &["diff", "--cached", "--name-only"]),
+            "root.txt\n"
+        );
+    }
+
+    #[test]
+    fn execute_git_commit_preserves_unchanged_gitlinks_and_rejects_changes() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+
+        fs::write(dir.join("file.txt"), "alpha\n").expect("write file");
+        git(dir, &["add", "file.txt"]);
+        git(dir, &["commit", "-m", "initial"]);
+
+        let gitlink_id = git_output(dir, &["rev-parse", "HEAD"]).trim().to_string();
+        git(
+            dir,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                "160000",
+                &gitlink_id,
+                "vendor/reference",
+            ],
+        );
+        git(dir, &["commit", "-m", "add gitlink"]);
+
+        fs::write(dir.join("file.txt"), "beta\n").expect("modify file");
+        execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec!["file.txt".to_string()],
+            },
+        )
+        .expect("stage file");
+        execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "update file".to_string(),
+            },
+        )
+        .expect("commit while preserving gitlink");
+
+        assert!(
+            git_output(dir, &["ls-tree", "HEAD", "vendor/reference"]).contains(&gitlink_id),
+            "unchanged gitlink must be preserved"
+        );
+
+        let changed_gitlink_id = git_output(dir, &["rev-parse", "HEAD"]).trim().to_string();
+        git(
+            dir,
+            &[
+                "update-index",
+                "--cacheinfo",
+                "160000",
+                &changed_gitlink_id,
+                "vendor/reference",
+            ],
+        );
+        let error = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "change gitlink".to_string(),
+            },
+        )
+        .expect_err("staged gitlink change must fail");
+        assert!(error.contains("staged submodule changes are not supported: vendor/reference"));
     }
 }

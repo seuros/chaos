@@ -64,10 +64,10 @@ pub fn collect(cwd: &Path) -> Result<StatusInfo, GitError> {
 fn collect_staged(repo: &gix::Repository) -> Result<Vec<FileStatus>, GitError> {
     let mut staged = Vec::new();
 
-    let head_tree_id = match repo.head_tree_id() {
-        Ok(id) => id,
-        Err(_) => return Ok(staged), // No HEAD yet (empty repo)
-    };
+    let head_tree_id = repo
+        .head_tree_id()
+        .map(gix::Id::detach)
+        .unwrap_or_else(|_| repo.empty_tree().id);
 
     let index = repo.index_or_empty().git_op()?;
 

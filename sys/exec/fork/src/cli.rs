@@ -44,6 +44,10 @@ pub struct Cli {
     #[arg(long = "ephemeral", global = true, default_value_t = false)]
     pub ephemeral: bool,
 
+    /// Internal: start from a serialized Stop-hook transcript snapshot.
+    #[arg(long = "fork-snapshot", value_name = "FILE", hide = true)]
+    pub fork_snapshot: Option<PathBuf>,
+
     /// Path to a JSON Schema file describing the model's final response shape.
     #[arg(long = "output-schema", value_name = "FILE")]
     pub output_schema: Option<PathBuf>,
@@ -287,5 +291,23 @@ mod tests {
         };
         assert_eq!(args.session_id.as_deref(), Some("session-123"));
         assert_eq!(args.prompt.as_deref(), Some(PROMPT));
+    }
+
+    #[test]
+    fn hidden_fork_snapshot_option_is_parsed() {
+        let cli = Cli::parse_from([
+            "chaos-exec",
+            "--fork-snapshot",
+            "/tmp/turn-snapshot.json",
+            "--ephemeral",
+            "reflect",
+        ]);
+
+        assert_eq!(
+            cli.fork_snapshot,
+            Some(PathBuf::from("/tmp/turn-snapshot.json"))
+        );
+        assert!(cli.ephemeral);
+        assert_eq!(cli.prompt.as_deref(), Some("reflect"));
     }
 }

@@ -16,9 +16,11 @@ use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
+use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::AuthManager;
@@ -126,6 +128,7 @@ struct ExecRunArgs {
     json_mode: bool,
     last_message_file: Option<PathBuf>,
     output_schema_path: Option<PathBuf>,
+    fork_snapshot: Option<PathBuf>,
     prompt: Option<String>,
     skip_git_repo_check: bool,
     stderr_with_ansi: bool,
@@ -208,6 +211,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         skip_git_repo_check,
         add_dir,
         ephemeral,
+        fork_snapshot,
         color,
         last_message_file,
         json: json_mode,
@@ -427,6 +431,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         json_mode,
         last_message_file,
         output_schema_path,
+        fork_snapshot,
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
@@ -447,6 +452,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         json_mode,
         last_message_file,
         output_schema_path,
+        fork_snapshot,
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
@@ -482,7 +488,31 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     }
 
     // Start or resume a process directly via the ProcessTable.
-    let new_process = if let Some(ExecCommand::Resume(ref resume_args)) = command {
+    let new_process = if let Some(snapshot_path) = fork_snapshot.as_deref() {
+        let snapshot_bytes = std::fs::read(snapshot_path).map_err(|err| {
+            anyhow::anyhow!(
+                "failed to read fork snapshot {}: {err}",
+                snapshot_path.display()
+            )
+        })?;
+        let rollout_items: Vec<RolloutItem> =
+            serde_json::from_slice(&snapshot_bytes).map_err(|err| {
+                anyhow::anyhow!(
+                    "fork snapshot {} is not valid rollout JSON: {err}",
+                    snapshot_path.display()
+                )
+            })?;
+        process_table
+            .resume_process_with_history(
+                config.clone(),
+                InitialHistory::Forked(rollout_items),
+                auth_manager.clone(),
+                /*persist_extended_history*/ false,
+                /*parent_trace*/ None,
+            )
+            .await
+            .map_err(|err| anyhow::anyhow!("failed to start process from fork snapshot: {err}"))?
+    } else if let Some(ExecCommand::Resume(ref resume_args)) = command {
         let resume_process_id = resolve_resume_process_id(&config, resume_args).await?;
 
         if let Some(process_id) = resume_process_id {

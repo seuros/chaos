@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::io;
+use std::io::Write;
 use std::sync::Arc;
 
 use chaos_dtrace::HookEvent;
@@ -14,6 +16,7 @@ use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::HookCompletedEvent;
 use chaos_ipc::protocol::HookRunSummary;
+use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::protocol::TurnStartedEvent;
@@ -24,6 +27,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
+
+use tempfile::NamedTempFile;
 
 use crate::client::ModelClientSession;
 use crate::distill::InitialContextInjection;
@@ -63,6 +68,23 @@ struct ContextHookOutcome {
     completed_events: Vec<HookCompletedEvent>,
     should_stop: bool,
     additional_context: Option<String>,
+}
+
+fn write_stop_hook_transcript_snapshot(items: &[ResponseItem]) -> io::Result<NamedTempFile> {
+    let mut file = tempfile::Builder::new()
+        .prefix("chaos-stop-transcript-")
+        .suffix(".json")
+        .tempfile()?;
+    let rollout_items = items
+        .iter()
+        .cloned()
+        .map(RolloutItem::ResponseItem)
+        .collect::<Vec<_>>();
+    serde_json::to_writer(file.as_file_mut(), &rollout_items).map_err(|err| {
+        io::Error::other(format!("failed to serialize transcript snapshot: {err}"))
+    })?;
+    file.as_file_mut().flush()?;
+    Ok(file)
 }
 
 fn hook_agent_context(
@@ -513,7 +535,7 @@ pub(crate) async fn run_turn(
 
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
-                    let stop_request = chaos_dtrace::StopRequest {
+                    let mut stop_request = chaos_dtrace::StopRequest {
                         session_id: sess.conversation_id,
                         turn_id: turn_context.sub_id.clone(),
                         cwd: turn_context.cwd.clone(),
@@ -525,7 +547,27 @@ pub(crate) async fn run_turn(
                         last_assistant_message: last_agent_message.clone(),
                         agent_context: agent_context.clone(),
                     };
-                    for run in sess.hooks().preview_stop(&stop_request) {
+                    let stop_previews = sess.hooks().preview_stop(&stop_request);
+                    let stop_transcript_snapshot = if stop_previews.is_empty() {
+                        None
+                    } else {
+                        let history = sess.clone_history().await;
+                        match write_stop_hook_transcript_snapshot(history.raw_items()) {
+                            Ok(snapshot) => {
+                                stop_request.transcript_path = Some(snapshot.path().to_path_buf());
+                                Some(snapshot)
+                            }
+                            Err(err) => {
+                                warn!(
+                                    turn_id = %turn_context.sub_id,
+                                    error = %err,
+                                    "failed to materialize Stop-hook transcript snapshot"
+                                );
+                                None
+                            }
+                        }
+                    };
+                    for run in stop_previews {
                         sess.send_event(
                             &turn_context,
                             EventMsg::HookStarted(crate::protocol::HookStartedEvent {
@@ -536,6 +578,9 @@ pub(crate) async fn run_turn(
                         .await;
                     }
                     let stop_outcome = sess.hooks().run_stop(stop_request).await;
+                    // The path is intentionally valid only while Stop handlers
+                    // execute. A background hook must copy it before returning.
+                    drop(stop_transcript_snapshot);
                     for completed in stop_outcome.hook_events {
                         sess.send_event(&turn_context, EventMsg::HookCompleted(completed))
                             .await;
@@ -749,11 +794,43 @@ pub(crate) async fn built_tools(
 
 #[cfg(test)]
 mod hook_agent_context_tests {
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     use chaos_ipc::ProcessId;
+    use chaos_ipc::models::DeveloperInstructions;
+    use chaos_ipc::protocol::RolloutItem;
     use chaos_ipc::protocol::SessionSource;
     use chaos_ipc::protocol::SubAgentSource;
 
     use super::hook_agent_context;
+    use super::write_stop_hook_transcript_snapshot;
+
+    #[test]
+    fn stop_hook_snapshot_is_fork_ready_and_ephemeral() {
+        let item = DeveloperInstructions::new("snapshot marker").into();
+        let snapshot = write_stop_hook_transcript_snapshot(&[item]).expect("write snapshot");
+        let path = snapshot.path().to_path_buf();
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(&path)
+                .expect("snapshot metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+
+        let rollout_items: Vec<RolloutItem> =
+            serde_json::from_slice(&fs::read(&path).expect("read snapshot"))
+                .expect("parse rollout snapshot");
+        assert_eq!(rollout_items.len(), 1);
+        assert!(matches!(rollout_items[0], RolloutItem::ResponseItem(_)));
+
+        drop(snapshot);
+        assert!(!path.exists());
+    }
 
     #[test]
     fn root_sessions_have_no_agent_identity() {

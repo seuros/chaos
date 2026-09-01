@@ -51,7 +51,7 @@ with FreeChaOS, Claude Code, and other MCP-aware tools:
 {
   "mcpServers": {
     "my-server": {
-      "command": "node",
+      "command": "bun",
       "args": ["server.js"],
       "env": {
         "API_KEY": "..."
@@ -120,7 +120,7 @@ chaos mcp serve | your_mcp_client
 For inspection:
 
 ```bash
-npx @mcpjam/inspector@latest chaos mcp serve
+bunx @mcpjam/inspector@latest chaos mcp serve
 ```
 
 The server runs over standard MCP stdio transport using JSON-RPC 2.0.
@@ -159,7 +159,10 @@ single unified `chaos` tool.
 | `chaos://sessions/{id}` | Read session details |
 | `chaos://crons` | List scheduled jobs |
 | `chaos://spool` | List persisted spool jobs |
+| `chaos://models` | List available model presets |
 | `chaos://modes` | List the caller-visible collaboration mode catalog |
+| `chaos://man` | List agent-facing manual pages and their resource URIs |
+| `chaos://man/{page}` | Read an agent-facing manual page |
 
 ### Events and approvals
 

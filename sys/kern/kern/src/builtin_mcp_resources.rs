@@ -8,6 +8,8 @@ use std::path::Path;
 
 use crate::runtime_db::RuntimeDbHandle;
 
+mod man;
+
 pub const JSON_MIME_TYPE: &str = "application/json";
 pub const CHAOS_SESSIONS_URI: &str = "chaos://sessions";
 pub const CHAOS_SESSIONS_URI_TEMPLATE: &str = "chaos://sessions/{id}";
@@ -15,6 +17,9 @@ pub const CHAOS_CRONS_URI: &str = "chaos://crons";
 pub const CHAOS_SPOOL_URI: &str = "chaos://spool";
 pub const CHAOS_MODELS_URI: &str = "chaos://models";
 pub const CHAOS_MODES_URI: &str = "chaos://modes";
+pub use man::MANUAL_INDEX_URI as CHAOS_MANUAL_URI;
+pub use man::MANUAL_PAGE_URI_TEMPLATE as CHAOS_MANUAL_URI_TEMPLATE;
+pub use man::MARKDOWN_MIME_TYPE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChaosBuiltinResourceKind {
@@ -23,11 +28,13 @@ pub enum ChaosBuiltinResourceKind {
     Spool,
     Models,
     Modes,
+    Manual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChaosBuiltinResourceTemplateKind {
     SessionDetail,
+    ManualPage,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +55,7 @@ pub struct ChaosBuiltinResourceTemplateSpec {
     pub mime_type: &'static str,
 }
 
-const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 5] = [
+const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 6] = [
     ChaosBuiltinResourceSpec {
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
@@ -84,16 +91,31 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 5] = [
         description: "List the ChaOS collaboration modes visible to this caller",
         mime_type: JSON_MIME_TYPE,
     },
+    ChaosBuiltinResourceSpec {
+        kind: ChaosBuiltinResourceKind::Manual,
+        uri: CHAOS_MANUAL_URI,
+        name: "manual",
+        description: "List agent-facing ChaOS manual pages and their resource URIs",
+        mime_type: JSON_MIME_TYPE,
+    },
 ];
 
-const RESOURCE_TEMPLATE_SPECS: [ChaosBuiltinResourceTemplateSpec; 1] =
-    [ChaosBuiltinResourceTemplateSpec {
+const RESOURCE_TEMPLATE_SPECS: [ChaosBuiltinResourceTemplateSpec; 2] = [
+    ChaosBuiltinResourceTemplateSpec {
         kind: ChaosBuiltinResourceTemplateKind::SessionDetail,
         uri_template: CHAOS_SESSIONS_URI_TEMPLATE,
         name: "session_detail",
         description: "Details for a specific ChaOS process",
         mime_type: JSON_MIME_TYPE,
-    }];
+    },
+    ChaosBuiltinResourceTemplateSpec {
+        kind: ChaosBuiltinResourceTemplateKind::ManualPage,
+        uri_template: CHAOS_MANUAL_URI_TEMPLATE,
+        name: "manual_page",
+        description: "Read an agent-facing ChaOS manual page by canonical page id",
+        mime_type: MARKDOWN_MIME_TYPE,
+    },
+];
 
 pub fn resource_specs() -> &'static [ChaosBuiltinResourceSpec] {
     &RESOURCE_SPECS
@@ -111,6 +133,8 @@ pub enum ResolvedChaosBuiltinResource {
     Spool,
     Models,
     Modes,
+    ManualIndex,
+    ManualPage(&'static man::ManualPageSpec),
 }
 
 pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinResource>, String> {
@@ -120,10 +144,10 @@ pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinReso
         CHAOS_SPOOL_URI => Ok(Some(ResolvedChaosBuiltinResource::Spool)),
         CHAOS_MODELS_URI => Ok(Some(ResolvedChaosBuiltinResource::Models)),
         CHAOS_MODES_URI => Ok(Some(ResolvedChaosBuiltinResource::Modes)),
-        _ => {
-            let Some(id) = uri.strip_prefix("chaos://sessions/") else {
-                return Ok(None);
-            };
+        _ if uri.starts_with("chaos://sessions/") => {
+            let id = uri
+                .strip_prefix("chaos://sessions/")
+                .expect("prefix checked");
             if id.is_empty() {
                 return Err("missing process_id in resource URI".to_string());
             }
@@ -133,6 +157,28 @@ pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinReso
                 process_id,
             }))
         }
+        _ => match man::resolve_resource_uri(uri)? {
+            Some(man::ResolvedManualResource::Index) => {
+                Ok(Some(ResolvedChaosBuiltinResource::ManualIndex))
+            }
+            Some(man::ResolvedManualResource::Page(page)) => {
+                Ok(Some(ResolvedChaosBuiltinResource::ManualPage(page)))
+            }
+            None => Ok(None),
+        },
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChaosBuiltinResourceContent {
+    pub text: String,
+    pub mime_type: &'static str,
+}
+
+fn json_resource(text: String) -> ChaosBuiltinResourceContent {
+    ChaosBuiltinResourceContent {
+        text,
+        mime_type: JSON_MIME_TYPE,
     }
 }
 
@@ -279,19 +325,40 @@ pub trait ChaosBuiltinResourceBackend {
     async fn modes_json(&self) -> Result<String, String>;
 }
 
-pub async fn read_resource_json<B: ChaosBuiltinResourceBackend + Sync>(
+pub async fn read_resource<B: ChaosBuiltinResourceBackend + Sync>(
     backend: &B,
     uri: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Option<ChaosBuiltinResourceContent>, String> {
     match resolve_resource_uri(uri)? {
-        Some(ResolvedChaosBuiltinResource::Sessions) => backend.sessions_json().await.map(Some),
-        Some(ResolvedChaosBuiltinResource::SessionDetail { process_id }) => {
-            backend.session_detail_json(process_id).await.map(Some)
+        Some(ResolvedChaosBuiltinResource::Sessions) => {
+            backend.sessions_json().await.map(json_resource).map(Some)
         }
-        Some(ResolvedChaosBuiltinResource::Crons) => backend.crons_json().await.map(Some),
-        Some(ResolvedChaosBuiltinResource::Spool) => backend.spool_json().await.map(Some),
-        Some(ResolvedChaosBuiltinResource::Models) => backend.models_json().await.map(Some),
-        Some(ResolvedChaosBuiltinResource::Modes) => backend.modes_json().await.map(Some),
+        Some(ResolvedChaosBuiltinResource::SessionDetail { process_id }) => backend
+            .session_detail_json(process_id)
+            .await
+            .map(json_resource)
+            .map(Some),
+        Some(ResolvedChaosBuiltinResource::Crons) => {
+            backend.crons_json().await.map(json_resource).map(Some)
+        }
+        Some(ResolvedChaosBuiltinResource::Spool) => {
+            backend.spool_json().await.map(json_resource).map(Some)
+        }
+        Some(ResolvedChaosBuiltinResource::Models) => {
+            backend.models_json().await.map(json_resource).map(Some)
+        }
+        Some(ResolvedChaosBuiltinResource::Modes) => {
+            backend.modes_json().await.map(json_resource).map(Some)
+        }
+        Some(ResolvedChaosBuiltinResource::ManualIndex) => {
+            man::index_json().map(json_resource).map(Some)
+        }
+        Some(ResolvedChaosBuiltinResource::ManualPage(page)) => {
+            Ok(Some(ChaosBuiltinResourceContent {
+                text: man::render_page(page),
+                mime_type: MARKDOWN_MIME_TYPE,
+            }))
+        }
         None => Ok(None),
     }
 }
@@ -322,6 +389,10 @@ mod tests {
             resolve_resource_uri(CHAOS_MODES_URI).expect("resolve modes"),
             Some(ResolvedChaosBuiltinResource::Modes)
         );
+        assert_eq!(
+            resolve_resource_uri(CHAOS_MANUAL_URI).expect("resolve manual"),
+            Some(ResolvedChaosBuiltinResource::ManualIndex)
+        );
     }
 
     #[test]
@@ -339,5 +410,13 @@ mod tests {
     fn rejects_invalid_session_detail_uri() {
         let err = resolve_resource_uri("chaos://sessions/not-a-uuid").expect_err("invalid uri");
         assert!(err.contains("invalid process_id"));
+    }
+
+    #[test]
+    fn resolves_manual_page_uri() {
+        assert!(matches!(
+            resolve_resource_uri("chaos://man/chaos-mcp.7").expect("resolve manual page"),
+            Some(ResolvedChaosBuiltinResource::ManualPage(page)) if page.id == "chaos-mcp.7"
+        ));
     }
 }

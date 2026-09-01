@@ -228,11 +228,15 @@ fn merge_inline_resource_templates(
     templates_by_server
 }
 
-fn inline_text_resource_result(uri: impl Into<String>, text: String) -> ReadResourceResult {
+fn inline_text_resource_result(
+    uri: impl Into<String>,
+    text: String,
+    mime_type: &'static str,
+) -> ReadResourceResult {
     ReadResourceResult {
         contents: vec![ResourceContents::Text(ResourceContentsText {
             uri: uri.into(),
-            mime_type: Some(builtin_mcp_resources::JSON_MIME_TYPE.to_string()),
+            mime_type: Some(mime_type.to_string()),
             text,
             meta: None,
         })],
@@ -292,13 +296,17 @@ async fn read_inline_resource(
     uri: &str,
 ) -> Result<ReadResourceResult, FunctionCallError> {
     let backend = KernelBuiltinResourceBackend { session, turn };
-    let content = builtin_mcp_resources::read_resource_json(&backend, uri)
+    let content = builtin_mcp_resources::read_resource(&backend, uri)
         .await
         .map_err(FunctionCallError::RespondToModel)?;
     let content = content.ok_or_else(|| {
         FunctionCallError::RespondToModel(format!("unknown inline ChaOS resource: {uri}"))
     })?;
-    Ok(inline_text_resource_result(uri.to_string(), content))
+    Ok(inline_text_resource_result(
+        uri.to_string(),
+        content.text,
+        content.mime_type,
+    ))
 }
 
 #[derive(Debug, Serialize)]

@@ -251,6 +251,10 @@ For casual greetings, acknowledgements, or other one-off conversational messages
 - Use shell commands only when the harness does not expose a suitable dedicated tool or when command execution is itself required by the task.
 - Do not invoke language runtimes or create ad hoc scripts to inspect, transform, or edit repository files when a harness tool can perform the operation.
 
+## ChaOS manual
+
+- When the user asks how agent-facing ChaOS capabilities work, consult the embedded manual resources before guessing. Read `chaos://man` for the curated page index, then read the relevant `chaos://man/{page}` resource.
+
 ## `update_plan`
 
 A tool named `update_plan` is available to you. You can use it to keep an up‑to‑date, step‑by‑step plan for the task.

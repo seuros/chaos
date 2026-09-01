@@ -115,12 +115,12 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 }
 
-async fn read_builtin_resource_json(
+async fn read_builtin_resource(
     server: &ChaosMcpServer,
     uri: &str,
-) -> Result<String, ResourceError> {
+) -> Result<builtin_mcp_resources::ChaosBuiltinResourceContent, ResourceError> {
     let backend = McpHostBuiltinResourceBackend { server };
-    builtin_mcp_resources::read_resource_json(&backend, uri)
+    builtin_mcp_resources::read_resource(&backend, uri)
         .await
         .map_err(ResourceError::Internal)?
         .ok_or_else(|| ResourceError::NotFound(format!("unknown {OS_NAME} resource: {uri}")))
@@ -131,11 +131,11 @@ fn read_static_resource_handler<'a>(
     uri: &'static str,
 ) -> ResourceReadFuture<'a> {
     Box::pin(async move {
-        let content = read_builtin_resource_json(server, uri).await?;
+        let content = read_builtin_resource(server, uri).await?;
         Ok(vec![text_resource_with_mime(
             uri,
-            content,
-            builtin_mcp_resources::JSON_MIME_TYPE,
+            content.text,
+            content.mime_type,
         )])
     })
 }
@@ -180,6 +180,14 @@ fn modes_list_handler<'a>(
     read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MODES_URI)
 }
 
+fn manual_list_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    let _ = ctx;
+    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MANUAL_URI)
+}
+
 fn session_detail_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
@@ -193,11 +201,31 @@ fn session_detail_handler<'a>(
         ProcessId::from_string(&id)
             .map_err(|err| ResourceError::NotFound(format!("invalid process_id: {err}")))?;
         let uri = format!("chaos://sessions/{id}");
-        let content = read_builtin_resource_json(server, &uri).await?;
+        let content = read_builtin_resource(server, &uri).await?;
         Ok(vec![text_resource_with_mime(
             uri,
-            content,
-            builtin_mcp_resources::JSON_MIME_TYPE,
+            content.text,
+            content.mime_type,
+        )])
+    })
+}
+
+fn manual_page_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    Box::pin(async move {
+        let page = ctx
+            .uri_params
+            .get("page")
+            .ok_or_else(|| ResourceError::InvalidUri("missing 'page' parameter".into()))?
+            .clone();
+        let uri = format!("chaos://man/{page}");
+        let content = read_builtin_resource(server, &uri).await?;
+        Ok(vec![text_resource_with_mime(
+            uri,
+            content.text,
+            content.mime_type,
         )])
     })
 }
@@ -240,6 +268,7 @@ pub(crate) fn resource_router() -> McpResourceRouter<ChaosMcpServer> {
             builtin_mcp_resources::ChaosBuiltinResourceKind::Spool => spool_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Models => models_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Modes => modes_list_handler,
+            builtin_mcp_resources::ChaosBuiltinResourceKind::Manual => manual_list_handler,
         };
         router = router.with_resource(resource_info(spec), handler, None);
     }
@@ -252,6 +281,9 @@ pub(crate) fn resource_template_router() -> McpResourceTemplateRouter<ChaosMcpSe
         let handler = match spec.kind {
             builtin_mcp_resources::ChaosBuiltinResourceTemplateKind::SessionDetail => {
                 session_detail_handler
+            }
+            builtin_mcp_resources::ChaosBuiltinResourceTemplateKind::ManualPage => {
+                manual_page_handler
             }
         };
         router = router.with_template(template_info(spec), handler, None);

@@ -133,7 +133,7 @@ fn merge_inline_resources_adds_local_chaos_resources() {
         .get(INTERNAL_TASK_SERVER_NAME)
         .expect("inline chaos resources should exist");
 
-    assert_eq!(resources.len(), 5);
+    assert_eq!(resources.len(), 6);
     assert_eq!(resources[0].uri, builtin_mcp_resources::CHAOS_SESSIONS_URI);
     assert_eq!(resources[0].name, "sessions");
     assert_eq!(
@@ -164,12 +164,21 @@ fn merge_inline_resources_adds_local_chaos_resources() {
         resources[4].mime_type.as_deref(),
         Some(builtin_mcp_resources::JSON_MIME_TYPE)
     );
+    assert_eq!(resources[5].uri, builtin_mcp_resources::CHAOS_MANUAL_URI);
+    assert_eq!(resources[5].name, "manual");
+    assert_eq!(
+        resources[5].mime_type.as_deref(),
+        Some(builtin_mcp_resources::JSON_MIME_TYPE)
+    );
 }
 
 #[test]
 fn inline_text_resource_result_wraps_json_text_content() {
-    let result =
-        inline_text_resource_result(builtin_mcp_resources::CHAOS_CRONS_URI, "[]".to_string());
+    let result = inline_text_resource_result(
+        builtin_mcp_resources::CHAOS_CRONS_URI,
+        "[]".to_string(),
+        builtin_mcp_resources::JSON_MIME_TYPE,
+    );
 
     assert_eq!(
         result,
@@ -186,14 +195,14 @@ fn inline_text_resource_result_wraps_json_text_content() {
 }
 
 #[test]
-fn merge_inline_resource_templates_adds_session_detail_template() {
+fn merge_inline_resource_templates_adds_builtin_templates() {
     let merged = merge_inline_resource_templates(HashMap::new());
 
     let templates = merged
         .get(INTERNAL_TASK_SERVER_NAME)
         .expect("inline chaos templates should exist");
 
-    assert_eq!(templates.len(), 1);
+    assert_eq!(templates.len(), 2);
     assert_eq!(
         templates[0].uri_template,
         builtin_mcp_resources::CHAOS_SESSIONS_URI_TEMPLATE
@@ -202,5 +211,31 @@ fn merge_inline_resource_templates_adds_session_detail_template() {
     assert_eq!(
         templates[0].description.as_deref(),
         Some("Details for a specific ChaOS process")
+    );
+    assert_eq!(
+        templates[1].uri_template,
+        builtin_mcp_resources::CHAOS_MANUAL_URI_TEMPLATE
+    );
+    assert_eq!(templates[1].name, "manual_page");
+    assert_eq!(
+        templates[1].mime_type.as_deref(),
+        Some(builtin_mcp_resources::MARKDOWN_MIME_TYPE)
+    );
+}
+
+#[test]
+fn inline_text_resource_result_preserves_markdown_mime_type() {
+    let result = inline_text_resource_result(
+        "chaos://man/chaos-mcp.7",
+        "# chaos-mcp(7)".to_string(),
+        builtin_mcp_resources::MARKDOWN_MIME_TYPE,
+    );
+
+    let ResourceContents::Text(content) = &result.contents[0] else {
+        panic!("expected text resource");
+    };
+    assert_eq!(
+        content.mime_type.as_deref(),
+        Some(builtin_mcp_resources::MARKDOWN_MIME_TYPE)
     );
 }

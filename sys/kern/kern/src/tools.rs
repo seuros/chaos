@@ -1,5 +1,6 @@
 pub mod context;
 pub mod events;
+pub(crate) mod groups;
 pub(crate) mod handlers;
 pub(crate) mod network_approval;
 pub mod orchestrator;

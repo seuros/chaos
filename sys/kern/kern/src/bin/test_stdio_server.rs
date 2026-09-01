@@ -139,7 +139,7 @@ fn tool_router() -> McpToolRouter<TestStdioServer> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
-    let mcp_server = server("test-stdio-server", CHAOS_VERSION)
+    let mcp_server = Server::builder("test-stdio-server", CHAOS_VERSION)
         .with_tools(true)
         .build();
     let tool_registry = mcp_server.tool_registry().clone();
@@ -148,9 +148,11 @@ async fn main() -> io::Result<()> {
     });
     for tool in tool_router().into_tools(server) {
         if tool.name() == "project_task" {
-            tool_registry.register_boxed_with_policy(
+            tool_registry.register_boxed_configured(
                 tool,
-                ToolPolicy::new().initial_state(ToolLifecycleState::Disabled),
+                ToolRegistrationPolicy::new().lifecycle(
+                    ToolLifecyclePolicy::new().initial_state(ToolLifecycleState::Disabled),
+                ),
             );
         } else {
             tool_registry.register_boxed(tool);

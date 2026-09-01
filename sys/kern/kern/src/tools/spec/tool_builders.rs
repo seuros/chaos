@@ -12,6 +12,7 @@ use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::request_permissions_tool_description;
 use crate::tools::handlers::request_user_input_tool_description;
+use mcp_host::prelude::ToolGroupCatalog;
 
 use super::ToolsConfig;
 use super::schemas::{
@@ -19,6 +20,43 @@ use super::schemas::{
     resume_agent_output_schema, send_input_output_schema, spawn_agent_output_schema,
     unified_exec_output_schema, wait_output_schema,
 };
+
+pub(crate) fn create_tool_group_control_tool(name: &str, catalog: &ToolGroupCatalog) -> ToolSpec {
+    let definitions = catalog.definitions();
+    let available = definitions
+        .iter()
+        .map(|group| format!("{}: {}", group.id, group.description))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let action = if name == "enable_tools" {
+        "Enable"
+    } else {
+        "Disable"
+    };
+    let properties = BTreeMap::from([(
+        "groups".to_string(),
+        JsonSchema::Array {
+            items: Box::new(JsonSchema::String { description: None }),
+            description: Some(format!(
+                "One or more capability group IDs. Available groups:\n{available}"
+            )),
+        },
+    )]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: name.to_string(),
+        description: format!(
+            "{action} one or more capability groups for this session. The next model sample sees the updated tool set."
+        ),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["groups".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
 
 pub(crate) fn create_switch_mode_tool() -> ToolSpec {
     let properties = BTreeMap::from([(

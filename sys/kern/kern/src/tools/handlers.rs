@@ -16,6 +16,7 @@ mod session_title;
 mod shell;
 mod switch_mode;
 mod test_sync;
+mod tool_groups;
 pub(crate) mod unified_exec;
 mod view_image;
 
@@ -55,6 +56,7 @@ pub use shell::ShellCommandHandler;
 pub use shell::ShellHandler;
 pub use switch_mode::SwitchModeHandler;
 pub use test_sync::TestSyncHandler;
+pub use tool_groups::ToolGroupsHandler;
 pub use unified_exec::UnifiedExecHandler;
 pub use view_image::ViewImageHandler;
 

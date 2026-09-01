@@ -20,10 +20,13 @@ use crate::tools::sandboxing::ApprovalStore;
 use crate::unified_exec::UnifiedExecProcessManager;
 use chaos_dtrace::Hooks;
 use chaos_snitch::SessionTelemetry;
+use mcp_host::prelude::{ToolGroupCatalog, ToolGroupState};
 use tokio::sync::Mutex;
 
 pub(crate) struct SessionServices {
     pub(crate) catalog: Arc<CatalogSink>,
+    pub(crate) tool_group_catalog: ToolGroupCatalog,
+    pub(crate) tool_group_state: ToolGroupState,
     pub(crate) mcp_registry: McpRegistryActor,
     pub(crate) mcp_refresh: McpRefreshActor,
     pub(crate) internal_task_store: InternalTaskStore,

@@ -50,6 +50,7 @@ pub(crate) struct ToolRouterParams<'a> {
     pub(crate) halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
     /// When true, exclude destructive MCP tools from the registry (plan mode).
     pub(crate) plan_mode: bool,
+    pub(crate) tool_groups: Option<crate::tools::groups::ToolGroupFilter<'a>>,
 }
 
 impl ToolRouter {
@@ -61,6 +62,7 @@ impl ToolRouter {
             catalog_tools,
             halluacinate,
             plan_mode,
+            tool_groups,
         } = params;
         let builder = build_specs_with_discoverable_tools(
             config,
@@ -70,6 +72,7 @@ impl ToolRouter {
             catalog_tools,
             halluacinate,
             plan_mode,
+            tool_groups,
         );
         let (specs, registry) = builder.build();
         let model_visible_specs = specs

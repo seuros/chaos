@@ -387,6 +387,15 @@ impl ToolRegistryBuilder {
         }
     }
 
+    pub(crate) fn retain_tools<F>(&mut self, mut is_visible: F)
+    where
+        F: FnMut(&str) -> bool,
+    {
+        self.specs
+            .retain(|configured| is_visible(configured.spec.name()));
+        self.handlers.retain(|name, _| is_visible(name));
+    }
+
     // TODO(jif) for dynamic tools.
     // pub fn register_many<I>(&mut self, names: I, handler: Arc<dyn ToolHandler>)
     // where

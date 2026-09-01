@@ -33,6 +33,7 @@ use chaos_traits::catalog::CatalogToolDriver;
 use chaos_traits::catalog::CatalogToolDriverFuture;
 use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
+use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools_with_parallel;
 use mcp_host::prelude::*;
 use std::sync::Arc;
@@ -86,6 +87,10 @@ fn cron_tool_driver() -> Arc<dyn CatalogToolDriver> {
     Arc::new(CronToolDriver)
 }
 
+fn cron_tool_exposure(_tool_name: &str) -> ToolExposure {
+    ToolExposure::groups(["cron"])
+}
+
 inventory::submit! {
     CatalogRegistration {
         name: "cron",
@@ -97,6 +102,7 @@ inventory::submit! {
         resource_templates: || vec![],
         prompts: || vec![],
         tool_driver: Some(cron_tool_driver),
+        tool_exposure: cron_tool_exposure,
     }
 }
 

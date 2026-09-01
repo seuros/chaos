@@ -5,6 +5,7 @@ use chaos_traits::catalog::CatalogToolDriver;
 use chaos_traits::catalog::CatalogToolDriverFuture;
 use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
+use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools;
 use mcp_host::prelude::*;
 use std::sync::Arc;
@@ -42,6 +43,10 @@ fn arsenal_tool_driver() -> Arc<dyn CatalogToolDriver> {
     Arc::new(ArsenalToolDriver)
 }
 
+fn arsenal_tool_exposure(_tool_name: &str) -> ToolExposure {
+    ToolExposure::groups(["filesystem"])
+}
+
 inventory::submit! {
     CatalogRegistration {
         name: "arsenal",
@@ -50,6 +55,7 @@ inventory::submit! {
         resource_templates: || vec![],
         prompts: || vec![],
         tool_driver: Some(arsenal_tool_driver),
+        tool_exposure: arsenal_tool_exposure,
     }
 }
 

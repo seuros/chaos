@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
+pub use mcp_host::prelude::ToolExposure;
+
 pub type CatalogToolDriverFuture<'a> =
     Pin<Box<dyn Future<Output = Result<CatalogToolResult, String>> + Send + 'a>>;
 
@@ -18,6 +20,7 @@ pub trait CatalogToolDriver: Send + Sync {
 }
 
 pub type CatalogToolDriverFactory = fn() -> Arc<dyn CatalogToolDriver>;
+pub type CatalogToolExposureFactory = fn(&str) -> ToolExposure;
 
 #[derive(Debug, Clone)]
 pub struct CatalogToolRequest {
@@ -56,6 +59,8 @@ pub struct CatalogRegistration {
     pub prompts: fn() -> Vec<CatalogPrompt>,
     /// Optional driver factory for executing the module's catalog tools.
     pub tool_driver: Option<CatalogToolDriverFactory>,
+    /// Explicit group exposure for each tool provided by this module.
+    pub tool_exposure: CatalogToolExposureFactory,
 }
 
 inventory::collect!(CatalogRegistration);

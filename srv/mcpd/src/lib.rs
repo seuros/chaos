@@ -141,7 +141,7 @@ pub async fn run_main(
     let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
 
     // Build the mcp-host Server.
-    let mcp_server = server("chaos-mcp-server", CHAOS_VERSION)
+    let mcp_server = Server::builder("chaos-mcp-server", CHAOS_VERSION)
         .with_tools(true)
         .with_resources(true, false)
         .with_resource_templates()

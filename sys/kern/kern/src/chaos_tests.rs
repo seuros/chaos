@@ -266,6 +266,7 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
             catalog_tools: vec![],
             halluacinate: None,
             plan_mode: false,
+            tool_groups: None,
         },
     ));
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
@@ -469,10 +470,15 @@ fn make_test_session_services(
     let network_approval = Arc::new(NetworkApprovalService::default());
     let file_watcher = Arc::new(FileWatcher::noop());
     let user_shell = default_user_shell();
+    let tool_group_catalog =
+        crate::tools::groups::build_catalog().expect("build test tool group catalog");
+    let tool_group_state = tool_group_catalog.new_state();
     SessionServices {
         catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),
+        tool_group_catalog,
+        tool_group_state,
         mcp_registry: crate::mcp_registry::McpRegistryActor::spawn(
             McpConnectionManager::new_uninitialized(&config.permissions.approval_policy),
             CancellationToken::new(),

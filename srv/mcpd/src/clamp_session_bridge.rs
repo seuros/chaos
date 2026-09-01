@@ -40,7 +40,7 @@ pub async fn run_main() -> IoResult<()> {
         .map_err(|_| Error::new(ErrorKind::InvalidInput, format!("missing {TOKEN_ENV}")))?;
 
     let tool_specs = list_tools(&socket_path, &token).await?;
-    let server = server("chaos-clamp-session-bridge", CHAOS_VERSION)
+    let server = Server::builder("chaos-clamp-session-bridge", CHAOS_VERSION)
         .with_tools(true)
         .with_instructions(format!("{OS_NAME} session-backed tools for clamp"))
         .build();

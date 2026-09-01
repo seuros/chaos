@@ -345,6 +345,7 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
             catalog_tools: vec![],
             halluacinate: None,
             plan_mode: false,
+            tool_groups: None,
         },
     );
     let item = ResponseItem::CustomToolCall {

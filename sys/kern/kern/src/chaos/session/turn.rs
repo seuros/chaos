@@ -102,6 +102,31 @@ impl Session {
         session_configuration: SessionConfiguration,
         final_output_json_schema: Option<Option<serde_json::Value>>,
     ) -> Arc<TurnContext> {
+        let turn_context = Arc::new(
+            self.build_turn_context_from_configuration(
+                sub_id,
+                session_configuration,
+                final_output_json_schema,
+            )
+            .await,
+        );
+        self.permission_actor
+            .register_turn(&turn_context)
+            .await
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while registering a turn");
+            });
+        self.sync_mcp_permission_state(&turn_context).await;
+        turn_context.turn_metadata_state.spawn_git_enrichment_task();
+        turn_context
+    }
+
+    async fn build_turn_context_from_configuration(
+        &self,
+        sub_id: String,
+        session_configuration: SessionConfiguration,
+        final_output_json_schema: Option<Option<serde_json::Value>>,
+    ) -> TurnContext {
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
 
         let model_info = self
@@ -130,16 +155,39 @@ impl Session {
         if let Some(final_schema) = final_output_json_schema {
             turn_context.final_output_json_schema = final_schema;
         }
-        let turn_context = Arc::new(turn_context);
-        self.permission_actor
-            .register_turn(&turn_context)
-            .await
-            .unwrap_or_else(|_| {
-                panic!("permission actor stopped while registering a turn");
-            });
-        self.sync_mcp_permission_state(&turn_context).await;
-        turn_context.turn_metadata_state.spawn_git_enrichment_task();
         turn_context
+    }
+
+    /// Returns the effective context used to build the model-visible tool
+    /// registry without creating a synthetic active turn.
+    pub(crate) async fn tool_listing_turn_context(
+        &self,
+        sub_id: String,
+    ) -> (Arc<TurnContext>, tokio_util::sync::CancellationToken) {
+        if let Some((turn_context, cancellation_token)) =
+            self.active_turn_context_and_cancellation_token().await
+        {
+            return (
+                self.effective_turn_context(&turn_context).await,
+                cancellation_token,
+            );
+        }
+
+        let session_configuration = {
+            let state = self.state.lock().await;
+            state.session_configuration.clone()
+        };
+        let turn_context = self
+            .build_turn_context_from_configuration(
+                sub_id,
+                session_configuration,
+                /*final_output_json_schema*/ None,
+            )
+            .await;
+        (
+            Arc::new(turn_context),
+            tokio_util::sync::CancellationToken::new(),
+        )
     }
 
     pub(crate) async fn permission_snapshot(

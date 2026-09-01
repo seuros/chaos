@@ -3,6 +3,7 @@ use std::sync::Arc;
 use chaos_mcp_runtime::McpTask as Task;
 use chaos_traits::catalog::CatalogRegistration;
 use chaos_traits::catalog::CatalogTool;
+use chaos_traits::catalog::ToolExposure;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -187,6 +188,10 @@ fn mcp_task_catalog_tools() -> Vec<CatalogTool> {
     .collect()
 }
 
+fn mcp_task_tool_exposure(_tool_name: &str) -> ToolExposure {
+    ToolExposure::Always
+}
+
 inventory::submit! {
     CatalogRegistration {
         name: "mcp_task",
@@ -195,5 +200,6 @@ inventory::submit! {
         resource_templates: || vec![],
         prompts: || vec![],
         tool_driver: None,
+        tool_exposure: mcp_task_tool_exposure,
     }
 }

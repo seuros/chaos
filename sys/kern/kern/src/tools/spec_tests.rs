@@ -3,6 +3,7 @@ use crate::config::test_config;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::model_info::with_config_overrides;
 use crate::tools::ToolRouter;
+use crate::tools::groups::{FILESYSTEM, GIT, ToolGroupFilter};
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::spec::tool_builders::create_read_session_history_tool;
@@ -37,6 +38,60 @@ fn mcp_tool(
         icons: None,
         meta: None,
     }
+}
+
+fn inventory_catalog_tools() -> Vec<(String, chaos_traits::catalog::CatalogTool)> {
+    use chaos_traits::catalog::CatalogRegistration;
+    use std::collections::HashSet;
+
+    let mut seen = HashSet::new();
+    inventory::iter::<CatalogRegistration>
+        .into_iter()
+        .filter(|registration| seen.insert(registration.name))
+        .flat_map(|registration| {
+            let source = registration.name.to_string();
+            (registration.tools)()
+                .into_iter()
+                .map(move |tool| (source.clone(), tool))
+        })
+        .collect()
+}
+
+fn capability_group_test_config() -> ToolsConfig {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    })
+}
+
+fn build_grouped_tools(
+    config: &ToolsConfig,
+    catalog: &mcp_host::prelude::ToolGroupCatalog,
+    state: &mcp_host::prelude::ToolGroupState,
+    mcp_tools: Option<HashMap<String, chaos_mcp_runtime::manager::McpToolInfo>>,
+    dynamic_tools: &[DynamicToolSpec],
+) -> Vec<ConfiguredToolSpec> {
+    build_specs_with_discoverable_tools(
+        config,
+        mcp_tools,
+        None,
+        dynamic_tools,
+        inventory_catalog_tools(),
+        None,
+        false,
+        Some(ToolGroupFilter { catalog, state }),
+    )
+    .build()
+    .0
 }
 
 const REPRESENTATIVE_CODE_EDIT_MODEL_SLUG: &str = "gpt-5-codex";
@@ -394,6 +449,7 @@ fn plan_mode_hides_destructive_mcp_tools_using_spec_defaults() {
         Vec::new(),
         None,
         /*plan_mode*/ true,
+        None,
     )
     .build();
 
@@ -441,6 +497,111 @@ fn non_mutating_mode_hides_mutating_tools_but_keeps_mode_switching() {
     assert_lacks_tool_name(&tools, "apply_patch");
     assert_lacks_tool_name(&tools, "request_permissions");
     assert_lacks_tool_name(&tools, "external_mutation");
+}
+
+#[test]
+fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
+    let config = capability_group_test_config();
+    let catalog = crate::tools::groups::build_catalog().expect("tool group catalog");
+    let state = catalog.new_state();
+
+    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
+    assert_contains_tool_names(&tools, &["enable_tools", "request_user_input"]);
+    assert_lacks_tool_name(&tools, "disable_tools");
+    for name in [
+        "git_status",
+        "git_add",
+        "git_commit",
+        "read_file",
+        "apply_patch",
+        "shell_command",
+        "update_plan",
+        "web_search",
+        "spawn_agent",
+        "cron_create",
+        "mcp_add_server",
+    ] {
+        assert_lacks_tool_name(&tools, name);
+    }
+    assert!(!find_tool(&tools, "enable_tools").supports_parallel_tool_calls);
+
+    let change = catalog
+        .set_groups_enabled(&state, [GIT, FILESYSTEM], true)
+        .expect("enable git and filesystem");
+    assert_eq!(
+        change.changed_groups,
+        vec![FILESYSTEM.to_string(), GIT.to_string()]
+    );
+
+    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
+    assert_contains_tool_names(
+        &tools,
+        &[
+            "enable_tools",
+            "disable_tools",
+            "git_status",
+            "git_add",
+            "git_commit",
+            "read_file",
+            "list_dir",
+            "view_image",
+        ],
+    );
+    assert_lacks_tool_name(&tools, "apply_patch");
+    assert!(!find_tool(&tools, "disable_tools").supports_parallel_tool_calls);
+
+    catalog
+        .set_groups_enabled(&state, [GIT], false)
+        .expect("disable git");
+    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
+    assert_lacks_tool_name(&tools, "git_status");
+    assert_lacks_tool_name(&tools, "git_commit");
+    assert_contains_tool_names(&tools, &["read_file", "disable_tools"]);
+}
+
+#[test]
+fn capability_groups_do_not_filter_external_mcp_or_dynamic_tools() {
+    let config = capability_group_test_config();
+    let catalog = crate::tools::groups::build_catalog().expect("tool group catalog");
+    let state = catalog.new_state();
+    let mcp_tools = HashMap::from([(
+        "mcp__server__safe_read".to_string(),
+        mcp_tool(
+            "safe_read",
+            "Safe external read",
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+    )]);
+    let dynamic_tools = [DynamicToolSpec {
+        name: "external_dynamic".to_string(),
+        description: "External dynamic tool".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+        defer_loading: false,
+    }];
+
+    let tools = build_grouped_tools(&config, &catalog, &state, Some(mcp_tools), &dynamic_tools);
+
+    assert_contains_tool_names(
+        &tools,
+        &[
+            "enable_tools",
+            "mcp__server__safe_read",
+            "external_dynamic",
+            "list_mcp_resources",
+            "read_mcp_resource",
+            "call_mcp_tool_async",
+            "cancel_mcp_task",
+        ],
+    );
+    assert_lacks_tool_name(&tools, "git_status");
+    assert_lacks_tool_name(&tools, "read_file");
 }
 
 fn tool_name(tool: &ToolSpec) -> &str {
@@ -1077,6 +1238,7 @@ fn assert_model_tools(
             },
             halluacinate: None,
             plan_mode: false,
+            tool_groups: None,
         },
     );
     let model_visible_specs = router.model_visible_specs();
@@ -1137,8 +1299,10 @@ const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "cron_toggle",
     // spool_submit is only listed when a spool backend is registered; none is
     // in the test harness.
+    "git_add",
     "git_blame",
     "git_branches",
+    "git_commit",
     "git_diff",
     "git_log",
     "git_remotes",

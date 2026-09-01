@@ -45,6 +45,7 @@ use chaos_traits::catalog::CatalogToolDriver;
 use chaos_traits::catalog::CatalogToolDriverFuture;
 use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
+use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools;
 pub use commit::CommitResult;
 pub use commit::commit;
@@ -155,6 +156,10 @@ fn git_catalog_tools() -> Vec<CatalogTool> {
         .collect()
 }
 
+fn git_tool_exposure(_tool_name: &str) -> ToolExposure {
+    ToolExposure::groups(["git"])
+}
+
 inventory::submit! {
     CatalogRegistration {
         name: "git",
@@ -163,6 +168,7 @@ inventory::submit! {
         resource_templates: || vec![],
         prompts: || vec![],
         tool_driver: Some(git_tool_driver),
+        tool_exposure: git_tool_exposure,
     }
 }
 

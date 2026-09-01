@@ -9,6 +9,7 @@ use chaos_ipc::openai_models::WebSearchToolType;
 use chaos_mcp_runtime::manager::ToolInfo;
 
 use crate::client_common::tools::ToolSpec;
+use crate::tools::groups::ToolGroupFilter;
 use crate::tools::registry::ToolRegistryBuilder;
 
 use super::ToolsConfig;
@@ -26,7 +27,8 @@ use super::tool_builders::{
     create_search_session_history_tool, create_send_input_tool, create_set_parent_effort_tool,
     create_set_session_title_tool, create_shell_command_tool, create_shell_tool,
     create_spawn_agent_tool, create_spawn_minions_on_csv_tool, create_switch_mode_tool,
-    create_test_sync_tool, create_view_image_tool, create_wait_agent_tool, create_write_stdin_tool,
+    create_test_sync_tool, create_tool_group_control_tool, create_view_image_tool,
+    create_wait_agent_tool, create_write_stdin_tool,
 };
 
 pub(crate) fn push_tool_spec(
@@ -74,6 +76,7 @@ pub(crate) fn build_specs(
         catalog_tools,
         None,
         false,
+        None,
     )
 }
 
@@ -86,6 +89,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
     halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
     plan_mode: bool,
+    tool_groups: Option<ToolGroupFilter<'_>>,
 ) -> ToolRegistryBuilder {
     use crate::minions::tools::CloseAgentHandler;
     use crate::minions::tools::ResumeAgentHandler;
@@ -112,6 +116,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ShellHandler;
     use crate::tools::handlers::SwitchModeHandler;
     use crate::tools::handlers::TestSyncHandler;
+    use crate::tools::handlers::ToolGroupsHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
     use chaos_parrot::sanitize::parse_tool_input_schema;
@@ -141,6 +146,26 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let session_title_handler = Arc::new(SessionTitleHandler);
     let compaction_control_handler = Arc::new(CompactionControlHandler);
     let exec_permission_approvals_enabled = config.exec_permission_approvals_enabled;
+
+    if let Some(filter) = tool_groups.as_ref() {
+        let handler = Arc::new(ToolGroupsHandler);
+        if !filter.catalog.disabled_groups(filter.state).is_empty() {
+            push_tool_spec(
+                &mut builder,
+                create_tool_group_control_tool("enable_tools", filter.catalog),
+                false,
+            );
+            builder.register_handler("enable_tools", handler.clone());
+        }
+        if !filter.catalog.enabled_groups(filter.state).is_empty() {
+            push_tool_spec(
+                &mut builder,
+                create_tool_group_control_tool("disable_tools", filter.catalog),
+                false,
+            );
+            builder.register_handler("disable_tools", handler);
+        }
+    }
 
     match &config.shell_type {
         ConfigShellToolType::Default => {
@@ -610,6 +635,16 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 }
             }
         }
+    }
+
+    if let Some(filter) = tool_groups {
+        builder.retain_tools(|name| {
+            let visible = filter.is_visible(name);
+            if !visible {
+                tracing::debug!(tool = %name, "tool hidden by capability group");
+            }
+            visible
+        });
     }
 
     builder

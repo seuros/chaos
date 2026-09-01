@@ -739,6 +739,10 @@ pub(crate) async fn built_tools(
             catalog_tools,
             halluacinate: sess.services.halluacinate.clone(),
             plan_mode,
+            tool_groups: Some(crate::tools::groups::ToolGroupFilter {
+                catalog: &sess.services.tool_group_catalog,
+                state: &sess.services.tool_group_state,
+            }),
         },
     )))
 }

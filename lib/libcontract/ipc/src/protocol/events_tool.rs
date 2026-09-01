@@ -153,7 +153,8 @@ pub struct McpListToolsResponseEvent {
 /// A single tool entry in the all-tools response.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ToolSummary {
-    /// Tool name as the model sees it.
+    /// Tool name for display in `/tools`. MCP names omit the model-only
+    /// `mcp__<server>__` qualification.
     pub name: String,
     /// Human-readable description.
     pub description: String,
@@ -164,7 +165,7 @@ pub struct ToolSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub annotations: Option<serde_json::Value>,
-    /// Origin: "builtin", "arsenal", "cron", or "mcp:<server>".
+    /// Origin: "builtin", a catalog module, "dynamic", "halluacinate", or "mcp:<server>".
     pub source: String,
 }
 

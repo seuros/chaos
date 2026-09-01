@@ -472,10 +472,15 @@ impl Session {
             }
         };
 
+        let tool_group_catalog =
+            crate::tools::groups::build_catalog().context("failed to build tool group catalog")?;
+        let tool_group_state = tool_group_catalog.new_state();
         let services = SessionServices {
             catalog: Arc::new(crate::catalog::CatalogSink::new(
                 crate::catalog::Catalog::from_inventory(),
             )),
+            tool_group_catalog,
+            tool_group_state,
             mcp_registry: crate::mcp_registry::McpRegistryActor::spawn(
                 McpConnectionManager::new_uninitialized(&config.permissions.approval_policy),
                 CancellationToken::new(),

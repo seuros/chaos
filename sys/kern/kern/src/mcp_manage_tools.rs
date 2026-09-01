@@ -16,6 +16,7 @@ use chaos_traits::catalog::CatalogToolDriverFuture;
 use chaos_traits::catalog::CatalogToolEffect;
 use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
+use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools_with_parallel;
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
@@ -222,6 +223,10 @@ fn mcp_manage_tool_driver() -> Arc<dyn CatalogToolDriver> {
     Arc::new(McpManageToolDriver)
 }
 
+fn mcp_manage_tool_exposure(_tool_name: &str) -> ToolExposure {
+    ToolExposure::groups(["mcp-management"])
+}
+
 inventory::submit! {
     CatalogRegistration {
         name: "mcp",
@@ -230,6 +235,7 @@ inventory::submit! {
         resource_templates: || vec![],
         prompts: || vec![],
         tool_driver: Some(mcp_manage_tool_driver),
+        tool_exposure: mcp_manage_tool_exposure,
     }
 }
 

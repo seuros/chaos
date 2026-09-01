@@ -106,9 +106,6 @@ mod tests {
         supports_grep_weird_backtick_in_query();
         supports_cd_and_rg_files();
         supports_single_string_script_with_cd_and_pipe();
-        supports_python_walks_files();
-        supports_python3_walks_files();
-        python_without_file_walk_is_unknown();
         small_formatting_always_true_commands();
         awk_behavior();
         head_behavior();
@@ -720,38 +717,6 @@ mod tests {
                 cmd: "rg -n chaos_api chaos -S".to_string(),
                 query: Some("chaos_api".to_string()),
                 path: Some("chaos".to_string()),
-            }],
-        );
-    }
-
-    fn supports_python_walks_files() {
-        let inner = r#"python -c "import os; print(os.listdir('.'))""#;
-        assert_parsed(
-            &vec_str(&["bash", "-lc", inner]),
-            vec![ParsedCommand::ListFiles {
-                cmd: shlex_join(&shlex_split_safe(inner)),
-                path: None,
-            }],
-        );
-    }
-
-    fn supports_python3_walks_files() {
-        let inner = r#"python3 -c "import glob; print(glob.glob('*.rs'))""#;
-        assert_parsed(
-            &vec_str(&["bash", "-lc", inner]),
-            vec![ParsedCommand::ListFiles {
-                cmd: shlex_join(&shlex_split_safe(inner)),
-                path: None,
-            }],
-        );
-    }
-
-    fn python_without_file_walk_is_unknown() {
-        let inner = r#"python -c "print('hello')""#;
-        assert_parsed(
-            &vec_str(&["bash", "-lc", inner]),
-            vec![ParsedCommand::Unknown {
-                cmd: shlex_join(&shlex_split_safe(inner)),
             }],
         );
     }

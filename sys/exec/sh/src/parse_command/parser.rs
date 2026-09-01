@@ -271,33 +271,6 @@ fn parse_grep_like(main_cmd: &[String], args: &[String]) -> ParsedCommand {
     }
 }
 
-fn python_walks_files(args: &[String]) -> bool {
-    let args_no_connector = trim_at_connector(args);
-    let mut iter = args_no_connector.iter();
-    while let Some(arg) = iter.next() {
-        if arg == "-c"
-            && let Some(script) = iter.next()
-        {
-            return script.contains("os.walk")
-                || script.contains("os.listdir")
-                || script.contains("os.scandir")
-                || script.contains("glob.glob")
-                || script.contains("glob.iglob")
-                || script.contains("pathlib.Path")
-                || script.contains(".rglob(");
-        }
-    }
-    false
-}
-
-fn is_python_command(cmd: &str) -> bool {
-    cmd == "python"
-        || cmd == "python2"
-        || cmd == "python3"
-        || cmd.starts_with("python2.")
-        || cmd.starts_with("python3.")
-}
-
 fn cd_target(args: &[String]) -> Option<String> {
     if args.is_empty() {
         return None;
@@ -947,16 +920,6 @@ pub fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
         }
         Some((head, tail)) if head == "sed" => {
             read_command_or_unknown(main_cmd, sed_read_path(tail))
-        }
-        Some((head, tail)) if is_python_command(head) => {
-            if python_walks_files(tail) {
-                ParsedCommand::ListFiles {
-                    cmd: shlex_join(main_cmd),
-                    path: None,
-                }
-            } else {
-                unknown_for_main_cmd(main_cmd)
-            }
         }
         // Other commands
         _ => unknown_for_main_cmd(main_cmd),

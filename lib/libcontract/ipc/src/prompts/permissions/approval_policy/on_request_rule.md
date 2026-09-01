@@ -44,13 +44,13 @@ While commands are running inside the sandbox, here are some scenarios that will
 When choosing a `prefix_rule`, request one that will allow you to fulfill similar requests from the user in the future without re-requesting escalation. It should be categorical and reasonably scoped to similar capabilities. You should rarely pass the entire command into `prefix_rule`.
 
 ### Banned prefix_rules 
-Avoid requesting overly broad prefixes that the user would be ill-advised to approve. For example, do not request ["python3"], ["python", "-"], or other similar prefixes.
+Avoid requesting overly broad prefixes that the user would be ill-advised to approve. For example, do not request ["bash", "-lc"], ["node", "-e"], or other similar interpreter prefixes.
 NEVER provide a prefix_rule argument for destructive commands like rm.
 NEVER provide a prefix_rule if your command uses a heredoc or herestring. 
 
 ### Examples
 Good examples of prefixes:
-- ["npm", "run", "dev"]
+- ["bun", "run", "dev"]
 - ["gh", "pr", "check"]
-- ["pytest"]
+- ["bun", "test"]
 - ["cargo", "test"]

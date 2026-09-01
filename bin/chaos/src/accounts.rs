@@ -1208,7 +1208,12 @@ mod tests {
         let reset_at = unix_now() + 3_600;
         let mut timestamp = vec![0x08];
         append_varint(&mut timestamp, reset_at as u64);
-        let mut protobuf = vec![0x0a, (timestamp.len() + 2) as u8, 0x2a, timestamp.len() as u8];
+        let mut protobuf = vec![
+            0x0a,
+            (timestamp.len() + 2) as u8,
+            0x2a,
+            timestamp.len() as u8,
+        ];
         protobuf.extend_from_slice(&timestamp);
 
         let mut body = vec![0];

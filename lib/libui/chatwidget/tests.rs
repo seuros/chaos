@@ -7162,7 +7162,7 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
         .approval_policy
         .set(ApprovalPolicy::Interactive)?;
 
-    let script = "python - <<'PY'\nprint('hello')\nPY".to_string();
+    let script = "cat <<'EOF'\nhello\nEOF".to_string();
     let command = vec!["bash".into(), "-lc".into(), script];
     let ev = ExecApprovalRequestEvent {
         call_id: "call-approve-cmd-multiline-trunc".into(),

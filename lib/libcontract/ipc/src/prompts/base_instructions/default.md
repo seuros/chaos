@@ -117,7 +117,7 @@ You MUST adhere to the following criteria when solving queries:
 - Working on the repo(s) in the current environment is allowed, even if they are proprietary.
 - Analyzing code for vulnerabilities is allowed.
 - Showing user code and tool call details is allowed.
-- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {"command":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n- pass\\n+ return 123\\n*** End Patch"]}
+- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {"command":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.txt\\n@@\\n-old value\\n+new value\\n*** End Patch"]}
 
 If completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though higher-priority user instructions may override them:
 
@@ -245,12 +245,11 @@ For casual greetings, acknowledgements, or other one-off conversational messages
 
 # Tool Guidelines
 
-## Shell commands
+## Repository inspection
 
-When using the shell, you must adhere to the following guidelines:
-
-- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)
-- Do not use python scripts to attempt to output larger chunks of a file.
+- Prefer dedicated harness tools over shell commands: use the fff-backed `grep_files` for content search and `locate_files` for fuzzy file-path search, plus `read_file` for file contents and `list_dir` for directory structure.
+- Use shell commands only when the harness does not expose a suitable dedicated tool or when command execution is itself required by the task.
+- Do not invoke language runtimes or create ad hoc scripts to inspect, transform, or edit repository files when a harness tool can perform the operation.
 
 ## `update_plan`
 

@@ -369,11 +369,9 @@ mod tests {
         // Unsafe `find` commands.
         for args in [
             vec_str(&["find", ".", "-name", "file.txt", "-exec", "rm", "{}", ";"]),
-            vec_str(&[
-                "find", ".", "-name", "*.py", "-execdir", "python3", "{}", ";",
-            ]),
+            vec_str(&["find", ".", "-name", "*.txt", "-execdir", "sh", "{}", ";"]),
             vec_str(&["find", ".", "-name", "file.txt", "-ok", "rm", "{}", ";"]),
-            vec_str(&["find", ".", "-name", "*.py", "-okdir", "python3", "{}", ";"]),
+            vec_str(&["find", ".", "-name", "*.txt", "-okdir", "sh", "{}", ";"]),
             vec_str(&["find", ".", "-delete", "-name", "file.txt"]),
             vec_str(&["find", ".", "-fls", "/etc/passwd"]),
             vec_str(&["find", ".", "-fprint", "/etc/passwd"]),

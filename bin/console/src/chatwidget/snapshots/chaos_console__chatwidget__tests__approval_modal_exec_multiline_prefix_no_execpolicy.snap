@@ -6,9 +6,9 @@ expression: contents
                                                                                                     
   Would you like to run the following command?                                                      
                                                                                                     
-  $ python - <<'PY'                                                                                 
-  print('hello')                                                                                    
-  PY                                                                                                
+  $ cat <<'EOF'                                                                                    
+  hello                                                                                            
+  EOF                                                                                              
                                                                                                     
 › 1. Yes, proceed (y)                                                                               
   2. No, and tell Chaos what to do differently (esc)                                                

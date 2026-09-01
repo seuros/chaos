@@ -6,9 +6,9 @@ expression: contents
                                                                                                     
   Would you like to run the following command?                                                      
                                                                                                     
-  $ python - <<'PY'                                                                                 
-  print('hello')                                                                                    
-  PY                                                                                                
+  $ cat <<'EOF'                                                                                     
+  hello                                                                                             
+  EOF                                                                                               
                                                                                                     
 › 1. Yes, proceed (y)                                                                               
   2. No, and tell gpt-5.4-codex what to do differently (esc)                                        

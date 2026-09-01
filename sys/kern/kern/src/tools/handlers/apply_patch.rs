@@ -407,11 +407,11 @@ A full patch can combine several operations:
 *** Begin Patch
 *** Add File: hello.txt
 +Hello world
-*** Update File: src/app.py
-*** Move to: src/main.py
-@@ def greet():
--print("Hi")
-+print("Hello, world!")
+*** Update File: config/settings.toml
+*** Move to: config/runtime.toml
+@@
+-mode = "development"
++mode = "production"
 *** Delete File: obsolete.txt
 *** End Patch
 

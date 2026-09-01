@@ -393,7 +393,7 @@ pub(crate) mod tests {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Yes, and don't ask again for commands that start with `python -mpre_commit run --files eslint-plugin/no-mixed-const-enum-exports.js`".to_string(),
+                name: "Yes, and don't ask again for commands that start with `cargo clippy --workspace --all-targets --all-features -- -D warnings`".to_string(),
                 dismiss_on_select: true,
                 ..Default::default()
             },
@@ -410,15 +410,15 @@ pub(crate) mod tests {
         let rendered = render_lines_with_width(&view, 60);
         let command_line = rendered
             .lines()
-            .find(|line| line.contains("python -mpre_commit run"))
+            .find(|line| line.contains("cargo clippy --workspace"))
             .expect("rendered lines should include wrapped command");
         assert!(
-            command_line.starts_with("     `python -mpre_commit run"),
+            command_line.starts_with("     `cargo clippy --workspace"),
             "wrapped command line should align under the numbered prefix:\n{rendered}"
         );
         assert!(
-            rendered.contains("eslint-plugin/no-")
-                && rendered.contains("mixed-const-enum-exports.js"),
+            rendered.contains("--all-targets --all-")
+                && rendered.contains("features -- -D warnings"),
             "long command should not be truncated even when wrapped:\n{rendered}"
         );
     }

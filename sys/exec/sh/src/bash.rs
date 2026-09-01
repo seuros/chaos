@@ -153,7 +153,7 @@ fn parse_plain_command_from_node(cmd: tree_sitter::Node, src: &str) -> Option<Ve
                 words.push(parsed);
             }
             "concatenation" => {
-                // Handle concatenated arguments like -g"*.py"
+                // Handle concatenated arguments like -g"*.rs"
                 let mut concatenated = String::new();
                 let mut concat_cursor = child.walk();
                 for part in child.named_children(&mut concat_cursor) {
@@ -441,15 +441,15 @@ mod tests {
 
     #[test]
     fn accepts_concatenated_flag_and_value() {
-        // Test case: -g"*.py" (flag directly concatenated with quoted value)
-        let cmds = parse_seq("rg -n \"foo\" -g\"*.py\"").unwrap();
+        // Test case: -g"*.rs" (flag directly concatenated with quoted value)
+        let cmds = parse_seq("rg -n \"foo\" -g\"*.rs\"").unwrap();
         assert_eq!(
             cmds,
             vec![vec![
                 "rg".to_string(),
                 "-n".to_string(),
                 "foo".to_string(),
-                "-g*.py".to_string(),
+                "-g*.rs".to_string(),
             ]]
         );
     }
@@ -479,7 +479,7 @@ mod tests {
     fn rejects_concatenation_with_command_substitution() {
         // Command substitution in concatenated strings should be rejected
         assert!(parse_seq("rg -g\"$(pwd)\" pattern").is_none());
-        assert!(parse_seq("rg -g\"$(echo '*.py')\" pattern").is_none());
+        assert!(parse_seq("rg -g\"$(echo '*.rs')\" pattern").is_none());
     }
 
     #[test]
@@ -487,18 +487,18 @@ mod tests {
         let command = vec![
             "zsh".to_string(),
             "-lc".to_string(),
-            "python3 <<'PY'\nprint('hello')\nPY".to_string(),
+            "cat <<'EOF'\nhello\nEOF".to_string(),
         ];
         let parsed = parse_shell_lc_single_command_prefix(&command);
-        assert_eq!(parsed, Some(vec!["python3".to_string()]));
+        assert_eq!(parsed, Some(vec!["cat".to_string()]));
 
         let command_unquoted = vec![
             "zsh".to_string(),
             "-lc".to_string(),
-            "python3 << PY\nprint('hello')\nPY".to_string(),
+            "cat << EOF\nhello\nEOF".to_string(),
         ];
         let parsed_unquoted = parse_shell_lc_single_command_prefix(&command_unquoted);
-        assert_eq!(parsed_unquoted, Some(vec!["python3".to_string()]));
+        assert_eq!(parsed_unquoted, Some(vec!["cat".to_string()]));
     }
 
     #[test]
@@ -506,7 +506,7 @@ mod tests {
         let command = vec![
             "bash".to_string(),
             "-lc".to_string(),
-            "python3 <<'PY'\nprint('hello')\nPY\necho done".to_string(),
+            "cat <<'EOF'\nhello\nEOF\necho done".to_string(),
         ];
         assert_eq!(parse_shell_lc_single_command_prefix(&command), None);
     }
@@ -526,11 +526,11 @@ mod tests {
         let command = vec![
             "bash".to_string(),
             "-lc".to_string(),
-            "python3 <<'PY' > /tmp/out.txt\nprint('hello')\nPY".to_string(),
+            "cat <<'EOF' > /tmp/out.txt\nhello\nEOF".to_string(),
         ];
         assert_eq!(
             parse_shell_lc_single_command_prefix(&command),
-            Some(vec!["python3".to_string()])
+            Some(vec!["cat".to_string()])
         );
     }
 
@@ -549,7 +549,7 @@ mod tests {
         let command = vec![
             "bash".to_string(),
             "-lc".to_string(),
-            r#"python3 <<< "$(rm -rf /)""#.to_string(),
+            r#"cat <<< "$(rm -rf /)""#.to_string(),
         ];
         assert_eq!(parse_shell_lc_single_command_prefix(&command), None);
     }
@@ -569,7 +569,7 @@ mod tests {
         let command = vec![
             "bash".to_string(),
             "-lc".to_string(),
-            "python3 $((1<<2)) <<'PY'\nprint('hello')\nPY".to_string(),
+            "cat $((1<<2)) <<'EOF'\nhello\nEOF".to_string(),
         ];
         assert_eq!(parse_shell_lc_single_command_prefix(&command), None);
     }

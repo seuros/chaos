@@ -258,7 +258,7 @@ pub(crate) fn create_approval_parameters(
                 description: Some(
                     r#"Only specify when sandbox_permissions is `require_escalated`.
                         Suggest a prefix command pattern that will allow you to fulfill similar requests from the user in the future.
-                        Should be a short but reasonable prefix, e.g. [\"git\", \"pull\"] or [\"uv\", \"run\"] or [\"pytest\"]."#.to_string(),
+                        Should be a short but reasonable prefix, e.g. [\"git\", \"pull\"] or [\"cargo\", \"test\"] or [\"bun\", \"run\"]."#.to_string(),
                 ),
             },
         )

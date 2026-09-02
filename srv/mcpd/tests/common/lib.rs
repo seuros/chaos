@@ -9,6 +9,7 @@ use mcp_host::protocol::types::JsonRpcResponse;
 pub use mcp_process::McpProcess;
 pub use mock_model_server::create_mock_responses_server;
 pub use responses::create_apply_patch_sse_response;
+pub use responses::create_enable_tools_sse_response;
 pub use responses::create_final_assistant_message_sse_response;
 pub use responses::create_shell_command_sse_response;
 use serde::de::DeserializeOwned;

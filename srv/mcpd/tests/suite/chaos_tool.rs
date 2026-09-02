@@ -23,6 +23,7 @@ use wiremock::MockServer;
 use core_test_support::skip_if_no_network;
 use mcp_test_support::McpProcess;
 use mcp_test_support::create_apply_patch_sse_response;
+use mcp_test_support::create_enable_tools_sse_response;
 use mcp_test_support::create_final_assistant_message_sse_response;
 use mcp_test_support::create_mock_responses_server;
 
@@ -60,6 +61,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
         server: _server,
         dir: _dir,
     } = create_mcp_process(vec![
+        create_enable_tools_sse_response(&["editing"], "enable-editing")?,
         create_apply_patch_sse_response(&patch_content, "call1234")?,
         create_final_assistant_message_sse_response("Patch has been applied successfully!")?,
     ])

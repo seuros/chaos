@@ -475,6 +475,12 @@ impl Session {
         let tool_group_catalog =
             crate::tools::groups::build_catalog().context("failed to build tool group catalog")?;
         let tool_group_state = tool_group_catalog.new_state();
+        if crate::test_support::all_tool_groups_enabled_for_tests() {
+            let disabled_groups = tool_group_catalog.disabled_groups(&tool_group_state);
+            tool_group_catalog
+                .set_groups_enabled(&tool_group_state, disabled_groups, true)
+                .context("failed to enable tool groups for test session")?;
+        }
         let services = SessionServices {
             catalog: Arc::new(crate::catalog::CatalogSink::new(
                 crate::catalog::Catalog::from_inventory(),

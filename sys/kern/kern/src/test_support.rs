@@ -6,6 +6,8 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::config_types::ReasoningSummary;
@@ -37,6 +39,8 @@ use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::process_table;
 use crate::unified_exec;
+
+static ENABLE_ALL_TOOL_GROUPS_FOR_TESTS: AtomicBool = AtomicBool::new(false);
 
 /// Build a provider-agnostic [`ModelInfo`] with sensible defaults for testing.
 pub fn test_model_info(slug: &str) -> ModelInfo {
@@ -176,6 +180,14 @@ static TEST_MODEL_PRESETS: LazyLock<Vec<ModelPreset>> = LazyLock::new(|| {
 
 pub fn set_process_table_test_mode(enabled: bool) {
     process_table::set_process_table_test_mode_for_tests(enabled);
+}
+
+pub fn set_all_tool_groups_enabled_for_tests(enabled: bool) {
+    ENABLE_ALL_TOOL_GROUPS_FOR_TESTS.store(enabled, Ordering::Relaxed);
+}
+
+pub(crate) fn all_tool_groups_enabled_for_tests() -> bool {
+    ENABLE_ALL_TOOL_GROUPS_FOR_TESTS.load(Ordering::Relaxed)
 }
 
 pub fn set_deterministic_process_ids(enabled: bool) {

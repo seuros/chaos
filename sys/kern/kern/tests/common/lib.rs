@@ -32,6 +32,7 @@ pub mod auth_test_fixtures {
 #[ctor(unsafe)]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {
     chaos_kern::test_support::set_process_table_test_mode(/*enabled*/ true);
+    chaos_kern::test_support::set_all_tool_groups_enabled_for_tests(/*enabled*/ true);
     chaos_kern::test_support::set_deterministic_process_ids(/*enabled*/ true);
 }
 

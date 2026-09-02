@@ -138,25 +138,23 @@ pub enum ResolvedChaosBuiltinResource {
 }
 
 pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinResource>, String> {
+    if let Some(id) = uri.strip_prefix("chaos://sessions/") {
+        if id.is_empty() {
+            return Err("missing process_id in resource URI".to_string());
+        }
+        let process_id = ProcessId::from_string(id)
+            .map_err(|err| format!("invalid process_id in resource URI: {err}"))?;
+        return Ok(Some(ResolvedChaosBuiltinResource::SessionDetail {
+            process_id,
+        }));
+    }
+
     match uri {
         CHAOS_SESSIONS_URI => Ok(Some(ResolvedChaosBuiltinResource::Sessions)),
         CHAOS_CRONS_URI => Ok(Some(ResolvedChaosBuiltinResource::Crons)),
         CHAOS_SPOOL_URI => Ok(Some(ResolvedChaosBuiltinResource::Spool)),
         CHAOS_MODELS_URI => Ok(Some(ResolvedChaosBuiltinResource::Models)),
         CHAOS_MODES_URI => Ok(Some(ResolvedChaosBuiltinResource::Modes)),
-        _ if uri.starts_with("chaos://sessions/") => {
-            let id = uri
-                .strip_prefix("chaos://sessions/")
-                .expect("prefix checked");
-            if id.is_empty() {
-                return Err("missing process_id in resource URI".to_string());
-            }
-            let process_id = ProcessId::from_string(id)
-                .map_err(|err| format!("invalid process_id in resource URI: {err}"))?;
-            Ok(Some(ResolvedChaosBuiltinResource::SessionDetail {
-                process_id,
-            }))
-        }
         _ => match man::resolve_resource_uri(uri)? {
             Some(man::ResolvedManualResource::Index) => {
                 Ok(Some(ResolvedChaosBuiltinResource::ManualIndex))

@@ -32,16 +32,24 @@ pub fn create_final_assistant_message_sse_response(message: &str) -> anyhow::Res
     ]))
 }
 
+pub fn create_enable_tools_sse_response(groups: &[&str], call_id: &str) -> anyhow::Result<String> {
+    let arguments = serde_json::to_string(&json!({ "groups": groups }))?;
+    let response_id = format!("resp-{call_id}");
+    Ok(responses::sse(vec![
+        responses::ev_response_created(&response_id),
+        responses::ev_function_call(call_id, "enable_tools", &arguments),
+        responses::ev_completed(&response_id),
+    ]))
+}
+
 pub fn create_apply_patch_sse_response(
     patch_content: &str,
     call_id: &str,
 ) -> anyhow::Result<String> {
-    let command = format!("apply_patch <<'EOF'\n{patch_content}\nEOF");
-    let arguments = serde_json::to_string(&json!({ "command": command }))?;
     let response_id = format!("resp-{call_id}");
     Ok(responses::sse(vec![
         responses::ev_response_created(&response_id),
-        responses::ev_function_call(call_id, "shell_command", &arguments),
+        responses::ev_apply_patch_custom_tool_call(call_id, patch_content),
         responses::ev_completed(&response_id),
     ]))
 }

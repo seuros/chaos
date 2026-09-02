@@ -182,7 +182,43 @@ async fn resources_are_listed_after_initialize() -> Result<()> {
     assert!(uris.contains(&"chaos://spool"));
     assert!(uris.contains(&"chaos://models"));
     assert!(uris.contains(&"chaos://modes"));
+    assert!(uris.contains(&"chaos://mcp"));
     assert!(uris.contains(&"chaos://man"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mcp_resource_can_be_read_after_initialize() -> Result<()> {
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
+    mcp.initialize().await?;
+
+    let request_id = mcp
+        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://mcp" })))
+        .await?;
+    let message = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id.clone()),
+    )
+    .await??;
+
+    let JsonRpcMessage::Response(response) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+    };
+    assert_eq!(response.id, Some(request_id.to_value()));
+    assert!(
+        response.error.is_none(),
+        "unexpected error: {:?}",
+        response.error
+    );
+
+    let content = &response.result.as_ref().unwrap()["contents"][0];
+    assert_eq!(content["uri"], json!("chaos://mcp"));
+    assert_eq!(content["mimeType"], json!("application/json"));
+    let payload: serde_json::Value =
+        serde_json::from_str(content["text"].as_str().expect("MCP status text"))?;
+    assert!(payload["revision"].is_null());
+    assert!(payload["servers"].is_array());
 
     Ok(())
 }

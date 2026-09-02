@@ -133,7 +133,7 @@ fn merge_inline_resources_adds_local_chaos_resources() {
         .get(INTERNAL_TASK_SERVER_NAME)
         .expect("inline chaos resources should exist");
 
-    assert_eq!(resources.len(), 6);
+    assert_eq!(resources.len(), 7);
     assert_eq!(resources[0].uri, builtin_mcp_resources::CHAOS_SESSIONS_URI);
     assert_eq!(resources[0].name, "sessions");
     assert_eq!(
@@ -164,10 +164,16 @@ fn merge_inline_resources_adds_local_chaos_resources() {
         resources[4].mime_type.as_deref(),
         Some(builtin_mcp_resources::JSON_MIME_TYPE)
     );
-    assert_eq!(resources[5].uri, builtin_mcp_resources::CHAOS_MANUAL_URI);
-    assert_eq!(resources[5].name, "manual");
+    assert_eq!(resources[5].uri, builtin_mcp_resources::CHAOS_MCP_URI);
+    assert_eq!(resources[5].name, "mcp");
     assert_eq!(
         resources[5].mime_type.as_deref(),
+        Some(builtin_mcp_resources::JSON_MIME_TYPE)
+    );
+    assert_eq!(resources[6].uri, builtin_mcp_resources::CHAOS_MANUAL_URI);
+    assert_eq!(resources[6].name, "manual");
+    assert_eq!(
+        resources[6].mime_type.as_deref(),
         Some(builtin_mcp_resources::JSON_MIME_TYPE)
     );
 }

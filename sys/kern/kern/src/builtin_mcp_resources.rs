@@ -1,9 +1,14 @@
 use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ModelPreset;
+use chaos_ipc::protocol::McpAuthStatus;
+use chaos_ipc::protocol::McpStartupStatus;
+use chaos_sysctl::types::McpServerConfig;
+use chaos_sysctl::types::McpServerTransportConfig;
 
 use crate::models_manager::manager::ProviderModels;
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::runtime_db::RuntimeDbHandle;
@@ -17,6 +22,7 @@ pub const CHAOS_CRONS_URI: &str = "chaos://crons";
 pub const CHAOS_SPOOL_URI: &str = "chaos://spool";
 pub const CHAOS_MODELS_URI: &str = "chaos://models";
 pub const CHAOS_MODES_URI: &str = "chaos://modes";
+pub const CHAOS_MCP_URI: &str = "chaos://mcp";
 pub use man::MANUAL_INDEX_URI as CHAOS_MANUAL_URI;
 pub use man::MANUAL_PAGE_URI_TEMPLATE as CHAOS_MANUAL_URI_TEMPLATE;
 pub use man::MARKDOWN_MIME_TYPE;
@@ -28,6 +34,7 @@ pub enum ChaosBuiltinResourceKind {
     Spool,
     Models,
     Modes,
+    Mcp,
     Manual,
 }
 
@@ -55,7 +62,7 @@ pub struct ChaosBuiltinResourceTemplateSpec {
     pub mime_type: &'static str,
 }
 
-const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 6] = [
+const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 7] = [
     ChaosBuiltinResourceSpec {
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
@@ -89,6 +96,13 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 6] = [
         uri: CHAOS_MODES_URI,
         name: "modes",
         description: "List the ChaOS collaboration modes visible to this caller",
+        mime_type: JSON_MIME_TYPE,
+    },
+    ChaosBuiltinResourceSpec {
+        kind: ChaosBuiltinResourceKind::Mcp,
+        uri: CHAOS_MCP_URI,
+        name: "mcp",
+        description: "List configured MCP servers with authentication and startup status",
         mime_type: JSON_MIME_TYPE,
     },
     ChaosBuiltinResourceSpec {
@@ -133,6 +147,7 @@ pub enum ResolvedChaosBuiltinResource {
     Spool,
     Models,
     Modes,
+    Mcp,
     ManualIndex,
     ManualPage(&'static man::ManualPageSpec),
 }
@@ -155,6 +170,7 @@ pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinReso
         CHAOS_SPOOL_URI => Ok(Some(ResolvedChaosBuiltinResource::Spool)),
         CHAOS_MODELS_URI => Ok(Some(ResolvedChaosBuiltinResource::Models)),
         CHAOS_MODES_URI => Ok(Some(ResolvedChaosBuiltinResource::Modes)),
+        CHAOS_MCP_URI => Ok(Some(ResolvedChaosBuiltinResource::Mcp)),
         _ => match man::resolve_resource_uri(uri)? {
             Some(man::ResolvedManualResource::Index) => {
                 Ok(Some(ResolvedChaosBuiltinResource::ManualIndex))
@@ -305,6 +321,108 @@ pub fn modes_json_from_chaos_home(chaos_home: &Path) -> Result<String, String> {
     registry.installation_resource_json(&policy)
 }
 
+pub async fn mcp_json_from_config(
+    revision: Option<u64>,
+    config: &crate::config::Config,
+    active_servers: Option<&HashMap<String, McpServerConfig>>,
+    startup_statuses: Option<&HashMap<String, McpStartupStatus>>,
+) -> Result<String, String> {
+    let servers = config.mcp_servers.get();
+    let auth_statuses = crate::mcp::auth::compute_auth_statuses(
+        servers.iter(),
+        config.mcp_oauth_credentials_store_mode,
+    )
+    .await
+    .into_iter()
+    .map(|(name, entry)| (name, entry.auth_status))
+    .collect();
+    mcp_json_from_servers(
+        revision,
+        servers,
+        active_servers,
+        &auth_statuses,
+        startup_statuses,
+    )
+}
+
+pub fn mcp_json_from_servers(
+    revision: Option<u64>,
+    servers: &HashMap<String, McpServerConfig>,
+    active_servers: Option<&HashMap<String, McpServerConfig>>,
+    auth_statuses: &HashMap<String, McpAuthStatus>,
+    startup_statuses: Option<&HashMap<String, McpStartupStatus>>,
+) -> Result<String, String> {
+    let mut names = servers.keys().collect::<Vec<_>>();
+    names.sort();
+    let servers = names
+        .into_iter()
+        .map(|name| {
+            let config = &servers[name];
+            let transport = match &config.transport {
+                McpServerTransportConfig::Stdio { .. } => "stdio",
+                McpServerTransportConfig::StreamableHttp { .. } => "streamable_http",
+            };
+            let status = if !config.enabled {
+                json!({ "state": "disabled" })
+            } else {
+                match (active_servers, startup_statuses) {
+                    (Some(active_servers), Some(_))
+                        if active_servers.get(name) != Some(config) =>
+                    {
+                        json!({
+                            "state": "not_loaded",
+                            "error": "configured server is not active in this session; the latest reload may have failed"
+                        })
+                    }
+                    (Some(_), Some(startup_statuses)) => startup_statuses
+                        .get(name)
+                        .map(|status| match status {
+                            McpStartupStatus::Starting => json!({ "state": "starting" }),
+                            McpStartupStatus::Ready => json!({ "state": "ready" }),
+                            McpStartupStatus::Failed { error } => {
+                                json!({ "state": "failed", "error": error })
+                            }
+                            McpStartupStatus::Cancelled => json!({ "state": "cancelled" }),
+                        })
+                        .unwrap_or_else(|| {
+                            json!({
+                                "state": "not_loaded",
+                                "error": "configured server has no active client"
+                            })
+                        }),
+                    _ => json!({
+                        "state": "unavailable",
+                        "error": "per-session status requires an active ChaOS session"
+                    }),
+                }
+            };
+
+            let mut server = serde_json::Map::new();
+            server.insert("name".to_string(), json!(name));
+            server.insert("enabled".to_string(), json!(config.enabled));
+            server.insert("required".to_string(), json!(config.required));
+            server.insert("transport".to_string(), json!(transport));
+            server.insert(
+                "auth_status".to_string(),
+                auth_statuses.get(name).map_or(serde_json::Value::Null, |status| json!(status)),
+            );
+            server.insert("status".to_string(), status);
+            if let Some(reason) = &config.disabled_reason {
+                server.insert("disabled_reason".to_string(), json!(reason.to_string()));
+            }
+            serde_json::Value::Object(server)
+        })
+        .collect::<Vec<_>>();
+
+    to_pretty_json(
+        &json!({
+            "revision": revision,
+            "servers": servers,
+        }),
+        "MCP server status",
+    )
+}
+
 pub async fn crons_json() -> Result<String, String> {
     chaos_cron::resource::list_crons().await
 }
@@ -321,6 +439,7 @@ pub trait ChaosBuiltinResourceBackend {
     async fn spool_json(&self) -> Result<String, String>;
     async fn models_json(&self) -> Result<String, String>;
     async fn modes_json(&self) -> Result<String, String>;
+    async fn mcp_json(&self) -> Result<String, String>;
 }
 
 pub async fn read_resource<B: ChaosBuiltinResourceBackend + Sync>(
@@ -347,6 +466,9 @@ pub async fn read_resource<B: ChaosBuiltinResourceBackend + Sync>(
         }
         Some(ResolvedChaosBuiltinResource::Modes) => {
             backend.modes_json().await.map(json_resource).map(Some)
+        }
+        Some(ResolvedChaosBuiltinResource::Mcp) => {
+            backend.mcp_json().await.map(json_resource).map(Some)
         }
         Some(ResolvedChaosBuiltinResource::ManualIndex) => {
             man::index_json().map(json_resource).map(Some)
@@ -388,6 +510,10 @@ mod tests {
             Some(ResolvedChaosBuiltinResource::Modes)
         );
         assert_eq!(
+            resolve_resource_uri(CHAOS_MCP_URI).expect("resolve mcp"),
+            Some(ResolvedChaosBuiltinResource::Mcp)
+        );
+        assert_eq!(
             resolve_resource_uri(CHAOS_MANUAL_URI).expect("resolve manual"),
             Some(ResolvedChaosBuiltinResource::ManualIndex)
         );
@@ -416,5 +542,77 @@ mod tests {
             resolve_resource_uri("chaos://man/chaos-mcp.7").expect("resolve manual page"),
             Some(ResolvedChaosBuiltinResource::ManualPage(page)) if page.id == "chaos-mcp.7"
         ));
+    }
+
+    #[test]
+    fn mcp_status_json_is_sorted_and_does_not_serialize_secrets() {
+        let alpha: McpServerConfig = serde_json::from_value(json!({
+            "url": "https://example.com/mcp",
+            "bearer_token": "secret"
+        }))
+        .expect("HTTP config");
+        let beta: McpServerConfig = serde_json::from_value(json!({
+            "command": "server",
+            "env": { "API_TOKEN": "secret" },
+            "enabled": false
+        }))
+        .expect("stdio config");
+        let gamma: McpServerConfig = serde_json::from_value(json!({
+            "command": "broken-server"
+        }))
+        .expect("failed stdio config");
+        let servers = HashMap::from([
+            ("beta".to_string(), beta),
+            ("alpha".to_string(), alpha.clone()),
+            ("gamma".to_string(), gamma.clone()),
+        ]);
+        let active = HashMap::from([("alpha".to_string(), alpha), ("gamma".to_string(), gamma)]);
+        let auth = HashMap::from([("alpha".to_string(), McpAuthStatus::BearerToken)]);
+        let startup_statuses = HashMap::from([
+            ("alpha".to_string(), McpStartupStatus::Ready),
+            (
+                "gamma".to_string(),
+                McpStartupStatus::Failed {
+                    error: "401 Unauthorized".to_string(),
+                },
+            ),
+        ]);
+
+        let text = mcp_json_from_servers(
+            Some(3),
+            &servers,
+            Some(&active),
+            &auth,
+            Some(&startup_statuses),
+        )
+        .expect("MCP status JSON");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("parse status JSON");
+
+        assert_eq!(value["revision"], 3);
+        assert_eq!(value["servers"][0]["name"], "alpha");
+        assert_eq!(value["servers"][0]["auth_status"], "bearer_token");
+        assert_eq!(value["servers"][0]["status"]["state"], "ready");
+        assert_eq!(value["servers"][1]["name"], "beta");
+        assert_eq!(value["servers"][1]["status"]["state"], "disabled");
+        assert_eq!(value["servers"][2]["name"], "gamma");
+        assert_eq!(value["servers"][2]["status"]["state"], "failed");
+        assert_eq!(value["servers"][2]["status"]["error"], "401 Unauthorized");
+        assert!(!text.contains("secret"));
+        assert!(!text.contains("API_TOKEN"));
+    }
+
+    #[test]
+    fn mcp_status_is_unavailable_without_an_active_session() {
+        let config: McpServerConfig = serde_json::from_value(json!({
+            "command": "server"
+        }))
+        .expect("stdio config");
+        let servers = HashMap::from([("server".to_string(), config)]);
+
+        let text = mcp_json_from_servers(None, &servers, None, &HashMap::new(), None)
+            .expect("MCP status JSON");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("parse status JSON");
+
+        assert_eq!(value["servers"][0]["status"]["state"], "unavailable");
     }
 }

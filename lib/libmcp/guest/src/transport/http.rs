@@ -229,6 +229,10 @@ impl HttpTransportInner {
             }
             status => {
                 let body = collect_body_string(response).await;
+                if is_stale_session_rejection(status, body.as_deref()) {
+                    self.clear_session_state().await;
+                    return Err(GuestError::SessionExpired);
+                }
                 return Err(GuestError::Http(format!(
                     "http POST {} returned {}{}",
                     self.endpoint,
@@ -720,6 +724,35 @@ fn format_body_suffix(body: Option<&str>) -> String {
     body.map(|body| format!(": {body}")).unwrap_or_default()
 }
 
+/// Returns true only for the protocol-level rejection emitted when a request
+/// reaches a stateful MCP endpoint without a session header.
+///
+/// The server rejects this before dispatching the JSON-RPC message, so it is
+/// safe for `send_message_locked` to establish a fresh session and retry once,
+/// including for non-idempotent methods such as `tools/call`. Generic 400
+/// responses remain ordinary errors and are never replayed.
+fn is_stale_session_rejection(status: StatusCode, body: Option<&str>) -> bool {
+    if status != StatusCode::BAD_REQUEST {
+        return false;
+    }
+
+    let Some(body) = body.map(str::trim) else {
+        return false;
+    };
+    if body.eq_ignore_ascii_case("Missing Mcp-Session-Id header") {
+        return true;
+    }
+
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .is_some_and(|value| {
+            value
+                .get("error")
+                .and_then(|error| error.as_str())
+                .is_some_and(|error| error.eq_ignore_ascii_case("Missing Mcp-Session-Id header"))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1102,6 +1135,161 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn transport_recovers_missing_session_without_double_executing_tool_call() {
+        let seen_requests = Arc::new(AsyncMutex::new(Vec::<SeenRequest>::new()));
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let executed_tool_calls = Arc::new(AtomicUsize::new(0));
+
+        let client = {
+            let seen_requests = Arc::clone(&seen_requests);
+            let call_count = Arc::clone(&call_count);
+            let executed_tool_calls = Arc::clone(&executed_tool_calls);
+            service_fn(move |req: Request| {
+                let seen_requests = Arc::clone(&seen_requests);
+                let call_count = Arc::clone(&call_count);
+                let executed_tool_calls = Arc::clone(&executed_tool_calls);
+                async move {
+                    let seen = record_request(req).await;
+                    seen_requests.lock().await.push(seen);
+
+                    let response = match call_count.fetch_add(1, Ordering::Relaxed) {
+                        0 => initialize_http_response("session-1"),
+                        1 => Response::builder()
+                            .status(StatusCode::ACCEPTED)
+                            .body(Body::empty())
+                            .unwrap(),
+                        // This is the post-restart race: the SSE loop has already
+                        // cleared the old session, so the request has no header.
+                        // A conforming server rejects it before tool dispatch.
+                        2 => Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body(Body::from(
+                                json!({"error": "Missing Mcp-Session-Id header"}).to_string(),
+                            ))
+                            .unwrap(),
+                        3 => initialize_http_response("session-2"),
+                        4 => Response::builder()
+                            .status(StatusCode::ACCEPTED)
+                            .header(HEADER_SESSION_ID, "session-2")
+                            .body(Body::empty())
+                            .unwrap(),
+                        5 => {
+                            executed_tool_calls.fetch_add(1, Ordering::Relaxed);
+                            Response::builder()
+                                .status(StatusCode::OK)
+                                .header(CONTENT_TYPE, MIME_APPLICATION_JSON)
+                                .header(HEADER_SESSION_ID, "session-2")
+                                .body(Body::from(
+                                    serde_json::to_vec(&JsonRpcMessage::Response(
+                                        JsonRpcResponse::success(
+                                            json!(2),
+                                            json!({
+                                                "content": [{"type": "text", "text": "ok"}]
+                                            }),
+                                        ),
+                                    ))
+                                    .unwrap(),
+                                ))
+                                .unwrap()
+                        }
+                        other => Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Body::from(format!("unexpected call {other}")))
+                            .unwrap(),
+                    };
+
+                    Ok::<_, OpaqueError>(response)
+                }
+            })
+            .boxed()
+        };
+
+        let transport = HttpTransport::with_client(
+            HttpClientConfig {
+                endpoint: Url::parse("http://localhost:62770/mcp").unwrap(),
+                open_sse_stream: false,
+                reconnect_delay: Duration::from_millis(5),
+                default_headers: Vec::new(),
+            },
+            client,
+        );
+
+        transport
+            .send(JsonRpcMessage::Request(JsonRpcRequest::new(
+                json!(1),
+                "initialize",
+                Some(
+                    serde_json::to_value(InitializeRequest {
+                        protocol_version: "2025-11-25".to_string(),
+                        capabilities: ClientCapabilities::default(),
+                        client_info: Implementation::new("mcp-guest", "0.1.0"),
+                    })
+                    .unwrap(),
+                ),
+            )))
+            .await
+            .unwrap();
+        let _ = transport.recv().await.unwrap();
+
+        transport
+            .send(JsonRpcMessage::Notification(JsonRpcRequest::notification(
+                "notifications/initialized",
+                None,
+            )))
+            .await
+            .unwrap();
+
+        // Mirror the SSE restart race: the background GET observes the dead
+        // session and clears local state before the foreground request starts.
+        transport.inner.clear_session_state().await;
+
+        transport
+            .send(JsonRpcMessage::Request(JsonRpcRequest::new(
+                json!(2),
+                "tools/call",
+                Some(json!({
+                    "name": "create_item",
+                    "arguments": {"name": "only-once"}
+                })),
+            )))
+            .await
+            .unwrap();
+
+        let message = transport.recv().await.unwrap();
+        let JsonRpcMessage::Response(response) = message else {
+            panic!("expected retried tool response");
+        };
+        assert_eq!(response.id, Some(json!(2)));
+        assert!(response.error.is_none());
+        assert_eq!(executed_tool_calls.load(Ordering::Relaxed), 1);
+
+        let seen = seen_requests.lock().await.clone();
+        let tool_posts = seen
+            .iter()
+            .filter(|request| request.rpc_method.as_deref() == Some("tools/call"))
+            .collect::<Vec<_>>();
+        assert_eq!(tool_posts.len(), 2);
+        assert_eq!(tool_posts[0].session_id, None);
+        assert_eq!(tool_posts[1].session_id.as_deref(), Some("session-2"));
+    }
+
+    #[test]
+    fn generic_bad_request_is_not_treated_as_a_stale_session() {
+        assert!(!is_stale_session_rejection(
+            StatusCode::BAD_REQUEST,
+            Some("invalid tool arguments")
+        ));
+        assert!(!is_stale_session_rejection(
+            StatusCode::BAD_REQUEST,
+            Some(r#"{"error":"invalid tool arguments"}"#)
+        ));
+        assert!(!is_stale_session_rejection(
+            StatusCode::UNAUTHORIZED,
+            Some("Missing Mcp-Session-Id header")
+        ));
     }
 
     #[tokio::test]

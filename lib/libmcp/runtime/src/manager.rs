@@ -381,6 +381,29 @@ impl McpConnectionManager {
         }
     }
 
+    /// Returns a non-blocking snapshot of every configured client's startup state.
+    pub async fn server_startup_statuses(&self) -> HashMap<String, McpStartupStatus> {
+        let mut statuses = HashMap::with_capacity(self.clients.len());
+        for (server_name, client) in &self.clients {
+            let status = if !client
+                .startup_complete
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                McpStartupStatus::Starting
+            } else {
+                match client.client().await {
+                    Ok(_) => McpStartupStatus::Ready,
+                    Err(StartupOutcomeError::Failed { error }) => {
+                        McpStartupStatus::Failed { error }
+                    }
+                    Err(StartupOutcomeError::Cancelled) => McpStartupStatus::Cancelled,
+                }
+            };
+            statuses.insert(server_name.clone(), status);
+        }
+        statuses
+    }
+
     pub async fn required_startup_failures(
         &self,
         required_servers: &[String],

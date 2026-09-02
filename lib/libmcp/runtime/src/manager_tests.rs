@@ -319,6 +319,54 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
     assert_eq!(tool.tool_name, "calendar_create_event");
 }
 
+#[tokio::test]
+async fn server_startup_statuses_report_pending_and_failed_without_blocking() {
+    let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
+        .boxed()
+        .shared();
+    let failed_client = futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
+        StartupOutcomeError::Failed {
+            error: "401 Unauthorized".to_string(),
+        },
+    ))
+    .boxed()
+    .shared();
+    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
+    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
+    manager.clients.insert(
+        "pending".to_string(),
+        AsyncManagedClient::for_tests(
+            pending_client,
+            None,
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+        ),
+    );
+    manager.clients.insert(
+        "failed".to_string(),
+        AsyncManagedClient::for_tests(
+            failed_client,
+            None,
+            Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+        ),
+    );
+
+    let statuses =
+        tokio::time::timeout(Duration::from_millis(10), manager.server_startup_statuses())
+            .await
+            .expect("status snapshot should not wait for pending clients");
+
+    assert!(matches!(
+        statuses.get("pending"),
+        Some(McpStartupStatus::Starting)
+    ));
+    assert!(matches!(
+        statuses.get("failed"),
+        Some(McpStartupStatus::Failed { error }) if error == "401 Unauthorized"
+    ));
+}
+
 #[test]
 fn mcp_init_error_display_prompts_for_github_pat() {
     let server_name = "github";

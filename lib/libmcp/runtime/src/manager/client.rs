@@ -35,9 +35,11 @@ use mcp_guest::protocol::PaginatedRequestParams;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 pub(super) const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str =
     "chaos.mcp.tools.fetch_uncached.duration_ms";
+const MCP_CLIENT_ID_DESCRIPTION_PREFIX: &str = "chaos-mcp-client-id:";
 
 /// Logger name used to identify sandbox state notifications.
 pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
@@ -169,6 +171,18 @@ pub(super) fn mcp_client_implementation_version() -> &'static str {
     } else {
         version
     }
+}
+
+fn managed_client_info() -> mcp_guest::protocol::Implementation {
+    mcp_guest::protocol::Implementation::new(
+        "chaos-mcp-client",
+        mcp_client_implementation_version(),
+    )
+    .with_title(OS_NAME)
+    .with_description(format!(
+        "{MCP_CLIENT_ID_DESCRIPTION_PREFIX}{}",
+        Uuid::new_v4()
+    ))
 }
 
 pub(super) async fn list_tools_for_session_uncached(
@@ -508,11 +522,7 @@ pub(super) async fn make_managed_client(
         cwd: Arc::clone(&cwd_arc),
     };
 
-    let client_info = mcp_guest::protocol::Implementation::new(
-        "chaos-mcp-client",
-        mcp_client_implementation_version(),
-    )
-    .with_title(OS_NAME);
+    let client_info = managed_client_info();
 
     let capabilities = mcp_guest::protocol::ClientCapabilities {
         experimental: None,
@@ -637,6 +647,26 @@ pub(super) async fn make_managed_client(
 mod tests {
     use super::*;
     use futures::future;
+
+    #[test]
+    fn managed_client_info_carries_a_stable_connection_identity() {
+        let first = managed_client_info();
+        let second = managed_client_info();
+        let first_id = first
+            .description
+            .as_deref()
+            .and_then(|description| description.strip_prefix(MCP_CLIENT_ID_DESCRIPTION_PREFIX))
+            .expect("managed client identity");
+        let second_id = second
+            .description
+            .as_deref()
+            .and_then(|description| description.strip_prefix(MCP_CLIENT_ID_DESCRIPTION_PREFIX))
+            .expect("managed client identity");
+
+        assert!(Uuid::parse_str(first_id).is_ok());
+        assert!(Uuid::parse_str(second_id).is_ok());
+        assert_ne!(first_id, second_id);
+    }
 
     fn sandbox_state(cwd: &str) -> SandboxState {
         SandboxState {

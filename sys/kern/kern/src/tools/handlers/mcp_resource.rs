@@ -409,6 +409,20 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourc
     async fn modes_json(&self) -> Result<String, String> {
         self.session.modes_json().await
     }
+
+    async fn mcp_json(&self) -> Result<String, String> {
+        let config = self.session.get_config().await;
+        let registry = &self.session.services.mcp_registry;
+        let active_servers = registry.configs_snapshot();
+        let startup_statuses = registry.current_manager().server_startup_statuses().await;
+        builtin_mcp_resources::mcp_json_from_config(
+            Some(registry.revision()),
+            &config,
+            Some(active_servers.as_ref()),
+            Some(&startup_statuses),
+        )
+        .await
+    }
 }
 
 async fn read_inline_resource(

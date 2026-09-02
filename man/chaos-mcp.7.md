@@ -172,8 +172,16 @@ single unified `chaos` tool.
 | `chaos://spool` | List persisted spool jobs |
 | `chaos://models` | List available model presets |
 | `chaos://modes` | List the caller-visible collaboration mode catalog |
+| `chaos://mcp` | List configured MCP servers with auth and startup status |
 | `chaos://man` | List agent-facing manual pages and their resource URIs |
 | `chaos://man/{page}` | Read an agent-facing manual page |
+
+`chaos://mcp` reports each server's enabled, required, transport, authentication,
+and startup state. Failed startup states include the error. Commands, endpoints,
+environment variables, headers, and credentials are omitted. Per-session startup
+state is available when the resource is read from an active ChaOS session; the
+standalone `chaos mcp serve` endpoint reports it as unavailable because it has no
+single session to inspect.
 
 ### Events and approvals
 
@@ -243,7 +251,8 @@ exceed the timeout return an error.
 ## TROUBLESHOOTING
 
 **Server fails to start** — Check that the command exists and runs manually.
-Look at `~/.chaos/log/` for connection errors.
+Read `chaos://mcp` for the server's startup state and error, then look at
+`~/.chaos/log/` for additional connection details.
 
 **Tool not appearing** — Run `chaos mcp list` to verify the server is
 configured. Check any `enabled_tools` / `disabled_tools` filters.

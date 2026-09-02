@@ -267,6 +267,10 @@ impl McpRegistryActor {
         self.revision.load(Ordering::SeqCst)
     }
 
+    pub(crate) fn configs_snapshot(&self) -> Arc<HashMap<String, McpServerConfig>> {
+        self.configs.load_full()
+    }
+
     pub(crate) fn has_servers(&self) -> bool {
         self.configs.load().values().any(|config| config.enabled)
     }

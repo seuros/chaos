@@ -52,7 +52,7 @@ pub(crate) enum RuntimeCommand {
         reason: Option<String>,
     },
     Shutdown {
-        response_tx: oneshot::Sender<()>,
+        response_tx: oneshot::Sender<Result<(), GuestError>>,
     },
 }
 
@@ -459,8 +459,7 @@ impl McpSession {
             .send(RuntimeCommand::Shutdown { response_tx })
             .await
             .map_err(|_| GuestError::Disconnected)?;
-        let _ = response_rx.await;
-        Ok(())
+        response_rx.await.map_err(|_| GuestError::Disconnected)?
     }
 }
 

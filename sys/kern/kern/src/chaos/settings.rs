@@ -23,9 +23,9 @@ impl Session {
         state.session_configuration.chaos_home().clone()
     }
 
-    /// Refresh the shell snapshot when the working directory changes, unless
+    /// Refresh the captured shell environment when the working directory changes, unless
     /// this session is a sub-agent process spawn (which inherits from parent).
-    pub(super) async fn maybe_refresh_shell_snapshot_for_cwd(
+    pub(super) async fn maybe_refresh_shell_environment_for_cwd(
         &self,
         previous_cwd: &Path,
         next_cwd: &Path,
@@ -43,11 +43,11 @@ impl Session {
         }
 
         self.services
-            .shell_snapshot
+            .shell_environment
             .refresh(next_cwd.to_path_buf())
             .await
             .unwrap_or_else(|_| {
-                panic!("shell snapshot actor stopped while the session is running");
+                panic!("shell environment actor stopped while the session is running");
             });
     }
 
@@ -72,7 +72,7 @@ impl Session {
                         panic!("permission actor stopped while the session is running");
                     });
 
-                self.maybe_refresh_shell_snapshot_for_cwd(
+                self.maybe_refresh_shell_environment_for_cwd(
                     &previous_cwd,
                     &next_cwd,
                     &session_source,

@@ -102,8 +102,6 @@ use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::TokenUsageInfo;
 use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_ipc::protocol::TurnStartedEvent;
-use chaos_ipc::protocol::UndoCompletedEvent;
-use chaos_ipc::protocol::UndoStartedEvent;
 use chaos_ipc::protocol::ViewImageToolCallEvent;
 use chaos_ipc::protocol::WarningEvent;
 use chaos_ipc::request_user_input::RequestUserInputEvent;
@@ -349,9 +347,6 @@ pub(crate) async fn chatwidget_suite() {
     Box::pin(slash_clear_is_disabled_while_task_running()).await;
     Box::pin(slash_resume_opens_picker()).await;
     Box::pin(slash_fork_requests_current_fork()).await;
-    Box::pin(undo_success_events_render_info_messages()).await;
-    Box::pin(undo_failure_events_render_error_message()).await;
-    Box::pin(undo_started_hides_interrupt_hint()).await;
     Box::pin(review_commit_picker_shows_subjects_without_timestamps()).await;
     Box::pin(custom_prompt_submit_sends_review_op()).await;
     Box::pin(custom_prompt_enter_empty_does_not_send()).await;
@@ -6026,97 +6021,6 @@ async fn slash_fork_requests_current_fork() {
     chat.dispatch_command(SlashCommand::Fork);
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::ForkCurrentSession));
-}
-
-#[cfg(test)]
-async fn undo_success_events_render_info_messages() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.handle_codex_event(Event {
-        id: "turn-1".to_string(),
-        msg: EventMsg::UndoStarted(UndoStartedEvent {
-            message: Some("Undo requested for the last turn...".to_string()),
-        }),
-    });
-    assert!(
-        chat.bottom_pane.status_indicator_visible(),
-        "status indicator should be visible during undo"
-    );
-
-    chat.handle_codex_event(Event {
-        id: "turn-1".to_string(),
-        msg: EventMsg::UndoCompleted(UndoCompletedEvent {
-            success: true,
-            message: None,
-        }),
-    });
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected final status only");
-    assert!(
-        !chat.bottom_pane.status_indicator_visible(),
-        "status indicator should be hidden after successful undo"
-    );
-
-    let completed = lines_to_single_string(&cells[0]);
-    assert!(
-        completed.contains("Undo completed successfully."),
-        "expected default success message, got {completed:?}"
-    );
-}
-
-#[cfg(test)]
-async fn undo_failure_events_render_error_message() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.handle_codex_event(Event {
-        id: "turn-2".to_string(),
-        msg: EventMsg::UndoStarted(UndoStartedEvent { message: None }),
-    });
-    assert!(
-        chat.bottom_pane.status_indicator_visible(),
-        "status indicator should be visible during undo"
-    );
-
-    chat.handle_codex_event(Event {
-        id: "turn-2".to_string(),
-        msg: EventMsg::UndoCompleted(UndoCompletedEvent {
-            success: false,
-            message: Some("Failed to restore workspace state.".to_string()),
-        }),
-    });
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected final status only");
-    assert!(
-        !chat.bottom_pane.status_indicator_visible(),
-        "status indicator should be hidden after failed undo"
-    );
-
-    let completed = lines_to_single_string(&cells[0]);
-    assert!(
-        completed.contains("Failed to restore workspace state."),
-        "expected failure message, got {completed:?}"
-    );
-}
-
-#[cfg(test)]
-async fn undo_started_hides_interrupt_hint() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.handle_codex_event(Event {
-        id: "turn-hint".to_string(),
-        msg: EventMsg::UndoStarted(UndoStartedEvent { message: None }),
-    });
-
-    let status = chat
-        .bottom_pane
-        .status_widget()
-        .expect("status indicator should be active");
-    assert!(
-        !status.interrupt_hint_visible(),
-        "undo should hide the interrupt hint because the operation cannot be cancelled"
-    );
 }
 
 /// The commit picker shows only commit subjects (no timestamps).

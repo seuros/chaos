@@ -95,8 +95,7 @@ impl ContextManager {
     {
         for item in items {
             let item_ref = item.deref();
-            let is_ghost_snapshot = matches!(item_ref, ResponseItem::GhostSnapshot { .. });
-            if !is_api_message(item_ref) && !is_ghost_snapshot {
+            if !is_api_message(item_ref) {
                 continue;
             }
 
@@ -111,8 +110,6 @@ impl ContextManager {
     /// outputs.
     pub(crate) fn for_prompt(mut self, input_modalities: &[InputModality]) -> Vec<ResponseItem> {
         self.normalize_history(input_modalities);
-        self.items
-            .retain(|item| !matches!(item, ResponseItem::GhostSnapshot { .. }));
         self.items
     }
 
@@ -385,7 +382,6 @@ impl ContextManager {
             | ResponseItem::CustomToolCall { .. }
             | ResponseItem::Compaction { .. }
             | ResponseItem::CompactionTrigger {}
-            | ResponseItem::GhostSnapshot { .. }
             | ResponseItem::Other => item.clone(),
         }
     }
@@ -432,9 +428,7 @@ fn is_api_message(message: &ResponseItem) -> bool {
         | ResponseItem::WebSearchCall { .. }
         | ResponseItem::ImageGenerationCall { .. }
         | ResponseItem::Compaction { .. } => true,
-        ResponseItem::CompactionTrigger {}
-        | ResponseItem::GhostSnapshot { .. }
-        | ResponseItem::Other => false,
+        ResponseItem::CompactionTrigger {} | ResponseItem::Other => false,
     }
 }
 
@@ -471,7 +465,6 @@ static ORIGINAL_IMAGE_ESTIMATE_CACHE: LazyLock<BlockingLruCache<[u8; 20], Option
 
 pub(crate) fn estimate_response_item_model_visible_bytes(item: &ResponseItem) -> i64 {
     match item {
-        ResponseItem::GhostSnapshot { .. } => 0,
         ResponseItem::Reasoning {
             encrypted_content: Some(content),
             ..
@@ -627,7 +620,6 @@ fn is_model_generated_item(item: &ResponseItem) -> bool {
         ResponseItem::FunctionCallOutput { .. }
         | ResponseItem::ToolSearchOutput { .. }
         | ResponseItem::CustomToolCallOutput { .. }
-        | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::CompactionTrigger {}
         | ResponseItem::Other => false,
     }

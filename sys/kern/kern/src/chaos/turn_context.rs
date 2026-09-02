@@ -22,7 +22,6 @@ use chaos_ipc::protocol::TurnContextItem;
 use chaos_ipc::protocol::TurnContextNetworkItem;
 use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
 
-use chaos_ready::ReadinessFlag;
 use chaos_snitch::SessionTelemetry;
 use chaos_snitch::current_span_trace_id;
 
@@ -31,7 +30,6 @@ use crate::ModelProviderInfo;
 use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ConstraintResult;
-use crate::config::GhostSnapshotConfig;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::distill;
 use crate::models_manager::manager::ModelsManager;
@@ -39,7 +37,7 @@ use crate::models_manager::manager::RefreshStrategy;
 use crate::modes::ModeCapabilities;
 use crate::modes::ModePolicy;
 use crate::modes::ModeRegistry;
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_environment::ShellEnvironment;
 use crate::tools::spec::ToolsConfig;
 use crate::tools::spec::ToolsConfigParams;
 use crate::truncate::TruncationPolicy;
@@ -92,12 +90,10 @@ pub(crate) struct TurnContext {
     pub(crate) network: Option<NetworkProxy>,
     pub(crate) shell_environment_policy: ShellEnvironmentPolicy,
     pub(crate) tools_config: ToolsConfig,
-    pub(crate) ghost_snapshot: GhostSnapshotConfig,
     pub(crate) final_output_json_schema: Option<Value>,
     pub(crate) alcatraz_macos_exe: Option<PathBuf>,
     pub(crate) alcatraz_linux_exe: Option<PathBuf>,
     pub(crate) alcatraz_freebsd_exe: Option<PathBuf>,
-    pub(crate) tool_call_gate: Arc<ReadinessFlag>,
     pub(crate) truncation_policy: TruncationPolicy,
     pub(crate) dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
     pub(crate) turn_metadata_state: Arc<TurnMetadataState>,
@@ -211,12 +207,10 @@ impl TurnContext {
             network: self.network.clone(),
             shell_environment_policy: self.shell_environment_policy.clone(),
             tools_config,
-            ghost_snapshot: self.ghost_snapshot.clone(),
             final_output_json_schema: self.final_output_json_schema.clone(),
             alcatraz_macos_exe: self.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: self.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: self.alcatraz_freebsd_exe.clone(),
-            tool_call_gate: Arc::new(ReadinessFlag::new()),
             truncation_policy,
             dynamic_tools: self.dynamic_tools.clone(),
             turn_metadata_state: self.turn_metadata_state.clone(),
@@ -350,7 +344,7 @@ pub(crate) struct SessionConfiguration {
     pub(super) session_source: SessionSource,
     pub(super) dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
     pub(super) persist_extended_history: bool,
-    pub(super) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+    pub(super) inherited_shell_environment: Option<Arc<ShellEnvironment>>,
 }
 
 impl SessionConfiguration {
@@ -554,12 +548,10 @@ pub(super) fn make_turn_context(
         network,
         shell_environment_policy: per_turn_config.permissions.shell_environment_policy.clone(),
         tools_config,
-        ghost_snapshot: per_turn_config.ghost_snapshot.clone(),
         final_output_json_schema: None,
         alcatraz_macos_exe: per_turn_config.alcatraz_macos_exe.clone(),
         alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),
-        tool_call_gate: Arc::new(ReadinessFlag::new()),
         truncation_policy: model_info.truncation_policy.into(),
         dynamic_tools: session_configuration.dynamic_tools.clone(),
         turn_metadata_state,

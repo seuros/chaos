@@ -35,7 +35,6 @@ use crate::protocol::SandboxPolicy;
 use chaos_pf::NetworkProxyConfig;
 
 use super::ApprovalsReviewer;
-use super::GhostSnapshotConfig;
 use super::NetworkProxySpec;
 use super::ProjectTrust;
 use super::RealtimeAudioConfig;
@@ -435,31 +434,6 @@ impl Config {
             .unwrap_or(crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS)
             .max(crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS);
 
-        let ghost_snapshot = {
-            let mut config = GhostSnapshotConfig::default();
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(ignore_over_bytes) = ghost_snapshot.ignore_large_untracked_files
-            {
-                config.ignore_large_untracked_files = if ignore_over_bytes > 0 {
-                    Some(ignore_over_bytes)
-                } else {
-                    None
-                };
-            }
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(threshold) = ghost_snapshot.ignore_large_untracked_dirs
-            {
-                config.ignore_large_untracked_dirs =
-                    if threshold > 0 { Some(threshold) } else { None };
-            }
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(disable_warnings) = ghost_snapshot.disable_warnings
-            {
-                config.disable_warnings = disable_warnings;
-            }
-            config
-        };
-
         let forced_chatgpt_workspace_id =
             cfg.forced_chatgpt_workspace_id.as_ref().and_then(|value| {
                 let trimmed = value.trim();
@@ -713,7 +687,6 @@ impl Config {
             collab_enabled: true,
             minion_jobs_allowed: cfg.minion_jobs_allowed.unwrap_or(true),
             background_terminal_max_timeout,
-            ghost_snapshot,
             active_profile: active_profile_name,
             active_project_trust,
             notices: cfg.notice.unwrap_or_default(),

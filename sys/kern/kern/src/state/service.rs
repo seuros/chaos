@@ -14,7 +14,7 @@ use crate::mcp_registry::McpRegistryActor;
 use crate::minions::AgentControl;
 use crate::models_manager::manager::ModelsManager;
 use crate::runtime_db::RuntimeDbHandle;
-use crate::shell_snapshot::ShellSnapshotActor;
+use crate::shell_environment::ShellEnvironmentActor;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::unified_exec::UnifiedExecProcessManager;
@@ -34,7 +34,7 @@ pub(crate) struct SessionServices {
     pub(crate) hooks: Hooks,
     pub(crate) rollout: Mutex<Option<RolloutRecorder>>,
     pub(crate) user_shell: Arc<crate::shell::Shell>,
-    pub(crate) shell_snapshot: ShellSnapshotActor,
+    pub(crate) shell_environment: ShellEnvironmentActor,
 
     pub(crate) exec_policy: ExecPolicyManager,
     pub(crate) auth_manager: Arc<AuthManager>,

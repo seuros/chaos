@@ -311,6 +311,7 @@ impl Session {
         state.clone_history()
     }
 
+    #[cfg(test)]
     pub(crate) async fn reference_context_item(&self) -> Option<TurnContextItem> {
         let state = self.state.lock().await;
         state.reference_context_item()

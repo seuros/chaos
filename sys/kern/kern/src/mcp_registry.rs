@@ -6,6 +6,7 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
@@ -13,6 +14,7 @@ use anyhow::Context;
 use arc_swap::ArcSwap;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_mcp_runtime::PaginatedRequestParams;
+use chaos_mcp_runtime::manager::McpClientIdentity;
 use chaos_mcp_runtime::manager::McpConnectionManager;
 use chaos_mcp_runtime::manager::SandboxState;
 use chaos_sysctl::Constrained;
@@ -151,6 +153,7 @@ pub(crate) struct McpRegistryActor {
     current: Arc<ArcSwap<McpConnectionManager>>,
     configs: Arc<ArcSwap<HashMap<String, McpServerConfig>>>,
     revision: Arc<AtomicU64>,
+    client_identities: Arc<StdMutex<HashMap<String, McpClientIdentity>>>,
 }
 
 impl McpRegistryActor {
@@ -161,6 +164,7 @@ impl McpRegistryActor {
         let current = Arc::new(ArcSwap::from_pointee(initial_manager));
         let configs = Arc::new(ArcSwap::from_pointee(HashMap::new()));
         let revision = Arc::new(AtomicU64::new(0));
+        let client_identities = Arc::new(StdMutex::new(HashMap::new()));
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
 
         let actor_current = Arc::clone(&current);
@@ -212,11 +216,15 @@ impl McpRegistryActor {
                         }
                         next_catalog_gate.activate(catalog_tools);
                         catalog_gate = Some(next_catalog_gate);
-                        actor_current.store(manager);
+                        let retired_manager = actor_current.swap(manager);
                         actor_configs.store(Arc::new(next_configs));
                         let retired_cancellation_token =
                             std::mem::replace(&mut cancellation_token, next_cancellation_token);
-                        drain_generation(retired_actors, retired_cancellation_token);
+                        drain_generation(
+                            retired_actors,
+                            retired_cancellation_token,
+                            retired_manager,
+                        );
                         diff.revision = if bump_revision {
                             actor_revision
                                 .fetch_add(1, Ordering::SeqCst)
@@ -256,7 +264,29 @@ impl McpRegistryActor {
             current,
             configs,
             revision,
+            client_identities,
         }
+    }
+
+    /// Return the session-stable client identity for each named MCP server.
+    ///
+    /// Identities intentionally outlive individual connection generations so a
+    /// reset does not create a new server-side agent.
+    pub(crate) fn client_identities_for(
+        &self,
+        server_names: impl IntoIterator<Item = String>,
+    ) -> HashMap<String, McpClientIdentity> {
+        let mut identities = self
+            .client_identities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        server_names
+            .into_iter()
+            .map(|server_name| {
+                let identity = identities.entry(server_name.clone()).or_default().clone();
+                (server_name, identity)
+            })
+            .collect()
     }
 
     pub(crate) fn current_manager(&self) -> Arc<McpConnectionManager> {
@@ -637,6 +667,7 @@ fn enabled_configs(
 fn drain_generation(
     actors: HashMap<String, McpServerActor>,
     cancellation_token: CancellationToken,
+    manager: Arc<McpConnectionManager>,
 ) {
     tokio::spawn(async move {
         let drains = actors.into_values().map(|actor| async move {
@@ -646,6 +677,9 @@ fn drain_generation(
         });
         join_all(drains).await;
         cancellation_token.cancel();
+        if let Err(error) = manager.shutdown().await {
+            warn!(error = %error, "failed to shut down retired MCP generation");
+        }
     });
 }
 
@@ -706,6 +740,16 @@ mod tests {
         Arc::new(McpCatalogGate::staging(Arc::new(CatalogSink::new(
             Catalog::from_inventory(),
         ))))
+    }
+
+    #[tokio::test]
+    async fn client_identity_is_stable_for_the_registry_lifetime() {
+        let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
+        let first = actor.client_identities_for(["skynet".to_string()]);
+        let second = actor.client_identities_for(["skynet".to_string(), "other".to_string()]);
+
+        assert_eq!(first["skynet"], second["skynet"]);
+        assert_ne!(second["skynet"], second["other"]);
     }
 
     #[tokio::test]
@@ -860,7 +904,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reconcile_does_not_wait_for_running_server_call() {
+    async fn reconcile_installs_new_generation_before_retiring_old_generation() {
         let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
         let enabled: McpServerConfig = serde_json::from_value(json!({
             "command": "enabled-server",
@@ -894,6 +938,7 @@ mod tests {
         });
         let running_manager = started_rx.await.expect("server call started");
         assert!(Arc::ptr_eq(&old_manager, &running_manager));
+        let old_manager_weak = Arc::downgrade(&old_manager);
 
         timeout(
             Duration::from_millis(100),
@@ -926,6 +971,8 @@ mod tests {
             !old_cancellation_token.is_cancelled(),
             "old generation must stay alive while its call is running"
         );
+        drop(running_manager);
+        drop(old_manager);
 
         release_tx.send(()).expect("release old server call");
         execution
@@ -935,5 +982,12 @@ mod tests {
         timeout(Duration::from_secs(1), old_cancellation_token.cancelled())
             .await
             .expect("old generation should be cancelled after it drains");
+        timeout(Duration::from_secs(1), async {
+            while old_manager_weak.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("retired manager should be shut down and released after its calls drain");
     }
 }

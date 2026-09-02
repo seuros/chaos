@@ -12,7 +12,7 @@ use crate::sandboxing::SandboxPermissions;
 use crate::tools::network_approval::NetworkApprovalMode;
 use crate::tools::network_approval::NetworkApprovalSpec;
 use crate::tools::runtimes::build_command_spec;
-use crate::tools::runtimes::maybe_wrap_shell_lc_with_snapshot;
+use crate::tools::runtimes::maybe_apply_shell_environment;
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalCtx;
 use crate::tools::sandboxing::ExecApprovalRequirement;
@@ -166,14 +166,16 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
     ) -> Result<UnifiedExecProcess, ToolError> {
         let base_command = &req.command;
         let session_shell = ctx.session.user_shell();
-        let command = maybe_wrap_shell_lc_with_snapshot(
+        let (command, mut env) = maybe_apply_shell_environment(
             base_command,
             session_shell.as_ref(),
             &req.cwd,
+            &ctx.turn.shell_environment_policy,
+            ctx.session.conversation_id,
+            &req.env,
             &req.explicit_env_overrides,
         );
 
-        let mut env = req.env.clone();
         if let Some(network) = req.network.as_ref() {
             network.apply_to_env(&mut env);
         }

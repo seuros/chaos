@@ -76,6 +76,8 @@ pub struct StdioTransport {
     shutdown_timeout: Duration,
     kill_timeout: Duration,
     closed: AtomicBool,
+    reaped: AtomicBool,
+    shutdown_lock: Mutex<()>,
 }
 
 impl StdioTransport {
@@ -87,6 +89,8 @@ impl StdioTransport {
             shutdown_timeout,
             kill_timeout,
             closed: AtomicBool::new(false),
+            reaped: AtomicBool::new(false),
+            shutdown_lock: Mutex::new(()),
         })
     }
 
@@ -135,9 +139,11 @@ impl MessageTransport for StdioTransport {
 
     fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
         Box::pin(async move {
-            if self.closed.swap(true, Ordering::SeqCst) {
+            let _shutdown_guard = self.shutdown_lock.lock().await;
+            if self.reaped.load(Ordering::Acquire) {
                 return Ok(());
             }
+            self.closed.store(true, Ordering::Release);
 
             {
                 let mut writer = self.writer.lock().await;
@@ -146,13 +152,35 @@ impl MessageTransport for StdioTransport {
             }
 
             let mut child = self.child.lock().await;
-            if timeout(self.shutdown_timeout, child.wait()).await.is_ok() {
-                return Ok(());
+            match timeout(self.shutdown_timeout, child.wait()).await {
+                Ok(Ok(_)) => {
+                    self.reaped.store(true, Ordering::Release);
+                    return Ok(());
+                }
+                Ok(Err(error)) => return Err(error.into()),
+                Err(_) => {}
             }
 
-            let _ = child.start_kill();
-            let _ = timeout(self.kill_timeout, child.wait()).await;
-            Ok(())
+            if child.try_wait()?.is_some() {
+                self.reaped.store(true, Ordering::Release);
+                return Ok(());
+            }
+            if let Err(error) = child.start_kill() {
+                if child.try_wait()?.is_some() {
+                    self.reaped.store(true, Ordering::Release);
+                    return Ok(());
+                }
+                return Err(error.into());
+            }
+
+            match timeout(self.kill_timeout, child.wait()).await {
+                Ok(Ok(_)) => {
+                    self.reaped.store(true, Ordering::Release);
+                    Ok(())
+                }
+                Ok(Err(error)) => Err(error.into()),
+                Err(_) => Err(GuestError::Timeout(self.kill_timeout)),
+            }
         })
     }
 }
@@ -165,4 +193,32 @@ pub struct StdioProcessConfig {
     pub cwd: Option<PathBuf>,
     pub shutdown_timeout: Duration,
     pub kill_timeout: Duration,
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn shutdown_force_kills_and_reaps_a_child_that_ignores_stdin() {
+        let args = vec!["-c".to_string(), "trap '' TERM; exec sleep 60".to_string()];
+        let child = StdioChild::spawn("/bin/sh", &args, &HashMap::new(), None)
+            .expect("spawn stubborn child");
+        let transport =
+            StdioTransport::new(child, Duration::from_millis(20), Duration::from_secs(1));
+
+        transport.shutdown().await.expect("shutdown transport");
+
+        assert!(transport.reaped.load(Ordering::Acquire));
+        assert!(
+            transport
+                .child
+                .lock()
+                .await
+                .try_wait()
+                .expect("query child status")
+                .is_some(),
+            "shutdown must not return before the child has been reaped"
+        );
+    }
 }

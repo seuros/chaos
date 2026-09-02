@@ -20,7 +20,7 @@ use crate::process::Process;
 use crate::protocol::SessionConfiguredEvent;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::truncation;
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_environment::ShellEnvironment;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::openai_models::ModelPreset;
@@ -569,7 +569,7 @@ impl ProcessTableState {
         process_id: ProcessId,
         agent_control: AgentControl,
         session_source: SessionSource,
-        inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+        inherited_shell_environment: Option<Arc<ShellEnvironment>>,
     ) -> ChaosResult<NewProcess> {
         let stashed_history = self
             .closed_process_histories
@@ -622,7 +622,7 @@ impl ProcessTableState {
             Vec::new(),
             /*persist_extended_history*/ false,
             /*metrics_service_name*/ None,
-            inherited_shell_snapshot,
+            inherited_shell_environment,
             /*parent_trace*/ None,
         )
         .await
@@ -635,7 +635,7 @@ impl ProcessTableState {
         agent_control: AgentControl,
         session_source: SessionSource,
         persist_extended_history: bool,
-        inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+        inherited_shell_environment: Option<Arc<ShellEnvironment>>,
     ) -> ChaosResult<NewProcess> {
         self.spawn_process_with_source(
             config,
@@ -646,7 +646,7 @@ impl ProcessTableState {
             Vec::new(),
             persist_extended_history,
             /*metrics_service_name*/ None,
-            inherited_shell_snapshot,
+            inherited_shell_environment,
             /*parent_trace*/ None,
         )
         .await
@@ -674,7 +674,7 @@ impl ProcessTableState {
             dynamic_tools,
             persist_extended_history,
             metrics_service_name,
-            /*inherited_shell_snapshot*/ None,
+            /*inherited_shell_environment*/ None,
             parent_trace,
         )
         .await
@@ -691,7 +691,7 @@ impl ProcessTableState {
         dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
         persist_extended_history: bool,
         metrics_service_name: Option<String>,
-        inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+        inherited_shell_environment: Option<Arc<ShellEnvironment>>,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
         let watch_registration = self.file_watcher.register_config(&config);
@@ -709,7 +709,7 @@ impl ProcessTableState {
             dynamic_tools,
             persist_extended_history,
             metrics_service_name,
-            inherited_shell_snapshot,
+            inherited_shell_environment,
             parent_trace,
         })
         .await?;

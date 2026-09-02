@@ -1541,7 +1541,6 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chaos-realpath",
- "chaos-scm",
  "chaos-selinux",
  "icu_decimal",
  "icu_locale_core",
@@ -1611,7 +1610,6 @@ dependencies = [
  "chaos-proc",
  "chaos-pty",
  "chaos-pwd",
- "chaos-ready",
  "chaos-realpath",
  "chaos-scm",
  "chaos-selinux",
@@ -1975,16 +1973,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chaos-ready"
-version = "47.2.0"
-dependencies = [
- "assert_matches",
- "thiserror 2.0.20",
- "time",
- "tokio",
-]
-
-[[package]]
 name = "chaos-realpath"
 version = "47.2.0"
 dependencies = [
@@ -2040,15 +2028,9 @@ dependencies = [
 name = "chaos-scm"
 version = "47.2.0"
 dependencies = [
- "assert_matches",
- "pretty_assertions",
  "regex",
- "schemars",
- "serde",
  "tempfile",
  "thiserror 2.0.20",
- "ts-rs",
- "walkdir",
 ]
 
 [[package]]

@@ -38,7 +38,6 @@ pub fn should_persist_response_item(item: &ResponseItem) -> bool {
         | ResponseItem::CustomToolCallOutput { .. }
         | ResponseItem::WebSearchCall { .. }
         | ResponseItem::ImageGenerationCall { .. }
-        | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::Compaction { .. } => true,
         ResponseItem::CompactionTrigger {} | ResponseItem::Other => false,
     }
@@ -64,7 +63,6 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::ExitedReviewMode(_)
         | EventMsg::ProcessRolledBack(_)
         | EventMsg::PermissionsUpdated(_)
-        | EventMsg::UndoCompleted(_)
         | EventMsg::TurnAborted(_)
         | EventMsg::TurnStarted(_)
         | EventMsg::TurnComplete(_) => Some(EventPersistenceMode::Limited),
@@ -115,7 +113,6 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::PatchApplyBegin(_)
         | EventMsg::TurnDiff(_)
         | EventMsg::GetHistoryEntryResponse(_)
-        | EventMsg::UndoStarted(_)
         | EventMsg::McpListToolsResponse(_)
         | EventMsg::AllToolsResponse(_)
         | EventMsg::McpStartupUpdate(_)

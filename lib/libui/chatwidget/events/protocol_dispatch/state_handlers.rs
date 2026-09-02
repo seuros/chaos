@@ -1,11 +1,9 @@
-//! Miscellaneous state-mutation event handlers: undo, review mode, plan
+//! Miscellaneous state-mutation event handlers: review mode, plan
 //! updates, diffs, shutdown, user messages, collab events, and replay helpers.
 
 use chaos_ipc::protocol::DeprecationNoticeEvent;
 use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::ReviewRequest;
-use chaos_ipc::protocol::UndoCompletedEvent;
-use chaos_ipc::protocol::UndoStartedEvent;
 use chaos_ipc::protocol::UserMessageEvent;
 use chaos_ipc::user_input::TextElement;
 
@@ -93,33 +91,6 @@ impl ChatWidget {
         }
         self.add_to_history(PlainHistoryCell::new(lines));
         self.request_redraw();
-    }
-
-    pub(crate) fn on_undo_started(&mut self, event: UndoStartedEvent) {
-        self.bottom_pane.ensure_status_indicator();
-        self.bottom_pane
-            .set_interrupt_hint_visible(/*visible*/ false);
-        let message = event
-            .message
-            .unwrap_or_else(|| "Undo in progress...".to_string());
-        self.set_status_header(message);
-    }
-
-    pub(crate) fn on_undo_completed(&mut self, event: UndoCompletedEvent) {
-        let UndoCompletedEvent { success, message } = event;
-        self.bottom_pane.hide_status_indicator();
-        let message = message.unwrap_or_else(|| {
-            if success {
-                "Undo completed successfully.".to_string()
-            } else {
-                "Undo failed.".to_string()
-            }
-        });
-        if success {
-            self.add_info_message(message, /*hint*/ None);
-        } else {
-            self.add_error_message(message);
-        }
     }
 
     pub(crate) fn on_stream_error(&mut self, message: String, additional_details: Option<String>) {

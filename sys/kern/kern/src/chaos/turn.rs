@@ -316,7 +316,7 @@ pub(crate) async fn run_turn(
         .await;
     maybe_inject_session_title_reminder(&sess, &turn_context).await;
     // Track the previous-turn baseline from the regular user-turn path only so
-    // standalone tasks (compact/shell/review/undo) cannot suppress future
+    // standalone tasks (compact/shell/review) cannot suppress future
     // model injections.
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: turn_context.model_info.slug.clone(),
@@ -334,8 +334,6 @@ pub(crate) async fn run_turn(
         agent_context: agent_context.clone(),
     });
 
-    sess.maybe_start_ghost_snapshot(Arc::clone(&turn_context), cancellation_token.child_token())
-        .await;
     let mut last_agent_message: Option<String> = None;
     let mut stop_hook_active = false;
     // Although from the perspective of chaos.rs, TurnDiffTracker has the lifecycle of a Task

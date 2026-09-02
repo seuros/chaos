@@ -20,6 +20,7 @@ use crate::util::backoff;
 use chaos_ipc::items::ContextCompactionItem;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ResponseInputItem;
+#[cfg(test)]
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::user_input::UserInput;
 use futures::prelude::*;
@@ -191,12 +192,6 @@ async fn run_distill_task_inner(
         new_history =
             insert_initial_context_before_last_real_user_or_summary(new_history, initial_context);
     }
-    let ghost_snapshots: Vec<ResponseItem> = history_items
-        .iter()
-        .filter(|item| matches!(item, ResponseItem::GhostSnapshot { .. }))
-        .cloned()
-        .collect();
-    new_history.extend(ghost_snapshots);
     let reference_context_item = match initial_context_injection {
         InitialContextInjection::DoNotInject => None,
         InitialContextInjection::BeforeLastUserMessage => Some(turn_context.to_turn_context_item()),

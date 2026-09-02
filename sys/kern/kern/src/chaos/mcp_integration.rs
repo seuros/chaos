@@ -435,11 +435,17 @@ impl Session {
         };
         let approval_policy =
             chaos_sysctl::Constrained::allow_any(permission_snapshot.approval_policy);
+        let client_identities = self
+            .services
+            .mcp_registry
+            .client_identities_for(mcp_servers.keys().cloned());
+
         let mcp_catalog_gate = Arc::new(crate::catalog::McpCatalogGate::staging(Arc::clone(
             &self.services.catalog,
         )));
         let (refreshed_manager, cancel_token) = McpConnectionManager::new(
             &mcp_servers,
+            &client_identities,
             store_mode,
             auth_statuses,
             &approval_policy,
@@ -472,6 +478,9 @@ impl Session {
 
         if !failed.is_empty() {
             cancel_token.cancel();
+            refreshed_manager.shutdown().await.map_err(|error| {
+                anyhow::anyhow!("failed to clean up rejected MCP refresh generation: {error:#}")
+            })?;
             return Ok(McpServersRefreshedEvent {
                 revision: self.services.mcp_registry.revision(),
                 applied: false,

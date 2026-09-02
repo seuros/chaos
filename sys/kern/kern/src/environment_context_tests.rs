@@ -8,7 +8,7 @@ fn fake_shell() -> Shell {
     Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
-        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+        shell_environment: crate::shell::empty_shell_environment_receiver(),
     }
 }
 
@@ -222,7 +222,7 @@ fn equals_except_shell_ignores_shell() {
         Shell {
             shell_type: ShellType::Bash,
             shell_path: "/bin/bash".into(),
-            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+            shell_environment: crate::shell::empty_shell_environment_receiver(),
         },
         None,
         None,
@@ -234,7 +234,7 @@ fn equals_except_shell_ignores_shell() {
         Shell {
             shell_type: ShellType::Zsh,
             shell_path: "/bin/zsh".into(),
-            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+            shell_environment: crate::shell::empty_shell_environment_receiver(),
         },
         None,
         None,

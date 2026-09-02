@@ -70,7 +70,7 @@ impl Session {
                 panic!("permission actor stopped while the session is running");
             });
 
-        self.maybe_refresh_shell_snapshot_for_cwd(
+        self.maybe_refresh_shell_environment_for_cwd(
             &previous_cwd,
             &session_configuration.cwd,
             &session_source,
@@ -399,37 +399,5 @@ impl Session {
                 warn!("No pending dynamic tool call found for call_id: {call_id}");
             }
         }
-    }
-
-    pub(crate) async fn maybe_start_ghost_snapshot(
-        self: &Arc<Self>,
-        turn_context: Arc<TurnContext>,
-        cancellation_token: tokio_util::sync::CancellationToken,
-    ) {
-        use crate::tasks::GhostSnapshotTask;
-        use crate::tasks::SessionTask;
-        use crate::tasks::SessionTaskContext;
-        use chaos_ready::Readiness;
-        use tracing::info;
-        use tracing::warn;
-
-        let token = match turn_context.tool_call_gate.subscribe().await {
-            Ok(token) => token,
-            Err(err) => {
-                warn!("failed to subscribe to ghost snapshot readiness: {err}");
-                return;
-            }
-        };
-
-        info!("spawning ghost snapshot task");
-        let task = GhostSnapshotTask::new(token);
-        Arc::new(task)
-            .run(
-                Arc::new(SessionTaskContext::new(self.clone())),
-                turn_context.clone(),
-                Vec::new(),
-                cancellation_token,
-            )
-            .await;
     }
 }

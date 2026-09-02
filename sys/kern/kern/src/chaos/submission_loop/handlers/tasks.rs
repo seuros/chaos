@@ -17,16 +17,9 @@ use crate::config::Config;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::process_names;
 use crate::tasks::DistillTask;
-use crate::tasks::UndoTask;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::UserShellCommandTask;
 use crate::tasks::execute_user_shell_command;
-
-pub async fn undo(sess: &Arc<Session>, sub_id: String) {
-    let turn_context = sess.new_default_turn_with_sub_id(sub_id).await;
-    sess.spawn_task(turn_context, Vec::new(), UndoTask::new())
-        .await;
-}
 
 pub async fn compact(sess: &Arc<Session>, sub_id: String) {
     let turn_context = sess.new_default_turn_with_sub_id(sub_id).await;

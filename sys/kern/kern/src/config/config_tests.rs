@@ -1058,7 +1058,6 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         collab_enabled: true,
         minion_jobs_allowed: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
-        ghost_snapshot: GhostSnapshotConfig::default(),
         active_profile: None,
         active_project_trust: ProjectTrust { trust_level: None },
         notices: Default::default(),

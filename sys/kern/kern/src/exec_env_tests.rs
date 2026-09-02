@@ -10,7 +10,7 @@ fn make_vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 #[test]
-fn test_core_inherit_defaults_keep_sensitive_vars() {
+fn defaults_exclude_sensitive_vars() {
     let vars = make_vars(&[
         ("PATH", "/usr/bin"),
         ("HOME", "/home/user"),
@@ -18,15 +18,13 @@ fn test_core_inherit_defaults_keep_sensitive_vars() {
         ("SECRET_TOKEN", "t"),
     ]);
 
-    let policy = ShellEnvironmentPolicy::default(); // inherit All, default excludes ignored
+    let policy = ShellEnvironmentPolicy::default();
     let process_id = ProcessId::new();
-    let result = populate_env(vars, &policy, Some(process_id));
+    let result = create_env_from(vars, &policy, Some(process_id));
 
     let mut expected: HashMap<String, String> = HashMap::from([
         ("PATH".to_string(), "/usr/bin".to_string()),
         ("HOME".to_string(), "/home/user".to_string()),
-        ("API_KEY".to_string(), "secret".to_string()),
-        ("SECRET_TOKEN".to_string(), "t".to_string()),
     ]);
     expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
@@ -47,7 +45,7 @@ fn test_core_inherit_with_default_excludes_enabled() {
         ..Default::default()
     };
     let process_id = ProcessId::new();
-    let result = populate_env(vars, &policy, Some(process_id));
+    let result = create_env_from(vars, &policy, Some(process_id));
 
     let mut expected: HashMap<String, String> = HashMap::from([
         ("PATH".to_string(), "/usr/bin".to_string()),
@@ -70,7 +68,7 @@ fn test_include_only() {
     };
 
     let process_id = ProcessId::new();
-    let result = populate_env(vars, &policy, Some(process_id));
+    let result = create_env_from(vars, &policy, Some(process_id));
 
     let mut expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
@@ -90,7 +88,7 @@ fn test_set_overrides() {
     policy.r#set.insert("NEW_VAR".to_string(), "42".to_string());
 
     let process_id = ProcessId::new();
-    let result = populate_env(vars, &policy, Some(process_id));
+    let result = create_env_from(vars, &policy, Some(process_id));
 
     let mut expected: HashMap<String, String> = HashMap::from([
         ("PATH".to_string(), "/usr/bin".to_string()),
@@ -102,11 +100,11 @@ fn test_set_overrides() {
 }
 
 #[test]
-fn populate_env_inserts_process_id() {
+fn create_env_from_inserts_process_id() {
     let vars = make_vars(&[("PATH", "/usr/bin")]);
     let policy = ShellEnvironmentPolicy::default();
     let process_id = ProcessId::new();
-    let result = populate_env(vars, &policy, Some(process_id));
+    let result = create_env_from(vars, &policy, Some(process_id));
 
     let mut expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
@@ -116,10 +114,10 @@ fn populate_env_inserts_process_id() {
 }
 
 #[test]
-fn populate_env_omits_process_id_when_missing() {
+fn create_env_from_omits_process_id_when_missing() {
     let vars = make_vars(&[("PATH", "/usr/bin")]);
     let policy = ShellEnvironmentPolicy::default();
-    let result = populate_env(vars, &policy, None);
+    let result = create_env_from(vars, &policy, None);
 
     let expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
@@ -138,7 +136,7 @@ fn test_inherit_all() {
     };
 
     let process_id = ProcessId::new();
-    let result = populate_env(vars.clone(), &policy, Some(process_id));
+    let result = create_env_from(vars.clone(), &policy, Some(process_id));
     let mut expected: HashMap<String, String> = vars.into_iter().collect();
     expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     assert_eq!(result, expected);
@@ -155,7 +153,7 @@ fn test_inherit_all_with_default_excludes() {
     };
 
     let process_id = ProcessId::new();
-    let result = populate_env(vars, &policy, Some(process_id));
+    let result = create_env_from(vars, &policy, Some(process_id));
     let mut expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
     expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
@@ -176,7 +174,7 @@ fn test_inherit_none() {
         .insert("ONLY_VAR".to_string(), "yes".to_string());
 
     let process_id = ProcessId::new();
-    let result = populate_env(vars, &policy, Some(process_id));
+    let result = create_env_from(vars, &policy, Some(process_id));
     let mut expected: HashMap<String, String> =
         HashMap::from([("ONLY_VAR".to_string(), "yes".to_string())]);
     expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
@@ -184,7 +182,7 @@ fn test_inherit_none() {
 }
 
 #[test]
-fn populate_env_strips_reserved_sandbox_markers() {
+fn create_env_from_strips_reserved_sandbox_markers() {
     let vars = make_vars(&[
         ("PATH", "/usr/bin"),
         (crate::spawn::CHAOS_SANDBOX_ENV_VAR, "seatbelt"),
@@ -197,7 +195,7 @@ fn populate_env_strips_reserved_sandbox_markers() {
         ..Default::default()
     };
 
-    let result = populate_env(vars, &policy, None);
+    let result = create_env_from(vars, &policy, None);
 
     let expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);

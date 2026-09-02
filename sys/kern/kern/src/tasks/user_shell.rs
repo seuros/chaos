@@ -30,7 +30,7 @@ use crate::sandboxing::SandboxPermissions;
 use crate::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use crate::state::TaskKind;
 use crate::tools::format_exec_output_str;
-use crate::tools::runtimes::maybe_wrap_shell_lc_with_snapshot;
+use crate::tools::runtimes::maybe_apply_shell_environment;
 use crate::user_shell_command::user_shell_command_record_item;
 
 use super::SessionTask;
@@ -128,13 +128,6 @@ pub(crate) async fn execute_user_shell_command(
     let use_login_shell = true;
     let session_shell = session.user_shell();
     let display_command = session_shell.derive_exec_args(&command, use_login_shell);
-    let exec_command = maybe_wrap_shell_lc_with_snapshot(
-        &display_command,
-        session_shell.as_ref(),
-        turn_context.cwd.as_path(),
-        &turn_context.shell_environment_policy.r#set,
-    );
-
     let call_id = Uuid::new_v4().to_string();
     let raw_command = command;
     let cwd = turn_context.cwd.clone();
@@ -161,6 +154,16 @@ pub(crate) async fn execute_user_shell_command(
         &turn_context.shell_environment_policy,
         Some(session.conversation_id),
     );
+    let (exec_command, captured_shell_env) = maybe_apply_shell_environment(
+        &display_command,
+        session_shell.as_ref(),
+        turn_context.cwd.as_path(),
+        &turn_context.shell_environment_policy,
+        session.conversation_id,
+        &shell_env,
+        &turn_context.shell_environment_policy.r#set,
+    );
+    shell_env = captured_shell_env;
     shell_env.remove(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR);
     let exec_env = ExecRequest {
         command: exec_command.clone(),

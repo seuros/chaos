@@ -348,9 +348,6 @@ pub enum Op {
     #[serde(rename = "set_process_name")]
     SetProcessName { name: String },
 
-    /// Request Chaos to undo a turn (turn are stacked so it is the same effect as CMD + Z).
-    Undo,
-
     /// Request Chaos to drop the last N user turns from in-memory context.
     ///
     /// This does not attempt to revert local filesystem changes. Clients are
@@ -406,7 +403,6 @@ impl Op {
             Self::DropMemories => "drop_memories",
             Self::UpdateMemories => "update_memories",
             Self::SetProcessName { .. } => "set_process_name",
-            Self::Undo => "undo",
             Self::ProcessRollback { .. } => "process_rollback",
             Self::Review { .. } => "review",
             Self::Shutdown => "shutdown",

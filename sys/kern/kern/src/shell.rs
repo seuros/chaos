@@ -1,4 +1,4 @@
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_environment::ShellEnvironment;
 use chaos_sh::KnownShell;
 use chaos_sh::detect_shell_type;
 use serde::Deserialize;
@@ -21,9 +21,9 @@ pub struct Shell {
     #[serde(
         skip_serializing,
         skip_deserializing,
-        default = "empty_shell_snapshot_receiver"
+        default = "empty_shell_environment_receiver"
     )]
-    pub(crate) shell_snapshot: watch::Receiver<Option<Arc<ShellSnapshot>>>,
+    pub(crate) shell_environment: watch::Receiver<Option<Arc<ShellEnvironment>>>,
 }
 
 impl Shell {
@@ -46,13 +46,13 @@ impl Shell {
         ]
     }
 
-    /// Return the shell snapshot if existing.
-    pub fn shell_snapshot(&self) -> Option<Arc<ShellSnapshot>> {
-        self.shell_snapshot.borrow().clone()
+    /// Return the captured user shell environment, if available.
+    pub fn shell_environment(&self) -> Option<Arc<ShellEnvironment>> {
+        self.shell_environment.borrow().clone()
     }
 }
 
-pub(crate) fn empty_shell_snapshot_receiver() -> watch::Receiver<Option<Arc<ShellSnapshot>>> {
+pub(crate) fn empty_shell_environment_receiver() -> watch::Receiver<Option<Arc<ShellEnvironment>>> {
     let (_tx, rx) = watch::channel(None);
     rx
 }
@@ -178,7 +178,7 @@ fn get_shell_by_type(
     get_shell_path(shell_type.clone(), path, binary, fallbacks.to_vec()).map(|shell_path| Shell {
         shell_type,
         shell_path,
-        shell_snapshot: empty_shell_snapshot_receiver(),
+        shell_environment: empty_shell_environment_receiver(),
     })
 }
 
@@ -198,7 +198,7 @@ fn ultimate_fallback_shell() -> Shell {
     Shell {
         shell_type: ShellType::Sh,
         shell_path: PathBuf::from("/bin/sh"),
-        shell_snapshot: empty_shell_snapshot_receiver(),
+        shell_environment: empty_shell_environment_receiver(),
     }
 }
 

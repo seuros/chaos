@@ -173,7 +173,26 @@ pub(super) fn mcp_client_implementation_version() -> &'static str {
     }
 }
 
-fn managed_client_info() -> mcp_guest::protocol::Implementation {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpClientIdentity(String);
+
+impl McpClientIdentity {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4().to_string())
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for McpClientIdentity {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn managed_client_info(identity: &McpClientIdentity) -> mcp_guest::protocol::Implementation {
     mcp_guest::protocol::Implementation::new(
         "chaos-mcp-client",
         mcp_client_implementation_version(),
@@ -181,7 +200,7 @@ fn managed_client_info() -> mcp_guest::protocol::Implementation {
     .with_title(OS_NAME)
     .with_description(format!(
         "{MCP_CLIENT_ID_DESCRIPTION_PREFIX}{}",
-        Uuid::new_v4()
+        identity.as_str()
     ))
 }
 
@@ -335,6 +354,7 @@ impl AsyncManagedClient {
     pub(super) fn new(
         server_name: String,
         config: McpServerConfig,
+        client_identity: McpClientIdentity,
         _store_mode: OAuthCredentialsStoreMode,
         cancel_token: CancellationToken,
         tx_event: async_channel::Sender<chaos_ipc::protocol::Event>,
@@ -358,6 +378,7 @@ impl AsyncManagedClient {
                 make_managed_client(
                     server_name,
                     config,
+                    client_identity,
                     MakeClientParams {
                         tool_filter: startup_tool_filter,
                         tx_event,
@@ -488,6 +509,7 @@ impl AsyncManagedClient {
 pub(super) async fn make_managed_client(
     server_name: String,
     config: McpServerConfig,
+    client_identity: McpClientIdentity,
     params: MakeClientParams,
 ) -> Result<ManagedClient, StartupOutcomeError> {
     let MakeClientParams {
@@ -522,7 +544,7 @@ pub(super) async fn make_managed_client(
         cwd: Arc::clone(&cwd_arc),
     };
 
-    let client_info = managed_client_info();
+    let client_info = managed_client_info(&client_identity);
 
     let capabilities = mcp_guest::protocol::ClientCapabilities {
         experimental: None,
@@ -649,9 +671,10 @@ mod tests {
     use futures::future;
 
     #[test]
-    fn managed_client_info_carries_a_stable_connection_identity() {
-        let first = managed_client_info();
-        let second = managed_client_info();
+    fn managed_client_info_reuses_the_supplied_identity() {
+        let identity = McpClientIdentity::new();
+        let first = managed_client_info(&identity);
+        let second = managed_client_info(&identity);
         let first_id = first
             .description
             .as_deref()
@@ -664,8 +687,12 @@ mod tests {
             .expect("managed client identity");
 
         assert!(Uuid::parse_str(first_id).is_ok());
-        assert!(Uuid::parse_str(second_id).is_ok());
-        assert_ne!(first_id, second_id);
+        assert_eq!(first_id, second_id);
+    }
+
+    #[test]
+    fn managed_client_identities_are_unique_when_created() {
+        assert_ne!(McpClientIdentity::new(), McpClientIdentity::new());
     }
 
     fn sandbox_state(cwd: &str) -> SandboxState {

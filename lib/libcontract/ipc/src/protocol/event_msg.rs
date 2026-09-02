@@ -63,8 +63,6 @@ use super::TurnCompleteEvent;
 use super::TurnDiffEvent;
 use super::TurnProgressEvent;
 use super::TurnStartedEvent;
-use super::UndoCompletedEvent;
-use super::UndoStartedEvent;
 use super::UserMessageEvent;
 use super::ViewImageToolCallEvent;
 use super::WarningEvent;
@@ -230,10 +228,6 @@ pub enum EventMsg {
     DeprecationNotice(DeprecationNoticeEvent),
 
     BackgroundEvent(BackgroundEventEvent),
-
-    UndoStarted(UndoStartedEvent),
-
-    UndoCompleted(UndoCompletedEvent),
 
     /// Notification that a model stream experienced an error or disconnect
     /// and the system is handling it (e.g., retrying with backoff).

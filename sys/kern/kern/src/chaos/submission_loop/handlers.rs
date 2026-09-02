@@ -14,7 +14,7 @@ pub(crate) use mcp::{
 };
 pub(crate) use tasks::{
     add_to_history, compact, get_history_entry_request, persist_process_name, process_rollback,
-    run_user_shell_command, set_process_name, undo,
+    run_user_shell_command, set_process_name,
 };
 pub(crate) use tools::{
     dynamic_tool_response, list_all_tools, list_custom_prompts, list_mcp_tools,

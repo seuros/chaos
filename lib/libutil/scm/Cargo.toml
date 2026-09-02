@@ -11,17 +11,5 @@ workspace = true
 
 [dependencies]
 regex = "1"
-schemars = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-ts-rs = { workspace = true, features = [
-    "uuid-impl",
-    "serde-json-impl",
-    "no-serde-warnings",
-] }
-walkdir = { workspace = true }
-
-[dev-dependencies]
-assert_matches = { workspace = true }
-pretty_assertions = { workspace = true }

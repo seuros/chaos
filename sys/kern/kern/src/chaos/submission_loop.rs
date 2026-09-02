@@ -223,10 +223,6 @@ pub(super) async fn submission_loop(
                     handlers::list_custom_prompts(&sess, sub.id.clone()).await;
                     false
                 }
-                Op::Undo => {
-                    handlers::undo(&sess, sub.id.clone()).await;
-                    false
-                }
                 Op::Compact => {
                     handlers::compact(&sess, sub.id.clone()).await;
                     false
@@ -434,7 +430,6 @@ pub(super) async fn spawn_review_thread(
         reasoning_summary,
         session_source,
         tools_config,
-        ghost_snapshot: parent_turn_context.ghost_snapshot.clone(),
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),
         app_server_client_name: parent_turn_context.app_server_client_name.clone(),
@@ -456,7 +451,6 @@ pub(super) async fn spawn_review_thread(
         alcatraz_macos_exe: parent_turn_context.alcatraz_macos_exe.clone(),
         alcatraz_linux_exe: parent_turn_context.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: parent_turn_context.alcatraz_freebsd_exe.clone(),
-        tool_call_gate: Arc::new(chaos_ready::ReadinessFlag::new()),
         dynamic_tools: parent_turn_context.dynamic_tools.clone(),
         truncation_policy: model_info.truncation_policy.into(),
         turn_metadata_state,

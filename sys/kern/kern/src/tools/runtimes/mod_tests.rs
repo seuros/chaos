@@ -1,398 +1,234 @@
 use super::*;
+use crate::config::types::ShellEnvironmentPolicy;
 use crate::shell::ShellType;
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_environment::ShellEnvironment;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use tempfile::tempdir;
 use tokio::sync::watch;
 
-fn shell_with_snapshot(
-    shell_type: ShellType,
-    shell_path: &str,
-    snapshot_path: PathBuf,
-    snapshot_cwd: PathBuf,
-) -> Shell {
-    let (_tx, shell_snapshot) = watch::channel(Some(Arc::new(ShellSnapshot {
-        path: snapshot_path,
-        cwd: snapshot_cwd,
+fn shell_with_environment(vars: HashMap<String, String>, environment_cwd: PathBuf) -> Shell {
+    let (_tx, shell_environment) = watch::channel(Some(Arc::new(ShellEnvironment {
+        vars,
+        cwd: environment_cwd,
     })));
     Shell {
-        shell_type,
-        shell_path: PathBuf::from(shell_path),
-        shell_snapshot,
+        shell_type: ShellType::Zsh,
+        shell_path: PathBuf::from("/bin/zsh"),
+        shell_environment,
     }
 }
 
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_bootstraps_in_user_shell() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Zsh,
-        "/bin/zsh",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "echo hello".to_string(),
-    ];
-
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, dir.path(), &HashMap::new());
-
-    assert_eq!(rewritten[0], "/bin/zsh");
-    assert_eq!(rewritten[1], "-c");
-    assert!(rewritten[2].contains("if . '"));
-    assert!(rewritten[2].contains("exec '/bin/bash' -c 'echo hello'"));
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_escapes_single_quotes() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Zsh,
-        "/bin/zsh",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "echo 'hello'".to_string(),
-    ];
-
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, dir.path(), &HashMap::new());
-
-    assert!(rewritten[2].contains(r#"exec '/bin/bash' -c 'echo '"'"'hello'"'"''"#));
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_uses_bash_bootstrap_shell() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Bash,
-        "/bin/bash",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
+fn login_command() -> Vec<String> {
+    vec![
         "/bin/zsh".to_string(),
         "-lc".to_string(),
-        "echo hello".to_string(),
-    ];
-
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, dir.path(), &HashMap::new());
-
-    assert_eq!(rewritten[0], "/bin/bash");
-    assert_eq!(rewritten[1], "-c");
-    assert!(rewritten[2].contains("if . '"));
-    assert!(rewritten[2].contains("exec '/bin/zsh' -c 'echo hello'"));
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_uses_sh_bootstrap_shell() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Sh,
-        "/bin/sh",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "echo hello".to_string(),
-    ];
-
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, dir.path(), &HashMap::new());
-
-    assert_eq!(rewritten[0], "/bin/sh");
-    assert_eq!(rewritten[1], "-c");
-    assert!(rewritten[2].contains("if . '"));
-    assert!(rewritten[2].contains("exec '/bin/bash' -c 'echo hello'"));
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_preserves_trailing_args() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Zsh,
-        "/bin/zsh",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "printf '%s %s' \"$0\" \"$1\"".to_string(),
+        "printf '%s' \"$PATH\"".to_string(),
         "arg0".to_string(),
-        "arg1".to_string(),
-    ];
+    ]
+}
 
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, dir.path(), &HashMap::new());
+#[test]
+fn captured_environment_replaces_login_profile_loading() {
+    let dir = tempdir().expect("create temp dir");
+    let shell = shell_with_environment(
+        HashMap::from([("PATH".to_string(), "/captured/bin".to_string())]),
+        dir.path().to_path_buf(),
+    );
+    let process_id = ProcessId::new();
+    let process_id_string = process_id.to_string();
 
+    let (command, env) = maybe_apply_shell_environment(
+        &login_command(),
+        &shell,
+        dir.path(),
+        &ShellEnvironmentPolicy::default(),
+        process_id,
+        &HashMap::new(),
+        &HashMap::new(),
+    );
+
+    assert_eq!(command[0], "/bin/zsh");
+    assert_eq!(command[1], "-c");
+    assert_eq!(command[2], "printf '%s' \"$PATH\"");
+    assert_eq!(command[3], "arg0");
+    assert_eq!(env.get("PATH").map(String::as_str), Some("/captured/bin"));
+    assert_eq!(
+        env.get(crate::exec_env::CHAOS_THREAD_ID_ENV_VAR)
+            .map(String::as_str),
+        Some(process_id_string.as_str())
+    );
+}
+
+#[test]
+fn sensitive_variables_are_filtered_by_default() {
+    let dir = tempdir().expect("create temp dir");
+    let shell = shell_with_environment(
+        HashMap::from([
+            ("PATH".to_string(), "/captured/bin".to_string()),
+            ("API_KEY".to_string(), "must-not-leak".to_string()),
+            ("ACCESS_TOKEN".to_string(), "must-not-leak".to_string()),
+        ]),
+        dir.path().to_path_buf(),
+    );
+
+    let (_, env) = maybe_apply_shell_environment(
+        &login_command(),
+        &shell,
+        dir.path(),
+        &ShellEnvironmentPolicy::default(),
+        ProcessId::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+    );
+
+    assert!(!env.contains_key("API_KEY"));
+    assert!(!env.contains_key("ACCESS_TOKEN"));
+    assert_eq!(env.get("PATH").map(String::as_str), Some("/captured/bin"));
+}
+
+#[test]
+fn sensitive_variables_require_explicit_opt_in() {
+    let dir = tempdir().expect("create temp dir");
+    let shell = shell_with_environment(
+        HashMap::from([("API_KEY".to_string(), "allowed".to_string())]),
+        dir.path().to_path_buf(),
+    );
+    let policy = ShellEnvironmentPolicy {
+        ignore_default_excludes: true,
+        ..Default::default()
+    };
+
+    let (_, env) = maybe_apply_shell_environment(
+        &login_command(),
+        &shell,
+        dir.path(),
+        &policy,
+        ProcessId::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+    );
+
+    assert_eq!(env.get("API_KEY").map(String::as_str), Some("allowed"));
+}
+
+#[test]
+fn explicit_overrides_win_without_entering_command_arguments() {
+    let dir = tempdir().expect("create temp dir");
+    let shell = shell_with_environment(
+        HashMap::from([("PATH".to_string(), "/captured/bin".to_string())]),
+        dir.path().to_path_buf(),
+    );
+    let overrides = HashMap::from([
+        ("PATH".to_string(), "/configured/bin".to_string()),
+        ("API_KEY".to_string(), "explicit-secret".to_string()),
+    ]);
+
+    let (command, env) = maybe_apply_shell_environment(
+        &login_command(),
+        &shell,
+        dir.path(),
+        &ShellEnvironmentPolicy::default(),
+        ProcessId::new(),
+        &HashMap::new(),
+        &overrides,
+    );
+
+    assert_eq!(env.get("PATH").map(String::as_str), Some("/configured/bin"));
+    assert_eq!(
+        env.get("API_KEY").map(String::as_str),
+        Some("explicit-secret")
+    );
     assert!(
-        rewritten[2]
-            .contains(r#"exec '/bin/bash' -c 'printf '"'"'%s %s'"'"' "$0" "$1"' 'arg0' 'arg1'"#)
+        command
+            .iter()
+            .all(|argument| !argument.contains("explicit-secret"))
     );
 }
 
 #[test]
-fn maybe_wrap_shell_lc_with_snapshot_skips_when_cwd_mismatch() {
+fn cwd_mismatch_uses_non_login_command_and_fallback_environment() {
     let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
-    let snapshot_cwd = dir.path().join("worktree-a");
-    let command_cwd = dir.path().join("worktree-b");
-    std::fs::create_dir_all(&snapshot_cwd).expect("create snapshot cwd");
+    let captured_cwd = dir.path().join("captured");
+    let command_cwd = dir.path().join("command");
+    std::fs::create_dir_all(&captured_cwd).expect("create captured cwd");
     std::fs::create_dir_all(&command_cwd).expect("create command cwd");
-    let session_shell =
-        shell_with_snapshot(ShellType::Zsh, "/bin/zsh", snapshot_path, snapshot_cwd);
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
+    let shell = shell_with_environment(
+        HashMap::from([("PATH".to_string(), "/captured/bin".to_string())]),
+        captured_cwd,
+    );
+    let fallback = HashMap::from([("PATH".to_string(), "/fallback/bin".to_string())]);
+    let original = login_command();
+
+    let (command, env) = maybe_apply_shell_environment(
+        &original,
+        &shell,
+        &command_cwd,
+        &ShellEnvironmentPolicy::default(),
+        ProcessId::new(),
+        &fallback,
+        &HashMap::new(),
+    );
+
+    assert_eq!(command[0], original[0]);
+    assert_eq!(command[1], "-c");
+    assert_eq!(command[2..], original[2..]);
+    assert_eq!(env, fallback);
+}
+
+#[test]
+fn explicit_profile_mode_bypasses_captured_environment() {
+    let dir = tempdir().expect("create temp dir");
+    let shell = shell_with_environment(
+        HashMap::from([("PATH".to_string(), "/captured/bin".to_string())]),
+        dir.path().to_path_buf(),
+    );
+    let fallback = HashMap::from([("PATH".to_string(), "/fallback/bin".to_string())]);
+    let policy = ShellEnvironmentPolicy {
+        use_profile: true,
+        ..Default::default()
+    };
+    let original = login_command();
+
+    let (command, env) = maybe_apply_shell_environment(
+        &original,
+        &shell,
+        dir.path(),
+        &policy,
+        ProcessId::new(),
+        &fallback,
+        &HashMap::new(),
+    );
+
+    assert_eq!(command, original);
+    assert_eq!(env, fallback);
+}
+
+#[test]
+fn non_login_commands_are_not_changed() {
+    let dir = tempdir().expect("create temp dir");
+    let shell = shell_with_environment(
+        HashMap::from([("PATH".to_string(), "/captured/bin".to_string())]),
+        dir.path().to_path_buf(),
+    );
+    let fallback = HashMap::from([("PATH".to_string(), "/fallback/bin".to_string())]);
+    let original = vec![
+        "/bin/zsh".to_string(),
+        "-c".to_string(),
         "echo hello".to_string(),
     ];
 
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, &command_cwd, &HashMap::new());
-
-    assert_eq!(rewritten, command);
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_accepts_dot_alias_cwd() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Zsh,
-        "/bin/zsh",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "echo hello".to_string(),
-    ];
-    let command_cwd = dir.path().join(".");
-
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, &command_cwd, &HashMap::new());
-
-    assert_eq!(rewritten[0], "/bin/zsh");
-    assert_eq!(rewritten[1], "-c");
-    assert!(rewritten[2].contains("if . '"));
-    assert!(rewritten[2].contains("exec '/bin/bash' -c 'echo hello'"));
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_restores_explicit_override_precedence() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(
-        &snapshot_path,
-        "# Snapshot file\nexport TEST_ENV_SNAPSHOT=global\nexport SNAPSHOT_ONLY=from_snapshot\n",
-    )
-    .expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Bash,
-        "/bin/bash",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "printf '%s|%s' \"$TEST_ENV_SNAPSHOT\" \"${SNAPSHOT_ONLY-unset}\"".to_string(),
-    ];
-    let explicit_env_overrides =
-        HashMap::from([("TEST_ENV_SNAPSHOT".to_string(), "worktree".to_string())]);
-    let rewritten = maybe_wrap_shell_lc_with_snapshot(
-        &command,
-        &session_shell,
+    let (command, env) = maybe_apply_shell_environment(
+        &original,
+        &shell,
         dir.path(),
-        &explicit_env_overrides,
-    );
-    let output = Command::new(&rewritten[0])
-        .args(&rewritten[1..])
-        .env("TEST_ENV_SNAPSHOT", "worktree")
-        .output()
-        .expect("run rewritten command");
-
-    assert!(output.status.success(), "command failed: {output:?}");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "worktree|from_snapshot"
-    );
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_keeps_snapshot_path_without_override() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(
-        &snapshot_path,
-        "# Snapshot file\nexport PATH='/snapshot/bin'\n",
-    )
-    .expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Bash,
-        "/bin/bash",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "printf '%s' \"$PATH\"".to_string(),
-    ];
-    let rewritten =
-        maybe_wrap_shell_lc_with_snapshot(&command, &session_shell, dir.path(), &HashMap::new());
-    let output = Command::new(&rewritten[0])
-        .args(&rewritten[1..])
-        .output()
-        .expect("run rewritten command");
-
-    assert!(output.status.success(), "command failed: {output:?}");
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "/snapshot/bin");
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_applies_explicit_path_override() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(
-        &snapshot_path,
-        "# Snapshot file\nexport PATH='/snapshot/bin'\n",
-    )
-    .expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Bash,
-        "/bin/bash",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "printf '%s' \"$PATH\"".to_string(),
-    ];
-    let explicit_env_overrides = HashMap::from([("PATH".to_string(), "/worktree/bin".to_string())]);
-    let rewritten = maybe_wrap_shell_lc_with_snapshot(
-        &command,
-        &session_shell,
-        dir.path(),
-        &explicit_env_overrides,
-    );
-    let output = Command::new(&rewritten[0])
-        .args(&rewritten[1..])
-        .env("PATH", "/worktree/bin")
-        .output()
-        .expect("run rewritten command");
-
-    assert!(output.status.success(), "command failed: {output:?}");
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "/worktree/bin");
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_does_not_embed_override_values_in_argv() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(
-        &snapshot_path,
-        "# Snapshot file\nexport OPENAI_API_KEY='snapshot-value'\n",
-    )
-    .expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Bash,
-        "/bin/bash",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-        "/bin/bash".to_string(),
-        "-lc".to_string(),
-        "printf '%s' \"$OPENAI_API_KEY\"".to_string(),
-    ];
-    let explicit_env_overrides = HashMap::from([(
-        "OPENAI_API_KEY".to_string(),
-        "super-secret-value".to_string(),
-    )]);
-    let rewritten = maybe_wrap_shell_lc_with_snapshot(
-        &command,
-        &session_shell,
-        dir.path(),
-        &explicit_env_overrides,
+        &ShellEnvironmentPolicy::default(),
+        ProcessId::new(),
+        &fallback,
+        &HashMap::new(),
     );
 
-    assert!(!rewritten[2].contains("super-secret-value"));
-    let output = Command::new(&rewritten[0])
-        .args(&rewritten[1..])
-        .env("OPENAI_API_KEY", "super-secret-value")
-        .output()
-        .expect("run rewritten command");
-    assert!(output.status.success(), "command failed: {output:?}");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "super-secret-value"
-    );
-}
-
-#[test]
-fn maybe_wrap_shell_lc_with_snapshot_preserves_unset_override_variables() {
-    let dir = tempdir().expect("create temp dir");
-    let snapshot_path = dir.path().join("snapshot.sh");
-    std::fs::write(
-        &snapshot_path,
-        "# Snapshot file\nexport CHAOS_TEST_UNSET_OVERRIDE='snapshot-value'\n",
-    )
-    .expect("write snapshot");
-    let session_shell = shell_with_snapshot(
-        ShellType::Bash,
-        "/bin/bash",
-        snapshot_path,
-        dir.path().to_path_buf(),
-    );
-    let command = vec![
-            "/bin/bash".to_string(),
-            "-lc".to_string(),
-            "if [ \"${CHAOS_TEST_UNSET_OVERRIDE+x}\" = x ]; then printf 'set:%s' \"$CHAOS_TEST_UNSET_OVERRIDE\"; else printf 'unset'; fi".to_string(),
-        ];
-    let explicit_env_overrides = HashMap::from([(
-        "CHAOS_TEST_UNSET_OVERRIDE".to_string(),
-        "worktree-value".to_string(),
-    )]);
-    let rewritten = maybe_wrap_shell_lc_with_snapshot(
-        &command,
-        &session_shell,
-        dir.path(),
-        &explicit_env_overrides,
-    );
-
-    let output = Command::new(&rewritten[0])
-        .args(&rewritten[1..])
-        .env_remove("CHAOS_TEST_UNSET_OVERRIDE")
-        .output()
-        .expect("run rewritten command");
-    assert!(output.status.success(), "command failed: {output:?}");
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+    assert_eq!(command, original);
+    assert_eq!(env, fallback);
 }

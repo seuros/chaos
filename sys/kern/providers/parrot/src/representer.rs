@@ -47,7 +47,7 @@ pub trait Representer: Send + Sync {
 /// - `CustomToolCallOutput` → `FunctionCallOutput`
 /// - `LocalShellCall` → `FunctionCall("shell_command")`
 /// - Strips `tool_name` from output variants (ABI extension, not in OpenAI schema)
-/// - Drops: `ToolSearchCall`, `ToolSearchOutput`, `GhostSnapshot`, `Other`
+/// - Drops: `ToolSearchCall`, `ToolSearchOutput`, `Other`
 fn base_represent(item: ResponseItem) -> Option<ResponseItem> {
     match item {
         // Standard output — strip the ABI-internal tool_name field.
@@ -111,7 +111,6 @@ fn base_represent(item: ResponseItem) -> Option<ResponseItem> {
         // Chaos-only types with no OpenAI equivalent — drop them.
         ResponseItem::ToolSearchCall { .. }
         | ResponseItem::ToolSearchOutput { .. }
-        | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::Other => None,
 
         // Everything else passes through to the per-representer stage.

@@ -4,12 +4,15 @@ Module: runtimes
 Concrete ToolRuntime implementations for specific tools. Each runtime stays
 small and focused and reuses the orchestrator for approvals + sandbox + retry.
 */
+use crate::config::types::ShellEnvironmentPolicy;
 use crate::exec::ExecExpiration;
+use crate::exec_env::create_env_from;
 use crate::path_utils;
 use crate::sandboxing::CommandSpec;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
 use crate::tools::sandboxing::ToolError;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::PermissionProfile;
 use std::collections::HashMap;
 use std::path::Path;
@@ -44,125 +47,67 @@ pub(crate) fn build_command_spec(
     })
 }
 
-/// POSIX-only helper: for commands produced by `Shell::derive_exec_args`
-/// for Bash/Zsh/sh of the form `[shell_path, "-lc", "<script>"]`, and
-/// when a snapshot is configured on the session shell, rewrite the argv
-/// to a single non-login shell that sources the snapshot before running
-/// the original script:
+/// Use the CWD-aware environment captured from the user's initialized shell.
 ///
 ///   shell -lc "<script>"
-///   => user_shell -c ". SNAPSHOT (best effort); exec shell -c <script>"
+///   => shell -c "<script>"
 ///
-/// This wrapper script uses POSIX constructs (`if`, `.`, `exec`) so it can
-/// be run by Bash/Zsh/sh. On non-matching commands, or when command cwd does
-/// not match the snapshot cwd, this is a no-op.
-pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
+/// The captured environment is filtered through the active
+/// [`ShellEnvironmentPolicy`] before use. Explicit profile mode and non-login
+/// shell commands retain their original command. If capture is not ready for
+/// the command CWD, the already-filtered fallback environment is used without
+/// loading the profile again.
+pub(crate) fn maybe_apply_shell_environment(
     command: &[String],
     session_shell: &Shell,
     cwd: &Path,
+    policy: &ShellEnvironmentPolicy,
+    process_id: ProcessId,
+    fallback_env: &HashMap<String, String>,
     explicit_env_overrides: &HashMap<String, String>,
-) -> Vec<String> {
-    let Some(snapshot) = session_shell.shell_snapshot() else {
-        return command.to_vec();
-    };
-
-    if !snapshot.path.exists() {
-        return command.to_vec();
+) -> (Vec<String>, HashMap<String, String>) {
+    if policy.use_profile {
+        return (command.to_vec(), fallback_env.clone());
     }
 
-    if if let (Ok(snapshot_cwd), Ok(command_cwd)) = (
-        path_utils::normalize_for_path_comparison(snapshot.cwd.as_path()),
+    if command.len() < 3 || command[1] != "-lc" {
+        return (command.to_vec(), fallback_env.clone());
+    }
+
+    let mut non_login_command = command.to_vec();
+    non_login_command[1] = "-c".to_string();
+
+    let Some(environment) = session_shell.shell_environment() else {
+        return (non_login_command, fallback_env.clone());
+    };
+
+    let cwd_matches = if let (Ok(environment_cwd), Ok(command_cwd)) = (
+        path_utils::normalize_for_path_comparison(environment.cwd.as_path()),
         path_utils::normalize_for_path_comparison(cwd),
     ) {
-        snapshot_cwd != command_cwd
+        environment_cwd == command_cwd
     } else {
-        snapshot.cwd != cwd
-    } {
-        return command.to_vec();
-    }
-
-    if command.len() < 3 {
-        return command.to_vec();
-    }
-
-    let flag = command[1].as_str();
-    if flag != "-lc" {
-        return command.to_vec();
-    }
-
-    let snapshot_path = snapshot.path.to_string_lossy();
-    let shell_path = session_shell.shell_path.to_string_lossy();
-    let original_shell = shell_single_quote(&command[0]);
-    let original_script = shell_single_quote(&command[2]);
-    let snapshot_path = shell_single_quote(snapshot_path.as_ref());
-    let trailing_args = command[3..]
-        .iter()
-        .map(|arg| format!(" '{}'", shell_single_quote(arg)))
-        .collect::<String>();
-    let (override_captures, override_exports) = build_override_exports(explicit_env_overrides);
-    let rewritten_script = if override_exports.is_empty() {
-        format!(
-            "if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
-        )
-    } else {
-        format!(
-            "{override_captures}\n\nif . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{override_exports}\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
-        )
+        environment.cwd == cwd
     };
-
-    vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
-}
-
-fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (String, String) {
-    let mut keys = explicit_env_overrides
-        .keys()
-        .filter(|key| is_valid_shell_variable_name(key))
-        .collect::<Vec<_>>();
-    keys.sort_unstable();
-
-    if keys.is_empty() {
-        return (String::new(), String::new());
+    if !cwd_matches {
+        return (non_login_command, fallback_env.clone());
     }
 
-    let captures = keys
-        .iter()
-        .enumerate()
-        .map(|(idx, key)| {
-            format!(
-                "__CHAOS_SNAPSHOT_OVERRIDE_SET_{idx}=\"${{{key}+x}}\"\n__CHAOS_SNAPSHOT_OVERRIDE_{idx}=\"${{{key}-}}\""
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let restores = keys
-        .iter()
-        .enumerate()
-        .map(|(idx, key)| {
-            format!(
-                "if [ -n \"${{__CHAOS_SNAPSHOT_OVERRIDE_SET_{idx}}}\" ]; then export {key}=\"${{__CHAOS_SNAPSHOT_OVERRIDE_{idx}}}\"; else unset {key}; fi"
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    (captures, restores)
-}
-
-fn is_valid_shell_variable_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first == '_' || first.is_ascii_alphabetic()) {
-        return false;
+    let mut filtered_env = create_env_from(
+        environment
+            .vars
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone())),
+        policy,
+        Some(process_id),
+    );
+    for (key, value) in explicit_env_overrides {
+        filtered_env.insert(key.clone(), value.clone());
     }
-    chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
-}
 
-fn shell_single_quote(input: &str) -> String {
-    input.replace('\'', r#"'"'"'"#)
+    (non_login_command, filtered_env)
 }
 
 #[cfg(all(test, unix))]
-#[path = "mod_tests.rs"]
+#[path = "runtimes/mod_tests.rs"]
 mod tests;

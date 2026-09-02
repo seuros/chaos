@@ -46,7 +46,18 @@ pub(crate) async fn connect_with_transport(
     transport: Arc<dyn MessageTransport>,
     options: ConnectionOptions,
 ) -> Result<McpSession, GuestError> {
-    let info = perform_handshake(Arc::clone(&transport), &options).await?;
+    let info = match perform_handshake(Arc::clone(&transport), &options).await {
+        Ok(info) => info,
+        Err(error) => {
+            if let Err(shutdown_error) = transport.shutdown().await {
+                tracing::warn!(
+                    error = %shutdown_error,
+                    "failed to shut down MCP transport after handshake failure"
+                );
+            }
+            return Err(error);
+        }
+    };
     let shared = Arc::new(SharedState::new(info, options.default_timeout));
     let next_id = Arc::new(AtomicU64::new(2));
     let (command_tx, command_rx) = mpsc::channel(64);
@@ -262,8 +273,8 @@ async fn handle_runtime_command(
         RuntimeCommand::Shutdown { response_tx } => {
             fail_pending(pending_outgoing, GuestError::Disconnected);
             abort_inbound(inbound_requests);
-            let _ = transport.shutdown().await;
-            let _ = response_tx.send(());
+            let result = transport.shutdown().await;
+            let _ = response_tx.send(result);
             true
         }
     }

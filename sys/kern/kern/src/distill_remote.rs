@@ -98,14 +98,6 @@ async fn run_remote_distill_task_inner_impl(
             "trimmed tool outputs before remote compaction"
         );
     }
-    // Required to keep `/undo` available after compaction
-    let ghost_snapshots: Vec<ResponseItem> = history
-        .raw_items()
-        .iter()
-        .filter(|item| matches!(item, ResponseItem::GhostSnapshot { .. }))
-        .cloned()
-        .collect();
-
     let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
     let tool_router = built_tools(
         sess.as_ref(),
@@ -140,8 +132,8 @@ async fn run_remote_distill_task_inner_impl(
             return Err(err);
         }
     };
-    let mut new_history = build_v2_compacted_history(replacement_input, compaction_output);
-    new_history = process_compacted_history(
+    let new_history = build_v2_compacted_history(replacement_input, compaction_output);
+    let new_history = process_compacted_history(
         sess.as_ref(),
         turn_context.as_ref(),
         new_history,
@@ -149,9 +141,6 @@ async fn run_remote_distill_task_inner_impl(
     )
     .await;
 
-    if !ghost_snapshots.is_empty() {
-        new_history.extend(ghost_snapshots);
-    }
     let reference_context_item = match initial_context_injection {
         InitialContextInjection::DoNotInject => None,
         InitialContextInjection::BeforeLastUserMessage => Some(turn_context.to_turn_context_item()),

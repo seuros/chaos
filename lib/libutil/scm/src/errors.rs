@@ -3,9 +3,8 @@ use std::process::ExitStatus;
 use std::string::FromUtf8Error;
 
 use thiserror::Error;
-use walkdir::Error as WalkdirError;
 
-/// Errors returned while managing git worktree snapshots.
+/// Errors returned by git tooling helpers.
 #[derive(Debug, Error)]
 pub enum GitToolingError {
     #[error("git command `{command}` failed with status {status}: {stderr}")]
@@ -22,14 +21,6 @@ pub enum GitToolingError {
     },
     #[error("{path:?} is not a git repository")]
     NotAGitRepository { path: PathBuf },
-    #[error("path {path:?} must be relative to the repository root")]
-    NonRelativePath { path: PathBuf },
-    #[error("path {path:?} escapes the repository root")]
-    PathEscapesRepository { path: PathBuf },
-    #[error("failed to process path inside worktree")]
-    PathPrefix(#[from] std::path::StripPrefixError),
-    #[error(transparent)]
-    Walkdir(#[from] WalkdirError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

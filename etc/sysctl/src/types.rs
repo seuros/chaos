@@ -921,7 +921,7 @@ pub struct ShellEnvironmentPolicy {
     pub inherit: ShellEnvironmentPolicyInherit,
 
     /// True to skip the check to exclude default environment variables that
-    /// contain "KEY", "SECRET", or "TOKEN" in their name. Defaults to true.
+    /// contain "KEY", "SECRET", or "TOKEN" in their name. Defaults to false.
     pub ignore_default_excludes: bool,
 
     /// Environment variable names to exclude from the environment.
@@ -941,7 +941,7 @@ impl From<ShellEnvironmentPolicyToml> for ShellEnvironmentPolicy {
     fn from(toml: ShellEnvironmentPolicyToml) -> Self {
         // Default to inheriting the full environment when not specified.
         let inherit = toml.inherit.unwrap_or(ShellEnvironmentPolicyInherit::All);
-        let ignore_default_excludes = toml.ignore_default_excludes.unwrap_or(true);
+        let ignore_default_excludes = toml.ignore_default_excludes.unwrap_or(false);
         let exclude = toml
             .exclude
             .unwrap_or_default()
@@ -972,7 +972,7 @@ impl Default for ShellEnvironmentPolicy {
     fn default() -> Self {
         Self {
             inherit: ShellEnvironmentPolicyInherit::All,
-            ignore_default_excludes: true,
+            ignore_default_excludes: false,
             exclude: Vec::new(),
             r#set: HashMap::new(),
             include_only: Vec::new(),
@@ -1153,19 +1153,6 @@ pub struct AgentRoleToml {
     /// Catchphrases the kernel may emit when this role is dispatched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catchphrases: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct GhostSnapshotToml {
-    /// Exclude untracked files larger than this many bytes from ghost snapshots.
-    #[serde(alias = "ignore_untracked_files_over_bytes")]
-    pub ignore_large_untracked_files: Option<i64>,
-    /// Ignore untracked directories that contain this many files or more.
-    #[serde(alias = "large_untracked_dir_warning_threshold")]
-    pub ignore_large_untracked_dirs: Option<i64>,
-    /// Disable all ghost snapshot warning events.
-    pub disable_warnings: Option<bool>,
 }
 
 #[cfg(test)]

@@ -17,7 +17,6 @@ use chaos_ipc::models::ReasoningItemContent;
 use chaos_ipc::models::ReasoningItemReasoningSummary;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::default_input_modalities;
-use chaos_scm::GhostCommit;
 use image::ImageBuffer;
 use image::ImageFormat;
 use image::Rgba;
@@ -474,17 +473,6 @@ fn for_prompt_clears_image_generation_result_when_images_are_unsupported() {
             },
         ]
     );
-}
-
-#[test]
-fn get_history_for_prompt_drops_ghost_commits() {
-    let items = vec![ResponseItem::GhostSnapshot {
-        ghost_commit: GhostCommit::new("ghost-1".to_string(), None, Vec::new(), Vec::new()),
-    }];
-    let history = create_history_with_items(items);
-    let modalities = default_input_modalities();
-    let filtered = history.for_prompt(&modalities);
-    assert_eq!(filtered, vec![]);
 }
 
 #[test]

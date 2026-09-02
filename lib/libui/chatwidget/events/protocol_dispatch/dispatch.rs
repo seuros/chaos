@@ -190,8 +190,6 @@ impl ChatWidget {
             EventMsg::BackgroundEvent(BackgroundEventEvent { message }) => {
                 self.on_background_event(message)
             }
-            EventMsg::UndoStarted(ev) => self.on_undo_started(ev),
-            EventMsg::UndoCompleted(ev) => self.on_undo_completed(ev),
             EventMsg::StreamError(StreamErrorEvent {
                 message,
                 additional_details,

@@ -23,10 +23,10 @@ pub fn create_env(
     policy: &ShellEnvironmentPolicy,
     process_id: Option<ProcessId>,
 ) -> HashMap<String, String> {
-    populate_env(std::env::vars(), policy, process_id)
+    create_env_from(std::env::vars(), policy, process_id)
 }
 
-fn populate_env<I>(
+pub(crate) fn create_env_from<I>(
     vars: I,
     policy: &ShellEnvironmentPolicy,
     process_id: Option<ProcessId>,

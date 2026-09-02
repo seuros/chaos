@@ -115,7 +115,7 @@ mod rollout;
 pub mod runtime_db;
 pub(crate) mod safety;
 pub mod shell;
-pub mod shell_snapshot;
+pub mod shell_environment;
 pub mod spawn;
 pub mod terminal;
 mod tools;

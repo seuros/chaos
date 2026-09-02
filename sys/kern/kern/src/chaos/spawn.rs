@@ -36,7 +36,7 @@ use crate::models_manager::manager::ModelsManager;
 use crate::process::ProcessConfigSnapshot;
 use crate::rollout::map_session_init_error;
 use crate::runtime_db;
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_environment::ShellEnvironment;
 
 use super::Session;
 use super::SessionConfiguration;
@@ -79,7 +79,7 @@ pub(crate) struct ChaosSpawnArgs {
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
     pub(crate) persist_extended_history: bool,
     pub(crate) metrics_service_name: Option<String>,
-    pub(crate) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+    pub(crate) inherited_shell_environment: Option<Arc<ShellEnvironment>>,
     pub(crate) parent_trace: Option<W3cTraceContext>,
 }
 
@@ -141,7 +141,7 @@ impl Chaos {
             dynamic_tools,
             persist_extended_history,
             metrics_service_name,
-            inherited_shell_snapshot,
+            inherited_shell_environment,
             parent_trace: _,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
@@ -282,7 +282,7 @@ impl Chaos {
             session_source,
             dynamic_tools,
             persist_extended_history,
-            inherited_shell_snapshot,
+            inherited_shell_environment,
         };
 
         // Generate a unique ID for the lifetime of this Chaos session.

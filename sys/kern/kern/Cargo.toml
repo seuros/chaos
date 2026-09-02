@@ -65,7 +65,6 @@ chaos-tmpfs = { workspace = true }
 chaos-pixbuf = { workspace = true }
 chaos-pwd = { workspace = true }
 chaos-pty = { workspace = true }
-chaos-ready = { workspace = true }
 chaos-vault = { workspace = true }
 chaos-wchar = { workspace = true }
 chaos-lex = { workspace = true }

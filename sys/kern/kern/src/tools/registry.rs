@@ -17,7 +17,6 @@ use chaos_dtrace::HookToolInput;
 use chaos_dtrace::HookToolInputLocalShell;
 use chaos_dtrace::HookToolKind;
 use chaos_ipc::models::ResponseInputItem;
-use chaos_ready::Readiness;
 use std::future::Future;
 use tracing::warn;
 
@@ -279,11 +278,6 @@ impl ToolRegistry {
                     let handler = handler.clone();
                     let response_cell = &response_cell;
                     async move {
-                        if is_mutating {
-                            tracing::trace!("waiting for tool gate");
-                            invocation_for_tool.turn.tool_call_gate.wait_ready().await;
-                            tracing::trace!("tool gate released");
-                        }
                         match handler.handle_any(invocation_for_tool).await {
                             Ok(result) => {
                                 let preview = result.result.log_preview();

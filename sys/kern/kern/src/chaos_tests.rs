@@ -451,7 +451,7 @@ fn make_test_session_config(
         session_source: SessionSource::Exec,
         dynamic_tools: Vec::new(),
         persist_extended_history: false,
-        inherited_shell_snapshot: None,
+        inherited_shell_environment: None,
     }
 }
 
@@ -491,7 +491,7 @@ fn make_test_session_services(
         hooks: Hooks::new(HooksConfig::default()),
         rollout: Mutex::new(None),
         user_shell: Arc::new(user_shell),
-        shell_snapshot: crate::shell_snapshot::ShellSnapshotActor::for_tests(),
+        shell_environment: crate::shell_environment::ShellEnvironmentActor::for_tests(),
 
         exec_policy,
         auth_manager: auth_manager.clone(),

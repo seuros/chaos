@@ -77,7 +77,7 @@ pub(crate) async fn run_chaos_process_interactive(
         dynamic_tools: Vec::new(),
         persist_extended_history: false,
         metrics_service_name: None,
-        inherited_shell_snapshot: None,
+        inherited_shell_environment: None,
         parent_trace: None,
     })
     .await?;

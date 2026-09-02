@@ -1,8 +1,6 @@
 mod distill;
-mod ghost_snapshot;
 mod regular;
 mod review;
-mod undo;
 mod user_shell;
 
 use std::future::Future;
@@ -47,10 +45,8 @@ use chaos_snitch::metrics::names::TURN_TOKEN_USAGE_METRIC;
 use chaos_snitch::metrics::names::TURN_TOOL_CALL_METRIC;
 
 pub(crate) use distill::DistillTask;
-pub(crate) use ghost_snapshot::GhostSnapshotTask;
 pub(crate) use regular::RegularTask;
 pub(crate) use review::ReviewTask;
-pub(crate) use undo::UndoTask;
 pub(crate) use user_shell::UserShellCommandMode;
 pub(crate) use user_shell::UserShellCommandTask;
 pub(crate) use user_shell::execute_user_shell_command;
@@ -102,7 +98,7 @@ impl SessionTaskContext {
 /// Async task that drives a [`Session`] turn.
 ///
 /// Implementations encapsulate a specific Chaos workflow (regular chat,
-/// reviews, ghost snapshots, etc.). Each task instance is owned by a
+/// reviews, shell commands, etc.). Each task instance is owned by a
 /// [`Session`] and executed on a background Tokio task. The trait is
 /// intentionally small: implementers identify themselves via
 /// [`SessionTask::kind`], perform their work in [`SessionTask::run`], and may

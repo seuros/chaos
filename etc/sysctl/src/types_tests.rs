@@ -18,6 +18,16 @@ fn string_map(entries: &[(&str, &str)]) -> HashMap<String, String> {
         .collect()
 }
 
+#[test]
+fn shell_environment_policy_filters_sensitive_variables_by_default() {
+    let toml: ShellEnvironmentPolicyToml =
+        toml::from_str("").expect("empty shell environment policy should deserialize");
+    let policy = ShellEnvironmentPolicy::from(toml);
+
+    assert!(!policy.ignore_default_excludes);
+    assert!(!ShellEnvironmentPolicy::default().ignore_default_excludes);
+}
+
 fn stdio_transport(
     args: &[&str],
     env: Option<&[(&str, &str)]>,

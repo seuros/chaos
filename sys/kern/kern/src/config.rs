@@ -79,7 +79,6 @@ pub(crate) use crate::protocol::ReadOnlyAccess;
 #[cfg(test)]
 pub(crate) use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
 pub use chaos_pf::NetworkProxyAuditMetadata;
-pub use chaos_scm::GhostSnapshotConfig;
 pub use chaos_sysctl::Constrained;
 pub use chaos_sysctl::ConstraintError;
 pub use chaos_sysctl::ConstraintResult;
@@ -594,9 +593,6 @@ pub struct Config {
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: u64,
 
-    /// Settings for ghost snapshots (used for undo).
-    pub ghost_snapshot: GhostSnapshotConfig,
-
     /// The active profile name used to derive this `Config` (if any).
     pub active_profile: Option<String>,
 
@@ -883,10 +879,6 @@ pub struct ConfigToml {
     /// Whether minion-job fanout tools are available. Defaults to `true`.
     pub minion_jobs_allowed: Option<bool>,
 
-    /// Settings for ghost snapshots (used for undo).
-    #[serde(default)]
-    pub ghost_snapshot: Option<GhostSnapshotToml>,
-
     /// Markers used to detect the project root when searching parent
     /// directories for `.chaos` folders. Defaults to [".git"] when unset.
     #[serde(default)]
@@ -957,7 +949,6 @@ impl From<ConfigToml> for UserSavedConfig {
 pub use chaos_sysctl::types::AgentRoleConfig;
 pub use chaos_sysctl::types::AgentRoleToml;
 pub use chaos_sysctl::types::AgentsToml;
-pub use chaos_sysctl::types::GhostSnapshotToml;
 pub use chaos_sysctl::types::RealtimeAudioConfig;
 pub use chaos_sysctl::types::RealtimeAudioToml;
 pub use chaos_sysctl::types::RealtimeConfig;

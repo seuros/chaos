@@ -70,6 +70,7 @@ use filter::StartupOutcomeError;
 use handler::root_uri_from_cwd;
 
 pub use client::MCP_SANDBOX_STATE_LOGGER;
+pub use client::McpClientIdentity;
 pub use client::SandboxState;
 pub use filter::ToolFilter;
 pub use handler::protocol_request_id_to_guest;
@@ -242,6 +243,7 @@ impl McpConnectionManager {
     #[allow(clippy::new_ret_no_self, clippy::too_many_arguments)]
     pub async fn new(
         mcp_servers: &HashMap<String, McpServerConfig>,
+        client_identities: &HashMap<String, McpClientIdentity>,
         store_mode: OAuthCredentialsStoreMode,
         auth_entries: HashMap<String, McpAuthStatusEntry>,
         approval_policy: &Constrained<ApprovalPolicy>,
@@ -261,6 +263,15 @@ impl McpConnectionManager {
                 server_origins.insert(server_name.clone(), origin);
             }
             let cancel_token = cancel_token.child_token();
+            let client_identity = client_identities
+                .get(&server_name)
+                .cloned()
+                .unwrap_or_else(|| {
+                    warn!(
+                        "missing stable client identity for MCP server {server_name}; generating a connection-local fallback"
+                    );
+                    McpClientIdentity::new()
+                });
             emit_update(
                 &tx_event,
                 McpStartupUpdateEvent {
@@ -272,6 +283,7 @@ impl McpConnectionManager {
             let async_managed_client = AsyncManagedClient::new(
                 server_name.clone(),
                 cfg,
+                client_identity,
                 store_mode,
                 cancel_token.clone(),
                 tx_event.clone(),
@@ -347,6 +359,46 @@ impl McpConnectionManager {
                 .await;
         });
         (manager, cancel_token)
+    }
+
+    /// Disconnect every initialized server and wait for its transport to finish
+    /// shutting down.
+    ///
+    /// Callers must cancel the generation's startup token before invoking this
+    /// method so clients still handshaking resolve as cancelled.
+    pub async fn shutdown(&self) -> Result<()> {
+        let mut shutdowns = JoinSet::new();
+        for (server_name, client) in &self.clients {
+            let server_name = server_name.clone();
+            let client = client.clone();
+            shutdowns.spawn(async move {
+                match client.client().await {
+                    Ok(client) => match client.session.disconnect().await {
+                        Ok(()) | Err(mcp_guest::GuestError::Disconnected) => Ok(()),
+                        Err(error) => Err(anyhow!(
+                            "failed to disconnect MCP server {server_name}: {error}"
+                        )),
+                    },
+                    Err(StartupOutcomeError::Cancelled | StartupOutcomeError::Failed { .. }) => {
+                        Ok(())
+                    }
+                }
+            });
+        }
+
+        let mut errors = Vec::new();
+        while let Some(result) = shutdowns.join_next().await {
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => errors.push(error.to_string()),
+                Err(error) => errors.push(format!("MCP shutdown task failed: {error}")),
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(anyhow!(errors.join("; ")))
+        }
     }
 
     async fn client_by_name(&self, name: &str) -> Result<ManagedClient> {

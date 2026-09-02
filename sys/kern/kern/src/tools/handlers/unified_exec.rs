@@ -304,7 +304,7 @@ pub(crate) fn get_command(
 
     let model_shell = args.shell.as_ref().map(|shell_str| {
         let mut shell = get_shell_by_model_provided_path(&PathBuf::from(shell_str));
-        shell.shell_snapshot = crate::shell::empty_shell_snapshot_receiver();
+        shell.shell_environment = crate::shell::empty_shell_environment_receiver();
         shell
     });
     let shell = model_shell.as_ref().unwrap_or(session_shell.as_ref());

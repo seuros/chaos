@@ -903,7 +903,7 @@ async fn set_rate_limits_retains_previous_credits() {
         session_source: SessionSource::Exec,
         dynamic_tools: Vec::new(),
         persist_extended_history: false,
-        inherited_shell_snapshot: None,
+        inherited_shell_environment: None,
     };
 
     let mut state = SessionState::new(session_configuration);

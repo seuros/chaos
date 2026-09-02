@@ -124,10 +124,10 @@ mod safety_check_downgrade;
 mod seatbelt;
 #[path = "shell_command.rs"]
 mod shell_command;
+#[path = "shell_environment.rs"]
+mod shell_environment;
 #[path = "shell_serialization.rs"]
 mod shell_serialization;
-#[path = "shell_snapshot.rs"]
-mod shell_snapshot;
 #[path = "spawn_agent_description.rs"]
 mod spawn_agent_description;
 #[path = "stream_error_allows_next_turn.rs"]
@@ -146,8 +146,6 @@ mod tools;
 mod truncation;
 #[path = "turn_state.rs"]
 mod turn_state;
-#[path = "undo.rs"]
-mod undo;
 #[path = "unified_exec.rs"]
 mod unified_exec;
 

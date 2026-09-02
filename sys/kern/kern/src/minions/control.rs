@@ -15,7 +15,7 @@ use crate::rollout::RolloutRecorder;
 use crate::runtime_db;
 use crate::session_prefix::format_subagent_context_line;
 use crate::session_prefix::format_subagent_notification_message;
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_environment::ShellEnvironment;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputPayload;
 use chaos_ipc::models::MessagePhase;
@@ -174,8 +174,8 @@ impl AgentControl {
     ) -> ChaosResult<ProcessId> {
         let state = self.upgrade()?;
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
-        let inherited_shell_snapshot = self
-            .inherited_shell_snapshot_for_source(&state, session_source.as_ref())
+        let inherited_shell_environment = self
+            .inherited_shell_environment_for_source(&state, session_source.as_ref())
             .await;
         let session_source = match session_source {
             Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
@@ -272,7 +272,7 @@ impl AgentControl {
                                 agent_control,
                                 session_source,
                                 persist_extended_history: false,
-                                inherited_shell_snapshot,
+                                inherited_shell_environment,
                             }),
                             reply,
                         },
@@ -291,7 +291,7 @@ impl AgentControl {
                                 session_source,
                                 persist_extended_history: false,
                                 metrics_service_name: None,
-                                inherited_shell_snapshot,
+                                inherited_shell_environment,
                                 parent_trace: None,
                             }),
                             reply,
@@ -314,7 +314,7 @@ impl AgentControl {
                             session_source,
                             persist_extended_history: false,
                             metrics_service_name: None,
-                            inherited_shell_snapshot: None,
+                            inherited_shell_environment: None,
                             parent_trace: None,
                         }),
                         reply,
@@ -396,8 +396,8 @@ impl AgentControl {
             other => other,
         };
         let notification_source = session_source.clone();
-        let inherited_shell_snapshot = self
-            .inherited_shell_snapshot_for_source(&state, Some(&session_source))
+        let inherited_shell_environment = self
+            .inherited_shell_environment_for_source(&state, Some(&session_source))
             .await;
         let agent_control = self.clone();
         let resumed_process = self
@@ -409,7 +409,7 @@ impl AgentControl {
                         process_id,
                         agent_control,
                         session_source,
-                        inherited_shell_snapshot,
+                        inherited_shell_environment,
                     }),
                     reply,
                 },
@@ -592,11 +592,11 @@ impl AgentControl {
             .ok_or_else(|| ChaosErr::UnsupportedOperation("thread manager dropped".to_string()))
     }
 
-    async fn inherited_shell_snapshot_for_source(
+    async fn inherited_shell_environment_for_source(
         &self,
         state: &Arc<ProcessTableState>,
         session_source: Option<&SessionSource>,
-    ) -> Option<Arc<ShellSnapshot>> {
+    ) -> Option<Arc<ShellEnvironment>> {
         let Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
             parent_process_id, ..
         })) = session_source
@@ -605,7 +605,7 @@ impl AgentControl {
         };
 
         let parent_thread = state.get_process(*parent_process_id).await.ok()?;
-        parent_thread.chaos.session.user_shell().shell_snapshot()
+        parent_thread.chaos.session.user_shell().shell_environment()
     }
 }
 #[cfg(test)]

@@ -452,7 +452,6 @@ fn render_response_item(item: &ResponseItem) -> Option<(&'static str, Option<Str
                 .unwrap_or_else(|| "Generated image [binary omitted]".to_string()),
         )),
         ResponseItem::Reasoning { .. }
-        | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::Compaction { .. }
         | ResponseItem::CompactionTrigger {}
         | ResponseItem::Other => None,

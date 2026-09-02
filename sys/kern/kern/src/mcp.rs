@@ -18,6 +18,7 @@ use serde_json::Value;
 use crate::config::Config;
 use crate::config::types::McpServerConfig;
 use crate::mcp::auth::compute_auth_statuses;
+use chaos_mcp_runtime::manager::McpClientIdentity;
 use chaos_mcp_runtime::manager::McpConnectionManager;
 use chaos_mcp_runtime::manager::SandboxState;
 
@@ -91,8 +92,14 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
     let snapshot_catalog = Arc::new(crate::catalog::CatalogSink::new(
         crate::catalog::Catalog::from_inventory(),
     ));
+    let client_identities = mcp_servers
+        .keys()
+        .cloned()
+        .map(|server_name| (server_name, McpClientIdentity::new()))
+        .collect();
     let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(
         &mcp_servers,
+        &client_identities,
         config.mcp_oauth_credentials_store_mode,
         auth_status_entries.clone(),
         &config.permissions.approval_policy,
@@ -107,6 +114,9 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
         collect_mcp_snapshot_from_manager(&mcp_connection_manager, auth_status_entries).await;
 
     cancel_token.cancel();
+    if let Err(error) = mcp_connection_manager.shutdown().await {
+        tracing::warn!("failed to shut down MCP snapshot connections: {error:#}");
+    }
 
     snapshot
 }

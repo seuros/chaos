@@ -5,6 +5,54 @@ use serde_json::json;
 use std::path::PathBuf;
 
 #[test]
+fn rollout_item_discards_retired_undo_events() -> Result<()> {
+    for event_type in ["undo_started", "undo_completed"] {
+        let item: RolloutItem = serde_json::from_value(json!({
+            "type": "event_msg",
+            "payload": {
+                "type": event_type,
+                "success": true,
+                "message": null
+            }
+        }))?;
+        assert!(matches!(
+            item,
+            RolloutItem::ResponseItem(crate::models::ResponseItem::Other)
+        ));
+    }
+
+    let snapshot: RolloutItem = serde_json::from_value(json!({
+        "type": "response_item",
+        "payload": {
+            "type": "ghost_snapshot",
+            "ghost_commit": {
+                "id": "deadbeef",
+                "parent": null,
+                "preexisting_untracked_files": [],
+                "preexisting_untracked_dirs": []
+            }
+        }
+    }))?;
+    assert!(matches!(
+        snapshot,
+        RolloutItem::ResponseItem(crate::models::ResponseItem::Other)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn rollout_item_still_rejects_other_unknown_events() {
+    let result = serde_json::from_value::<RolloutItem>(json!({
+        "type": "event_msg",
+        "payload": {
+            "type": "not_a_real_event"
+        }
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
 fn rollback_failed_error_does_not_affect_turn_status() {
     let event = ErrorEvent {
         message: "rollback failed".into(),

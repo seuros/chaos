@@ -44,7 +44,7 @@ use crate::error::Result as ChaosResult;
 use crate::minions::control::AgentControl;
 use crate::process_table::NewProcess;
 use crate::process_table::ProcessTableState;
-use crate::shell_snapshot::ShellSnapshot;
+use crate::shell_environment::ShellEnvironment;
 
 /// Typed args for spawning a fresh process.
 pub(crate) struct SpawnArgs {
@@ -54,7 +54,7 @@ pub(crate) struct SpawnArgs {
     pub(crate) session_source: SessionSource,
     pub(crate) persist_extended_history: bool,
     pub(crate) metrics_service_name: Option<String>,
-    pub(crate) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+    pub(crate) inherited_shell_environment: Option<Arc<ShellEnvironment>>,
     pub(crate) parent_trace: Option<W3cTraceContext>,
 }
 
@@ -64,7 +64,7 @@ pub(crate) struct ResumeArgs {
     pub(crate) process_id: ProcessId,
     pub(crate) agent_control: AgentControl,
     pub(crate) session_source: SessionSource,
-    pub(crate) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+    pub(crate) inherited_shell_environment: Option<Arc<ShellEnvironment>>,
 }
 
 /// Typed args for forking a process from captured history.
@@ -74,7 +74,7 @@ pub(crate) struct ForkArgs {
     pub(crate) agent_control: AgentControl,
     pub(crate) session_source: SessionSource,
     pub(crate) persist_extended_history: bool,
-    pub(crate) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
+    pub(crate) inherited_shell_environment: Option<Arc<ShellEnvironment>>,
 }
 
 /// Packets accepted by the process-table router. The reply sender
@@ -164,7 +164,7 @@ async fn router_loop(
                             session_source,
                             persist_extended_history,
                             metrics_service_name,
-                            inherited_shell_snapshot,
+                            inherited_shell_environment,
                             parent_trace,
                         } = *args;
                         let result = Box::pin(state.spawn_process_with_source(
@@ -176,7 +176,7 @@ async fn router_loop(
                             Vec::new(),
                             persist_extended_history,
                             metrics_service_name,
-                            inherited_shell_snapshot,
+                            inherited_shell_environment,
                             parent_trace,
                         ))
                         .await;
@@ -196,14 +196,14 @@ async fn router_loop(
                             process_id,
                             agent_control,
                             session_source,
-                            inherited_shell_snapshot,
+                            inherited_shell_environment,
                         } = *args;
                         let result = Box::pin(state.resume_process_with_source(
                             config,
                             process_id,
                             agent_control,
                             session_source,
-                            inherited_shell_snapshot,
+                            inherited_shell_environment,
                         ))
                         .await;
                         if reply.send(result).is_err() {
@@ -223,7 +223,7 @@ async fn router_loop(
                             agent_control,
                             session_source,
                             persist_extended_history,
-                            inherited_shell_snapshot,
+                            inherited_shell_environment,
                         } = *args;
                         let result = Box::pin(state.fork_process_with_source(
                             config,
@@ -231,7 +231,7 @@ async fn router_loop(
                             agent_control,
                             session_source,
                             persist_extended_history,
-                            inherited_shell_snapshot,
+                            inherited_shell_environment,
                         ))
                         .await;
                         if reply.send(result).is_err() {

@@ -47,8 +47,8 @@ use crate::rollout::policy::EventPersistenceMode;
 use crate::rollout::process_names;
 use crate::runtime_db;
 use crate::shell;
-use crate::shell_snapshot::ShellSnapshotActor;
-use crate::shell_snapshot::ShellSnapshotStartup;
+use crate::shell_environment::ShellEnvironmentActor;
+use crate::shell_environment::ShellEnvironmentStartup;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 use crate::tools::network_approval::NetworkApprovalService;
@@ -358,14 +358,15 @@ impl Session {
         );
 
         let mut default_shell = shell::default_user_shell();
-        let shell_snapshot_startup = match session_configuration.inherited_shell_snapshot.clone() {
-            Some(snapshot) => ShellSnapshotStartup::Inherited(snapshot),
-            None => ShellSnapshotStartup::Capture(session_configuration.cwd.clone()),
-        };
-        let shell_snapshot = ShellSnapshotActor::spawn(
+        let shell_environment_startup =
+            match session_configuration.inherited_shell_environment.clone() {
+                Some(environment) => ShellEnvironmentStartup::Inherited(environment),
+                None => ShellEnvironmentStartup::Capture(session_configuration.cwd.clone()),
+            };
+        let shell_environment = ShellEnvironmentActor::spawn(
             config.chaos_home.clone(),
             conversation_id,
-            shell_snapshot_startup,
+            shell_environment_startup,
             &mut default_shell,
             session_telemetry.clone(),
         );
@@ -499,7 +500,7 @@ impl Session {
             hooks,
             rollout: Mutex::new(rollout_recorder),
             user_shell: Arc::new(default_shell),
-            shell_snapshot,
+            shell_environment,
             exec_policy,
             auth_manager: Arc::clone(&auth_manager),
             session_telemetry,
@@ -609,8 +610,13 @@ impl Session {
         let mcp_catalog_gate = Arc::new(crate::catalog::McpCatalogGate::staging(Arc::clone(
             &sess.services.catalog,
         )));
+        let mcp_client_identities = sess
+            .services
+            .mcp_registry
+            .client_identities_for(mcp_servers.keys().cloned());
         let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(
             &mcp_servers,
+            &mcp_client_identities,
             config.mcp_oauth_credentials_store_mode,
             auth_statuses.clone(),
             &session_configuration.approval_policy,
@@ -637,13 +643,17 @@ impl Session {
                 .await;
             if !failures.is_empty() {
                 cancel_token.cancel();
+                let shutdown_error = mcp_connection_manager.shutdown().await.err();
                 let details = failures
                     .iter()
                     .map(|failure| format!("{}: {}", failure.server, failure.error))
                     .collect::<Vec<_>>()
                     .join("; ");
+                let shutdown_details = shutdown_error
+                    .map(|error| format!("; cleanup failed: {error:#}"))
+                    .unwrap_or_default();
                 return Err(anyhow::anyhow!(
-                    "required MCP servers failed to initialize: {details}"
+                    "required MCP servers failed to initialize: {details}{shutdown_details}"
                 ));
             }
         }

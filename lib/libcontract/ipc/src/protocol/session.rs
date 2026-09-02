@@ -275,7 +275,7 @@ pub struct SessionMetaLine {
     pub git: Option<GitInfo>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, TS)]
+#[derive(Serialize, Debug, Clone, JsonSchema, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum RolloutItem {
     SessionMeta(SessionMetaLine),
@@ -284,6 +284,44 @@ pub enum RolloutItem {
     CompactionControl(CompactionControlItem),
     TurnContext(TurnContextItem),
     EventMsg(EventMsg),
+}
+
+impl<'de> Deserialize<'de> for RolloutItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+        enum RolloutItemWire {
+            SessionMeta(SessionMetaLine),
+            ResponseItem(ResponseItem),
+            Compacted(CompactedItem),
+            CompactionControl(CompactionControlItem),
+            TurnContext(TurnContextItem),
+            EventMsg(Value),
+        }
+
+        let item = RolloutItemWire::deserialize(deserializer)?;
+        match item {
+            RolloutItemWire::SessionMeta(item) => Ok(Self::SessionMeta(item)),
+            RolloutItemWire::ResponseItem(item) => Ok(Self::ResponseItem(item)),
+            RolloutItemWire::Compacted(item) => Ok(Self::Compacted(item)),
+            RolloutItemWire::CompactionControl(item) => Ok(Self::CompactionControl(item)),
+            RolloutItemWire::TurnContext(item) => Ok(Self::TurnContext(item)),
+            RolloutItemWire::EventMsg(value) => {
+                let is_retired_undo_event = value
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| matches!(kind, "undo_started" | "undo_completed"));
+                match serde_json::from_value(value) {
+                    Ok(event) => Ok(Self::EventMsg(event)),
+                    Err(_) if is_retired_undo_event => Ok(Self::ResponseItem(ResponseItem::Other)),
+                    Err(error) => Err(<D::Error as serde::de::Error>::custom(error)),
+                }
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]

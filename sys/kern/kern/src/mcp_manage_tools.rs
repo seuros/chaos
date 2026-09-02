@@ -79,7 +79,7 @@ struct McpManageServer;
 impl McpManageServer {
     #[mcp_tool(
         name = "mcp_add_server",
-        description = "Add an MCP server to the project `.mcp.json` and reload the active session.",
+        description = "Add a stdio or HTTP MCP server to the project `.mcp.json` and reload the active session.",
         read_only = false,
         destructive = false,
         open_world = false

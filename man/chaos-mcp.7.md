@@ -61,6 +61,17 @@ with FreeChaOS, Claude Code, and other MCP-aware tools:
 }
 ```
 
+### Agent-facing MCP management tools
+
+Agents can manage project-local servers with:
+
+| Tool | Purpose |
+|------|---------|
+| `mcp_add_server` | Add a stdio or HTTP server and reload the active session |
+| `mcp_server` | Enable, disable, reset, or remove a server and reload the active session |
+
+Use `command` for stdio or `url` for HTTP.
+
 ### Persistent tool approvals
 
 Personal MCP trust decisions belong in `~/.chaos/config.toml`, separate from

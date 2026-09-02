@@ -3177,13 +3177,10 @@ fn selecting_custom_prompt_without_args_submits_content() {
         argument_hint: None,
     }]);
 
-    type_chars_humanlike(
-        &mut composer,
-        &[
-            '/', 'p', 'r', 'o', 'm', 'p', 't', 's', ':', 'm', 'y', '-', 'p', 'r', 'o', 'm', 'p',
-            't',
-        ],
-    );
+    composer
+        .textarea
+        .set_text_clearing_elements("/prompts:my-prompt");
+    composer.sync_popups();
 
     let (result, _needs_redraw) =
         composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -4016,10 +4013,8 @@ fn selecting_custom_prompt_with_no_args_inserts_template() {
         argument_hint: None,
     }]);
 
-    type_chars_humanlike(
-        &mut composer,
-        &['/', 'p', 'r', 'o', 'm', 'p', 't', 's', ':', 'p'],
-    );
+    composer.textarea.set_text_clearing_elements("/prompts:p");
+    composer.sync_popups();
     let (result, _needs_redraw) =
         composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -4050,12 +4045,10 @@ fn selecting_custom_prompt_preserves_literal_dollar_dollar() {
         argument_hint: None,
     }]);
 
-    type_chars_humanlike(
-        &mut composer,
-        &[
-            '/', 'p', 'r', 'o', 'm', 'p', 't', 's', ':', 'p', 'r', 'i', 'c', 'e', ' ', 'x',
-        ],
-    );
+    composer
+        .textarea
+        .set_text_clearing_elements("/prompts:price x");
+    composer.sync_popups();
     let (result, _needs_redraw) =
         composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -4089,6 +4082,7 @@ fn custom_prompt_reuses_arguments_join() {
     composer
         .textarea
         .set_text_clearing_elements("/prompts:repeat one two");
+    composer.sync_popups();
     let (result, _needs_redraw) =
         composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 

@@ -5,6 +5,7 @@ use std::time::Duration;
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde::Serialize;
 
 use crate::GitCtx;
 use crate::GitServer;
@@ -36,14 +37,32 @@ fn default_log_limit() -> usize {
     20
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GitDiffFormat {
+    /// Return unified patches grouped by file.
+    Patch,
+    /// Return per-file and aggregate line statistics.
+    Stat,
+    /// Return repository-relative changed paths.
+    NameOnly,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
 pub struct GitDiffParams {
-    /// Optional ref to diff against (default: HEAD).
+    /// Comparison scope: worktree is index-to-filesystem, staged is base-to-index,
+    /// and all is base-to-filesystem. Untracked files are excluded.
+    scope: crate::DiffScope,
+    /// Output representation.
+    format: GitDiffFormat,
+    /// Check newly added lines for whitespace errors and conflict markers.
+    check: bool,
+    /// Optional base ref for staged or all scope (default: HEAD). Invalid with worktree.
     #[serde(default)]
     base: Option<String>,
-    /// Optional path filters relative to repo root.
+    /// Optional exact file or directory-prefix filters relative to repo root.
     #[serde(default)]
     paths: Option<Vec<String>>,
 }
@@ -140,7 +159,7 @@ pub struct GitBranchParams {
 impl GitServer {
     #[mcp_tool(
         name = "git_diff",
-        description = "Show unified diff of worktree changes against a base ref (default HEAD).",
+        description = "Inspect tracked changes by scope, returning structured patches, statistics, or changed paths with optional whitespace checks.",
         read_only = true,
         open_world = false
     )]
@@ -293,31 +312,78 @@ pub fn tool_infos() -> Vec<ToolInfo> {
     ]
 }
 
-#[allow(dead_code)]
-pub fn execute_git_diff(cwd: &Path, params: GitDiffParams) -> Result<String, String> {
-    execute_git_diff_structured(cwd, params).map(|value| {
-        value
-            .get("diff")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_string()
-    })
-}
-
 pub fn execute_git_diff_structured(
     cwd: &Path,
     params: GitDiffParams,
 ) -> Result<serde_json::Value, String> {
-    let GitDiffParams { base, paths } = params;
+    let GitDiffParams {
+        scope,
+        format,
+        check,
+        base,
+        paths,
+    } = params;
+    let report_scope = scope;
     let path_refs = paths
         .as_ref()
         .map(|items| items.iter().map(String::as_str).collect::<Vec<_>>());
-    let diff =
-        crate::diff(cwd, base.as_deref(), path_refs.as_deref()).map_err(|e| e.to_string())?;
+    let report = crate::diff_report(
+        cwd,
+        report_scope,
+        base.as_deref(),
+        path_refs.as_deref(),
+        check,
+    )
+    .map_err(|e| e.to_string())?;
+    let result = match format {
+        GitDiffFormat::Patch => serde_json::json!({
+            "format": format,
+            "files": report.files.iter().map(|file| serde_json::json!({
+                "path": file.path,
+                "status": file.status,
+                "binary": file.binary,
+                "patch": file.patch,
+            })).collect::<Vec<_>>(),
+        }),
+        GitDiffFormat::Stat => serde_json::json!({
+            "format": format,
+            "files": report.files.iter().map(|file| serde_json::json!({
+                "path": file.path,
+                "status": file.status,
+                "binary": file.binary,
+                "additions": file.additions,
+                "deletions": file.deletions,
+            })).collect::<Vec<_>>(),
+        }),
+        GitDiffFormat::NameOnly => serde_json::json!({
+            "format": format,
+            "paths": report.files.iter().map(|file| &file.path).collect::<Vec<_>>(),
+        }),
+    };
+    let whitespace_check = if check {
+        serde_json::json!({
+            "checked": true,
+            "passed": report.whitespace_errors.is_empty(),
+            "errors": report.whitespace_errors,
+        })
+    } else {
+        serde_json::json!({
+            "checked": false,
+            "passed": null,
+            "errors": [],
+        })
+    };
+    let resolved_base = match report_scope {
+        crate::DiffScope::Worktree => None,
+        crate::DiffScope::Staged | crate::DiffScope::All => Some(base.as_deref().unwrap_or("HEAD")),
+    };
     Ok(serde_json::json!({
-        "diff": diff,
-        "base": base,
-        "paths": paths,
+        "scope": report_scope,
+        "base": resolved_base,
+        "path_filters": paths.unwrap_or_default(),
+        "summary": report.summary,
+        "result": result,
+        "whitespace_check": whitespace_check,
     }))
 }
 
@@ -465,14 +531,16 @@ mod tests {
     use super::GitAddParams;
     use super::GitBlameParams;
     use super::GitCommitParams;
+    use super::GitDiffFormat;
     use super::GitDiffParams;
     use super::GitShowParams;
     use super::execute_git_add_structured;
     use super::execute_git_blame;
     use super::execute_git_commit_structured;
-    use super::execute_git_diff;
+    use super::execute_git_diff_structured;
     use super::execute_git_show;
     use crate::BlameLine;
+    use crate::DiffScope;
     use crate::ShowEntry;
 
     fn git(dir: &Path, args: &[&str]) {
@@ -504,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_git_diff_surfaces_worktree_changes_against_head() {
+    fn execute_git_diff_returns_scoped_structured_formats_and_checks() {
         let temp = tempdir().expect("tempdir");
         let dir = temp.path();
 
@@ -517,21 +585,81 @@ mod tests {
         git(dir, &["add", "file.txt"]);
         git(dir, &["commit", "-m", "initial"]);
 
-        fs::write(&file, "one\nthree\n").expect("write modified file");
+        fs::write(&file, "one\nstaged\n").expect("write staged file");
+        git(dir, &["add", "file.txt"]);
+        fs::write(&file, "one\nworktree  \n").expect("write worktree file");
 
-        let diff = execute_git_diff(
+        let staged = execute_git_diff_structured(
             dir,
             GitDiffParams {
+                scope: DiffScope::Staged,
+                format: GitDiffFormat::Patch,
+                check: false,
                 base: None,
                 paths: Some(vec!["file.txt".to_string()]),
             },
         )
-        .expect("diff");
+        .expect("staged patch");
+        let staged_patch = staged["result"]["files"][0]["patch"]
+            .as_str()
+            .expect("staged patch text");
+        assert!(staged_patch.contains("--- a/file.txt"));
+        assert!(staged_patch.contains("+++ b/file.txt"));
+        assert!(staged_patch.contains("-two"));
+        assert!(staged_patch.contains("+staged"));
+        assert!(!staged_patch.contains("worktree"));
 
-        assert!(diff.contains("--- a/file.txt"));
-        assert!(diff.contains("+++ b/file.txt"));
-        assert!(diff.contains("-two"));
-        assert!(diff.contains("+three"));
+        let worktree = execute_git_diff_structured(
+            dir,
+            GitDiffParams {
+                scope: DiffScope::Worktree,
+                format: GitDiffFormat::Stat,
+                check: false,
+                base: None,
+                paths: None,
+            },
+        )
+        .expect("worktree stat");
+        assert_eq!(worktree["scope"], "worktree");
+        assert_eq!(worktree["summary"]["files_changed"], 1);
+        assert_eq!(worktree["result"]["format"], "stat");
+        assert_eq!(worktree["result"]["files"][0]["path"], "file.txt");
+        assert_eq!(worktree["result"]["files"][0]["additions"], 1);
+        assert_eq!(worktree["result"]["files"][0]["deletions"], 1);
+
+        let all = execute_git_diff_structured(
+            dir,
+            GitDiffParams {
+                scope: DiffScope::All,
+                format: GitDiffFormat::NameOnly,
+                check: true,
+                base: None,
+                paths: None,
+            },
+        )
+        .expect("all changed paths");
+        assert_eq!(all["base"], "HEAD");
+        assert_eq!(all["result"]["format"], "name_only");
+        assert_eq!(all["result"]["paths"], serde_json::json!(["file.txt"]));
+        assert_eq!(all["whitespace_check"]["passed"], false);
+        assert_eq!(
+            all["whitespace_check"]["errors"][0]["kind"],
+            "trailing_whitespace"
+        );
+        assert_eq!(all["whitespace_check"]["errors"][0]["line"], 2);
+
+        let error = execute_git_diff_structured(
+            dir,
+            GitDiffParams {
+                scope: DiffScope::Worktree,
+                format: GitDiffFormat::NameOnly,
+                check: false,
+                base: Some("HEAD".to_string()),
+                paths: None,
+            },
+        )
+        .expect_err("worktree base must be rejected");
+        assert!(error.contains("base cannot be used with worktree scope"));
     }
 
     #[test]

@@ -9,7 +9,7 @@
 //! - `git://branches{?scope,contains}` — current, default, local, and remote branches
 //!
 //! **Tools** (require params):
-//! - `diff` — unified diff with optional base ref and path filters
+//! - `git_diff` — scoped structured patches, statistics, changed paths, and checks
 //! - `log` — commit history with optional limit and branch
 //! - `show` — full commit details with subject, body, and trailers
 //! - `blame` — per-line attribution for a file
@@ -54,7 +54,14 @@ use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools;
 pub use commit::CommitResult;
 pub use commit::commit;
+pub use diff::DiffFile;
+pub use diff::DiffReport;
+pub use diff::DiffScope;
+pub use diff::DiffStatus;
+pub use diff::DiffSummary;
+pub use diff::WhitespaceError;
 pub use diff::diff;
+pub use diff::diff_report;
 pub use error::GitError;
 pub use log::LogEntry;
 pub use log::log;
@@ -260,6 +267,33 @@ mod tests {
             tools.iter().all(|tool| tool.name != "git_branches"),
             "branch listing must be exposed as a resource, not a tool"
         );
+    }
+
+    #[test]
+    fn git_diff_schema_requires_structured_scope_format_and_check() {
+        let tools = super::git_catalog_tools();
+        let diff = tools
+            .iter()
+            .find(|tool| tool.name == "git_diff")
+            .expect("git_diff");
+        let required = diff.input_schema["required"]
+            .as_array()
+            .expect("required properties");
+
+        for name in ["scope", "format", "check"] {
+            assert!(
+                required.iter().any(|value| value == name),
+                "{name} must be required: {}",
+                diff.input_schema
+            );
+        }
+        for name in ["base", "paths"] {
+            assert!(
+                required.iter().all(|value| value != name),
+                "{name} must remain optional: {}",
+                diff.input_schema
+            );
+        }
     }
 
     #[test]

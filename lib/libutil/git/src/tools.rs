@@ -96,11 +96,6 @@ pub struct GitStatusParams {}
 #[derive(Debug, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
-pub struct GitBranchesParams {}
-
-#[derive(Debug, Deserialize, JsonSchema, Default)]
-#[serde(deny_unknown_fields)]
-#[schemars(deny_unknown_fields)]
 pub struct GitRemotesParams {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -117,6 +112,29 @@ pub struct GitAddParams {
 pub struct GitCommitParams {
     /// Commit message. The first line becomes the commit subject.
     message: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GitBranchOperation {
+    Create,
+    Delete,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct GitBranchParams {
+    /// Branch operation to perform.
+    operation: GitBranchOperation,
+    /// Short local branch name, without the refs/heads/ prefix.
+    name: String,
+    /// Revision used as the new branch tip. Create only; defaults to HEAD.
+    #[serde(default)]
+    start_point: Option<String>,
+    /// Allow deletion when the branch is not merged into HEAD. Delete only.
+    #[serde(default)]
+    force: bool,
 }
 
 impl GitServer {
@@ -197,27 +215,6 @@ impl GitServer {
     }
 
     #[mcp_tool(
-        name = "git_branches",
-        description = "List local and remote branches with current and default markers.",
-        read_only = true,
-        open_world = false
-    )]
-    async fn git_branches(
-        &self,
-        _ctx: GitCtx<'_>,
-        params: Parameters<GitBranchesParams>,
-    ) -> ToolResult {
-        output_from_json_result(
-            execute_blocking(
-                PathBuf::from("."),
-                params.0,
-                execute_git_branches_structured,
-            )
-            .await,
-        )
-    }
-
-    #[mcp_tool(
         name = "git_remotes",
         description = "List configured remotes with their fetch and push URLs.",
         read_only = true,
@@ -262,6 +259,23 @@ impl GitServer {
             execute_blocking(PathBuf::from("."), params.0, execute_git_commit_structured).await,
         )
     }
+
+    #[mcp_tool(
+        name = "git_branch",
+        description = "Create or delete a local branch. Creation does not check out the branch; deletion rejects checked-out or unmerged branches unless force is set.",
+        read_only = false,
+        destructive = true,
+        open_world = false
+    )]
+    async fn git_branch(
+        &self,
+        _ctx: GitCtx<'_>,
+        params: Parameters<GitBranchParams>,
+    ) -> ToolResult {
+        output_from_json_result(
+            execute_blocking(PathBuf::from("."), params.0, execute_git_branch_structured).await,
+        )
+    }
 }
 
 pub fn tool_infos() -> Vec<ToolInfo> {
@@ -272,10 +286,10 @@ pub fn tool_infos() -> Vec<ToolInfo> {
         GitServer::git_blame_tool_info(),
         GitServer::git_repo_tool_info(),
         GitServer::git_status_tool_info(),
-        GitServer::git_branches_tool_info(),
         GitServer::git_remotes_tool_info(),
         GitServer::git_add_tool_info(),
         GitServer::git_commit_tool_info(),
+        GitServer::git_branch_tool_info(),
     ]
 }
 
@@ -389,20 +403,6 @@ pub fn execute_git_status_structured(
 }
 
 #[allow(dead_code)]
-pub fn execute_git_branches(cwd: &Path, _params: GitBranchesParams) -> Result<String, String> {
-    execute_git_branches_structured(cwd, _params)
-        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
-}
-
-pub fn execute_git_branches_structured(
-    cwd: &Path,
-    _params: GitBranchesParams,
-) -> Result<serde_json::Value, String> {
-    let info = crate::branches(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_value(info).map_err(|e| e.to_string())
-}
-
-#[allow(dead_code)]
 pub fn execute_git_remotes(cwd: &Path, _params: GitRemotesParams) -> Result<String, String> {
     execute_git_remotes_structured(cwd, _params)
         .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
@@ -430,6 +430,28 @@ pub fn execute_git_commit_structured(
 ) -> Result<serde_json::Value, String> {
     let result = crate::commit(cwd, &params.message).map_err(|e| e.to_string())?;
     serde_json::to_value(result).map_err(|e| e.to_string())
+}
+
+pub fn execute_git_branch_structured(
+    cwd: &Path,
+    params: GitBranchParams,
+) -> Result<serde_json::Value, String> {
+    let result = match params.operation {
+        GitBranchOperation::Create => {
+            if params.force {
+                return Err("force is only valid for branch deletion".to_string());
+            }
+            crate::create_branch(cwd, &params.name, params.start_point.as_deref())
+        }
+        GitBranchOperation::Delete => {
+            if params.start_point.is_some() {
+                return Err("start_point is only valid for branch creation".to_string());
+            }
+            crate::delete_branch(cwd, &params.name, params.force)
+        }
+    }
+    .map_err(|error| error.to_string())?;
+    serde_json::to_value(result).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

@@ -22,6 +22,50 @@ pub trait CatalogToolDriver: Send + Sync {
 pub type CatalogToolDriverFactory = fn() -> Arc<dyn CatalogToolDriver>;
 pub type CatalogToolExposureFactory = fn(&str) -> ToolExposure;
 
+pub type CatalogResourceDriverFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<CatalogResourceResult, String>> + Send + 'a>>;
+
+/// Executes static resources registered by an in-process catalog module.
+pub trait CatalogResourceDriver: Send + Sync {
+    /// Return whether this driver owns `uri`.
+    fn matches(&self, uri: &str) -> bool;
+
+    /// Read a resource previously accepted by [`Self::matches`].
+    fn read_resource(&self, request: CatalogResourceRequest) -> CatalogResourceDriverFuture<'_>;
+}
+
+pub type CatalogResourceDriverFactory = fn() -> Arc<dyn CatalogResourceDriver>;
+pub type CatalogResourceExposureFactory = fn(&str) -> ToolExposure;
+
+#[derive(Debug, Clone)]
+pub struct CatalogResourceRequest {
+    pub uri: String,
+    pub cwd: PathBuf,
+    pub project_root: PathBuf,
+    pub sqlite_home: PathBuf,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CatalogResourceResult {
+    pub text: String,
+    pub mime_type: String,
+}
+
+/// Runtime support for resources declared by a static catalog module.
+///
+/// Kept separate from [`CatalogRegistration`] so modules that only expose
+/// tools do not need resource-driver boilerplate.
+pub struct CatalogResourceDriverRegistration {
+    /// Must match the owning [`CatalogRegistration::name`].
+    pub module: &'static str,
+    pub driver: CatalogResourceDriverFactory,
+    /// Explicit capability-group exposure for resource URIs and templates.
+    pub exposure: CatalogResourceExposureFactory,
+}
+
+inventory::collect!(CatalogResourceDriverRegistration);
+
 #[derive(Debug, Clone)]
 pub struct CatalogToolRequest {
     pub tool_name: String,

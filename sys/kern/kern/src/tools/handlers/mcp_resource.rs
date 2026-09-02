@@ -15,12 +15,15 @@ use chaos_mcp_runtime::ResourceContents;
 use chaos_mcp_runtime::ResourceContentsText;
 use chaos_mcp_runtime::ResourceInfo;
 use chaos_mcp_runtime::ResourceTemplateInfo;
+use chaos_traits::catalog::CatalogResourceDriverRegistration;
+use chaos_traits::catalog::CatalogResourceRequest;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::builtin_mcp_resources;
+use crate::catalog::CatalogSource;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::function_tool::FunctionCallError;
@@ -32,6 +35,7 @@ use crate::protocol::McpToolCallEndEvent;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
+use crate::tools::groups::ToolGroupFilter;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
@@ -192,6 +196,57 @@ fn chaos_inline_resources() -> Vec<ResourceInfo> {
         .collect()
 }
 
+fn static_resource_driver_registration(
+    module: &str,
+) -> Option<&'static CatalogResourceDriverRegistration> {
+    inventory::iter::<CatalogResourceDriverRegistration>
+        .into_iter()
+        .find(|registration| registration.module == module)
+}
+
+fn chaos_static_resources(session: &Session) -> Vec<ResourceInfo> {
+    let filter = ToolGroupFilter {
+        catalog: &session.services.tool_group_catalog,
+        state: &session.services.tool_group_state,
+    };
+    let catalog = session
+        .services
+        .catalog
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    catalog
+        .resources()
+        .iter()
+        .filter_map(|(source, resource)| {
+            let CatalogSource::Module(module) = source else {
+                return None;
+            };
+            let registration = static_resource_driver_registration(module)?;
+            let exposure = (registration.exposure)(&resource.uri);
+            filter.is_exposure_visible(&exposure).then(|| ResourceInfo {
+                uri: resource.uri.clone(),
+                name: resource.name.clone(),
+                title: None,
+                description: resource.description.clone(),
+                mime_type: resource.mime_type.clone(),
+                size: None,
+                icons: None,
+                annotations: None,
+                meta: None,
+            })
+        })
+        .collect()
+}
+
+fn chaos_resources(session: &Session) -> Vec<ResourceInfo> {
+    let mut resources = chaos_inline_resources();
+    resources.extend(chaos_static_resources(session));
+    resources.sort_by(|a, b| a.uri.cmp(&b.uri));
+    resources
+}
+
+#[cfg(test)]
 fn merge_inline_resources(
     mut resources_by_server: HashMap<String, Vec<ResourceInfo>>,
 ) -> HashMap<String, Vec<ResourceInfo>> {
@@ -199,6 +254,17 @@ fn merge_inline_resources(
         .entry(INTERNAL_TASK_SERVER_NAME.to_string())
         .or_default()
         .extend(chaos_inline_resources());
+    resources_by_server
+}
+
+fn merge_chaos_resources(
+    mut resources_by_server: HashMap<String, Vec<ResourceInfo>>,
+    session: &Session,
+) -> HashMap<String, Vec<ResourceInfo>> {
+    resources_by_server
+        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
+        .or_default()
+        .extend(chaos_resources(session));
     resources_by_server
 }
 
@@ -218,6 +284,50 @@ fn chaos_inline_resource_templates() -> Vec<ResourceTemplateInfo> {
         .collect()
 }
 
+fn chaos_static_resource_templates(session: &Session) -> Vec<ResourceTemplateInfo> {
+    let filter = ToolGroupFilter {
+        catalog: &session.services.tool_group_catalog,
+        state: &session.services.tool_group_state,
+    };
+    let catalog = session
+        .services
+        .catalog
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    catalog
+        .resource_templates()
+        .iter()
+        .filter_map(|(source, template)| {
+            let CatalogSource::Module(module) = source else {
+                return None;
+            };
+            let registration = static_resource_driver_registration(module)?;
+            let exposure = (registration.exposure)(&template.uri_template);
+            filter
+                .is_exposure_visible(&exposure)
+                .then(|| ResourceTemplateInfo {
+                    uri_template: template.uri_template.clone(),
+                    name: template.name.clone(),
+                    title: None,
+                    description: template.description.clone(),
+                    mime_type: template.mime_type.clone(),
+                    icons: None,
+                    annotations: None,
+                    meta: None,
+                })
+        })
+        .collect()
+}
+
+fn chaos_resource_templates(session: &Session) -> Vec<ResourceTemplateInfo> {
+    let mut templates = chaos_inline_resource_templates();
+    templates.extend(chaos_static_resource_templates(session));
+    templates.sort_by(|a, b| a.uri_template.cmp(&b.uri_template));
+    templates
+}
+
+#[cfg(test)]
 fn merge_inline_resource_templates(
     mut templates_by_server: HashMap<String, Vec<ResourceTemplateInfo>>,
 ) -> HashMap<String, Vec<ResourceTemplateInfo>> {
@@ -228,15 +338,26 @@ fn merge_inline_resource_templates(
     templates_by_server
 }
 
+fn merge_chaos_resource_templates(
+    mut templates_by_server: HashMap<String, Vec<ResourceTemplateInfo>>,
+    session: &Session,
+) -> HashMap<String, Vec<ResourceTemplateInfo>> {
+    templates_by_server
+        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
+        .or_default()
+        .extend(chaos_resource_templates(session));
+    templates_by_server
+}
+
 fn inline_text_resource_result(
     uri: impl Into<String>,
     text: String,
-    mime_type: &'static str,
+    mime_type: impl Into<String>,
 ) -> ReadResourceResult {
     ReadResourceResult {
         contents: vec![ResourceContents::Text(ResourceContentsText {
             uri: uri.into(),
-            mime_type: Some(mime_type.to_string()),
+            mime_type: Some(mime_type.into()),
             text,
             meta: None,
         })],
@@ -307,6 +428,66 @@ async fn read_inline_resource(
         content.text,
         content.mime_type,
     ))
+}
+
+async fn read_static_resource(
+    session: &Session,
+    turn: &TurnContext,
+    uri: &str,
+) -> Result<Option<ReadResourceResult>, FunctionCallError> {
+    let mut seen_modules = std::collections::HashSet::new();
+    let mut matches = inventory::iter::<CatalogResourceDriverRegistration>
+        .into_iter()
+        .filter(|registration| seen_modules.insert(registration.module))
+        .filter_map(|registration| {
+            let driver = (registration.driver)();
+            driver.matches(uri).then_some((registration, driver))
+        });
+    let Some((registration, driver)) = matches.next() else {
+        return Ok(None);
+    };
+    if let Some((other, _)) = matches.next() {
+        return Err(FunctionCallError::RespondToModel(format!(
+            "resource URI {uri:?} is claimed by both {:?} and {:?}",
+            registration.module, other.module
+        )));
+    }
+
+    let filter = ToolGroupFilter {
+        catalog: &session.services.tool_group_catalog,
+        state: &session.services.tool_group_state,
+    };
+    let exposure = (registration.exposure)(uri);
+    if !filter.is_exposure_visible(&exposure) {
+        return Err(FunctionCallError::RespondToModel(format!(
+            "resource {uri:?} is disabled; enable its capability group first"
+        )));
+    }
+
+    let config = session.get_config().await;
+    let project_root = crate::config_loader::project_mcp_json_path_for_stack(
+        &config.config_layer_stack,
+        &turn.cwd,
+    )
+    .parent()
+    .map(std::path::Path::to_path_buf)
+    .unwrap_or_else(|| turn.cwd.clone());
+    let result = driver
+        .read_resource(CatalogResourceRequest {
+            uri: uri.to_string(),
+            cwd: turn.cwd.clone(),
+            project_root,
+            sqlite_home: turn.config.sqlite_home.clone(),
+            session_id: session.conversation_id.to_string(),
+        })
+        .await
+        .map_err(FunctionCallError::RespondToModel)?;
+
+    Ok(Some(inline_text_resource_result(
+        uri.to_string(),
+        result.text,
+        result.mime_type,
+    )))
 }
 
 #[derive(Debug, Serialize)]
@@ -404,7 +585,7 @@ async fn handle_list_resources(
         if let Some(server_name) = server.clone() {
             let result = if server_name == INTERNAL_TASK_SERVER_NAME {
                 ListResourcesResult {
-                    resources: chaos_inline_resources(),
+                    resources: chaos_resources(&session),
                     next_cursor: None,
                     meta: None,
                 }
@@ -432,7 +613,7 @@ async fn handle_list_resources(
 
             let resources = session.services.mcp_registry.list_all_resources().await;
             Ok(ListResourcesPayload::from_all_servers(
-                merge_inline_resources(resources),
+                merge_chaos_resources(resources, &session),
             ))
         }
     }
@@ -473,7 +654,7 @@ async fn handle_list_resource_templates(
         if let Some(server_name) = server.clone() {
             let result = if server_name == INTERNAL_TASK_SERVER_NAME {
                 ListResourceTemplatesResult {
-                    resource_templates: chaos_inline_resource_templates(),
+                    resource_templates: chaos_resource_templates(&session),
                     next_cursor: None,
                     meta: None,
                 }
@@ -507,7 +688,7 @@ async fn handle_list_resource_templates(
                 .list_all_resource_templates()
                 .await;
             Ok(ListResourceTemplatesPayload::from_all_servers(
-                merge_inline_resource_templates(templates),
+                merge_chaos_resource_templates(templates, &session),
             ))
         }
     }
@@ -648,7 +829,10 @@ async fn handle_read_resource(
         let result = if let Some(op) = parse_task_uri(&uri) {
             read_task_resource(&session, &server, &uri, op).await?
         } else if server == INTERNAL_TASK_SERVER_NAME {
-            read_inline_resource(&session, turn.as_ref(), &uri).await?
+            match read_static_resource(&session, turn.as_ref(), &uri).await? {
+                Some(result) => result,
+                None => read_inline_resource(&session, turn.as_ref(), &uri).await?,
+            }
         } else {
             session
                 .read_resource(

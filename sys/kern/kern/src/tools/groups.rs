@@ -4,6 +4,7 @@ use mcp_host::prelude::{
 };
 
 pub(crate) const GIT: &str = "git";
+pub(crate) const GIT_WRITE: &str = "git-write";
 pub(crate) const SHELL: &str = "shell";
 pub(crate) const FILESYSTEM: &str = "filesystem";
 pub(crate) const EDITING: &str = "editing";
@@ -22,15 +23,22 @@ impl ToolGroupFilter<'_> {
     pub(crate) fn is_visible(&self, tool_name: &str) -> bool {
         self.catalog.is_tool_visible(self.state, tool_name)
     }
+
+    pub(crate) fn is_exposure_visible(&self, exposure: &ToolExposure) -> bool {
+        match exposure {
+            ToolExposure::Always => true,
+            ToolExposure::Groups(groups) => groups
+                .iter()
+                .any(|group| self.catalog.is_group_enabled(self.state, group)),
+        }
+    }
 }
 
 pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     let catalog = ToolGroupCatalog::new();
     for (id, description) in [
-        (
-            GIT,
-            "Gix-backed repository inspection, staging, and commits",
-        ),
+        (GIT, "Gix-backed read-only repository inspection"),
+        (GIT_WRITE, "Gix-backed repository mutation operations"),
         (SHELL, "Command execution and PTY input"),
         (
             FILESYSTEM,
@@ -187,10 +195,30 @@ mod tests {
         assert!(!catalog.is_tool_visible(&state, "read_file"));
 
         catalog
-            .set_groups_enabled(&state, [GIT, FILESYSTEM], true)
+            .set_groups_enabled(&state, [GIT, GIT_WRITE, FILESYSTEM], true)
             .expect("enable groups");
         assert!(catalog.is_tool_visible(&state, "git_commit"));
+        assert!(catalog.is_tool_visible(&state, "git_branch"));
         assert!(catalog.is_tool_visible(&state, "read_file"));
+    }
+
+    #[test]
+    fn git_read_and_write_groups_are_independent() {
+        let catalog = build_catalog().expect("tool group catalog");
+        let state = catalog.new_state();
+
+        catalog
+            .set_groups_enabled(&state, [GIT], true)
+            .expect("enable git reads");
+        assert!(catalog.is_tool_visible(&state, "git_status"));
+        assert!(!catalog.is_tool_visible(&state, "git_commit"));
+        assert!(!catalog.is_tool_visible(&state, "git_branch"));
+
+        catalog
+            .set_groups_enabled(&state, [GIT_WRITE], true)
+            .expect("enable git writes");
+        assert!(catalog.is_tool_visible(&state, "git_commit"));
+        assert!(catalog.is_tool_visible(&state, "git_branch"));
     }
 
     #[test]

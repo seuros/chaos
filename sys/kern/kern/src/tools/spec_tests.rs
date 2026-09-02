@@ -3,7 +3,7 @@ use crate::config::test_config;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::model_info::with_config_overrides;
 use crate::tools::ToolRouter;
-use crate::tools::groups::{FILESYSTEM, GIT, ToolGroupFilter};
+use crate::tools::groups::{FILESYSTEM, GIT, GIT_WRITE, ToolGroupFilter};
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::spec::tool_builders::create_read_session_history_tool;
@@ -511,6 +511,7 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
     for name in [
         "git_status",
         "git_add",
+        "git_branch",
         "git_commit",
         "read_file",
         "apply_patch",
@@ -526,11 +527,15 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
     assert!(!find_tool(&tools, "enable_tools").supports_parallel_tool_calls);
 
     let change = catalog
-        .set_groups_enabled(&state, [GIT, FILESYSTEM], true)
-        .expect("enable git and filesystem");
+        .set_groups_enabled(&state, [GIT, GIT_WRITE, FILESYSTEM], true)
+        .expect("enable git read, git write, and filesystem");
     assert_eq!(
         change.changed_groups,
-        vec![FILESYSTEM.to_string(), GIT.to_string()]
+        vec![
+            FILESYSTEM.to_string(),
+            GIT.to_string(),
+            GIT_WRITE.to_string()
+        ]
     );
 
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
@@ -541,6 +546,7 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
             "disable_tools",
             "git_status",
             "git_add",
+            "git_branch",
             "git_commit",
             "read_file",
             "list_dir",
@@ -555,7 +561,14 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
         .expect("disable git");
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
     assert_lacks_tool_name(&tools, "git_status");
+    assert_contains_tool_names(&tools, &["git_commit", "git_branch"]);
+
+    catalog
+        .set_groups_enabled(&state, [GIT_WRITE], false)
+        .expect("disable git writes");
+    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
     assert_lacks_tool_name(&tools, "git_commit");
+    assert_lacks_tool_name(&tools, "git_branch");
     assert_contains_tool_names(&tools, &["read_file", "disable_tools"]);
 }
 
@@ -1301,7 +1314,7 @@ const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     // in the test harness.
     "git_add",
     "git_blame",
-    "git_branches",
+    "git_branch",
     "git_commit",
     "git_diff",
     "git_log",

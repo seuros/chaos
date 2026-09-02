@@ -24,6 +24,7 @@ serde_json = { workspace = true }
 similar = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time"] }
+url = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

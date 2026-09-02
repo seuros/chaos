@@ -239,3 +239,24 @@ fn inline_text_resource_result_preserves_markdown_mime_type() {
         Some(builtin_mcp_resources::MARKDOWN_MIME_TYPE)
     );
 }
+
+#[test]
+fn static_git_resource_driver_is_capability_gated() {
+    let registration =
+        static_resource_driver_registration("git").expect("git resource driver registration");
+    assert!((registration.driver)().matches("git://branches?scope=local"));
+
+    let catalog = crate::tools::groups::build_catalog().expect("tool group catalog");
+    let state = catalog.new_state();
+    let filter = ToolGroupFilter {
+        catalog: &catalog,
+        state: &state,
+    };
+    let exposure = (registration.exposure)("git://branches");
+    assert!(!filter.is_exposure_visible(&exposure));
+
+    catalog
+        .set_groups_enabled(&state, [crate::tools::groups::GIT], true)
+        .expect("enable git group");
+    assert!(filter.is_exposure_visible(&exposure));
+}

@@ -5,12 +5,8 @@
 //!
 //! ## MCP surface
 //!
-//! **Resources** (no params, implicit cwd):
-//! - `git://repo` — root, branch, HEAD sha, remote url, dirty flag, default branch
-//! - `git://status` — staged, unstaged, untracked files
-//! - `git://branches` — current, default, local, remote
-//! - `git://remotes` — name→url map
-//! - `git://diff_to_remote` — base sha + diff against closest remote ancestor
+//! **Resources** (implicit cwd):
+//! - `git://branches{?scope,contains}` — current, default, local, and remote branches
 //!
 //! **Tools** (require params):
 //! - `diff` — unified diff with optional base ref and path filters
@@ -19,9 +15,11 @@
 //! - `blame` — per-line attribution for a file
 //! - `add` — stage explicit repository-relative file paths
 //! - `commit` — create an unsigned commit from the staged index without hooks
+//! - `branch` — create or delete a local branch
 
 mod add;
 mod blame;
+mod branch;
 mod branches;
 mod commit;
 mod diff;
@@ -30,6 +28,7 @@ mod ext;
 mod log;
 mod remotes;
 mod repo;
+mod resources;
 mod show;
 mod status;
 mod tools;
@@ -38,8 +37,14 @@ pub use add::AddResult;
 pub use add::add;
 pub use blame::BlameLine;
 pub use blame::blame;
+pub use branch::BranchMutationResult;
+pub use branch::create as create_branch;
+pub use branch::delete as delete_branch;
 pub use branches::BranchInfo;
 use chaos_traits::catalog::CatalogRegistration;
+use chaos_traits::catalog::CatalogResourceDriver;
+use chaos_traits::catalog::CatalogResourceDriverRegistration;
+use chaos_traits::catalog::CatalogResourceTemplate;
 use chaos_traits::catalog::CatalogTool;
 use chaos_traits::catalog::CatalogToolDriver;
 use chaos_traits::catalog::CatalogToolDriverFuture;
@@ -105,12 +110,6 @@ impl CatalogToolDriver for GitToolDriver {
                         .map_err(|e| format!("invalid arguments: {e}"))?;
                     tools::execute_blocking(cwd, params, tools::execute_git_status_structured).await
                 }
-                "git_branches" => {
-                    let params = serde_json::from_value(request.arguments)
-                        .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_branches_structured)
-                        .await
-                }
                 "git_remotes" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
@@ -126,6 +125,11 @@ impl CatalogToolDriver for GitToolDriver {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
                     tools::execute_blocking(cwd, params, tools::execute_git_commit_structured).await
+                }
+                "git_branch" => {
+                    let params = serde_json::from_value(request.arguments)
+                        .map_err(|e| format!("invalid arguments: {e}"))?;
+                    tools::execute_blocking(cwd, params, tools::execute_git_branch_structured).await
                 }
                 other => Err(format!("unknown git tool: {other}")),
             };
@@ -147,7 +151,7 @@ fn git_catalog_tools() -> Vec<CatalogTool> {
     tool_infos_to_catalog_tools(tools::tool_infos())
         .into_iter()
         .map(|mut tool| {
-            if matches!(tool.name.as_str(), "git_add" | "git_commit") {
+            if matches!(tool.name.as_str(), "git_add" | "git_commit" | "git_branch") {
                 tool.read_only_hint = Some(false);
                 tool.supports_parallel_tool_calls = false;
             }
@@ -156,7 +160,31 @@ fn git_catalog_tools() -> Vec<CatalogTool> {
         .collect()
 }
 
-fn git_tool_exposure(_tool_name: &str) -> ToolExposure {
+fn git_tool_exposure(tool_name: &str) -> ToolExposure {
+    if matches!(tool_name, "git_add" | "git_commit" | "git_branch") {
+        ToolExposure::groups(["git-write"])
+    } else {
+        ToolExposure::groups(["git"])
+    }
+}
+
+fn git_resource_templates() -> Vec<CatalogResourceTemplate> {
+    vec![CatalogResourceTemplate {
+        uri_template: "git://branches{?scope,contains}".to_string(),
+        name: "git_branches".to_string(),
+        description: Some(
+            "List local and remote branches, optionally filtered by scope and substring"
+                .to_string(),
+        ),
+        mime_type: Some("application/json".to_string()),
+    }]
+}
+
+fn git_resource_driver() -> Arc<dyn CatalogResourceDriver> {
+    Arc::new(resources::GitResourceDriver)
+}
+
+fn git_resource_exposure(_uri: &str) -> ToolExposure {
     ToolExposure::groups(["git"])
 }
 
@@ -165,10 +193,18 @@ inventory::submit! {
         name: "git",
         tools: git_catalog_tools,
         resources: || vec![],
-        resource_templates: || vec![],
+        resource_templates: git_resource_templates,
         prompts: || vec![],
         tool_driver: Some(git_tool_driver),
         tool_exposure: git_tool_exposure,
+    }
+}
+
+inventory::submit! {
+    CatalogResourceDriverRegistration {
+        module: "git",
+        driver: git_resource_driver,
+        exposure: git_resource_exposure,
     }
 }
 
@@ -205,7 +241,7 @@ mod tests {
     #[test]
     fn mutation_tools_are_marked_mutating_and_non_parallel() {
         let tools = super::git_catalog_tools();
-        for name in ["git_add", "git_commit"] {
+        for name in ["git_add", "git_commit", "git_branch"] {
             let tool = tools
                 .iter()
                 .find(|tool| tool.name == name)
@@ -220,5 +256,17 @@ mod tests {
             .expect("git_status");
         assert_eq!(status.read_only_hint, Some(true));
         assert!(status.supports_parallel_tool_calls);
+        assert!(
+            tools.iter().all(|tool| tool.name != "git_branches"),
+            "branch listing must be exposed as a resource, not a tool"
+        );
+    }
+
+    #[test]
+    fn branch_resource_template_is_registered() {
+        let templates = super::git_resource_templates();
+        assert_eq!(templates.len(), 1);
+        assert_eq!(templates[0].uri_template, "git://branches{?scope,contains}");
+        assert_eq!(templates[0].mime_type.as_deref(), Some("application/json"));
     }
 }

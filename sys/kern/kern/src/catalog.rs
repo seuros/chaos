@@ -151,12 +151,10 @@ impl Catalog {
         &self.tools
     }
 
-    #[cfg(test)]
     pub(crate) fn resources(&self) -> &[(CatalogSource, CatalogResource)] {
         &self.resources
     }
 
-    #[cfg(test)]
     pub(crate) fn resource_templates(&self) -> &[(CatalogSource, CatalogResourceTemplate)] {
         &self.resource_templates
     }
@@ -570,6 +568,7 @@ mod tests {
     fn mcp_resources_register_and_unregister() {
         let mut catalog = Catalog::from_inventory();
         assert!(catalog.resources().is_empty());
+        let initial_template_count = catalog.resource_templates().len();
 
         catalog.register_mcp_resources(
             "fs-server",
@@ -591,11 +590,14 @@ mod tests {
                 mime_type: None,
             }],
         );
-        assert_eq!(catalog.resource_templates().len(), 1);
+        assert_eq!(
+            catalog.resource_templates().len(),
+            initial_template_count + 1
+        );
 
         catalog.unregister_mcp_resources("fs-server");
         assert!(catalog.resources().is_empty());
-        assert!(catalog.resource_templates().is_empty());
+        assert_eq!(catalog.resource_templates().len(), initial_template_count);
     }
 
     #[test]

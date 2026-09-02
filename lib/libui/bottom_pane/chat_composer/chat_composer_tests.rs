@@ -135,7 +135,7 @@ pub(crate) fn chat_composer_prompt_suite() {
     numeric_prompt_positional_args_does_not_error();
     selecting_custom_prompt_with_no_args_inserts_template();
     selecting_custom_prompt_preserves_literal_dollar_dollar();
-    selecting_custom_prompt_reuses_cached_arguments_join();
+    custom_prompt_reuses_arguments_join();
     pending_first_ascii_char_flushes_as_typed();
     burst_paste_fast_small_buffers_and_flushes_on_stop();
     burst_paste_fast_large_inserts_placeholder_on_flush();
@@ -4066,7 +4066,7 @@ fn selecting_custom_prompt_preserves_literal_dollar_dollar() {
     ));
 }
 
-fn selecting_custom_prompt_reuses_cached_arguments_join() {
+fn custom_prompt_reuses_arguments_join() {
     let prompt_text = "First: $ARGUMENTS\nSecond: $ARGUMENTS";
 
     let sender = make_app_event_sender();
@@ -4086,21 +4086,18 @@ fn selecting_custom_prompt_reuses_cached_arguments_join() {
         argument_hint: None,
     }]);
 
-    type_chars_humanlike(
-        &mut composer,
-        &[
-            '/', 'p', 'r', 'o', 'm', 'p', 't', 's', ':', 'r', 'e', 'p', 'e', 'a', 't', ' ', 'o',
-            'n', 'e', ' ', 't', 'w', 'o',
-        ],
-    );
+    composer
+        .textarea
+        .set_text_clearing_elements("/prompts:repeat one two");
     let (result, _needs_redraw) =
         composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    let expected = "First: one two\nSecond: one two".to_string();
-    assert!(matches!(
-        result,
-        InputResult::Submitted { text, .. } if text == expected
-    ));
+    match result {
+        InputResult::Submitted { text, .. } => {
+            assert_eq!(text, "First: one two\nSecond: one two");
+        }
+        other => panic!("expected submitted prompt, got {other:?}"),
+    }
 }
 
 /// Behavior: the first fast ASCII character is held briefly to avoid flicker; if no burst

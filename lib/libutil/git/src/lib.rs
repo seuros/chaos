@@ -55,6 +55,7 @@ use chaos_traits::catalog::tool_infos_to_catalog_tools;
 pub use commit::CommitResult;
 pub use commit::commit;
 pub use diff::DiffFile;
+pub use diff::DiffFormat;
 pub use diff::DiffReport;
 pub use diff::DiffScope;
 pub use diff::DiffStatus;
@@ -90,7 +91,7 @@ impl CatalogToolDriver for GitToolDriver {
                 "git_diff" => {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::execute_blocking(cwd, params, tools::execute_git_diff_structured).await
+                    tools::execute_git_diff_blocking(cwd, params).await
                 }
                 "git_log" => {
                     let params = serde_json::from_value(request.arguments)

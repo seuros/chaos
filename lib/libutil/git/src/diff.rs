@@ -1,7 +1,12 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Read;
 use std::ops::ControlFlow;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use gix::bstr::ByteSlice;
 use schemars::JsonSchema;
@@ -13,7 +18,14 @@ use similar::TextDiff;
 use crate::error::GitError;
 use crate::ext::GitResultExt;
 use crate::open_repo;
-use crate::status;
+
+const MAX_CHANGED_FILES: usize = 20_000;
+const MAX_BLOB_BYTES: usize = 8 * 1024 * 1024;
+const MAX_TOTAL_CONTENT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_TEXT_LINES: usize = 200_000;
+const MAX_PATCH_BYTES: usize = 8 * 1024 * 1024;
+const MAX_WHITESPACE_ERRORS: usize = 10_000;
+const TEXT_DIFF_TIMEOUT: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -21,6 +33,17 @@ pub enum DiffScope {
     Worktree,
     Staged,
     All,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffFormat {
+    /// Return unified patches grouped by file.
+    Patch,
+    /// Return per-file and aggregate line statistics.
+    Stat,
+    /// Return repository-relative changed paths.
+    NameOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -44,9 +67,12 @@ pub struct DiffFile {
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffSummary {
     pub files_changed: usize,
-    pub insertions: usize,
-    pub deletions: usize,
-    pub binary_files: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insertions: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_files: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -59,6 +85,7 @@ pub struct WhitespaceError {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffReport {
+    pub paths: Vec<String>,
     pub files: Vec<DiffFile>,
     pub summary: DiffSummary,
     pub whitespace_errors: Vec<WhitespaceError>,
@@ -72,9 +99,30 @@ pub struct DiffReport {
 pub fn diff_report(
     cwd: &Path,
     scope: DiffScope,
+    format: DiffFormat,
     base: Option<&str>,
     paths: Option<&[&str]>,
     check_whitespace: bool,
+) -> Result<DiffReport, GitError> {
+    diff_report_with_cancel(
+        cwd,
+        scope,
+        format,
+        base,
+        paths,
+        check_whitespace,
+        Arc::new(AtomicBool::new(false)),
+    )
+}
+
+pub(crate) fn diff_report_with_cancel(
+    cwd: &Path,
+    scope: DiffScope,
+    format: DiffFormat,
+    base: Option<&str>,
+    paths: Option<&[&str]>,
+    check_whitespace: bool,
+    cancel: Arc<AtomicBool>,
 ) -> Result<DiffReport, GitError> {
     if scope == DiffScope::Worktree && base.is_some() {
         return Err(GitError::InvalidInput(
@@ -83,6 +131,7 @@ pub fn diff_report(
         ));
     }
 
+    check_cancelled(&cancel)?;
     let repo = open_repo(cwd)?;
     let root = repo
         .workdir()
@@ -91,14 +140,13 @@ pub fn diff_report(
         .index_or_load_from_head_or_empty()
         .map_err(|e| GitError::Operation(e.to_string()))?
         .into_owned();
-    let repository_status = status::collect(cwd)?;
 
     let base_tree = match scope {
         DiffScope::Worktree => None,
         DiffScope::Staged | DiffScope::All => Some(resolve_base_tree(&repo, base)?),
     };
 
-    let mut changed_paths = BTreeSet::new();
+    let mut staged_paths = BTreeSet::new();
     if scope != DiffScope::Worktree {
         collect_tree_index_paths(
             &repo,
@@ -107,23 +155,48 @@ pub fn diff_report(
                 .as_ref()
                 .expect("base tree for staged or all scope"),
             paths,
-            &mut changed_paths,
+            &mut staged_paths,
+            &cancel,
         )?;
     }
+    let mut unstaged_paths = BTreeSet::new();
     if scope != DiffScope::Staged {
-        extend_filtered_paths(
-            &mut changed_paths,
-            repository_status.unstaged.into_iter().map(|item| item.path),
-            paths,
-        );
+        collect_worktree_paths(&repo, paths, &mut unstaged_paths, &cancel)?;
     }
 
+    let paths_requiring_confirmation = if scope == DiffScope::All {
+        staged_paths
+            .intersection(&unstaged_paths)
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    } else {
+        BTreeSet::new()
+    };
+    let changed_paths = match scope {
+        DiffScope::Worktree => unstaged_paths,
+        DiffScope::Staged => staged_paths,
+        DiffScope::All => staged_paths.union(&unstaged_paths).cloned().collect(),
+    };
+    ensure_changed_path_limit(changed_paths.len())?;
+
+    let needs_details = format != DiffFormat::NameOnly || check_whitespace;
     let mut files = Vec::new();
+    let mut confirmed_paths = Vec::new();
     let mut whitespace_errors = Vec::new();
+    let mut total_content_bytes = 0usize;
+    let mut total_patch_bytes = 0usize;
     for path in changed_paths {
+        check_cancelled(&cancel)?;
+        let needs_content = needs_details || paths_requiring_confirmation.contains(path.as_str());
+        if !needs_content {
+            confirmed_paths.push(path);
+            continue;
+        }
+
         let old_content = match scope {
             DiffScope::Worktree => index_blob_content(&repo, &index, &path)?,
             DiffScope::Staged | DiffScope::All => tree_blob_content(
+                &repo,
                 base_tree
                     .as_ref()
                     .expect("base tree for staged or all scope"),
@@ -132,27 +205,54 @@ pub fn diff_report(
         };
         let new_content = match scope {
             DiffScope::Staged => index_blob_content(&repo, &index, &path)?,
-            DiffScope::Worktree | DiffScope::All => worktree_blob_content(root, &path)?,
+            DiffScope::Worktree | DiffScope::All => worktree_blob_content(root, &path, &cancel)?,
         };
 
         if old_content == new_content {
             continue;
         }
 
+        confirmed_paths.push(path.clone());
+        if !needs_details {
+            continue;
+        }
+
+        let content_bytes = old_content.as_deref().map_or(0, <[u8]>::len)
+            + new_content.as_deref().map_or(0, <[u8]>::len);
+        total_content_bytes = total_content_bytes.saturating_add(content_bytes);
+        if total_content_bytes > MAX_TOTAL_CONTENT_BYTES {
+            return Err(GitError::DiffLimit(format!(
+                "content exceeds {MAX_TOTAL_CONTENT_BYTES} bytes in total; narrow paths or use format=name_only"
+            )));
+        }
+
         let (file, mut file_errors) =
-            build_diff_file(path, old_content, new_content, check_whitespace);
+            build_diff_file(path, old_content, new_content, format, check_whitespace)?;
+        total_patch_bytes = total_patch_bytes.saturating_add(file.patch.len());
+        if total_patch_bytes > MAX_PATCH_BYTES {
+            return Err(GitError::DiffLimit(format!(
+                "patch output exceeds {MAX_PATCH_BYTES} bytes; narrow paths or use format=stat/name_only"
+            )));
+        }
+        if whitespace_errors.len().saturating_add(file_errors.len()) > MAX_WHITESPACE_ERRORS {
+            return Err(GitError::DiffLimit(format!(
+                "whitespace check produced more than {MAX_WHITESPACE_ERRORS} errors in total; narrow paths"
+            )));
+        }
+        check_cancelled(&cancel)?;
         files.push(file);
         whitespace_errors.append(&mut file_errors);
     }
 
     let summary = DiffSummary {
-        files_changed: files.len(),
-        insertions: files.iter().filter_map(|file| file.additions).sum(),
-        deletions: files.iter().filter_map(|file| file.deletions).sum(),
-        binary_files: files.iter().filter(|file| file.binary).count(),
+        files_changed: confirmed_paths.len(),
+        insertions: needs_details.then(|| files.iter().filter_map(|file| file.additions).sum()),
+        deletions: needs_details.then(|| files.iter().filter_map(|file| file.deletions).sum()),
+        binary_files: needs_details.then(|| files.iter().filter(|file| file.binary).count()),
     };
 
     Ok(DiffReport {
+        paths: confirmed_paths,
         files,
         summary,
         whitespace_errors,
@@ -161,7 +261,7 @@ pub fn diff_report(
 
 /// Generate a unified diff from a base tree to the working tree.
 pub fn diff(cwd: &Path, base: Option<&str>, paths: Option<&[&str]>) -> Result<String, GitError> {
-    let report = diff_report(cwd, DiffScope::All, base, paths, false)?;
+    let report = diff_report(cwd, DiffScope::All, DiffFormat::Patch, base, paths, false)?;
     Ok(report.files.into_iter().map(|file| file.patch).collect())
 }
 
@@ -191,7 +291,9 @@ fn collect_tree_index_paths(
     tree: &gix::Tree<'_>,
     paths: Option<&[&str]>,
     changed_paths: &mut BTreeSet<String>,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<(), GitError> {
+    let mut limit_exceeded = false;
     repo.tree_index_status(
         tree.id.as_ref(),
         index,
@@ -209,31 +311,62 @@ fn collect_tree_index_paths(
             if matches_filter(&path, paths) {
                 changed_paths.insert(path);
             }
-            Ok::<_, std::convert::Infallible>(ControlFlow::Continue(()))
+            limit_exceeded = changed_paths.len() > MAX_CHANGED_FILES;
+            let stop = limit_exceeded || cancel.load(Ordering::Acquire);
+            Ok::<_, std::convert::Infallible>(if stop {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            })
         },
     )
     .git_op()?;
+    check_cancelled(cancel)?;
+    if limit_exceeded {
+        return Err(changed_path_limit_error());
+    }
     Ok(())
 }
 
-fn extend_filtered_paths(
-    changed_paths: &mut BTreeSet<String>,
-    candidates: impl IntoIterator<Item = String>,
+fn collect_worktree_paths(
+    repo: &gix::Repository,
     paths: Option<&[&str]>,
-) {
-    changed_paths.extend(
-        candidates
-            .into_iter()
-            .filter(|path| matches_filter(path, paths)),
-    );
+    changed_paths: &mut BTreeSet<String>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<(), GitError> {
+    let status_iter = repo
+        .status(gix::progress::Discard)
+        .git_op()?
+        .untracked_files(gix::status::UntrackedFiles::None)
+        .index_worktree_submodules(None)
+        .should_interrupt_owned(Arc::clone(cancel))
+        .into_index_worktree_iter(Vec::<gix::bstr::BString>::new())
+        .git_op()?;
+
+    for item in status_iter {
+        check_cancelled(cancel)?;
+        let item = item.git_op()?;
+        use gix::status::index_worktree::Item;
+        if let Item::Modification { rela_path, .. } = item {
+            let path = rela_path.to_string();
+            if matches_filter(&path, paths) {
+                changed_paths.insert(path);
+                ensure_changed_path_limit(changed_paths.len())?;
+            }
+        }
+    }
+    check_cancelled(cancel)
 }
 
-fn tree_blob_content(tree: &gix::Tree<'_>, path: &str) -> Result<Option<Vec<u8>>, GitError> {
+fn tree_blob_content(
+    repo: &gix::Repository,
+    tree: &gix::Tree<'_>,
+    path: &str,
+) -> Result<Option<Vec<u8>>, GitError> {
     let Some(entry) = tree.lookup_entry_by_path(path).git_op()? else {
         return Ok(None);
     };
-    let object = entry.object().git_op()?;
-    Ok(Some(object.data.to_vec()))
+    object_blob_content(repo, entry.id().detach(), path)
 }
 
 fn index_blob_content(
@@ -248,11 +381,24 @@ fn index_blob_content(
         .iter()
         .find(|entry| entry.stage() == gix::index::entry::Stage::Unconflicted)
         .ok_or_else(|| GitError::Conflict(path.to_string()))?;
-    let object = repo.find_object(entry.id).git_op()?;
+    object_blob_content(repo, entry.id, path)
+}
+
+fn object_blob_content(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    path: &str,
+) -> Result<Option<Vec<u8>>, GitError> {
+    ensure_object_size(repo, id, path)?;
+    let object = repo.find_object(id).git_op()?;
     Ok(Some(object.data.to_vec()))
 }
 
-fn worktree_blob_content(root: &Path, path: &str) -> Result<Option<Vec<u8>>, GitError> {
+fn worktree_blob_content(
+    root: &Path,
+    path: &str,
+    cancel: &Arc<AtomicBool>,
+) -> Result<Option<Vec<u8>>, GitError> {
     let full_path = root.join(path);
     let metadata = match fs::symlink_metadata(&full_path) {
         Ok(metadata) => metadata,
@@ -264,26 +410,44 @@ fn worktree_blob_content(root: &Path, path: &str) -> Result<Option<Vec<u8>>, Git
         }
     };
     if metadata.file_type().is_symlink() {
-        return fs::read_link(&full_path)
-            .map(|target| Some(target.to_string_lossy().into_owned().into_bytes()))
-            .map_err(|err| {
-                GitError::Operation(format!("failed to read worktree symlink {path}: {err}"))
-            });
+        let target = fs::read_link(&full_path).map_err(|err| {
+            GitError::Operation(format!("failed to read worktree symlink {path}: {err}"))
+        })?;
+        let content = target.to_string_lossy().into_owned().into_bytes();
+        ensure_blob_size(path, content.len() as u64)?;
+        return Ok(Some(content));
     }
     if !metadata.is_file() {
         return Ok(None);
     }
-    fs::read(&full_path)
-        .map(Some)
-        .map_err(|err| GitError::Operation(format!("failed to read worktree file {path}: {err}")))
+    ensure_blob_size(path, metadata.len())?;
+
+    let mut file = fs::File::open(&full_path).map_err(|err| {
+        GitError::Operation(format!("failed to open worktree file {path}: {err}"))
+    })?;
+    let mut content = Vec::with_capacity(metadata.len() as usize);
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        check_cancelled(cancel)?;
+        let read = file.read(&mut chunk).map_err(|err| {
+            GitError::Operation(format!("failed to read worktree file {path}: {err}"))
+        })?;
+        if read == 0 {
+            break;
+        }
+        content.extend_from_slice(&chunk[..read]);
+        ensure_blob_size(path, content.len() as u64)?;
+    }
+    Ok(Some(content))
 }
 
 fn build_diff_file(
     path: String,
     old: Option<Vec<u8>>,
     new: Option<Vec<u8>>,
+    format: DiffFormat,
     check_whitespace: bool,
-) -> (DiffFile, Vec<WhitespaceError>) {
+) -> Result<(DiffFile, Vec<WhitespaceError>), GitError> {
     let status = match (old.is_some(), new.is_some()) {
         (false, true) => DiffStatus::Added,
         (true, false) => DiffStatus::Deleted,
@@ -302,12 +466,19 @@ fn build_diff_file(
         "/dev/null".to_string()
     };
 
-    let mut patch = format!("diff --git a/{path} b/{path}\n");
+    let render_patch = format == DiffFormat::Patch;
+    let mut patch = if render_patch {
+        format!("diff --git a/{path} b/{path}\n")
+    } else {
+        String::new()
+    };
     if binary {
-        patch.push_str(&format!(
-            "Binary files {old_label} and {new_label} differ\n"
-        ));
-        return (
+        if render_patch {
+            patch.push_str(&format!(
+                "Binary files {old_label} and {new_label} differ\n"
+            ));
+        }
+        return Ok((
             DiffFile {
                 path,
                 status,
@@ -317,12 +488,23 @@ fn build_diff_file(
                 patch,
             },
             Vec::new(),
-        );
+        ));
     }
 
     let old_text = String::from_utf8_lossy(old.as_deref().unwrap_or_default());
     let new_text = String::from_utf8_lossy(new.as_deref().unwrap_or_default());
-    let text_diff = TextDiff::from_lines(old_text.as_ref(), new_text.as_ref());
+    let line_count = old_text
+        .lines()
+        .count()
+        .saturating_add(new_text.lines().count());
+    if line_count > MAX_TEXT_LINES {
+        return Err(GitError::DiffLimit(format!(
+            "{path} contains {line_count} lines across both sides (limit {MAX_TEXT_LINES}); use format=name_only"
+        )));
+    }
+    let text_diff = TextDiff::configure()
+        .timeout(TEXT_DIFF_TIMEOUT)
+        .diff_lines(old_text.as_ref(), new_text.as_ref());
     let mut additions = 0;
     let mut deletions = 0;
     for change in text_diff.iter_all_changes() {
@@ -332,20 +514,22 @@ fn build_diff_file(
             ChangeTag::Equal => {}
         }
     }
-    patch.push_str(
-        &text_diff
-            .unified_diff()
-            .context_radius(3)
-            .header(&old_label, &new_label)
-            .to_string(),
-    );
+    if render_patch {
+        patch.push_str(
+            &text_diff
+                .unified_diff()
+                .context_radius(3)
+                .header(&old_label, &new_label)
+                .to_string(),
+        );
+    }
     let whitespace_errors = if check_whitespace {
-        collect_whitespace_errors(&path, &text_diff)
+        collect_whitespace_errors(&path, &text_diff)?
     } else {
         Vec::new()
     };
 
-    (
+    Ok((
         DiffFile {
             path,
             status,
@@ -355,10 +539,13 @@ fn build_diff_file(
             patch,
         },
         whitespace_errors,
-    )
+    ))
 }
 
-fn collect_whitespace_errors(path: &str, diff: &TextDiff<'_, '_, str>) -> Vec<WhitespaceError> {
+fn collect_whitespace_errors(
+    path: &str,
+    diff: &TextDiff<'_, '_, str>,
+) -> Result<Vec<WhitespaceError>, GitError> {
     let mut errors = Vec::new();
     let mut new_line = 0;
     for change in diff.iter_all_changes() {
@@ -374,27 +561,72 @@ fn collect_whitespace_errors(path: &str, diff: &TextDiff<'_, '_, str>) -> Vec<Wh
         let line = change.value().strip_suffix('\n').unwrap_or(change.value());
         let line = line.strip_suffix('\r').unwrap_or(line);
         let mut report = |kind, message| {
+            if errors.len() >= MAX_WHITESPACE_ERRORS {
+                return Err(GitError::DiffLimit(format!(
+                    "whitespace check produced more than {MAX_WHITESPACE_ERRORS} errors; narrow paths"
+                )));
+            }
             errors.push(WhitespaceError {
                 path: path.to_string(),
                 line: new_line,
                 kind,
                 message,
             });
+            Ok(())
         };
         if line.ends_with([' ', '\t']) {
-            report("trailing_whitespace", "new line has trailing whitespace");
+            report("trailing_whitespace", "new line has trailing whitespace")?;
         }
         if has_space_before_tab_in_indent(line) {
             report(
                 "space_before_tab",
                 "new line has a space before a tab in its indentation",
-            );
+            )?;
         }
         if is_conflict_marker(line) {
-            report("conflict_marker", "new line introduces a conflict marker");
+            report("conflict_marker", "new line introduces a conflict marker")?;
         }
     }
-    errors
+    Ok(errors)
+}
+
+fn ensure_object_size(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    path: &str,
+) -> Result<(), GitError> {
+    let header = repo.find_header(id).git_op()?;
+    ensure_blob_size(path, header.size())
+}
+
+fn ensure_blob_size(path: &str, size: u64) -> Result<(), GitError> {
+    if size > MAX_BLOB_BYTES as u64 {
+        return Err(GitError::DiffLimit(format!(
+            "{path} is {size} bytes (per-file limit {MAX_BLOB_BYTES}); use format=name_only when possible or narrow paths"
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_changed_path_limit(count: usize) -> Result<(), GitError> {
+    if count > MAX_CHANGED_FILES {
+        return Err(changed_path_limit_error());
+    }
+    Ok(())
+}
+
+fn changed_path_limit_error() -> GitError {
+    GitError::DiffLimit(format!(
+        "more than {MAX_CHANGED_FILES} changed files; narrow paths"
+    ))
+}
+
+fn check_cancelled(cancel: &AtomicBool) -> Result<(), GitError> {
+    if cancel.load(Ordering::Acquire) {
+        Err(GitError::Cancelled)
+    } else {
+        Ok(())
+    }
 }
 
 fn has_space_before_tab_in_indent(line: &str) -> bool {

@@ -1,11 +1,13 @@
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde::Serialize;
 
 use crate::GitCtx;
 use crate::GitServer;
@@ -25,6 +27,50 @@ where
         .map_err(|e| format!("git tool task failed: {e}"))?
 }
 
+async fn execute_cancellable_blocking<P, F, R>(
+    cwd: PathBuf,
+    params: P,
+    timeout: Duration,
+    operation: &'static str,
+    f: F,
+) -> Result<R, String>
+where
+    P: Send + 'static,
+    F: FnOnce(&Path, P, Arc<AtomicBool>) -> Result<R, String> + Send + 'static,
+    R: Send + 'static,
+{
+    let cancel = Arc::new(AtomicBool::new(false));
+    let worker_cancel = Arc::clone(&cancel);
+    let mut task = tokio::task::spawn_blocking(move || f(&cwd, params, worker_cancel));
+    tokio::select! {
+        biased;
+        result = &mut task => {
+            result.map_err(|e| format!("{operation} task failed: {e}"))?
+        }
+        _ = tokio::time::sleep(timeout) => {
+            cancel.store(true, Ordering::Release);
+            let _worker_result = task.await.map_err(|e| {
+                format!("{operation} timed out after {timeout:?}; worker cleanup failed: {e}")
+            })?;
+            Err(format!("{operation} timed out after {timeout:?}"))
+        }
+    }
+}
+
+pub(crate) async fn execute_git_diff_blocking(
+    cwd: PathBuf,
+    params: GitDiffParams,
+) -> Result<serde_json::Value, String> {
+    execute_cancellable_blocking(
+        cwd,
+        params,
+        GIT_TOOL_TIMEOUT,
+        "git diff",
+        execute_git_diff_structured_with_cancel,
+    )
+    .await
+}
+
 fn output_from_json_result(result: Result<serde_json::Value, String>) -> ToolResult {
     match result {
         Ok(value) => ToolOutput::structured(value)
@@ -33,19 +79,12 @@ fn output_from_json_result(result: Result<serde_json::Value, String>) -> ToolRes
     }
 }
 
-fn default_log_limit() -> usize {
-    20
+fn to_json_value<T: serde::Serialize>(value: T) -> Result<serde_json::Value, String> {
+    serde_json::to_value(value).map_err(|error| error.to_string())
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum GitDiffFormat {
-    /// Return unified patches grouped by file.
-    Patch,
-    /// Return per-file and aggregate line statistics.
-    Stat,
-    /// Return repository-relative changed paths.
-    NameOnly,
+fn default_log_limit() -> usize {
+    20
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -56,7 +95,7 @@ pub struct GitDiffParams {
     /// and all is base-to-filesystem. Untracked files are excluded.
     scope: crate::DiffScope,
     /// Output representation.
-    format: GitDiffFormat,
+    format: crate::DiffFormat,
     /// Check newly added lines for whitespace errors and conflict markers.
     check: bool,
     /// Optional base ref for staged or all scope (default: HEAD). Invalid with worktree.
@@ -164,9 +203,7 @@ impl GitServer {
         open_world = false
     )]
     async fn git_diff(&self, _ctx: GitCtx<'_>, params: Parameters<GitDiffParams>) -> ToolResult {
-        output_from_json_result(
-            execute_blocking(PathBuf::from("."), params.0, execute_git_diff_structured).await,
-        )
+        output_from_json_result(execute_git_diff_blocking(PathBuf::from("."), params.0).await)
     }
 
     #[mcp_tool(
@@ -312,9 +349,10 @@ pub fn tool_infos() -> Vec<ToolInfo> {
     ]
 }
 
-pub fn execute_git_diff_structured(
+fn execute_git_diff_structured_with_cancel(
     cwd: &Path,
     params: GitDiffParams,
+    cancel: Arc<AtomicBool>,
 ) -> Result<serde_json::Value, String> {
     let GitDiffParams {
         scope,
@@ -327,16 +365,18 @@ pub fn execute_git_diff_structured(
     let path_refs = paths
         .as_ref()
         .map(|items| items.iter().map(String::as_str).collect::<Vec<_>>());
-    let report = crate::diff_report(
+    let report = crate::diff::diff_report_with_cancel(
         cwd,
         report_scope,
+        format,
         base.as_deref(),
         path_refs.as_deref(),
         check,
+        cancel,
     )
     .map_err(|e| e.to_string())?;
     let result = match format {
-        GitDiffFormat::Patch => serde_json::json!({
+        crate::DiffFormat::Patch => serde_json::json!({
             "format": format,
             "files": report.files.iter().map(|file| serde_json::json!({
                 "path": file.path,
@@ -345,7 +385,7 @@ pub fn execute_git_diff_structured(
                 "patch": file.patch,
             })).collect::<Vec<_>>(),
         }),
-        GitDiffFormat::Stat => serde_json::json!({
+        crate::DiffFormat::Stat => serde_json::json!({
             "format": format,
             "files": report.files.iter().map(|file| serde_json::json!({
                 "path": file.path,
@@ -355,9 +395,9 @@ pub fn execute_git_diff_structured(
                 "deletions": file.deletions,
             })).collect::<Vec<_>>(),
         }),
-        GitDiffFormat::NameOnly => serde_json::json!({
+        crate::DiffFormat::NameOnly => serde_json::json!({
             "format": format,
-            "paths": report.files.iter().map(|file| &file.path).collect::<Vec<_>>(),
+            "paths": report.paths,
         }),
     };
     let whitespace_check = if check {
@@ -387,25 +427,13 @@ pub fn execute_git_diff_structured(
     }))
 }
 
-#[allow(dead_code)]
-pub fn execute_git_log(cwd: &Path, params: GitLogParams) -> Result<String, String> {
-    execute_git_log_structured(cwd, params)
-        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
-}
-
 pub fn execute_git_log_structured(
     cwd: &Path,
     params: GitLogParams,
 ) -> Result<serde_json::Value, String> {
     let entries =
         crate::log(cwd, Some(params.limit), params.branch.as_deref()).map_err(|e| e.to_string())?;
-    serde_json::to_value(entries).map_err(|e| e.to_string())
-}
-
-#[allow(dead_code)]
-pub fn execute_git_show(cwd: &Path, params: GitShowParams) -> Result<String, String> {
-    execute_git_show_structured(cwd, params)
-        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+    to_json_value(entries)
 }
 
 pub fn execute_git_show_structured(
@@ -413,13 +441,7 @@ pub fn execute_git_show_structured(
     params: GitShowParams,
 ) -> Result<serde_json::Value, String> {
     let entry = crate::show(cwd, params.rev.as_deref()).map_err(|e| e.to_string())?;
-    serde_json::to_value(entry).map_err(|e| e.to_string())
-}
-
-#[allow(dead_code)]
-pub fn execute_git_blame(cwd: &Path, params: GitBlameParams) -> Result<String, String> {
-    execute_git_blame_structured(cwd, params)
-        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+    to_json_value(entry)
 }
 
 pub fn execute_git_blame_structured(
@@ -437,13 +459,7 @@ pub fn execute_git_blame_structured(
         }
     };
     let blamed = crate::blame(cwd, &params.file_path, lines).map_err(|e| e.to_string())?;
-    serde_json::to_value(blamed).map_err(|e| e.to_string())
-}
-
-#[allow(dead_code)]
-pub fn execute_git_repo(cwd: &Path, _params: GitRepoParams) -> Result<String, String> {
-    execute_git_repo_structured(cwd, _params)
-        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+    to_json_value(blamed)
 }
 
 pub fn execute_git_repo_structured(
@@ -451,13 +467,7 @@ pub fn execute_git_repo_structured(
     _params: GitRepoParams,
 ) -> Result<serde_json::Value, String> {
     let info = crate::repo_info(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_value(info).map_err(|e| e.to_string())
-}
-
-#[allow(dead_code)]
-pub fn execute_git_status(cwd: &Path, _params: GitStatusParams) -> Result<String, String> {
-    execute_git_status_structured(cwd, _params)
-        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+    to_json_value(info)
 }
 
 pub fn execute_git_status_structured(
@@ -465,13 +475,7 @@ pub fn execute_git_status_structured(
     _params: GitStatusParams,
 ) -> Result<serde_json::Value, String> {
     let info = crate::status(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_value(info).map_err(|e| e.to_string())
-}
-
-#[allow(dead_code)]
-pub fn execute_git_remotes(cwd: &Path, _params: GitRemotesParams) -> Result<String, String> {
-    execute_git_remotes_structured(cwd, _params)
-        .and_then(|value| serde_json::to_string_pretty(&value).map_err(|e| e.to_string()))
+    to_json_value(info)
 }
 
 pub fn execute_git_remotes_structured(
@@ -479,7 +483,7 @@ pub fn execute_git_remotes_structured(
     _params: GitRemotesParams,
 ) -> Result<serde_json::Value, String> {
     let info = crate::remotes(cwd).map_err(|e| e.to_string())?;
-    serde_json::to_value(info).map_err(|e| e.to_string())
+    to_json_value(info)
 }
 
 pub fn execute_git_add_structured(
@@ -487,7 +491,7 @@ pub fn execute_git_add_structured(
     params: GitAddParams,
 ) -> Result<serde_json::Value, String> {
     let result = crate::add(cwd, &params.paths).map_err(|e| e.to_string())?;
-    serde_json::to_value(result).map_err(|e| e.to_string())
+    to_json_value(result)
 }
 
 pub fn execute_git_commit_structured(
@@ -495,7 +499,7 @@ pub fn execute_git_commit_structured(
     params: GitCommitParams,
 ) -> Result<serde_json::Value, String> {
     let result = crate::commit(cwd, &params.message).map_err(|e| e.to_string())?;
-    serde_json::to_value(result).map_err(|e| e.to_string())
+    to_json_value(result)
 }
 
 pub fn execute_git_branch_structured(
@@ -517,31 +521,44 @@ pub fn execute_git_branch_structured(
         }
     }
     .map_err(|error| error.to_string())?;
-    serde_json::to_value(result).map_err(|error| error.to_string())
+    to_json_value(result)
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::Path;
+    use std::path::PathBuf;
     use std::process::Command;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
 
     use tempfile::tempdir;
 
     use super::GitAddParams;
     use super::GitBlameParams;
     use super::GitCommitParams;
-    use super::GitDiffFormat;
     use super::GitDiffParams;
     use super::GitShowParams;
+    use super::execute_cancellable_blocking;
     use super::execute_git_add_structured;
-    use super::execute_git_blame;
+    use super::execute_git_blame_structured;
     use super::execute_git_commit_structured;
-    use super::execute_git_diff_structured;
-    use super::execute_git_show;
+    use super::execute_git_diff_structured_with_cancel;
+    use super::execute_git_show_structured;
     use crate::BlameLine;
+    use crate::DiffFormat;
     use crate::DiffScope;
     use crate::ShowEntry;
+
+    fn execute_git_diff_structured(
+        cwd: &Path,
+        params: GitDiffParams,
+    ) -> Result<serde_json::Value, String> {
+        execute_git_diff_structured_with_cancel(cwd, params, Arc::new(AtomicBool::new(false)))
+    }
 
     fn git(dir: &Path, args: &[&str]) {
         let status = Command::new("git")
@@ -593,7 +610,7 @@ mod tests {
             dir,
             GitDiffParams {
                 scope: DiffScope::Staged,
-                format: GitDiffFormat::Patch,
+                format: DiffFormat::Patch,
                 check: false,
                 base: None,
                 paths: Some(vec!["file.txt".to_string()]),
@@ -613,7 +630,7 @@ mod tests {
             dir,
             GitDiffParams {
                 scope: DiffScope::Worktree,
-                format: GitDiffFormat::Stat,
+                format: DiffFormat::Stat,
                 check: false,
                 base: None,
                 paths: None,
@@ -631,7 +648,7 @@ mod tests {
             dir,
             GitDiffParams {
                 scope: DiffScope::All,
-                format: GitDiffFormat::NameOnly,
+                format: DiffFormat::NameOnly,
                 check: true,
                 base: None,
                 paths: None,
@@ -652,7 +669,7 @@ mod tests {
             dir,
             GitDiffParams {
                 scope: DiffScope::Worktree,
-                format: GitDiffFormat::NameOnly,
+                format: DiffFormat::NameOnly,
                 check: false,
                 base: Some("HEAD".to_string()),
                 paths: None,
@@ -660,6 +677,117 @@ mod tests {
         )
         .expect_err("worktree base must be rejected");
         assert!(error.contains("base cannot be used with worktree scope"));
+    }
+
+    #[test]
+    fn execute_git_diff_name_only_skips_oversized_blob_content() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        let large = vec![b'x'; 9 * 1024 * 1024];
+        fs::write(dir.join("generated.txt"), large).expect("write large file");
+        git(dir, &["add", "generated.txt"]);
+
+        let names = execute_git_diff_structured(
+            dir,
+            GitDiffParams {
+                scope: DiffScope::Staged,
+                format: DiffFormat::NameOnly,
+                check: false,
+                base: None,
+                paths: None,
+            },
+        )
+        .expect("name-only should not load blob content");
+        assert_eq!(
+            names["result"]["paths"],
+            serde_json::json!(["generated.txt"])
+        );
+        assert!(
+            !names["summary"]
+                .as_object()
+                .expect("summary object")
+                .contains_key("insertions")
+        );
+
+        let error = execute_git_diff_structured(
+            dir,
+            GitDiffParams {
+                scope: DiffScope::Staged,
+                format: DiffFormat::Patch,
+                check: false,
+                base: None,
+                paths: None,
+            },
+        )
+        .expect_err("patch generation must reject oversized content");
+        assert!(error.contains("per-file limit"));
+        assert!(error.contains("generated.txt"));
+    }
+
+    #[test]
+    fn execute_git_diff_all_filters_staged_changes_undone_in_worktree() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+        fs::write(dir.join("file.txt"), "head\n").expect("write initial file");
+        git(dir, &["add", "file.txt"]);
+        git(dir, &["commit", "-m", "initial"]);
+
+        fs::write(dir.join("file.txt"), "staged\n").expect("write staged content");
+        git(dir, &["add", "file.txt"]);
+        fs::write(dir.join("file.txt"), "head\n").expect("restore head content");
+
+        let all = execute_git_diff_structured(
+            dir,
+            GitDiffParams {
+                scope: DiffScope::All,
+                format: DiffFormat::NameOnly,
+                check: false,
+                base: None,
+                paths: None,
+            },
+        )
+        .expect("all diff");
+        assert_eq!(all["result"]["paths"], serde_json::json!([]));
+        assert_eq!(all["summary"]["files_changed"], 0);
+    }
+
+    #[test]
+    fn cancellable_blocking_waits_for_worker_shutdown_after_timeout() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("runtime");
+        let stopped = Arc::new(AtomicBool::new(false));
+        let worker_stopped = Arc::clone(&stopped);
+
+        let result = runtime.block_on(execute_cancellable_blocking(
+            PathBuf::from("."),
+            (),
+            Duration::from_millis(20),
+            "test operation",
+            move |_, (), cancel| {
+                while !cancel.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                worker_stopped.store(true, Ordering::Release);
+                Ok::<(), String>(())
+            },
+        ));
+
+        assert_eq!(
+            result.expect_err("operation must time out"),
+            "test operation timed out after 20ms"
+        );
+        assert!(
+            stopped.load(Ordering::Acquire),
+            "timeout must not leave blocking work running"
+        );
     }
 
     #[test]
@@ -676,7 +804,7 @@ mod tests {
         git(dir, &["add", "file.txt"]);
         git(dir, &["commit", "-m", "initial"]);
 
-        let blame_json = execute_git_blame(
+        let blame_json = execute_git_blame_structured(
             dir,
             GitBlameParams {
                 file_path: "file.txt".to_string(),
@@ -686,7 +814,7 @@ mod tests {
         )
         .expect("blame");
 
-        let blamed: Vec<BlameLine> = serde_json::from_str(&blame_json).expect("parse blame json");
+        let blamed: Vec<BlameLine> = serde_json::from_value(blame_json).expect("parse blame json");
         assert_eq!(blamed.len(), 1);
         assert_eq!(blamed[0].author, "Test User");
         assert_eq!(blamed[0].content, "alpha");
@@ -716,7 +844,7 @@ mod tests {
             ],
         );
 
-        let show_json = execute_git_show(
+        let show_json = execute_git_show_structured(
             dir,
             GitShowParams {
                 rev: Some("HEAD".to_string()),
@@ -724,7 +852,7 @@ mod tests {
         )
         .expect("show");
 
-        let shown: ShowEntry = serde_json::from_str(&show_json).expect("parse show json");
+        let shown: ShowEntry = serde_json::from_value(show_json).expect("parse show json");
         assert_eq!(shown.subject, "feat: roast engine online");
         assert!(shown.body.contains("charisma of a tax form"));
         assert_eq!(shown.author, "Test User");

@@ -24,6 +24,12 @@ pub enum GitError {
     #[error("unsupported git operation: {0}")]
     Unsupported(String),
 
+    #[error("git diff exceeded its safe work limit: {0}")]
+    DiffLimit(String),
+
+    #[error("git operation cancelled")]
+    Cancelled,
+
     #[error("cannot commit while repository operation is in progress: {0}")]
     RepositoryState(String),
 

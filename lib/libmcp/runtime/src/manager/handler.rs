@@ -8,6 +8,7 @@ use chaos_ipc::approvals::ElicitationCompleteEvent;
 use chaos_ipc::approvals::ElicitationRequest;
 use chaos_ipc::approvals::ElicitationRequestEvent;
 use chaos_ipc::mcp::RequestId as ProtocolRequestId;
+use chaos_ipc::protocol::BackgroundEventEvent;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_traits::McpCatalogSink;
@@ -20,7 +21,9 @@ use mcp_guest::protocol::CreateElicitationResponse;
 use mcp_guest::protocol::ElicitationAction;
 use mcp_guest::protocol::ElicitationCompleteNotificationParams;
 use mcp_guest::protocol::ListRootsResult;
+use mcp_guest::protocol::LogMessageNotificationParams;
 use mcp_guest::protocol::RequestId;
+use mcp_guest::protocol::ResourceUpdatedNotificationParams;
 use mcp_guest::protocol::Root;
 use mcp_guest::protocol::TaskOrResult;
 use tokio::sync::oneshot;
@@ -60,6 +63,44 @@ pub(super) fn root_uri_from_cwd(cwd: &std::path::Path) -> String {
             warn!("Failed to convert cwd to file URI: {}", cwd.display());
             "file:///".to_string()
         })
+}
+
+fn format_log_message(server_name: &str, params: &LogMessageNotificationParams) -> String {
+    let body = params
+        .data
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| {
+            params
+                .data
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| params.data.to_string());
+    let source = params
+        .logger
+        .as_deref()
+        .map(|logger| format!("{}/{}", params.level, logger))
+        .unwrap_or_else(|| params.level.clone());
+    let resource = params
+        .data
+        .get("uri")
+        .and_then(serde_json::Value::as_str)
+        .filter(|uri| !body.contains(uri))
+        .map(|uri| format!(" ({uri})"))
+        .unwrap_or_default();
+
+    format!("MCP {server_name} [{source}]: {body}{resource}")
+}
+
+async fn emit_background_event(tx_event: &Sender<Event>, message: String) {
+    let _ = tx_event
+        .send(Event {
+            id: "mcp_notification".to_string(),
+            msg: EventMsg::BackgroundEvent(BackgroundEventEvent { message }),
+        })
+        .await;
 }
 
 /// Handler that bridges mcp-guest callbacks to the core event system.
@@ -167,6 +208,14 @@ impl ClientHandler for ChaosClientHandler {
         })
     }
 
+    fn on_log_message(&self, params: LogMessageNotificationParams) -> ClientHandlerFuture<'_> {
+        let tx_event = self.tx_event.clone();
+        let message = format_log_message(&self.server_name, &params);
+        Box::pin(async move {
+            emit_background_event(&tx_event, message).await;
+        })
+    }
+
     fn on_tools_list_changed(&self) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
             let session_guard = self.session.read().await;
@@ -202,6 +251,17 @@ impl ClientHandler for ChaosClientHandler {
                 return;
             };
             refresh_prompts(&self.server_name, session, &*self.catalog).await;
+        })
+    }
+
+    fn on_resource_updated(
+        &self,
+        params: ResourceUpdatedNotificationParams,
+    ) -> ClientHandlerFuture<'_> {
+        let tx_event = self.tx_event.clone();
+        let message = format!("MCP {} resource updated: {}", self.server_name, params.uri);
+        Box::pin(async move {
+            emit_background_event(&tx_event, message).await;
         })
     }
 
@@ -301,4 +361,44 @@ async fn refresh_prompts(server_name: &str, session: &McpSession, catalog: &dyn 
 
     catalog.unregister_mcp_prompts(server_name);
     catalog.register_mcp_prompts(server_name, prompts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_message_prefers_human_message_and_preserves_resource_hint() {
+        let message = format_log_message(
+            "skynet",
+            &LogMessageNotificationParams {
+                level: "notice".to_string(),
+                logger: Some("skynet.coordinator".to_string()),
+                data: serde_json::json!({
+                    "message": "Coordination state changed; read the inbox.",
+                    "uri": "skynet://inbox",
+                    "event_id": 42
+                }),
+            },
+        );
+
+        assert_eq!(
+            message,
+            "MCP skynet [notice/skynet.coordinator]: Coordination state changed; read the inbox. (skynet://inbox)"
+        );
+    }
+
+    #[test]
+    fn log_message_serializes_structured_data_without_message() {
+        let message = format_log_message(
+            "server",
+            &LogMessageNotificationParams {
+                level: "info".to_string(),
+                logger: None,
+                data: serde_json::json!({"ready": true}),
+            },
+        );
+
+        assert_eq!(message, "MCP server [info]: {\"ready\":true}");
+    }
 }

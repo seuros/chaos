@@ -368,7 +368,28 @@ pub async fn run_main(
         log_state_db,
     )
     .await
-    .map_err(|err| std::io::Error::other(err.to_string()))
+    .map_err(report_to_io_error)
+}
+
+fn report_to_io_error(report: color_eyre::eyre::Report) -> std::io::Error {
+    let mut chain = report.chain();
+    let mut message = chain
+        .next()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| report.to_string());
+    let causes: Vec<String> = chain.map(ToString::to_string).collect();
+
+    if !causes.is_empty() {
+        message.push_str("\n\nCaused by:");
+        for (index, cause) in causes.iter().enumerate() {
+            message.push_str("\n    ");
+            message.push_str(&index.to_string());
+            message.push_str(": ");
+            message.push_str(cause);
+        }
+    }
+
+    std::io::Error::other(message)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -828,8 +849,26 @@ mod tests {
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
     use chaos_kern::config::ProjectTrust;
+    use color_eyre::eyre::WrapErr;
+    use color_eyre::eyre::eyre;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
+
+    #[test]
+    fn report_to_io_error_preserves_cause_chain() {
+        let result: color_eyre::Result<()> = Err(eyre!("Connection refused (os error 61)"));
+        let report = result
+            .wrap_err("required MCP server `skynet` failed to initialize")
+            .wrap_err("Failed to resume session 01a04fe5")
+            .expect_err("error chain");
+
+        let error = report_to_io_error(report);
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to resume session 01a04fe5\n\nCaused by:\n    0: required MCP server `skynet` failed to initialize\n    1: Connection refused (os error 61)"
+        );
+    }
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
         ConfigBuilder::default()

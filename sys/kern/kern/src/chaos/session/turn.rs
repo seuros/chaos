@@ -28,10 +28,14 @@ impl Session {
     }
 
     pub(super) fn next_internal_sub_id(&self) -> String {
+        self.next_internal_sub_id_with_prefix("auto-compact")
+    }
+
+    pub(super) fn next_internal_sub_id_with_prefix(&self, prefix: &str) -> String {
         let id = self
             .next_internal_sub_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        format!("auto-compact-{id}")
+        format!("{prefix}-{id}")
     }
 
     pub(crate) async fn new_turn_with_sub_id(

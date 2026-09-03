@@ -104,6 +104,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
         auth_status_entries.clone(),
         &config.permissions.approval_policy,
         tx_event,
+        None,
         sandbox_state,
         config.chaos_home.clone(),
         snapshot_catalog,

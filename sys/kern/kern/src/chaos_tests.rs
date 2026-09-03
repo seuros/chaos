@@ -587,6 +587,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let session = Session {
         conversation_id,
         tx_event,
+        mcp_notification_tx: async_channel::bounded(1).0,
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),
@@ -670,6 +671,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let session = Arc::new(Session {
         conversation_id,
         tx_event,
+        mcp_notification_tx: async_channel::bounded(1).0,
         agent_status: agent_status_tx,
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),

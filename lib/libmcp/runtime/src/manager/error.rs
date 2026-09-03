@@ -9,6 +9,7 @@ use chaos_ipc::protocol::Event;
 use chaos_sysctl::types::McpServerTransportConfig;
 use chaos_traits::McpCatalogSink;
 
+use super::McpServerNotification;
 use super::elicitation::ElicitationRequestManager;
 use super::filter::StartupOutcomeError;
 use super::filter::ToolFilter;
@@ -16,6 +17,7 @@ use super::filter::ToolFilter;
 pub(super) struct MakeClientParams {
     pub(super) tool_filter: ToolFilter,
     pub(super) tx_event: Sender<Event>,
+    pub(super) notification_tx: Option<Sender<McpServerNotification>>,
     pub(super) elicitation_requests: ElicitationRequestManager,
     pub(super) catalog: Arc<dyn McpCatalogSink>,
     pub(super) cwd: Arc<StdRwLock<PathBuf>>,

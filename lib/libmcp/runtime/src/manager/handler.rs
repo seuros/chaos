@@ -30,6 +30,7 @@ use mcp_guest::protocol::TaskOrResult;
 use tokio::sync::oneshot;
 use tracing::warn;
 
+use super::McpServerNotification;
 use super::ToolInfo;
 use super::elicitation::ElicitationRequestManager;
 use super::elicitation::elicitation_is_rejected_by_policy;
@@ -104,10 +105,27 @@ async fn emit_background_event(tx_event: &Sender<Event>, message: String) {
         .await;
 }
 
+async fn emit_resource_update(
+    tx_event: &Sender<Event>,
+    notification_tx: Option<&Sender<McpServerNotification>>,
+    server: String,
+    uri: String,
+) {
+    emit_background_event(tx_event, format!("MCP {server} resource updated: {uri}")).await;
+    if let Some(notification_tx) = notification_tx
+        && let Err(error) = notification_tx
+            .send(McpServerNotification::ResourceUpdated { server, uri })
+            .await
+    {
+        warn!("dropping MCP resource update notification: {error}");
+    }
+}
+
 /// Handler that bridges mcp-guest callbacks to the core event system.
 pub(super) struct ChaosClientHandler {
     pub(super) server_name: String,
     pub(super) tx_event: Sender<Event>,
+    pub(super) notification_tx: Option<Sender<McpServerNotification>>,
     pub(super) elicitation_requests: ElicitationRequestManager,
     /// Shared tool store + filter for refreshing on list_changed.
     pub(super) tools_arc: Arc<StdRwLock<Vec<ToolInfo>>>,
@@ -260,9 +278,11 @@ impl ClientHandler for ChaosClientHandler {
         params: ResourceUpdatedNotificationParams,
     ) -> ClientHandlerFuture<'_> {
         let tx_event = self.tx_event.clone();
-        let message = format!("MCP {} resource updated: {}", self.server_name, params.uri);
+        let notification_tx = self.notification_tx.clone();
+        let server = self.server_name.clone();
+        let uri = params.uri;
         Box::pin(async move {
-            emit_background_event(&tx_event, message).await;
+            emit_resource_update(&tx_event, notification_tx.as_ref(), server, uri).await;
         })
     }
 
@@ -371,13 +391,13 @@ mod tests {
     #[test]
     fn log_message_prefers_human_message_and_preserves_resource_hint() {
         let message = format_log_message(
-            "skynet",
+            "coordinator",
             &LogMessageNotificationParams {
                 level: "notice".to_string(),
-                logger: Some("skynet.coordinator".to_string()),
+                logger: Some("coordination.state".to_string()),
                 data: serde_json::json!({
                     "message": "Coordination state changed; read the inbox.",
-                    "uri": "skynet://inbox",
+                    "uri": "agent://inbox",
                     "event_id": 42
                 }),
             },
@@ -385,7 +405,7 @@ mod tests {
 
         assert_eq!(
             message,
-            "MCP skynet [notice/skynet.coordinator]: Coordination state changed; read the inbox. (skynet://inbox)"
+            "MCP coordinator [notice/coordination.state]: Coordination state changed; read the inbox. (agent://inbox)"
         );
     }
 
@@ -401,5 +421,36 @@ mod tests {
         );
 
         assert_eq!(message, "MCP server [info]: {\"ready\":true}");
+    }
+
+    #[tokio::test]
+    async fn resource_update_emits_ui_and_structured_notifications() {
+        let (tx_event, rx_event) = async_channel::bounded(1);
+        let (notification_tx, notification_rx) = async_channel::bounded(1);
+
+        emit_resource_update(
+            &tx_event,
+            Some(&notification_tx),
+            "coordinator".to_string(),
+            "agent://inbox".to_string(),
+        )
+        .await;
+
+        let event = rx_event.recv().await.expect("UI event");
+        assert!(matches!(
+            event.msg,
+            EventMsg::BackgroundEvent(BackgroundEventEvent { message })
+                if message == "MCP coordinator resource updated: agent://inbox"
+        ));
+        assert_eq!(
+            notification_rx
+                .recv()
+                .await
+                .expect("structured notification"),
+            McpServerNotification::ResourceUpdated {
+                server: "coordinator".to_string(),
+                uri: "agent://inbox".to_string(),
+            }
+        );
     }
 }

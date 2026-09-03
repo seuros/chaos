@@ -318,6 +318,12 @@ pub struct McpServerInstructions {
     pub instructions: String,
 }
 
+/// Structured server notifications consumed by the kernel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpServerNotification {
+    ResourceUpdated { server: String, uri: String },
+}
+
 async fn emit_update(tx_event: &Sender<Event>, update: McpStartupUpdateEvent) {
     let _ = tx_event
         .send(Event {
@@ -372,6 +378,7 @@ impl McpConnectionManager {
         auth_entries: HashMap<String, McpAuthStatusEntry>,
         approval_policy: &Constrained<ApprovalPolicy>,
         tx_event: Sender<Event>,
+        notification_tx: Option<Sender<McpServerNotification>>,
         initial_sandbox_state: SandboxState,
         _codex_home: std::path::PathBuf,
         catalog: Arc<dyn McpCatalogSink>,
@@ -411,6 +418,7 @@ impl McpConnectionManager {
                 store_mode,
                 cancel_token.clone(),
                 tx_event.clone(),
+                notification_tx.clone(),
                 elicitation_requests.clone(),
                 Arc::clone(&catalog),
                 initial_sandbox_state.clone(),

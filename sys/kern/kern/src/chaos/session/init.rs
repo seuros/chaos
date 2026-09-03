@@ -482,6 +482,7 @@ impl Session {
                 .set_groups_enabled(&tool_group_state, disabled_groups, true)
                 .context("failed to enable tool groups for test session")?;
         }
+        let (mcp_notification_tx, mcp_notification_rx) = async_channel::bounded(256);
         let services = SessionServices {
             catalog: Arc::new(crate::catalog::CatalogSink::new(
                 crate::catalog::Catalog::from_inventory(),
@@ -538,6 +539,7 @@ impl Session {
         let sess = Arc::new(Session {
             conversation_id,
             tx_event: tx_event.clone(),
+            mcp_notification_tx: mcp_notification_tx.clone(),
             agent_status,
             out_of_band_elicitation_paused,
             state: Mutex::new(state),
@@ -547,6 +549,7 @@ impl Session {
             next_internal_sub_id: AtomicU64::new(0),
         });
         sess.services.model_client.bind_session(&sess);
+        sess.start_mcp_notification_listener(mcp_notification_rx);
         if let Some(network_policy_decider_session) = network_policy_decider_session {
             let mut guard = network_policy_decider_session.write().await;
             *guard = Arc::downgrade(&sess);
@@ -621,6 +624,7 @@ impl Session {
             auth_statuses.clone(),
             &session_configuration.approval_policy,
             tx_event.clone(),
+            Some(mcp_notification_tx),
             sandbox_state,
             config.chaos_home.clone(),
             Arc::clone(&mcp_catalog_gate) as Arc<dyn chaos_traits::McpCatalogSink>,

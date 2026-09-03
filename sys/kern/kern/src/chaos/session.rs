@@ -3,6 +3,7 @@ mod context;
 mod event;
 mod history;
 mod init;
+mod mcp_notifications;
 mod modes;
 pub(crate) mod tokens;
 mod turn;
@@ -15,6 +16,7 @@ use tokio::sync::watch;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
+use chaos_mcp_runtime::McpServerNotification;
 
 use crate::chaos::permissions::PermissionActor;
 use crate::minions::AgentStatus;
@@ -29,6 +31,7 @@ use crate::state::SessionState;
 pub(crate) struct Session {
     pub(crate) conversation_id: ProcessId,
     pub(crate) tx_event: Sender<Event>,
+    pub(crate) mcp_notification_tx: Sender<McpServerNotification>,
     pub(super) agent_status: watch::Sender<AgentStatus>,
     pub(super) out_of_band_elicitation_paused: watch::Sender<bool>,
     pub(crate) state: Mutex<SessionState>,

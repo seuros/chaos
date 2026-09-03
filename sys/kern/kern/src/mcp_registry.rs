@@ -2,6 +2,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
@@ -46,6 +47,7 @@ const MCP_SERVER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const MCP_SERVER_TASK_JOIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MCP_REFRESH_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const MCP_REGISTRY_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
+const MCP_SUBSCRIPTION_RESTORE_TIMEOUT: Duration = Duration::from_secs(10);
 const REGISTRY_RUNNING: u8 = 0;
 const REGISTRY_SHUTTING_DOWN: u8 = 1;
 const REGISTRY_STOPPED: u8 = 2;
@@ -265,6 +267,7 @@ pub(crate) struct McpRegistryActor {
     configs: Arc<ArcSwap<HashMap<String, McpServerConfig>>>,
     revision: Arc<AtomicU64>,
     client_identities: Arc<StdMutex<HashMap<String, McpClientIdentity>>>,
+    resource_subscriptions: Arc<StdMutex<HashMap<String, HashSet<String>>>>,
     lifecycle: Arc<McpRegistryLifecycle>,
 }
 
@@ -286,6 +289,7 @@ impl McpRegistryActor {
         let configs = Arc::new(ArcSwap::from_pointee(HashMap::new()));
         let revision = Arc::new(AtomicU64::new(0));
         let client_identities = Arc::new(StdMutex::new(HashMap::new()));
+        let resource_subscriptions = Arc::new(StdMutex::new(HashMap::new()));
         let lifecycle = Arc::new(McpRegistryLifecycle {
             state: AtomicU8::new(REGISTRY_RUNNING),
             stopped: Notify::new(),
@@ -295,6 +299,7 @@ impl McpRegistryActor {
         let actor_current = Arc::clone(&current);
         let actor_configs = Arc::clone(&configs);
         let actor_revision = Arc::clone(&revision);
+        let actor_resource_subscriptions = Arc::clone(&resource_subscriptions);
         let actor_lifecycle = Arc::clone(&lifecycle);
         tokio::spawn(async move {
             let mut server_actors = HashMap::<String, McpServerActor>::new();
@@ -370,6 +375,7 @@ impl McpRegistryActor {
                         }
                         next_catalog_gate.activate(catalog_tools);
                         catalog_gate = Some(next_catalog_gate);
+                        let active_manager = Arc::clone(&manager);
                         let retired_manager = actor_current.swap(manager);
                         actor_configs.store(Arc::new(next_configs));
                         let retired_cancellation_token =
@@ -378,6 +384,13 @@ impl McpRegistryActor {
                             retired_actors,
                             retired_cancellation_token,
                             retired_manager,
+                        )
+                        .await;
+                        let active_configs = actor_configs.load_full();
+                        restore_resource_subscriptions(
+                            &active_manager,
+                            active_configs.as_ref(),
+                            &actor_resource_subscriptions,
                         )
                         .await;
                         diff.revision = if bump_revision {
@@ -474,6 +487,7 @@ impl McpRegistryActor {
             configs,
             revision,
             client_identities,
+            resource_subscriptions,
             lifecycle,
         }
     }
@@ -509,6 +523,27 @@ impl McpRegistryActor {
 
     pub(crate) fn configs_snapshot(&self) -> Arc<HashMap<String, McpServerConfig>> {
         self.configs.load_full()
+    }
+
+    pub(crate) fn record_resource_subscription(&self, server: &str, uri: &str, subscribed: bool) {
+        let mut subscriptions = self
+            .resource_subscriptions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if subscribed {
+            subscriptions
+                .entry(server.to_string())
+                .or_default()
+                .insert(uri.to_string());
+            return;
+        }
+
+        if let Some(server_subscriptions) = subscriptions.get_mut(server) {
+            server_subscriptions.remove(uri);
+            if server_subscriptions.is_empty() {
+                subscriptions.remove(server);
+            }
+        }
     }
 
     pub(crate) fn has_servers(&self) -> bool {
@@ -1077,6 +1112,62 @@ async fn retire_generation(
     }
 }
 
+fn resource_subscriptions_snapshot(
+    subscriptions: &Arc<StdMutex<HashMap<String, HashSet<String>>>>,
+) -> HashMap<String, Vec<String>> {
+    let subscriptions = subscriptions
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    subscriptions
+        .iter()
+        .map(|(server, uris)| {
+            let mut uris = uris.iter().cloned().collect::<Vec<_>>();
+            uris.sort();
+            (server.clone(), uris)
+        })
+        .collect()
+}
+
+async fn restore_resource_subscriptions(
+    manager: &McpConnectionManager,
+    configs: &HashMap<String, McpServerConfig>,
+    subscriptions: &Arc<StdMutex<HashMap<String, HashSet<String>>>>,
+) {
+    let mut desired = resource_subscriptions_snapshot(subscriptions)
+        .into_iter()
+        .filter(|(server, _)| configs.get(server).is_some_and(|config| config.enabled))
+        .collect::<Vec<_>>();
+    desired.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    let restores = desired.into_iter().map(|(server, uris)| async move {
+        let uri_count = uris.len();
+        let result = tokio::time::timeout(MCP_SUBSCRIPTION_RESTORE_TIMEOUT, async {
+            for uri in uris {
+                if let Err(error) = manager.subscribe_resource(&server, uri.clone()).await {
+                    warn!(
+                        server,
+                        uri,
+                        %error,
+                        "failed to restore MCP resource subscription; keeping desired state for a later refresh"
+                    );
+                }
+            }
+        })
+        .await;
+        (server, uri_count, result)
+    });
+    for (server, uri_count, result) in join_all(restores).await {
+        if let Err(error) = result {
+            warn!(
+                server,
+                uri_count,
+                %error,
+                "timed out restoring MCP resource subscription; keeping desired state for a later refresh"
+            );
+        }
+    }
+}
+
 fn collect_successful_servers<T>(
     results: Vec<(String, anyhow::Result<T>)>,
     operation: &str,
@@ -1134,6 +1225,33 @@ mod tests {
         Arc::new(McpCatalogGate::staging(Arc::new(CatalogSink::new(
             Catalog::from_inventory(),
         ))))
+    }
+
+    #[tokio::test]
+    async fn resource_subscription_state_tracks_transient_uris() {
+        let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
+
+        actor.record_resource_subscription("coordinator", "agent://inbox", true);
+        actor.record_resource_subscription("coordinator", "agent://inbox", true);
+        actor.record_resource_subscription("coordinator", "agent://state", true);
+
+        assert_eq!(
+            resource_subscriptions_snapshot(&actor.resource_subscriptions),
+            HashMap::from([(
+                "coordinator".to_string(),
+                vec!["agent://inbox".to_string(), "agent://state".to_string()],
+            )])
+        );
+
+        actor.record_resource_subscription("coordinator", "agent://inbox", false);
+        assert_eq!(
+            resource_subscriptions_snapshot(&actor.resource_subscriptions),
+            HashMap::from([("coordinator".to_string(), vec!["agent://state".to_string()],)])
+        );
+
+        actor.record_resource_subscription("coordinator", "agent://state", false);
+        assert!(resource_subscriptions_snapshot(&actor.resource_subscriptions).is_empty());
+        actor.shutdown().await.expect("shutdown registry");
     }
 
     #[tokio::test]

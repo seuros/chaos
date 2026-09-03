@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
+use super::McpServerNotification;
 use super::ToolInfo;
 use super::elicitation::ElicitationRequestManager;
 use super::error::MakeClientParams;
@@ -370,6 +371,7 @@ impl AsyncManagedClient {
         _store_mode: OAuthCredentialsStoreMode,
         cancel_token: CancellationToken,
         tx_event: async_channel::Sender<chaos_ipc::protocol::Event>,
+        notification_tx: Option<async_channel::Sender<McpServerNotification>>,
         elicitation_requests: ElicitationRequestManager,
         catalog: Arc<dyn chaos_traits::McpCatalogSink>,
         initial_sandbox_state: SandboxState,
@@ -394,6 +396,7 @@ impl AsyncManagedClient {
                     MakeClientParams {
                         tool_filter: startup_tool_filter,
                         tx_event,
+                        notification_tx,
                         elicitation_requests,
                         catalog,
                         cwd: cwd_for_client,
@@ -527,6 +530,7 @@ pub(super) async fn make_managed_client(
     let MakeClientParams {
         tool_filter,
         tx_event,
+        notification_tx,
         elicitation_requests,
         catalog,
         cwd,
@@ -547,6 +551,7 @@ pub(super) async fn make_managed_client(
     let handler = ChaosClientHandler {
         server_name: server_name.clone(),
         tx_event,
+        notification_tx,
         elicitation_requests,
         tools_arc: Arc::clone(&tools_arc),
         tool_filter: tool_filter.clone(),

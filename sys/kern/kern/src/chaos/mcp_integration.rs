@@ -183,9 +183,43 @@ impl Session {
     mcp_delegate!(pub fn list_resources(server, params: Option<PaginatedRequestParams>) -> ListResourcesResult => list_resources);
     mcp_delegate!(pub fn list_resource_templates(server, params: Option<PaginatedRequestParams>) -> ListResourceTemplatesResult => list_resource_templates);
     mcp_delegate!(pub fn read_resource(server, params: ReadResourceRequestParams) -> ReadResourceResult => read_resource);
-    mcp_delegate!(pub fn subscribe_resource(server, uri: String) -> () => subscribe_resource);
-    mcp_delegate!(pub fn unsubscribe_resource(server, uri: String) -> () => unsubscribe_resource);
     mcp_delegate!(pub fn list_mcp_tasks(server) -> ListTasksResult => list_tasks);
+
+    pub async fn subscribe_resource(&self, server: &str, uri: String) -> anyhow::Result<()> {
+        let registry = self.services.mcp_registry.clone();
+        let dispatch_registry = registry.clone();
+        let desired_registry = registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        with_circuit_breaker(&breaker_server, move || async move {
+            dispatch_registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager.subscribe_resource(&server, uri.clone()).await?;
+                    desired_registry.record_resource_subscription(&server, &uri, true);
+                    Ok(())
+                })
+                .await
+        })
+        .await
+    }
+
+    pub async fn unsubscribe_resource(&self, server: &str, uri: String) -> anyhow::Result<()> {
+        let registry = self.services.mcp_registry.clone();
+        let dispatch_registry = registry.clone();
+        let desired_registry = registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        with_circuit_breaker(&breaker_server, move || async move {
+            dispatch_registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager.unsubscribe_resource(&server, uri.clone()).await?;
+                    desired_registry.record_resource_subscription(&server, &uri, false);
+                    Ok(())
+                })
+                .await
+        })
+        .await
+    }
 
     pub async fn call_tool_async(
         &self,
@@ -483,6 +517,7 @@ impl Session {
             auth_statuses,
             &approval_policy,
             self.get_tx_event(),
+            Some(self.mcp_notification_tx.clone()),
             sandbox_state,
             config.chaos_home.clone(),
             Arc::clone(&mcp_catalog_gate) as Arc<dyn chaos_traits::McpCatalogSink>,

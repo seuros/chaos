@@ -1,4 +1,6 @@
 use chaos_ipc::models::ResponseItem;
+use chaos_ipc::protocol::SessionSource;
+use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::protocol::TurnContextItem;
 
 use super::Session;
@@ -37,7 +39,6 @@ impl Session {
             previous_turn_settings,
             collaboration_mode,
             base_instructions,
-            _session_source,
         ) = {
             let state = self.state.lock().await;
             (
@@ -45,7 +46,6 @@ impl Session {
                 state.previous_turn_settings(),
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
-                state.session_configuration.session_source.clone(),
             )
         };
         if let Some(model_switch_message) =
@@ -73,6 +73,12 @@ impl Session {
         );
         if let Some(minion_instructions) = turn_context.minion_instructions.as_deref() {
             developer_sections.push(minion_instructions.to_string());
+        }
+        if matches!(
+            turn_context.session_source,
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
+        ) {
+            developer_sections.push(crate::minions::SUPERVISED_SUBAGENT_INSTRUCTIONS.to_string());
         }
         if let Some(collab_instructions) =
             chaos_ipc::models::DeveloperInstructions::from_collaboration_mode(&collaboration_mode)

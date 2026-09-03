@@ -38,6 +38,7 @@ pub(crate) struct ToolsConfig {
     pub request_permissions_tool_enabled: bool,
     pub can_request_original_image_detail: bool,
     pub collab_tools: bool,
+    pub supervisor_tool: bool,
     pub request_user_input: bool,
     pub default_mode_request_user_input: bool,
     pub dynamic_parent_effort: bool,
@@ -81,6 +82,10 @@ impl ToolsConfig {
             collab_enabled,
         } = params;
         let include_collab_tools = *collab_enabled;
+        let include_supervisor_tool = matches!(
+            session_source,
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
+        );
         let include_minion_jobs = *minion_jobs_allowed;
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input = include_request_user_input;
@@ -128,6 +133,7 @@ impl ToolsConfig {
             request_permissions_tool_enabled,
             can_request_original_image_detail: include_original_image_detail,
             collab_tools: include_collab_tools,
+            supervisor_tool: include_supervisor_tool,
             request_user_input: include_request_user_input,
             default_mode_request_user_input: include_default_mode_request_user_input,
             dynamic_parent_effort: false,

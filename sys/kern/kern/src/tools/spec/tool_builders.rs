@@ -1023,6 +1023,35 @@ pub(crate) fn create_send_input_tool() -> ToolSpec {
     })
 }
 
+pub(crate) fn create_send_to_supervisor_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "message".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Plain-text message to send to your supervisor. Use either message or items."
+                        .to_string(),
+                ),
+            },
+        ),
+        ("items".to_string(), create_collab_input_items_schema()),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "send_to_supervisor".to_string(),
+        description: "Send a message to your supervisor. Use it for important progress, blockers, questions, or early findings. The message is queued without interrupting the supervisor's current turn. Your final response is returned automatically, so do not use this tool merely to repeat it."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: Some(send_input_output_schema()),
+    })
+}
+
 pub(crate) fn create_resume_agent_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(

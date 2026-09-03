@@ -24,7 +24,7 @@ use super::tool_builders::{
     create_read_mcp_resource_tool, create_read_session_history_tool,
     create_report_minion_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_run_synopsis_tool,
-    create_search_session_history_tool, create_send_input_tool,
+    create_search_session_history_tool, create_send_input_tool, create_send_to_supervisor_tool,
     create_set_mcp_resource_subscription_tool, create_set_parent_effort_tool,
     create_set_session_title_tool, create_shell_command_tool, create_shell_tool,
     create_spawn_agent_tool, create_spawn_minions_on_csv_tool, create_switch_mode_tool,
@@ -97,6 +97,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::minions::tools::RunSynopsisHandler;
     use crate::minions::tools::SendInputHandler;
     use crate::minions::tools::SpawnAgentHandler;
+    use crate::minions::tools::SupervisorHandler;
     use crate::minions::tools::WaitAgentHandler;
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::CatalogModuleHandler;
@@ -529,6 +530,15 @@ pub(crate) fn build_specs_with_discoverable_tools(
         /*supports_parallel_tool_calls*/ true,
     );
     builder.register_handler("view_image", view_image_handler);
+
+    if config.supervisor_tool {
+        push_tool_spec(
+            &mut builder,
+            create_send_to_supervisor_tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        builder.register_handler("send_to_supervisor", Arc::new(SupervisorHandler));
+    }
 
     if config.collab_tools {
         push_tool_spec(

@@ -49,6 +49,7 @@ use std::sync::Arc;
 pub(crate) use close_agent::Handler as CloseAgentHandler;
 pub(crate) use resume_agent::Handler as ResumeAgentHandler;
 pub(crate) use send_input::Handler as SendInputHandler;
+pub(crate) use send_input::SupervisorHandler;
 pub(crate) use spawn::Handler as SpawnAgentHandler;
 pub(crate) use synopsis::Handler as RunSynopsisHandler;
 pub(crate) use wait::Handler as WaitAgentHandler;

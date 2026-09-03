@@ -5,8 +5,10 @@ use crate::ProcessTable;
 use crate::built_in_model_providers;
 use crate::chaos::make_session_and_context;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
+use crate::config::test_config;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::function_tool::FunctionCallError;
+use crate::models_manager::manager::ModelsManager;
 use crate::protocol::ApprovalPolicy;
 use crate::protocol::Op;
 use crate::protocol::SandboxPolicy;
@@ -15,6 +17,9 @@ use crate::protocol::SocketPolicy;
 use crate::protocol::SubAgentSource;
 use crate::protocol::VfsPolicy;
 use crate::tools::context::ToolOutput;
+use crate::tools::spec::ToolsConfig;
+use crate::tools::spec::ToolsConfigParams;
+use crate::tools::spec::build_specs;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
@@ -100,6 +105,22 @@ where
     }
 }
 
+fn system_input_text(items: &[ResponseItem]) -> String {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "system" => Some(content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn attach_process_manager(session: &mut crate::chaos::Session) -> ProcessTable {
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
@@ -135,6 +156,7 @@ where
     match tool_name {
         "spawn_agent" => SpawnAgentHandler.handle(invocation).await.map(|_| ()),
         "send_input" => SendInputHandler.handle(invocation).await.map(|_| ()),
+        "send_to_supervisor" => SupervisorHandler.handle(invocation).await.map(|_| ()),
         "resume_agent" => ResumeAgentHandler.handle(invocation).await.map(|_| ()),
         "wait_agent" => WaitAgentHandler.handle(invocation).await.map(|_| ()),
         other => panic!("unsupported validation test tool: {other}"),
@@ -216,13 +238,23 @@ async fn collab_input_handlers_reject_empty_messages() {
             tool_name: "send_input",
             args: json!({"id": ProcessId::new().to_string(), "message": ""}),
         },
+        ValidationCase {
+            name: "send_to_supervisor rejects empty message",
+            tool_name: "send_to_supervisor",
+            args: json!({"message": ""}),
+        },
     ] {
+        let supervisor_tool = case.tool_name == "send_to_supervisor";
         assert_respond_to_model_error(
             case.name,
             case.tool_name,
             case.args,
             EMPTY_MESSAGE_ERROR,
-            |_, _| (),
+            move |session, turn| {
+                if supervisor_tool {
+                    set_depth_limited_sub_agent_source(session, turn);
+                }
+            },
         )
         .await;
     }
@@ -248,13 +280,26 @@ async fn collab_input_handlers_reject_message_and_items_together() {
                 "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
             }),
         },
+        ValidationCase {
+            name: "send_to_supervisor rejects message+items",
+            tool_name: "send_to_supervisor",
+            args: json!({
+                "message": "hello",
+                "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
+            }),
+        },
     ] {
+        let supervisor_tool = case.tool_name == "send_to_supervisor";
         assert_respond_to_model_error(
             case.name,
             case.tool_name,
             case.args,
             MESSAGE_AND_ITEMS_CONFLICT_ERROR,
-            |_, _| (),
+            move |session, turn| {
+                if supervisor_tool {
+                    set_depth_limited_sub_agent_source(session, turn);
+                }
+            },
         )
         .await;
     }
@@ -635,6 +680,115 @@ async fn send_input_accepts_structured_items() {
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
+}
+
+#[tokio::test]
+async fn spawned_subagent_alone_can_message_its_supervisor() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    let tool_names = |session_source, collab_enabled| {
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            available_models: &available_models,
+            approval_policy: ApprovalPolicy::Interactive,
+            minion_jobs_allowed: false,
+            web_search_mode: None,
+            session_source,
+            vfs_policy: &VfsPolicy::unrestricted(),
+            collab_enabled,
+        });
+        build_specs(&tools_config, None, None, &[])
+            .build()
+            .0
+            .into_iter()
+            .map(|tool| tool.spec.name().to_string())
+            .collect::<Vec<_>>()
+    };
+
+    let child_source = process_spawn_source(ProcessId::new(), 1, None);
+    for (source, collab_enabled, expected) in [
+        (SessionSource::Cli, true, false),
+        (child_source.clone(), false, true),
+        (
+            SessionSource::SubAgent(SubAgentSource::Other("minion_job:test".to_string())),
+            true,
+            false,
+        ),
+    ] {
+        assert_eq!(
+            tool_names(source, collab_enabled)
+                .iter()
+                .any(|name| name == "send_to_supervisor"),
+            expected
+        );
+    }
+    let child_tools = tool_names(child_source.clone(), false);
+    for unavailable in ["send_input", "spawn_agent"] {
+        assert!(!child_tools.iter().any(|name| name == unavailable));
+    }
+
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = process_table();
+    session.services.agent_control = manager.agent_control();
+    let parent_thread = manager
+        .start_process(turn.config.as_ref().clone())
+        .await
+        .expect("start supervisor");
+    let supervisor_id = parent_thread.process_id;
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: supervisor_id,
+        depth: 1,
+        agent_nickname: None,
+        agent_role: None,
+    });
+    let session = Arc::new(session);
+    let child_turn = Arc::new(turn);
+    let child_system = system_input_text(&session.build_initial_context(&child_turn).await);
+    for expected in [
+        "<supervision>",
+        "materialized subagent",
+        "`send_to_supervisor`",
+        "materialize child agents",
+    ] {
+        assert!(child_system.contains(expected));
+    }
+
+    let output = SupervisorHandler
+        .handle(invocation(
+            Arc::clone(&session),
+            Arc::clone(&child_turn),
+            "send_to_supervisor",
+            function_payload(json!({"message": "status update"})),
+        ))
+        .await
+        .expect("child should message supervisor");
+    let (_, success) = expect_text_output(output);
+    assert_eq!(success, Some(true));
+    assert!(manager.captured_ops().iter().any(|(id, op)| {
+        *id == supervisor_id
+            && matches!(
+                op,
+                Op::UserInput { items, .. }
+                    if matches!(
+                        items.as_slice(),
+                        [UserInput::Text { text, .. }] if text == "status update"
+                    )
+            )
+    }));
+
+    let mut root_turn = (*child_turn).clone();
+    root_turn.session_source = SessionSource::Cli;
+    assert!(
+        !system_input_text(&session.build_initial_context(&root_turn).await)
+            .contains("<supervision>")
+    );
+
+    parent_thread
+        .process
+        .submit(Op::Shutdown {})
+        .await
+        .expect("shutdown supervisor");
 }
 
 #[tokio::test]

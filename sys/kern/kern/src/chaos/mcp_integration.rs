@@ -320,10 +320,6 @@ impl Session {
     }
 
     /// Host-only MCP path for attaching attested reviewer provenance.
-    #[expect(
-        dead_code,
-        reason = "v0.9 review orchestration will call this host-only foundation"
-    )]
     pub(crate) async fn call_tool_with_review_provenance(
         &self,
         server: &str,

@@ -266,6 +266,7 @@ pub(crate) struct McpRegistryActor {
     current: Arc<ArcSwap<McpConnectionManager>>,
     configs: Arc<ArcSwap<HashMap<String, McpServerConfig>>>,
     revision: Arc<AtomicU64>,
+    client_identity_scope: Option<Arc<str>>,
     client_identities: Arc<StdMutex<HashMap<String, McpClientIdentity>>>,
     resource_subscriptions: Arc<StdMutex<HashMap<String, HashSet<String>>>>,
     lifecycle: Arc<McpRegistryLifecycle>,
@@ -281,9 +282,30 @@ impl McpRegistryActor {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn spawn(
         initial_manager: McpConnectionManager,
         initial_cancellation_token: CancellationToken,
+    ) -> Self {
+        Self::spawn_with_identity_scope(initial_manager, initial_cancellation_token, None)
+    }
+
+    pub(crate) fn spawn_for_session(
+        initial_manager: McpConnectionManager,
+        initial_cancellation_token: CancellationToken,
+        conversation_id: chaos_ipc::ProcessId,
+    ) -> Self {
+        Self::spawn_with_identity_scope(
+            initial_manager,
+            initial_cancellation_token,
+            Some(Arc::from(conversation_id.to_string())),
+        )
+    }
+
+    fn spawn_with_identity_scope(
+        initial_manager: McpConnectionManager,
+        initial_cancellation_token: CancellationToken,
+        client_identity_scope: Option<Arc<str>>,
     ) -> Self {
         let current = Arc::new(ArcSwap::from_pointee(initial_manager));
         let configs = Arc::new(ArcSwap::from_pointee(HashMap::new()));
@@ -486,6 +508,7 @@ impl McpRegistryActor {
             current,
             configs,
             revision,
+            client_identity_scope,
             client_identities,
             resource_subscriptions,
             lifecycle,
@@ -500,6 +523,7 @@ impl McpRegistryActor {
         &self,
         server_names: impl IntoIterator<Item = String>,
     ) -> HashMap<String, McpClientIdentity> {
+        let identity_scope = self.client_identity_scope.as_deref();
         let mut identities = self
             .client_identities
             .lock()
@@ -507,7 +531,14 @@ impl McpRegistryActor {
         server_names
             .into_iter()
             .map(|server_name| {
-                let identity = identities.entry(server_name.clone()).or_default().clone();
+                let identity = identities
+                    .entry(server_name.clone())
+                    .or_insert_with(|| {
+                        identity_scope.map_or_else(McpClientIdentity::new, |scope| {
+                            McpClientIdentity::for_scope(scope, &server_name)
+                        })
+                    })
+                    .clone();
                 (server_name, identity)
             })
             .collect()
@@ -1255,13 +1286,66 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn client_identity_is_stable_for_the_registry_lifetime() {
+    async fn client_identity_is_stable_scoped_and_replay_safe() {
         let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
-        let first = actor.client_identities_for(["skynet".to_string()]);
-        let second = actor.client_identities_for(["skynet".to_string(), "other".to_string()]);
+        let first = actor.client_identities_for(["review-service".to_string()]);
+        let second =
+            actor.client_identities_for(["review-service".to_string(), "other".to_string()]);
 
-        assert_eq!(first["skynet"], second["skynet"]);
-        assert_ne!(second["skynet"], second["other"]);
+        assert_eq!(first["review-service"], second["review-service"]);
+        assert_ne!(second["review-service"], second["other"]);
+        actor.shutdown().await.expect("shutdown registry");
+
+        let conversation_id = chaos_ipc::ProcessId::new();
+        let first_actor = McpRegistryActor::spawn_for_session(
+            manager(),
+            CancellationToken::new(),
+            conversation_id,
+        );
+        let first = first_actor.client_identities_for(["review-service".to_string()]);
+        first_actor
+            .shutdown()
+            .await
+            .expect("shutdown first registry");
+
+        let replayed_actor = McpRegistryActor::spawn_for_session(
+            manager(),
+            CancellationToken::new(),
+            conversation_id,
+        );
+        let replayed = replayed_actor
+            .client_identities_for(["review-service".to_string(), "other".to_string()]);
+
+        assert_eq!(first["review-service"], replayed["review-service"]);
+        assert_ne!(replayed["review-service"], replayed["other"]);
+        replayed_actor
+            .shutdown()
+            .await
+            .expect("shutdown replayed registry");
+
+        let first_actor = McpRegistryActor::spawn_for_session(
+            manager(),
+            CancellationToken::new(),
+            chaos_ipc::ProcessId::new(),
+        );
+        let second_actor = McpRegistryActor::spawn_for_session(
+            manager(),
+            CancellationToken::new(),
+            chaos_ipc::ProcessId::new(),
+        );
+
+        let first = first_actor.client_identities_for(["review-service".to_string()]);
+        let second = second_actor.client_identities_for(["review-service".to_string()]);
+
+        assert_ne!(first["review-service"], second["review-service"]);
+        first_actor
+            .shutdown()
+            .await
+            .expect("shutdown first registry");
+        second_actor
+            .shutdown()
+            .await
+            .expect("shutdown second registry");
     }
 
     #[tokio::test]

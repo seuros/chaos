@@ -19,6 +19,7 @@ installed manpage paths such as:
 - [chaos-mcp.7](./chaos-mcp.7.md) — MCP client and server usage
 - [chaos-modes.7](./chaos-modes.7.md) — collaboration mode discovery and switching
 - [chaos-synopsis.7](./chaos-synopsis.7.md) — FreeChaOS sub-agent orchestration gate
+- [chaos-attested-review.7](./chaos-attested-review.7.md) — protected independent review orchestration
 - [chaos-storage.7](./chaos-storage.7.md) — runtime storage backend selection
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md) — Lua scripting engine
 

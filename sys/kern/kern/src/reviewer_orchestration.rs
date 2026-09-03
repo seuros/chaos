@@ -14,8 +14,11 @@ use chaos_proc::RuntimeDbHandle;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
+use serde_json::json;
 use std::collections::HashSet;
 use uuid::Uuid;
+
+pub(crate) const REVIEW_VERDICT_TOOL: &str = "submit_review_verdict";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReviewerBinding {
@@ -31,7 +34,7 @@ pub struct ReviewerSelection {
     pub prompt: String,
     pub mcp_server: String,
     pub mcp_tool: String,
-    /// The exact idempotency key allocated by Skynet for this reviewer.
+    /// The exact idempotency key allocated by the review service.
     pub idempotency_key: String,
 }
 
@@ -58,6 +61,7 @@ pub enum SubmissionOutcome {
 pub trait ReviewerBoundary {
     async fn spawn_reviewer(
         &self,
+        attempt_id: &str,
         binding: &ReviewerBinding,
         prompt: &str,
     ) -> anyhow::Result<SpawnedReviewer>;
@@ -90,7 +94,14 @@ where
 
     /// Validate the complete diversity set before persistence or any boundary
     /// call, then atomically persist immutable reviewer bindings in Selection.
-    pub async fn start_run(&self, selections: Vec<ReviewerSelection>) -> anyhow::Result<ReviewRun> {
+    pub async fn start_run(
+        &self,
+        owner_process_id: &str,
+        selections: Vec<ReviewerSelection>,
+    ) -> anyhow::Result<ReviewRun> {
+        if owner_process_id.trim().is_empty() {
+            bail!("review owner process id cannot be empty");
+        }
         validate_diverse_selection(&selections)?;
 
         let run_id = Uuid::new_v4().to_string();
@@ -100,7 +111,7 @@ where
             let attempt_id = Uuid::new_v4().to_string();
             let attempt_subject = reviewer_attempt_subject(&attempt_id);
             // Construction is the host-only schema gate. It rejects malformed
-            // opaque subjects and non-wire-safe Skynet keys before DB or spawn.
+            // opaque subjects and non-wire-safe idempotency keys before DB or spawn.
             TrustedReviewProvenance::new(
                 selection.binding.account_subject.clone(),
                 selection.binding.model_family_subject.clone(),
@@ -129,6 +140,7 @@ where
                 &ReviewRunCreateParams {
                     id: run_id,
                     review_run_subject: run_subject,
+                    owner_process_id: owner_process_id.to_string(),
                 },
                 &attempts,
             )
@@ -139,20 +151,30 @@ where
     ///
     /// An acknowledged attempt is never submitted again. A submission whose
     /// acknowledgement was lost remains SubmissionUnknown, so reconnect
-    /// retries the exact persisted JSON with the exact persisted Skynet key.
-    pub async fn resume_run(&self, run_id: &str) -> anyhow::Result<Vec<ReviewerAttempt>> {
+    /// retries the exact persisted JSON with the exact persisted idempotency key.
+    pub async fn resume_run(
+        &self,
+        owner_process_id: &str,
+        run_id: &str,
+    ) -> anyhow::Result<Vec<ReviewerAttempt>> {
         let store = self.db.reviewer_orchestrations();
         let run = store
             .get_run(run_id)
             .await?
             .with_context(|| format!("review run `{run_id}` not found"))?;
+        require_owner(&run, owner_process_id)?;
         for attempt in store.list_attempts(run_id).await? {
             self.drive_attempt(&run, &attempt.id).await?;
         }
         store.list_attempts(run_id).await
     }
 
-    pub async fn cancel_attempt(&self, attempt_id: &str, reason: &str) -> anyhow::Result<bool> {
+    pub async fn cancel_attempt(
+        &self,
+        owner_process_id: &str,
+        attempt_id: &str,
+        reason: &str,
+    ) -> anyhow::Result<bool> {
         if reason.trim().is_empty() {
             bail!("reviewer cancellation reason cannot be empty");
         }
@@ -160,13 +182,27 @@ where
         let Some(attempt) = store.get_attempt(attempt_id).await? else {
             bail!("reviewer attempt `{attempt_id}` not found");
         };
-        if attempt.state.is_terminal() {
+        let run = store
+            .get_run(&attempt.run_id)
+            .await?
+            .with_context(|| format!("review run `{}` not found", attempt.run_id))?;
+        require_owner(&run, owner_process_id)?;
+        if attempt.state == ReviewAttemptState::SubmissionUnknown {
+            bail!("reviewer attempt cannot be cancelled after submission begins");
+        }
+        if matches!(
+            attempt.state,
+            ReviewAttemptState::Acknowledged | ReviewAttemptState::TerminalFailure
+        ) {
             return Ok(false);
         }
-        if let Some(process_id) = attempt.process_id.as_deref() {
-            self.boundary.cancel_reviewer(process_id).await?;
+        if attempt.state == ReviewAttemptState::Cancelled {
+            if let Some(process_id) = attempt.process_id.as_deref() {
+                self.boundary.cancel_reviewer(process_id).await?;
+            }
+            return Ok(false);
         }
-        store
+        let cancelled = store
             .transition_attempt(
                 attempt_id,
                 attempt.state,
@@ -176,7 +212,23 @@ where
                     ..Default::default()
                 },
             )
-            .await
+            .await?;
+        if !cancelled {
+            let current = store
+                .get_attempt(attempt_id)
+                .await?
+                .with_context(|| format!("reviewer attempt `{attempt_id}` not found"))?;
+            if current.state == ReviewAttemptState::SubmissionUnknown {
+                bail!("reviewer attempt cannot be cancelled after submission begins");
+            }
+            if current.state != ReviewAttemptState::Cancelled {
+                return Ok(false);
+            }
+        }
+        if let Some(process_id) = attempt.process_id.as_deref() {
+            self.boundary.cancel_reviewer(process_id).await?;
+        }
+        Ok(cancelled)
     }
 
     async fn drive_attempt(&self, run: &ReviewRun, attempt_id: &str) -> anyhow::Result<()> {
@@ -201,7 +253,7 @@ where
                     let expected = binding_from_attempt(&attempt);
                     let spawned = match self
                         .boundary
-                        .spawn_reviewer(&expected, &attempt.prompt)
+                        .spawn_reviewer(attempt_id, &expected, &attempt.prompt)
                         .await
                     {
                         Ok(spawned) => spawned,
@@ -257,9 +309,11 @@ where
                                     },
                                 )
                                 .await?;
+                            let _ = self.boundary.cancel_reviewer(process_id).await;
                         }
                         ReviewerOutput::Failed(reason) => {
                             self.fail_attempt(&attempt, reason.clone()).await?;
+                            let _ = self.boundary.cancel_reviewer(process_id).await;
                             bail!("reviewer model execution failed: {reason}");
                         }
                     }
@@ -268,7 +322,11 @@ where
                     let raw_output = attempt.raw_output.as_deref().with_context(|| {
                         format!("output_parse attempt `{attempt_id}` has no raw output")
                     })?;
-                    let submission = match parse_strict_review_output(raw_output) {
+                    let submission = match prepare_submission(
+                        &attempt.mcp_tool,
+                        &attempt.idempotency_key,
+                        raw_output,
+                    ) {
                         Ok(submission) => submission,
                         Err(error) => {
                             let reason = format!("invalid reviewer output: {error:#}");
@@ -360,6 +418,13 @@ fn binding_from_attempt(attempt: &ReviewerAttempt) -> ReviewerBinding {
     }
 }
 
+fn require_owner(run: &ReviewRun, owner_process_id: &str) -> anyhow::Result<()> {
+    if run.owner_process_id != owner_process_id {
+        bail!("review run is owned by another process");
+    }
+    Ok(())
+}
+
 fn validate_diverse_selection(selections: &[ReviewerSelection]) -> anyhow::Result<()> {
     if selections.is_empty() {
         bail!("review run must select at least one reviewer");
@@ -368,6 +433,12 @@ fn validate_diverse_selection(selections: &[ReviewerSelection]) -> anyhow::Resul
     let mut families = HashSet::with_capacity(selections.len());
     let mut keys = HashSet::with_capacity(selections.len());
     for selection in selections {
+        if selection.mcp_server.trim().is_empty() {
+            bail!("attested review MCP server cannot be empty");
+        }
+        if selection.mcp_tool != REVIEW_VERDICT_TOOL {
+            bail!("attested reviews can submit only through the review verdict capability");
+        }
         if !accounts.insert(selection.binding.account_subject.as_str()) {
             bail!("duplicate credential subject in reviewer selection");
         }
@@ -375,7 +446,7 @@ fn validate_diverse_selection(selections: &[ReviewerSelection]) -> anyhow::Resul
             bail!("duplicate canonical model family in reviewer selection");
         }
         if !keys.insert(selection.idempotency_key.as_str()) {
-            bail!("duplicate Skynet idempotency key in reviewer selection");
+            bail!("duplicate review idempotency key in reviewer selection");
         }
     }
     Ok(())
@@ -425,6 +496,163 @@ fn parse_strict_review_output(raw_output: &str) -> anyhow::Result<Value> {
     Ok(value)
 }
 
+fn prepare_submission(
+    mcp_tool: &str,
+    idempotency_key: &str,
+    raw_output: &str,
+) -> anyhow::Result<Value> {
+    let output = parse_strict_review_output(raw_output)?;
+    if mcp_tool != REVIEW_VERDICT_TOOL {
+        return Ok(output);
+    }
+
+    let strict: StrictReviewOutput = serde_json::from_value(output)?;
+    let verdict = match strict.overall_correctness.trim() {
+        "patch is correct" => "approve",
+        "patch is incorrect" => "changes_requested",
+        other => bail!(
+            "overall_correctness must be `patch is correct` or `patch is incorrect`, got `{other}`"
+        ),
+    };
+    let summary = strict.overall_explanation.trim();
+    if summary.is_empty() {
+        bail!("overall_explanation cannot be empty");
+    }
+
+    Ok(json!({
+        "verdict": verdict,
+        "summary": summary,
+        "findings": {
+            "format": "chaos.review_output.v1",
+            "items": strict.findings,
+            "overall_confidence_score": strict.overall_confidence_score
+        },
+        "idempotency_key": idempotency_key
+    }))
+}
+
+pub(crate) async fn resolve_reviewer_binding(
+    session: &crate::chaos::Session,
+    turn: &crate::chaos::TurnContext,
+    provider_id: &str,
+    model: &str,
+) -> anyhow::Result<ReviewerBinding> {
+    let provider_id = provider_id.trim();
+    let model = model.trim();
+    if provider_id.is_empty() {
+        bail!("review model provider cannot be empty");
+    }
+    if model.is_empty() {
+        bail!("review model cannot be empty");
+    }
+    let provider = turn
+        .config
+        .model_providers
+        .get(provider_id)
+        .with_context(|| format!("unknown review model provider `{provider_id}`"))?;
+    let available = session
+        .services
+        .models_manager
+        .usable_cached_models_for_provider(provider_id, provider)
+        .await
+        .with_context(|| format!("review model provider `{provider_id}` is unavailable"))?;
+    let selected = available
+        .iter()
+        .find(|preset| preset.model == model)
+        .with_context(|| {
+            let models = available
+                .iter()
+                .map(|preset| preset.model.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "unknown review model `{model}` for provider `{provider_id}`; available models: {models}"
+            )
+        })?;
+    let account_subject = session
+        .services
+        .auth_manager
+        .credential_subject_fingerprint_for_provider(
+            provider_id,
+            crate::review_provenance::REVIEW_ACCOUNT_SUBJECT_DOMAIN,
+        )
+        .map(crate::auth::CredentialSubjectFingerprint::into_string)
+        .context("selected review provider has no attestable credential subject")?;
+    let model_family_subject =
+        crate::review_provenance::model_family_subject(&selected.model_family)
+            .context("selected review model has no canonical model family")?;
+
+    Ok(ReviewerBinding {
+        provider_id: provider_id.to_string(),
+        model: model.to_string(),
+        account_subject,
+        model_family_subject,
+    })
+}
+
+pub(crate) fn build_reviewer_prompt(instructions: &str) -> anyhow::Result<String> {
+    let instructions = instructions.trim();
+    if instructions.is_empty() {
+        bail!("review instructions cannot be empty");
+    }
+    Ok(format!(
+        "{}\n\nREVIEW ASSIGNMENT:\n{instructions}",
+        include_str!("../review_prompt.md").trim()
+    ))
+}
+
+pub(crate) fn progress_json(run_id: &str, attempts: &[ReviewerAttempt]) -> Value {
+    let terminal = attempts.iter().all(|attempt| attempt.state.is_terminal());
+    let acknowledged = attempts
+        .iter()
+        .all(|attempt| attempt.state == ReviewAttemptState::Acknowledged);
+    json!({
+        "run_id": run_id,
+        "terminal": terminal,
+        "acknowledged": acknowledged,
+        "attempts": attempts.iter().map(|attempt| json!({
+            "attempt_id": attempt.id,
+            "state": attempt.state.as_str(),
+            "failure": attempt.failure
+        })).collect::<Vec<_>>()
+    })
+}
+
+struct PersistedReviewerState {
+    model_provider: String,
+    model: String,
+    output: Option<String>,
+}
+
+async fn persisted_reviewer_state(
+    process_id: chaos_ipc::ProcessId,
+) -> anyhow::Result<PersistedReviewerState> {
+    use chaos_ipc::protocol::EventMsg;
+
+    let history = crate::RolloutRecorder::get_rollout_history_for_process(process_id)
+        .await
+        .context("persisted reviewer rollout could not be read")?;
+    let events = history
+        .get_event_msgs()
+        .context("persisted reviewer rollout contains no events")?;
+    let configured = events
+        .iter()
+        .find_map(|event| match event {
+            EventMsg::SessionConfigured(configured) => Some(configured),
+            _ => None,
+        })
+        .context("persisted reviewer rollout has no session configuration")?;
+    let output = events.iter().rev().find_map(|event| match event {
+        EventMsg::TurnComplete(event) => event.last_agent_message.clone(),
+        _ => None,
+    });
+    Ok(PersistedReviewerState {
+        model_provider: configured.model_provider_id.clone(),
+        model: configured.model.clone(),
+        output,
+    })
+}
+
 /// Production adapter for exact provider/model spawning, live or persisted
 /// output recovery, and host-attested MCP submission.
 ///
@@ -432,19 +660,11 @@ fn parse_strict_review_output(raw_output: &str) -> anyhow::Result<Value> {
 /// kernel capabilities, while the orchestration API above remains testable at
 /// a real boundary without exposing those capabilities.
 #[derive(Clone)]
-#[expect(
-    dead_code,
-    reason = "constructed by the v0.9 review coordinator integration point"
-)]
 pub(crate) struct SessionReviewerBoundary {
     session: std::sync::Arc<crate::chaos::Session>,
     turn: std::sync::Arc<crate::chaos::TurnContext>,
 }
 
-#[expect(
-    dead_code,
-    reason = "constructed by the v0.9 review coordinator integration point"
-)]
 impl SessionReviewerBoundary {
     pub(crate) fn new(
         session: std::sync::Arc<crate::chaos::Session>,
@@ -464,78 +684,11 @@ impl SessionReviewerBoundary {
             .context("reviewer orchestration requires a runtime database")?;
         Ok(ReviewerOrchestrator::new(db, Self::new(session, turn)))
     }
-}
 
-impl ReviewerBoundary for SessionReviewerBoundary {
-    async fn spawn_reviewer(
+    async fn reviewer_from_spawned(
         &self,
-        binding: &ReviewerBinding,
-        prompt: &str,
+        spawned: crate::minions::control::SpawnedAgent,
     ) -> anyhow::Result<SpawnedReviewer> {
-        use chaos_ipc::protocol::SessionSource;
-        use chaos_ipc::protocol::SubAgentSource;
-        use chaos_ipc::user_input::UserInput;
-
-        let configured_account = self
-            .session
-            .services
-            .auth_manager
-            .credential_subject_fingerprint_for_provider(
-                &binding.provider_id,
-                crate::review_provenance::REVIEW_ACCOUNT_SUBJECT_DOMAIN,
-            )
-            .map(crate::auth::CredentialSubjectFingerprint::into_string)
-            .context("selected provider has no attestable credential subject")?;
-        if configured_account != binding.account_subject {
-            bail!("selected provider credential changed before reviewer spawn");
-        }
-
-        let child_depth = crate::minions::next_process_spawn_depth(&self.turn.session_source);
-        if crate::minions::exceeds_process_spawn_depth_limit(
-            child_depth,
-            self.turn.config.agent_max_depth,
-        ) {
-            bail!("reviewer spawn exceeds agent depth limit");
-        }
-        let mut config = crate::minions::tools::build_agent_spawn_config(
-            &self.session.get_base_instructions().await,
-            self.turn.as_ref(),
-        )
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
-        crate::minions::tools::apply_requested_spawn_agent_provider_binding(
-            &self.session,
-            &mut config,
-            &binding.provider_id,
-            Some(&binding.model),
-            None,
-        )
-        .await
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
-        crate::minions::tools::apply_spawn_agent_overrides(&mut config, child_depth);
-        let spawned = self
-            .session
-            .services
-            .agent_control
-            .spawn_agent_with_options(
-                config,
-                vec![UserInput::Text {
-                    text: prompt.to_string(),
-                    text_elements: Vec::new(),
-                }],
-                Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-                    parent_process_id: self.session.conversation_id,
-                    depth: child_depth,
-                    agent_nickname: None,
-                    agent_role: Some("reviewer".to_string()),
-                })),
-                crate::minions::control::SpawnAgentOptions {
-                    suppress_parent_completion_notification: true,
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
-
         let account_subject = match spawned.provenance.account_subject {
             Some(subject) => subject,
             None => {
@@ -570,12 +723,199 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             },
         })
     }
+}
+
+impl ReviewerBoundary for SessionReviewerBoundary {
+    async fn spawn_reviewer(
+        &self,
+        attempt_id: &str,
+        binding: &ReviewerBinding,
+        prompt: &str,
+    ) -> anyhow::Result<SpawnedReviewer> {
+        use chaos_ipc::config_types::WebSearchMode;
+        use chaos_ipc::permissions::SocketPolicy;
+        use chaos_ipc::permissions::VfsPolicy;
+        use chaos_ipc::protocol::ApprovalPolicy;
+        use chaos_ipc::protocol::SandboxPolicy;
+        use chaos_ipc::protocol::SessionSource;
+        use chaos_ipc::protocol::SubAgentSource;
+        use chaos_ipc::user_input::UserInput;
+
+        let configured_account = self
+            .session
+            .services
+            .auth_manager
+            .credential_subject_fingerprint_for_provider(
+                &binding.provider_id,
+                crate::review_provenance::REVIEW_ACCOUNT_SUBJECT_DOMAIN,
+            )
+            .map(crate::auth::CredentialSubjectFingerprint::into_string)
+            .context("selected provider has no attestable credential subject")?;
+        if configured_account != binding.account_subject {
+            bail!("selected provider credential changed before reviewer spawn");
+        }
+
+        let agent_role = crate::minions::internal_agent_role("attested-review", attempt_id);
+        if let Some(spawned) = self
+            .session
+            .services
+            .agent_control
+            .find_direct_child_by_role(self.session.conversation_id, &agent_role)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?
+        {
+            return self.reviewer_from_spawned(spawned).await;
+        }
+
+        let runtime_db = self
+            .session
+            .services
+            .runtime_db
+            .as_ref()
+            .context("reviewer orchestration requires a runtime database")?;
+        let persisted_processes = runtime_db
+            .find_process_ids_by_parent_and_role(self.session.conversation_id, &agent_role)
+            .await?;
+        if persisted_processes.len() > 1 {
+            bail!("multiple persisted reviewer processes use role `{agent_role}`");
+        }
+        let persisted_process_id = persisted_processes.first().copied();
+        if let Some(process_id) = persisted_process_id {
+            let persisted = persisted_reviewer_state(process_id).await?;
+            if persisted.model_provider != binding.provider_id || persisted.model != binding.model {
+                bail!("persisted reviewer effective provider/model does not match selection");
+            }
+            if persisted.output.is_some() {
+                return Ok(SpawnedReviewer {
+                    process_id: process_id.to_string(),
+                    effective_binding: binding.clone(),
+                });
+            }
+        }
+
+        let child_depth = crate::minions::next_process_spawn_depth(&self.turn.session_source);
+        if crate::minions::exceeds_process_spawn_depth_limit(
+            child_depth,
+            self.turn.config.agent_max_depth,
+        ) {
+            bail!("reviewer spawn exceeds agent depth limit");
+        }
+        let mut config = crate::minions::tools::build_agent_spawn_config(
+            &self.session.get_base_instructions().await,
+            self.turn.as_ref(),
+        )
+        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        crate::minions::tools::apply_requested_spawn_agent_provider_binding(
+            &self.session,
+            &mut config,
+            &binding.provider_id,
+            Some(&binding.model),
+            None,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        crate::minions::tools::apply_spawn_agent_overrides(&mut config, child_depth);
+        config.collab_enabled = false;
+        config.minion_jobs_allowed = false;
+        config
+            .permissions
+            .approval_policy
+            .set(ApprovalPolicy::Headless)
+            .map_err(anyhow::Error::msg)?;
+        config
+            .permissions
+            .sandbox_policy
+            .set(SandboxPolicy::new_read_only_policy())
+            .map_err(anyhow::Error::msg)?;
+        config.permissions.vfs_policy = VfsPolicy::default();
+        config.permissions.socket_policy = SocketPolicy::Restricted;
+        config
+            .web_search_mode
+            .set(WebSearchMode::Disabled)
+            .map_err(anyhow::Error::msg)?;
+        config
+            .mcp_servers
+            .set(Default::default())
+            .map_err(anyhow::Error::msg)?;
+        config.mode_policy_override = Some(
+            self.session
+                .child_mode_policy(
+                    self.turn.as_ref(),
+                    Some("plan"),
+                    /*allowed_modes*/ None,
+                    /*allow_mode_switching*/ Some(false),
+                )
+                .await
+                .map_err(anyhow::Error::msg)?,
+        );
+        let session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+            parent_process_id: self.session.conversation_id,
+            depth: child_depth,
+            agent_nickname: None,
+            agent_role: Some(agent_role.clone()),
+        });
+        let options = crate::minions::control::SpawnAgentOptions {
+            suppress_parent_completion_notification: true,
+            ..Default::default()
+        };
+        let spawned = if let Some(process_id) = persisted_process_id {
+            let process_id = self
+                .session
+                .services
+                .agent_control
+                .resume_agent_from_rollout_with_options(config, process_id, session_source, options)
+                .await
+                .map_err(|error| anyhow::anyhow!("{error}"))?;
+            let provenance = self
+                .session
+                .services
+                .agent_control
+                .effective_spawn_provenance(process_id)
+                .await
+                .map_err(|error| anyhow::anyhow!("{error}"))?;
+            crate::minions::control::SpawnedAgent {
+                process_id,
+                provenance,
+            }
+        } else {
+            match self
+                .session
+                .services
+                .agent_control
+                .spawn_agent_with_options(
+                    config,
+                    vec![UserInput::Text {
+                        text: prompt.to_string(),
+                        text_elements: Vec::new(),
+                    }],
+                    Some(session_source),
+                    options,
+                )
+                .await
+            {
+                Ok(spawned) => spawned,
+                Err(error) => {
+                    if let Some(spawned) = self
+                        .session
+                        .services
+                        .agent_control
+                        .find_direct_child_by_role(self.session.conversation_id, &agent_role)
+                        .await
+                        .map_err(|find_error| anyhow::anyhow!("{find_error}"))?
+                    {
+                        spawned
+                    } else {
+                        return Err(anyhow::anyhow!("{error}"));
+                    }
+                }
+            }
+        };
+        self.reviewer_from_spawned(spawned).await
+    }
 
     async fn reviewer_output(&self, process_id: &str) -> anyhow::Result<ReviewerOutput> {
         use crate::minions::AgentStatus;
         use chaos_ipc::ProcessId;
-        use chaos_ipc::protocol::EventMsg;
-
         let process_id =
             ProcessId::from_string(process_id).context("invalid reviewer process id")?;
         match self
@@ -597,17 +937,10 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             AgentStatus::Shutdown => Ok(ReviewerOutput::Failed(
                 "reviewer shut down before producing output".to_string(),
             )),
-            AgentStatus::NotFound => {
-                let history = crate::RolloutRecorder::get_rollout_history_for_process(process_id)
-                    .await
-                    .context("reviewer is not live and persisted rollout could not be read")?;
-                let output = history.get_event_msgs().and_then(|events| {
-                    events.into_iter().rev().find_map(|event| match event {
-                        EventMsg::TurnComplete(event) => event.last_agent_message,
-                        _ => None,
-                    })
-                });
-                output.map_or_else(
+            AgentStatus::NotFound => persisted_reviewer_state(process_id)
+                .await?
+                .output
+                .map_or_else(
                     || {
                         Ok(ReviewerOutput::Failed(
                             "reviewer is not live and its rollout has no completed output"
@@ -615,8 +948,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
                         ))
                     },
                     |output| Ok(ReviewerOutput::Completed(output)),
-                )
-            }
+                ),
         }
     }
 
@@ -627,6 +959,12 @@ impl ReviewerBoundary for SessionReviewerBoundary {
         arguments: Value,
         provenance: TrustedReviewProvenance,
     ) -> anyhow::Result<SubmissionOutcome> {
+        if server.trim().is_empty() {
+            bail!("attested review MCP server cannot be empty");
+        }
+        if tool != REVIEW_VERDICT_TOOL {
+            bail!("attested reviews can submit only through the review verdict capability");
+        }
         let result = self
             .session
             .call_tool_with_review_provenance(server, tool, Some(arguments), None, provenance)
@@ -641,8 +979,20 @@ impl ReviewerBoundary for SessionReviewerBoundary {
     }
 
     async fn cancel_reviewer(&self, process_id: &str) -> anyhow::Result<()> {
+        use crate::minions::AgentStatus;
+
         let process_id =
             chaos_ipc::ProcessId::from_string(process_id).context("invalid reviewer process id")?;
+        if matches!(
+            self.session
+                .services
+                .agent_control
+                .get_status(process_id)
+                .await,
+            AgentStatus::NotFound | AgentStatus::Shutdown
+        ) {
+            return Ok(());
+        }
         self.session
             .services
             .agent_control
@@ -684,6 +1034,7 @@ mod tests {
     impl ReviewerBoundary for FakeBoundary {
         async fn spawn_reviewer(
             &self,
+            _attempt_id: &str,
             binding: &ReviewerBinding,
             _prompt: &str,
         ) -> anyhow::Result<SpawnedReviewer> {
@@ -778,9 +1129,9 @@ mod tests {
                 model_family_subject: subject("review-subject:v1:", family),
             },
             prompt: "Review and return strict JSON only".to_string(),
-            mcp_server: "skynet".to_string(),
-            mcp_tool: "submit_review".to_string(),
-            idempotency_key: format!("skynet-review-{index}"),
+            mcp_server: "review-service".to_string(),
+            mcp_tool: REVIEW_VERDICT_TOOL.to_string(),
+            idempotency_key: format!("review-{index}"),
         }
     }
 
@@ -794,16 +1145,18 @@ mod tests {
         .to_string()
     }
 
+    const OWNER: &str = "owner-process";
+
     #[tokio::test]
     async fn diverse_fake_provider_accounts_complete_with_verified_bindings() {
         let db = database().await;
         let boundary = FakeBoundary::default();
         let orchestrator = ReviewerOrchestrator::new(db, boundary.clone());
         let run = orchestrator
-            .start_run(vec![selection(0, 'a', 'b'), selection(1, 'c', 'd')])
+            .start_run(OWNER, vec![selection(0, 'a', 'b'), selection(1, 'c', 'd')])
             .await
             .unwrap();
-        let attempts = orchestrator.resume_run(&run.id).await.unwrap();
+        let attempts = orchestrator.resume_run(OWNER, &run.id).await.unwrap();
 
         assert_eq!(attempts.len(), 2);
         assert!(
@@ -830,7 +1183,7 @@ mod tests {
         let boundary = FakeBoundary::default();
         let orchestrator = ReviewerOrchestrator::new(db, boundary.clone());
         let error = orchestrator
-            .start_run(vec![selection(0, 'a', 'b'), selection(1, 'a', 'c')])
+            .start_run(OWNER, vec![selection(0, 'a', 'b'), selection(1, 'a', 'c')])
             .await
             .unwrap_err();
 
@@ -847,10 +1200,10 @@ mod tests {
         boundary.state.lock().await.mismatch_model = true;
         let orchestrator = ReviewerOrchestrator::new(db.clone(), boundary.clone());
         let run = orchestrator
-            .start_run(vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
-        let error = orchestrator.resume_run(&run.id).await.unwrap_err();
+        let error = orchestrator.resume_run(OWNER, &run.id).await.unwrap_err();
 
         assert!(error.to_string().contains("did not match"));
         let attempt = &db
@@ -872,11 +1225,11 @@ mod tests {
         boundary.state.lock().await.drop_first_ack = true;
         let orchestrator = ReviewerOrchestrator::new(db.clone(), boundary.clone());
         let run = orchestrator
-            .start_run(vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
 
-        let error = orchestrator.resume_run(&run.id).await.unwrap_err();
+        let error = orchestrator.resume_run(OWNER, &run.id).await.unwrap_err();
         assert!(error.to_string().contains("acknowledgement unknown"));
         let unknown = &db
             .reviewer_orchestrations()
@@ -887,7 +1240,7 @@ mod tests {
         let exact_key = unknown.idempotency_key.clone();
         let exact_payload = unknown.submission.clone();
 
-        let attempts = orchestrator.resume_run(&run.id).await.unwrap();
+        let attempts = orchestrator.resume_run(OWNER, &run.id).await.unwrap();
         assert_eq!(attempts[0].state, ReviewAttemptState::Acknowledged);
         assert_eq!(attempts[0].submission, exact_payload);
         let state = boundary.state.lock().await;
@@ -923,10 +1276,10 @@ mod tests {
         );
         let orchestrator = ReviewerOrchestrator::new(db.clone(), boundary.clone());
         let run = orchestrator
-            .start_run(vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
-        let error = orchestrator.resume_run(&run.id).await.unwrap_err();
+        let error = orchestrator.resume_run(OWNER, &run.id).await.unwrap_err();
 
         assert!(error.to_string().contains("invalid reviewer output"));
         let attempt = &db
@@ -942,5 +1295,87 @@ mod tests {
                 .is_some_and(|failure| failure.contains("invalid reviewer output"))
         );
         assert!(boundary.state.lock().await.submit_keys.is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_is_fenced_to_its_owner_process() {
+        let db = database().await;
+        let orchestrator = ReviewerOrchestrator::new(db, FakeBoundary::default());
+        let run = orchestrator
+            .start_run(OWNER, vec![selection(0, 'a', 'b')])
+            .await
+            .unwrap();
+
+        let error = orchestrator
+            .resume_run("different-process", &run.id)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("another process"));
+    }
+
+    #[tokio::test]
+    async fn owner_can_cancel_its_pending_attempt() {
+        let db = database().await;
+        let boundary = FakeBoundary::default();
+        boundary
+            .state
+            .lock()
+            .await
+            .outputs
+            .insert("next".to_string(), ReviewerOutput::Pending);
+        let orchestrator = ReviewerOrchestrator::new(db, boundary.clone());
+        let run = orchestrator
+            .start_run(OWNER, vec![selection(0, 'a', 'b')])
+            .await
+            .unwrap();
+        let attempts = orchestrator.resume_run(OWNER, &run.id).await.unwrap();
+        let attempt_id = attempts[0].id.clone();
+        assert!(
+            progress_json(&run.id, &attempts)["attempts"][0]
+                .get("process_id")
+                .is_none()
+        );
+
+        assert!(
+            orchestrator
+                .cancel_attempt(OWNER, &attempt_id, "review timed out")
+                .await
+                .unwrap()
+        );
+        let attempts = orchestrator.resume_run(OWNER, &run.id).await.unwrap();
+        assert_eq!(attempts[0].state, ReviewAttemptState::Cancelled);
+        assert_eq!(boundary.state.lock().await.cancelled, vec!["process-1"]);
+    }
+
+    #[test]
+    fn verdict_submission_maps_strict_review_output_and_reuses_exact_key() {
+        let submission =
+            prepare_submission(REVIEW_VERDICT_TOOL, "stable-verdict-key", &valid_output()).unwrap();
+
+        assert_eq!(submission["verdict"], "approve");
+        assert_eq!(submission["summary"], "No findings.");
+        assert_eq!(submission["idempotency_key"], "stable-verdict-key");
+        assert_eq!(submission["findings"]["format"], "chaos.review_output.v1");
+        assert!(
+            submission["findings"]["overall_confidence_score"]
+                .as_f64()
+                .is_some_and(|confidence| (confidence - 0.98).abs() < 0.000_001)
+        );
+    }
+
+    #[test]
+    fn verdict_submission_rejects_ambiguous_correctness() {
+        let raw = json!({
+            "findings": [],
+            "overall_correctness": "probably fine",
+            "overall_explanation": "Ambiguous.",
+            "overall_confidence_score": 0.5
+        })
+        .to_string();
+
+        let error = prepare_submission(REVIEW_VERDICT_TOOL, "stable-key", &raw).unwrap_err();
+
+        assert!(error.to_string().contains("overall_correctness"));
     }
 }

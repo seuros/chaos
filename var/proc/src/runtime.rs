@@ -458,6 +458,11 @@ impl RuntimeDbHandle {
 
     chaos_dispatch::backend_dispatch! {
         pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<ProcessMetadata>>;
+        pub async fn find_process_ids_by_parent_and_role(
+            &self,
+            parent_process_id: ProcessId,
+            agent_role: &str,
+        ) -> anyhow::Result<Vec<ProcessId>>;
         pub async fn get_dynamic_tools(
             &self,
             process_id: ProcessId,
@@ -930,6 +935,33 @@ WHERE id = $1
         .fetch_optional(&self.pool)
         .await?;
         row.as_ref().map(process_from_pg_row).transpose()
+    }
+
+    async fn find_process_ids_by_parent_and_role(
+        &self,
+        parent_process_id: ProcessId,
+        agent_role: &str,
+    ) -> anyhow::Result<Vec<ProcessId>> {
+        let rows = sqlx::query(
+            r#"
+SELECT id
+FROM processes
+WHERE parent_process_id = $1
+  AND agent_role = $2
+  AND archived_at IS NULL
+ORDER BY created_at ASC, id ASC
+            "#,
+        )
+        .bind(parent_process_id.to_string())
+        .bind(agent_role)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let id: String = row.try_get("id")?;
+                Ok(ProcessId::try_from(id)?)
+            })
+            .collect()
     }
 
     #[allow(clippy::too_many_arguments)]

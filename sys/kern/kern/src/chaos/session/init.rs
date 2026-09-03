@@ -489,9 +489,10 @@ impl Session {
             )),
             tool_group_catalog,
             tool_group_state,
-            mcp_registry: crate::mcp_registry::McpRegistryActor::spawn(
+            mcp_registry: crate::mcp_registry::McpRegistryActor::spawn_for_session(
                 McpConnectionManager::new_uninitialized(&config.permissions.approval_policy),
                 CancellationToken::new(),
+                conversation_id,
             ),
             mcp_refresh: crate::mcp_registry::McpRefreshActor::spawn(),
             internal_task_store: crate::internal_tasks::InternalTaskStore::default(),

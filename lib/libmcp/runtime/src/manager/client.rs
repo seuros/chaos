@@ -41,7 +41,7 @@ use uuid::Uuid;
 pub(super) const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str =
     "chaos.mcp.tools.fetch_uncached.duration_ms";
 const MCP_CLIENT_ID_DESCRIPTION_PREFIX: &str = "chaos-mcp-client-id:";
-/// Trusted, stable identity injected into every managed stdio MCP child.
+/// Trusted identity injected into every managed stdio MCP child.
 pub const CHAOS_MCP_CLIENT_ID_ENV: &str = "CHAOS_MCP_CLIENT_ID";
 
 /// Logger name used to identify sandbox state notifications.
@@ -188,6 +188,14 @@ pub struct McpClientIdentity(String);
 impl McpClientIdentity {
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
+    }
+
+    /// Derive a stable identity for one host-controlled session and MCP server.
+    ///
+    /// The scope must come from trusted host state, never model or MCP input.
+    pub fn for_scope(scope: &str, server_name: &str) -> Self {
+        let material = format!("chaos-mcp-client-id:v1\0{scope}\0{server_name}");
+        Self(Uuid::new_v5(&Uuid::NAMESPACE_OID, material.as_bytes()).to_string())
     }
 
     fn as_str(&self) -> &str {
@@ -710,6 +718,18 @@ mod tests {
     #[test]
     fn managed_client_identities_are_unique_when_created() {
         assert_ne!(McpClientIdentity::new(), McpClientIdentity::new());
+    }
+
+    #[test]
+    fn scoped_client_identities_are_stable_and_isolated() {
+        let first = McpClientIdentity::for_scope("session-1", "review-service");
+        let replay = McpClientIdentity::for_scope("session-1", "review-service");
+        let other_server = McpClientIdentity::for_scope("session-1", "other");
+        let other_session = McpClientIdentity::for_scope("session-2", "review-service");
+
+        assert_eq!(first, replay);
+        assert_ne!(first, other_server);
+        assert_ne!(first, other_session);
     }
 
     #[test]

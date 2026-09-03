@@ -19,12 +19,15 @@ impl StateRuntime {
         let mut tx = self.pool().begin().await?;
         sqlx::query(
             r#"
-INSERT INTO review_runs (id, review_run_subject, created_at, updated_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO review_runs (
+    id, review_run_subject, owner_process_id, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&run.id)
         .bind(&run.review_run_subject)
+        .bind(&run.owner_process_id)
         .bind(now)
         .bind(now)
         .execute(&mut *tx)
@@ -74,6 +77,7 @@ INSERT INTO reviewer_attempts (
         Ok(ReviewRun {
             id: run.id.clone(),
             review_run_subject: run.review_run_subject.clone(),
+            owner_process_id: run.owner_process_id.clone(),
             created_at: jiff::Timestamp::from_second(now)?,
             updated_at: jiff::Timestamp::from_second(now)?,
         })
@@ -82,7 +86,7 @@ INSERT INTO reviewer_attempts (
     pub(crate) async fn get_review_run(&self, run_id: &str) -> anyhow::Result<Option<ReviewRun>> {
         sqlx::query_as::<_, ReviewRunRow>(
             r#"
-SELECT id, review_run_subject, created_at, updated_at
+SELECT id, review_run_subject, owner_process_id, created_at, updated_at
 FROM review_runs
 WHERE id = ?
             "#,
@@ -208,12 +212,15 @@ impl PostgresRuntime {
         let mut tx = self.pool.begin().await?;
         sqlx::query(
             r#"
-INSERT INTO review_runs (id, review_run_subject, created_at, updated_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO review_runs (
+    id, review_run_subject, owner_process_id, created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5)
             "#,
         )
         .bind(&run.id)
         .bind(&run.review_run_subject)
+        .bind(&run.owner_process_id)
         .bind(now)
         .bind(now)
         .execute(&mut *tx)
@@ -263,6 +270,7 @@ INSERT INTO reviewer_attempts (
         Ok(ReviewRun {
             id: run.id.clone(),
             review_run_subject: run.review_run_subject.clone(),
+            owner_process_id: run.owner_process_id.clone(),
             created_at: jiff::Timestamp::from_second(now)?,
             updated_at: jiff::Timestamp::from_second(now)?,
         })
@@ -271,7 +279,7 @@ INSERT INTO reviewer_attempts (
     pub(crate) async fn get_review_run(&self, run_id: &str) -> anyhow::Result<Option<ReviewRun>> {
         sqlx::query_as::<_, ReviewRunRow>(
             r#"
-SELECT id, review_run_subject, created_at, updated_at
+SELECT id, review_run_subject, owner_process_id, created_at, updated_at
 FROM review_runs
 WHERE id = $1
             "#,

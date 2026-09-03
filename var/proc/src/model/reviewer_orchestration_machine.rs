@@ -36,7 +36,6 @@ state_machine! {
             transition: { from: Spawn, to: Cancelled }
             transition: { from: ModelExecution, to: Cancelled }
             transition: { from: OutputParse, to: Cancelled }
-            transition: { from: SubmissionUnknown, to: Cancelled }
         }
         fail {
             transition: { from: Selection, to: TerminalFailure }
@@ -156,11 +155,14 @@ mod tests {
             ReviewAttemptState::Spawn,
             ReviewAttemptState::ModelExecution,
             ReviewAttemptState::OutputParse,
-            ReviewAttemptState::SubmissionUnknown,
         ] {
             assert!(
                 ReviewAttemptWorkflow::from_state(state).permits(ReviewAttemptState::Cancelled)
             );
         }
+        assert!(
+            !ReviewAttemptWorkflow::from_state(ReviewAttemptState::SubmissionUnknown)
+                .permits(ReviewAttemptState::Cancelled)
+        );
     }
 }

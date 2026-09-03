@@ -1023,6 +1023,59 @@ fn test_build_specs_collab_tools_enabled() {
         ],
     );
     assert_lacks_tool_name(&tools, "spawn_minions_on_csv");
+    assert_lacks_tool_name(&tools, "start_attested_review");
+    assert_lacks_tool_name(&tools, "resume_attested_review");
+    assert_lacks_tool_name(&tools, "cancel_attested_review");
+}
+
+#[test]
+fn attested_review_tools_follow_verdict_capability_and_mode() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        vfs_policy: &VfsPolicy::unrestricted(),
+        collab_enabled: true,
+    });
+    let verdict_tools = HashMap::from([(
+        "mcp__review_service__submit_review_verdict".to_string(),
+        mcp_tool(
+            "submit_review_verdict",
+            "Submit a review verdict",
+            serde_json::json!({"type": "object", "properties": {}}),
+        ),
+    )]);
+
+    let (tools, _) = build_specs(&tools_config, Some(verdict_tools.clone()), None, &[]).build();
+    assert_contains_tool_names(
+        &tools,
+        &[
+            "start_attested_review",
+            "resume_attested_review",
+            "cancel_attested_review",
+        ],
+    );
+
+    let (plan_tools, _) = build_specs_with_discoverable_tools(
+        &tools_config,
+        Some(verdict_tools),
+        None,
+        &[],
+        inventory_catalog_tools(),
+        None,
+        /*plan_mode*/ true,
+        None,
+    )
+    .build();
+    assert_lacks_tool_name(&plan_tools, "start_attested_review");
+    assert_lacks_tool_name(&plan_tools, "resume_attested_review");
+    assert_lacks_tool_name(&plan_tools, "cancel_attested_review");
 }
 
 #[test]

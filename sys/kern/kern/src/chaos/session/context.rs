@@ -77,7 +77,8 @@ impl Session {
         if matches!(
             turn_context.session_source,
             SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
-        ) {
+        ) && !crate::minions::is_internal_process_spawn(&turn_context.session_source)
+        {
             developer_sections.push(crate::minions::SUPERVISED_SUBAGENT_INSTRUCTIONS.to_string());
         }
         if let Some(collab_instructions) =

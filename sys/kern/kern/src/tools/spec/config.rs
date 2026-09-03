@@ -82,10 +82,11 @@ impl ToolsConfig {
             collab_enabled,
         } = params;
         let include_collab_tools = *collab_enabled;
-        let include_supervisor_tool = matches!(
-            session_source,
-            SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
-        );
+        let include_supervisor_tool =
+            matches!(
+                session_source,
+                SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
+            ) && !crate::minions::is_internal_process_spawn(session_source);
         let include_minion_jobs = *minion_jobs_allowed;
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input = include_request_user_input;

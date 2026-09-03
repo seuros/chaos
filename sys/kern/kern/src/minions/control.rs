@@ -442,6 +442,22 @@ impl AgentControl {
         process_id: ProcessId,
         session_source: SessionSource,
     ) -> ChaosResult<ProcessId> {
+        self.resume_agent_from_rollout_with_options(
+            config,
+            process_id,
+            session_source,
+            SpawnAgentOptions::default(),
+        )
+        .await
+    }
+
+    pub(crate) async fn resume_agent_from_rollout_with_options(
+        &self,
+        config: crate::config::Config,
+        process_id: ProcessId,
+        session_source: SessionSource,
+        options: SpawnAgentOptions,
+    ) -> ChaosResult<ProcessId> {
         let state = self.upgrade()?;
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
         let session_source = match session_source {
@@ -508,7 +524,9 @@ impl AgentControl {
         // Resumed processes are re-registered in-memory and need the same listener
         // attachment path as freshly spawned processes.
         state.notify_process_created(process_id);
-        self.maybe_start_completion_watcher(process_id, Some(notification_source));
+        if !options.suppress_parent_completion_notification {
+            self.maybe_start_completion_watcher(process_id, Some(notification_source));
+        }
 
         Ok(process_id)
     }
@@ -580,6 +598,70 @@ impl AgentControl {
         ))
     }
 
+    pub(crate) async fn find_direct_child_by_role(
+        &self,
+        parent_process_id: ProcessId,
+        agent_role: &str,
+    ) -> ChaosResult<Option<SpawnedAgent>> {
+        let state = self.upgrade()?;
+        let mut matched_process_id = None;
+        for process_id in state.list_process_ids().await {
+            let Ok(thread) = state.get_process(process_id).await else {
+                continue;
+            };
+            let snapshot = thread.config_snapshot().await;
+            let SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id: candidate_parent,
+                agent_role: Some(candidate_role),
+                ..
+            }) = snapshot.session_source
+            else {
+                continue;
+            };
+            if candidate_parent != parent_process_id || candidate_role != agent_role {
+                continue;
+            }
+            if matched_process_id.replace(process_id).is_some() {
+                return Err(ChaosErr::InvalidRequest(format!(
+                    "multiple direct child agents use role `{agent_role}`"
+                )));
+            }
+        }
+
+        let Some(process_id) = matched_process_id else {
+            return Ok(None);
+        };
+        let provenance = self.effective_spawn_provenance(process_id).await?;
+        Ok(Some(SpawnedAgent {
+            process_id,
+            provenance,
+        }))
+    }
+
+    pub(crate) async fn effective_spawn_provenance(
+        &self,
+        process_id: ProcessId,
+    ) -> ChaosResult<EffectiveSpawnProvenance> {
+        let state = self.upgrade()?;
+        let thread = state.get_process(process_id).await?;
+        let snapshot = thread.config_snapshot().await;
+        let effective_turn = thread.chaos.session.new_default_turn().await;
+        Ok(EffectiveSpawnProvenance {
+            account_subject: state
+                .auth_manager()
+                .credential_subject_fingerprint_for_provider(
+                    &snapshot.model_provider_id,
+                    crate::review_provenance::REVIEW_ACCOUNT_SUBJECT_DOMAIN,
+                )
+                .map(crate::auth::CredentialSubjectFingerprint::into_string),
+            model_family_subject: crate::review_provenance::model_family_subject(
+                &effective_turn.model_info.model_family,
+            ),
+            effective_model: snapshot.model,
+            effective_model_provider: snapshot.model_provider_id,
+        })
+    }
+
     /// Subscribe to status updates for `agent_id`, yielding the latest value and changes.
     pub(crate) async fn subscribe_status(
         &self,
@@ -604,6 +686,9 @@ impl AgentControl {
                 continue;
             };
             let snapshot = thread.config_snapshot().await;
+            if crate::minions::is_internal_process_spawn(&snapshot.session_source) {
+                continue;
+            }
             let SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
                 parent_process_id: agent_parent_process_id,
                 agent_nickname,

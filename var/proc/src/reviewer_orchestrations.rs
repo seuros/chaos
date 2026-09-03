@@ -96,6 +96,7 @@ fn validate_selection(
 ) -> anyhow::Result<()> {
     require_value("review run id", &run.id)?;
     require_value("review run subject", &run.review_run_subject)?;
+    require_value("review run owner process id", &run.owner_process_id)?;
     if attempts.is_empty() {
         bail!("review run must select at least one reviewer");
     }
@@ -264,9 +265,9 @@ mod tests {
             .chars()
             .take("reviewer-attempt:v1:".len() + 64)
             .collect(),
-            idempotency_key: format!("skynet-review-{ordinal}"),
+            idempotency_key: format!("review-{ordinal}"),
             prompt: "Return strict review JSON".to_string(),
-            mcp_server: "skynet".to_string(),
+            mcp_server: "review-service".to_string(),
             mcp_tool: "submit_review".to_string(),
         }
     }
@@ -275,6 +276,7 @@ mod tests {
         ReviewRunCreateParams {
             id: "run-1".to_string(),
             review_run_subject: format!("review-run:v1:{}", "a".repeat(64)),
+            owner_process_id: "owner-process-1".to_string(),
         }
     }
 
@@ -282,10 +284,20 @@ mod tests {
     async fn persists_immutable_selection_and_declared_state_progression() {
         let db = database().await;
         let store = db.reviewer_orchestrations();
-        store
+        let persisted = store
             .create_run(&run(), &[attempt(0, 'a', 'b'), attempt(1, 'b', 'c')])
             .await
             .unwrap();
+        assert_eq!(persisted.owner_process_id, "owner-process-1");
+        assert_eq!(
+            store
+                .get_run("run-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .owner_process_id,
+            "owner-process-1"
+        );
 
         let first = &store.list_attempts("run-1").await.unwrap()[0];
         assert_eq!(first.state, ReviewAttemptState::Selection);
@@ -370,6 +382,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_empty_owner_process_id_before_database_write() {
+        let db = database().await;
+        let store = db.reviewer_orchestrations();
+        let mut invalid = run();
+        invalid.owner_process_id = "  ".to_string();
+
+        let error = store
+            .create_run(&invalid, &[attempt(0, 'a', 'b')])
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("review run owner process id cannot be empty")
+        );
+        assert!(store.get_run("run-1").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
     async fn database_trigger_rejects_binding_mutation() {
         let db = database().await;
         let store = db.reviewer_orchestrations();
@@ -381,6 +413,14 @@ mod tests {
         let error = sqlx::query("UPDATE reviewer_attempts SET model = ? WHERE id = ?")
             .bind("forged")
             .bind("attempt-0")
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("immutable"));
+
+        let error = sqlx::query("UPDATE review_runs SET owner_process_id = ? WHERE id = ?")
+            .bind("another-owner")
+            .bind("run-1")
             .execute(&pool)
             .await
             .unwrap_err();

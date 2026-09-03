@@ -33,4 +33,4 @@ thiserror = { workspace = true }
 url = { workspace = true }
 chaos-snitch = { workspace = true }
 regex-lite = { workspace = true }
-uuid = { workspace = true, features = ["v4"] }
+uuid = { workspace = true, features = ["v4", "v5"] }

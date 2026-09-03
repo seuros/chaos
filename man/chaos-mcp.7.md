@@ -72,6 +72,18 @@ Agents can manage project-local servers with:
 
 Use `command` for stdio or `url` for HTTP.
 
+### Trusted stdio identity
+
+Each managed stdio server receives a host-controlled `CHAOS_MCP_CLIENT_ID`.
+The identity is scoped to the persisted ChaOS conversation and server name, so
+it survives server resets and harness restarts that resume the same
+conversation. Different conversations and different servers receive distinct
+identities. Server configuration cannot override the value.
+
+The identity preserves server-side ownership across reconnects; it does not
+extend or revive an expired server-side lease. A server should resume a live
+lease for this identity or create a new fenced generation after expiration.
+
 ### Persistent tool approvals
 
 Personal MCP trust decisions belong in `~/.chaos/config.toml`, separate from

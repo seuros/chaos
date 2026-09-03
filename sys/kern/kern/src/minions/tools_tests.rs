@@ -707,9 +707,12 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
     };
 
     let child_source = process_spawn_source(ProcessId::new(), 1, None);
+    let internal_role = crate::minions::internal_agent_role("attested-review", "test");
+    let internal_source = process_spawn_source(ProcessId::new(), 1, Some(internal_role.as_str()));
     for (source, collab_enabled, expected) in [
         (SessionSource::Cli, true, false),
         (child_source.clone(), false, true),
+        (internal_source.clone(), false, false),
         (
             SessionSource::SubAgent(SubAgentSource::Other("minion_job:test".to_string())),
             true,
@@ -753,6 +756,13 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
     ] {
         assert!(child_system.contains(expected));
     }
+
+    let mut internal_turn = (*child_turn).clone();
+    internal_turn.session_source = internal_source;
+    assert!(
+        !system_input_text(&session.build_initial_context(&internal_turn).await)
+            .contains("<supervision>")
+    );
 
     let output = SupervisorHandler
         .handle(invocation(

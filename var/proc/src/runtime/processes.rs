@@ -49,6 +49,33 @@ WHERE id = ?
             .transpose()
     }
 
+    pub async fn find_process_ids_by_parent_and_role(
+        &self,
+        parent_process_id: ProcessId,
+        agent_role: &str,
+    ) -> anyhow::Result<Vec<ProcessId>> {
+        let rows = sqlx::query(
+            r#"
+SELECT id
+FROM processes
+WHERE parent_process_id = ?
+  AND agent_role = ?
+  AND archived_at IS NULL
+ORDER BY created_at ASC, id ASC
+            "#,
+        )
+        .bind(parent_process_id.to_string())
+        .bind(agent_role)
+        .fetch_all(self.pool.as_ref())
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let id: String = row.try_get("id")?;
+                Ok(ProcessId::try_from(id)?)
+            })
+            .collect()
+    }
+
     pub async fn get_process_memory_mode(&self, id: ProcessId) -> anyhow::Result<Option<String>> {
         let row = sqlx::query("SELECT memory_mode FROM processes WHERE id = ?")
             .bind(id.to_string())

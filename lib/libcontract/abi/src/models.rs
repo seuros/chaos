@@ -7,6 +7,7 @@
 //! Discovery is an optional adapter capability. Providers that
 //! do not expose a `/models` endpoint return `Unsupported`.
 
+use chaos_ipc::openai_models::ModelFamily;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -19,6 +20,11 @@ use serde::Serialize;
 pub struct AbiModelInfo {
     /// Model identifier used in API requests (e.g. `claude-sonnet-4-20250514`).
     pub id: String,
+
+    /// Explicit model family. Unknown values must remain unknown rather than
+    /// being inferred from provider URLs or model names.
+    #[serde(default)]
+    pub model_family: ModelFamily,
 
     /// Human-readable display name (e.g. `Claude Sonnet 4`).
     pub display_name: String,

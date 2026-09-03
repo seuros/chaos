@@ -6373,6 +6373,7 @@ async fn model_picker_hides_show_in_picker_false_models_from_cache() {
     let preset = |slug: &str, show_in_picker: bool| ModelPreset {
         id: slug.to_string(),
         model: slug.to_string(),
+        model_family: Default::default(),
         display_name: slug.to_string(),
         description: format!("{slug} description"),
         default_reasoning_effort: ReasoningEffortConfig::Medium,
@@ -6576,6 +6577,7 @@ async fn single_reasoning_option_skips_selection() {
     let preset = ModelPreset {
         id: "model-with-single-reasoning".to_string(),
         model: "model-with-single-reasoning".to_string(),
+        model_family: Default::default(),
         display_name: "model-with-single-reasoning".to_string(),
         description: "".to_string(),
         default_reasoning_effort: ReasoningEffortConfig::High,

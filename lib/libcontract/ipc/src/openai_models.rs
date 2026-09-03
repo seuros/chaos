@@ -79,6 +79,56 @@ pub fn default_input_modalities() -> Vec<InputModality> {
     vec![InputModality::Text, InputModality::Image]
 }
 
+/// Canonical model-family metadata supplied explicitly by a provider or catalog.
+///
+/// `unknown` is deliberately conservative: callers must not infer a family from
+/// a model slug, display name, endpoint URL, or wire protocol when enforcing
+/// reviewer diversity.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, TS, JsonSchema)]
+#[serde(transparent)]
+pub struct ModelFamily(String);
+
+impl ModelFamily {
+    pub const UNKNOWN: &'static str = "unknown";
+
+    pub fn new(value: impl Into<String>) -> Self {
+        let value = value.into();
+        let value = value.trim().to_ascii_lowercase();
+        if value.is_empty()
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        {
+            Self::default()
+        } else {
+            Self(value)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        self.0 == Self::UNKNOWN
+    }
+}
+
+impl<'de> Deserialize<'de> for ModelFamily {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::new)
+    }
+}
+
+impl Default for ModelFamily {
+    fn default() -> Self {
+        Self(Self::UNKNOWN.to_string())
+    }
+}
+
 /// A reasoning effort option that can be surfaced for a model.
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
 pub struct ReasoningEffortPreset {
@@ -100,6 +150,9 @@ pub struct ModelPreset {
     pub id: String,
     /// Model slug (e.g., "gpt-5").
     pub model: String,
+    /// Explicit canonical family used for reviewer-diversity decisions.
+    #[serde(default)]
+    pub model_family: ModelFamily,
     /// Display name shown in UIs.
     pub display_name: String,
     /// Short human description shown in UIs.
@@ -220,6 +273,9 @@ const fn default_effective_context_window_percent() -> i64 {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema)]
 pub struct ModelInfo {
     pub slug: String,
+    /// Explicit canonical family supplied by catalog/provider metadata.
+    #[serde(default)]
+    pub model_family: ModelFamily,
     pub display_name: String,
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -385,6 +441,7 @@ impl From<ModelInfo> for ModelPreset {
         ModelPreset {
             id: info.slug.clone(),
             model: info.slug.clone(),
+            model_family: info.model_family,
             display_name: info.display_name,
             description: info.description.unwrap_or_default(),
             default_reasoning_effort: info
@@ -444,9 +501,21 @@ mod tests {
     }
     use pretty_assertions::assert_eq;
 
+    #[test]
+    fn model_family_deserialization_is_canonical_and_conservative() {
+        let family: ModelFamily =
+            serde_json::from_str(r#""  Anthropic  ""#).expect("valid family string");
+        assert_eq!(family.as_str(), "anthropic");
+
+        let malformed: ModelFamily =
+            serde_json::from_str(r#""not a family""#).expect("string should deserialize");
+        assert!(malformed.is_unknown());
+    }
+
     fn test_model(spec: Option<ModelMessages>) -> ModelInfo {
         ModelInfo {
             slug: "test-model".to_string(),
+            model_family: ModelFamily::default(),
             display_name: "Test Model".to_string(),
             description: None,
             default_reasoning_level: None,

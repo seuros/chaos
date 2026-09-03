@@ -23,6 +23,7 @@ fn normalized_auth_serialization_omits_legacy_openai_api_key_when_none() {
         providers: [(
             "zai-coding".to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("zai-test-subject".to_string()),
                 auth_mode: Some(AuthMode::ApiKey),
                 api_key: Some("test-key".to_string()),
                 tokens: None,
@@ -52,6 +53,113 @@ fn normalized_auth_serialization_omits_legacy_openai_api_key_when_none() {
     );
 }
 
+#[test]
+fn legacy_file_auth_gains_and_persists_stable_credential_subject() -> anyhow::Result<()> {
+    let chaos_home = tempdir()?;
+    let auth_file = get_auth_file(chaos_home.path());
+    std::fs::write(
+        &auth_file,
+        r#"{
+  "providers": {
+    "legacy": {
+      "api_key": "legacy-secret"
+    }
+  }
+}"#,
+    )?;
+    let storage = FileAuthStorage::new(chaos_home.path().to_path_buf());
+
+    let first = storage.load()?.context("legacy auth should load")?;
+    let first_subject = first
+        .provider_record("legacy")
+        .and_then(|record| record.credential_subject)
+        .context("legacy record should gain a subject")?;
+    let second = storage.load()?.context("migrated auth should load")?;
+    let second_subject = second
+        .provider_record("legacy")
+        .and_then(|record| record.credential_subject)
+        .context("migrated record should retain its subject")?;
+    let persisted = storage.try_read_auth_json(&auth_file)?;
+
+    assert_eq!(first_subject, second_subject);
+    assert_eq!(
+        persisted
+            .provider_record("legacy")
+            .and_then(|record| record.credential_subject),
+        Some(first_subject)
+    );
+    assert_eq!(
+        persisted
+            .provider_record("legacy")
+            .and_then(|record| record.api_key)
+            .as_deref(),
+        Some("legacy-secret")
+    );
+    Ok(())
+}
+
+#[test]
+fn duplicate_credential_subjects_produce_the_same_opaque_identity() {
+    let record = |credential_subject: &str, api_key: &str| ProviderAuthRecord {
+        credential_subject: Some(credential_subject.to_string()),
+        auth_mode: Some(AuthMode::ApiKey),
+        api_key: Some(api_key.to_string()),
+        tokens: None,
+        last_refresh: None,
+    };
+    let domain = "chaos/review/account/v1";
+
+    let first = record("duplicate-local-subject", "first-secret")
+        .credential_subject_fingerprint(domain)
+        .expect("first fingerprint");
+    let duplicate = record("duplicate-local-subject", "second-secret")
+        .credential_subject_fingerprint(domain)
+        .expect("duplicate fingerprint");
+    let distinct = record("distinct-local-subject", "first-secret")
+        .credential_subject_fingerprint(domain)
+        .expect("distinct fingerprint");
+
+    assert_eq!(first, duplicate);
+    assert_ne!(first, distinct);
+    assert!(!first.as_str().contains("first-secret"));
+    assert!(!first.as_str().contains("duplicate-local-subject"));
+}
+
+#[test]
+fn replacing_provider_credentials_preserves_local_subject() {
+    let mut auth = AuthDotJson {
+        providers: Default::default(),
+    };
+    let record = |api_key: &str| ProviderAuthRecord {
+        credential_subject: None,
+        auth_mode: Some(AuthMode::ApiKey),
+        api_key: Some(api_key.to_string()),
+        tokens: None,
+        last_refresh: None,
+    };
+
+    auth.set_provider_record("provider", record("old-secret"));
+    let before = auth
+        .provider_record("provider")
+        .and_then(|record| record.credential_subject)
+        .expect("generated subject");
+    let mut rotated = record("rotated-secret");
+    rotated.credential_subject = Some("attempted-identity-reset".to_string());
+    auth.set_provider_record("provider", rotated);
+    let after = auth
+        .provider_record("provider")
+        .and_then(|record| record.credential_subject)
+        .expect("preserved subject");
+
+    assert_eq!(before, after);
+    assert_eq!(
+        auth.provider_record("provider")
+            .and_then(|record| record.api_key)
+            .as_deref(),
+        Some("rotated-secret")
+    );
+}
+
 #[tokio::test]
 async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
@@ -60,6 +168,7 @@ async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
         providers: [(
             "openai".to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("openai-load-subject".to_string()),
                 auth_mode: Some(AuthMode::ApiKey),
                 api_key: Some("test-key".to_string()),
                 tokens: None,
@@ -87,6 +196,7 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
         providers: [(
             "openai".to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("openai-save-subject".to_string()),
                 auth_mode: Some(AuthMode::ApiKey),
                 api_key: Some("test-key".to_string()),
                 tokens: None,
@@ -144,6 +254,7 @@ fn file_storage_delete_removes_auth_file() -> anyhow::Result<()> {
         providers: [(
             "openai".to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("openai-delete-subject".to_string()),
                 auth_mode: Some(AuthMode::ApiKey),
                 api_key: Some("sk-test-key".to_string()),
                 tokens: None,
@@ -174,6 +285,7 @@ fn ephemeral_storage_save_load_delete_is_in_memory_only() -> anyhow::Result<()> 
         providers: [(
             "openai".to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("openai-ephemeral-subject".to_string()),
                 auth_mode: Some(AuthMode::ApiKey),
                 api_key: Some("sk-ephemeral".to_string()),
                 tokens: None,
@@ -279,6 +391,7 @@ fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
         providers: [(
             "openai".to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("openai-keyring-load-subject".to_string()),
                 auth_mode: Some(AuthMode::ApiKey),
                 api_key: Some("sk-test".to_string()),
                 tokens: None,
@@ -323,6 +436,7 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
         providers: [(
             "openai".to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("openai-keyring-save-subject".to_string()),
                 auth_mode: Some(AuthMode::Chatgpt),
                 api_key: None,
                 tokens: Some(TokenData {

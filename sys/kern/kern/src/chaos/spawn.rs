@@ -161,17 +161,26 @@ impl Chaos {
             .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?;
 
         let config = Arc::new(config);
+        let auth_manager = auth_manager.for_provider(&config.model_provider_id);
         // The host's manager is bound to whichever provider it started on. A
         // process that chose another one has to resolve its model from that
         // provider's catalog, or it inherits a model name the chosen provider
         // has never heard of.
-        let models_manager = match models_manager.provider().name == config.model_provider.name {
-            true => models_manager,
-            false => models_manager
-                .rebound_to(&config.model_provider_id, config.model_provider.clone())
-                .map(Arc::new)
-                .unwrap_or(models_manager),
-        };
+        let models_manager =
+            match models_manager.is_bound_to(&config.model_provider_id, &config.model_provider) {
+                true => models_manager,
+                false => Arc::new(
+                    models_manager
+                        .rebound_to(&config.model_provider_id, config.model_provider.clone())
+                        .ok_or_else(|| {
+                            ChaosErr::InvalidRequest(format!(
+                                "models manager cannot rebind from provider `{}` to `{}`",
+                                models_manager.provider_id(),
+                                config.model_provider_id
+                            ))
+                        })?,
+                ),
+            };
         let refresh_strategy = match session_source {
             SessionSource::SubAgent(_) => RefreshStrategy::Offline,
             _ => RefreshStrategy::OnlineIfUncached,

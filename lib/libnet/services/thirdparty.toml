@@ -7,6 +7,7 @@
 #
 #   [<provider_id>]
 #   name                     = "Display Name"
+#   model_family             = "Canonical family, or omitted for unknown"
 #   base_url                 = "https://api.example.com/v1"
 #   env_key                  = "EXAMPLE_API_KEY"
 #   env_key_instructions     = "Grab a key at https://example.com/keys"
@@ -33,6 +34,7 @@ wire_api             = "chat_completions"
 
 [xai]
 name                 = "xAI"
+model_family         = "xai"
 base_url             = "https://api.x.ai/v1"
 env_key              = "XAI_API_KEY"
 env_key_instructions = "Get an API key at https://console.x.ai and export it as XAI_API_KEY."

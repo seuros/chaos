@@ -89,6 +89,85 @@ fn mcp_client_implementation_version() -> &'static str {
 
 const INITIAL_SUBMIT_ID: &str = "";
 
+/// Reserved `_meta` key for host-attested review provenance.
+///
+/// Calls through the ordinary MCP tool path may not set this key.
+pub const REVIEW_PROVENANCE_META_KEY: &str = "io.chaos.review_provenance.v1";
+
+const ACCOUNT_SUBJECT_PREFIX: &str = "credential:v1:";
+const MODEL_FAMILY_SUBJECT_PREFIX: &str = "review-subject:v1:";
+
+/// Host-created, wire-safe reviewer provenance.
+///
+/// Fields are private so callers cannot serialize arbitrary model/provider
+/// labels or credentials under the reserved MCP key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TrustedReviewProvenance {
+    account_subject: String,
+    model_family_subject: String,
+}
+
+impl TrustedReviewProvenance {
+    pub fn new(account_subject: String, model_family_subject: String) -> Result<Self> {
+        validate_opaque_subject(&account_subject, ACCOUNT_SUBJECT_PREFIX, "account")?;
+        validate_opaque_subject(
+            &model_family_subject,
+            MODEL_FAMILY_SUBJECT_PREFIX,
+            "model family",
+        )?;
+        Ok(Self {
+            account_subject,
+            model_family_subject,
+        })
+    }
+}
+
+fn validate_opaque_subject(subject: &str, prefix: &str, kind: &str) -> Result<()> {
+    let Some(digest) = subject.strip_prefix(prefix) else {
+        return Err(anyhow!("{kind} subject is not a recognized opaque subject"));
+    };
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(anyhow!("{kind} subject has an invalid opaque digest"));
+    }
+    Ok(())
+}
+
+fn reject_reserved_review_provenance(
+    meta: Option<serde_json::Value>,
+) -> Result<Option<serde_json::Value>> {
+    if meta.as_ref().is_some_and(|value| {
+        value
+            .as_object()
+            .is_some_and(|object| object.contains_key(REVIEW_PROVENANCE_META_KEY))
+    }) {
+        return Err(anyhow!(
+            "MCP request metadata key `{REVIEW_PROVENANCE_META_KEY}` is reserved for the host"
+        ));
+    }
+    Ok(meta)
+}
+
+fn inject_trusted_review_provenance(
+    meta: Option<serde_json::Value>,
+    provenance: TrustedReviewProvenance,
+) -> Result<Option<serde_json::Value>> {
+    let mut object = match meta {
+        None => serde_json::Map::new(),
+        Some(serde_json::Value::Object(object)) => object,
+        Some(_) => {
+            return Err(anyhow!(
+                "trusted MCP request metadata must be a JSON object"
+            ));
+        }
+    };
+    object.insert(
+        REVIEW_PROVENANCE_META_KEY.to_string(),
+        serde_json::to_value(provenance)
+            .context("failed to serialize trusted review provenance")?,
+    );
+    Ok(Some(serde_json::Value::Object(object)))
+}
+
 /// Delimiter used to separate the server name from the tool name in a fully
 /// qualified tool name.
 ///
@@ -631,6 +710,33 @@ impl McpConnectionManager {
         arguments: Option<serde_json::Value>,
         meta: Option<serde_json::Value>,
     ) -> Result<CallToolResult> {
+        let meta = reject_reserved_review_provenance(meta)?;
+        self.call_tool_inner(server, tool, arguments, meta).await
+    }
+
+    /// Invoke a tool with host-attested reviewer provenance.
+    ///
+    /// Any caller-supplied value under the reserved key is overwritten by the
+    /// trusted value after opaque-subject validation.
+    pub async fn call_tool_with_review_provenance(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
+        provenance: TrustedReviewProvenance,
+    ) -> Result<CallToolResult> {
+        let meta = inject_trusted_review_provenance(meta, provenance)?;
+        self.call_tool_inner(server, tool, arguments, meta).await
+    }
+
+    async fn call_tool_inner(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
+    ) -> Result<CallToolResult> {
         let client = self.client_by_name(server).await?;
         if !client.tool_filter.allows(tool) {
             return Err(anyhow!(
@@ -796,6 +902,7 @@ impl McpConnectionManager {
         meta: Option<serde_json::Value>,
         ttl: Option<u64>,
     ) -> Result<mcp_guest::protocol::Task> {
+        let meta = reject_reserved_review_provenance(meta)?;
         let client = self.client_by_name(server).await?;
         if !client.tool_filter.allows(tool) {
             return Err(anyhow!(

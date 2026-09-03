@@ -6,9 +6,10 @@ use super::{
     AgentStatus, CollabAgentSpawnBeginEvent, CollabAgentSpawnEndEvent, Deserialize,
     FunctionCallError, ReasoningEffort, ResponseInputItem, Serialize, ToolHandler, ToolInvocation,
     ToolKind, ToolOutput, ToolPayload, UserInput, apply_requested_spawn_agent_model_overrides,
-    apply_spawn_agent_overrides, apply_spawn_agent_runtime_overrides, build_agent_spawn_config,
-    collab_spawn_error, function_arguments, input_preview, parse_arguments, parse_collab_input,
-    process_spawn_source, tool_output_json_text, tool_output_response_item,
+    apply_requested_spawn_agent_provider_binding, apply_spawn_agent_overrides,
+    apply_spawn_agent_runtime_overrides, build_agent_spawn_config, collab_spawn_error,
+    function_arguments, input_preview, parse_arguments, parse_collab_input, process_spawn_source,
+    tool_output_json_text, tool_output_response_item,
 };
 use crate::internal_tasks;
 use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
@@ -93,17 +94,34 @@ impl ToolHandler for Handler {
             .await;
         let mut config =
             build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref())?;
-        apply_requested_spawn_agent_model_overrides(
-            &session,
-            turn.as_ref(),
-            &mut config,
-            args.model.as_deref(),
-            args.reasoning_effort,
-        )
-        .await?;
-        apply_role_to_config(&mut config, role_name)
-            .await
-            .map_err(FunctionCallError::RespondToModel)?;
+        if let Some(model_provider) = args.model_provider.as_deref() {
+            apply_role_to_config(&mut config, role_name)
+                .await
+                .map_err(FunctionCallError::RespondToModel)?;
+            apply_requested_spawn_agent_provider_binding(
+                &session,
+                &mut config,
+                model_provider,
+                args.model.as_deref(),
+                args.reasoning_effort,
+            )
+            .await?;
+        } else {
+            // Preserve the existing override order when no provider binding is
+            // requested: role configuration continues to apply after model
+            // overrides exactly as it did before this parameter existed.
+            apply_requested_spawn_agent_model_overrides(
+                &session,
+                turn.as_ref(),
+                &mut config,
+                args.model.as_deref(),
+                args.reasoning_effort,
+            )
+            .await?;
+            apply_role_to_config(&mut config, role_name)
+                .await
+                .map_err(FunctionCallError::RespondToModel)?;
+        }
         apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
         apply_spawn_agent_overrides(&mut config, child_depth);
         config.mode_policy_override = Some(
@@ -137,9 +155,13 @@ impl ToolHandler for Handler {
             .await
             .map_err(collab_spawn_error);
         let (new_process_id, status) = match &result {
-            Ok(process_id) => (
-                Some(*process_id),
-                session.services.agent_control.get_status(*process_id).await,
+            Ok(spawned) => (
+                Some(spawned.process_id),
+                session
+                    .services
+                    .agent_control
+                    .get_status(spawned.process_id)
+                    .await,
             ),
             Err(_) => (None, AgentStatus::NotFound),
         };
@@ -158,14 +180,26 @@ impl ToolHandler for Handler {
                     new_agent_nickname,
                     new_agent_role,
                     prompt,
-                    model: args.model.clone().unwrap_or_default(),
+                    model: result
+                        .as_ref()
+                        .map(|spawned| spawned.provenance.effective_model.clone())
+                        .unwrap_or_default(),
                     reasoning_effort: args.reasoning_effort.unwrap_or_default(),
                     status: status.clone(),
                 }
                 .into(),
             )
             .await;
-        let new_process_id = result?;
+        let spawned = result?;
+        tracing::info!(
+            process_id = %spawned.process_id,
+            provider = %spawned.provenance.effective_model_provider,
+            model = %spawned.provenance.effective_model,
+            account_subject = spawned.provenance.account_subject.as_deref(),
+            model_family_subject = spawned.provenance.model_family_subject.as_deref(),
+            "spawned agent with effective review provenance"
+        );
+        let new_process_id = spawned.process_id;
         let role_tag = role_name.unwrap_or(DEFAULT_ROLE_NAME);
         turn.session_telemetry.counter(
             "chaos.multi_agent.spawn",
@@ -199,6 +233,7 @@ struct SpawnAgentArgs {
     /// at random and emits a catchphrase. Unmatched topics are surfaced to
     /// the user as a warning.
     topics: Option<Vec<String>>,
+    model_provider: Option<String>,
     model: Option<String>,
     reasoning_effort: Option<ReasoningEffort>,
     mode: Option<String>,

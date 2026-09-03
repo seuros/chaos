@@ -1,6 +1,7 @@
 use super::*;
 use crate::ChaosAuth;
 use crate::auth::AuthCredentialsStoreMode;
+use crate::auth::login_with_provider_api_key;
 use crate::config::ConfigBuilder;
 use crate::model_provider_info::WireApi;
 use chaos_ipc::openai_models::ModelsResponse;
@@ -82,6 +83,7 @@ fn assert_models_contain(actual: &[ModelInfo], expected: &[ModelInfo]) {
 fn provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "OpenAI".into(),
+        model_family: Default::default(),
         base_url: Some(base_url),
         env_key: None,
         env_key_instructions: None,
@@ -97,6 +99,16 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+    }
+}
+
+fn account_provider(name: &str, base_url: &str) -> ModelProviderInfo {
+    ModelProviderInfo {
+        name: name.to_string(),
+        model_family: ModelFamily::new("shared-family"),
+        base_url: Some(base_url.to_string()),
+        requires_openai_auth: true,
+        ..provider_for(base_url.to_string())
     }
 }
 
@@ -802,4 +814,155 @@ async fn custom_catalog_refuses_to_rebind() {
             .rebound_to("chosen", provider_for("http://127.0.0.1:1/v1".to_string()))
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn two_provider_account_bindings_use_their_own_cached_catalog_and_subject() {
+    let chaos_home = tempdir().expect("temp dir");
+    login_with_provider_api_key(
+        chaos_home.path(),
+        "account-a",
+        "secret-a",
+        AuthCredentialsStoreMode::File,
+    )
+    .expect("store account a");
+    login_with_provider_api_key(
+        chaos_home.path(),
+        "account-b",
+        "secret-b",
+        AuthCredentialsStoreMode::File,
+    )
+    .expect("store account b");
+    let root_auth = AuthManager::shared(
+        chaos_home.path().to_path_buf(),
+        false,
+        AuthCredentialsStoreMode::File,
+    );
+    let provider_a = account_provider("Provider A", "https://a.example.test/v1");
+    let provider_b = account_provider("Provider B", "https://b.example.test/v1");
+    let manager = manager_over_own_cache(
+        chaos_home.path().to_path_buf(),
+        root_auth.for_provider("account-a"),
+        provider_a.clone(),
+    )
+    .await;
+    manager
+        .cache_manager
+        .persist_cache(
+            &[remote_model("model-a", "Model A", 1)],
+            None,
+            crate::models_manager::client_version_to_whole(),
+            manager.cache_scope(),
+        )
+        .await;
+    let rebound_b = manager
+        .rebound_to("account-b", provider_b.clone())
+        .expect("default catalog manager can rebind");
+    rebound_b
+        .cache_manager
+        .persist_cache(
+            &[remote_model("model-b", "Model B", 1)],
+            None,
+            crate::models_manager::client_version_to_whole(),
+            rebound_b.cache_scope(),
+        )
+        .await;
+
+    let models_a = manager
+        .usable_cached_models_for_provider("account-a", &provider_a)
+        .await
+        .expect("account a cached catalog");
+    let models_b = manager
+        .usable_cached_models_for_provider("account-b", &provider_b)
+        .await
+        .expect("account b cached catalog");
+    let subject_a = root_auth
+        .credential_subject_fingerprint_for_provider(
+            "account-a",
+            crate::review_provenance::REVIEW_ACCOUNT_SUBJECT_DOMAIN,
+        )
+        .expect("account a subject");
+    let subject_b = root_auth
+        .credential_subject_fingerprint_for_provider(
+            "account-b",
+            crate::review_provenance::REVIEW_ACCOUNT_SUBJECT_DOMAIN,
+        )
+        .expect("account b subject");
+
+    assert_eq!(manager.provider_id(), "account-a");
+    assert_eq!(rebound_b.provider_id(), "account-b");
+    assert_eq!(
+        models_a
+            .iter()
+            .map(|model| model.model.as_str())
+            .collect::<Vec<_>>(),
+        vec!["model-a"]
+    );
+    assert_eq!(
+        models_b
+            .iter()
+            .map(|model| model.model.as_str())
+            .collect::<Vec<_>>(),
+        vec!["model-b"]
+    );
+    assert_ne!(subject_a, subject_b);
+    assert!(!subject_a.as_str().contains("secret-a"));
+    assert!(!subject_b.as_str().contains("secret-b"));
+}
+
+#[tokio::test]
+async fn provider_bound_cached_lookup_fails_when_custom_manager_cannot_rebind() {
+    let chaos_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
+    let manager = ModelsManager::new(
+        chaos_home.path().to_path_buf(),
+        auth_manager,
+        Some(ModelsResponse {
+            models: vec![remote_model("supplied", "Supplied", 1)],
+        }),
+        CollaborationModesConfig::default(),
+    );
+    let mut target = provider_for("http://127.0.0.1:1/v1".to_string());
+    target.experimental_bearer_token = Some("configured-but-never-sent".to_string());
+
+    let error = manager
+        .usable_cached_models_for_provider("chosen", &target)
+        .await
+        .expect_err("custom catalog must fail closed instead of falling back");
+    assert!(error.to_string().contains("cannot be rebound"));
+}
+
+#[tokio::test]
+async fn explicit_catalog_family_wins_and_provider_family_only_fills_unknown() {
+    let chaos_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
+    let inherited = remote_model("inherited", "Inherited", 1);
+    let mut explicit = remote_model("explicit", "Explicit", 2);
+    explicit.model_family = ModelFamily::new("catalog-family");
+    let provider = ModelProviderInfo {
+        model_family: ModelFamily::new("provider-family"),
+        ..provider_for("https://family.example.test/v1".to_string())
+    };
+    let manager = ModelsManager::new_with_provider_binding(
+        chaos_home.path().to_path_buf(),
+        auth_manager,
+        Some(ModelsResponse {
+            models: vec![inherited.clone(), explicit],
+        }),
+        CollaborationModesConfig::default(),
+        "family-provider".to_string(),
+        provider,
+    );
+
+    let models = manager.list_models(RefreshStrategy::Offline).await;
+    let inherited = models
+        .iter()
+        .find(|model| model.model == inherited.slug)
+        .expect("inherited model");
+    let explicit = models
+        .iter()
+        .find(|model| model.model == "explicit")
+        .expect("explicit model");
+    assert_eq!(inherited.model_family.as_str(), "provider-family");
+    assert_eq!(explicit.model_family.as_str(), "catalog-family");
 }

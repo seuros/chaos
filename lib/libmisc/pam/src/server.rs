@@ -771,6 +771,7 @@ pub(crate) async fn persist_tokens_async(
         auth.set_provider_record(
             DEFAULT_AUTH_PROVIDER_ID,
             ProviderAuthRecord {
+                credential_subject: None,
                 auth_mode: Some(AuthMode::Chatgpt),
                 api_key,
                 tokens: Some(tokens),

@@ -9,6 +9,7 @@ base_url = "http://localhost:11434/v1"
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Ollama".into(),
+        model_family: Default::default(),
         base_url: Some("http://localhost:11434/v1".into()),
         env_key: None,
         env_key_instructions: None,
@@ -40,6 +41,7 @@ query_params = { api-version = "2025-04-01-preview" }
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Azure".into(),
+        model_family: Default::default(),
         base_url: Some("https://xxxxx.openai.azure.com/openai".into()),
         env_key: Some("AZURE_OPENAI_API_KEY".into()),
         env_key_instructions: None,
@@ -75,6 +77,7 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Example".into(),
+        model_family: Default::default(),
         base_url: Some("https://example.com".into()),
         env_key: Some("API_KEY".into()),
         env_key_instructions: None,

@@ -416,7 +416,8 @@ async fn spawn_agent_can_fork_parent_thread_history() {
             },
         )
         .await
-        .expect("forked spawn should succeed");
+        .expect("forked spawn should succeed")
+        .process_id;
 
     let child_thread = harness
         .manager
@@ -501,7 +502,8 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
             },
         )
         .await
-        .expect("forked spawn should succeed");
+        .expect("forked spawn should succeed")
+        .process_id;
 
     let child_thread = harness
         .manager
@@ -571,7 +573,8 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
             },
         )
         .await
-        .expect("forked spawn should flush parent rollout before loading history");
+        .expect("forked spawn should flush parent rollout before loading history")
+        .process_id;
 
     let child_thread = harness
         .manager
@@ -998,5 +1001,26 @@ fn sanitize_forked_history_keeps_conversation_and_spawn_call() {
             "compacted",
             "call:call-spawn",
         ]
+    );
+}
+
+#[test]
+fn effective_spawn_binding_mismatch_fails_closed() {
+    let provider_error =
+        verify_effective_spawn_binding("account-a", Some("model-a"), "account-b", "model-a")
+            .expect_err("provider mismatch must fail");
+    assert!(
+        provider_error
+            .to_string()
+            .contains("requested `account-a`, effective `account-b`")
+    );
+
+    let model_error =
+        verify_effective_spawn_binding("account-a", Some("model-a"), "account-a", "model-b")
+            .expect_err("model mismatch must fail");
+    assert!(
+        model_error
+            .to_string()
+            .contains("requested `model-a`, effective `model-b`")
     );
 }

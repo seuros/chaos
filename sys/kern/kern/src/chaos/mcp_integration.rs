@@ -283,6 +283,37 @@ impl Session {
         .await
     }
 
+    /// Host-only MCP path for attaching attested reviewer provenance.
+    #[expect(
+        dead_code,
+        reason = "v0.9 review orchestration will call this host-only foundation"
+    )]
+    pub(crate) async fn call_tool_with_review_provenance(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
+        provenance: chaos_mcp_runtime::TrustedReviewProvenance,
+    ) -> anyhow::Result<CallToolResult> {
+        let registry = self.services.mcp_registry.clone();
+        let breaker_server = server.to_string();
+        let dispatch_server = breaker_server.clone();
+        let tool = tool.to_string();
+        with_circuit_breaker(&breaker_server, move || async move {
+            registry
+                .execute(&dispatch_server, move |manager, server| async move {
+                    manager
+                        .call_tool_with_review_provenance(
+                            &server, &tool, arguments, meta, provenance,
+                        )
+                        .await
+                })
+                .await
+        })
+        .await
+    }
+
     pub(crate) async fn parse_mcp_tool_name(
         &self,
         name: &str,

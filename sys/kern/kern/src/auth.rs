@@ -21,6 +21,7 @@ use chaos_snitch::TelemetryAuthMode;
 pub use crate::auth::storage::AuthCredentialsStoreMode;
 pub use crate::auth::storage::AuthDotJson;
 use crate::auth::storage::AuthStorageBackend;
+pub use crate::auth::storage::CredentialSubjectFingerprint;
 pub use crate::auth::storage::ProviderAuthRecord;
 use crate::auth::storage::create_auth_storage;
 use crate::error::RefreshTokenFailedError;
@@ -83,6 +84,7 @@ pub enum ChaosAuth {
 pub struct ApiKeyAuth {
     provider_id: String,
     api_key: String,
+    credential_subject: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +182,7 @@ impl ChaosAuth {
             return Ok(ChaosAuth::from_api_key_with_provider_and_client(
                 provider_id,
                 api_key,
+                record.credential_subject.clone(),
                 client,
             ));
         }
@@ -297,6 +300,38 @@ impl ChaosAuth {
             .and_then(|t| t.id_token.chatgpt_user_id)
     }
 
+    /// Return an opaque identity for the configured credential record.
+    ///
+    /// This never hashes or exposes credential material. Direct environment
+    /// API keys have no persisted subject and therefore return `None`.
+    pub fn credential_subject_fingerprint(
+        &self,
+        domain: &str,
+    ) -> Option<CredentialSubjectFingerprint> {
+        match self {
+            Self::ApiKey(auth) => ProviderAuthRecord {
+                credential_subject: auth.credential_subject.clone(),
+                auth_mode: None,
+                api_key: None,
+                tokens: None,
+                last_refresh: None,
+            }
+            .credential_subject_fingerprint(domain),
+            Self::Chatgpt(auth) | Self::Xai(auth) => auth
+                .current_auth_json()
+                .and_then(|auth_json| auth_json.provider_record(auth.provider_id()))
+                .and_then(|record| record.credential_subject_fingerprint(domain)),
+            Self::ChatgptAuthTokens(auth) => auth
+                .state
+                .auth_dot_json
+                .lock()
+                .ok()
+                .and_then(|auth_json| auth_json.clone())
+                .and_then(|auth_json| auth_json.provider_record(&auth.state.provider_id))
+                .and_then(|record| record.credential_subject_fingerprint(domain)),
+        }
+    }
+
     /// Account-facing plan classification derived from the current token.
     pub fn account_plan_type(&self) -> Option<AccountPlanType> {
         let map_known = |kp: &InternalKnownPlan| match kp {
@@ -354,6 +389,7 @@ impl ChaosAuth {
         auth_dot_json.set_provider_record(
             DEFAULT_AUTH_PROVIDER_ID,
             ProviderAuthRecord {
+                credential_subject: None,
                 auth_mode: Some(ApiAuthMode::Chatgpt),
                 api_key: None,
                 tokens: Some(TokenData {
@@ -379,16 +415,18 @@ impl ChaosAuth {
     fn from_api_key_with_provider_and_client(
         provider_id: &str,
         api_key: &str,
+        credential_subject: Option<String>,
         _client: ChaosHttpClient,
     ) -> Self {
         Self::ApiKey(ApiKeyAuth {
             provider_id: provider_id.to_string(),
             api_key: api_key.to_owned(),
+            credential_subject,
         })
     }
 
     fn from_api_key_with_client(api_key: &str, client: ChaosHttpClient) -> Self {
-        Self::from_api_key_with_provider_and_client(DEFAULT_AUTH_PROVIDER_ID, api_key, client)
+        Self::from_api_key_with_provider_and_client(DEFAULT_AUTH_PROVIDER_ID, api_key, None, client)
     }
 
     pub fn from_api_key(api_key: &str) -> Self {
@@ -501,6 +539,7 @@ impl AuthDotJson {
         auth.set_provider_record(
             DEFAULT_AUTH_PROVIDER_ID,
             ProviderAuthRecord {
+                credential_subject: None,
                 auth_mode: Some(ApiAuthMode::ChatgptAuthTokens),
                 api_key: None,
                 tokens: Some(tokens),

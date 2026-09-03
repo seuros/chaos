@@ -264,6 +264,7 @@ impl AgentBackend for LiveAgentBackend {
                     },
                 )
                 .await
+                .map(|spawned| spawned.process_id)
                 .map_err(|error| error.to_string())
         })
     }

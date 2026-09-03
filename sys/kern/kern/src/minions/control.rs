@@ -41,6 +41,59 @@ pub(crate) struct SpawnAgentOptions {
     pub(crate) suppress_parent_completion_notification: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct EffectiveSpawnProvenance {
+    pub(crate) account_subject: Option<String>,
+    pub(crate) model_family_subject: Option<String>,
+    pub(crate) effective_model: String,
+    pub(crate) effective_model_provider: String,
+}
+
+impl EffectiveSpawnProvenance {
+    #[expect(
+        dead_code,
+        reason = "v0.9 review orchestration will consume this spawn provenance"
+    )]
+    pub(crate) fn trusted_mcp_review_provenance(
+        &self,
+    ) -> Option<chaos_mcp_runtime::TrustedReviewProvenance> {
+        chaos_mcp_runtime::TrustedReviewProvenance::new(
+            self.account_subject.clone()?,
+            self.model_family_subject.clone()?,
+        )
+        .ok()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SpawnedAgent {
+    pub(crate) process_id: ProcessId,
+    pub(crate) provenance: EffectiveSpawnProvenance,
+}
+
+fn verify_effective_spawn_binding(
+    expected_provider: &str,
+    expected_model: Option<&str>,
+    effective_provider: &str,
+    effective_model: &str,
+) -> ChaosResult<()> {
+    if effective_provider != expected_provider {
+        return Err(ChaosErr::InvalidRequest(format!(
+            "spawned agent provider mismatch: requested `{expected_provider}`, effective \
+             `{effective_provider}`"
+        )));
+    }
+    if let Some(expected_model) = expected_model
+        && effective_model != expected_model
+    {
+        return Err(ChaosErr::InvalidRequest(format!(
+            "spawned agent model mismatch for provider `{expected_provider}`: requested \
+             `{expected_model}`, effective `{effective_model}`"
+        )));
+    }
+    Ok(())
+}
+
 /// Strip tool traffic and interim narration from a forked child's history so it
 /// starts from conversational context only. The parent's `spawn_agent` call is
 /// retained: the orientation message appended afterwards is its output, and an
@@ -163,6 +216,7 @@ impl AgentControl {
     ) -> ChaosResult<ProcessId> {
         self.spawn_agent_with_options(config, items, session_source, SpawnAgentOptions::default())
             .await
+            .map(|spawned| spawned.process_id)
     }
 
     pub(crate) async fn spawn_agent_with_options(
@@ -171,8 +225,10 @@ impl AgentControl {
         items: Vec<UserInput>,
         session_source: Option<SessionSource>,
         options: SpawnAgentOptions,
-    ) -> ChaosResult<ProcessId> {
+    ) -> ChaosResult<SpawnedAgent> {
         let state = self.upgrade()?;
+        let expected_provider = config.model_provider_id.clone();
+        let expected_model = config.model.clone();
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
         let inherited_shell_environment = self
             .inherited_shell_environment_for_source(&state, session_source.as_ref())
@@ -324,6 +380,51 @@ impl AgentControl {
             }
         };
         let process_id = new_process.process_id();
+        if let Err(error) = verify_effective_spawn_binding(
+            &expected_provider,
+            expected_model.as_deref(),
+            &new_process.session_configured.model_provider_id,
+            &new_process.session_configured.model,
+        ) {
+            warn!(
+                process_id = %process_id,
+                requested_provider = %expected_provider,
+                requested_model = expected_model.as_deref(),
+                effective_provider = %new_process.session_configured.model_provider_id,
+                effective_model = %new_process.session_configured.model,
+                error = %error,
+                "rejecting spawned agent with mismatched effective binding"
+            );
+            if let Err(shutdown_error) = state.send_op(process_id, Op::Shutdown {}).await {
+                warn!(
+                    process_id = %process_id,
+                    error = %shutdown_error,
+                    "failed to submit shutdown for rejected spawned agent"
+                );
+            }
+            if state.remove_process(&process_id).await.is_none() {
+                warn!(
+                    process_id = %process_id,
+                    "rejected spawned agent was already absent during cleanup"
+                );
+            }
+            return Err(error);
+        }
+        let effective_turn = new_process.process.chaos.session.new_default_turn().await;
+        let provenance = EffectiveSpawnProvenance {
+            account_subject: state
+                .auth_manager()
+                .credential_subject_fingerprint_for_provider(
+                    &new_process.session_configured.model_provider_id,
+                    crate::review_provenance::REVIEW_ACCOUNT_SUBJECT_DOMAIN,
+                )
+                .map(crate::auth::CredentialSubjectFingerprint::into_string),
+            model_family_subject: crate::review_provenance::model_family_subject(
+                &effective_turn.model_info.model_family,
+            ),
+            effective_model: new_process.session_configured.model.clone(),
+            effective_model_provider: new_process.session_configured.model_provider_id.clone(),
+        };
         reservation.commit(process_id);
 
         // Notify a new process has been created. This notification will be processed by clients
@@ -344,7 +445,10 @@ impl AgentControl {
             self.maybe_start_completion_watcher(process_id, notification_source);
         }
 
-        Ok(process_id)
+        Ok(SpawnedAgent {
+            process_id,
+            provenance,
+        })
     }
 
     /// Resume an existing agent thread from persisted journal history.

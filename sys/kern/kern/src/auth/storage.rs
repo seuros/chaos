@@ -17,6 +17,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::token_data::TokenData;
 use chaos_ipc::api::AuthMode;
@@ -32,6 +33,14 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct ProviderAuthRecord {
+    /// Stable, locally generated identity for this credential record.
+    ///
+    /// This value is never derived from credential material. Callers that need
+    /// an external identity must use `credential_subject_fingerprint` instead
+    /// of sending this storage identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_subject: Option<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_mode: Option<AuthMode>,
 
@@ -101,7 +110,11 @@ impl AuthStorageBackend for FileAuthStorage {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(err) => return Err(err),
         };
-        Ok(Some(auth_dot_json))
+        let normalized = auth_dot_json.normalized();
+        if normalized != auth_dot_json {
+            self.save(&normalized)?;
+        }
+        Ok(Some(normalized))
     }
 
     fn save(&self, auth_dot_json: &AuthDotJson) -> std::io::Result<()> {
@@ -208,7 +221,14 @@ impl KeyringAuthStorage {
 impl AuthStorageBackend for KeyringAuthStorage {
     fn load(&self) -> std::io::Result<Option<AuthDotJson>> {
         let key = compute_store_key(&self.chaos_home)?;
-        self.load_from_keyring(&key)
+        let Some(auth) = self.load_from_keyring(&key)? else {
+            return Ok(None);
+        };
+        let normalized = auth.normalized();
+        if normalized != auth {
+            self.save(&normalized)?;
+        }
+        Ok(Some(normalized))
     }
 
     fn save(&self, auth: &AuthDotJson) -> std::io::Result<()> {
@@ -307,7 +327,16 @@ impl EphemeralAuthStorage {
 
 impl AuthStorageBackend for EphemeralAuthStorage {
     fn load(&self) -> std::io::Result<Option<AuthDotJson>> {
-        self.with_store(|store, key| Ok(store.get(&key).cloned()))
+        self.with_store(|store, key| {
+            let Some(auth) = store.get(&key).cloned() else {
+                return Ok(None);
+            };
+            let normalized = auth.normalized();
+            if normalized != auth {
+                store.insert(key, normalized.clone());
+            }
+            Ok(Some(normalized))
+        })
     }
 
     fn save(&self, auth: &AuthDotJson) -> std::io::Result<()> {
@@ -350,6 +379,41 @@ fn create_auth_storage_with_keyring_store(
 mod tests;
 
 impl ProviderAuthRecord {
+    fn ensure_credential_subject(&mut self) {
+        if self
+            .credential_subject
+            .as_deref()
+            .is_none_or(|subject| subject.trim().is_empty())
+        {
+            self.credential_subject = Some(Uuid::new_v4().to_string());
+        }
+    }
+
+    /// Return an opaque, domain-separated identity for this credential record.
+    ///
+    /// The digest is based only on a random local subject and never on API
+    /// keys, access tokens, refresh tokens, account ids, or email addresses.
+    pub fn credential_subject_fingerprint(
+        &self,
+        domain: &str,
+    ) -> Option<CredentialSubjectFingerprint> {
+        let subject = self.credential_subject.as_deref()?;
+        let mut hasher = Sha256::new();
+        hasher.update(b"chaos/credential-subject/v1\0");
+        hasher.update((domain.len() as u64).to_be_bytes());
+        hasher.update(domain.as_bytes());
+        hasher.update((subject.len() as u64).to_be_bytes());
+        hasher.update(subject.as_bytes());
+        let digest = hasher.finalize();
+        Some(CredentialSubjectFingerprint(format!(
+            "credential:v1:{}",
+            digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )))
+    }
+
     pub fn resolved_mode(&self) -> AuthMode {
         if let Some(mode) = self.auth_mode {
             return mode;
@@ -372,6 +436,20 @@ impl ProviderAuthRecord {
     }
 }
 
+/// Opaque identity derived from a local credential subject.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CredentialSubjectFingerprint(String);
+
+impl CredentialSubjectFingerprint {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
 impl AuthDotJson {
     pub fn provider_record(&self, provider_id: &str) -> Option<ProviderAuthRecord> {
         self.providers.get(provider_id).cloned()
@@ -380,9 +458,27 @@ impl AuthDotJson {
     pub fn set_provider_record(
         &mut self,
         provider_id: impl Into<String>,
-        record: ProviderAuthRecord,
+        mut record: ProviderAuthRecord,
     ) {
-        self.providers.insert(provider_id.into(), record);
+        let provider_id = provider_id.into();
+        if let Some(existing_subject) = self
+            .providers
+            .get(&provider_id)
+            .and_then(|existing| existing.credential_subject.as_deref())
+            .filter(|subject| !subject.trim().is_empty())
+        {
+            // Credential refresh/rotation must not reset reviewer identity.
+            // Clearing the provider record is the explicit identity boundary.
+            record.credential_subject = Some(existing_subject.to_string());
+        } else if record
+            .credential_subject
+            .as_deref()
+            .is_none_or(|subject| subject.trim().is_empty())
+        {
+            record.credential_subject = None;
+        }
+        record.ensure_credential_subject();
+        self.providers.insert(provider_id, record);
     }
 
     pub fn clear_provider_record(&mut self, provider_id: &str) {
@@ -390,7 +486,11 @@ impl AuthDotJson {
     }
 
     pub fn normalized_provider_records(&self) -> HashMap<String, ProviderAuthRecord> {
-        self.providers.clone()
+        let mut providers = self.providers.clone();
+        for record in providers.values_mut() {
+            record.ensure_credential_subject();
+        }
+        providers
     }
 
     pub fn normalized(&self) -> Self {

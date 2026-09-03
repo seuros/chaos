@@ -938,6 +938,7 @@ async fn fetch_anthropic_models(
             chaos_abi::AbiModelInfo {
                 display_name: m.display_name.unwrap_or_else(|| id.clone()),
                 id,
+                model_family: chaos_ipc::openai_models::ModelFamily::new("anthropic"),
                 description: None,
                 max_input_tokens: m.max_input_tokens,
                 max_output_tokens: m.max_tokens,

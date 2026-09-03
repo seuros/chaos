@@ -326,6 +326,11 @@ pub struct AuthManager {
 }
 
 impl AuthManager {
+    /// Configured provider id this manager is scoped to.
+    pub fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
     /// Create a new manager loading the initial auth using the provided
     /// preferred auth method. Errors loading auth are swallowed; `auth()` will
     /// simply return `None` in that case so callers can treat it as an
@@ -514,6 +519,17 @@ impl AuthManager {
         )
         .ok()
         .flatten()
+    }
+
+    /// Resolve an opaque credential identity for a provider without exposing
+    /// any stored credential material.
+    pub fn credential_subject_fingerprint_for_provider(
+        &self,
+        provider_id: &str,
+        domain: &str,
+    ) -> Option<crate::auth::CredentialSubjectFingerprint> {
+        self.auth_for_provider(provider_id)
+            .and_then(|auth| auth.credential_subject_fingerprint(domain))
     }
 
     /// Resolve provider-scoped auth and refresh managed OAuth credentials when stale.

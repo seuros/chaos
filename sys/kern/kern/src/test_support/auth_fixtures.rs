@@ -69,6 +69,7 @@ pub(super) fn openai_auth(
         providers: [(
             DEFAULT_AUTH_PROVIDER_ID.to_string(),
             ProviderAuthRecord {
+                credential_subject: Some("test-credential-subject".to_string()),
                 auth_mode: Some(auth_mode),
                 api_key: api_key.map(str::to_string),
                 tokens,

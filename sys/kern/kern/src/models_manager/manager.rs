@@ -15,6 +15,7 @@ use crate::response_debug_context::telemetry_transport_error_message;
 use crate::util::FeedbackRequestTags;
 use crate::util::emit_feedback_request_tags;
 use chaos_ipc::config_types::CollaborationModeMask;
+use chaos_ipc::openai_models::ModelFamily;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ModelsResponse;
@@ -181,6 +182,7 @@ pub struct ModelsManager {
     auth_manager: Arc<AuthManager>,
     etag: RwLock<Option<String>>,
     cache_manager: ModelsCacheManager,
+    provider_id: String,
     provider: ModelProviderInfo,
 }
 
@@ -213,6 +215,27 @@ impl ModelsManager {
         collaboration_modes_config: CollaborationModesConfig,
         provider: ModelProviderInfo,
     ) -> Self {
+        let provider_id = auth_manager.provider_id().to_string();
+        Self::new_with_provider_binding(
+            chaos_home,
+            auth_manager,
+            model_catalog,
+            collaboration_modes_config,
+            provider_id,
+            provider,
+        )
+    }
+
+    /// Construct a manager with an explicit configured provider binding.
+    pub fn new_with_provider_binding(
+        chaos_home: PathBuf,
+        auth_manager: Arc<AuthManager>,
+        model_catalog: Option<ModelsResponse>,
+        collaboration_modes_config: CollaborationModesConfig,
+        provider_id: String,
+        provider: ModelProviderInfo,
+    ) -> Self {
+        let auth_manager = auth_manager.for_provider(&provider_id);
         let cache_manager = ModelsCacheManager::new(chaos_home, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
             CatalogMode::Custom
@@ -226,6 +249,7 @@ impl ModelsManager {
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
             .unwrap_or_default();
+        let remote_models = Self::with_provider_model_family(remote_models, &provider.model_family);
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -233,8 +257,14 @@ impl ModelsManager {
             auth_manager,
             etag: RwLock::new(None),
             cache_manager,
+            provider_id,
             provider,
         }
+    }
+
+    /// Configured provider id this manager is bound to.
+    pub fn provider_id(&self) -> &str {
+        &self.provider_id
     }
 
     /// The provider this manager refreshes and resolves models from.
@@ -253,13 +283,57 @@ impl ModelsManager {
         if self.catalog_mode == CatalogMode::Custom {
             return None;
         }
-        Some(Self::new_with_provider(
+        Some(Self::new_with_provider_binding(
             self.cache_manager.home().to_path_buf(),
             self.auth_manager.for_provider(provider_id),
             None,
             self.collaboration_modes_config,
+            provider_id.to_string(),
             provider,
         ))
+    }
+
+    /// Whether this manager has the exact configured provider/account binding.
+    pub fn is_bound_to(&self, provider_id: &str, provider: &ModelProviderInfo) -> bool {
+        self.provider_id == provider_id && &self.provider == provider
+    }
+
+    /// Resolve models only from a usable cached catalog for an exact provider
+    /// binding. This never falls back to the current manager or contacts the
+    /// target provider.
+    pub(crate) async fn usable_cached_models_for_provider(
+        &self,
+        provider_id: &str,
+        provider: &ModelProviderInfo,
+    ) -> CoreResult<Vec<ModelPreset>> {
+        if !self.provider_is_usable(provider_id, provider) {
+            return Err(ChaosErr::InvalidRequest(format!(
+                "model provider `{provider_id}` has no usable configured credentials"
+            )));
+        }
+        let rebound;
+        let target = if self.is_bound_to(provider_id, provider) {
+            self
+        } else {
+            rebound = self
+                .rebound_to(provider_id, provider.clone())
+                .ok_or_else(|| {
+                    ChaosErr::InvalidRequest(format!(
+                        "model catalog cannot be rebound from `{}` to `{provider_id}`",
+                        self.provider_id
+                    ))
+                })?;
+            &rebound
+        };
+
+        target.refresh_models(RefreshStrategy::Offline).await?;
+        let models = target.build_available_models(target.get_remote_models().await);
+        if models.is_empty() {
+            return Err(ChaosErr::InvalidRequest(format!(
+                "model provider `{provider_id}` has no usable cached catalog"
+            )));
+        }
+        Ok(models)
     }
 
     /// List all available models, refreshing according to the specified strategy.
@@ -343,7 +417,12 @@ impl ModelsManager {
             };
             if models.is_empty() {
                 models = cache
-                    .map(|cache| build_presets(cache.models.clone()))
+                    .map(|cache| {
+                        build_presets(Self::with_provider_model_family(
+                            cache.models.clone(),
+                            &provider.model_family,
+                        ))
+                    })
                     .unwrap_or_default();
             }
 
@@ -371,6 +450,9 @@ impl ModelsManager {
     /// session's active auth mode, so signing into one provider does not hide
     /// the others.
     fn provider_is_usable(&self, provider_id: &str, provider: &ModelProviderInfo) -> bool {
+        if !provider.requires_managed_auth() {
+            return true;
+        }
         if provider.experimental_bearer_token.is_some() {
             return true;
         }
@@ -518,6 +600,7 @@ impl ModelsManager {
                 used_fallback_model_metadata: true,
                 ..model_info::model_info_from_abi(&chaos_abi::AbiModelInfo {
                     id: model.to_string(),
+                    model_family: ModelFamily::default(),
                     display_name: model.to_string(),
                     description: None,
                     max_input_tokens: None,
@@ -801,6 +884,7 @@ impl ModelsManager {
     }
 
     async fn apply_live_catalog(&self, models: Vec<ModelInfo>, etag: Option<String>) {
+        let models = Self::with_provider_model_family(models, &self.provider.model_family);
         let client_version = crate::models_manager::client_version_to_whole();
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
@@ -829,6 +913,7 @@ impl ModelsManager {
 
     async fn apply_cache_entry(&self, cache: ModelsCache) {
         let ModelsCache { models, etag, .. } = cache;
+        let models = Self::with_provider_model_family(models, &self.provider.model_family);
         *self.etag.write().await = etag.clone();
         self.apply_remote_models(models.clone()).await;
         info!(
@@ -866,6 +951,21 @@ impl ModelsManager {
                 .provider
                 .effective_base_url(self.auth_manager.auth_mode()),
         }
+    }
+
+    fn with_provider_model_family(
+        mut models: Vec<ModelInfo>,
+        provider_family: &ModelFamily,
+    ) -> Vec<ModelInfo> {
+        if provider_family.is_unknown() {
+            return models;
+        }
+        for model in &mut models {
+            if model.model_family.is_unknown() {
+                model.model_family = provider_family.clone();
+            }
+        }
+        models
     }
 
     /// Build picker-ready presets from the active catalog snapshot.

@@ -46,6 +46,7 @@ static ENABLE_ALL_TOOL_GROUPS_FOR_TESTS: AtomicBool = AtomicBool::new(false);
 pub fn test_model_info(slug: &str) -> ModelInfo {
     ModelInfo {
         slug: slug.to_string(),
+        model_family: Default::default(),
         display_name: slug.to_string(),
         description: Some(format!("{slug} test model")),
         default_reasoning_level: Some(ReasoningEffort::Medium),

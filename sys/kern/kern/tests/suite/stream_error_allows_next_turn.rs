@@ -65,6 +65,7 @@ async fn continue_after_stream_error() {
     // without requiring a real secret.
     let provider = ModelProviderInfo {
         name: "mock-openai".into(),
+        model_family: Default::default(),
         base_url: Some(format!("{}/v1", server.uri())),
         env_key: Some("PATH".into()),
         env_key_instructions: None,

@@ -376,6 +376,76 @@ async fn apply_requested_spawn_agent_model_overrides(
     Ok(())
 }
 
+async fn apply_requested_spawn_agent_provider_binding(
+    session: &Session,
+    config: &mut Config,
+    requested_provider_id: &str,
+    requested_model: Option<&str>,
+    requested_reasoning_effort: Option<ReasoningEffort>,
+) -> Result<(), FunctionCallError> {
+    let provider = config
+        .model_providers
+        .get(requested_provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            FunctionCallError::RespondToModel(format!(
+                "Unknown model provider `{requested_provider_id}` for spawn_agent"
+            ))
+        })?;
+    let available_models = session
+        .services
+        .models_manager
+        .usable_cached_models_for_provider(requested_provider_id, &provider)
+        .await
+        .map_err(|err| {
+            FunctionCallError::RespondToModel(format!(
+                "Cannot bind spawn_agent to model provider `{requested_provider_id}`: {err}"
+            ))
+        })?;
+
+    let selected = if let Some(requested_model) = requested_model {
+        available_models
+            .iter()
+            .find(|model| model.model == requested_model)
+            .ok_or_else(|| {
+                let available = available_models
+                    .iter()
+                    .map(|model| model.model.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FunctionCallError::RespondToModel(format!(
+                    "Unknown model `{requested_model}` for model provider \
+                     `{requested_provider_id}`. Available models: {available}"
+                ))
+            })?
+    } else {
+        available_models
+            .iter()
+            .find(|model| model.is_default)
+            .or_else(|| available_models.first())
+            .ok_or_else(|| {
+                FunctionCallError::RespondToModel(format!(
+                    "Model provider `{requested_provider_id}` has no usable cached models"
+                ))
+            })?
+    };
+
+    if let Some(reasoning_effort) = requested_reasoning_effort {
+        validate_spawn_agent_reasoning_effort(
+            &selected.model,
+            &selected.supported_reasoning_efforts,
+            reasoning_effort,
+        )?;
+        config.model_reasoning_effort = Some(reasoning_effort);
+    } else {
+        config.model_reasoning_effort = Some(selected.default_reasoning_effort);
+    }
+    config.model_provider_id = requested_provider_id.to_string();
+    config.model_provider = provider;
+    config.model = Some(selected.model.clone());
+    Ok(())
+}
+
 fn find_spawn_agent_model_name(
     available_models: &[chaos_ipc::openai_models::ModelPreset],
     requested_model: &str,

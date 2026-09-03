@@ -9,6 +9,7 @@ use chaos_abi::AbiModelInfo;
 fn with_config_overrides_never_yields_empty_base_instructions() {
     let model = model_info_from_abi(&AbiModelInfo {
         id: "test-model".to_string(),
+        model_family: Default::default(),
         display_name: "Test".to_string(),
         description: None,
         max_input_tokens: None,
@@ -30,6 +31,7 @@ fn with_config_overrides_never_yields_empty_base_instructions() {
 fn unknown_model() -> ModelInfo {
     model_info_from_abi(&AbiModelInfo {
         id: "unknown-model".to_string(),
+        model_family: Default::default(),
         display_name: "unknown-model".to_string(),
         description: None,
         max_input_tokens: None,

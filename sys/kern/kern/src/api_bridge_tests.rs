@@ -198,6 +198,7 @@ fn auth_provider_from_auth_preflight_matrix() {
     }
     let xai_missing = ModelProviderInfo {
         name: "xAI".into(),
+        model_family: Default::default(),
         base_url: Some("https://api.x.ai/v1".into()),
         env_key: Some(xai_var.into()),
         env_key_instructions: Some("Create a key at https://x.ai/api.".into()),
@@ -270,6 +271,7 @@ fn auth_provider_from_auth_preflight_matrix() {
     }
     let minimax = ModelProviderInfo {
         name: "MiniMax".into(),
+        model_family: Default::default(),
         base_url: Some("https://api.minimax.io/anthropic".into()),
         env_key: Some(minimax_var.into()),
         env_key_instructions: None,
@@ -296,6 +298,7 @@ fn auth_provider_from_auth_preflight_matrix() {
 
     let ollama = ModelProviderInfo {
         name: "Ollama".into(),
+        model_family: Default::default(),
         base_url: Some("http://localhost:11434/v1".into()),
         env_key: None,
         env_key_instructions: None,

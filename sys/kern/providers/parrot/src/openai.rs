@@ -462,6 +462,9 @@ async fn fetch_openai_models(
             chaos_abi::AbiModelInfo {
                 display_name: m.display_name.unwrap_or_else(|| id.clone()),
                 id,
+                // OpenAI-compatible discovery is vendor-neutral. The configured
+                // provider or a richer catalog may fill this explicitly.
+                model_family: chaos_ipc::openai_models::ModelFamily::default(),
                 description: m.description,
                 max_input_tokens: m.context_length,
                 max_output_tokens: m.max_tokens_output,

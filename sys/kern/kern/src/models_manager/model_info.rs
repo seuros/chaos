@@ -12,6 +12,10 @@ pub use chaos_model_catalog::model_info_from_abi;
 pub const BASE_INSTRUCTIONS: &str = include_str!("../../prompt.md");
 
 pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> ModelInfo {
+    if model.model_family.is_unknown() && !config.model_provider.model_family.is_unknown() {
+        model.model_family = config.model_provider.model_family.clone();
+    }
+
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
         && supports_reasoning_summaries
     {

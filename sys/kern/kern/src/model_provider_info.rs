@@ -7,6 +7,7 @@
 
 use crate::auth::AuthMode;
 use crate::error::EnvVarError;
+use chaos_ipc::openai_models::ModelFamily;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_parrot::Provider as ApiProvider;
 use chaos_parrot::provider::RetryConfig as ApiRetryConfig;
@@ -139,6 +140,10 @@ pub fn native_server_side_tools_for_url(base_url: Option<&str>) -> Vec<String> {
 pub struct ModelProviderInfo {
     /// Friendly display name.
     pub name: String,
+    /// Explicit family for catalogs that do not publish per-model family
+    /// metadata. Defaults to unknown and is never inferred from URLs or names.
+    #[serde(default)]
+    pub model_family: ModelFamily,
     /// Base URL for the provider's OpenAI-compatible API.
     pub base_url: Option<String>,
     /// Environment variable that stores the user's API key for this provider.
@@ -373,6 +378,7 @@ impl ModelProviderInfo {
     pub fn create_anthropic_provider() -> ModelProviderInfo {
         ModelProviderInfo {
             name: ANTHROPIC_PROVIDER_NAME.into(),
+            model_family: ModelFamily::new("anthropic"),
             base_url: Some(ANTHROPIC_DEFAULT_BASE_URL.into()),
             env_key: Some("ANTHROPIC_API_KEY".into()),
             env_key_instructions: Some(
@@ -404,6 +410,7 @@ impl ModelProviderInfo {
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
+            model_family: ModelFamily::new("openai"),
             base_url,
             env_key: None,
             env_key_instructions: None,
@@ -479,6 +486,7 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "gpt-oss".into(),
+        model_family: ModelFamily::new("openai"),
         base_url: Some(base_url.into()),
         env_key: None,
         env_key_instructions: None,

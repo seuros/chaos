@@ -119,6 +119,7 @@ fn antigravity_conversation_state_resumes_across_model_clients() {
 fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {
     crate::model_provider_info::ModelProviderInfo {
         name: "anthropic".into(),
+        model_family: chaos_ipc::openai_models::ModelFamily::new("anthropic"),
         base_url: Some(chaos_services::anthropic::API_BASE.into()),
         env_key: None,
         env_key_instructions: None,

@@ -46,6 +46,7 @@ async fn retries_on_early_close() {
 
     let model_provider = ModelProviderInfo {
         name: "openai".into(),
+        model_family: Default::default(),
         base_url: Some(format!("{}/v1", server.uri())),
         // Environment variable that should exist in the test environment.
         // ModelClient will return an error if the environment variable for the

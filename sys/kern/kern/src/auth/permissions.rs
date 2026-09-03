@@ -201,6 +201,7 @@ pub fn login_with_provider_api_key(
     auth_dot_json.set_provider_record(
         provider_id,
         ProviderAuthRecord {
+            credential_subject: None,
             auth_mode: Some(ApiAuthMode::ApiKey),
             api_key: Some(api_key.to_string()),
             tokens: None,
@@ -236,6 +237,7 @@ pub fn login_with_xai_oauth_tokens(
     auth_dot_json.set_provider_record(
         XAI_PROVIDER_ID,
         ProviderAuthRecord {
+            credential_subject: None,
             auth_mode: Some(ApiAuthMode::Xai),
             api_key: None,
             tokens: Some(crate::token_data::TokenData {

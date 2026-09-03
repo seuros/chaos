@@ -640,6 +640,17 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             },
         ),
         (
+            "model_provider".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional configured model provider/account id for the new agent. The host \
+                     validates the selected model against that provider's cached catalog and \
+                     fails closed when the provider cannot be rebound."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
             "model".to_string(),
             JsonSchema::String {
                 description: Some(

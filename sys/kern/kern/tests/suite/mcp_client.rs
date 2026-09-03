@@ -669,6 +669,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
         ModelsResponse {
             models: vec![ModelInfo {
                 slug: text_only_model_slug.to_string(),
+                model_family: Default::default(),
                 display_name: "MCP Test Text Only".to_string(),
                 description: Some("Test model without image input support".to_string()),
                 default_reasoning_level: None,

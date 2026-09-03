@@ -56,6 +56,7 @@ impl ChatWidget {
                         ModelPreset {
                             id: value.to_string(),
                             model: value.to_string(),
+                            model_family: Default::default(),
                             display_name: display.to_string(),
                             description: desc.to_string(),
                             default_reasoning_effort: ReasoningEffort::Medium,

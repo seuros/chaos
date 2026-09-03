@@ -1670,8 +1670,11 @@ fn spawn_agent_tool_description_uses_current_role_names() {
         collab_enabled: true,
     });
 
-    let ToolSpec::Function(ResponsesApiTool { description, .. }) =
-        create_spawn_agent_tool(&tools_config)
+    let ToolSpec::Function(ResponsesApiTool {
+        description,
+        parameters,
+        ..
+    }) = create_spawn_agent_tool(&tools_config)
     else {
         panic!("expected function tool");
     };
@@ -1680,6 +1683,13 @@ fn spawn_agent_tool_description_uses_current_role_names() {
     assert!(description.contains("scout analysis"));
     assert!(!description.contains("worker subtasks"));
     assert!(!description.contains("explorer analysis"));
+    let JsonSchema::Object { properties, .. } = parameters else {
+        panic!("spawn_agent parameters should be an object");
+    };
+    assert!(
+        properties.contains_key("model_provider"),
+        "spawn_agent must expose optional provider/account binding"
+    );
 }
 
 #[test]

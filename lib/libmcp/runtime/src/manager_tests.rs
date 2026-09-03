@@ -150,6 +150,88 @@ fn mcp_client_implementation_version_is_not_placeholder() {
     assert_ne!(mcp_client_implementation_version(), "0.0.0");
 }
 
+fn opaque_account_subject(byte: char) -> String {
+    format!("{ACCOUNT_SUBJECT_PREFIX}{}", byte.to_string().repeat(64))
+}
+
+fn opaque_family_subject(byte: char) -> String {
+    format!(
+        "{MODEL_FAMILY_SUBJECT_PREFIX}{}",
+        byte.to_string().repeat(64)
+    )
+}
+
+#[test]
+fn model_supplied_review_provenance_is_rejected() {
+    let meta = Some(serde_json::json!({
+        REVIEW_PROVENANCE_META_KEY: {
+            "account_subject": opaque_account_subject('a'),
+            "model_family_subject": opaque_family_subject('b'),
+        }
+    }));
+
+    let error =
+        reject_reserved_review_provenance(meta).expect_err("reserved metadata must be rejected");
+    assert!(error.to_string().contains("reserved for the host"));
+}
+
+#[test]
+fn trusted_review_provenance_overwrites_spoofed_reserved_metadata() {
+    let spoofed = Some(serde_json::json!({
+        REVIEW_PROVENANCE_META_KEY: {"account_subject": "spoofed"},
+        "caller": "preserved",
+    }));
+    let provenance =
+        TrustedReviewProvenance::new(opaque_account_subject('a'), opaque_family_subject('b'))
+            .expect("valid opaque provenance");
+
+    let meta = inject_trusted_review_provenance(spoofed, provenance)
+        .expect("trusted metadata")
+        .expect("metadata value");
+    assert_eq!(meta["caller"], "preserved");
+    assert_eq!(
+        meta[REVIEW_PROVENANCE_META_KEY]["account_subject"],
+        opaque_account_subject('a')
+    );
+    assert_eq!(
+        meta[REVIEW_PROVENANCE_META_KEY]["model_family_subject"],
+        opaque_family_subject('b')
+    );
+}
+
+#[test]
+fn trusted_review_provenance_wire_payload_contains_no_raw_secrets_or_bindings() {
+    let raw_api_key = "sk-raw-secret-that-must-never-cross-mcp";
+    let raw_access_token = "raw-access-token";
+    let raw_provider = "configured-provider-account-a";
+    let raw_model = "vendor-model-name";
+    assert!(
+        TrustedReviewProvenance::new(raw_api_key.to_string(), opaque_family_subject('d')).is_err(),
+        "trusted provenance must reject raw credential-shaped input"
+    );
+    let provenance =
+        TrustedReviewProvenance::new(opaque_account_subject('c'), opaque_family_subject('d'))
+            .expect("valid opaque provenance");
+    let meta = inject_trusted_review_provenance(None, provenance)
+        .expect("trusted metadata")
+        .expect("metadata value");
+    let params = mcp_guest::protocol::CallToolRequestParams {
+        name: "submit_review".to_string(),
+        arguments: None,
+        meta: Some(meta),
+        task: None,
+    };
+    let wire = serde_json::to_string(&params).expect("serialize MCP request");
+
+    for forbidden in [raw_api_key, raw_access_token, raw_provider, raw_model] {
+        assert!(
+            !wire.contains(forbidden),
+            "MCP request leaked forbidden value `{forbidden}`"
+        );
+    }
+    assert!(wire.contains(REVIEW_PROVENANCE_META_KEY));
+}
+
 #[test]
 fn tool_filter_allows_by_default() {
     let filter = ToolFilter::default();

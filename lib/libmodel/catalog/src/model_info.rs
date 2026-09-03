@@ -31,6 +31,7 @@ pub fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
 
     ModelInfo {
         slug: abi.id.clone(),
+        model_family: abi.model_family.clone(),
         display_name: abi.display_name.clone(),
         description: abi.description.clone(),
         default_reasoning_level: None,

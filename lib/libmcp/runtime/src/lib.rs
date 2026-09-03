@@ -20,6 +20,7 @@ pub use manager::McpToolInfo;
 pub use manager::SandboxState;
 pub use manager::ToolFilter;
 pub use manager::ToolInfo;
+pub use manager::TrustedReviewProvenance;
 
 // Re-export mcp_guest protocol types used by chaos-kern so it does not
 // need a direct mcp-guest dependency.

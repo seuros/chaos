@@ -25,6 +25,7 @@ use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::McpInvocation;
+use chaos_ipc::protocol::McpServerRefreshConfig;
 use chaos_ipc::protocol::McpToolCallBeginEvent;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -97,6 +98,16 @@ fn assert_structured_echo_content(
         "structured tool output should not include legacy content fallback: {:?}",
         result.content
     );
+}
+
+fn structured_client_identity(result: &chaos_ipc::mcp::CallToolResult) -> &str {
+    result
+        .structured_content
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|payload| payload.get("client_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("structured client identity missing in: {result:?}"))
 }
 
 fn streamable_http_server_bin() -> anyhow::Result<Option<PathBuf>> {
@@ -892,6 +903,208 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
     })
     .await;
 
+    server.verify().await;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[serial(process_env)]
+async fn stdio_client_identity_survives_server_refresh() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let server_name = "mcp_test_identity";
+    let tool_name = format!("mcp__{server_name}__echo");
+
+    mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_response_created("resp-before-refresh"),
+            responses::ev_function_call(
+                "call-before-refresh",
+                &tool_name,
+                "{\"message\":\"before refresh\"}",
+            ),
+            responses::ev_completed("resp-before-refresh"),
+        ]),
+    )
+    .await;
+    mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_assistant_message("msg-before-refresh", "first identity observed"),
+            responses::ev_completed("resp-before-refresh-final"),
+        ]),
+    )
+    .await;
+    mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_response_created("resp-after-refresh"),
+            responses::ev_function_call(
+                "call-after-refresh",
+                &tool_name,
+                "{\"message\":\"after refresh\"}",
+            ),
+            responses::ev_completed("resp-after-refresh"),
+        ]),
+    )
+    .await;
+    mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_assistant_message("msg-after-refresh", "second identity observed"),
+            responses::ev_completed("resp-after-refresh-final"),
+        ]),
+    )
+    .await;
+
+    let mcp_test_server_bin = stdio_server_bin()?;
+    let fixture = test_chaos()
+        .with_config(move |config| {
+            let mut servers = config.mcp_servers.get().clone();
+            servers.insert(
+                server_name.to_string(),
+                McpServerConfig {
+                    transport: McpServerTransportConfig::Stdio {
+                        command: mcp_test_server_bin,
+                        args: Vec::new(),
+                        env: Some(HashMap::from([
+                            ("MCP_TEST_INCLUDE_CLIENT_ID".to_string(), "1".to_string()),
+                            (
+                                "CHAOS_MCP_CLIENT_ID".to_string(),
+                                "configured-spoof".to_string(),
+                            ),
+                        ])),
+                        env_vars: Vec::new(),
+                        cwd: None,
+                    },
+                    enabled: true,
+                    required: false,
+                    disabled_reason: None,
+                    startup_timeout_sec: Some(Duration::from_secs(10)),
+                    tool_timeout_sec: None,
+                    enabled_tools: None,
+                    disabled_tools: None,
+                    scopes: None,
+                    oauth_resource: None,
+                    r#type: None,
+                    oauth: None,
+                },
+            );
+            config
+                .mcp_servers
+                .set(servers)
+                .expect("test mcp servers should accept any configuration");
+        })
+        .build(&server)
+        .await?;
+    let session_model = fixture.session_configured.model.clone();
+
+    fixture
+        .process
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "read the stdio MCP client identity".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: fixture.cwd.path().to_path_buf(),
+            approval_policy: ApprovalPolicy::Headless,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            model: session_model.clone(),
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    let first_end = wait_for_event(&fixture.process, |event| {
+        matches!(event, EventMsg::McpToolCallEnd(_))
+    })
+    .await;
+    let EventMsg::McpToolCallEnd(first_end) = first_end else {
+        unreachable!("event guard guarantees McpToolCallEnd");
+    };
+    let first_result = first_end
+        .result
+        .as_ref()
+        .expect("identity tool call before refresh should succeed");
+    assert_mcp_success(first_result.is_error);
+    let first_identity = structured_client_identity(first_result).to_string();
+    assert!(first_identity.starts_with("chaos:"));
+    assert_ne!(first_identity, "configured-spoof");
+
+    wait_for_event(&fixture.process, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    fixture
+        .process
+        .submit(Op::RefreshMcpServers {
+            config: McpServerRefreshConfig {
+                mcp_servers: serde_json::to_value(fixture.config.mcp_servers.get())?,
+                mcp_oauth_credentials_store_mode: serde_json::to_value(
+                    fixture.config.mcp_oauth_credentials_store_mode,
+                )?,
+            },
+        })
+        .await?;
+
+    let refreshed = wait_for_event(&fixture.process, |event| {
+        matches!(event, EventMsg::McpServersRefreshed(_))
+    })
+    .await;
+    let EventMsg::McpServersRefreshed(refreshed) = refreshed else {
+        unreachable!("event guard guarantees McpServersRefreshed");
+    };
+    assert!(
+        refreshed.applied,
+        "MCP refresh should be applied: {refreshed:?}"
+    );
+
+    fixture
+        .process
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "read the stdio MCP client identity again".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: fixture.cwd.path().to_path_buf(),
+            approval_policy: ApprovalPolicy::Headless,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            model: session_model,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    let second_end = wait_for_event(&fixture.process, |event| {
+        matches!(event, EventMsg::McpToolCallEnd(_))
+    })
+    .await;
+    let EventMsg::McpToolCallEnd(second_end) = second_end else {
+        unreachable!("event guard guarantees McpToolCallEnd");
+    };
+    let second_result = second_end
+        .result
+        .as_ref()
+        .expect("identity tool call after refresh should succeed");
+    assert_mcp_success(second_result.is_error);
+    assert_eq!(structured_client_identity(second_result), first_identity);
+
+    wait_for_event(&fixture.process, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
     server.verify().await;
 
     Ok(())

@@ -4,6 +4,7 @@ use std::io;
 use std::sync::Arc;
 
 use chaos_ipc::product::CHAOS_VERSION;
+use chaos_mcp_runtime::CHAOS_MCP_CLIENT_ID_ENV;
 use mcp_host::content::types::ImageContent;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpToolRouter;
@@ -46,6 +47,15 @@ impl TestStdioServer {
         );
         if let Ok(value) = std::env::var("MCP_TEST_VALUE") {
             payload.insert("env".to_string(), serde_json::Value::String(value));
+        }
+        if std::env::var_os("MCP_TEST_INCLUDE_CLIENT_ID").is_some() {
+            let client_id = std::env::var(CHAOS_MCP_CLIENT_ID_ENV).map_err(|err| {
+                ToolError::Execution(format!("missing {CHAOS_MCP_CLIENT_ID_ENV}: {err}"))
+            })?;
+            payload.insert(
+                "client_id".to_string(),
+                serde_json::Value::String(client_id),
+            );
         }
         Ok(ToolOutput::json(payload))
     }

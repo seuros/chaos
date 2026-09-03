@@ -936,6 +936,32 @@ impl McpConnectionManager {
         Ok(result)
     }
 
+    /// Subscribe to updates for a resource on the specified server.
+    pub async fn subscribe_resource(&self, server: &str, uri: String) -> Result<()> {
+        let managed = self.client_by_name(server).await?;
+        ensure_resource_subscriptions_supported(server, &managed.session)?;
+
+        managed
+            .session
+            .subscribe_resource(uri.as_str())
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("resources/subscribe failed for `{server}` ({uri})"))
+    }
+
+    /// Unsubscribe from updates for a resource on the specified server.
+    pub async fn unsubscribe_resource(&self, server: &str, uri: String) -> Result<()> {
+        let managed = self.client_by_name(server).await?;
+        ensure_resource_subscriptions_supported(server, &managed.session)?;
+
+        managed
+            .session
+            .unsubscribe_resource(uri.as_str())
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("resources/unsubscribe failed for `{server}` ({uri})"))
+    }
+
     /// Invoke a tool with task augmentation, returning the task ID immediately.
     pub async fn call_tool_async(
         &self,
@@ -1151,6 +1177,30 @@ impl McpConnectionManager {
             .ok_or_else(|| anyhow!("unknown MCP server '{server}'"))?;
         managed.notify_sandbox_state_change(sandbox_state).await
     }
+}
+
+fn ensure_resource_subscriptions_supported(
+    server: &str,
+    session: &mcp_guest::McpSession,
+) -> Result<()> {
+    let server_info = session.server_info();
+    if resource_subscriptions_supported(&server_info.capabilities) {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "MCP server `{server}` does not advertise resource subscription support"
+        ))
+    }
+}
+
+fn resource_subscriptions_supported(
+    capabilities: &mcp_guest::protocol::ServerCapabilities,
+) -> bool {
+    capabilities
+        .resources
+        .as_ref()
+        .and_then(|resources| resources.subscribe)
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

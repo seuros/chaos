@@ -60,9 +60,16 @@ struct ListResourceTemplatesArgs {
 }
 
 #[derive(Debug, Deserialize)]
-struct ReadResourceArgs {
+struct ResourceUriArgs {
     server: String,
     uri: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResourceSubscriptionArgs {
+    server: String,
+    uri: String,
+    subscribed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -512,6 +519,13 @@ struct ReadResourcePayload {
     result: ReadResourceResult,
 }
 
+#[derive(Debug, Serialize)]
+struct ResourceSubscriptionPayload {
+    server: String,
+    uri: String,
+    subscribed: bool,
+}
+
 impl ToolHandler for McpResourceHandler {
     type Output = FunctionToolOutput;
 
@@ -561,6 +575,15 @@ impl ToolHandler for McpResourceHandler {
             }
             "read_mcp_resource" => {
                 handle_read_resource(
+                    Arc::clone(&session),
+                    Arc::clone(&turn),
+                    call_id.clone(),
+                    arguments_value.clone(),
+                )
+                .await
+            }
+            "set_mcp_resource_subscription" => {
+                handle_resource_subscription(
                     Arc::clone(&session),
                     Arc::clone(&turn),
                     call_id,
@@ -825,8 +848,8 @@ async fn handle_read_resource(
     call_id: String,
     arguments: Option<Value>,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
-    let args: ReadResourceArgs = parse_args(arguments.clone())?;
-    let ReadResourceArgs { server, uri } = args;
+    let args: ResourceUriArgs = parse_args(arguments.clone())?;
+    let ResourceUriArgs { server, uri } = args;
     let server = normalize_required_string("server", server)?;
     let uri = normalize_required_string("uri", uri)?;
 
@@ -866,6 +889,71 @@ async fn handle_read_resource(
             server,
             uri,
             result,
+        })
+    }
+    .await;
+
+    finish_resource_call(
+        &session,
+        turn.as_ref(),
+        &call_id,
+        invocation,
+        start,
+        payload_result,
+    )
+    .await
+}
+
+async fn handle_resource_subscription(
+    session: Arc<Session>,
+    turn: Arc<TurnContext>,
+    call_id: String,
+    arguments: Option<Value>,
+) -> Result<FunctionToolOutput, FunctionCallError> {
+    let args: ResourceSubscriptionArgs = parse_args(arguments.clone())?;
+    let ResourceSubscriptionArgs {
+        server,
+        uri,
+        subscribed,
+    } = args;
+    let server = normalize_required_string("server", server)?;
+    let uri = normalize_required_string("uri", uri)?;
+
+    let invocation = McpInvocation {
+        server: server.clone(),
+        tool: "set_mcp_resource_subscription".to_string(),
+        arguments: arguments.clone(),
+    };
+
+    emit_tool_call_begin(&session, turn.as_ref(), &call_id, invocation.clone()).await;
+    let start = Instant::now();
+
+    let payload_result: Result<ResourceSubscriptionPayload, FunctionCallError> = async {
+        if server == INTERNAL_TASK_SERVER_NAME {
+            return Err(FunctionCallError::RespondToModel(
+                "resource subscriptions are only available for configured MCP servers".to_string(),
+            ));
+        }
+
+        let (method, result) = if subscribed {
+            (
+                "resources/subscribe",
+                session.subscribe_resource(&server, uri.clone()).await,
+            )
+        } else {
+            (
+                "resources/unsubscribe",
+                session.unsubscribe_resource(&server, uri.clone()).await,
+            )
+        };
+        result.map_err(|err| {
+            FunctionCallError::RespondToModel(format!("{method} failed: {err:#}"))
+        })?;
+
+        Ok(ResourceSubscriptionPayload {
+            server,
+            uri,
+            subscribed,
         })
     }
     .await;

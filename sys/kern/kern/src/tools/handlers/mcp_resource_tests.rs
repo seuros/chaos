@@ -93,6 +93,28 @@ fn call_tool_result_from_content_marks_success() {
 }
 
 #[test]
+fn resource_subscription_payload_reports_current_state() {
+    let subscribed = ResourceSubscriptionPayload {
+        server: "srv".to_string(),
+        uri: "memo://id".to_string(),
+        subscribed: true,
+    };
+    let unsubscribed = ResourceSubscriptionPayload {
+        subscribed: false,
+        ..subscribed
+    };
+
+    assert_eq!(
+        serde_json::to_value(&unsubscribed).expect("serialize subscription payload"),
+        json!({
+            "server": "srv",
+            "uri": "memo://id",
+            "subscribed": false
+        })
+    );
+}
+
+#[test]
 fn parse_arguments_handles_empty_and_json() {
     assert!(
         parse_arguments(" \n\t").unwrap().is_none(),

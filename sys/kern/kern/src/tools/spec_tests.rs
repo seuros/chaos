@@ -609,6 +609,7 @@ fn capability_groups_do_not_filter_external_mcp_or_dynamic_tools() {
             "external_dynamic",
             "list_mcp_resources",
             "read_mcp_resource",
+            "set_mcp_resource_subscription",
             "call_mcp_tool_async",
             "cancel_mcp_task",
         ],
@@ -1535,7 +1536,10 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
     assert!(
         !tools.iter().any(|tool| matches!(
             tool.spec.name(),
-            "list_mcp_resources" | "list_mcp_resource_templates" | "read_mcp_resource"
+            "list_mcp_resources"
+                | "list_mcp_resource_templates"
+                | "read_mcp_resource"
+                | "set_mcp_resource_subscription"
         )),
         "MCP resource tools should be omitted when no MCP servers are configured"
     );
@@ -1648,6 +1652,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
             "list_mcp_resources",
             "list_mcp_resource_templates",
             "read_mcp_resource",
+            "set_mcp_resource_subscription",
             "call_mcp_tool_async",
             "cancel_mcp_task",
         ],

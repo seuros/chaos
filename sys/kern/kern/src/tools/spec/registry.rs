@@ -24,7 +24,8 @@ use super::tool_builders::{
     create_read_mcp_resource_tool, create_read_session_history_tool,
     create_report_minion_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_run_synopsis_tool,
-    create_search_session_history_tool, create_send_input_tool, create_set_parent_effort_tool,
+    create_search_session_history_tool, create_send_input_tool,
+    create_set_mcp_resource_subscription_tool, create_set_parent_effort_tool,
     create_set_session_title_tool, create_shell_command_tool, create_shell_tool,
     create_spawn_agent_tool, create_spawn_minions_on_csv_tool, create_switch_mode_tool,
     create_test_sync_tool, create_tool_group_control_tool, create_view_image_tool,
@@ -237,9 +238,15 @@ pub(crate) fn build_specs_with_discoverable_tools(
             create_read_mcp_resource_tool(),
             /*supports_parallel_tool_calls*/ true,
         );
+        push_tool_spec(
+            &mut builder,
+            create_set_mcp_resource_subscription_tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
         builder.register_handler("list_mcp_resources", mcp_resource_handler.clone());
         builder.register_handler("list_mcp_resource_templates", mcp_resource_handler.clone());
-        builder.register_handler("read_mcp_resource", mcp_resource_handler);
+        builder.register_handler("read_mcp_resource", mcp_resource_handler.clone());
+        builder.register_handler("set_mcp_resource_subscription", mcp_resource_handler);
 
         push_tool_spec(
             &mut builder,

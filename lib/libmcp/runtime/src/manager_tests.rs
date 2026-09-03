@@ -150,6 +150,24 @@ fn mcp_client_implementation_version_is_not_placeholder() {
     assert_ne!(mcp_client_implementation_version(), "0.0.0");
 }
 
+#[test]
+fn resource_subscription_support_must_be_explicitly_advertised() {
+    let mut capabilities = mcp_guest::protocol::ServerCapabilities::default();
+    assert!(!resource_subscriptions_supported(&capabilities));
+
+    capabilities.resources = Some(mcp_guest::protocol::ResourcesCapability {
+        subscribe: Some(false),
+        list_changed: Some(true),
+    });
+    assert!(!resource_subscriptions_supported(&capabilities));
+
+    capabilities.resources = Some(mcp_guest::protocol::ResourcesCapability {
+        subscribe: Some(true),
+        list_changed: None,
+    });
+    assert!(resource_subscriptions_supported(&capabilities));
+}
+
 fn opaque_account_subject(byte: char) -> String {
     format!("{ACCOUNT_SUBJECT_PREFIX}{}", byte.to_string().repeat(64))
 }

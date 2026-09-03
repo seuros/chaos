@@ -183,6 +183,8 @@ impl Session {
     mcp_delegate!(pub fn list_resources(server, params: Option<PaginatedRequestParams>) -> ListResourcesResult => list_resources);
     mcp_delegate!(pub fn list_resource_templates(server, params: Option<PaginatedRequestParams>) -> ListResourceTemplatesResult => list_resource_templates);
     mcp_delegate!(pub fn read_resource(server, params: ReadResourceRequestParams) -> ReadResourceResult => read_resource);
+    mcp_delegate!(pub fn subscribe_resource(server, uri: String) -> () => subscribe_resource);
+    mcp_delegate!(pub fn unsubscribe_resource(server, uri: String) -> () => unsubscribe_resource);
     mcp_delegate!(pub fn list_mcp_tasks(server) -> ListTasksResult => list_tasks);
 
     pub async fn call_tool_async(

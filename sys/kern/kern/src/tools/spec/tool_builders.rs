@@ -1365,26 +1365,9 @@ pub(crate) fn create_list_mcp_resource_templates_tool() -> ToolSpec {
 }
 
 pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
-    let properties = BTreeMap::from([
-        (
-            "server".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
-                        .to_string(),
-                ),
-            },
-        ),
-        (
-            "uri".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Resource URI from list_mcp_resources, or tasks:// / tasks://get/<id> / tasks://result/<id>."
-                        .to_string(),
-                ),
-            },
-        ),
-    ]);
+    let properties = mcp_resource_uri_properties(
+        "Resource URI from list_mcp_resources, or tasks:// / tasks://get/<id> / tasks://result/<id>.",
+    );
 
     ToolSpec::Function(ResponsesApiTool {
         name: "read_mcp_resource".to_string(),
@@ -1400,6 +1383,57 @@ pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
         },
         output_schema: None,
     })
+}
+
+pub(crate) fn create_set_mcp_resource_subscription_tool() -> ToolSpec {
+    let mut properties = mcp_resource_uri_properties(
+        "Resource URI to subscribe to or unsubscribe from. The URI is passed to the server without requiring the resource to currently exist or appear in list_mcp_resources.",
+    );
+    properties.insert(
+        "subscribed".to_string(),
+        JsonSchema::Boolean {
+            description: Some(
+                "Set to true to subscribe to updates, or false to unsubscribe.".to_string(),
+            ),
+        },
+    );
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "set_mcp_resource_subscription".to_string(),
+        description: "Subscribe to or unsubscribe from update notifications for an MCP resource. The server must advertise resource subscription support. Resources may be transient and do not need to currently exist or appear in resources/list.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec![
+                "server".to_string(),
+                "uri".to_string(),
+                "subscribed".to_string(),
+            ]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn mcp_resource_uri_properties(uri_description: &str) -> BTreeMap<String, JsonSchema> {
+    BTreeMap::from([
+        (
+            "server".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "uri".to_string(),
+            JsonSchema::String {
+                description: Some(uri_description.to_string()),
+            },
+        ),
+    ])
 }
 
 pub(crate) fn create_call_mcp_tool_async_tool() -> ToolSpec {

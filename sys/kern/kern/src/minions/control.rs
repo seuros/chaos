@@ -49,22 +49,6 @@ pub(crate) struct EffectiveSpawnProvenance {
     pub(crate) effective_model_provider: String,
 }
 
-impl EffectiveSpawnProvenance {
-    #[expect(
-        dead_code,
-        reason = "v0.9 review orchestration will consume this spawn provenance"
-    )]
-    pub(crate) fn trusted_mcp_review_provenance(
-        &self,
-    ) -> Option<chaos_mcp_runtime::TrustedReviewProvenance> {
-        chaos_mcp_runtime::TrustedReviewProvenance::new(
-            self.account_subject.clone()?,
-            self.model_family_subject.clone()?,
-        )
-        .ok()
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct SpawnedAgent {
     pub(crate) process_id: ProcessId,

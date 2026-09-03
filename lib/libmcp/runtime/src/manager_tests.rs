@@ -161,6 +161,28 @@ fn opaque_family_subject(byte: char) -> String {
     )
 }
 
+fn opaque_run_subject(byte: char) -> String {
+    format!("{REVIEW_RUN_SUBJECT_PREFIX}{}", byte.to_string().repeat(64))
+}
+
+fn opaque_attempt_subject(byte: char) -> String {
+    format!(
+        "{REVIEWER_ATTEMPT_SUBJECT_PREFIX}{}",
+        byte.to_string().repeat(64)
+    )
+}
+
+fn trusted_review_provenance() -> TrustedReviewProvenance {
+    TrustedReviewProvenance::new(
+        opaque_account_subject('a'),
+        opaque_family_subject('b'),
+        opaque_run_subject('c'),
+        opaque_attempt_subject('d'),
+        "review:task-1:attempt-1".to_string(),
+    )
+    .expect("valid opaque provenance")
+}
+
 #[test]
 fn model_supplied_review_provenance_is_rejected() {
     let meta = Some(serde_json::json!({
@@ -175,15 +197,40 @@ fn model_supplied_review_provenance_is_rejected() {
     assert!(error.to_string().contains("reserved for the host"));
 }
 
+#[tokio::test]
+async fn ordinary_sync_and_async_tool_calls_cannot_supply_reserved_review_provenance() {
+    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
+    let manager = McpConnectionManager::new_uninitialized(&approval_policy);
+    let spoofed = Some(serde_json::json!({
+        REVIEW_PROVENANCE_META_KEY: {
+            "account_subject": opaque_account_subject('a'),
+            "model_family_subject": opaque_family_subject('b'),
+            "review_run_subject": opaque_run_subject('c'),
+            "reviewer_attempt_subject": opaque_attempt_subject('d'),
+            "idempotency_key": "forged-key",
+        }
+    }));
+
+    let sync_error = manager
+        .call_tool("missing", "submit_review", None, spoofed.clone())
+        .await
+        .expect_err("ordinary sync call must reject reserved metadata before transport");
+    assert!(sync_error.to_string().contains("reserved for the host"));
+
+    let async_error = manager
+        .call_tool_async("missing", "submit_review", None, spoofed, None)
+        .await
+        .expect_err("ordinary async call must reject reserved metadata before transport");
+    assert!(async_error.to_string().contains("reserved for the host"));
+}
+
 #[test]
 fn trusted_review_provenance_overwrites_spoofed_reserved_metadata() {
     let spoofed = Some(serde_json::json!({
         REVIEW_PROVENANCE_META_KEY: {"account_subject": "spoofed"},
         "caller": "preserved",
     }));
-    let provenance =
-        TrustedReviewProvenance::new(opaque_account_subject('a'), opaque_family_subject('b'))
-            .expect("valid opaque provenance");
+    let provenance = trusted_review_provenance();
 
     let meta = inject_trusted_review_provenance(spoofed, provenance)
         .expect("trusted metadata")
@@ -197,6 +244,18 @@ fn trusted_review_provenance_overwrites_spoofed_reserved_metadata() {
         meta[REVIEW_PROVENANCE_META_KEY]["model_family_subject"],
         opaque_family_subject('b')
     );
+    assert_eq!(
+        meta[REVIEW_PROVENANCE_META_KEY]["review_run_subject"],
+        opaque_run_subject('c')
+    );
+    assert_eq!(
+        meta[REVIEW_PROVENANCE_META_KEY]["reviewer_attempt_subject"],
+        opaque_attempt_subject('d')
+    );
+    assert_eq!(
+        meta[REVIEW_PROVENANCE_META_KEY]["idempotency_key"],
+        "review:task-1:attempt-1"
+    );
 }
 
 #[test]
@@ -206,12 +265,24 @@ fn trusted_review_provenance_wire_payload_contains_no_raw_secrets_or_bindings() 
     let raw_provider = "configured-provider-account-a";
     let raw_model = "vendor-model-name";
     assert!(
-        TrustedReviewProvenance::new(raw_api_key.to_string(), opaque_family_subject('d')).is_err(),
+        TrustedReviewProvenance::new(
+            raw_api_key.to_string(),
+            opaque_family_subject('d'),
+            opaque_run_subject('e'),
+            opaque_attempt_subject('f'),
+            "review:key".to_string(),
+        )
+        .is_err(),
         "trusted provenance must reject raw credential-shaped input"
     );
-    let provenance =
-        TrustedReviewProvenance::new(opaque_account_subject('c'), opaque_family_subject('d'))
-            .expect("valid opaque provenance");
+    let provenance = TrustedReviewProvenance::new(
+        opaque_account_subject('c'),
+        opaque_family_subject('d'),
+        opaque_run_subject('e'),
+        opaque_attempt_subject('f'),
+        "review:task-1:attempt-2".to_string(),
+    )
+    .expect("valid opaque provenance");
     let meta = inject_trusted_review_provenance(None, provenance)
         .expect("trusted metadata")
         .expect("metadata value");
@@ -230,6 +301,32 @@ fn trusted_review_provenance_wire_payload_contains_no_raw_secrets_or_bindings() 
         );
     }
     assert!(wire.contains(REVIEW_PROVENANCE_META_KEY));
+}
+
+#[test]
+fn trusted_review_provenance_rejects_noncanonical_or_unsafe_values() {
+    assert!(
+        TrustedReviewProvenance::new(
+            opaque_account_subject('A'),
+            opaque_family_subject('b'),
+            opaque_run_subject('c'),
+            opaque_attempt_subject('d'),
+            "review:key".to_string(),
+        )
+        .is_err(),
+        "uppercase digests are not canonical opaque subjects"
+    );
+    assert!(
+        TrustedReviewProvenance::new(
+            opaque_account_subject('a'),
+            opaque_family_subject('b'),
+            opaque_run_subject('c'),
+            opaque_attempt_subject('d'),
+            "review key with spaces".to_string(),
+        )
+        .is_err(),
+        "idempotency keys must be wire-safe"
+    );
 }
 
 #[test]

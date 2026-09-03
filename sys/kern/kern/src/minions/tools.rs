@@ -318,7 +318,7 @@ fn apply_spawn_agent_runtime_overrides(
     Ok(())
 }
 
-fn apply_spawn_agent_overrides(config: &mut Config, child_depth: i32) {
+pub(crate) fn apply_spawn_agent_overrides(config: &mut Config, child_depth: i32) {
     if child_depth >= config.agent_max_depth {
         config.minion_jobs_allowed = false;
         config.collab_enabled = false;
@@ -376,7 +376,7 @@ async fn apply_requested_spawn_agent_model_overrides(
     Ok(())
 }
 
-async fn apply_requested_spawn_agent_provider_binding(
+pub(crate) async fn apply_requested_spawn_agent_provider_binding(
     session: &Session,
     config: &mut Config,
     requested_provider_id: &str,

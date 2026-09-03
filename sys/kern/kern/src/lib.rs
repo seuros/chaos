@@ -103,6 +103,7 @@ mod response_debug_context;
 pub mod review_format;
 pub mod review_prompts;
 mod review_provenance;
+pub mod reviewer_orchestration;
 pub mod web_search {
     pub use chaos_context::web_search::*;
 }

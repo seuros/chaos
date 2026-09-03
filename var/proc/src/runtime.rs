@@ -56,6 +56,7 @@ mod memories;
 mod message_history;
 mod minion_jobs;
 mod processes;
+mod reviewer_orchestration;
 #[cfg(test)]
 mod test_support;
 

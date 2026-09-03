@@ -96,6 +96,9 @@ pub const REVIEW_PROVENANCE_META_KEY: &str = "io.chaos.review_provenance.v1";
 
 const ACCOUNT_SUBJECT_PREFIX: &str = "credential:v1:";
 const MODEL_FAMILY_SUBJECT_PREFIX: &str = "review-subject:v1:";
+const REVIEW_RUN_SUBJECT_PREFIX: &str = "review-run:v1:";
+const REVIEWER_ATTEMPT_SUBJECT_PREFIX: &str = "reviewer-attempt:v1:";
+const MAX_IDEMPOTENCY_KEY_BYTES: usize = 255;
 
 /// Host-created, wire-safe reviewer provenance.
 ///
@@ -105,19 +108,38 @@ const MODEL_FAMILY_SUBJECT_PREFIX: &str = "review-subject:v1:";
 pub struct TrustedReviewProvenance {
     account_subject: String,
     model_family_subject: String,
+    review_run_subject: String,
+    reviewer_attempt_subject: String,
+    idempotency_key: String,
 }
 
 impl TrustedReviewProvenance {
-    pub fn new(account_subject: String, model_family_subject: String) -> Result<Self> {
+    pub fn new(
+        account_subject: String,
+        model_family_subject: String,
+        review_run_subject: String,
+        reviewer_attempt_subject: String,
+        idempotency_key: String,
+    ) -> Result<Self> {
         validate_opaque_subject(&account_subject, ACCOUNT_SUBJECT_PREFIX, "account")?;
         validate_opaque_subject(
             &model_family_subject,
             MODEL_FAMILY_SUBJECT_PREFIX,
             "model family",
         )?;
+        validate_opaque_subject(&review_run_subject, REVIEW_RUN_SUBJECT_PREFIX, "review run")?;
+        validate_opaque_subject(
+            &reviewer_attempt_subject,
+            REVIEWER_ATTEMPT_SUBJECT_PREFIX,
+            "reviewer attempt",
+        )?;
+        validate_idempotency_key(&idempotency_key)?;
         Ok(Self {
             account_subject,
             model_family_subject,
+            review_run_subject,
+            reviewer_attempt_subject,
+            idempotency_key,
         })
     }
 }
@@ -126,8 +148,29 @@ fn validate_opaque_subject(subject: &str, prefix: &str, kind: &str) -> Result<()
     let Some(digest) = subject.strip_prefix(prefix) else {
         return Err(anyhow!("{kind} subject is not a recognized opaque subject"));
     };
-    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
         return Err(anyhow!("{kind} subject has an invalid opaque digest"));
+    }
+    Ok(())
+}
+
+fn validate_idempotency_key(key: &str) -> Result<()> {
+    if key.is_empty() || key.len() > MAX_IDEMPOTENCY_KEY_BYTES {
+        return Err(anyhow!(
+            "review idempotency key must contain between 1 and {MAX_IDEMPOTENCY_KEY_BYTES} bytes"
+        ));
+    }
+    if !key
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+    {
+        return Err(anyhow!(
+            "review idempotency key contains non wire-safe characters"
+        ));
     }
     Ok(())
 }

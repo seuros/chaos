@@ -5,6 +5,8 @@ mod memories;
 mod minion_job;
 pub(crate) mod minion_job_machine;
 mod process_metadata;
+mod reviewer_orchestration;
+pub(crate) mod reviewer_orchestration_machine;
 
 pub use backfill_state::BackfillState;
 pub use backfill_state::BackfillStatus;
@@ -34,6 +36,12 @@ pub use process_metadata::ProcessMetadata;
 pub use process_metadata::ProcessMetadataBuilder;
 pub use process_metadata::ProcessesPage;
 pub use process_metadata::SortKey;
+pub use reviewer_orchestration::ReviewAttemptState;
+pub use reviewer_orchestration::ReviewAttemptTransitionData;
+pub use reviewer_orchestration::ReviewRun;
+pub use reviewer_orchestration::ReviewRunCreateParams;
+pub use reviewer_orchestration::ReviewerAttempt;
+pub use reviewer_orchestration::ReviewerAttemptCreateParams;
 
 pub(crate) use memories::Stage1OutputRow;
 pub(crate) use memories::stage1_output_ref_from_parts;
@@ -42,3 +50,5 @@ pub(crate) use minion_job::MinionJobRow;
 pub(crate) use process_metadata::ProcessRow;
 pub(crate) use process_metadata::anchor_from_item;
 pub(crate) use process_metadata::datetime_to_epoch_seconds;
+pub(crate) use reviewer_orchestration::ReviewRunRow;
+pub(crate) use reviewer_orchestration::ReviewerAttemptRow;

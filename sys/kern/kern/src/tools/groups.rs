@@ -170,6 +170,18 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     Ok(catalog)
 }
 
+pub(crate) fn new_state(
+    catalog: &ToolGroupCatalog,
+    enable_all: bool,
+) -> Result<ToolGroupState, ToolGroupError> {
+    let state = catalog.new_state();
+    if enable_all {
+        let disabled_groups = catalog.disabled_groups(&state);
+        catalog.set_groups_enabled(&state, disabled_groups, true)?;
+    }
+    Ok(state)
+}
+
 fn assign<const N: usize>(
     catalog: &ToolGroupCatalog,
     names: [&str; N],
@@ -188,7 +200,7 @@ mod tests {
     #[test]
     fn catalog_is_strict_and_defaults_operational_groups_off() {
         let catalog = build_catalog().expect("tool group catalog");
-        let state = catalog.new_state();
+        let state = new_state(&catalog, false).expect("tool group state");
 
         assert!(catalog.is_tool_visible(&state, "enable_tools"));
         assert!(!catalog.is_tool_visible(&state, "git_commit"));
@@ -200,6 +212,17 @@ mod tests {
         assert!(catalog.is_tool_visible(&state, "git_commit"));
         assert!(catalog.is_tool_visible(&state, "git_branch"));
         assert!(catalog.is_tool_visible(&state, "read_file"));
+    }
+
+    #[test]
+    fn clamp_state_starts_with_operational_groups_enabled() {
+        let catalog = build_catalog().expect("tool group catalog");
+        let state = new_state(&catalog, true).expect("tool group state");
+
+        assert!(catalog.disabled_groups(&state).is_empty());
+        assert!(catalog.is_tool_visible(&state, "exec_command"));
+        assert!(catalog.is_tool_visible(&state, "read_file"));
+        assert!(catalog.is_tool_visible(&state, "apply_patch"));
     }
 
     #[test]

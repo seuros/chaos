@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::io::Error;
 use std::io::ErrorKind;
@@ -5,6 +6,7 @@ use std::io::Result as IoResult;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use chaos_ipc::clamp_bridge::ClampBridgeRequest;
 use chaos_ipc::clamp_bridge::ClampBridgeResponse;
@@ -22,7 +24,10 @@ use mcp_host::registry::tools::Tool;
 use mcp_host::registry::tools::ToolError;
 use mcp_host::registry::tools::ToolFuture;
 use mcp_host::registry::tools::ToolOutput;
+use mcp_host::registry::tools::ToolRegistry;
+use mcp_host::server::NotificationSender;
 use mcp_host::server::visibility::ExecutionContext;
+use mcp_host::server::visibility::VisibilityContext;
 use serde_json::Value;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
@@ -39,26 +44,99 @@ pub async fn run_main() -> IoResult<()> {
     let token = env::var(TOKEN_ENV)
         .map_err(|_| Error::new(ErrorKind::InvalidInput, format!("missing {TOKEN_ENV}")))?;
 
-    let tool_specs = list_tools(&socket_path, &token).await?;
     let server = Server::builder("chaos-clamp-session-bridge", CHAOS_VERSION)
         .with_tools(true)
         .with_instructions(format!("{OS_NAME} session-backed tools for clamp"))
         .build();
-
-    for tool in tool_specs {
-        server
-            .tool_registry()
-            .register_boxed(Arc::new(BridgeTool::new(
-                socket_path.clone(),
-                token.clone(),
-                tool,
-            )));
-    }
+    let state = Arc::new(BridgeState::new(
+        socket_path,
+        token,
+        server.tool_registry().clone(),
+        server.notification_sender(),
+    ));
+    state.refresh(false).await?;
 
     server
         .run(StdioTransport::new())
         .await
         .map_err(|err| Error::other(format!("clamp bridge MCP server error: {err}")))
+}
+
+struct BridgeState {
+    socket_path: PathBuf,
+    token: String,
+    registry: ToolRegistry,
+    notification_sender: NotificationSender,
+    visible_tools: RwLock<HashMap<String, BridgeToolSpec>>,
+    refresh_lock: tokio::sync::Mutex<()>,
+}
+
+impl BridgeState {
+    fn new(
+        socket_path: PathBuf,
+        token: String,
+        registry: ToolRegistry,
+        notification_sender: NotificationSender,
+    ) -> Self {
+        Self {
+            socket_path,
+            token,
+            registry,
+            notification_sender,
+            visible_tools: RwLock::new(HashMap::new()),
+            refresh_lock: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    async fn refresh(self: &Arc<Self>, notify: bool) -> IoResult<()> {
+        let _guard = self.refresh_lock.lock().await;
+        let tool_specs = list_tools(&self.socket_path, &self.token).await?;
+        self.replace_visible_tools(tool_specs, notify)
+    }
+
+    fn replace_visible_tools(
+        self: &Arc<Self>,
+        tool_specs: Vec<BridgeToolSpec>,
+        notify: bool,
+    ) -> IoResult<()> {
+        let next_visible = tool_specs
+            .iter()
+            .map(|tool| (tool.name.clone(), tool.clone()))
+            .collect::<HashMap<_, _>>();
+        let changed = {
+            let visible = self
+                .visible_tools
+                .read()
+                .map_err(|_| Error::other("clamp bridge visible tool state is poisoned"))?;
+            *visible != next_visible
+        };
+
+        for tool in tool_specs {
+            self.registry
+                .try_register_boxed(Arc::new(BridgeTool::new(Arc::clone(self), tool)))
+                .map_err(|err| Error::other(format!("invalid clamp bridge tool: {err}")))?;
+        }
+
+        *self
+            .visible_tools
+            .write()
+            .map_err(|_| Error::other("clamp bridge visible tool state is poisoned"))? =
+            next_visible;
+
+        if notify && changed {
+            let _ = self.notification_sender.send(JsonRpcNotification::new(
+                "notifications/tools/list_changed",
+                None,
+            ));
+        }
+        Ok(())
+    }
+
+    fn is_visible(&self, name: &str) -> bool {
+        self.visible_tools
+            .read()
+            .is_ok_and(|visible| visible.contains_key(name))
+    }
 }
 
 async fn list_tools(socket_path: &Path, token: &str) -> IoResult<Vec<BridgeToolSpec>> {
@@ -99,18 +177,13 @@ async fn bridge_request(
 
 #[derive(Clone)]
 struct BridgeTool {
-    socket_path: PathBuf,
-    token: String,
+    state: Arc<BridgeState>,
     spec: BridgeToolSpec,
 }
 
 impl BridgeTool {
-    fn new(socket_path: PathBuf, token: String, spec: BridgeToolSpec) -> Self {
-        Self {
-            socket_path,
-            token,
-            spec,
-        }
+    fn new(state: Arc<BridgeState>, spec: BridgeToolSpec) -> Self {
+        Self { state, spec }
     }
 }
 
@@ -135,12 +208,16 @@ impl Tool for BridgeTool {
         self.spec.output_schema.clone()
     }
 
+    fn is_visible(&self, _ctx: &VisibilityContext) -> bool {
+        self.state.is_visible(&self.spec.name)
+    }
+
     fn execute<'a>(&'a self, ctx: ExecutionContext<'a>) -> ToolFuture<'a> {
         Box::pin(async move {
             let response = bridge_request(
-                &self.socket_path,
+                &self.state.socket_path,
                 ClampBridgeRequest::CallTool {
-                    token: self.token.clone(),
+                    token: self.state.token.clone(),
                     name: self.spec.name.clone(),
                     arguments: ctx.params.clone(),
                 },
@@ -149,6 +226,13 @@ impl Tool for BridgeTool {
             .map_err(|err| ToolError::Execution(err.to_string()))?;
             match response {
                 ClampBridgeResponse::ToolResult { output } => {
+                    if matches!(self.spec.name.as_str(), "enable_tools" | "disable_tools") {
+                        self.state.refresh(true).await.map_err(|err| {
+                            ToolError::Execution(format!(
+                                "tool groups changed but the clamp bridge failed to refresh: {err}"
+                            ))
+                        })?;
+                    }
                     response_input_to_tool_output(output, self.spec.output_schema.is_some())
                 }
                 ClampBridgeResponse::Error { message } => Err(ToolError::Execution(message)),
@@ -261,6 +345,51 @@ fn content_items_to_text(content: &[serde_json::Value]) -> String {
 mod tests {
     use super::*;
     use chaos_ipc::models::FunctionCallOutputPayload;
+
+    fn tool_spec(name: &str) -> BridgeToolSpec {
+        BridgeToolSpec {
+            name: name.to_string(),
+            title: None,
+            description: None,
+            input_schema: serde_json::json!({ "type": "object" }),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+            meta: None,
+        }
+    }
+
+    #[test]
+    fn clamp_bridge_replaces_visible_tools_after_group_changes() {
+        let registry = ToolRegistry::new();
+        let (notification_sender, mut notification_rx) = NotificationSender::bounded(4);
+        let state = Arc::new(BridgeState::new(
+            PathBuf::from("/unused"),
+            "token".to_string(),
+            registry.clone(),
+            notification_sender,
+        ));
+
+        state
+            .replace_visible_tools(vec![tool_spec("enable_tools")], false)
+            .expect("initial tool list");
+        assert!(state.is_visible("enable_tools"));
+        assert!(!state.is_visible("exec_command"));
+        assert!(notification_rx.try_recv().is_err());
+
+        state
+            .replace_visible_tools(vec![tool_spec("exec_command")], true)
+            .expect("refreshed tool list");
+        assert!(!state.is_visible("enable_tools"));
+        assert!(state.is_visible("exec_command"));
+        assert!(registry.get("enable_tools").is_some());
+        assert!(registry.get("exec_command").is_some());
+
+        let notification = notification_rx
+            .try_recv()
+            .expect("tool list changed notification");
+        assert_eq!(notification.method, "notifications/tools/list_changed");
+    }
 
     #[test]
     fn clamp_bridge_preserves_image_only_function_output() {

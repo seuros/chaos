@@ -16,6 +16,7 @@ use mcp_guest::ClientHandler;
 use mcp_guest::ClientHandlerFuture;
 use mcp_guest::ClientHandlerResultFuture;
 use mcp_guest::McpSession;
+use mcp_guest::WeakMcpSession;
 use mcp_guest::protocol::CreateElicitationRequest;
 use mcp_guest::protocol::CreateElicitationResponse;
 use mcp_guest::protocol::ElicitationAction;
@@ -114,7 +115,7 @@ pub(super) struct ChaosClientHandler {
     pub(super) tool_timeout: Duration,
     /// The session is set after connect. We need it for re-listing tools
     /// when the server sends a tools/list_changed notification.
-    pub(super) session: Arc<tokio::sync::RwLock<Option<McpSession>>>,
+    pub(super) session: Arc<tokio::sync::RwLock<Option<WeakMcpSession>>>,
     /// Shared catalog for updating on list_changed notifications.
     pub(super) catalog: Arc<dyn McpCatalogSink>,
     /// Working directory exposed to MCP servers via roots/list.
@@ -219,12 +220,12 @@ impl ClientHandler for ChaosClientHandler {
     fn on_tools_list_changed(&self) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
             let session_guard = self.session.read().await;
-            let Some(session) = session_guard.as_ref() else {
+            let Some(session) = session_guard.as_ref().and_then(WeakMcpSession::upgrade) else {
                 return;
             };
             refresh_tools(
                 &self.server_name,
-                session,
+                &session,
                 self.tool_timeout,
                 &self.tool_filter,
                 &self.tools_arc,
@@ -237,20 +238,20 @@ impl ClientHandler for ChaosClientHandler {
     fn on_resources_list_changed(&self) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
             let session_guard = self.session.read().await;
-            let Some(session) = session_guard.as_ref() else {
+            let Some(session) = session_guard.as_ref().and_then(WeakMcpSession::upgrade) else {
                 return;
             };
-            refresh_resources(&self.server_name, session, &*self.catalog).await;
+            refresh_resources(&self.server_name, &session, &*self.catalog).await;
         })
     }
 
     fn on_prompts_list_changed(&self) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
             let session_guard = self.session.read().await;
-            let Some(session) = session_guard.as_ref() else {
+            let Some(session) = session_guard.as_ref().and_then(WeakMcpSession::upgrade) else {
                 return;
             };
-            refresh_prompts(&self.server_name, session, &*self.catalog).await;
+            refresh_prompts(&self.server_name, &session, &*self.catalog).await;
         })
     }
 

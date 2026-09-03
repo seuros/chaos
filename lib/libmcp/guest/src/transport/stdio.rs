@@ -73,6 +73,7 @@ pub struct StdioTransport {
     reader: Mutex<BufReader<ChildStdout>>,
     writer: Mutex<BufWriter<ChildStdin>>,
     child: Mutex<Child>,
+    write_timeout: Duration,
     shutdown_timeout: Duration,
     kill_timeout: Duration,
     closed: AtomicBool,
@@ -81,11 +82,17 @@ pub struct StdioTransport {
 }
 
 impl StdioTransport {
-    pub fn new(child: StdioChild, shutdown_timeout: Duration, kill_timeout: Duration) -> Arc<Self> {
+    pub fn new(
+        child: StdioChild,
+        write_timeout: Duration,
+        shutdown_timeout: Duration,
+        kill_timeout: Duration,
+    ) -> Arc<Self> {
         Arc::new(Self {
             reader: Mutex::new(child.stdout),
             writer: Mutex::new(child.stdin),
             child: Mutex::new(child.child),
+            write_timeout,
             shutdown_timeout,
             kill_timeout,
             closed: AtomicBool::new(false),
@@ -95,12 +102,109 @@ impl StdioTransport {
     }
 
     async fn write_message(&self, message: &JsonRpcMessage) -> Result<(), GuestError> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(GuestError::Disconnected);
+        }
         let json = serde_json::to_string(message)?;
-        let mut writer = self.writer.lock().await;
-        writer.write_all(json.as_bytes()).await?;
-        writer.write_all(b"\n").await?;
-        writer.flush().await?;
-        Ok(())
+        timeout(self.write_timeout, async {
+            let mut writer = self.writer.lock().await;
+            writer.write_all(json.as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await?;
+            Ok(())
+        })
+        .await
+        .map_err(|_| GuestError::Timeout(self.write_timeout))?
+    }
+
+    async fn reap_child(&self, graceful_timeout: Option<Duration>) -> Result<(), GuestError> {
+        let mut child = self.child.lock().await;
+        let pid = child.id();
+
+        if child.try_wait()?.is_some() {
+            self.reaped.store(true, Ordering::Release);
+            return Ok(());
+        }
+
+        if let Some(graceful_timeout) = graceful_timeout {
+            match timeout(graceful_timeout, child.wait()).await {
+                Ok(Ok(status)) => {
+                    self.reaped.store(true, Ordering::Release);
+                    tracing::debug!(
+                        ?pid,
+                        ?status,
+                        "MCP stdio child exited during graceful shutdown"
+                    );
+                    return Ok(());
+                }
+                Ok(Err(error)) => return Err(error.into()),
+                Err(_) => {
+                    tracing::warn!(
+                        ?pid,
+                        ?graceful_timeout,
+                        "MCP stdio child ignored graceful shutdown; forcing termination"
+                    );
+                }
+            }
+        }
+
+        if let Err(error) = child.start_kill() {
+            if child.try_wait()?.is_some() {
+                self.reaped.store(true, Ordering::Release);
+                return Ok(());
+            }
+            return Err(error.into());
+        }
+
+        match timeout(self.kill_timeout, child.wait()).await {
+            Ok(Ok(status)) => {
+                self.reaped.store(true, Ordering::Release);
+                tracing::debug!(?pid, ?status, "MCP stdio child was killed and reaped");
+                Ok(())
+            }
+            Ok(Err(error)) => Err(error.into()),
+            Err(_) => {
+                tracing::error!(
+                    ?pid,
+                    kill_timeout = ?self.kill_timeout,
+                    "timed out reaping killed MCP stdio child"
+                );
+                Err(GuestError::Timeout(self.kill_timeout))
+            }
+        }
+    }
+
+    async fn shutdown_inner(&self, graceful: bool) -> Result<(), GuestError> {
+        let _shutdown_guard = self.shutdown_lock.lock().await;
+        if self.reaped.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.closed.store(true, Ordering::Release);
+
+        if graceful {
+            match timeout(self.shutdown_timeout, async {
+                let mut writer = self.writer.lock().await;
+                writer.flush().await?;
+                writer.shutdown().await?;
+                Ok::<(), std::io::Error>(())
+            })
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, "failed to close MCP stdio input; forcing child shutdown");
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        shutdown_timeout = ?self.shutdown_timeout,
+                        "timed out closing MCP stdio input; forcing child shutdown"
+                    );
+                }
+            }
+        }
+
+        self.reap_child(graceful.then_some(self.shutdown_timeout))
+            .await
     }
 }
 
@@ -138,50 +242,11 @@ impl MessageTransport for StdioTransport {
     }
 
     fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
-        Box::pin(async move {
-            let _shutdown_guard = self.shutdown_lock.lock().await;
-            if self.reaped.load(Ordering::Acquire) {
-                return Ok(());
-            }
-            self.closed.store(true, Ordering::Release);
+        Box::pin(async move { self.shutdown_inner(true).await })
+    }
 
-            {
-                let mut writer = self.writer.lock().await;
-                let _ = writer.flush().await;
-                let _ = writer.shutdown().await;
-            }
-
-            let mut child = self.child.lock().await;
-            match timeout(self.shutdown_timeout, child.wait()).await {
-                Ok(Ok(_)) => {
-                    self.reaped.store(true, Ordering::Release);
-                    return Ok(());
-                }
-                Ok(Err(error)) => return Err(error.into()),
-                Err(_) => {}
-            }
-
-            if child.try_wait()?.is_some() {
-                self.reaped.store(true, Ordering::Release);
-                return Ok(());
-            }
-            if let Err(error) = child.start_kill() {
-                if child.try_wait()?.is_some() {
-                    self.reaped.store(true, Ordering::Release);
-                    return Ok(());
-                }
-                return Err(error.into());
-            }
-
-            match timeout(self.kill_timeout, child.wait()).await {
-                Ok(Ok(_)) => {
-                    self.reaped.store(true, Ordering::Release);
-                    Ok(())
-                }
-                Ok(Err(error)) => Err(error.into()),
-                Err(_) => Err(GuestError::Timeout(self.kill_timeout)),
-            }
-        })
+    fn force_shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
+        Box::pin(async move { self.shutdown_inner(false).await })
     }
 }
 
@@ -191,6 +256,7 @@ pub struct StdioProcessConfig {
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
     pub cwd: Option<PathBuf>,
+    pub write_timeout: Duration,
     pub shutdown_timeout: Duration,
     pub kill_timeout: Duration,
 }
@@ -204,8 +270,12 @@ mod tests {
         let args = vec!["-c".to_string(), "trap '' TERM; exec sleep 60".to_string()];
         let child = StdioChild::spawn("/bin/sh", &args, &HashMap::new(), None)
             .expect("spawn stubborn child");
-        let transport =
-            StdioTransport::new(child, Duration::from_millis(20), Duration::from_secs(1));
+        let transport = StdioTransport::new(
+            child,
+            Duration::from_secs(1),
+            Duration::from_millis(20),
+            Duration::from_secs(1),
+        );
 
         transport.shutdown().await.expect("shutdown transport");
 
@@ -220,5 +290,23 @@ mod tests {
                 .is_some(),
             "shutdown must not return before the child has been reaped"
         );
+    }
+
+    #[tokio::test]
+    async fn force_shutdown_is_idempotent() {
+        let args = vec!["-c".to_string(), "trap '' TERM; exec sleep 60".to_string()];
+        let child = StdioChild::spawn("/bin/sh", &args, &HashMap::new(), None)
+            .expect("spawn stubborn child");
+        let transport = StdioTransport::new(
+            child,
+            Duration::from_secs(1),
+            Duration::from_millis(20),
+            Duration::from_secs(1),
+        );
+
+        transport.force_shutdown().await.expect("first shutdown");
+        transport.force_shutdown().await.expect("second shutdown");
+
+        assert!(transport.reaped.load(Ordering::Acquire));
     }
 }

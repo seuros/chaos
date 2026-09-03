@@ -110,6 +110,44 @@ fn structured_client_identity(result: &chaos_ipc::mcp::CallToolResult) -> &str {
         .unwrap_or_else(|| panic!("structured client identity missing in: {result:?}"))
 }
 
+async fn wait_for_recorded_stdio_pids(path: &Path, expected: usize) -> anyhow::Result<Vec<u32>> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let pids = fs::read_to_string(path)
+            .ok()
+            .into_iter()
+            .flat_map(|contents| contents.lines().map(str::to_owned).collect::<Vec<String>>())
+            .map(|line| line.parse::<u32>())
+            .collect::<Result<Vec<_>, _>>()?;
+        if pids.len() >= expected {
+            return Ok(pids);
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!(
+                "timed out waiting for {expected} stdio server PIDs in {} (found {})",
+                path.display(),
+                pids.len()
+            );
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+}
+
+async fn wait_for_process_exit(pid: u32) -> anyhow::Result<()> {
+    let pid = i32::try_from(pid)?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let result = unsafe { libc::kill(pid, 0) };
+        if result == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("stdio MCP server process {pid} survived its retirement deadline");
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+}
+
 fn streamable_http_server_bin() -> anyhow::Result<Option<PathBuf>> {
     if std::env::var_os("CARGO_BIN_EXE_test_streamable_http_server").is_none() {
         eprintln!(
@@ -961,6 +999,9 @@ async fn stdio_client_identity_survives_server_refresh() -> anyhow::Result<()> {
     .await;
 
     let mcp_test_server_bin = stdio_server_bin()?;
+    let pid_dir = tempdir()?;
+    let pid_file = pid_dir.path().join("stdio-server-pids");
+    let configured_pid_file = pid_file.clone();
     let fixture = test_chaos()
         .with_config(move |config| {
             let mut servers = config.mcp_servers.get().clone();
@@ -975,6 +1016,10 @@ async fn stdio_client_identity_survives_server_refresh() -> anyhow::Result<()> {
                             (
                                 "CHAOS_MCP_CLIENT_ID".to_string(),
                                 "configured-spoof".to_string(),
+                            ),
+                            (
+                                "MCP_TEST_PID_FILE".to_string(),
+                                configured_pid_file.display().to_string(),
                             ),
                         ])),
                         env_vars: Vec::new(),
@@ -1001,6 +1046,7 @@ async fn stdio_client_identity_survives_server_refresh() -> anyhow::Result<()> {
         .build(&server)
         .await?;
     let session_model = fixture.session_configured.model.clone();
+    let mut pids = wait_for_recorded_stdio_pids(&pid_file, 1).await?;
 
     fixture
         .process
@@ -1043,29 +1089,44 @@ async fn stdio_client_identity_survives_server_refresh() -> anyhow::Result<()> {
     })
     .await;
 
-    fixture
-        .process
-        .submit(Op::RefreshMcpServers {
-            config: McpServerRefreshConfig {
-                mcp_servers: serde_json::to_value(fixture.config.mcp_servers.get())?,
-                mcp_oauth_credentials_store_mode: serde_json::to_value(
-                    fixture.config.mcp_oauth_credentials_store_mode,
-                )?,
-            },
-        })
-        .await?;
+    for generation in 1..=3 {
+        let retired_pid = *pids
+            .last()
+            .expect("initial stdio server PID should have been recorded");
+        fixture
+            .process
+            .submit(Op::RefreshMcpServers {
+                config: McpServerRefreshConfig {
+                    mcp_servers: serde_json::to_value(fixture.config.mcp_servers.get())?,
+                    mcp_oauth_credentials_store_mode: serde_json::to_value(
+                        fixture.config.mcp_oauth_credentials_store_mode,
+                    )?,
+                },
+            })
+            .await?;
 
-    let refreshed = wait_for_event(&fixture.process, |event| {
-        matches!(event, EventMsg::McpServersRefreshed(_))
-    })
-    .await;
-    let EventMsg::McpServersRefreshed(refreshed) = refreshed else {
-        unreachable!("event guard guarantees McpServersRefreshed");
-    };
-    assert!(
-        refreshed.applied,
-        "MCP refresh should be applied: {refreshed:?}"
-    );
+        let refreshed = wait_for_event(&fixture.process, |event| {
+            matches!(event, EventMsg::McpServersRefreshed(_))
+        })
+        .await;
+        let EventMsg::McpServersRefreshed(refreshed) = refreshed else {
+            unreachable!("event guard guarantees McpServersRefreshed");
+        };
+        assert!(
+            refreshed.applied,
+            "MCP refresh generation {generation} should be applied: {refreshed:?}"
+        );
+
+        pids = wait_for_recorded_stdio_pids(&pid_file, generation + 1).await?;
+        let current_pid = *pids
+            .last()
+            .expect("refreshed stdio server PID should have been recorded");
+        assert_ne!(
+            current_pid, retired_pid,
+            "refresh generation {generation} should start a new stdio server"
+        );
+        wait_for_process_exit(retired_pid).await?;
+    }
 
     fixture
         .process
@@ -1106,6 +1167,16 @@ async fn stdio_client_identity_survives_server_refresh() -> anyhow::Result<()> {
     })
     .await;
     server.verify().await;
+
+    let final_pid = *pids
+        .last()
+        .expect("final stdio server PID should have been recorded");
+    fixture.process.submit(Op::Shutdown).await?;
+    wait_for_event(&fixture.process, |event| {
+        matches!(event, EventMsg::ShutdownComplete)
+    })
+    .await;
+    wait_for_process_exit(final_pid).await?;
 
     Ok(())
 }

@@ -1,4 +1,7 @@
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
+use std::sync::Weak;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -10,6 +13,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 use crate::error::GuestError;
 use crate::protocol::CallToolRequestParams;
@@ -34,6 +38,12 @@ use crate::protocol::StringMap;
 use crate::protocol::SubscribeRequestParams;
 use crate::protocol::Task;
 use crate::protocol::ToolInfo;
+use crate::transport::MessageTransport;
+
+const COMMAND_QUEUE_TIMEOUT: Duration = Duration::from_secs(1);
+const GRACEFUL_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const FORCE_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const RUNTIME_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(crate) enum RuntimeCommand {
     Request {
@@ -80,22 +90,72 @@ impl SharedState {
 
 #[derive(Clone)]
 pub struct McpSession {
-    pub(crate) command_tx: mpsc::Sender<RuntimeCommand>,
-    pub(crate) shared: Arc<SharedState>,
-    pub(crate) next_id: Arc<AtomicU64>,
+    inner: Arc<McpSessionInner>,
+}
+
+struct McpSessionInner {
+    command_tx: mpsc::Sender<RuntimeCommand>,
+    shared: Arc<SharedState>,
+    next_id: AtomicU64,
+    lifecycle: RuntimeLifecycle,
+}
+
+struct RuntimeLifecycle {
+    transport: Arc<dyn MessageTransport>,
+    runtime_task: StdMutex<Option<JoinHandle<()>>>,
+    shutdown_lock: tokio::sync::Mutex<()>,
+    closed: AtomicBool,
+}
+
+#[derive(Clone)]
+pub struct WeakMcpSession {
+    inner: Weak<McpSessionInner>,
+}
+
+impl WeakMcpSession {
+    pub fn upgrade(&self) -> Option<McpSession> {
+        self.inner.upgrade().map(|inner| McpSession { inner })
+    }
 }
 
 impl McpSession {
+    pub(crate) fn new(
+        command_tx: mpsc::Sender<RuntimeCommand>,
+        shared: Arc<SharedState>,
+        transport: Arc<dyn MessageTransport>,
+        runtime_task: JoinHandle<()>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(McpSessionInner {
+                command_tx,
+                shared,
+                next_id: AtomicU64::new(2),
+                lifecycle: RuntimeLifecycle {
+                    transport,
+                    runtime_task: StdMutex::new(Some(runtime_task)),
+                    shutdown_lock: tokio::sync::Mutex::new(()),
+                    closed: AtomicBool::new(false),
+                },
+            }),
+        }
+    }
+
+    pub fn downgrade(&self) -> WeakMcpSession {
+        WeakMcpSession {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+
     pub fn server_info(&self) -> ServerInfo {
-        self.shared.info.clone()
+        self.inner.shared.info.clone()
     }
 
     pub fn protocol_version(&self) -> &str {
-        &self.shared.info.protocol_version
+        &self.inner.shared.info.protocol_version
     }
 
     pub fn default_timeout(&self) -> Duration {
-        self.shared.default_timeout
+        self.inner.shared.default_timeout
     }
 
     pub async fn request_value(
@@ -118,13 +178,10 @@ impl McpSession {
         match tokio::time::timeout(timeout, fut).await {
             Ok(result) => result,
             Err(_) => {
-                let _ = self
-                    .command_tx
-                    .send(RuntimeCommand::Cancel {
-                        request_id,
-                        reason: Some(format!("request timed out after {timeout:?}")),
-                    })
-                    .await;
+                let _ = self.inner.command_tx.try_send(RuntimeCommand::Cancel {
+                    request_id,
+                    reason: Some(format!("request timed out after {timeout:?}")),
+                });
                 Err(GuestError::Timeout(timeout))
             }
         }
@@ -136,20 +193,27 @@ impl McpSession {
         params: Option<Value>,
         timeout_override: Option<Duration>,
     ) -> Result<Value, GuestError> {
-        let request_id = RequestId::number(self.next_id.fetch_add(1, Ordering::Relaxed) as i64);
+        if self.inner.lifecycle.closed.load(Ordering::Acquire) {
+            return Err(GuestError::Disconnected);
+        }
+        let timeout = timeout_override.unwrap_or(self.inner.shared.default_timeout);
+        let request_id =
+            RequestId::number(self.inner.next_id.fetch_add(1, Ordering::Relaxed) as i64);
         let (response_tx, response_rx) = oneshot::channel();
 
-        self.command_tx
-            .send(RuntimeCommand::Request {
+        tokio::time::timeout(
+            timeout,
+            self.inner.command_tx.send(RuntimeCommand::Request {
                 request_id: request_id.clone(),
                 method: method.into(),
                 params,
                 response_tx,
-            })
-            .await
-            .map_err(|_| GuestError::Disconnected)?;
+            }),
+        )
+        .await
+        .map_err(|_| GuestError::Timeout(timeout))?
+        .map_err(|_| GuestError::Disconnected)?;
 
-        let timeout = timeout_override.unwrap_or(self.shared.default_timeout);
         self.execute_with_timeout(request_id, timeout, async {
             match response_rx.await {
                 Ok(result) => result,
@@ -196,16 +260,26 @@ impl McpSession {
         method: impl Into<String>,
         params: Option<Value>,
     ) -> Result<(), GuestError> {
+        if self.inner.lifecycle.closed.load(Ordering::Acquire) {
+            return Err(GuestError::Disconnected);
+        }
+        let timeout = self.inner.shared.default_timeout;
         let (response_tx, response_rx) = oneshot::channel();
-        self.command_tx
-            .send(RuntimeCommand::Notification {
+        tokio::time::timeout(
+            timeout,
+            self.inner.command_tx.send(RuntimeCommand::Notification {
                 method: method.into(),
                 params,
                 response_tx,
-            })
+            }),
+        )
+        .await
+        .map_err(|_| GuestError::Timeout(timeout))?
+        .map_err(|_| GuestError::Disconnected)?;
+        tokio::time::timeout(timeout, response_rx)
             .await
-            .map_err(|_| GuestError::Disconnected)?;
-        response_rx.await.map_err(|_| GuestError::Disconnected)?
+            .map_err(|_| GuestError::Timeout(timeout))?
+            .map_err(|_| GuestError::Disconnected)?
     }
 
     pub async fn notify<TParams>(
@@ -264,18 +338,18 @@ impl McpSession {
     }
 
     pub async fn list_tools(&self) -> Result<Vec<ToolInfo>, GuestError> {
-        if let Some(cached) = self.shared.tools.read().await.clone() {
+        if let Some(cached) = self.inner.shared.tools.read().await.clone() {
             return Ok(cached);
         }
         let tools = self
             .paginated_list("tools/list", |r: ListToolsResult| (r.tools, r.next_cursor))
             .await?;
-        *self.shared.tools.write().await = Some(tools.clone());
+        *self.inner.shared.tools.write().await = Some(tools.clone());
         Ok(tools)
     }
 
     pub async fn tools(&self) -> Option<Vec<ToolInfo>> {
-        self.shared.tools.read().await.clone()
+        self.inner.shared.tools.read().await.clone()
     }
 
     pub async fn call_tool(
@@ -300,7 +374,7 @@ impl McpSession {
     }
 
     pub async fn list_resources(&self) -> Result<Vec<crate::protocol::ResourceInfo>, GuestError> {
-        if let Some(cached) = self.shared.resources.read().await.clone() {
+        if let Some(cached) = self.inner.shared.resources.read().await.clone() {
             return Ok(cached);
         }
         let resources = self
@@ -308,14 +382,14 @@ impl McpSession {
                 (r.resources, r.next_cursor)
             })
             .await?;
-        *self.shared.resources.write().await = Some(resources.clone());
+        *self.inner.shared.resources.write().await = Some(resources.clone());
         Ok(resources)
     }
 
     pub async fn list_resource_templates(
         &self,
     ) -> Result<Vec<crate::protocol::ResourceTemplateInfo>, GuestError> {
-        if let Some(cached) = self.shared.resource_templates.read().await.clone() {
+        if let Some(cached) = self.inner.shared.resource_templates.read().await.clone() {
             return Ok(cached);
         }
         let templates = self
@@ -324,7 +398,7 @@ impl McpSession {
                 |r: ListResourceTemplatesResult| (r.resource_templates, r.next_cursor),
             )
             .await?;
-        *self.shared.resource_templates.write().await = Some(templates.clone());
+        *self.inner.shared.resource_templates.write().await = Some(templates.clone());
         Ok(templates)
     }
 
@@ -368,7 +442,7 @@ impl McpSession {
     }
 
     pub async fn list_prompts(&self) -> Result<Vec<crate::protocol::PromptInfo>, GuestError> {
-        if let Some(cached) = self.shared.prompts.read().await.clone() {
+        if let Some(cached) = self.inner.shared.prompts.read().await.clone() {
             return Ok(cached);
         }
         let prompts = self
@@ -376,7 +450,7 @@ impl McpSession {
                 (r.prompts, r.next_cursor)
             })
             .await?;
-        *self.shared.prompts.write().await = Some(prompts.clone());
+        *self.inner.shared.prompts.write().await = Some(prompts.clone());
         Ok(prompts)
     }
 
@@ -454,12 +528,90 @@ impl McpSession {
     }
 
     pub async fn disconnect(&self) -> Result<(), GuestError> {
+        let _shutdown_guard = self.inner.lifecycle.shutdown_lock.lock().await;
+        if self
+            .inner
+            .lifecycle
+            .runtime_task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_none()
+        {
+            return Ok(());
+        }
+        self.inner.lifecycle.closed.store(true, Ordering::Release);
+
         let (response_tx, response_rx) = oneshot::channel();
-        self.command_tx
-            .send(RuntimeCommand::Shutdown { response_tx })
+        let graceful = tokio::time::timeout(GRACEFUL_DISCONNECT_TIMEOUT, async {
+            tokio::time::timeout(
+                COMMAND_QUEUE_TIMEOUT,
+                self.inner
+                    .command_tx
+                    .send(RuntimeCommand::Shutdown { response_tx }),
+            )
             .await
+            .map_err(|_| GuestError::Timeout(COMMAND_QUEUE_TIMEOUT))?
             .map_err(|_| GuestError::Disconnected)?;
-        response_rx.await.map_err(|_| GuestError::Disconnected)?
+            response_rx.await.map_err(|_| GuestError::Disconnected)?
+        })
+        .await;
+
+        let graceful_succeeded = matches!(graceful, Ok(Ok(())));
+        let mut shutdown_error = None;
+        if !graceful_succeeded {
+            match &graceful {
+                Ok(Err(error)) => tracing::warn!(
+                    %error,
+                    "graceful MCP session disconnect failed; forcing transport shutdown"
+                ),
+                Err(_) => tracing::warn!(
+                    timeout = ?GRACEFUL_DISCONNECT_TIMEOUT,
+                    "graceful MCP session disconnect timed out; forcing transport shutdown"
+                ),
+                Ok(Ok(())) => {}
+            }
+            shutdown_error = match tokio::time::timeout(
+                FORCE_DISCONNECT_TIMEOUT,
+                self.inner.lifecycle.transport.force_shutdown(),
+            )
+            .await
+            {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(error),
+                Err(_) => Some(GuestError::Timeout(FORCE_DISCONNECT_TIMEOUT)),
+            };
+        }
+
+        let runtime_task = self
+            .inner
+            .lifecycle
+            .runtime_task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(mut runtime_task) = runtime_task {
+            match tokio::time::timeout(RUNTIME_JOIN_TIMEOUT, &mut runtime_task).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    shutdown_error = Some(GuestError::Protocol(format!(
+                        "MCP runtime task failed during shutdown: {error}"
+                    )));
+                }
+                Err(_) => {
+                    tracing::error!(
+                        timeout = ?RUNTIME_JOIN_TIMEOUT,
+                        "MCP runtime task did not exit after transport shutdown; aborting it"
+                    );
+                    runtime_task.abort();
+                    let _ = runtime_task.await;
+                }
+            }
+        }
+
+        match shutdown_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 }
 

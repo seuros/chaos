@@ -540,7 +540,7 @@ pub(super) async fn make_managed_client(
         .or(Some(super::DEFAULT_STARTUP_TIMEOUT));
 
     let tools_arc: Arc<StdRwLock<Vec<ToolInfo>>> = Arc::new(StdRwLock::new(Vec::new()));
-    let session_holder: Arc<tokio::sync::RwLock<Option<McpSession>>> =
+    let session_holder: Arc<tokio::sync::RwLock<Option<mcp_guest::WeakMcpSession>>> =
         Arc::new(tokio::sync::RwLock::new(None));
     let cwd_arc = cwd;
 
@@ -654,7 +654,7 @@ pub(super) async fn make_managed_client(
     };
 
     // Store session in handler's session holder so tools_list_changed can use it
-    *session_holder.write().await = Some(session.clone());
+    *session_holder.write().await = Some(session.downgrade());
 
     // List tools
     let fetch_start = Instant::now();

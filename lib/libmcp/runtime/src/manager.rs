@@ -102,6 +102,7 @@ pub const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Default timeout for individual tool calls.
 const DEFAULT_TOOL_TIMEOUT: Duration = Duration::from_secs(120);
+const MCP_SERVER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(20);
 
 const MIN_COMPATIBLE_MCP_CLIENT_VERSION: &str = "0.63.0";
 
@@ -373,16 +374,25 @@ impl McpConnectionManager {
             let server_name = server_name.clone();
             let client = client.clone();
             shutdowns.spawn(async move {
-                match client.client().await {
-                    Ok(client) => match client.session.disconnect().await {
-                        Ok(()) | Err(mcp_guest::GuestError::Disconnected) => Ok(()),
-                        Err(error) => Err(anyhow!(
-                            "failed to disconnect MCP server {server_name}: {error}"
-                        )),
-                    },
-                    Err(StartupOutcomeError::Cancelled | StartupOutcomeError::Failed { .. }) => {
-                        Ok(())
+                match tokio::time::timeout(MCP_SERVER_SHUTDOWN_TIMEOUT, async {
+                    match client.client().await {
+                        Ok(client) => match client.session.disconnect().await {
+                            Ok(()) | Err(mcp_guest::GuestError::Disconnected) => Ok(()),
+                            Err(error) => Err(anyhow!(
+                                "failed to disconnect MCP server {server_name}: {error}"
+                            )),
+                        },
+                        Err(
+                            StartupOutcomeError::Cancelled | StartupOutcomeError::Failed { .. },
+                        ) => Ok(()),
                     }
+                })
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => Err(anyhow!(
+                        "timed out shutting down MCP server {server_name} after {MCP_SERVER_SHUTDOWN_TIMEOUT:?}"
+                    )),
                 }
             });
         }

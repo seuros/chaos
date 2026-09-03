@@ -21,3 +21,4 @@ pub use handler::ClientHandlerResultFuture;
 pub use handler::NoopClientHandler;
 pub use protocol::*;
 pub use session::McpSession;
+pub use session::WeakMcpSession;

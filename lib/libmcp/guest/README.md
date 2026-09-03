@@ -13,3 +13,12 @@ let session = mcp_guest::http("https://example.test/mcp")
     .connect()
     .await?;
 ```
+
+An `McpSession` owns its runtime task and transport. Calling `disconnect()` is
+idempotent: it first requests graceful shutdown, then force-closes the transport
+and aborts the runtime if either exceeds its deadline. Stdio transports kill and
+reap child processes during forced shutdown, so a configuration refresh cannot
+leave superseded MCP server generations running.
+
+Use `.shutdown_timeout(duration)` on the connection builder to bound transport
+shutdown for a server with a known termination budget.

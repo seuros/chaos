@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -59,21 +58,16 @@ pub(crate) async fn connect_with_transport(
         }
     };
     let shared = Arc::new(SharedState::new(info, options.default_timeout));
-    let next_id = Arc::new(AtomicU64::new(2));
     let (command_tx, command_rx) = mpsc::channel(64);
 
-    tokio::spawn(run_runtime(
-        transport,
+    let runtime_task = tokio::spawn(run_runtime(
+        Arc::clone(&transport),
         Arc::clone(&shared),
         Arc::clone(&options.handler),
         command_rx,
     ));
 
-    Ok(McpSession {
-        command_tx,
-        shared,
-        next_id,
-    })
+    Ok(McpSession::new(command_tx, shared, transport, runtime_task))
 }
 
 async fn perform_handshake(
@@ -156,14 +150,29 @@ async fn run_runtime(
 
     loop {
         tokio::select! {
-            Some(command) = command_rx.recv() => {
-                if handle_runtime_command(
-                    Arc::clone(&transport),
-                    command,
-                    &mut pending_outgoing,
-                    &mut inbound_requests,
-                ).await {
-                    break;
+            command = command_rx.recv() => {
+                match command {
+                    Some(command) => {
+                        if handle_runtime_command(
+                            Arc::clone(&transport),
+                            command,
+                            &mut pending_outgoing,
+                            &mut inbound_requests,
+                        ).await {
+                            break;
+                        }
+                    }
+                    None => {
+                        fail_pending(&mut pending_outgoing, GuestError::Disconnected);
+                        abort_inbound(&mut inbound_requests);
+                        if let Err(error) = transport.force_shutdown().await {
+                            tracing::error!(
+                                %error,
+                                "failed to force MCP transport shutdown after session handles were dropped"
+                            );
+                        }
+                        break;
+                    }
                 }
             }
             Some((request_id, response)) = server_response_rx.recv() => {
@@ -214,7 +223,12 @@ async fn run_runtime(
                         tracing::debug!(error = %error, "transport closed");
                         fail_pending(&mut pending_outgoing, GuestError::Disconnected);
                         abort_inbound(&mut inbound_requests);
-                        let _ = transport.shutdown().await;
+                        if let Err(shutdown_error) = transport.shutdown().await {
+                            tracing::warn!(
+                                error = %shutdown_error,
+                                "failed to finish MCP transport shutdown after receive failure"
+                            );
+                        }
                         break;
                     }
                 }

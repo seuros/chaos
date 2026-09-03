@@ -41,8 +41,9 @@ pub fn stdio(command: &str, args: &[String]) -> StdioBuilder {
             args: args.to_vec(),
             env: HashMap::new(),
             cwd: None,
-            shutdown_timeout: Duration::from_secs(5),
-            kill_timeout: Duration::from_secs(5),
+            write_timeout: Duration::from_secs(5),
+            shutdown_timeout: Duration::from_secs(2),
+            kill_timeout: Duration::from_secs(3),
         },
         client_info: Implementation::new("mcp-guest", env!("CARGO_PKG_VERSION")),
         capabilities: ClientCapabilities::default(),
@@ -183,6 +184,11 @@ impl StdioBuilder {
         self
     }
 
+    pub fn write_timeout(mut self, timeout: Duration) -> Self {
+        self.process.write_timeout = timeout;
+        self
+    }
+
     pub fn kill_timeout(mut self, timeout: Duration) -> Self {
         self.process.kill_timeout = timeout;
         self
@@ -197,6 +203,7 @@ impl StdioBuilder {
         )?;
         let transport = StdioTransport::new(
             child,
+            self.process.write_timeout,
             self.process.shutdown_timeout,
             self.process.kill_timeout,
         );

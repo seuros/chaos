@@ -7,8 +7,11 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use anyhow::Context;
 use arc_swap::ArcSwap;
@@ -24,7 +27,9 @@ use chaos_traits::router::Adapter;
 use chaos_traits::router::AdapterError;
 use chaos_traits::router::DEFAULT_ADAPTER_CAPACITY;
 use futures::future::join_all;
+use tokio::sync::Notify;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
@@ -35,6 +40,15 @@ type ServerFuture = Pin<Box<dyn Future<Output = ErasedResult> + Send>>;
 type ServerJob =
     Box<dyn FnOnce(Arc<McpConnectionManager>, String) -> ServerFuture + Send + 'static>;
 type RefreshFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
+const MCP_MAILBOX_TIMEOUT: Duration = Duration::from_secs(1);
+const MCP_SERVER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+const MCP_SERVER_TASK_JOIN_TIMEOUT: Duration = Duration::from_secs(1);
+const MCP_REFRESH_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const MCP_REGISTRY_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
+const REGISTRY_RUNNING: u8 = 0;
+const REGISTRY_SHUTTING_DOWN: u8 = 1;
+const REGISTRY_STOPPED: u8 = 2;
 
 #[derive(Clone)]
 struct McpPermissionState {
@@ -57,13 +71,18 @@ enum McpServerOp {
 
 #[derive(Clone)]
 struct McpServerActor {
+    name: Arc<str>,
     mailbox: Adapter<McpServerOp>,
+    accepting: Arc<AtomicBool>,
+    task: Arc<StdMutex<Option<JoinHandle<()>>>>,
 }
 
 impl McpServerActor {
     fn spawn(name: String, manager: Arc<McpConnectionManager>) -> Self {
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
-        tokio::spawn(async move {
+        let actor_name: Arc<str> = Arc::from(name.clone());
+        let accepting = Arc::new(AtomicBool::new(true));
+        let task = tokio::spawn(async move {
             while let Some(packet) = receiver.recv().await {
                 match packet.op {
                     McpServerOp::Execute { job, reply } => {
@@ -87,7 +106,12 @@ impl McpServerActor {
                 }
             }
         });
-        Self { mailbox }
+        Self {
+            name: actor_name,
+            mailbox,
+            accepting,
+            task: Arc::new(StdMutex::new(Some(task))),
+        }
     }
 
     async fn execute(
@@ -95,19 +119,98 @@ impl McpServerActor {
         job: ServerJob,
         reply: oneshot::Sender<ErasedResult>,
     ) -> Result<(), AdapterError> {
-        self.mailbox.send(McpServerOp::Execute { job, reply }).await
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err(AdapterError::Closed);
+        }
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox.send(McpServerOp::Execute { job, reply }),
+        )
+        .await
+        .map_err(|_| AdapterError::Closed)?
     }
 
     async fn apply_sandbox_state(&self, sandbox_state: SandboxState) -> Result<(), AdapterError> {
-        self.mailbox
-            .send(McpServerOp::ApplySandboxState { sandbox_state })
-            .await
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err(AdapterError::Closed);
+        }
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox
+                .send(McpServerOp::ApplySandboxState { sandbox_state }),
+        )
+        .await
+        .map_err(|_| AdapterError::Closed)?
     }
 
-    async fn shutdown(&self) -> Result<(), AdapterError> {
+    async fn shutdown(&self) -> anyhow::Result<()> {
+        self.accepting.store(false, Ordering::Release);
         let (reply, response) = oneshot::channel();
-        self.mailbox.send(McpServerOp::Shutdown { reply }).await?;
-        response.await.map_err(|_| AdapterError::ReplyDropped)
+        let graceful = tokio::time::timeout(MCP_SERVER_DRAIN_TIMEOUT, async {
+            tokio::time::timeout(
+                MCP_MAILBOX_TIMEOUT,
+                self.mailbox.send(McpServerOp::Shutdown { reply }),
+            )
+            .await
+            .map_err(|_| anyhow::anyhow!("server actor shutdown mailbox admission timed out"))?
+            .map_err(adapter_error)?;
+            response
+                .await
+                .context("server actor dropped shutdown acknowledgement")
+        })
+        .await;
+
+        let task = self
+            .task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(mut task) = task else {
+            return Ok(());
+        };
+
+        match graceful {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                warn!(
+                    server = %self.name,
+                    %error,
+                    "MCP server actor could not drain; aborting its in-flight operation"
+                );
+                task.abort();
+                let _ = task.await;
+                return Ok(());
+            }
+            Err(error) => {
+                warn!(
+                    server = %self.name,
+                    timeout = ?MCP_SERVER_DRAIN_TIMEOUT,
+                    %error,
+                    "MCP server actor did not drain; aborting its in-flight operation"
+                );
+                task.abort();
+                let _ = task.await;
+                return Ok(());
+            }
+        }
+
+        match tokio::time::timeout(MCP_SERVER_TASK_JOIN_TIMEOUT, &mut task).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(anyhow::anyhow!(
+                "MCP server actor {} failed during shutdown: {error}",
+                self.name
+            )),
+            Err(_) => {
+                warn!(
+                    server = %self.name,
+                    timeout = ?MCP_SERVER_TASK_JOIN_TIMEOUT,
+                    "MCP server actor acknowledged shutdown but did not exit; aborting it"
+                );
+                task.abort();
+                let _ = task.await;
+                Ok(())
+            }
+        }
     }
 }
 
@@ -124,7 +227,7 @@ enum McpRegistryCommand {
         catalog_gate: Arc<McpCatalogGate>,
         catalog_tools: Vec<(String, CatalogTool)>,
         bump_revision: bool,
-        reply: oneshot::Sender<McpRegistryDiff>,
+        reply: oneshot::Sender<anyhow::Result<McpRegistryDiff>>,
     },
     SyncPermissionState {
         state: McpPermissionState,
@@ -135,8 +238,16 @@ enum McpRegistryCommand {
         reply: oneshot::Sender<CancellationToken>,
     },
     Cancel {
-        reply: oneshot::Sender<()>,
+        reply: oneshot::Sender<anyhow::Result<()>>,
     },
+    Shutdown {
+        reply: oneshot::Sender<anyhow::Result<()>>,
+    },
+}
+
+struct McpRegistryLifecycle {
+    state: AtomicU8,
+    stopped: Notify,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -154,9 +265,19 @@ pub(crate) struct McpRegistryActor {
     configs: Arc<ArcSwap<HashMap<String, McpServerConfig>>>,
     revision: Arc<AtomicU64>,
     client_identities: Arc<StdMutex<HashMap<String, McpClientIdentity>>>,
+    lifecycle: Arc<McpRegistryLifecycle>,
 }
 
 impl McpRegistryActor {
+    fn ensure_running(&self) -> anyhow::Result<()> {
+        match self.lifecycle.state.load(Ordering::Acquire) {
+            REGISTRY_RUNNING => Ok(()),
+            REGISTRY_SHUTTING_DOWN => anyhow::bail!("MCP registry is shutting down"),
+            REGISTRY_STOPPED => anyhow::bail!("MCP registry is stopped"),
+            state => anyhow::bail!("MCP registry has invalid lifecycle state {state}"),
+        }
+    }
+
     pub(crate) fn spawn(
         initial_manager: McpConnectionManager,
         initial_cancellation_token: CancellationToken,
@@ -165,25 +286,41 @@ impl McpRegistryActor {
         let configs = Arc::new(ArcSwap::from_pointee(HashMap::new()));
         let revision = Arc::new(AtomicU64::new(0));
         let client_identities = Arc::new(StdMutex::new(HashMap::new()));
+        let lifecycle = Arc::new(McpRegistryLifecycle {
+            state: AtomicU8::new(REGISTRY_RUNNING),
+            stopped: Notify::new(),
+        });
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
 
         let actor_current = Arc::clone(&current);
         let actor_configs = Arc::clone(&configs);
         let actor_revision = Arc::clone(&revision);
+        let actor_lifecycle = Arc::clone(&lifecycle);
         tokio::spawn(async move {
             let mut server_actors = HashMap::<String, McpServerActor>::new();
             let mut cancellation_token = initial_cancellation_token;
             let mut catalog_gate: Option<Arc<McpCatalogGate>> = None;
             let mut permission_state: Option<McpPermissionState> = None;
+            let mut generation_shutdown = false;
 
             while let Some(packet) = receiver.recv().await {
                 match packet.op {
                     McpRegistryCommand::Dispatch { server, job, reply } => {
+                        if actor_lifecycle.state.load(Ordering::Acquire) != REGISTRY_RUNNING {
+                            let _ = reply.send(Err(anyhow::anyhow!(
+                                "MCP registry is shutting down; dispatch rejected for `{server}`"
+                            )));
+                            continue;
+                        }
                         match server_actors.get(&server) {
                             Some(actor) => {
-                                actor.execute(job, reply).await.unwrap_or_else(|_| {
-                                    panic!("MCP server actor stopped during dispatch");
-                                });
+                                if let Err(error) = actor.execute(job, reply).await {
+                                    warn!(
+                                        server,
+                                        %error,
+                                        "MCP server actor rejected dispatch"
+                                    );
+                                }
                             }
                             None => {
                                 let _ = reply.send(Err(anyhow::anyhow!(
@@ -201,6 +338,23 @@ impl McpRegistryActor {
                         bump_revision,
                         reply,
                     } => {
+                        if actor_lifecycle.state.load(Ordering::Acquire) != REGISTRY_RUNNING {
+                            next_cancellation_token.cancel();
+                            let cleanup =
+                                retire_generation(HashMap::new(), next_cancellation_token, manager)
+                                    .await;
+                            let error = match cleanup {
+                                Ok(()) => anyhow::anyhow!(
+                                    "MCP registry is shutting down; generation install rejected"
+                                ),
+                                Err(cleanup_error) => anyhow::anyhow!(
+                                    "MCP registry is shutting down; generation install rejected; \
+                                     staged generation cleanup failed: {cleanup_error:#}"
+                                ),
+                            };
+                            let _ = reply.send(Err(error));
+                            continue;
+                        }
                         apply_permission_state_to_manager(&manager, permission_state.as_ref());
                         let (mut diff, retired_actors) = reconcile_registry(
                             &mut server_actors,
@@ -220,11 +374,12 @@ impl McpRegistryActor {
                         actor_configs.store(Arc::new(next_configs));
                         let retired_cancellation_token =
                             std::mem::replace(&mut cancellation_token, next_cancellation_token);
-                        drain_generation(
+                        let retirement = retire_generation(
                             retired_actors,
                             retired_cancellation_token,
                             retired_manager,
-                        );
+                        )
+                        .await;
                         diff.revision = if bump_revision {
                             actor_revision
                                 .fetch_add(1, Ordering::SeqCst)
@@ -233,9 +388,19 @@ impl McpRegistryActor {
                         } else {
                             actor_revision.load(Ordering::SeqCst)
                         };
-                        let _ = reply.send(diff);
+                        let _ = reply.send(
+                            retirement
+                                .context("new MCP generation is active, but retirement failed")
+                                .map(|()| diff),
+                        );
                     }
                     McpRegistryCommand::SyncPermissionState { state, reply } => {
+                        if actor_lifecycle.state.load(Ordering::Acquire) != REGISTRY_RUNNING {
+                            let _ = reply.send(Err(anyhow::anyhow!(
+                                "MCP registry is shutting down; permission update rejected"
+                            )));
+                            continue;
+                        }
                         permission_state = Some(state.clone());
                         let result = synchronize_permission_state(
                             &server_actors,
@@ -251,12 +416,56 @@ impl McpRegistryActor {
                     }
                     McpRegistryCommand::Cancel { reply } => {
                         cancellation_token.cancel();
-                        let _ = reply.send(());
+                        let _ = reply.send(Ok(()));
+                    }
+                    McpRegistryCommand::Shutdown { reply } => {
+                        actor_lifecycle
+                            .state
+                            .store(REGISTRY_SHUTTING_DOWN, Ordering::Release);
+                        if let Some(active_catalog_gate) = catalog_gate.take() {
+                            active_catalog_gate.retire();
+                        }
+                        actor_configs.store(Arc::new(HashMap::new()));
+                        let actors = std::mem::take(&mut server_actors);
+                        let manager = actor_current.load_full();
+                        let token =
+                            std::mem::replace(&mut cancellation_token, CancellationToken::new());
+                        let result = retire_generation(actors, token, manager)
+                            .await
+                            .context("failed to shut down active MCP generation");
+                        generation_shutdown = true;
+                        actor_lifecycle
+                            .state
+                            .store(REGISTRY_STOPPED, Ordering::Release);
+                        actor_lifecycle.stopped.notify_waiters();
+                        let _ = reply.send(result);
+                        break;
                     }
                 }
             }
 
-            cancellation_token.cancel();
+            if !generation_shutdown {
+                actor_lifecycle
+                    .state
+                    .store(REGISTRY_SHUTTING_DOWN, Ordering::Release);
+                if let Some(active_catalog_gate) = catalog_gate.take() {
+                    active_catalog_gate.retire();
+                }
+                actor_configs.store(Arc::new(HashMap::new()));
+                if let Err(error) = retire_generation(
+                    std::mem::take(&mut server_actors),
+                    cancellation_token,
+                    actor_current.load_full(),
+                )
+                .await
+                {
+                    warn!(%error, "failed to shut down MCP registry after mailbox closure");
+                }
+                actor_lifecycle
+                    .state
+                    .store(REGISTRY_STOPPED, Ordering::Release);
+                actor_lifecycle.stopped.notify_waiters();
+            }
         });
 
         Self {
@@ -265,6 +474,7 @@ impl McpRegistryActor {
             configs,
             revision,
             client_identities,
+            lifecycle,
         }
     }
 
@@ -358,45 +568,109 @@ impl McpRegistryActor {
         catalog_tools: Vec<(String, CatalogTool)>,
         bump_revision: bool,
     ) -> anyhow::Result<McpRegistryDiff> {
+        let manager = Arc::new(manager);
+        if let Err(error) = self.ensure_running() {
+            cancellation_token.cancel();
+            manager
+                .shutdown()
+                .await
+                .context("failed to clean up rejected MCP generation")?;
+            return Err(error);
+        }
         let (reply, response) = oneshot::channel();
-        self.mailbox
-            .send(McpRegistryCommand::Install {
-                manager: Arc::new(manager),
+        tokio::time::timeout(
+            MCP_REGISTRY_CONTROL_TIMEOUT,
+            self.mailbox.send(McpRegistryCommand::Install {
+                manager,
                 configs,
                 cancellation_token,
                 catalog_gate,
                 catalog_tools,
                 bump_revision,
                 reply,
-            })
+            }),
+        )
+        .await
+        .context("timed out admitting MCP generation install to registry mailbox")?
+        .context("MCP registry actor is unavailable")?;
+        tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, response)
             .await
-            .context("MCP registry actor is unavailable")?;
-        response
-            .await
-            .context("MCP registry actor dropped the install reply")
+            .context("timed out waiting for MCP generation retirement")?
+            .context("MCP registry actor dropped the install reply")?
     }
 
     #[cfg(test)]
     pub(crate) async fn cancellation_token(&self) -> CancellationToken {
         let (reply, response) = oneshot::channel();
-        self.mailbox
-            .send(McpRegistryCommand::CancellationToken { reply })
-            .await
-            .expect("MCP registry actor stopped in test");
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox
+                .send(McpRegistryCommand::CancellationToken { reply }),
+        )
+        .await
+        .expect("MCP registry test mailbox admission timed out")
+        .expect("MCP registry actor stopped in test");
         response
             .await
             .expect("MCP registry actor dropped the cancellation token reply")
     }
 
     pub(crate) async fn cancel(&self) -> anyhow::Result<()> {
+        self.ensure_running()?;
         let (reply, response) = oneshot::channel();
-        self.mailbox
-            .send(McpRegistryCommand::Cancel { reply })
-            .await
-            .context("MCP registry actor is unavailable")?;
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox.send(McpRegistryCommand::Cancel { reply }),
+        )
+        .await
+        .context("timed out admitting MCP cancellation to registry mailbox")?
+        .context("MCP registry actor is unavailable")?;
         response
             .await
-            .context("MCP registry actor dropped the cancellation reply")
+            .context("MCP registry actor dropped the cancellation reply")?
+    }
+
+    /// Stop accepting work, drain the active generation, and wait until every
+    /// managed transport has completed bounded shutdown.
+    pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
+        match self.lifecycle.state.compare_exchange(
+            REGISTRY_RUNNING,
+            REGISTRY_SHUTTING_DOWN,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                let (reply, response) = oneshot::channel();
+                tokio::time::timeout(
+                    MCP_MAILBOX_TIMEOUT,
+                    self.mailbox.send(McpRegistryCommand::Shutdown { reply }),
+                )
+                .await
+                .context("timed out admitting MCP registry shutdown")?
+                .context("MCP registry actor is unavailable during shutdown")?;
+                tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, response)
+                    .await
+                    .context("timed out waiting for MCP registry shutdown")?
+                    .context("MCP registry actor dropped shutdown acknowledgement")?
+            }
+            Err(REGISTRY_STOPPED) => Ok(()),
+            Err(REGISTRY_SHUTTING_DOWN) => self.wait_until_stopped().await,
+            Err(state) => anyhow::bail!("MCP registry has invalid lifecycle state {state}"),
+        }
+    }
+
+    async fn wait_until_stopped(&self) -> anyhow::Result<()> {
+        tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, async {
+            loop {
+                let stopped = self.lifecycle.stopped.notified();
+                if self.lifecycle.state.load(Ordering::Acquire) == REGISTRY_STOPPED {
+                    return;
+                }
+                stopped.await;
+            }
+        })
+        .await
+        .context("timed out waiting for concurrent MCP registry shutdown")
     }
 
     pub(crate) async fn sync_permission_state(
@@ -404,19 +678,24 @@ impl McpRegistryActor {
         approval_policy: Constrained<ApprovalPolicy>,
         sandbox_state: SandboxState,
     ) -> anyhow::Result<()> {
+        self.ensure_running()?;
         let (reply, response) = oneshot::channel();
-        self.mailbox
-            .send(McpRegistryCommand::SyncPermissionState {
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox.send(McpRegistryCommand::SyncPermissionState {
                 state: McpPermissionState {
                     approval_policy,
                     sandbox_state,
                 },
                 reply,
-            })
+            }),
+        )
+        .await
+        .context("timed out admitting MCP permission update to registry mailbox")?
+        .context("MCP registry actor is unavailable")?;
+        tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, response)
             .await
-            .context("MCP registry actor is unavailable")?;
-        response
-            .await
+            .context("timed out waiting for MCP permission update")?
             .context("MCP registry actor dropped the permission reply")?
     }
 
@@ -426,6 +705,7 @@ impl McpRegistryActor {
         F: FnOnce(Arc<McpConnectionManager>, String) -> Fut + Send + 'static,
         Fut: Future<Output = anyhow::Result<T>> + Send + 'static,
     {
+        self.ensure_running()?;
         let (reply, response) = oneshot::channel();
         let erased_job: ServerJob = Box::new(move |manager, server| {
             Box::pin(async move {
@@ -433,14 +713,17 @@ impl McpRegistryActor {
                 Ok(Box::new(value) as Box<dyn Any + Send>)
             })
         });
-        self.mailbox
-            .send(McpRegistryCommand::Dispatch {
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox.send(McpRegistryCommand::Dispatch {
                 server: server.to_string(),
                 job: erased_job,
                 reply,
-            })
-            .await
-            .context("MCP registry actor is unavailable")?;
+            }),
+        )
+        .await
+        .context("timed out admitting MCP dispatch to registry mailbox")?
+        .context("MCP registry actor is unavailable")?;
         let erased = response
             .await
             .context("MCP server actor dropped its reply")??;
@@ -528,17 +811,24 @@ enum McpRefreshCommand {
         job: RefreshFuture,
         reply: oneshot::Sender<()>,
     },
+    Shutdown {
+        reply: oneshot::Sender<()>,
+    },
 }
 
 #[derive(Clone)]
 pub(crate) struct McpRefreshActor {
     mailbox: Adapter<McpRefreshCommand>,
+    accepting: Arc<AtomicBool>,
+    task: Arc<StdMutex<Option<JoinHandle<()>>>>,
+    shutdown_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl McpRefreshActor {
     pub(crate) fn spawn() -> Self {
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
-        tokio::spawn(async move {
+        let accepting = Arc::new(AtomicBool::new(true));
+        let task = tokio::spawn(async move {
             while let Some(packet) = receiver.recv().await {
                 match packet.op {
                     McpRefreshCommand::Enqueue { job } => job.await,
@@ -546,36 +836,132 @@ impl McpRefreshActor {
                         job.await;
                         let _ = reply.send(());
                     }
+                    McpRefreshCommand::Shutdown { reply } => {
+                        let _ = reply.send(());
+                        break;
+                    }
                 }
             }
         });
-        Self { mailbox }
+        Self {
+            mailbox,
+            accepting,
+            task: Arc::new(StdMutex::new(Some(task))),
+            shutdown_lock: Arc::new(tokio::sync::Mutex::new(())),
+        }
     }
 
     pub(crate) async fn enqueue<F>(&self, job: F) -> Result<(), AdapterError>
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        self.mailbox
-            .send(McpRefreshCommand::Enqueue { job: Box::pin(job) })
-            .await
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err(AdapterError::Closed);
+        }
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox
+                .send(McpRefreshCommand::Enqueue { job: Box::pin(job) }),
+        )
+        .await
+        .map_err(|_| AdapterError::Closed)?
     }
 
     pub(crate) async fn run<F>(&self, job: F) -> anyhow::Result<()>
     where
         F: Future<Output = ()> + Send + 'static,
     {
+        if !self.accepting.load(Ordering::Acquire) {
+            anyhow::bail!("MCP refresh actor is shutting down");
+        }
         let (reply, response) = oneshot::channel();
-        self.mailbox
-            .send(McpRefreshCommand::Run {
+        tokio::time::timeout(
+            MCP_MAILBOX_TIMEOUT,
+            self.mailbox.send(McpRefreshCommand::Run {
                 job: Box::pin(job),
                 reply,
-            })
+            }),
+        )
+        .await
+        .context("timed out admitting MCP refresh job")?
+        .context("MCP refresh actor is unavailable")?;
+        tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, response)
             .await
-            .context("MCP refresh actor is unavailable")?;
-        response
-            .await
+            .context("timed out waiting for MCP refresh completion")?
             .context("MCP refresh actor dropped completion acknowledgement")
+    }
+
+    pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
+        let _shutdown_guard = self.shutdown_lock.lock().await;
+        if self
+            .task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_none()
+        {
+            return Ok(());
+        }
+        self.accepting.store(false, Ordering::Release);
+
+        let (reply, response) = oneshot::channel();
+        let graceful = tokio::time::timeout(MCP_REFRESH_DRAIN_TIMEOUT, async {
+            tokio::time::timeout(
+                MCP_MAILBOX_TIMEOUT,
+                self.mailbox.send(McpRefreshCommand::Shutdown { reply }),
+            )
+            .await
+            .context("timed out admitting MCP refresh shutdown")?
+            .context("MCP refresh actor is unavailable during shutdown")?;
+            response
+                .await
+                .context("MCP refresh actor dropped shutdown acknowledgement")
+        })
+        .await;
+
+        let task = self
+            .task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(mut task) = task else {
+            return Ok(());
+        };
+
+        match graceful {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                warn!(%error, "MCP refresh actor could not drain; aborting it");
+                task.abort();
+                let _ = task.await;
+                return Ok(());
+            }
+            Err(error) => {
+                warn!(
+                    timeout = ?MCP_REFRESH_DRAIN_TIMEOUT,
+                    %error,
+                    "MCP refresh actor did not drain; aborting it"
+                );
+                task.abort();
+                let _ = task.await;
+                return Ok(());
+            }
+        }
+
+        match tokio::time::timeout(MCP_SERVER_TASK_JOIN_TIMEOUT, &mut task).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(anyhow::anyhow!(
+                "MCP refresh actor failed during shutdown: {error}"
+            )),
+            Err(_) => {
+                warn!(
+                    timeout = ?MCP_SERVER_TASK_JOIN_TIMEOUT,
+                    "MCP refresh actor acknowledged shutdown but did not exit; aborting it"
+                );
+                task.abort();
+                let _ = task.await;
+                Ok(())
+            }
+        }
     }
 }
 
@@ -591,12 +977,13 @@ fn apply_permission_state_to_manager(
 
 async fn queue_sandbox_state(actors: &HashMap<String, McpServerActor>, state: &McpPermissionState) {
     for actor in actors.values() {
-        actor
-            .apply_sandbox_state(state.sandbox_state.clone())
-            .await
-            .unwrap_or_else(|_| {
-                panic!("new MCP server actor stopped during generation cutover");
-            });
+        if let Err(error) = actor.apply_sandbox_state(state.sandbox_state.clone()).await {
+            warn!(
+                server = %actor.name,
+                %error,
+                "new MCP server actor rejected sandbox state during generation cutover"
+            );
+        }
     }
 }
 
@@ -664,23 +1051,30 @@ fn enabled_configs(
         .collect()
 }
 
-fn drain_generation(
+async fn retire_generation(
     actors: HashMap<String, McpServerActor>,
     cancellation_token: CancellationToken,
     manager: Arc<McpConnectionManager>,
-) {
-    tokio::spawn(async move {
-        let drains = actors.into_values().map(|actor| async move {
-            actor.shutdown().await.unwrap_or_else(|_| {
-                panic!("retired MCP server actor stopped before drain");
-            });
-        });
-        join_all(drains).await;
-        cancellation_token.cancel();
-        if let Err(error) = manager.shutdown().await {
-            warn!(error = %error, "failed to shut down retired MCP generation");
-        }
-    });
+) -> anyhow::Result<()> {
+    cancellation_token.cancel();
+    let drains = actors
+        .into_values()
+        .map(|actor| async move { actor.shutdown().await });
+    let mut errors = join_all(drains)
+        .await
+        .into_iter()
+        .filter_map(Result::err)
+        .map(|error| error.to_string())
+        .collect::<Vec<_>>();
+    if let Err(error) = manager.shutdown().await {
+        errors.push(format!("connection manager shutdown failed: {error:#}"));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("MCP generation retirement failed: {}", errors.join("; "))
+    }
 }
 
 fn collect_successful_servers<T>(
@@ -750,6 +1144,22 @@ mod tests {
 
         assert_eq!(first["skynet"], second["skynet"]);
         assert_ne!(second["skynet"], second["other"]);
+    }
+
+    #[tokio::test]
+    async fn registry_shutdown_is_idempotent_and_stops_admissions() {
+        let cancellation_token = CancellationToken::new();
+        let actor = McpRegistryActor::spawn(manager(), cancellation_token.clone());
+
+        actor.shutdown().await.expect("first registry shutdown");
+        actor.shutdown().await.expect("second registry shutdown");
+
+        assert!(cancellation_token.is_cancelled());
+        let error = actor
+            .execute("missing", |_, _| async { Ok(()) })
+            .await
+            .expect_err("shutdown registry must reject dispatch");
+        assert!(error.to_string().contains("stopped"));
     }
 
     #[tokio::test]
@@ -842,6 +1252,7 @@ mod tests {
         release_tx.send(()).expect("release first refresh");
         assert_eq!(order_rx.recv().await, Some(1));
         assert_eq!(order_rx.recv().await, Some(2));
+        actor.shutdown().await.expect("shutdown refresh actor");
     }
 
     #[tokio::test]
@@ -904,7 +1315,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reconcile_installs_new_generation_before_retiring_old_generation() {
+    async fn reconcile_installs_new_generation_and_awaits_bounded_retirement() {
         let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
         let enabled: McpServerConfig = serde_json::from_value(json!({
             "command": "enabled-server",
@@ -941,7 +1352,7 @@ mod tests {
         let old_manager_weak = Arc::downgrade(&old_manager);
 
         timeout(
-            Duration::from_millis(100),
+            Duration::from_secs(3),
             actor.reconcile(
                 manager(),
                 HashMap::from([("enabled".to_string(), enabled)]),
@@ -951,7 +1362,7 @@ mod tests {
             ),
         )
         .await
-        .expect("reconcile should not wait for the old server call")
+        .expect("reconcile must bound old generation retirement")
         .expect("reconcile");
 
         let new_manager = actor.current_manager();
@@ -968,20 +1379,24 @@ mod tests {
         .expect("new generation call");
         assert!(used_new_generation);
         assert!(
-            !old_cancellation_token.is_cancelled(),
-            "old generation must stay alive while its call is running"
+            old_cancellation_token.is_cancelled(),
+            "retirement must cancel the old generation"
+        );
+        assert!(
+            execution.is_finished(),
+            "reconcile must not reply before the old server actor is retired"
         );
         drop(running_manager);
         drop(old_manager);
 
-        release_tx.send(()).expect("release old server call");
+        assert!(
+            release_tx.send(()).is_err(),
+            "bounded retirement must abort an old call that refuses to drain"
+        );
         execution
             .await
             .expect("old server call task")
-            .expect("old server call");
-        timeout(Duration::from_secs(1), old_cancellation_token.cancelled())
-            .await
-            .expect("old generation should be cancelled after it drains");
+            .expect_err("old server call must be interrupted during bounded retirement");
         timeout(Duration::from_secs(1), async {
             while old_manager_weak.upgrade().is_some() {
                 tokio::task::yield_now().await;

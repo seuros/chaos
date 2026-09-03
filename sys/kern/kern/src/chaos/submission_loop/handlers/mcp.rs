@@ -14,6 +14,7 @@ use chaos_ipc::protocol::PermissionUpdateScope;
 use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::TurnAbortReason;
 use tracing::info;
+use tracing::warn;
 
 use crate::chaos::Session;
 use crate::chaos::SessionSettingsUpdate;
@@ -405,6 +406,18 @@ pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
         .unified_exec_manager
         .terminate_all_processes()
         .await;
+    if let Err(error) = sess.services.mcp_refresh.shutdown().await {
+        warn!(
+            %error,
+            "failed to stop MCP refresh actor during session shutdown"
+        );
+    }
+    if let Err(error) = sess.services.mcp_registry.shutdown().await {
+        warn!(
+            %error,
+            "failed to shut down MCP registry during session shutdown"
+        );
+    }
     info!("Shutting down Chaos instance");
     let history = sess.clone_history().await;
     let turn_count = history

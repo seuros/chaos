@@ -10,6 +10,14 @@ pub trait MessageTransport: Send + Sync + 'static {
     fn send<'a>(&'a self, message: JsonRpcMessage) -> TransportFuture<'a, ()>;
     fn recv<'a>(&'a self) -> TransportFuture<'a, JsonRpcMessage>;
     fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()>;
+
+    /// Stop the transport without depending on the normal request path.
+    ///
+    /// Implementations with external processes should override this to kill
+    /// and reap them even when a normal write or graceful shutdown is wedged.
+    fn force_shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
+        self.shutdown()
+    }
 }
 
 #[cfg(feature = "stdio")]

@@ -610,6 +610,13 @@ impl HttpTransportInner {
         Ok(())
     }
 
+    async fn force_shutdown_inner(&self) -> Result<(), GuestError> {
+        self.closed.store(true, Ordering::SeqCst);
+        self.shutdown_notify.notify_waiters();
+        self.stop_sse_task().await;
+        Ok(())
+    }
+
     fn apply_default_headers(
         &self,
         mut builder: rama::http::request::Builder,
@@ -679,6 +686,11 @@ impl MessageTransport for HttpTransport {
     fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
         let inner = Arc::clone(&self.inner);
         Box::pin(async move { inner.shutdown_inner().await })
+    }
+
+    fn force_shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
+        let inner = Arc::clone(&self.inner);
+        Box::pin(async move { inner.force_shutdown_inner().await })
     }
 }
 

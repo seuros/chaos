@@ -1,6 +1,8 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
+use std::fs::OpenOptions;
 use std::io;
+use std::io::Write;
 use std::sync::Arc;
 
 use chaos_ipc::product::CHAOS_VERSION;
@@ -149,6 +151,15 @@ fn tool_router() -> McpToolRouter<TestStdioServer> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
+    if let Some(pid_file) = std::env::var_os("MCP_TEST_PID_FILE") {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(pid_file)?;
+        writeln!(file, "{}", std::process::id())?;
+        file.flush()?;
+    }
+
     let mcp_server = Server::builder("test-stdio-server", CHAOS_VERSION)
         .with_tools(true)
         .build();

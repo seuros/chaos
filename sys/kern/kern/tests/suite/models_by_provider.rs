@@ -5,6 +5,8 @@ use chaos_ipc::openai_models::ModelVisibility;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_kern::ChaosAuth;
 use chaos_kern::ModelProviderInfo;
+use chaos_kern::ProviderAuthCapabilities;
+use chaos_kern::ProviderAuthMethod;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_kern::test_support::test_remote_model;
 use chaos_model_catalog::ModelsCache;
@@ -65,7 +67,9 @@ async fn lists_cached_models_for_every_usable_provider() -> Result<()> {
     locked_out.experimental_bearer_token = None;
     locked_out.env_key = None;
     locked_out.requires_openai_auth = false;
-    locked_out.auth = None;
+    locked_out.auth = Some(ProviderAuthCapabilities {
+        methods: vec![ProviderAuthMethod::ApiKey],
+    });
 
     // Only the "cached" third party has ever been listed.
     let fetched_at = Timestamp::from_second(1_600_000_000).expect("valid timestamp");

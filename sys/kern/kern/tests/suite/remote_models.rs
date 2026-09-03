@@ -526,6 +526,7 @@ async fn remote_models_do_not_append_removed_builtin_presets() -> Result<()> {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers()["openai"].clone()
     };
+    let expected_model_family = provider.model_family.clone();
     let manager = models_manager_with_provider(
         chaos_home.path().to_path_buf(),
         auth_manager_from_auth(auth),
@@ -539,6 +540,7 @@ async fn remote_models_do_not_append_removed_builtin_presets() -> Result<()> {
         .expect("remote model should be listed");
     let mut expected_remote: ModelPreset = remote_model.into();
     expected_remote.is_default = remote.is_default;
+    expected_remote.model_family = expected_model_family;
     assert_eq!(*remote, expected_remote);
     let default_model = available
         .iter()

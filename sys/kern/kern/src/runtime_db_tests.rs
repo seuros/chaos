@@ -49,3 +49,33 @@ async fn open_runtime_db_with_config_uses_storage_url() {
         "explicit storage_url should not fall back to chaos_home"
     );
 }
+
+#[tokio::test]
+async fn failed_mount_does_not_hide_the_next_mount_error_behind_runtime_breaker() {
+    let chaos_home = tempfile::tempdir().expect("create chaos home");
+    let missing_parent = chaos_home.path().join("missing");
+    let storage_url = format!(
+        "sqlite://{}",
+        missing_parent.join("runtime.sqlite").display()
+    );
+
+    let first = mount_vfs_for(Some(&storage_url), chaos_home.path())
+        .await
+        .expect_err("opening SQLite below a missing parent should fail");
+    assert!(
+        first.to_string().contains("failed to open runtime db"),
+        "first mount should expose the storage error: {first}"
+    );
+
+    let second = mount_vfs_for(Some(&storage_url), chaos_home.path())
+        .await
+        .expect_err("a repeated mount should still report the storage failure");
+    assert!(
+        second.to_string().contains("failed to open runtime db"),
+        "repeated mount should not be replaced by a circuit-open error: {second}"
+    );
+    assert!(
+        !second.to_string().contains("circuit"),
+        "mount errors must remain actionable: {second}"
+    );
+}

@@ -209,13 +209,7 @@ pub async fn mount_vfs_for(
         return Ok(vfs);
     }
 
-    let vfs = match with_runtime_storage_breaker(|| ChaosVfs::from_config(config.clone())).await {
-        Ok(vfs) => vfs,
-        Err(BreakerError::Open) => {
-            anyhow::bail!("runtime storage circuit is open; database probe is backing off")
-        }
-        Err(BreakerError::Operation(err)) => return Err(err.into()),
-    };
+    let vfs = ChaosVfs::from_config(config.clone()).await?;
     Ok(chaos_vfs::mount(config, vfs))
 }
 

@@ -51,16 +51,9 @@ where
 
 /// Initialize the runtime DB for thread persistence. To only be used
 /// inside `core`. The initialization should not be done anywhere else.
-pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
-    let vfs = match mount_vfs(config).await {
-        Ok(vfs) => vfs,
-        Err(err) => {
-            warn!(
-                "failed to initialize runtime storage for {}: {err}",
-                config.sqlite_home.display()
-            );
-            return None;
-        }
+pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHandle>> {
+    let Some(vfs) = mount_vfs_for_startup(config).await? else {
+        return Ok(None);
     };
 
     let runtime = runtime_handle_from_vfs(
@@ -83,7 +76,7 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
         chaos_libration::store::UsageStore::from_provider(vfs),
     );
 
-    Some(runtime)
+    Ok(Some(runtime))
 }
 
 async fn scheduler_executor(provider: &ChaosVfs, sqlite_home: &Path) -> chaos_cron::JobExecutor {
@@ -174,19 +167,23 @@ pub async fn mount_vfs(config: &Config) -> anyhow::Result<&'static ChaosVfs> {
     mount_root_for(config.storage_url.as_deref(), config.sqlite_home.as_path()).await
 }
 
-/// Attempt to mount runtime storage without making application boot depend on it.
+/// Mount runtime storage for an application entry point.
 ///
-/// Frontends use this during startup; session-local persistence will remain
-/// unavailable or degraded until a later breaker probe succeeds.
-pub async fn mount_vfs_best_effort(config: &Config) -> Option<&'static ChaosVfs> {
+/// SQLite preserves the historical degraded-startup behavior. PostgreSQL is an
+/// explicit operator choice, so a failed PostgreSQL mount is fatal and must
+/// never fall through to the SQLite journald sidecar.
+pub async fn mount_vfs_for_startup(config: &Config) -> anyhow::Result<Option<&'static ChaosVfs>> {
+    let mount_config =
+        chaos_vfs::resolve_mount_config(config.storage_url.as_deref(), &config.sqlite_home)?;
     match mount_vfs(config).await {
-        Ok(vfs) => Some(vfs),
+        Ok(vfs) => Ok(Some(vfs)),
+        Err(err) if mount_config.kind() == chaos_vfs::VfsKind::Postgres => Err(err),
         Err(err) => {
             warn!(
                 error = %err,
                 "runtime storage is unavailable; continuing without database-backed services"
             );
-            None
+            Ok(None)
         }
     }
 }

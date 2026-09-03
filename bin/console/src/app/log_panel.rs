@@ -1,7 +1,6 @@
 use super::{
-    App, Instant, LOG_PANEL_BACKFILL_LIMIT, LogQuery, Overlay, ProcessId, StateRuntime, tui,
+    App, Instant, LOG_PANEL_BACKFILL_LIMIT, LogQuery, Overlay, ProcessId, RuntimeDbHandle, tui,
 };
-use std::sync::Arc;
 
 impl App {
     pub(super) async fn toggle_log_panel(&mut self, tui: &mut tui::Tui) {
@@ -54,33 +53,20 @@ impl App {
         }
     }
 
-    pub(super) async fn ensure_log_state_db(&mut self) -> Option<Arc<StateRuntime>> {
+    pub(super) async fn ensure_log_state_db(&mut self) -> Option<RuntimeDbHandle> {
         if let Some(state_db) = self.log_state_db.clone() {
             return Some(state_db);
         }
 
-        let sqlite_home = self.config.sqlite_home.clone();
-        let model_provider_id = self.config.model_provider_id.clone();
-        match StateRuntime::init(sqlite_home.clone(), model_provider_id).await {
-            Ok(state_db) => {
-                self.log_state_db_init_error = None;
-                self.log_state_db = Some(state_db.clone());
-                Some(state_db)
-            }
-            Err(err) => {
-                let message = format!(
-                    "Failed to initialize logs DB at {}: {err}",
-                    sqlite_home.display()
-                );
-                tracing::warn!(
-                    error = %err,
-                    sqlite_home = %sqlite_home.display(),
-                    "failed to lazily initialize log/state runtime for console"
-                );
-                self.log_state_db_init_error = Some(message.clone());
-                self.log_panel.set_error(message);
-                None
-            }
+        if let Some(state_db) = chaos_kern::runtime_db::get_runtime_db(&self.config) {
+            self.log_state_db_init_error = None;
+            self.log_state_db = Some(state_db.clone());
+            return Some(state_db);
         }
+
+        let message = "Mounted runtime storage is unavailable for logs".to_string();
+        self.log_state_db_init_error = Some(message.clone());
+        self.log_panel.set_error(message);
+        None
     }
 }

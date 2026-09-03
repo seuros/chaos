@@ -123,7 +123,7 @@ pub async fn run_main(
         .await?;
 
     // 7. Mount the storage backend for the life of the process.
-    chaos_kern::runtime_db::mount_vfs_best_effort(&config).await;
+    chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
 
     // 8. Enforce login restrictions.
     chaos_kern::auth::enforce_login_restrictions(&config)?;

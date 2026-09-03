@@ -1,10 +1,12 @@
-//! Tracing log export into the ChaOS runtime SQLite database.
+//! Tracing log export into the mounted ChaOS runtime database.
 //!
 //! This module provides a `tracing_subscriber::Layer` that captures events and
 //! inserts them into the runtime `logs` table. The writer runs in a background
 //! task and batches inserts to keep logging overhead low.
 
 use chaos_proc::LogEntry;
+use chaos_proc::RuntimeDbHandle;
+#[cfg(test)]
 use chaos_proc::StateRuntime;
 use jiff::ToSpan;
 use std::sync::OnceLock;
@@ -33,10 +35,11 @@ pub struct LogDbLayer {
     process_uuid: String,
 }
 
-pub fn start_runtime_db_layer(state_db: std::sync::Arc<StateRuntime>) -> LogDbLayer {
+pub fn start_runtime_db_layer(state_db: impl Into<RuntimeDbHandle>) -> LogDbLayer {
+    let state_db = state_db.into();
     let process_uuid = current_process_log_uuid().to_string();
     let (sender, receiver) = mpsc::channel(LOG_QUEUE_CAPACITY);
-    tokio::spawn(run_inserter(std::sync::Arc::clone(&state_db), receiver));
+    tokio::spawn(run_inserter(state_db.clone(), receiver));
     tokio::spawn(run_retention_cleanup(state_db));
 
     LogDbLayer {
@@ -220,10 +223,7 @@ fn current_process_log_uuid() -> &'static str {
     })
 }
 
-async fn run_inserter(
-    state_db: std::sync::Arc<StateRuntime>,
-    mut receiver: mpsc::Receiver<LogDbCommand>,
-) {
+async fn run_inserter(state_db: RuntimeDbHandle, mut receiver: mpsc::Receiver<LogDbCommand>) {
     let mut buffer = Vec::with_capacity(LOG_BATCH_SIZE);
     let mut ticker = tokio::time::interval(LOG_FLUSH_INTERVAL);
     loop {
@@ -253,7 +253,7 @@ async fn run_inserter(
     }
 }
 
-async fn flush(state_db: &std::sync::Arc<StateRuntime>, buffer: &mut Vec<LogEntry>) {
+async fn flush(state_db: &RuntimeDbHandle, buffer: &mut Vec<LogEntry>) {
     if buffer.is_empty() {
         return;
     }
@@ -261,7 +261,7 @@ async fn flush(state_db: &std::sync::Arc<StateRuntime>, buffer: &mut Vec<LogEntr
     let _ = state_db.insert_logs(entries.as_slice()).await;
 }
 
-async fn run_retention_cleanup(state_db: std::sync::Arc<StateRuntime>) {
+async fn run_retention_cleanup(state_db: RuntimeDbHandle) {
     let Ok(cutoff) =
         jiff::Timestamp::now().checked_sub(LOG_RETENTION_DAYS.saturating_mul(24).hours())
     else {

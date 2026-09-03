@@ -4,7 +4,6 @@ use crate::rollout::list::ProcessSortKey;
 use crate::runtime_db;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::protocol::SessionSource;
-use chaos_journald::JournalRpcClient;
 use std::io;
 use std::path::Path;
 use tokio::fs::OpenOptions;
@@ -42,7 +41,18 @@ pub async fn maybe_migrate_personality(
         .or_else(|| config_toml.model_provider.clone())
         .unwrap_or_else(|| "openai".to_string());
 
-    if !has_recorded_sessions(chaos_home, model_provider_id.as_str()).await? {
+    let sqlite_home = config_toml
+        .sqlite_home
+        .as_ref()
+        .map(|path| path.to_path_buf())
+        .unwrap_or_else(|| chaos_home.to_path_buf());
+    if !has_recorded_sessions(
+        config_toml.storage_url.as_deref(),
+        sqlite_home.as_path(),
+        model_provider_id.as_str(),
+    )
+    .await?
+    {
         create_marker(&marker_path).await?;
         return Ok(PersonalityMigrationStatus::SkippedNoSessions);
     }
@@ -59,47 +69,39 @@ pub async fn maybe_migrate_personality(
     Ok(PersonalityMigrationStatus::Applied)
 }
 
-async fn has_recorded_sessions(chaos_home: &Path, default_provider: &str) -> io::Result<bool> {
+async fn has_recorded_sessions(
+    storage_url: Option<&str>,
+    sqlite_home: &Path,
+    default_provider: &str,
+) -> io::Result<bool> {
     let allowed_sources: &[SessionSource] = &[];
+    let runtime_db_ctx = runtime_db::open_or_create_runtime_db_with_config(
+        storage_url,
+        sqlite_home,
+        default_provider,
+    )
+    .await
+    .map_err(|err| io::Error::other(format!("failed to open runtime storage: {err}")))?;
 
-    if let Some(runtime_db_ctx) = runtime_db::open_if_present(chaos_home, default_provider)
-        && let Some(ids) = runtime_db::list_process_ids_db(
+    for archived_only in [false, true] {
+        if let Some(ids) = runtime_db::list_process_ids_db(
             Some(&runtime_db_ctx),
-            chaos_home,
+            sqlite_home,
             /*page_size*/ 1,
             /*cursor*/ None,
             ProcessSortKey::CreatedAt,
             allowed_sources,
             /*model_providers*/ None,
-            /*archived_only*/ false,
+            archived_only,
             "personality_migration",
         )
         .await
-        && !ids.is_empty()
-    {
-        return Ok(true);
-    }
-    let (client, _paths) = match JournalRpcClient::default_or_bootstrap(None).await {
-        Ok(client) => client,
-        Err(err) => {
-            return Err(io::Error::other(format!(
-                "failed to connect to journald while checking recorded sessions: {err}"
-            )));
+            && !ids.is_empty()
+        {
+            return Ok(true);
         }
-    };
-    let _ = (default_provider, allowed_sources, ProcessSortKey::CreatedAt);
-    let sessions = client
-        .list_processes(Some(false))
-        .await
-        .map_err(io::Error::other)?;
-    if !sessions.is_empty() {
-        return Ok(true);
     }
-    let archived_sessions = client
-        .list_processes(Some(true))
-        .await
-        .map_err(io::Error::other)?;
-    Ok(!archived_sessions.is_empty())
+    Ok(false)
 }
 
 async fn create_marker(marker_path: &Path) -> io::Result<()> {

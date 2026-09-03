@@ -33,7 +33,7 @@ use chaos_kern::path_utils;
 use chaos_kern::runtime_db::get_runtime_db;
 use chaos_kern::terminal::Multiplexer;
 use chaos_kern::terminal::TerminalName;
-use chaos_proc::StateRuntime;
+use chaos_proc::RuntimeDbHandle;
 use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_snitch::BoxedLogLayer;
@@ -45,7 +45,6 @@ use cwd_prompt::CwdPromptOutcome;
 use cwd_prompt::CwdSelection;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tracing::error;
 use tracing::warn;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -252,7 +251,9 @@ pub async fn run_main(
 
     let config = load_config_or_exit(cli_kv_overrides.clone(), overrides.clone()).await;
 
-    chaos_kern::runtime_db::mount_vfs_best_effort(&config).await;
+    chaos_kern::runtime_db::mount_vfs_for_startup(&config)
+        .await
+        .map_err(std::io::Error::other)?;
 
     #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack).await {
@@ -325,22 +326,7 @@ pub async fn run_main(
 
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
 
-    let log_state_db = match StateRuntime::init(
-        config.sqlite_home.clone(),
-        config.model_provider_id.clone(),
-    )
-    .await
-    {
-        Ok(db) => Some(db),
-        Err(err) => {
-            tracing::warn!(
-                error = %err,
-                sqlite_home = %config.sqlite_home.display(),
-                "failed to initialize log/state runtime for console"
-            );
-            None
-        }
-    };
+    let log_state_db = get_runtime_db(&config);
     let env_filter = || {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| {
             EnvFilter::new("chaos_kern=info,chaos_console=info,codex_mcp_guest=info")
@@ -400,7 +386,7 @@ async fn run_ratatui_app(
     initial_config: Config,
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
-    log_state_db: Option<Arc<StateRuntime>>,
+    log_state_db: Option<RuntimeDbHandle>,
 ) -> color_eyre::Result<AppExitInfo> {
     color_eyre::install()?;
 

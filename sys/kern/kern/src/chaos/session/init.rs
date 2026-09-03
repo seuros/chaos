@@ -228,7 +228,7 @@ impl Session {
             if config.ephemeral {
                 Ok::<_, anyhow::Error>((None, None))
             } else {
-                let runtime_db_ctx = runtime_db::init(&config).await;
+                let runtime_db_ctx = runtime_db::init(&config).await?;
                 let rollout_recorder = RolloutRecorder::new(
                     &config,
                     rollout_params,

@@ -1201,9 +1201,13 @@ fn retry_delay(attempt: usize) -> Duration {
 }
 
 async fn journal_client_for_mounted_backend() -> Result<JournalClient, String> {
-    if let Ok(vfs) = chaos_vfs::pool()
-        && let Some(client) = direct_journal_client_for_vfs(vfs)
-    {
+    let vfs = chaos_vfs::pool().map_err(|err| {
+        format!(
+            "journal backend is unavailable because runtime storage was not mounted: {err}; \
+             refusing to bootstrap SQLite without an explicit SQLite mount"
+        )
+    })?;
+    if let Some(client) = direct_journal_client_for_vfs(vfs) {
         return Ok(client);
     }
 

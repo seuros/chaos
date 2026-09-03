@@ -583,6 +583,12 @@ impl RuntimeDbHandle {
     }
 }
 
+impl From<Arc<StateRuntime>> for RuntimeDbHandle {
+    fn from(runtime: Arc<StateRuntime>) -> Self {
+        Self::Sqlite(runtime)
+    }
+}
+
 impl AsRef<RuntimeDbHandle> for RuntimeDbHandle {
     fn as_ref(&self) -> &RuntimeDbHandle {
         self

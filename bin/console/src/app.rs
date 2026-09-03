@@ -59,7 +59,7 @@ use libui::transcript_reflow::TranscriptReflowState;
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_proc::LogQuery;
-use chaos_proc::StateRuntime;
+use chaos_proc::RuntimeDbHandle;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_snitch::SessionTelemetry;
 use chaos_snitch::TelemetryAuthMode;
@@ -391,7 +391,7 @@ pub(crate) struct App {
     pub(crate) tool_list_pane: Rc<RefCell<ToolListPane>>,
     tool_list_close: Rc<Cell<bool>>,
     pub(crate) file_search: FileSearchManager,
-    log_state_db: Option<Arc<StateRuntime>>,
+    log_state_db: Option<RuntimeDbHandle>,
     log_state_db_init_error: Option<String>,
     log_panel: LogPanelState,
 

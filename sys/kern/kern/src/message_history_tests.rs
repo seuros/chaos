@@ -18,6 +18,7 @@ async fn test_config_and_runtime_db() -> (
         .expect("load config");
     let runtime_db = runtime_db::init(&config)
         .await
+        .expect("initialize runtime storage")
         .expect("initialize runtime db");
     (chaos_home, config, runtime_db)
 }

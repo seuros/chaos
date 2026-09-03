@@ -60,6 +60,9 @@ storage_url = "postgres://chaos:PASSWORD@db.example.com:5432/chaos"
 The schema is tested against PostgreSQL 18 and uses nothing newer than
 PostgreSQL 10. Migrations run on first connect, so an empty database is all
 FreeChaOS needs — but it will not create the database or the role for you.
+When PostgreSQL is selected, connection or migration failure stops startup.
+FreeChaOS never falls back to SQLite for an explicitly selected PostgreSQL
+backend.
 
 ### Provisioning
 
@@ -133,13 +136,13 @@ fresh PostgreSQL database gives you an empty history; the old
 The credential sits in plain text in `config.toml`. Keep the file at mode
 `0600`; FreeChaOS does not read `.pgpass` or a keyring.
 
-`chaos_journald` writes its own SQLite file and does not follow the mount, so
-that file keeps growing under a PostgreSQL backend.
+`chaos_journald` is only started for a mounted SQLite backend. PostgreSQL uses
+the mounted pool directly and does not create or write `chaos.sqlite`.
 
 ## FILES
 
 - `~/.chaos/config.toml` - where `storage_url` goes
-- `~/.chaos/chaos.sqlite` - the default backend, and journald's file regardless of mount
+- `~/.chaos/chaos.sqlite` - the default SQLite backend
 
 ## SEE ALSO
 

@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::Prompt;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::chaos::built_tools;
+use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
@@ -15,6 +17,7 @@ use crate::error::Result as ChaosResult;
 use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
 use crate::protocol::TurnStartedEvent;
+use crate::util::backoff;
 use chaos_context::allotment::TruncationPolicy;
 use chaos_context::allotment::truncate_text;
 use chaos_context::distill::should_keep_compacted_history_item;
@@ -172,6 +175,47 @@ async fn request_remote_compaction_v2(
     prompt: &Prompt,
 ) -> ChaosResult<ResponseItem> {
     let mut client_session = sess.services.model_client.new_session();
+    let max_retries = turn_context.provider.stream_max_retries();
+    let mut retries = 0;
+
+    loop {
+        match request_remote_compaction_v2_attempt(sess, turn_context, prompt, &mut client_session)
+            .await
+        {
+            Ok(item) => return Ok(item),
+            Err(err) => {
+                let next_retry = retries + 1;
+                let Some(delay) = remote_compaction_retry_delay(&err, next_retry, max_retries)
+                else {
+                    return Err(err);
+                };
+                retries = next_retry;
+                warn!(
+                    turn_id = %turn_context.sub_id,
+                    retries,
+                    max_retries,
+                    ?delay,
+                    compact_error = %err,
+                    "remote compaction request failed; retrying"
+                );
+                sess.notify_stream_error(
+                    turn_context,
+                    format!("Reconnecting remote compaction... {retries}/{max_retries}"),
+                    err,
+                )
+                .await;
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
+}
+
+async fn request_remote_compaction_v2_attempt(
+    sess: &Session,
+    turn_context: &TurnContext,
+    prompt: &Prompt,
+    client_session: &mut ModelClientSession,
+) -> ChaosResult<ResponseItem> {
     let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
     sess.record_provider_request_started(turn_context).await;
     let stream = client_session
@@ -197,6 +241,23 @@ async fn request_remote_compaction_v2(
         .await;
 
     Ok(output.item)
+}
+
+fn remote_compaction_retry_delay(
+    err: &ChaosErr,
+    next_retry: u64,
+    max_retries: u64,
+) -> Option<Duration> {
+    if next_retry > max_retries || !err.is_retryable() {
+        return None;
+    }
+
+    Some(match err {
+        ChaosErr::Stream(_, requested_delay) => {
+            requested_delay.unwrap_or_else(|| backoff(next_retry))
+        }
+        _ => backoff(next_retry),
+    })
 }
 
 async fn collect_compaction_output<S>(mut stream: S) -> ChaosResult<RemoteCompactionOutput>
@@ -466,6 +527,7 @@ fn trim_function_call_history_to_fit_context_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ConnectionFailedError;
     use tokio_stream::iter;
 
     fn completed() -> ResponseEvent {
@@ -532,6 +594,19 @@ mod tests {
         .expect_err("incomplete compaction stream must fail");
 
         assert!(error.to_string().contains("before response.completed"));
+    }
+
+    #[test]
+    fn remote_compaction_retries_transient_connection_failures_within_budget() {
+        let error = ChaosErr::ConnectionFailed(ConnectionFailedError {
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "operation timed out",
+            )),
+        });
+
+        assert!(remote_compaction_retry_delay(&error, 1, 2).is_some());
+        assert_eq!(remote_compaction_retry_delay(&error, 3, 2), None);
     }
 
     #[test]

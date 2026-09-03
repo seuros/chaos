@@ -10,6 +10,7 @@ use std::sync::Arc;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::product::CHAOS_VERSION;
+use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::SessionSource;
 use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
@@ -58,6 +59,8 @@ pub use crate::patch_approval::PatchApprovalResponse;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const OTEL_SERVICE_NAME: &str = "chaos_mcpd";
+const CHAOS_WEBSITE_URL: &str = "https://github.com/seuros/chaos";
+const MCP_SERVER_DESCRIPTION: &str = "Command center for the Agents of ChaOS";
 
 pub async fn run_main(
     arg0_paths: Arg0DispatchPaths,
@@ -144,6 +147,9 @@ pub async fn run_main(
 
     // Build the mcp-host Server.
     let mcp_server = Server::builder("chaos-mcp-server", CHAOS_VERSION)
+        .with_title(OS_NAME)
+        .with_description(MCP_SERVER_DESCRIPTION)
+        .with_website_url(CHAOS_WEBSITE_URL)
         .with_tools(true)
         .with_resources(true, false)
         .with_resource_templates()

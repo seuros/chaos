@@ -160,7 +160,10 @@ impl McpProcess {
                 "instructions": "Chaos — provider-agnostic coding agent",
                 "serverInfo": {
                     "name": "chaos-mcp-server",
-                    "version": env!("CARGO_PKG_VERSION")
+                    "title": "FreeChaOS",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "description": "Command center for the Agents of ChaOS",
+                    "websiteUrl": "https://github.com/seuros/chaos"
                 },
                 "protocolVersion": "2025-11-25"
             })

@@ -42,12 +42,11 @@ main() {
         tag="$CHAOS_VERSION"
         say "pinned release: $tag"
     else
-        # /releases/latest skips prereleases; the list endpoint returns the
-        # newest first (prereleases included, drafts omitted for anonymous
-        # requests), so take its first tag_name.
-        tag="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=1" \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4)"
-        [ -n "$tag" ] || err "no published release found for ${REPO} (drafts are not installable; publish one or set CHAOS_VERSION)"
+        release_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+            "https://github.com/${REPO}/releases/latest")"
+        tag="${release_url##*/}"
+        [ -n "$tag" ] && [ "$tag" != "latest" ] \
+            || err "no stable release found for ${REPO} (publish one or set CHAOS_VERSION)"
         say "latest release: $tag"
     fi
 

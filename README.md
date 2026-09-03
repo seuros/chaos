@@ -163,8 +163,10 @@ belongs on the private volume.
 curl -fsSL https://raw.githubusercontent.com/seuros/chaos/master/install.sh | sh
 ```
 
-By default this downloads the latest prebuilt release for your OS/CPU into
-`~/.local/bin`. Override the destination with `CHAOS_INSTALL_DIR=/path/to/bin`.
+By default this downloads GitHub's latest stable prebuilt release for your
+OS/CPU into `~/.local/bin`. Override the destination with
+`CHAOS_INSTALL_DIR=/path/to/bin`, or pin a specific release tag with
+`CHAOS_VERSION=<tag>`.
 
 To build from source instead:
 

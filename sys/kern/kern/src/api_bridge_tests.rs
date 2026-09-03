@@ -3,13 +3,10 @@ use base64::Engine;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn map_api_error_maps_server_overloaded() {
+fn map_api_error_maps_service_errors() {
     let err = map_api_error(ApiError::ServerOverloaded);
     assert!(matches!(err, ChaosErr::ServerOverloaded));
-}
 
-#[test]
-fn map_api_error_maps_server_overloaded_from_503_body() {
     let body = serde_json::json!({
         "error": {
             "code": "server_is_overloaded"
@@ -24,6 +21,14 @@ fn map_api_error_maps_server_overloaded_from_503_body() {
     }));
 
     assert!(matches!(err, ChaosErr::ServerOverloaded));
+
+    let err = map_api_error(ApiError::ServiceUnavailable);
+    assert!(matches!(err, ChaosErr::InternalServerError));
+    assert_eq!(
+        err.to_chaos_ipc_error(),
+        chaos_ipc::protocol::ChaosErrorInfo::InternalServerError
+    );
+    assert!(!err.to_string().contains("404"));
 }
 
 #[test]

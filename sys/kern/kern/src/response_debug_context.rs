@@ -74,6 +74,7 @@ pub(crate) fn telemetry_api_error_message(error: &ApiError) -> String {
         ApiError::RateLimit(_) => "rate limit".to_string(),
         ApiError::InvalidRequest { .. } => "invalid request".to_string(),
         ApiError::ServerOverloaded => "server overloaded".to_string(),
+        ApiError::ServiceUnavailable => "service unavailable".to_string(),
     }
 }
 
@@ -153,5 +154,9 @@ mod tests {
             "invalid header value"
         );
         assert_eq!(telemetry_api_error_message(&stream), "socket closed");
+        assert_eq!(
+            telemetry_api_error_message(&ApiError::ServiceUnavailable),
+            "service unavailable"
+        );
     }
 }

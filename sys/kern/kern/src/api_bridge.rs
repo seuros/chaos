@@ -29,6 +29,7 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
         ApiError::Retryable { message, delay } => ChaosErr::Stream(message, delay),
         ApiError::Stream(msg) => ChaosErr::Stream(msg, None),
         ApiError::ServerOverloaded => ChaosErr::ServerOverloaded,
+        ApiError::ServiceUnavailable => ChaosErr::InternalServerError,
         ApiError::Api { status, message } => ChaosErr::UnexpectedStatus(UnexpectedResponseError {
             status,
             body: message,
@@ -131,6 +132,7 @@ pub(crate) fn abi_error_to_api_error(err: AbiError) -> ApiError {
         AbiError::QuotaExceeded => ApiError::QuotaExceeded,
         AbiError::UsageNotIncluded => ApiError::UsageNotIncluded,
         AbiError::ServerOverloaded => ApiError::ServerOverloaded,
+        AbiError::ServiceUnavailable => ApiError::ServiceUnavailable,
         AbiError::InvalidRequest { message } => ApiError::InvalidRequest { message },
         AbiError::Stream(message) => ApiError::Stream(message),
         AbiError::Transport { status: 0, message } => {

@@ -23,6 +23,10 @@ pub enum AbiError {
     #[error("server overloaded")]
     ServerOverloaded,
 
+    /// The provider is temporarily unavailable.
+    #[error("service unavailable")]
+    ServiceUnavailable,
+
     /// The request was rejected as invalid.
     #[error("invalid request: {message}")]
     InvalidRequest { message: String },
@@ -46,7 +50,7 @@ pub enum AbiError {
 impl WireFormatError for AbiError {
     fn is_retryable(&self) -> bool {
         match self {
-            Self::ServerOverloaded | Self::Retryable { .. } => true,
+            Self::ServerOverloaded | Self::ServiceUnavailable | Self::Retryable { .. } => true,
             Self::Transport { status, .. } => {
                 *status == 408 || *status == 429 || (*status >= 500 && *status < 600)
             }
@@ -79,6 +83,7 @@ mod tests {
         let backoff = Some(Duration::from_millis(250));
         let cases: &[(AbiError, bool, bool, Option<Duration>)] = &[
             (AbiError::ServerOverloaded, true, false, None),
+            (AbiError::ServiceUnavailable, true, false, None),
             (
                 AbiError::Retryable {
                     message: "slow down".into(),

@@ -236,6 +236,7 @@ impl From<crate::error::ApiError> for AbiError {
             crate::error::ApiError::QuotaExceeded => AbiError::QuotaExceeded,
             crate::error::ApiError::UsageNotIncluded => AbiError::UsageNotIncluded,
             crate::error::ApiError::ServerOverloaded => AbiError::ServerOverloaded,
+            crate::error::ApiError::ServiceUnavailable => AbiError::ServiceUnavailable,
             crate::error::ApiError::InvalidRequest { message } => {
                 AbiError::InvalidRequest { message }
             }
@@ -464,19 +465,54 @@ mod tests {
     }
 
     #[test]
-    fn http_transport_status_is_preserved_in_abi_error() {
-        let err = crate::error::ApiError::Transport(crate::TransportError::Http {
+    fn api_error_semantics_are_preserved_in_abi_error() {
+        let err: crate::error::ApiError = crate::TransportError::Http {
             status: rama::http::StatusCode::UNAUTHORIZED,
             url: Some("https://api.openai.com/v1/responses".to_string()),
             headers: None,
             body: Some("unauthorized".to_string()),
-        });
+        }
+        .into();
 
         let abi: AbiError = err.into();
         assert!(matches!(
             abi,
             AbiError::Transport { status: 401, message } if message == "unauthorized"
         ));
+
+        let outage: crate::error::ApiError = crate::TransportError::Http {
+            status: rama::http::StatusCode::NOT_FOUND,
+            url: Some(format!(
+                "{}?client_version=47.2.0",
+                chaos_services::openai::CHATGPT_MODELS_URL
+            )),
+            headers: None,
+            body: None,
+        }
+        .into();
+        assert!(matches!(outage, crate::error::ApiError::ServiceUnavailable));
+        let abi: AbiError = outage.into();
+        assert!(matches!(abi, AbiError::ServiceUnavailable));
+
+        for transport in [
+            crate::TransportError::Http {
+                status: rama::http::StatusCode::NOT_FOUND,
+                url: Some("https://example.com/v1/models".to_string()),
+                headers: None,
+                body: None,
+            },
+            crate::TransportError::Http {
+                status: rama::http::StatusCode::NOT_FOUND,
+                url: Some(chaos_services::openai::CHATGPT_RESPONSES_URL.to_string()),
+                headers: None,
+                body: Some(r#"{"error":{"message":"not found"}}"#.to_string()),
+            },
+        ] {
+            assert!(matches!(
+                crate::error::ApiError::from(transport),
+                crate::error::ApiError::Transport(_)
+            ));
+        }
     }
 
     #[test]

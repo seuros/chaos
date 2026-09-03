@@ -655,10 +655,10 @@ async fn spawn_child_completion_notifies_parent_history() {
         .get_process(child_process_id)
         .await
         .expect("child thread should exist");
-    let _ = child_thread
-        .submit(Op::Shutdown {})
+    child_thread
+        .shutdown_and_wait()
         .await
-        .expect("child shutdown should submit");
+        .expect("child shutdown should complete");
 
     assert_eq!(wait_for_subagent_notification(&parent_thread).await, true);
 }

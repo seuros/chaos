@@ -40,6 +40,8 @@ use uuid::Uuid;
 pub(super) const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str =
     "chaos.mcp.tools.fetch_uncached.duration_ms";
 const MCP_CLIENT_ID_DESCRIPTION_PREFIX: &str = "chaos-mcp-client-id:";
+/// Trusted, stable identity injected into every managed stdio MCP child.
+pub const CHAOS_MCP_CLIENT_ID_ENV: &str = "CHAOS_MCP_CLIENT_ID";
 
 /// Logger name used to identify sandbox state notifications.
 pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
@@ -73,14 +75,20 @@ const DEFAULT_ENV_VARS: &[&str] = &[
 fn create_env_for_mcp_server(
     extra_env: Option<HashMap<String, String>>,
     env_vars: &[String],
+    client_identity: &McpClientIdentity,
 ) -> HashMap<String, String> {
-    DEFAULT_ENV_VARS
+    let mut env = DEFAULT_ENV_VARS
         .iter()
         .copied()
         .chain(env_vars.iter().map(String::as_str))
         .filter_map(|var| env::var(var).ok().map(|value| (var.to_string(), value)))
         .chain(extra_env.unwrap_or_default())
-        .collect()
+        .collect::<HashMap<_, _>>();
+    env.insert(
+        CHAOS_MCP_CLIENT_ID_ENV.to_string(),
+        client_identity.trusted_stdio_subject(),
+    );
+    env
 }
 
 fn resolve_http_headers(
@@ -183,6 +191,10 @@ impl McpClientIdentity {
 
     fn as_str(&self) -> &str {
         &self.0
+    }
+
+    fn trusted_stdio_subject(&self) -> String {
+        format!("chaos:{}", self.as_str())
     }
 }
 
@@ -582,7 +594,7 @@ pub(super) async fn make_managed_client(
                 env_vars,
                 cwd,
             } => {
-                let envs = create_env_for_mcp_server(env, &env_vars);
+                let envs = create_env_for_mcp_server(env, &env_vars, &client_identity);
                 let mut builder = mcp_guest::stdio(&command, &args)
                     .envs(&envs)
                     .client_info(client_info)
@@ -693,6 +705,22 @@ mod tests {
     #[test]
     fn managed_client_identities_are_unique_when_created() {
         assert_ne!(McpClientIdentity::new(), McpClientIdentity::new());
+    }
+
+    #[test]
+    fn stdio_environment_uses_the_stable_client_identity_and_rejects_spoofing() {
+        let identity = McpClientIdentity::new();
+        let configured = HashMap::from([(
+            CHAOS_MCP_CLIENT_ID_ENV.to_string(),
+            "chaos:spoofed".to_string(),
+        )]);
+
+        let env = create_env_for_mcp_server(Some(configured), &[], &identity);
+
+        assert_eq!(
+            env.get(CHAOS_MCP_CLIENT_ID_ENV),
+            Some(&identity.trusted_stdio_subject())
+        );
     }
 
     fn sandbox_state(cwd: &str) -> SandboxState {

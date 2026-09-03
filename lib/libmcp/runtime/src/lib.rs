@@ -13,6 +13,7 @@ pub mod catalog_conv;
 pub mod manager;
 pub mod types;
 
+pub use manager::CHAOS_MCP_CLIENT_ID_ENV;
 pub use manager::McpConnectionManager;
 pub use manager::McpServerInstructions;
 pub use manager::McpToolInfo;

@@ -478,6 +478,14 @@ ignored = [
     "chaos-recall",
 ]
 
+[profile.dev]
+# Full DWARF is expensive for this 86-crate workspace. Level 1 keeps useful
+# file/line backtraces while reducing compile, link, memory, and disk costs.
+debug = 1
+
+[profile.test]
+debug = 1
+
 [profile.release]
 # ThinLTO keeps ~95% of the runtime win of FatLTO on chaos's workload
 # (I/O-bound: tokio + rustls + model streaming + IPC, with hot CPU work

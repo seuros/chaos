@@ -8,7 +8,7 @@ help:
 # Run chaos (debug build)
 alias c := chaos
 chaos *args:
-    RUSTC_WRAPPER= cargo run --bin chaos -- {{args}}
+    cargo run --bin chaos -- {{args}}
 
 # Run chaos with max optimization: release profile (fat LTO, single
 # codegen unit, stripped symbols) plus `-C target-cpu=native` so the
@@ -16,11 +16,11 @@ chaos *args:
 # project, so portable codegen is wasted on a daily-driver binary.
 alias b := bigbang
 bigbang *args:
-    RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo run --release --bin chaos -- {{args}}
+    RUSTFLAGS="-C target-cpu=native" cargo run --release --bin chaos -- {{args}}
 
 # Build the chaos binary (debug profile).
 build *args:
-    RUSTC_WRAPPER= cargo build --bin chaos {{args}}
+    cargo build --bin chaos {{args}}
 
 # Install chaos into ~/.cargo/bin (release + target-cpu=native).
 install:
@@ -153,8 +153,8 @@ install:
         [ -n "$need_dbus_pkg" ]     && echo "  ensure PKG_CONFIG_PATH points at a directory with dbus-1.pc" >&2
         exit 1
     fi
-    RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
-    RUSTC_WRAPPER= RUSTFLAGS="-C target-cpu=native" cargo install --path srv/journald --locked --force
+    RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
+    RUSTFLAGS="-C target-cpu=native" cargo install --path srv/journald --locked --force
 
 # Build a portable release tarball: chaos + install.sh.
 # Usage: just dist [output=chaos-dist.tar.gz]
@@ -163,7 +163,7 @@ install:
 dist output="chaos-dist.tar.gz":
     #!/usr/bin/env sh
     set -e
-    RUSTC_WRAPPER= cargo build --release --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
+    cargo build --release --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
     for bin in chaos chaos_journald chaos-forkve-wrapper chaos-xclient; do
         strip "target/release/$bin" 2>/dev/null || true
     done
@@ -179,23 +179,23 @@ dist output="chaos-dist.tar.gz":
 
 # Format code
 fmt:
-    RUSTC_WRAPPER= cargo fmt
+    cargo fmt
 
 # Clippy with all features, deny warnings
 clippy:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo clippy --workspace --all-features --tests -- -D warnings
+    scripts/with-local-qa-tmp.sh cargo clippy --workspace --all-features --tests -- -D warnings
 
 # Check compilation without building
 check:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo check --workspace --all-targets --all-features
+    scripts/with-local-qa-tmp.sh cargo check --workspace --all-targets --all-features
 
 # Run tests with all features
 test *args:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo nextest run --workspace --all-features --no-fail-fast {{args}}
+    scripts/with-local-qa-tmp.sh cargo nextest run --workspace --all-features --no-fail-fast {{args}}
 
 # Run the bounded Postgres validation set against a mounted filesystem.
 postgres-validate database_url:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo nextest run -p chaos-vfs -p chaos-cron -p chaos-proc -p chaos-recall --all-features --no-fail-fast
+    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo nextest run -p chaos-vfs -p chaos-cron -p chaos-proc -p chaos-recall --all-features --no-fail-fast
 
 # Lint + check + clippy (no tests)
 qq: fmt check clippy
@@ -217,17 +217,17 @@ clean-qa:
 
 # List outdated deps via cargo-edit (cargo-outdated skips workspace-inherited deps)
 outdated:
-    RUSTC_WRAPPER= cargo upgrade --dry-run
+    cargo upgrade --dry-run
 
 # Fix clippy warnings automatically
 fix:
-    RUSTC_WRAPPER= scripts/with-local-qa-tmp.sh cargo clippy --fix --workspace --all-features --tests --allow-dirty
+    scripts/with-local-qa-tmp.sh cargo clippy --fix --workspace --all-features --tests --allow-dirty
 
 # Run the MCP server
 mcp-server-run *args:
-    RUSTC_WRAPPER= cargo run -p chaos-mcpd -- {{args}}
+    cargo run -p chaos-mcpd -- {{args}}
 
 # Write hooks JSON schema fixtures
 [no-cd]
 write-hooks-schema:
-    RUSTC_WRAPPER= cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures
+    cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures

@@ -580,41 +580,41 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("resume_agent", Arc::new(ResumeAgentHandler));
         builder.register_handler("wait_agent", Arc::new(WaitAgentHandler));
         builder.register_handler("close_agent", Arc::new(CloseAgentHandler));
+    }
 
-        let attested_review_available = mcp_tools.as_ref().is_some_and(|tools| {
-            tools
-                .values()
-                .any(|tool| tool.name == crate::reviewer_orchestration::REVIEW_VERDICT_TOOL)
-        });
-        if attested_review_available && !plan_mode {
-            push_tool_spec(
-                &mut builder,
-                crate::tools::handlers::start_attested_review::tool(),
-                /*supports_parallel_tool_calls*/ false,
-            );
-            push_tool_spec(
-                &mut builder,
-                crate::tools::handlers::resume_attested_review::tool(),
-                /*supports_parallel_tool_calls*/ false,
-            );
-            push_tool_spec(
-                &mut builder,
-                crate::tools::handlers::cancel_attested_review::tool(),
-                /*supports_parallel_tool_calls*/ false,
-            );
-            builder.register_handler(
-                crate::tools::handlers::start_attested_review::TOOL_NAME,
-                Arc::new(StartAttestedReviewHandler),
-            );
-            builder.register_handler(
-                crate::tools::handlers::resume_attested_review::TOOL_NAME,
-                Arc::new(ResumeAttestedReviewHandler),
-            );
-            builder.register_handler(
-                crate::tools::handlers::cancel_attested_review::TOOL_NAME,
-                Arc::new(CancelAttestedReviewHandler),
-            );
-        }
+    let attested_review_available = mcp_tools.as_ref().is_some_and(|tools| {
+        tools
+            .values()
+            .any(|tool| tool.name == crate::reviewer_orchestration::REVIEW_VERDICT_TOOL)
+    });
+    if attested_review_available && !plan_mode {
+        push_tool_spec(
+            &mut builder,
+            crate::tools::handlers::start_attested_review::tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        push_tool_spec(
+            &mut builder,
+            crate::tools::handlers::resume_attested_review::tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        push_tool_spec(
+            &mut builder,
+            crate::tools::handlers::cancel_attested_review::tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        builder.register_handler(
+            crate::tools::handlers::start_attested_review::TOOL_NAME,
+            Arc::new(StartAttestedReviewHandler),
+        );
+        builder.register_handler(
+            crate::tools::handlers::resume_attested_review::TOOL_NAME,
+            Arc::new(ResumeAttestedReviewHandler),
+        );
+        builder.register_handler(
+            crate::tools::handlers::cancel_attested_review::TOOL_NAME,
+            Arc::new(CancelAttestedReviewHandler),
+        );
     }
 
     if config.minion_jobs_tools {

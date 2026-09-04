@@ -618,6 +618,43 @@ fn capability_groups_do_not_filter_external_mcp_or_dynamic_tools() {
     assert_lacks_tool_name(&tools, "read_file");
 }
 
+#[test]
+fn attested_review_tools_do_not_depend_on_generic_collaboration() {
+    let mut config = capability_group_test_config();
+    config.collab_tools = false;
+    let mcp_tools = HashMap::from([(
+        "mcp__skynet__submit_review_verdict".to_string(),
+        mcp_tool(
+            crate::reviewer_orchestration::REVIEW_VERDICT_TOOL,
+            "Submit an attested review verdict",
+            serde_json::json!({"type": "object", "properties": {}}),
+        ),
+    )]);
+
+    let tools = build_specs_with_discoverable_tools(
+        &config,
+        Some(mcp_tools),
+        None,
+        &[],
+        vec![],
+        None,
+        false,
+        None,
+    )
+    .build()
+    .0;
+
+    assert_contains_tool_names(
+        &tools,
+        &[
+            "start_attested_review",
+            "resume_attested_review",
+            "cancel_attested_review",
+        ],
+    );
+    assert_lacks_tool_name(&tools, "spawn_agent");
+}
+
 fn tool_name(tool: &ToolSpec) -> &str {
     match tool {
         ToolSpec::Function(ResponsesApiTool { name, .. }) => name,

@@ -27,6 +27,7 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::user_input::UserInput;
 use chaos_traits::Adapter;
+use serde_json::Value;
 use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::oneshot;
@@ -39,6 +40,7 @@ const FORKED_SPAWN_AGENT_OUTPUT_MESSAGE: &str = "You are the newly spawned agent
 pub(crate) struct SpawnAgentOptions {
     pub(crate) fork_parent_spawn_call_id: Option<String>,
     pub(crate) suppress_parent_completion_notification: bool,
+    pub(crate) final_output_json_schema: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -213,6 +215,7 @@ impl AgentControl {
         let state = self.upgrade()?;
         let expected_provider = config.model_provider_id.clone();
         let expected_model = config.model.clone();
+        let final_output_json_schema = options.final_output_json_schema.clone();
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
         let inherited_shell_environment = self
             .inherited_shell_environment_for_source(&state, session_source.as_ref())
@@ -416,7 +419,10 @@ impl AgentControl {
         // TODO(jif) add helper for drain
         state.notify_process_created(process_id);
 
-        if let Err(error) = self.send_input(process_id, items).await {
+        if let Err(error) = self
+            .send_input_with_schema(process_id, items, final_output_json_schema)
+            .await
+        {
             // Once the spawn reservation is committed, callers only learn the process ID after
             // the initial prompt is accepted. Clean up here so an input failure cannot leave an
             // unreachable child process behind.
@@ -537,13 +543,22 @@ impl AgentControl {
         agent_id: ProcessId,
         items: Vec<UserInput>,
     ) -> ChaosResult<String> {
+        self.send_input_with_schema(agent_id, items, None).await
+    }
+
+    async fn send_input_with_schema(
+        &self,
+        agent_id: ProcessId,
+        items: Vec<UserInput>,
+        final_output_json_schema: Option<Value>,
+    ) -> ChaosResult<String> {
         let state = self.upgrade()?;
         let result = state
             .send_op(
                 agent_id,
                 Op::UserInput {
                     items,
-                    final_output_json_schema: None,
+                    final_output_json_schema,
                 },
             )
             .await;

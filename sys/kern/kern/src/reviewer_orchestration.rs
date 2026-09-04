@@ -665,9 +665,7 @@ pub(crate) struct SessionReviewerBoundary {
     turn: std::sync::Arc<crate::chaos::TurnContext>,
 }
 
-fn attested_reviewer_spawn_depth(
-    session_source: &chaos_ipc::protocol::SessionSource,
-) -> i32 {
+fn attested_reviewer_spawn_depth(session_source: &chaos_ipc::protocol::SessionSource) -> i32 {
     // This is a kernel-controlled, single-purpose reviewer rather than generic
     // delegation. Its configuration disables collaboration before the process
     // starts, so it cannot use this exemption to create another generation.
@@ -820,6 +818,13 @@ impl ReviewerBoundary for SessionReviewerBoundary {
         crate::minions::tools::apply_spawn_agent_overrides(&mut config, child_depth);
         config.collab_enabled = false;
         config.minion_jobs_allowed = false;
+        let final_output_json_schema = config
+            .model_providers
+            .get(&binding.provider_id)
+            .filter(|provider| {
+                !crate::model_provider_info::is_anthropic_wire(provider.base_url.as_deref())
+            })
+            .map(|_| crate::tasks::review_output_schema());
         config
             .permissions
             .approval_policy
@@ -844,7 +849,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             self.session
                 .child_mode_policy(
                     self.turn.as_ref(),
-                    Some("plan"),
+                    Some("default"),
                     /*allowed_modes*/ None,
                     /*allow_mode_switching*/ Some(false),
                 )
@@ -859,6 +864,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
         });
         let options = crate::minions::control::SpawnAgentOptions {
             suppress_parent_completion_notification: true,
+            final_output_json_schema,
             ..Default::default()
         };
         let spawned = if let Some(process_id) = persisted_process_id {

@@ -293,7 +293,7 @@ pub(crate) async fn exit_review_mode(
     session.ensure_rollout_materialized().await;
 }
 
-fn review_output_schema() -> serde_json::Value {
+pub(crate) fn review_output_schema() -> serde_json::Value {
     let mut schema = mcp_host::macros::schema_for::<chaos_ipc::protocol::ReviewOutputEvent>();
     strip_unsupported_schema_keywords(&mut schema);
     schema

@@ -371,6 +371,51 @@ async fn spawn_agent_creates_process_and_sends_prompt() {
 }
 
 #[tokio::test]
+async fn spawn_agent_options_attach_the_final_output_schema_to_initial_input() {
+    let harness = AgentControlHarness::new().await;
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "verdict": {"type": "string"}
+        },
+        "required": ["verdict"],
+        "additionalProperties": false
+    });
+    let process_id = harness
+        .control
+        .spawn_agent_with_options(
+            harness.config.clone(),
+            text_input("review"),
+            None,
+            SpawnAgentOptions {
+                final_output_json_schema: Some(schema.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("spawn_agent should succeed")
+        .process_id;
+    let expected = (
+        process_id,
+        Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "review".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: Some(schema),
+        },
+    );
+
+    assert!(
+        harness
+            .manager
+            .captured_ops()
+            .into_iter()
+            .any(|entry| entry == expected)
+    );
+}
+
+#[tokio::test]
 async fn spawn_agent_can_fork_parent_thread_history() {
     let harness = AgentControlHarness::new().await;
     let (parent_process_id, parent_thread) = harness.start_process().await;

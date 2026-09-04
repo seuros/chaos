@@ -47,6 +47,7 @@ use chaos_snitch::metrics::names::TURN_TOOL_CALL_METRIC;
 pub(crate) use distill::DistillTask;
 pub(crate) use regular::RegularTask;
 pub(crate) use review::ReviewTask;
+pub(crate) use review::review_output_schema;
 pub(crate) use user_shell::UserShellCommandMode;
 pub(crate) use user_shell::UserShellCommandTask;
 pub(crate) use user_shell::execute_user_shell_command;

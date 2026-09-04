@@ -389,6 +389,32 @@ pub mod fs_wait {
     }
 }
 
+/// Whether the OS sandbox helper can actually enforce restricted policies on
+/// this platform. On FreeBSD, alcatraz-freebsd applies procctl hardening only
+/// and fails closed for any restricted policy; jail/ipfw confinement is still
+/// TODO. Flip this (or probe at runtime) once FreeBSD enforcement lands.
+pub fn sandbox_enforcement_available() -> bool {
+    !cfg!(target_os = "freebsd")
+}
+
+/// Skip tests that require OS sandbox enforcement on platforms where the
+/// sandbox helper fails closed because enforcement is not implemented yet.
+#[macro_export]
+macro_rules! skip_if_sandbox_unenforceable {
+    () => {{
+        if !$crate::sandbox_enforcement_available() {
+            eprintln!("Skipping test: OS sandbox enforcement is not implemented on FreeBSD yet.");
+            return;
+        }
+    }};
+    ($return_value:expr $(,)?) => {{
+        if !$crate::sandbox_enforcement_available() {
+            eprintln!("Skipping test: OS sandbox enforcement is not implemented on FreeBSD yet.");
+            return $return_value;
+        }
+    }};
+}
+
 #[macro_export]
 macro_rules! skip_if_sandbox {
     () => {{

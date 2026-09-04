@@ -24,6 +24,7 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
+use core_test_support::skip_if_sandbox_unenforceable;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::TestChaosHarness;
 use core_test_support::test_chaos::test_chaos;
@@ -2331,6 +2332,7 @@ PY
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_runs_under_sandbox() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;

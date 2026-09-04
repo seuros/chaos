@@ -41,6 +41,7 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
+use core_test_support::skip_if_sandbox_unenforceable;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
@@ -66,6 +67,7 @@ fn assert_linux_split_filesystem_rejection(
 #[tokio::test(flavor = "current_thread")]
 async fn with_additional_permissions_requires_approval_under_on_request() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
@@ -227,6 +229,7 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
 #[tokio::test(flavor = "current_thread")]
 async fn relative_additional_permissions_resolve_against_tool_workdir() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
@@ -507,6 +510,7 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_tmp
 #[tokio::test(flavor = "current_thread")]
 async fn workspace_write_with_additional_permissions_can_write_outside_cwd() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
@@ -695,6 +699,7 @@ async fn with_additional_permissions_denied_approval_blocks_execution() -> Resul
 #[tokio::test(flavor = "current_thread")]
 async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
@@ -810,6 +815,7 @@ async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Resul
 async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_request() -> Result<()>
 {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
@@ -920,6 +926,7 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
 async fn request_permissions_grants_apply_to_later_shell_command_calls_without_inline_permission_approval()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
@@ -1027,6 +1034,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
 #[tokio::test(flavor = "current_thread")]
 async fn partial_request_permissions_grants_do_not_preapprove_new_permissions() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;

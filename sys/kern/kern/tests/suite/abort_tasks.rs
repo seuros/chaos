@@ -70,6 +70,10 @@ async fn interrupt_long_running_tool_emits_turn_aborted() {
 /// responses server, and ensures the model receives the synthesized abort.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn interrupt_tool_records_history_entries() {
+    // The interrupt must land while `sleep 60` is still running; on platforms
+    // where the sandbox helper fails closed the tool exits immediately and
+    // races the abort.
+    core_test_support::skip_if_sandbox_unenforceable!();
     let command = "sleep 60";
     let call_id = "call-history";
 

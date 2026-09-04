@@ -34,6 +34,7 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
+use core_test_support::skip_if_sandbox_unenforceable;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event_with_timeout;
@@ -1200,6 +1201,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn approval_matrix_covers_all_modes() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
 
     for scenario in scenarios() {
         run_scenario(&scenario).await?;
@@ -1638,6 +1640,7 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
 async fn denying_network_policy_amendment_persists_policy_and_skips_future_network_prompt()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_sandbox_unenforceable!(Ok(()));
 
     let server = start_mock_server().await;
     let home = Arc::new(TempDir::new()?);

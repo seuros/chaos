@@ -16,6 +16,11 @@ use tempfile::TempDir;
 pub fn chaos_command(chaos_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
     cmd.env("CHAOS_HOME", chaos_home);
+    // Tests match plain-text stderr, but clap honors color-forcing variables
+    // from the invoking shell even when output is piped.
+    cmd.env_remove("CLICOLOR_FORCE");
+    cmd.env_remove("FORCE_COLOR");
+    cmd.env("NO_COLOR", "1");
     Ok(cmd)
 }
 

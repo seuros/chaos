@@ -113,7 +113,17 @@ fn default_test_overrides() -> ConfigOverrides {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "freebsd")]
+fn default_test_overrides() -> ConfigOverrides {
+    ConfigOverrides {
+        alcatraz_exe: Some(
+            chaos_which::cargo_bin("alcatraz").expect("should find alcatraz binary"),
+        ),
+        ..ConfigOverrides::default()
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
 fn default_test_overrides() -> ConfigOverrides {
     ConfigOverrides::default()
 }

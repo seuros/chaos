@@ -129,6 +129,47 @@ async fn can_apply_linux_sandbox_policy(
         .unwrap_or(false)
 }
 
+#[cfg(target_os = "freebsd")]
+/// Determines whether FreeBSD sandbox tests can run on this host.
+///
+/// `alcatraz-freebsd` fails closed while jail/ipfw enforcement is
+/// unimplemented, so probe with a minimal command under a restricted policy
+/// and skip when enforcement is unavailable.
+async fn freebsd_sandbox_test_env() -> Option<HashMap<String, String>> {
+    let command_cwd = std::env::current_dir().ok()?;
+    let sandbox_cwd = command_cwd.clone();
+    let policy = SandboxPolicy::new_read_only_policy();
+
+    let spawn_result = spawn_command_under_sandbox(
+        vec!["/usr/bin/true".to_string()],
+        command_cwd,
+        &policy,
+        sandbox_cwd.as_path(),
+        StdioPolicy::RedirectForShellTool,
+        HashMap::new(),
+    )
+    .await;
+    let Ok(mut child) = spawn_result else {
+        eprintln!("Skipping test: sandbox restrictions are not enforceable on FreeBSD yet.");
+        return None;
+    };
+    let enforceable = wait_for_child(&mut child)
+        .await
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if !enforceable {
+        eprintln!("Skipping test: sandbox restrictions are not enforceable on FreeBSD yet.");
+        return None;
+    }
+
+    // confstr(_CS_PATH) omits /usr/local/bin, where ports/pkg installs
+    // python3, so hand sandboxed children the parent's PATH.
+    Some(HashMap::from([(
+        "PATH".to_string(),
+        std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".to_string()),
+    )]))
+}
+
 #[tokio::test]
 async fn python_multiprocessing_lock_works_under_sandbox() {
     core_test_support::skip_if_sandbox!();
@@ -137,7 +178,12 @@ async fn python_multiprocessing_lock_works_under_sandbox() {
         Some(env) => env,
         None => return,
     };
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "freebsd")]
+    let sandbox_env = match freebsd_sandbox_test_env().await {
+        Some(env) => env,
+        None => return,
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     let sandbox_env = HashMap::new();
     #[cfg(not(target_os = "linux"))]
     let writable_roots = Vec::<AbsolutePathBuf>::new();
@@ -202,7 +248,12 @@ async fn python_getpwuid_works_under_sandbox() {
         Some(env) => env,
         None => return,
     };
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "freebsd")]
+    let sandbox_env = match freebsd_sandbox_test_env().await {
+        Some(env) => env,
+        None => return,
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     let sandbox_env = HashMap::new();
 
     if std::process::Command::new("python3")
@@ -247,7 +298,12 @@ async fn sandbox_distinguishes_command_and_policy_cwds() {
         Some(env) => env,
         None => return,
     };
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "freebsd")]
+    let sandbox_env = match freebsd_sandbox_test_env().await {
+        Some(env) => env,
+        None => return,
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     let sandbox_env = HashMap::new();
     let temp = tempfile::tempdir().expect("should be able to create temp dir");
     let sandbox_root = temp.path().join("sandbox");

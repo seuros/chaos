@@ -475,13 +475,13 @@ impl Session {
 
         let tool_group_catalog =
             crate::tools::groups::build_catalog().context("failed to build tool group catalog")?;
-        let tool_group_state = tool_group_catalog.new_state();
-        if crate::test_support::all_tool_groups_enabled_for_tests() {
-            let disabled_groups = tool_group_catalog.disabled_groups(&tool_group_state);
-            tool_group_catalog
-                .set_groups_enabled(&tool_group_state, disabled_groups, true)
-                .context("failed to enable tool groups for test session")?;
-        }
+        // Clamp harnesses already own tool gating. Starting their bridge with operational
+        // groups hidden leaves clients unable to discover tools they need for the turn.
+        let tool_group_state = crate::tools::groups::new_state(
+            &tool_group_catalog,
+            config.clamp || crate::test_support::all_tool_groups_enabled_for_tests(),
+        )
+        .context("failed to initialize tool groups for session")?;
         let (mcp_notification_tx, mcp_notification_rx) = async_channel::bounded(256);
         let services = SessionServices {
             catalog: Arc::new(crate::catalog::CatalogSink::new(

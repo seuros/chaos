@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use gix::bstr::ByteSlice;
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -8,9 +9,13 @@ use crate::error::GitError;
 use crate::ext::GitResultExt;
 use crate::open_repo;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct CommitTrailer {
+    /// Trailer token, such as `Signed-off-by` or `Co-authored-by`.
     pub token: String,
+    /// Trailer value.
     pub value: String,
 }
 

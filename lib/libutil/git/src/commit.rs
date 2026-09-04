@@ -11,31 +11,58 @@ use serde::Serialize;
 
 use crate::error::GitError;
 use crate::open_repo;
+use crate::show::CommitTrailer;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CommitResult {
+    pub operation: &'static str,
     pub sha: String,
+    pub previous_sha: Option<String>,
     pub branch: Option<String>,
     pub detached: bool,
     pub subject: String,
+    pub trailers: Vec<CommitTrailer>,
     pub committed_paths: Vec<String>,
 }
 
 pub fn commit(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
-    commit_inner(cwd, message, false)
+    commit_with_trailers(cwd, message, &[])
 }
 
 pub fn amend(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
-    commit_inner(cwd, message, true)
+    amend_with_trailers(cwd, message, &[])
 }
 
-fn commit_inner(cwd: &Path, message: &str, amend: bool) -> Result<CommitResult, GitError> {
+pub fn commit_with_trailers(
+    cwd: &Path,
+    message: &str,
+    trailers: &[CommitTrailer],
+) -> Result<CommitResult, GitError> {
+    commit_inner(cwd, message, trailers, false)
+}
+
+pub fn amend_with_trailers(
+    cwd: &Path,
+    message: &str,
+    trailers: &[CommitTrailer],
+) -> Result<CommitResult, GitError> {
+    commit_inner(cwd, message, trailers, true)
+}
+
+fn commit_inner(
+    cwd: &Path,
+    message: &str,
+    trailers: &[CommitTrailer],
+    amend: bool,
+) -> Result<CommitResult, GitError> {
     let message = message.trim();
     if message.is_empty() {
         return Err(GitError::InvalidInput(
             "commit message must not be empty".to_string(),
         ));
     }
+    let trailers = normalize_trailers(trailers)?;
+    let message = render_message(message, &trailers);
 
     let repo = open_repo(cwd)?;
     if let Some(state) = repo.state() {
@@ -63,6 +90,7 @@ fn commit_inner(cwd: &Path, message: &str, amend: bool) -> Result<CommitResult, 
         }
         (false, _) => None,
     };
+    let previous_sha = amend_head_id.map(|id| id.to_string());
 
     let head_tree_id = match parent_id {
         Some(parent) => {
@@ -117,20 +145,80 @@ fn commit_inner(cwd: &Path, message: &str, amend: bool) -> Result<CommitResult, 
         .detach();
 
     let commit_id = if let Some(head_id) = amend_head_id {
-        amend_head(&repo, &head, head_id, message, tree_id)?
+        amend_head(&repo, &head, head_id, &message, tree_id)?
     } else {
-        repo.commit("HEAD", message, tree_id, parent_id)
+        repo.commit("HEAD", &message, tree_id, parent_id)
             .map(gix::Id::detach)
             .map_err(|e| GitError::Operation(e.to_string()))?
     };
 
     Ok(CommitResult {
+        operation: if amend { "amend" } else { "create" },
         sha: commit_id.to_string(),
+        previous_sha,
         branch,
         detached,
         subject: message.lines().next().unwrap_or_default().to_string(),
+        trailers,
         committed_paths,
     })
+}
+
+fn normalize_trailers(trailers: &[CommitTrailer]) -> Result<Vec<CommitTrailer>, GitError> {
+    trailers
+        .iter()
+        .map(|trailer| {
+            let token = trailer.token.trim();
+            let mut token_chars = token.chars();
+            let valid_token = token_chars
+                .next()
+                .is_some_and(|character| character.is_ascii_alphanumeric())
+                && token_chars
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-');
+            if !valid_token {
+                return Err(GitError::InvalidInput(format!(
+                    "invalid commit trailer token {:?}; use ASCII letters, digits, and hyphens",
+                    trailer.token
+                )));
+            }
+
+            let value = trailer.value.trim();
+            if value.is_empty() {
+                return Err(GitError::InvalidInput(format!(
+                    "commit trailer value for {token} must not be empty"
+                )));
+            }
+            if value
+                .chars()
+                .any(|character| matches!(character, '\r' | '\n' | '\0'))
+            {
+                return Err(GitError::InvalidInput(format!(
+                    "commit trailer value for {token} must be a single line"
+                )));
+            }
+
+            Ok(CommitTrailer {
+                token: token.to_string(),
+                value: value.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn render_message(message: &str, trailers: &[CommitTrailer]) -> String {
+    let mut rendered = message.to_string();
+    if !trailers.is_empty() {
+        rendered.push_str("\n\n");
+        for (index, trailer) in trailers.iter().enumerate() {
+            if index > 0 {
+                rendered.push('\n');
+            }
+            rendered.push_str(&trailer.token);
+            rendered.push_str(": ");
+            rendered.push_str(&trailer.value);
+        }
+    }
+    rendered
 }
 
 fn amend_head(

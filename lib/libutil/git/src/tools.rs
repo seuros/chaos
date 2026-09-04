@@ -170,6 +170,9 @@ pub struct GitAddParams {
 pub struct GitCommitParams {
     /// Commit message. The first line becomes the commit subject.
     message: String,
+    /// Structured trailers appended to the stored commit message in order.
+    #[serde(default)]
+    trailers: Vec<crate::CommitTrailer>,
     /// Replace HEAD instead of creating a child commit. Staged changes, if any,
     /// are included; with no staged changes, only the commit message changes.
     #[serde(default)]
@@ -305,7 +308,7 @@ impl GitServer {
 
     #[mcp_tool(
         name = "git_commit",
-        description = "Create an unsigned commit from the staged index, or replace HEAD when amend=true. Git hooks are not run.",
+        description = "Create or amend an unsigned commit, with optional structured trailers. Git hooks are not run.",
         read_only = false,
         destructive = true,
         open_world = false
@@ -503,9 +506,9 @@ pub fn execute_git_commit_structured(
     params: GitCommitParams,
 ) -> Result<serde_json::Value, String> {
     let result = if params.amend {
-        crate::amend(cwd, &params.message)
+        crate::amend_with_trailers(cwd, &params.message, &params.trailers)
     } else {
-        crate::commit(cwd, &params.message)
+        crate::commit_with_trailers(cwd, &params.message, &params.trailers)
     }
     .map_err(|e| e.to_string())?;
     to_json_value(result)
@@ -558,6 +561,7 @@ mod tests {
     use super::execute_git_diff_structured_with_cancel;
     use super::execute_git_show_structured;
     use crate::BlameLine;
+    use crate::CommitTrailer;
     use crate::DiffFormat;
     use crate::DiffScope;
     use crate::ShowEntry;
@@ -916,11 +920,15 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "initial commit".to_string(),
+                trailers: vec![],
                 amend: false,
             },
         )
         .expect("commit");
+        assert_eq!(committed["operation"], "create");
+        assert_eq!(committed["previous_sha"], serde_json::Value::Null);
         assert_eq!(committed["subject"], "initial commit");
+        assert_eq!(committed["trailers"], serde_json::json!([]));
         assert_eq!(
             committed["committed_paths"],
             serde_json::json!(["file.txt"])
@@ -943,6 +951,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "update tracked file".to_string(),
+                trailers: vec![],
                 amend: false,
             },
         )
@@ -958,11 +967,138 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "empty".to_string(),
+                trailers: vec![],
                 amend: false,
             },
         )
         .expect_err("empty commit must fail");
         assert!(empty.contains("nothing staged to commit"));
+    }
+
+    #[test]
+    fn execute_git_commit_appends_structured_trailers_and_returns_them() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+        fs::write(dir.join("file.txt"), "alpha\n").expect("write file");
+        git(dir, &["add", "file.txt"]);
+
+        let committed = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: " Implement commit trailers\n\nKeep the API structured. ".to_string(),
+                trailers: vec![
+                    CommitTrailer {
+                        token: " Signed-off-by ".to_string(),
+                        value: " Mira Tenner <mira-agent@agentmail.to> ".to_string(),
+                    },
+                    CommitTrailer {
+                        token: "Co-authored-by".to_string(),
+                        value: "Daniel Tenner <daniel@tenner.org>".to_string(),
+                    },
+                ],
+                amend: false,
+            },
+        )
+        .expect("commit with trailers");
+
+        assert_eq!(committed["operation"], "create");
+        assert_eq!(committed["previous_sha"], serde_json::Value::Null);
+        assert_eq!(
+            committed["trailers"],
+            serde_json::json!([
+                {
+                    "token": "Signed-off-by",
+                    "value": "Mira Tenner <mira-agent@agentmail.to>"
+                },
+                {
+                    "token": "Co-authored-by",
+                    "value": "Daniel Tenner <daniel@tenner.org>"
+                }
+            ])
+        );
+        assert_eq!(
+            git_output(dir, &["show", "-s", "--format=%B", "HEAD"]),
+            concat!(
+                "Implement commit trailers\n\n",
+                "Keep the API structured.\n\n",
+                "Signed-off-by: Mira Tenner <mira-agent@agentmail.to>\n",
+                "Co-authored-by: Daniel Tenner <daniel@tenner.org>\n"
+            )
+        );
+
+        let shown = crate::show(dir, None).expect("show committed trailers");
+        assert_eq!(
+            shown.trailers,
+            vec![
+                CommitTrailer {
+                    token: "Signed-off-by".to_string(),
+                    value: "Mira Tenner <mira-agent@agentmail.to>".to_string(),
+                },
+                CommitTrailer {
+                    token: "Co-authored-by".to_string(),
+                    value: "Daniel Tenner <daniel@tenner.org>".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn execute_git_commit_rejects_invalid_structured_trailers() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+        fs::write(dir.join("file.txt"), "alpha\n").expect("write file");
+        git(dir, &["add", "file.txt"]);
+
+        let invalid = [
+            (
+                CommitTrailer {
+                    token: "Signed off by".to_string(),
+                    value: "Test User <test@example.com>".to_string(),
+                },
+                "invalid commit trailer token",
+            ),
+            (
+                CommitTrailer {
+                    token: "Signed-off-by".to_string(),
+                    value: "Test User\nInjected-by: Someone".to_string(),
+                },
+                "must be a single line",
+            ),
+            (
+                CommitTrailer {
+                    token: "Signed-off-by".to_string(),
+                    value: "   ".to_string(),
+                },
+                "must not be empty",
+            ),
+        ];
+
+        for (trailer, expected) in invalid {
+            let error = execute_git_commit_structured(
+                dir,
+                GitCommitParams {
+                    message: "invalid trailer".to_string(),
+                    trailers: vec![trailer],
+                    amend: false,
+                },
+            )
+            .expect_err("invalid trailer must be rejected");
+            assert!(error.contains(expected), "unexpected error: {error}");
+        }
+
+        assert_eq!(
+            git_output(dir, &["rev-list", "--count", "--all"]),
+            "0\n",
+            "invalid trailers must not create a commit"
+        );
     }
 
     #[test]
@@ -1081,6 +1217,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "update file".to_string(),
+                trailers: vec![],
                 amend: false,
             },
         )
@@ -1106,6 +1243,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "change gitlink".to_string(),
+                trailers: vec![],
                 amend: false,
             },
         )
@@ -1136,12 +1274,19 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "second, revised".to_string(),
+                trailers: vec![],
                 amend: true,
             },
         )
         .expect("amend message");
 
+        assert_eq!(message_only["operation"], "amend");
+        assert_eq!(
+            message_only["previous_sha"].as_str(),
+            Some(original_sha.as_str())
+        );
         assert_eq!(message_only["subject"], "second, revised");
+        assert_eq!(message_only["trailers"], serde_json::json!([]));
         assert_eq!(message_only["committed_paths"], serde_json::json!([]));
         assert_ne!(
             message_only["sha"].as_str().expect("amended sha"),
@@ -1170,6 +1315,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "second, revised again".to_string(),
+                trailers: vec![],
                 amend: true,
             },
         )
@@ -1191,6 +1337,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "detached revision".to_string(),
+                trailers: vec![],
                 amend: true,
             },
         )
@@ -1217,6 +1364,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "cannot exist".to_string(),
+                trailers: vec![],
                 amend: true,
             },
         )

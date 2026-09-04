@@ -54,7 +54,9 @@ use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools;
 pub use commit::CommitResult;
 pub use commit::amend;
+pub use commit::amend_with_trailers;
 pub use commit::commit;
+pub use commit::commit_with_trailers;
 pub use diff::DiffFile;
 pub use diff::DiffFormat;
 pub use diff::DiffReport;
@@ -299,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn git_commit_schema_exposes_optional_destructive_amend() {
+    fn git_commit_schema_exposes_optional_trailers_and_destructive_amend() {
         let commit = super::tools::tool_infos()
             .into_iter()
             .find(|tool| tool.name == "git_commit")
@@ -310,9 +312,14 @@ mod tests {
 
         assert!(required.iter().any(|value| value == "message"));
         assert!(required.iter().all(|value| value != "amend"));
+        assert!(required.iter().all(|value| value != "trailers"));
         assert_eq!(
             commit.input_schema["properties"]["amend"]["type"],
             "boolean"
+        );
+        assert_eq!(
+            commit.input_schema["properties"]["trailers"]["type"],
+            "array"
         );
         let destructive = commit
             .annotations

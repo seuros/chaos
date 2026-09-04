@@ -6,7 +6,7 @@ use chaos_abi::ModelAdapter;
 use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
-use codex_client::RequestTelemetry;
+use chaos_client::RequestTelemetry;
 use rama::http::HeaderMap;
 use rama::http::HeaderName;
 use rama::http::HeaderValue;
@@ -328,7 +328,6 @@ async fn fetch_openai_models(
     use rama::http::Request;
     use rama::http::StatusCode;
     use rama::http::body::util::BodyExt;
-    use rama::http::client::EasyHttpWebClient;
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -406,7 +405,7 @@ async fn fetch_openai_models(
             message: e.to_string(),
         })?;
 
-    let client = EasyHttpWebClient::default();
+    let client = chaos_client::default_rama_http_client();
     let response = client
         .serve(request)
         .await

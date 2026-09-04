@@ -820,7 +820,6 @@ async fn fetch_anthropic_models(
     use rama::http::Request;
     use rama::http::StatusCode;
     use rama::http::body::util::BodyExt;
-    use rama::http::client::EasyHttpWebClient;
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -873,7 +872,7 @@ async fn fetch_anthropic_models(
         supported: bool,
     }
 
-    let client = EasyHttpWebClient::default();
+    let client = chaos_client::default_rama_http_client();
     let mut builder = Request::builder().method("GET").uri(url);
     // Copy auth and version headers, skip content-type/accept (not needed for GET)
     for (name, value) in headers.iter() {

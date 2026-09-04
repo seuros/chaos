@@ -1,6 +1,7 @@
 mod custom_ca;
 mod default_client;
 mod error;
+mod infrastructure_cookies;
 mod request;
 mod retry;
 mod sse;
@@ -17,6 +18,9 @@ pub use crate::default_client::ChaosRequestBuilder;
 pub use crate::default_client::ChaosResponse;
 pub use crate::error::StreamError;
 pub use crate::error::TransportError;
+pub use crate::infrastructure_cookies::InfrastructureCookieLayer;
+pub use crate::infrastructure_cookies::InfrastructureCookieService;
+pub use crate::infrastructure_cookies::default_rama_http_client;
 pub use crate::request::Request;
 pub use crate::request::RequestCompression;
 pub use crate::request::Response;

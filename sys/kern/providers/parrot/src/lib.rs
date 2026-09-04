@@ -49,9 +49,9 @@ pub use crate::representer::SessionRepresenter;
 pub use crate::requests::headers::build_conversation_headers;
 pub use crate::sse::stream_from_fixture;
 pub use crate::telemetry::SseTelemetry;
-pub use codex_client::RamaTransport;
-pub use codex_client::RequestTelemetry;
-pub use codex_client::TransportError;
+pub use chaos_client::RamaTransport;
+pub use chaos_client::RequestTelemetry;
+pub use chaos_client::TransportError;
 
 /// Select the adapter for a provider by its wire format identifier.
 ///

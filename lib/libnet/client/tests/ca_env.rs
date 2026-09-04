@@ -2,7 +2,7 @@
 //!
 //! These tests intentionally run through `custom_ca_probe` and
 //! the rustls config probe instead of calling the helper in-process. The
-//! detailed explanation of what "hermetic" means here lives in `codex_client::custom_ca`; these
+//! detailed explanation of what "hermetic" means here lives in `chaos_client::custom_ca`; these
 //! tests add the process-level half of that contract by scrubbing inherited CA environment
 //! variables before each subprocess launch. They still stop at client construction: the
 //! assertions here cover CA file selection, PEM parsing, and user-facing errors, not a full TLS

@@ -14,6 +14,7 @@ use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 
+use chaos_client::ChaosHttpClient;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::InputModality;
@@ -31,7 +32,6 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_which::cargo_bin;
-use codex_client::ChaosHttpClient;
 use core_test_support::responses;
 use core_test_support::responses::mount_models_once;
 use core_test_support::responses::mount_sse_once;

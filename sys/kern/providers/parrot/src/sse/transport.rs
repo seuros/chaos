@@ -1,5 +1,6 @@
 use crate::provider::RetryConfig;
 use chaos_abi::AbiError;
+use chaos_client::default_rama_http_client;
 use chaos_libration::UsageSniffer;
 use rama::Service;
 use rama::http::Body;
@@ -8,7 +9,6 @@ use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
 use rama::http::body::util::BodyExt;
-use rama::http::client::EasyHttpWebClient;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -40,7 +40,7 @@ pub(crate) async fn start_rama_post_sse_request(
             tokio::time::sleep(delay).await;
         }
 
-        let client = EasyHttpWebClient::default();
+        let client = default_rama_http_client();
         let mut builder = Request::builder().method("POST").uri(url);
         for (name, value) in headers.iter() {
             builder = builder.header(name, value);

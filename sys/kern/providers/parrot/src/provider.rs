@@ -1,7 +1,7 @@
-use codex_client::Request;
-use codex_client::RequestCompression;
-use codex_client::RetryOn;
-use codex_client::RetryPolicy;
+use chaos_client::Request;
+use chaos_client::RequestCompression;
+use chaos_client::RetryOn;
+use chaos_client::RetryPolicy;
 use rama::http::HeaderMap;
 use rama::http::Method;
 use std::collections::HashMap;

@@ -27,6 +27,7 @@ use crate::pkce::PkceCodes;
 use crate::pkce::generate_pkce;
 use base64::Engine;
 
+use chaos_client::ChaosHttpClient;
 use chaos_ipc::api::AuthMode;
 use chaos_ipc::product::OS_NAME;
 use chaos_kern::auth::AuthCredentialsStoreMode;
@@ -37,7 +38,6 @@ use chaos_kern::auth::save_auth;
 use chaos_kern::default_client::originator;
 use chaos_kern::token_data::TokenData;
 use chaos_kern::token_data::parse_chatgpt_jwt_claims;
-use codex_client::ChaosHttpClient;
 use rand::Rng;
 use serde_json::Value as JsonValue;
 use tiny_http::Header;

@@ -16,7 +16,7 @@ use chaos_abi::TurnRequest;
 use chaos_abi::TurnResult;
 use chaos_abi::turn_result::TurnError;
 use chaos_abi::turn_result::TurnOutput;
-use codex_client::ChaosHttpClient;
+use chaos_client::ChaosHttpClient;
 use rama::http::HeaderValue;
 use serde::Deserialize;
 use serde_json::Value;

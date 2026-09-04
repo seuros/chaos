@@ -18,6 +18,7 @@ use tracing::enabled;
 use tracing::trace;
 
 use crate::ensure_rustls_crypto_provider;
+use crate::infrastructure_cookies::with_infrastructure_cookies;
 use crate::telemetry::inject_trace_headers;
 
 pub type ByteStream = BoxStream<'static, Result<Bytes, TransportError>>;
@@ -44,7 +45,7 @@ pub struct RamaTransport {
 impl RamaTransport {
     pub fn new(client: RamaClient) -> Self {
         Self {
-            client: Arc::new(Mutex::new(client)),
+            client: Arc::new(Mutex::new(with_infrastructure_cookies(client))),
         }
     }
 

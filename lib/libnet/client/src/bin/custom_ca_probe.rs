@@ -9,12 +9,12 @@
 //! - multi-cert PEM bundles load,
 //! - error messages guide users when CA files are invalid.
 //!
-//! The detailed explanation of what "hermetic" means here lives in `codex_client::custom_ca`.
+//! The detailed explanation of what "hermetic" means here lives in `chaos_client::custom_ca`.
 
 use std::process;
 
 fn main() {
-    match codex_client::maybe_build_rustls_client_config_with_custom_ca() {
+    match chaos_client::maybe_build_rustls_client_config_with_custom_ca() {
         Ok(config) => {
             if config.is_some() {
                 println!("ok (custom CA loaded)");

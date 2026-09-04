@@ -192,7 +192,7 @@ chaos-lsd = { path = "share/lsd" }
 chaos-dtrace = { path = "share/dtrace" }
 
 # Internal — lib/
-codex-client = { path = "lib/libnet/client" }
+chaos-client = { path = "lib/libnet/client" }
 chaos-services = { path = "lib/libnet/services" }
 chaos-epoll = { path = "lib/libasync/epoll" }
 chaos-locate = { path = "lib/libfs/locate" }
@@ -251,6 +251,7 @@ bonsai-bt = { version = "0.13.1", default-features = false }
 bytes = "1.12.1"
 chardetng = "1.0.0"
 color-eyre = "0.6.5"
+cookie_store = { version = "0.22.1", default-features = false }
 crossbeam-channel = "0.5.16"
 crossterm = "0.29.0"
 csv = "1.4.0"

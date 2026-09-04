@@ -30,8 +30,8 @@ use crate::token_data::KnownPlan as InternalKnownPlan;
 use crate::token_data::PlanType as InternalPlanType;
 use crate::token_data::TokenData;
 use crate::token_data::parse_chatgpt_jwt_claims;
+use chaos_client::ChaosHttpClient;
 use chaos_ipc::account::PlanType as AccountPlanType;
-use codex_client::ChaosHttpClient;
 use thiserror::Error;
 
 // Re-export the public surface from submodules.

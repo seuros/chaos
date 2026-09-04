@@ -1,6 +1,6 @@
+use chaos_client::ChaosHttpClient;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::login_with_xai_oauth_tokens;
-use codex_client::ChaosHttpClient;
 use serde::Deserialize;
 use std::io;
 use std::path::PathBuf;

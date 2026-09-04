@@ -1,4 +1,4 @@
-use codex_client::Request;
+use chaos_client::Request;
 use rama::http::HeaderMap;
 use rama::http::HeaderValue;
 

@@ -2,10 +2,10 @@ use crate::auth::AuthProvider;
 use crate::endpoint::session::EndpointSession;
 use crate::error::ApiError;
 use crate::provider::Provider;
+use chaos_client::HttpTransport;
+use chaos_client::RequestTelemetry;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelsResponse;
-use codex_client::HttpTransport;
-use codex_client::RequestTelemetry;
 use rama::http::HeaderMap;
 use rama::http::Method;
 use rama::http::header::ETAG;
@@ -32,7 +32,7 @@ impl<T: HttpTransport, A: AuthProvider> ModelsClient<T, A> {
         "models"
     }
 
-    fn append_client_version_query(req: &mut codex_client::Request, client_version: &str) {
+    fn append_client_version_query(req: &mut chaos_client::Request, client_version: &str) {
         let separator = if req.url.contains('?') { '&' } else { '?' };
         req.url = format!("{}{}client_version={client_version}", req.url, separator);
     }
@@ -77,10 +77,10 @@ impl<T: HttpTransport, A: AuthProvider> ModelsClient<T, A> {
 mod tests {
     use super::*;
     use crate::provider::RetryConfig;
-    use codex_client::Request;
-    use codex_client::Response;
-    use codex_client::StreamResponse;
-    use codex_client::TransportError;
+    use chaos_client::Request;
+    use chaos_client::Response;
+    use chaos_client::StreamResponse;
+    use chaos_client::TransportError;
     use pretty_assertions::assert_eq;
     use rama::http::HeaderMap;
     use rama::http::StatusCode;

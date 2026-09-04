@@ -5,6 +5,7 @@
 //! account diagnostics to `chaos-accounts.log`, giving support a durable artifact
 //! for one-shot CLI runs.
 
+use chaos_client::ChaosHttpClient;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::config_types::ForcedLoginMethod;
 use chaos_kern::auth::AuthMode;
@@ -27,7 +28,6 @@ use chaos_pam::XaiDeviceCodeOptions;
 use chaos_pam::complete_xai_device_code_login;
 use chaos_pam::request_xai_device_code;
 use chaos_pam::spawn_login_flow;
-use codex_client::ChaosHttpClient;
 use serde::Serialize;
 use serde_json::Value;
 use std::io::IsTerminal;

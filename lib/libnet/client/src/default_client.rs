@@ -15,6 +15,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::ensure_rustls_crypto_provider;
+use crate::infrastructure_cookies::with_infrastructure_cookies;
 use crate::telemetry::inject_trace_headers;
 
 type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueError>;
@@ -36,7 +37,7 @@ impl std::fmt::Debug for ChaosHttpClient {
 impl ChaosHttpClient {
     pub fn new(client: RamaClient) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(client)),
+            inner: Arc::new(Mutex::new(with_infrastructure_cookies(client))),
             default_headers: HeaderMap::new(),
         }
     }

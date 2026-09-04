@@ -1,10 +1,10 @@
-use codex_client::Request;
-use codex_client::RequestTelemetry;
-use codex_client::Response;
-use codex_client::RetryPolicy;
-use codex_client::StreamResponse;
-use codex_client::TransportError;
-use codex_client::run_with_retry;
+use chaos_client::Request;
+use chaos_client::RequestTelemetry;
+use chaos_client::Response;
+use chaos_client::RetryPolicy;
+use chaos_client::StreamResponse;
+use chaos_client::TransportError;
+use chaos_client::run_with_retry;
 use rama::error::BoxError;
 use rama::http::StatusCode;
 use rama::http::sse::Event as SseEvent;

@@ -26,7 +26,7 @@ use crate::token_data::TokenData;
 use crate::token_data::parse_chatgpt_jwt_claims;
 use crate::util::try_parse_error_message;
 use base64::Engine;
-use codex_client::ChaosHttpClient;
+use chaos_client::ChaosHttpClient;
 use jiff::Timestamp;
 use rama::http::StatusCode;
 use serde::Deserialize;

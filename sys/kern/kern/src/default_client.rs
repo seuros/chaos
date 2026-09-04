@@ -1,6 +1,6 @@
+use chaos_client::ChaosHttpClient;
+pub use chaos_client::ChaosRequestBuilder;
 use chaos_ipc::product::CHAOS_VERSION;
-use codex_client::ChaosHttpClient;
-pub use codex_client::ChaosRequestBuilder;
 use rama::http::HeaderMap;
 use rama::http::HeaderValue;
 use rama::http::header::USER_AGENT;

@@ -1176,6 +1176,7 @@ dependencies = [
  "assert_cmd",
  "assert_matches",
  "chaos-argv",
+ "chaos-client",
  "chaos-console",
  "chaos-fork",
  "chaos-getopt",
@@ -1190,7 +1191,6 @@ dependencies = [
  "chaos-snitch",
  "chaos-sysctl",
  "chaos-which",
- "codex-client",
  "libc",
  "mimalloc",
  "owo-colors",
@@ -1209,6 +1209,34 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "usage-rs",
+]
+
+[[package]]
+name = "chaos-client"
+version = "47.2.0"
+dependencies = [
+ "bytes",
+ "chaos-abi",
+ "chaos-which",
+ "chrono-machines 0.6.0",
+ "cookie_store",
+ "futures",
+ "pretty_assertions",
+ "rama",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "zstd",
 ]
 
 [[package]]
@@ -1584,6 +1612,7 @@ dependencies = [
  "chaos-arsenal",
  "chaos-check",
  "chaos-clamp",
+ "chaos-client",
  "chaos-concierge",
  "chaos-context",
  "chaos-cron",
@@ -1627,7 +1656,6 @@ dependencies = [
  "chaos_journald",
  "chardetng",
  "chrono-machines 0.6.0",
- "codex-client",
  "core_test_support",
  "csv",
  "ctor 1.0.13",
@@ -1824,10 +1852,10 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chaos-auth-test-fixtures",
+ "chaos-client",
  "chaos-ipc",
  "chaos-kern",
  "chaos-services",
- "codex-client",
  "core_test_support",
  "jiff",
  "pretty_assertions",
@@ -1864,10 +1892,10 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "chaos-abi",
+ "chaos-client",
  "chaos-ipc",
  "chaos-libration",
  "chaos-services",
- "codex-client",
  "futures",
  "pretty_assertions",
  "rama",
@@ -2442,32 +2470,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-client"
-version = "47.2.0"
-dependencies = [
- "bytes",
- "chaos-abi",
- "chaos-which",
- "chrono-machines 0.6.0",
- "futures",
- "pretty_assertions",
- "rama",
- "rustls",
- "rustls-native-certs",
- "rustls-pki-types",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "zstd",
-]
-
-[[package]]
 name = "color-eyre"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2631,12 +2633,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "cookie"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
+dependencies = [
+ "percent-encoding",
+ "time",
+ "version_check",
+]
+
+[[package]]
 name = "cookie-factory"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9885fa71e26b8ab7855e2ec7cae6e9b380edff76cd052e07c683a0319d51b3a2"
 dependencies = [
  "futures",
+]
+
+[[package]]
+name = "cookie_store"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15b2c103cf610ec6cae3da84a766285b42fd16aad564758459e6ecf128c75206"
+dependencies = [
+ "cookie",
+ "document-features",
+ "idna",
+ "log",
+ "time",
+ "url",
 ]
 
 [[package]]
@@ -2716,11 +2743,11 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chaos-auth-test-fixtures",
+ "chaos-client",
  "chaos-ipc",
  "chaos-kern",
  "chaos-realpath",
  "chaos-which",
- "codex-client",
  "ctor 1.0.13",
  "notify 8.2.0",
  "pretty_assertions",

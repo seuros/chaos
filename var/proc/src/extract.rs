@@ -1,6 +1,9 @@
 use crate::model::ProcessMetadata;
+use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::permissions::VfsPolicyKind;
+use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_CLOSE_TAG;
+use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionMetaLine;
@@ -30,11 +33,12 @@ pub fn apply_rollout_item(
     }
 }
 
-/// Return whether this rollout item can mutate process metadata stored in SQLite.
+/// Return whether this rollout item can mutate persisted process metadata.
 pub fn rollout_item_affects_process_metadata(item: &RolloutItem) -> bool {
     match item {
         RolloutItem::SessionMeta(_) | RolloutItem::TurnContext(_) => true,
         RolloutItem::EventMsg(EventMsg::TokenCount(_) | EventMsg::UserMessage(_)) => true,
+        RolloutItem::ResponseItem(ResponseItem::Message { role, .. }) => role == "user",
         RolloutItem::EventMsg(_)
         | RolloutItem::ResponseItem(_)
         | RolloutItem::Compacted(_)
@@ -122,8 +126,23 @@ fn apply_event_msg(metadata: &mut ProcessMetadata, event: &EventMsg) {
     }
 }
 
-fn apply_response_item(_metadata: &mut ProcessMetadata, _item: &ResponseItem) {
-    // Title and first_user_message are derived from EventMsg::UserMessage only.
+fn apply_response_item(metadata: &mut ProcessMetadata, item: &ResponseItem) {
+    let ResponseItem::Message { role, content, .. } = item else {
+        return;
+    };
+    if role != "user" {
+        return;
+    }
+
+    let preview = response_user_message_preview(content);
+    if metadata.first_user_message.is_none() {
+        metadata.first_user_message = preview.clone();
+    }
+    if metadata.title.is_empty()
+        && let Some(preview) = preview
+    {
+        metadata.title = preview;
+    }
 }
 
 fn strip_user_message_prefix(text: &str) -> &str {
@@ -131,6 +150,44 @@ fn strip_user_message_prefix(text: &str) -> &str {
         Some(idx) => text[idx + USER_MESSAGE_BEGIN.len()..].trim(),
         None => text.trim(),
     }
+}
+
+fn response_user_message_preview(content: &[ContentItem]) -> Option<String> {
+    if let Some(text) = content.iter().find_map(|item| match item {
+        ContentItem::InputText { text } => Some(text.as_str()),
+        ContentItem::InputImage { .. }
+        | ContentItem::OutputText { .. }
+        | ContentItem::Document { .. } => None,
+    }) && let Some(preview) = cleanup_user_message_preview(text)
+    {
+        return Some(preview);
+    }
+
+    content
+        .iter()
+        .any(|item| matches!(item, ContentItem::InputImage { .. }))
+        .then(|| IMAGE_ONLY_USER_MESSAGE_PLACEHOLDER.to_string())
+}
+
+fn cleanup_user_message_preview(mut text: &str) -> Option<String> {
+    loop {
+        let trimmed = text.trim_start();
+        let Some(rest) = trimmed.strip_prefix(ENVIRONMENT_CONTEXT_OPEN_TAG) else {
+            text = trimmed;
+            break;
+        };
+        let close_idx = rest.find(ENVIRONMENT_CONTEXT_CLOSE_TAG)?;
+        text = &rest[close_idx + ENVIRONMENT_CONTEXT_CLOSE_TAG.len()..];
+    }
+
+    let mut cleaned = strip_user_message_prefix(text).trim();
+    if let Some(rest) = cleaned.strip_prefix("## My request for ")
+        && let Some((_, request)) = rest.split_once(':')
+    {
+        cleaned = request.trim();
+    }
+
+    (!cleaned.is_empty()).then(|| cleaned.to_string())
 }
 
 fn user_message_preview(user: &UserMessageEvent) -> Option<String> {
@@ -160,6 +217,7 @@ pub(crate) fn enum_to_string<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::apply_rollout_item;
+    use super::rollout_item_affects_process_metadata;
     use crate::model::ProcessMetadata;
     use chaos_ipc::ProcessId;
     use chaos_ipc::config_types::ReasoningSummary;
@@ -183,7 +241,7 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn response_item_user_messages_do_not_set_title_or_first_user_message() {
+    fn response_item_user_messages_set_title_and_first_user_message() {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::ResponseItem(ResponseItem::Message {
             id: None,
@@ -197,8 +255,62 @@ mod tests {
 
         apply_rollout_item(&mut metadata, &item, "test-provider");
 
-        assert_eq!(metadata.first_user_message, None);
-        assert_eq!(metadata.title, "");
+        assert_eq!(
+            metadata.first_user_message.as_deref(),
+            Some("hello from response item")
+        );
+        assert_eq!(metadata.title, "hello from response item");
+        assert!(rollout_item_affects_process_metadata(&item));
+    }
+
+    #[test]
+    fn response_item_user_message_strips_environment_context_and_request_marker() {
+        let mut metadata = metadata_for_test();
+        let item = RolloutItem::ResponseItem(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: concat!(
+                    "<environment_context>\n",
+                    "  <cwd>/tmp</cwd>\n",
+                    "</environment_context>\n\n",
+                    "## My request for FreeChaOS: Fix resume metadata"
+                )
+                .to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        });
+
+        apply_rollout_item(&mut metadata, &item, "test-provider");
+
+        assert_eq!(
+            metadata.first_user_message.as_deref(),
+            Some("Fix resume metadata")
+        );
+        assert_eq!(metadata.title, "Fix resume metadata");
+    }
+
+    #[test]
+    fn response_item_image_only_user_message_sets_image_placeholder_preview() {
+        let mut metadata = metadata_for_test();
+        let item = RolloutItem::ResponseItem(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputImage {
+                image_url: "https://example.com/image.png".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        });
+
+        apply_rollout_item(&mut metadata, &item, "test-provider");
+
+        assert_eq!(
+            metadata.first_user_message.as_deref(),
+            Some(super::IMAGE_ONLY_USER_MESSAGE_PLACEHOLDER)
+        );
+        assert_eq!(metadata.title, super::IMAGE_ONLY_USER_MESSAGE_PLACEHOLDER);
     }
 
     #[test]

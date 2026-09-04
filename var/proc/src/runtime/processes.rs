@@ -671,7 +671,6 @@ pub(super) fn push_process_filters<'a>(
     } else {
         builder.push(" AND archived_at IS NULL");
     }
-    builder.push(" AND first_user_message <> ''");
     if !allowed_sources.is_empty() {
         builder.push(" AND source IN (");
         let mut separated = builder.separated(", ");
@@ -736,6 +735,8 @@ mod tests {
     use super::*;
     use crate::runtime::test_support::test_process_metadata;
     use crate::runtime::test_support::unique_temp_dir;
+    use chaos_ipc::models::ContentItem;
+    use chaos_ipc::models::ResponseItem;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::GitInfo;
     use chaos_ipc::protocol::SessionMeta;
@@ -743,6 +744,39 @@ mod tests {
     use chaos_ipc::protocol::SessionSource;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn list_processes_includes_rows_without_derived_user_message() {
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
+            .await
+            .expect("runtime db should initialize");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000122")
+            .expect("valid process id");
+        let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
+        metadata.first_user_message = None;
+
+        runtime
+            .upsert_process(&metadata)
+            .await
+            .expect("legacy metadata row should persist");
+        let page = runtime
+            .list_processes(
+                10,
+                None,
+                SortKey::UpdatedAt,
+                &["cli".to_string()],
+                None,
+                false,
+                None,
+            )
+            .await
+            .expect("process listing should succeed");
+
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].id, process_id);
+        assert_eq!(page.items[0].first_user_message, None);
+    }
 
     #[tokio::test]
     async fn upsert_thread_keeps_creation_memory_mode_for_existing_rows() {
@@ -828,6 +862,57 @@ mod tests {
             .await
             .expect("memory mode should load");
         assert_eq!(memory_mode.as_deref(), Some("polluted"));
+    }
+
+    #[tokio::test]
+    async fn apply_rollout_items_projects_persisted_user_response() {
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
+            .await
+            .expect("runtime db should initialize");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000458")
+            .expect("valid thread id");
+        let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
+        metadata.title.clear();
+        metadata.first_user_message = None;
+        runtime
+            .upsert_process(&metadata)
+            .await
+            .expect("initial upsert should succeed");
+
+        let builder =
+            ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
+        let items = vec![RolloutItem::ResponseItem(ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: concat!(
+                    "<environment_context>\n",
+                    "  <cwd>/tmp/project</cwd>\n",
+                    "</environment_context>\n\n",
+                    "## My request for FreeChaOS: Keep resume fast"
+                )
+                .to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        })];
+
+        runtime
+            .apply_rollout_items(&builder, &items, None, None)
+            .await
+            .expect("apply_rollout_items should succeed");
+
+        let persisted = runtime
+            .get_process(process_id)
+            .await
+            .expect("thread should load")
+            .expect("thread should exist");
+        assert_eq!(
+            persisted.first_user_message.as_deref(),
+            Some("Keep resume fast")
+        );
+        assert_eq!(persisted.title, "Keep resume fast");
     }
 
     #[tokio::test]

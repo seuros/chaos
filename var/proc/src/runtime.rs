@@ -2098,7 +2098,6 @@ fn push_process_filters_postgres<'a>(
     } else {
         builder.push(" AND archived_at IS NULL");
     }
-    builder.push(" AND first_user_message <> ''");
     if !allowed_sources.is_empty() {
         builder.push(" AND source IN (");
         let mut separated = builder.separated(", ");

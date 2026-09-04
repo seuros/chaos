@@ -49,8 +49,6 @@ use crate::runtime_db;
 use crate::runtime_db::RuntimeDbHandle;
 use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
-use chaos_ipc::models::ContentItem;
-use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::ResumedHistory;
@@ -205,7 +203,7 @@ impl RolloutRecorder {
         default_provider: &str,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        Self::list_processes_from_journal(
+        Self::list_processes_from_runtime_db(
             config,
             page_size,
             cursor,
@@ -229,7 +227,7 @@ impl RolloutRecorder {
         default_provider: &str,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        Self::list_processes_from_journal(
+        Self::list_processes_from_runtime_db(
             config,
             page_size,
             cursor,
@@ -243,67 +241,37 @@ impl RolloutRecorder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn list_processes_from_journal(
-        _config: &impl RolloutConfig,
+    async fn list_processes_from_runtime_db(
+        config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
-        _default_provider: &str,
+        default_provider: &str,
         archived: bool,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        let client = journal_client_for_mounted_backend()
-            .await
-            .map_err(IoError::other)?;
-        let mut records = client
-            .list_processes(Some(archived))
-            .await
-            .map_err(IoError::other)?;
-        records.retain(|record| journal_record_matches_filters(record, allowed_sources));
-        sort_journal_records(&mut records, sort_key);
+        let runtime_db = runtime_db::get_runtime_db_for(config.sqlite_home(), default_provider);
+        let db_page = runtime_db::list_processes_db(
+            runtime_db.as_ref(),
+            config.sqlite_home(),
+            page_size,
+            cursor,
+            sort_key,
+            allowed_sources,
+            /*model_providers*/ None,
+            archived,
+            search_term,
+        )
+        .await
+        .ok_or_else(|| {
+            IoError::other(
+                "failed to list processes from the mounted runtime database; \
+                 refusing to scan complete journals for resume metadata",
+            )
+        })?;
 
-        let mut items = Vec::with_capacity(page_size);
-        let mut scanned = 0usize;
-        let mut next_cursor = None;
-        let mut last_returned_cursor = None;
-        let search_term = search_term.map(str::to_lowercase);
-        for record in records {
-            scanned = scanned.saturating_add(1);
-            if journal_record_is_before_cursor(&record, cursor, sort_key) {
-                continue;
-            }
-
-            let Some(process_id) = process_uuid(&record.process_id) else {
-                continue;
-            };
-            let loaded = client
-                .load_journal(record.process_id)
-                .await
-                .map_err(IoError::other)?;
-            let Some(item) =
-                journal_process_item_from_loaded(&record, loaded, search_term.as_deref())
-            else {
-                continue;
-            };
-
-            if items.len() == page_size {
-                next_cursor = last_returned_cursor.clone();
-                break;
-            }
-            items.push(item);
-            last_returned_cursor = Some(Cursor::new(
-                journal_record_sort_timestamp(&record, sort_key),
-                process_id,
-            ));
-        }
-
-        Ok(ProcessesPage {
-            items,
-            next_cursor,
-            num_scanned_records: scanned,
-            reached_scan_limit: false,
-        })
+        Ok(processes_page_from_db(db_page))
     }
 
     /// Find the newest recorded process id, optionally filtering to a matching cwd.
@@ -1300,123 +1268,44 @@ fn process_uuid(process_id: &ProcessId) -> Option<Uuid> {
     Uuid::parse_str(&process_id.to_string()).ok()
 }
 
-fn journal_process_item_from_loaded(
-    record: &JournalProcessRecord,
-    loaded: LoadedJournal,
-    search_term: Option<&str>,
-) -> Option<ProcessItem> {
-    let mut first_user_message_from_response: Option<String> = None;
-    let mut first_user_message_from_event: Option<String> = None;
-    let mut saw_user_event = false;
-    let mut git_branch = None;
-    let mut git_sha = None;
-    let mut git_origin_url = None;
-
-    for entry in loaded.items {
-        match entry.item {
-            RolloutItem::SessionMeta(session_meta_line) => {
-                if let Some(git) = session_meta_line.git {
-                    if git_branch.is_none() {
-                        git_branch = git.branch;
-                    }
-                    if git_sha.is_none() {
-                        git_sha = git.commit_hash;
-                    }
-                    if git_origin_url.is_none() {
-                        git_origin_url = git.repository_url;
-                    }
-                }
+fn processes_page_from_db(db_page: chaos_proc::ProcessesPage) -> ProcessesPage {
+    let items = db_page
+        .items
+        .into_iter()
+        .map(|item| {
+            let first_user_message = item.first_user_message.or_else(|| {
+                let title = item.title.trim();
+                (!title.is_empty()).then(|| title.to_string())
+            });
+            ProcessItem {
+                process_id: Some(item.id),
+                first_user_message,
+                cwd: Some(item.cwd),
+                git_branch: item.git_branch,
+                git_sha: item.git_sha,
+                git_origin_url: item.git_origin_url,
+                source: Some(
+                    serde_json::from_value(serde_json::Value::String(item.source))
+                        .unwrap_or(SessionSource::Unknown),
+                ),
+                agent_nickname: item.agent_nickname,
+                agent_role: item.agent_role,
+                model_provider: Some(item.model_provider),
+                cli_version: Some(item.cli_version),
+                created_at: Some(item.created_at.to_string()),
+                updated_at: Some(item.updated_at.to_string()),
             }
-            RolloutItem::ResponseItem(ResponseItem::Message { role, content, .. })
-                if role == "user" =>
-            {
-                saw_user_event = true;
-                if first_user_message_from_response.is_none() {
-                    let text = content.iter().find_map(|c| match c {
-                        ContentItem::InputText { text } => Some(text.clone()),
-                        _ => None,
-                    });
-                    first_user_message_from_response = text.and_then(cleanup_user_message_preview);
-                }
-            }
-            RolloutItem::EventMsg(EventMsg::UserMessage(user)) => {
-                saw_user_event = true;
-                // EventMsg::UserMessage carries the clean user turn without the
-                // `<environment_context>` wrapper the kernel prepends to the first
-                // role=user response item, so it makes a better picker preview.
-                if first_user_message_from_event.is_none() {
-                    first_user_message_from_event = cleanup_user_message_preview(user.message);
-                }
-            }
-            RolloutItem::ResponseItem(_)
-            | RolloutItem::Compacted(_)
-            | RolloutItem::CompactionControl(_)
-            | RolloutItem::TurnContext(_)
-            | RolloutItem::EventMsg(_) => {}
-        }
-    }
-
-    let first_user_message = first_user_message_from_event.or(first_user_message_from_response);
-
-    if !saw_user_event {
-        return None;
-    }
-
-    if let Some(term) = search_term {
-        let term = term.trim();
-        if !term.is_empty() {
-            let preview_match = first_user_message
-                .as_ref()
-                .is_some_and(|message| message.to_lowercase().contains(term));
-            let title_match = record.title.to_lowercase().contains(term);
-            let cwd_match = record.cwd.to_string_lossy().to_lowercase().contains(term);
-            let branch_match = git_branch
-                .as_ref()
-                .is_some_and(|branch| branch.to_lowercase().contains(term));
-            if !(preview_match || title_match || cwd_match || branch_match) {
-                return None;
-            }
-        }
-    }
-
-    Some(ProcessItem {
-        process_id: Some(record.process_id),
-        first_user_message,
-        cwd: Some(record.cwd.clone()),
-        git_branch,
-        git_sha,
-        git_origin_url,
-        source: Some(record.source.clone()),
-        agent_nickname: record.agent_nickname.clone(),
-        agent_role: record.agent_role.clone(),
-        model_provider: Some(record.model_provider.clone()),
-        cli_version: record.cli_version.clone(),
-        created_at: Some(record.created_at.to_string()),
-        updated_at: Some(record.updated_at.to_string()),
-    })
-}
-
-/// Strip the kernel-injected `<environment_context>...</environment_context>`
-/// wrapper (and any `## My request for Chaos:` marker) from a candidate
-/// preview. Returns `None` when nothing meaningful remains.
-fn cleanup_user_message_preview(mut text: String) -> Option<String> {
-    loop {
-        let trimmed = text.trim_start();
-        let Some(rest) = trimmed.strip_prefix("<environment_context>") else {
-            break;
-        };
-        let close_idx = rest.find("</environment_context>")?;
-        text = rest[close_idx + "</environment_context>".len()..].to_string();
-    }
-    let cleaned = text
-        .trim()
-        .trim_start_matches("## My request for Chaos:")
-        .trim()
-        .to_string();
-    if cleaned.is_empty() {
-        None
-    } else {
-        Some(cleaned)
+        })
+        .collect();
+    ProcessesPage {
+        items,
+        next_cursor: db_page.next_anchor.map(|anchor| {
+            let ts = OffsetDateTime::from_unix_timestamp(anchor.ts.as_second())
+                .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+            Cursor::new(ts, anchor.id)
+        }),
+        num_scanned_records: db_page.num_scanned_rows,
+        reached_scan_limit: false,
     }
 }
 
@@ -1665,11 +1554,15 @@ fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
 }
 
 #[cfg(test)]
-mod picker_preview_tests {
-    use super::cleanup_user_message_preview;
+mod tests {
     use super::direct_journal_client_for_vfs;
+    use super::processes_page_from_db;
+    use chaos_ipc::ProcessId;
+    use chaos_ipc::protocol::SessionSource;
     use chaos_journald::JournalClient;
     use sqlx::postgres::PgPoolOptions;
+    use std::path::PathBuf;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn postgres_vfs_selects_direct_journal_client() {
@@ -1682,29 +1575,60 @@ mod picker_preview_tests {
     }
 
     #[test]
-    fn strips_environment_context_and_request_marker() {
-        let xml = "<environment_context>\n  <cwd>/tmp</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-04-05</current_date>\n</environment_context>";
-        // Standalone env_context yields no preview.
-        assert_eq!(cleanup_user_message_preview(xml.to_string()), None);
+    fn converts_runtime_db_page_without_losing_resume_metadata() {
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000123").unwrap();
+        let next_id = Uuid::parse_str("00000000-0000-0000-0000-000000000456").unwrap();
+        let created_at: jiff::Timestamp = "2026-09-04T10:00:00Z".parse().unwrap();
+        let updated_at: jiff::Timestamp = "2026-09-04T11:00:00Z".parse().unwrap();
+        let db_page = chaos_proc::ProcessesPage {
+            items: vec![chaos_proc::ProcessMetadata {
+                id: process_id,
+                created_at,
+                updated_at,
+                source: "cli".to_string(),
+                agent_nickname: None,
+                agent_role: None,
+                model_provider: "openai".to_string(),
+                cwd: PathBuf::from("/tmp/project"),
+                cli_version: "47.2.0".to_string(),
+                title: "Fix resume".to_string(),
+                sandbox_policy: "workspace-write".to_string(),
+                approval_mode: "interactive".to_string(),
+                tokens_used: 42,
+                first_user_message: None,
+                archived_at: None,
+                git_sha: Some("abc123".to_string()),
+                git_branch: Some("main".to_string()),
+                git_origin_url: Some("https://example.com/chaos.git".to_string()),
+            }],
+            next_anchor: Some(chaos_proc::Anchor {
+                ts: updated_at,
+                id: next_id,
+            }),
+            num_scanned_rows: 2,
+        };
 
-        // Env context followed by a real request yields the request.
-        let combined = format!("{xml}\n\n## My request for Chaos: Explain this codebase");
-        assert_eq!(
-            cleanup_user_message_preview(combined),
-            Some("Explain this codebase".to_string())
-        );
+        let page = processes_page_from_db(db_page);
 
-        // Plain user message passes through unchanged (modulo trim).
+        assert_eq!(page.num_scanned_records, 2);
+        assert!(!page.reached_scan_limit);
         assert_eq!(
-            cleanup_user_message_preview("Explain this codebase".to_string()),
-            Some("Explain this codebase".to_string())
+            page.next_cursor.as_ref().map(|cursor| cursor.id()),
+            Some(next_id)
         );
-
-        // Multiple stacked env_context blocks also strip cleanly.
-        let stacked = format!("{xml}\n{xml}\nhello");
         assert_eq!(
-            cleanup_user_message_preview(stacked),
-            Some("hello".to_string())
+            page.next_cursor
+                .as_ref()
+                .map(|cursor| cursor.ts().unix_timestamp()),
+            Some(updated_at.as_second())
         );
+        assert_eq!(page.items.len(), 1);
+        let item = &page.items[0];
+        let expected_cwd = PathBuf::from("/tmp/project");
+        assert_eq!(item.process_id, Some(process_id));
+        assert_eq!(item.first_user_message.as_deref(), Some("Fix resume"));
+        assert_eq!(item.cwd.as_deref(), Some(expected_cwd.as_path()));
+        assert_eq!(item.source, Some(SessionSource::Cli));
+        assert_eq!(item.git_branch.as_deref(), Some("main"));
     }
 }

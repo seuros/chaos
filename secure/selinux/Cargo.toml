@@ -16,13 +16,13 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 chaos-realpath = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 mlua = { workspace = true }
 multimap = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 shlex = { workspace = true }
 thiserror = { workspace = true }
+usage = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

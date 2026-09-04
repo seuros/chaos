@@ -23,7 +23,6 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-coreboot = { workspace = true }
@@ -73,6 +72,7 @@ unicode-width = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
 libui = { workspace = true }
+usage = { workspace = true }
 
 
 [dev-dependencies]

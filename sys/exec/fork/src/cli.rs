@@ -1,93 +1,90 @@
 use chaos_getopt::CliConfigOverrides;
-use clap::Args;
-use clap::FromArgMatches;
-use clap::Parser;
-use clap::ValueEnum;
 use std::path::PathBuf;
 
-#[derive(Parser, Debug)]
-#[command(version)]
+#[derive(usage::Args, Debug, Default)]
 pub struct Cli {
     /// Action to perform. If omitted, runs a new non-interactive session.
-    #[command(subcommand)]
+    #[usage(subcommand)]
     pub command: Option<Command>,
 
     /// Select the sandbox policy to use when executing model-generated shell
     /// commands.
-    #[arg(long = "sandbox", short = 's', value_enum)]
+    #[usage(long = "sandbox", short = 's', value_enum)]
     pub sandbox_mode: Option<chaos_getopt::SandboxModeCliArg>,
 
     /// Configuration profile from config.toml to specify default options.
-    #[arg(long = "profile", short = 'p')]
+    #[usage(long = "profile", short = 'p')]
     pub config_profile: Option<String>,
 
     /// Override the model used for this exec run.
-    #[arg(long = "model", short = 'm', value_name = "MODEL")]
+    #[usage(long = "model", short = 'm', value_name = "MODEL")]
     pub model: Option<String>,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     pub auto_exec: chaos_getopt::GlobalAutoExecFlags,
 
     /// Tell the agent to use the specified directory as its working root.
-    #[clap(long = "cd", short = 'C', value_name = "DIR")]
+    #[usage(long = "cd", short = 'C', value_name = "DIR")]
     pub cwd: Option<PathBuf>,
 
     /// Allow running Chaos outside a Git repository.
-    #[arg(long = "skip-git-repo-check", global = true, default_value_t = false)]
+    #[usage(long = "skip-git-repo-check", global)]
     pub skip_git_repo_check: bool,
 
     /// Additional directories that should be writable alongside the primary workspace.
-    #[arg(long = "add-dir", value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
+    #[usage(
+        long = "add-dir",
+        value_name = "DIR",
+        value_hint = usage::ValueHint::DirPath
+    )]
     pub add_dir: Vec<PathBuf>,
 
     /// Run without persisting session history.
-    #[arg(long = "ephemeral", global = true, default_value_t = false)]
+    #[usage(long = "ephemeral", global)]
     pub ephemeral: bool,
 
     /// Internal: start from a serialized Stop-hook transcript snapshot.
-    #[arg(long = "fork-snapshot", value_name = "FILE", hide = true)]
+    #[usage(long = "fork-snapshot", value_name = "FILE", hide)]
     pub fork_snapshot: Option<PathBuf>,
 
     /// Path to a JSON Schema file describing the model's final response shape.
-    #[arg(long = "output-schema", value_name = "FILE")]
+    #[usage(long = "output-schema", value_name = "FILE")]
     pub output_schema: Option<PathBuf>,
 
-    #[clap(skip)]
+    #[usage(skip)]
     pub config_overrides: CliConfigOverrides,
 
     /// Specifies color settings for use in the output.
-    #[arg(long = "color", value_enum, default_value_t = Color::Auto)]
+    #[usage(long = "color", value_enum, default = "auto")]
     pub color: Color,
 
     /// Force cursor-based progress updates in exec mode.
-    #[arg(long = "progress-cursor", default_value_t = false)]
+    #[usage(long = "progress-cursor")]
     pub progress_cursor: bool,
 
     /// Print events to stdout as JSONL.
-    #[arg(
-        long = "json",
-        alias = "experimental-json",
-        default_value_t = false,
-        global = true
-    )]
+    #[usage(long = "json", alias = "experimental-json", global)]
     pub json: bool,
 
     /// Specifies file where the last message from the agent should be written.
-    #[arg(
-        long = "output-last-message",
-        short = 'o',
-        value_name = "FILE",
-        global = true
-    )]
+    #[usage(long = "output-last-message", short = 'o', value_name = "FILE", global)]
     pub last_message_file: Option<PathBuf>,
 
     /// Initial instructions for the agent. If not provided as an argument (or
     /// if `-` is used), instructions are read from stdin.
-    #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
+    #[usage(value_name = "PROMPT", value_hint = usage::ValueHint::Other)]
     pub prompt: Option<String>,
 }
 
-#[derive(Debug, clap::Subcommand)]
+impl Cli {
+    pub fn normalize(&mut self) {
+        if let Some(Command::Resume(args)) = &mut self.command {
+            args.normalize();
+        }
+    }
+}
+
+#[derive(Debug, usage::Subcommands)]
 pub enum Command {
     /// Resume a previous session by id or pick the most recent with --last.
     Resume(ResumeArgs),
@@ -96,120 +93,70 @@ pub enum Command {
     Review(ReviewArgs),
 }
 
-#[derive(Args, Debug)]
-struct ResumeArgsRaw {
-    // Note: This is the direct clap shape. We reinterpret the positional when --last is set
+#[derive(usage::Args, Debug)]
+pub struct ResumeArgs {
+    // Note: This is the direct parser shape. We reinterpret the positional when --last is set
     // so "chaos resume --last <prompt>" treats the positional as a prompt, not a session id.
     /// Conversation/session id (UUID) or process name. UUIDs take precedence if it parses.
     /// If omitted, use --last to pick the most recent recorded session.
-    #[arg(value_name = "SESSION_ID")]
-    session_id: Option<String>,
-
-    /// Resume the most recent recorded session (newest) without specifying an id.
-    #[arg(long = "last", default_value_t = false)]
-    last: bool,
-
-    /// Show all sessions (disables cwd filtering).
-    #[arg(long = "all", default_value_t = false)]
-    all: bool,
-
-    /// Prompt to send after resuming the session. If `-` is used, read from stdin.
-    #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
-    prompt: Option<String>,
-}
-
-#[derive(Debug)]
-pub struct ResumeArgs {
-    /// Conversation/session id (UUID) or process name. UUIDs take precedence if it parses.
-    /// If omitted, use --last to pick the most recent recorded session.
+    #[usage(value_name = "SESSION_ID")]
     pub session_id: Option<String>,
 
     /// Resume the most recent recorded session (newest) without specifying an id.
+    #[usage(long = "last")]
     pub last: bool,
 
     /// Show all sessions (disables cwd filtering).
+    #[usage(long = "all")]
     pub all: bool,
 
     /// Prompt to send after resuming the session. If `-` is used, read from stdin.
+    #[usage(value_name = "PROMPT", value_hint = usage::ValueHint::Other)]
     pub prompt: Option<String>,
 }
 
-impl From<ResumeArgsRaw> for ResumeArgs {
-    fn from(raw: ResumeArgsRaw) -> Self {
-        // When --last is used without an explicit prompt, treat the positional as the prompt
-        // (clap can’t express this conditional positional meaning cleanly).
-        let (session_id, prompt) = if raw.last && raw.prompt.is_none() {
-            (None, raw.session_id)
-        } else {
-            (raw.session_id, raw.prompt)
-        };
-        Self {
-            session_id,
-            last: raw.last,
-            all: raw.all,
-            prompt,
+impl ResumeArgs {
+    fn normalize(&mut self) {
+        // When --last is used without an explicit prompt, treat the positional as the prompt.
+        if self.last && self.prompt.is_none() {
+            self.prompt = self.session_id.take();
         }
     }
 }
 
-impl Args for ResumeArgs {
-    fn augment_args(cmd: clap::Command) -> clap::Command {
-        ResumeArgsRaw::augment_args(cmd)
-    }
-
-    fn augment_args_for_update(cmd: clap::Command) -> clap::Command {
-        ResumeArgsRaw::augment_args_for_update(cmd)
-    }
-}
-
-impl FromArgMatches for ResumeArgs {
-    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
-        ResumeArgsRaw::from_arg_matches(matches).map(Self::from)
-    }
-
-    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
-        *self = ResumeArgsRaw::from_arg_matches(matches).map(Self::from)?;
-        Ok(())
-    }
-}
-
-#[derive(Parser, Debug)]
+#[derive(usage::Args, Debug)]
 pub struct ReviewArgs {
     /// Review staged, unstaged, and untracked changes.
-    #[arg(
-        long = "uncommitted",
-        default_value_t = false,
-        conflicts_with_all = ["base", "commit", "prompt"]
-    )]
+    #[usage(long = "uncommitted", conflicts("--base", "--commit", "prompt"))]
     pub uncommitted: bool,
 
     /// Review changes against the given base branch.
-    #[arg(
+    #[usage(
         long = "base",
         value_name = "BRANCH",
-        conflicts_with_all = ["uncommitted", "commit", "prompt"]
+        conflicts("--uncommitted", "--commit", "prompt")
     )]
     pub base: Option<String>,
 
     /// Review the changes introduced by a commit.
-    #[arg(
+    #[usage(
         long = "commit",
         value_name = "SHA",
-        conflicts_with_all = ["uncommitted", "base", "prompt"]
+        conflicts("--uncommitted", "--base", "prompt")
     )]
     pub commit: Option<String>,
 
     /// Optional commit title to display in the review summary.
-    #[arg(long = "title", value_name = "TITLE", requires = "commit")]
+    #[usage(long = "title", value_name = "TITLE", requires = "--commit")]
     pub commit_title: Option<String>,
 
     /// Custom review instructions. If `-` is used, read from stdin.
-    #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
+    #[usage(value_name = "PROMPT", value_hint = usage::ValueHint::Other)]
     pub prompt: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
-#[value(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, usage::ValueEnum)]
+#[usage(rename_all = "kebab-case")]
 pub enum Color {
     Always,
     Never,
@@ -218,14 +165,58 @@ pub enum Color {
 }
 
 #[cfg(test)]
+#[derive(usage::Cli)]
+#[usage(
+    bin = "chaos-fork-test",
+    multicall,
+    unknown_flags = "error",
+    args_override_self = false
+)]
+struct TestRoot {
+    #[usage(subcommand)]
+    command: TestApplet,
+}
+
+#[cfg(test)]
+#[derive(usage::Subcommands)]
+enum TestApplet {
+    #[usage(name = "chaos-exec")]
+    ChaosExec(Cli),
+}
+
+#[cfg(test)]
+pub(crate) fn try_parse_for_test<'v>(args: &[&'v str]) -> Result<Cli, usage::Error<'static, 'v>> {
+    use std::ffi::OsStr;
+
+    let argv = args.iter().map(|arg| OsStr::new(*arg)).collect::<Vec<_>>();
+    let TestApplet::ChaosExec(mut cli) = TestRoot::try_parse_from(&argv)?.command;
+    cli.normalize();
+    Ok(cli)
+}
+
+#[cfg(test)]
+pub(crate) fn parse_owned_for_test(args: &[String]) -> Cli {
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    try_parse_for_test(&args).expect("valid exec arguments")
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    fn try_parse<'v>(args: &[&'v str]) -> Result<Cli, usage::Error<'static, 'v>> {
+        try_parse_for_test(args)
+    }
+
+    fn parse(args: &[&str]) -> Cli {
+        try_parse(args).expect("valid exec arguments")
+    }
+
     #[test]
     fn resume_rejects_model_flag_after_subcommand() {
         const PROMPT: &str = "echo resume-with-global-flags-after-subcommand";
-        let err = Cli::try_parse_from([
+        let err = try_parse(&[
             "chaos-exec",
             "resume",
             "--last",
@@ -239,13 +230,16 @@ mod tests {
         ])
         .expect_err("--model is a root exec override, not a resume flag");
 
-        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+        assert!(matches!(
+            err,
+            usage::Error::UnknownFlag { .. } | usage::Error::UnexpectedArg { .. }
+        ));
     }
 
     #[test]
     fn resume_parses_prompt_after_global_flags() {
         const PROMPT: &str = "echo resume-with-global-flags-after-subcommand";
-        let cli = Cli::parse_from([
+        let cli = parse(&[
             "chaos-exec",
             "resume",
             "--last",
@@ -273,7 +267,7 @@ mod tests {
     #[test]
     fn resume_accepts_output_last_message_flag_after_subcommand() {
         const PROMPT: &str = "echo resume-with-output-file";
-        let cli = Cli::parse_from([
+        let cli = parse(&[
             "chaos-exec",
             "resume",
             "session-123",
@@ -295,7 +289,7 @@ mod tests {
 
     #[test]
     fn hidden_fork_snapshot_option_is_parsed() {
-        let cli = Cli::parse_from([
+        let cli = parse(&[
             "chaos-exec",
             "--fork-snapshot",
             "/tmp/turn-snapshot.json",

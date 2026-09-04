@@ -1,13 +1,17 @@
 //! Entrypoints for execve interception helper binaries.
 
-use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(
+    bin = "chaos-forkve-wrapper",
+    unknown_flags = "error",
+    args_override_self = false
+)]
 pub struct ExecveWrapperCli {
     file: String,
 
-    #[arg(trailing_var_arg = true)]
+    #[usage(trailing_var_arg)]
     argv: Vec<String>,
 }
 

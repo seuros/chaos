@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::ffi::CString;
 use std::ffi::OsStr;
 use std::os::fd::AsRawFd;
@@ -15,7 +14,12 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SocketPolicy;
 use chaos_ipc::protocol::VfsPolicy;
 
-#[derive(Debug, Parser)]
+#[derive(Debug, usage::Cli)]
+#[usage(
+    bin = "alcatraz-freebsd",
+    unknown_flags = "error",
+    args_override_self = false
+)]
 /// CLI surface for the FreeBSD sandbox helper.
 ///
 /// Validates which sandbox policy combinations can be enforced safely on
@@ -24,20 +28,20 @@ use chaos_ipc::protocol::VfsPolicy;
 pub struct CapsicumCommand {
     /// It is possible that the cwd used in the context of the sandbox policy
     /// is different from the cwd of the process to spawn.
-    #[arg(long = "sandbox-policy-cwd")]
+    #[usage(long = "sandbox-policy-cwd")]
     pub sandbox_policy_cwd: PathBuf,
 
     /// Legacy compatibility policy.
     ///
     /// Newer callers pass split filesystem/network policies as well so the
     /// helper can migrate incrementally without breaking older invocations.
-    #[arg(long = "sandbox-policy", hide = true)]
+    #[usage(long = "sandbox-policy", hide)]
     pub sandbox_policy: Option<SandboxPolicy>,
 
-    #[arg(long = "file-system-sandbox-policy", hide = true)]
+    #[usage(long = "file-system-sandbox-policy", hide)]
     pub vfs_policy: Option<VfsPolicy>,
 
-    #[arg(long = "network-sandbox-policy", hide = true)]
+    #[usage(long = "network-sandbox-policy", hide)]
     pub socket_policy: Option<SocketPolicy>,
 
     /// Internal compatibility flag.
@@ -45,11 +49,11 @@ pub struct CapsicumCommand {
     /// Managed-network sessions request proxy-only connectivity through this
     /// flag. The current FreeBSD helper rejects that mode explicitly because
     /// proxy-routed networking is not implemented yet.
-    #[arg(long = "allow-network-for-proxy", hide = true, default_value_t = false)]
+    #[usage(long = "allow-network-for-proxy", hide)]
     pub allow_network_for_proxy: bool,
 
     /// Full command args to run under the FreeBSD sandbox helper.
-    #[arg(trailing_var_arg = true)]
+    #[usage(trailing_var_arg)]
     pub command: Vec<String>,
 }
 

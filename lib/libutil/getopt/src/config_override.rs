@@ -1,21 +1,19 @@
 //! Support for `-c key=value` overrides shared across Chaos CLI tools.
 //!
 //! This module provides a [`CliConfigOverrides`] struct that can be embedded
-//! into a `clap`-derived CLI struct using `#[clap(flatten)]`. Each occurrence
+//! into a `usage`-derived CLI struct using `#[usage(flatten)]`. Each occurrence
 //! of `-c key=value` (or `--config key=value`) will be collected as a raw
 //! string. Helper methods are provided to convert the raw strings into
 //! key/value pairs as well as to apply them onto a mutable
 //! `serde_json::Value` representing the configuration tree.
 
-use clap::ArgAction;
-use clap::Parser;
 use serde::de::Error as SerdeError;
 use toml::Value;
 
 /// CLI option that captures arbitrary configuration overrides specified as
 /// `-c key=value`. It intentionally keeps both halves **unparsed** so that the
 /// calling code can decide how to interpret the right-hand side.
-#[derive(Parser, Debug, Default, Clone)]
+#[derive(usage::Args, Debug, Default, Clone)]
 pub struct CliConfigOverrides {
     /// Override a configuration value that would otherwise be loaded from
     /// `~/.chaos/config.toml`. Use a dotted path (`foo.bar.baz`) to override
@@ -26,12 +24,12 @@ pub struct CliConfigOverrides {
     ///   - `-c model="o3"`
     ///   - `-c 'sandbox_permissions=["disk-full-read-access"]'`
     ///   - `-c shell_environment_policy.inherit=all`
-    #[arg(
+    #[usage(
         short = 'c',
         long = "config",
         value_name = "key=value",
-        action = ArgAction::Append,
-        global = true,
+        var,
+        global = true
     )]
     pub raw_overrides: Vec<String>,
 }

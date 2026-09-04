@@ -250,8 +250,6 @@ base64 = "0.22.1"
 bonsai-bt = { version = "0.13.1", default-features = false }
 bytes = "1.12.1"
 chardetng = "1.0.0"
-clap = "4"
-clap_complete = "4"
 color-eyre = "0.6.5"
 crossbeam-channel = "0.5.16"
 crossterm = "0.29.0"
@@ -406,6 +404,10 @@ zstd = "0.13"
 
 wiremock = "0.6"
 zeroize = "1.9.0"
+
+[workspace.dependencies.usage]
+package = "usage-rs"
+version = "6.6.1"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(feature, values(\"inspect\"))"] }

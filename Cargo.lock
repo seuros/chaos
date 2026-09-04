@@ -172,7 +172,6 @@ dependencies = [
  "chaos-parole",
  "chaos-pf",
  "chaos-realpath",
- "clap",
  "dbus-secret-service-keyring-store",
  "keyring-core",
  "libc",
@@ -182,6 +181,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "usage-rs",
 ]
 
 [[package]]
@@ -194,7 +194,6 @@ dependencies = [
  "chaos-kern",
  "chaos-parole",
  "chaos-realpath",
- "clap",
  "dbus-secret-service-keyring-store",
  "keyring-core",
  "landlock",
@@ -207,6 +206,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "usage-rs",
 ]
 
 [[package]]
@@ -1190,8 +1190,6 @@ dependencies = [
  "chaos-snitch",
  "chaos-sysctl",
  "chaos-which",
- "clap",
- "clap_complete",
  "codex-client",
  "libc",
  "mimalloc",
@@ -1210,6 +1208,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "usage-rs",
 ]
 
 [[package]]
@@ -1248,7 +1247,6 @@ dependencies = [
  "chaos-snitch",
  "chaos-termcap",
  "chaos-which",
- "clap",
  "color-eyre",
  "crossterm",
  "insta",
@@ -1273,6 +1271,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "unicode-width",
+ "usage-rs",
  "uuid",
  "webbrowser",
 ]
@@ -1373,7 +1372,6 @@ dependencies = [
  "anyhow",
  "chaos-ipc",
  "chaos-realpath",
- "clap",
  "libc",
  "pretty_assertions",
  "serde",
@@ -1384,6 +1382,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "usage-rs",
 ]
 
 [[package]]
@@ -1433,7 +1432,6 @@ dependencies = [
  "chaos-snitch",
  "chaos-uptime",
  "chaos-which",
- "clap",
  "core_test_support",
  "libc",
  "mcp-guest",
@@ -1452,6 +1450,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "ts-rs",
+ "usage-rs",
  "uuid",
 ]
 
@@ -1460,9 +1459,9 @@ name = "chaos-getopt"
 version = "47.2.0"
 dependencies = [
  "chaos-ipc",
- "clap",
  "serde",
  "toml 1.1.4+spec-1.1.0",
+ "usage-rs",
 ]
 
 [[package]]
@@ -1524,13 +1523,13 @@ dependencies = [
  "chaos-getopt",
  "chaos-ipc",
  "chaos-kern",
- "clap",
  "rama",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "usage-rs",
  "uuid",
 ]
 
@@ -1628,7 +1627,6 @@ dependencies = [
  "chaos_journald",
  "chardetng",
  "chrono-machines 0.6.0",
- "clap",
  "codex-client",
  "core_test_support",
  "csv",
@@ -1728,7 +1726,6 @@ name = "chaos-locate"
 version = "47.2.0"
 dependencies = [
  "anyhow",
- "clap",
  "crossbeam-channel",
  "fff-search",
  "ignore",
@@ -1737,6 +1734,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "usage-rs",
 ]
 
 [[package]]
@@ -1893,7 +1891,6 @@ dependencies = [
  "anyhow",
  "chaos-pwd",
  "chaos-realpath",
- "clap",
  "globset",
  "jiff",
  "pretty_assertions",
@@ -1927,7 +1924,6 @@ dependencies = [
  "chaos-dispatch",
  "chaos-ipc",
  "chaos-sysctl",
- "clap",
  "dirs 6.0.0",
  "jiff",
  "log",
@@ -1939,6 +1935,7 @@ dependencies = [
  "state-machines",
  "tokio",
  "tracing",
+ "usage-rs",
  "uuid",
 ]
 
@@ -2039,7 +2036,6 @@ version = "47.2.0"
 dependencies = [
  "anyhow",
  "chaos-realpath",
- "clap",
  "mlua",
  "multimap",
  "pretty_assertions",
@@ -2048,6 +2044,7 @@ dependencies = [
  "shlex 2.0.1",
  "tempfile",
  "thiserror 2.0.20",
+ "usage-rs",
 ]
 
 [[package]]
@@ -2287,7 +2284,6 @@ dependencies = [
  "chaos-ipc",
  "chaos-proc",
  "chaos-pwd",
- "clap",
  "jiff",
  "libc",
  "rama",
@@ -2299,6 +2295,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "usage-rs",
  "uuid",
 ]
 
@@ -2369,56 +2366,6 @@ dependencies = [
  "libc",
  "libloading",
 ]
-
-[[package]]
-name = "clap"
-version = "4.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "473c7e07f409a8d772161724aa8db6a765a2532a70f9667eeb7b49d3d02fbdca"
-dependencies = [
- "clap_builder",
- "clap_derive",
-]
-
-[[package]]
-name = "clap_builder"
-version = "4.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b48fea5a88e9ae728a2dcbedbfc0e730f7d60da42e1cb049a83c9fb8b789889"
-dependencies = [
- "anstream",
- "anstyle",
- "clap_lex",
- "strsim",
- "terminal_size",
-]
-
-[[package]]
-name = "clap_complete"
-version = "4.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3be2ad0423bdbbb0e25bc89add796f3559706d4a95e1bc98e4d9662a957b6a19"
-dependencies = [
- "clap",
-]
-
-[[package]]
-name = "clap_derive"
-version = "4.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d012d2b9d65aca7f18f4d9878a045bc17899bba951561ba5ec3c2ba1eed9a061"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 3.0.4",
-]
-
-[[package]]
-name = "clap_lex"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "clipboard-win"
@@ -11531,16 +11478,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "terminal_size"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
-dependencies = [
- "rustix 1.1.4",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "terminfo"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12456,6 +12393,43 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
+
+[[package]]
+name = "usage-argv"
+version = "6.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1f81ea3687bfc1e3f6133acc10d5b39074faad1abebddfb7b45e9f77a4f3294"
+
+[[package]]
+name = "usage-derive"
+version = "6.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da5bd6b4438ed4e7bb56603a25174969989560f77f60677dbbf7d832d8b95bfe"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
+]
+
+[[package]]
+name = "usage-rs"
+version = "6.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "457f6d93071e909c6bca69ab834cd7d0a2b3c5a85000b456431d8c9caed6c86f"
+dependencies = [
+ "usage-argv",
+ "usage-derive",
+ "usage-test",
+]
+
+[[package]]
+name = "usage-test"
+version = "6.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54fc305b97dc22cdd0c73622fa7692aea635b7d9ac2ddae2007e68b79cdcfd58"
+dependencies = [
+ "usage-argv",
+]
 
 [[package]]
 name = "utf8_iter"

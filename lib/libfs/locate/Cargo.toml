@@ -11,13 +11,13 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 crossbeam-channel = { workspace = true }
 fff-search = "0.9"
 ignore = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+usage = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

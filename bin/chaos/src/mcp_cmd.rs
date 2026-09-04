@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -21,7 +22,6 @@ use chaos_kern::mcp::auth::oauth_login_support;
 use chaos_kern::mcp::auth::resolve_oauth_scopes;
 use chaos_kern::mcp::oauth_types::OAuthCredentialsStoreMode;
 use chaos_pwd::find_chaos_home;
-use clap::ArgGroup;
 
 /// Subcommands:
 /// - `list`   — list configured servers (with `--json`)
@@ -30,16 +30,16 @@ use clap::ArgGroup;
 /// - `remove` — delete a server entry
 /// - `login`  — authenticate with MCP server using OAuth
 /// - `logout` — remove OAuth credentials for MCP server
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, usage::Args)]
 pub struct McpCli {
-    #[clap(flatten)]
+    #[usage(skip)]
     pub config_overrides: CliConfigOverrides,
 
-    #[command(subcommand)]
+    #[usage(subcommand)]
     pub subcommand: McpSubcommand,
 }
 
-#[derive(Debug, clap::Subcommand)]
+#[derive(Debug, usage::Subcommands)]
 pub enum McpSubcommand {
     /// Start Chaos as an MCP server (stdio).
     Serve,
@@ -51,113 +51,98 @@ pub enum McpSubcommand {
     Logout(LogoutArgs),
 }
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, usage::Args)]
 pub struct ListArgs {
     /// Output the configured servers as JSON.
-    #[arg(long)]
+    #[usage(long)]
     pub json: bool,
 }
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, usage::Args)]
 pub struct GetArgs {
     /// Name of the MCP server to display.
     pub name: String,
 
     /// Output the server configuration as JSON.
-    #[arg(long)]
+    #[usage(long)]
     pub json: bool,
 }
 
-#[derive(Debug, clap::Parser)]
-#[command(override_usage = "chaos mcp add [OPTIONS] <NAME> (--url <URL> | -- <COMMAND>...)")]
+#[derive(Debug, usage::Args)]
+#[usage(usage = "chaos mcp add [OPTIONS] <NAME> (--url <URL> | -- <COMMAND>...)")]
 pub struct AddArgs {
     /// Name for the MCP server configuration.
     pub name: String,
 
-    #[command(flatten)]
+    #[usage(flatten)]
     pub transport_args: AddMcpTransportArgs,
 }
 
-#[derive(Debug, clap::Args)]
-#[command(
-    group(
-        ArgGroup::new("transport")
-            .args(["command", "url"])
-            .required(true)
-            .multiple(false)
-    )
-)]
+#[derive(Debug, usage::Args)]
+#[usage(group("transport", required))]
 pub struct AddMcpTransportArgs {
-    #[command(flatten)]
-    pub stdio: Option<AddMcpStdioArgs>,
-
-    #[command(flatten)]
-    pub streamable_http: Option<AddMcpStreamableHttpArgs>,
-}
-
-#[derive(Debug, clap::Args)]
-pub struct AddMcpStdioArgs {
     /// Command to launch the MCP server.
     /// Use --url for a streamable HTTP server.
-    #[arg(
-            trailing_var_arg = true,
-            num_args = 0..,
-        )]
+    #[usage(value_name = "COMMAND", trailing_var_arg, group = "transport")]
     pub command: Vec<String>,
 
     /// Environment variables to set when launching the server.
     /// Only valid with stdio servers.
-    #[arg(
-        long,
-        value_parser = parse_env_pair,
-        value_name = "KEY=VALUE",
-    )]
-    pub env: Vec<(String, String)>,
-}
+    #[usage(long, value_name = "KEY=VALUE", requires = "command")]
+    pub env: Vec<EnvPair>,
 
-#[derive(Debug, clap::Args)]
-pub struct AddMcpStreamableHttpArgs {
     /// URL for a streamable HTTP MCP server.
-    #[arg(long)]
-    pub url: String,
+    #[usage(long, group = "transport")]
+    pub url: Option<String>,
 
     /// Optional literal bearer token stored with the runtime MCP registry.
-    #[arg(
+    #[usage(
         long = "bearer-token",
         value_name = "TOKEN",
-        requires = "url",
-        conflicts_with = "bearer_token_env_var"
+        requires = "--url",
+        conflicts = "--bearer-token-env-var"
     )]
     pub bearer_token: Option<String>,
 
     /// Optional environment variable to read for a bearer token.
     /// Only valid with streamable HTTP servers.
-    #[arg(
+    #[usage(
         long = "bearer-token-env-var",
         value_name = "ENV_VAR",
-        conflicts_with = "bearer_token",
-        requires = "url"
+        conflicts = "--bearer-token",
+        requires = "--url"
     )]
     pub bearer_token_env_var: Option<String>,
 }
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug)]
+pub struct EnvPair(pub String, pub String);
+
+impl FromStr for EnvPair {
+    type Err = String;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        parse_env_pair(raw).map(|(key, value)| Self(key, value))
+    }
+}
+
+#[derive(Debug, usage::Args)]
 pub struct RemoveArgs {
     /// Name of the MCP server configuration to remove.
     pub name: String,
 }
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, usage::Args)]
 pub struct LoginArgs {
     /// Name of the MCP server to authenticate with oauth.
     pub name: String,
 
     /// Comma-separated list of OAuth scopes to request.
-    #[arg(long, value_delimiter = ',', value_name = "SCOPE,SCOPE")]
+    #[usage(long, delimiter = ',', value_name = "SCOPE,SCOPE")]
     pub scopes: Vec<String>,
 }
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, usage::Args)]
 pub struct LogoutArgs {
     /// Name of the MCP server to deauthenticate.
     pub name: String,
@@ -249,20 +234,30 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
 
     let chaos_home = find_chaos_home().context("failed to resolve CHAOS_HOME")?;
 
-    let transport = match transport_args {
-        AddMcpTransportArgs {
-            stdio: Some(stdio), ..
-        } => {
-            let mut command_parts = stdio.command.into_iter();
+    let AddMcpTransportArgs {
+        command,
+        env,
+        url,
+        bearer_token,
+        bearer_token_env_var,
+    } = transport_args;
+
+    let transport = match url {
+        None => {
+            let mut command_parts = command.into_iter();
             let command_bin = command_parts
                 .next()
                 .ok_or_else(|| anyhow!("command is required"))?;
             let command_args: Vec<String> = command_parts.collect();
 
-            let env_map = if stdio.env.is_empty() {
+            let env_map = if env.is_empty() {
                 None
             } else {
-                Some(stdio.env.into_iter().collect::<HashMap<_, _>>())
+                Some(
+                    env.into_iter()
+                        .map(|EnvPair(key, value)| (key, value))
+                        .collect::<HashMap<_, _>>(),
+                )
             };
             McpServerTransportConfig::Stdio {
                 command: command_bin,
@@ -272,22 +267,13 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
                 cwd: None,
             }
         }
-        AddMcpTransportArgs {
-            streamable_http:
-                Some(AddMcpStreamableHttpArgs {
-                    url,
-                    bearer_token,
-                    bearer_token_env_var,
-                }),
-            ..
-        } => McpServerTransportConfig::StreamableHttp {
+        Some(url) => McpServerTransportConfig::StreamableHttp {
             url,
             bearer_token,
             bearer_token_env_var,
             http_headers: None,
             env_http_headers: None,
         },
-        AddMcpTransportArgs { .. } => bail!("exactly one of --command or --url must be provided"),
     };
 
     let new_entry = McpServerConfig {

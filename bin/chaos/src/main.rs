@@ -22,10 +22,6 @@ use chaos_fork::ReviewArgs;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::product::OS_NAME;
 use chaos_selinux::ExecPolicyCheckCommand;
-use clap::CommandFactory;
-use clap::Parser;
-use clap_complete::Shell;
-use clap_complete::generate;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use supports_color::Stream;
@@ -42,48 +38,57 @@ use chaos_kern::terminal::TerminalName;
 /// Chaos
 ///
 /// If no subcommand is specified, options will be forwarded to the interactive CLI.
-#[derive(Debug, Parser)]
-#[clap(
-    author,
+#[derive(Debug, usage::Cli)]
+#[usage(
+    author = env!("CARGO_PKG_AUTHORS"),
     version = concat!(env!("CARGO_PKG_VERSION"), ".", env!("CHAOS_BUILD_TS")),
-    // If a sub‑command is given, ignore requirements of the default args.
-    subcommand_negates_reqs = true,
     // The executable is sometimes invoked via a platform‑specific name like
     // `chaos-x86_64-unknown-linux-musl`, but the help output should always use
     // the generic `chaos` command name that users run.
-    bin_name = "chaos",
-    override_usage = "chaos [OPTIONS] [PROMPT]\n       chaos [OPTIONS] <COMMAND> [ARGS]"
+    bin = "chaos",
+    usage = "chaos [OPTIONS] [PROMPT]\n       chaos [OPTIONS] <COMMAND> [ARGS]",
+    completion,
+    unknown_flags = "error",
+    args_override_self = false
 )]
 struct MultitoolCli {
     /// Enable debug logging to ~/.chaos/debug.log.
-    #[arg(short = 'd', long = "debug", global = true, default_value_t = false)]
+    #[usage(short = 'd', long = "debug", global)]
     debug: bool,
 
     /// Override the model provider (e.g. openai, anthropic, charm). Equivalent to `-c model_provider=<name>`.
-    #[arg(long = "provider", value_name = "PROVIDER", global = true)]
+    #[usage(long = "provider", value_name = "PROVIDER", global)]
     provider: Option<String>,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     pub config_overrides: CliConfigOverrides,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     interactive: TuiCli,
 
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     subcommand: Option<Subcommand>,
 }
 
-#[derive(Debug, clap::Subcommand)]
+impl MultitoolCli {
+    fn normalize(&mut self) {
+        if let Some(Subcommand::Exec(exec)) = &mut self.subcommand {
+            exec.normalize();
+        }
+    }
+}
+
+#[derive(Debug, usage::Subcommands)]
 enum Subcommand {
     /// Run Chaos non-interactively.
-    #[clap(visible_alias = "e")]
+    #[usage(alias = "e")]
     Exec(ExecCli),
 
     /// Run a code review non-interactively.
     Review(ReviewArgs),
 
     /// Manage provider accounts and connections.
-    #[clap(visible_alias = "login")]
+    #[usage(alias = "login")]
     Accounts(AccountsCommand),
 
     /// Disconnect stored provider accounts.
@@ -99,7 +104,7 @@ enum Subcommand {
     Sandbox(chaos_boot::SandboxCommand),
 
     /// Execpolicy tooling.
-    #[clap(hide = true)]
+    #[usage(hide)]
     Execpolicy(ExecpolicyCommand),
 
     /// Resume a previous interactive session (picker by default; use --last to continue the most recent).
@@ -115,102 +120,123 @@ enum Subcommand {
     Models(ModelsCli),
 
     /// Hidden MCP bridge used by clamp subprocesses.
-    #[clap(hide = true, name = "clamp-session-bridge")]
+    #[usage(hide, name = "clamp-session-bridge")]
     ClampSessionBridge,
 }
 
-#[derive(Debug, Parser)]
+#[derive(Debug, usage::Args)]
 struct CompletionCommand {
     /// Shell to generate completions for
-    #[clap(value_enum, default_value_t = Shell::Bash)]
-    shell: Shell,
+    #[usage(value_enum, default = "bash")]
+    shell: CompletionShell,
 }
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage::ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    #[usage(name = "nushell", alias = "nu")]
+    Nushell,
+    #[usage(name = "powershell", alias = "pwsh")]
+    PowerShell,
+    Zsh,
+}
+
+impl From<CompletionShell> for usage::complete::Shell {
+    fn from(shell: CompletionShell) -> Self {
+        match shell {
+            CompletionShell::Bash => Self::Bash,
+            CompletionShell::Elvish => Self::Elvish,
+            CompletionShell::Fish => Self::Fish,
+            CompletionShell::Nushell => Self::Nu,
+            CompletionShell::PowerShell => Self::PowerShell,
+            CompletionShell::Zsh => Self::Zsh,
+        }
+    }
+}
+
+#[derive(Debug, usage::Args)]
 struct ResumeCommand {
     /// Conversation/session id (UUID) or thread name. UUIDs take precedence if it parses.
     /// If omitted, use --last to pick the most recent recorded session.
-    #[arg(value_name = "SESSION_ID")]
+    #[usage(value_name = "SESSION_ID")]
     session_id: Option<String>,
 
     /// Continue the most recent session without showing the picker.
-    #[arg(long = "last", default_value_t = false)]
+    #[usage(long = "last")]
     last: bool,
 
     /// Show all sessions (disables cwd filtering and shows CWD column).
-    #[arg(long = "all", default_value_t = false)]
+    #[usage(long = "all")]
     all: bool,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     config_overrides: TuiCli,
 }
 
-#[derive(Debug, Parser)]
+#[derive(Debug, usage::Args)]
 struct ForkCommand {
     /// Conversation/session id (UUID). When provided, forks this session.
     /// If omitted, use --last to pick the most recent recorded session.
-    #[arg(value_name = "SESSION_ID")]
+    #[usage(value_name = "SESSION_ID")]
     session_id: Option<String>,
 
     /// Fork the most recent session without showing the picker.
-    #[arg(long = "last", default_value_t = false, conflicts_with = "session_id")]
+    #[usage(long = "last", conflicts = "session_id")]
     last: bool,
 
     /// Show all sessions (disables cwd filtering and shows CWD column).
-    #[arg(long = "all", default_value_t = false)]
+    #[usage(long = "all")]
     all: bool,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     config_overrides: TuiCli,
 }
 
 // SandboxCommand is defined in chaos_boot::SandboxCommand — platform-agnostic,
 // auto-dispatches to seatbelt (macOS) or landlock (Linux) at runtime.
 
-#[derive(Debug, Parser)]
+#[derive(Debug, usage::Args)]
 struct ExecpolicyCommand {
-    #[command(subcommand)]
+    #[usage(subcommand)]
     sub: ExecpolicySubcommand,
 }
 
-#[derive(Debug, clap::Subcommand)]
+#[derive(Debug, usage::Subcommands)]
 enum ExecpolicySubcommand {
     /// Check execpolicy files against a command.
-    #[clap(name = "check")]
+    #[usage(name = "check")]
     Check(ExecPolicyCheckCommand),
 }
 
-#[derive(Debug, Parser)]
+#[derive(Debug, usage::Args)]
 struct AccountsCommand {
-    #[clap(skip)]
+    #[usage(skip)]
     config_overrides: CliConfigOverrides,
 
-    #[arg(
-        long = "with-api-key",
-        help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | chaos accounts --with-api-key`)"
-    )]
+    /// Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | chaos accounts --with-api-key`).
+    #[usage(long = "with-api-key")]
     with_api_key: bool,
 
-    #[arg(
-        long = "device-auth",
-        help = "Connect the selected provider with a subscription account using device authorization"
-    )]
+    /// Connect the selected provider with a subscription account using device authorization.
+    #[usage(long = "device-auth")]
     use_device_code: bool,
 
     /// EXPERIMENTAL: Use custom OAuth issuer base URL (advanced)
     /// Override the OAuth issuer base URL (advanced)
-    #[arg(long = "experimental_issuer", value_name = "URL", hide = true)]
+    #[usage(long = "experimental_issuer", value_name = "URL", hide)]
     issuer_base_url: Option<String>,
 
     /// EXPERIMENTAL: Use custom OAuth client ID (advanced)
-    #[arg(long = "experimental_client-id", value_name = "CLIENT_ID", hide = true)]
+    #[usage(long = "experimental_client-id", value_name = "CLIENT_ID", hide)]
     client_id: Option<String>,
 
-    #[command(subcommand)]
+    #[usage(subcommand)]
     action: Option<AccountsSubcommand>,
 }
 
-#[derive(Debug, clap::Subcommand)]
+#[derive(Debug, usage::Subcommands)]
 enum AccountsSubcommand {
     /// Show provider account status.
     Status,
@@ -218,21 +244,21 @@ enum AccountsSubcommand {
     /// Print subscription usage for the selected provider.
     Usage {
         /// Emit the stable machine-readable JSON response.
-        #[arg(long, default_value_t = false)]
+        #[usage(long)]
         json: bool,
     },
 
     /// Disconnect stored provider accounts.
     Disconnect {
         /// Disconnect every stored provider account instead of only the active provider.
-        #[arg(long = "all", default_value_t = false)]
+        #[usage(long = "all")]
         all: bool,
     },
 }
 
-#[derive(Debug, Parser)]
+#[derive(Debug, usage::Args)]
 struct LogoutCommand {
-    #[clap(skip)]
+    #[usage(skip)]
     config_overrides: CliConfigOverrides,
 }
 
@@ -322,13 +348,16 @@ macro_rules! prepend_root_flags {
 }
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
+    let mut cli = MultitoolCli::parse();
+    cli.normalize();
+
     let MultitoolCli {
         debug,
         provider,
         config_overrides: mut root_config_overrides,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = cli;
 
     // If --debug was passed, prepare the shared debug.log path before anything
     // else. The concrete runtime attaches the actual tracing layer so it can
@@ -338,6 +367,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     }
 
     // Fold --provider into config overrides so it flows to all subcommands.
+    let models_provider = provider.clone();
     if let Some(p) = provider {
         root_config_overrides
             .raw_overrides
@@ -355,7 +385,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Review(review_args)) => {
-            let mut exec_cli = ExecCli::try_parse_from(["chaos", "exec"])?;
+            let mut exec_cli = ExecCli::default();
             exec_cli.command = Some(ExecCommand::Review(review_args));
             prepend_root_flags!(exec_cli, root_config_overrides);
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
@@ -486,7 +516,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         },
         Some(Subcommand::Models(cli)) => {
             let profile = interactive.config_profile.clone();
-            models_cmd::run(cli, profile).await?;
+            models_cmd::run(cli, profile, models_provider).await?;
         }
         Some(Subcommand::ClampSessionBridge) => {
             chaos_mcpd::run_clamp_session_bridge_main().await?;
@@ -643,9 +673,7 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
 }
 
 fn print_completion(cmd: CompletionCommand) {
-    let mut app = MultitoolCli::command();
-    let name = "chaos";
-    generate(cmd.shell, &mut app, name, &mut std::io::stdout());
+    print!("{}", MultitoolCli::completion_script(cmd.shell.into()));
 }
 
 #[cfg(test)]
@@ -655,9 +683,17 @@ mod tests {
     use chaos_ipc::ProcessId;
     use chaos_ipc::protocol::TokenUsage;
     use pretty_assertions::assert_eq;
+    use std::ffi::OsStr;
+
+    fn try_parse_cli<'v>(args: &[&'v str]) -> Result<MultitoolCli, usage::Error<'static, 'v>> {
+        let argv = args.iter().map(|arg| OsStr::new(*arg)).collect::<Vec<_>>();
+        let mut cli = MultitoolCli::try_parse_from(&argv)?;
+        cli.normalize();
+        Ok(cli)
+    }
 
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
-        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        let cli = try_parse_cli(args).expect("parse");
         let MultitoolCli {
             debug: _,
             interactive,
@@ -687,7 +723,7 @@ mod tests {
     }
 
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
-        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        let cli = try_parse_cli(args).expect("parse");
         let MultitoolCli {
             debug: _,
             interactive,
@@ -717,12 +753,14 @@ mod tests {
         resume_and_fork_picker_logic_cover_default_last_session_and_all_modes();
         resume_merges_subcommand_scoped_flags_with_highest_precedence();
         debug_flag_is_global_and_defaults_false();
+        mcp_add_transport_shapes_and_constraints_are_preserved();
+        completion_shells_and_global_provider_are_preserved();
+        global_config_order_and_duplicate_scalar_rejection_are_preserved();
     }
 
     fn exec_resume_cli_parses_positionals_and_subcommand_flags() {
-        let cli =
-            MultitoolCli::try_parse_from(["chaos", "exec", "--json", "resume", "--last", "2+2"])
-                .expect("parse should succeed");
+        let cli = try_parse_cli(&["chaos", "exec", "--json", "resume", "--last", "2+2"])
+            .expect("parse should succeed");
         let Some(Subcommand::Exec(exec)) = cli.subcommand else {
             panic!("expected exec subcommand");
         };
@@ -733,7 +771,7 @@ mod tests {
         assert_eq!(args.session_id, None);
         assert_eq!(args.prompt.as_deref(), Some("2+2"));
 
-        let cli = MultitoolCli::try_parse_from([
+        let cli = try_parse_cli(&[
             "chaos",
             "exec",
             "resume",
@@ -756,7 +794,7 @@ mod tests {
         assert_eq!(args.session_id.as_deref(), Some("session-123"));
         assert_eq!(args.prompt.as_deref(), Some("re-review"));
 
-        let cli = MultitoolCli::try_parse_from([
+        let cli = try_parse_cli(&[
             "chaos",
             "exec",
             "resume",
@@ -783,8 +821,11 @@ mod tests {
             &["chaos", "completion", "--headless"][..],
             &["chaos", "completion", "--full-auto"][..],
         ] {
-            let err = MultitoolCli::try_parse_from(args).expect_err("parse should fail");
-            assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+            let err = try_parse_cli(args).expect_err("parse should fail");
+            assert!(matches!(
+                err,
+                usage::Error::UnknownFlag { .. } | usage::Error::UnexpectedArg { .. }
+            ));
         }
     }
 
@@ -945,11 +986,163 @@ mod tests {
             &["chaos", "--debug", "exec", "say hi"][..],
             &["chaos", "exec", "--debug", "say hi"][..],
         ] {
-            let cli = MultitoolCli::try_parse_from(args).expect("parse");
+            let cli = try_parse_cli(args).expect("parse");
             assert!(cli.debug, "debug should be enabled for {args:?}");
         }
 
-        let cli = MultitoolCli::try_parse_from(["chaos"]).expect("parse");
+        let cli = try_parse_cli(&["chaos"]).expect("parse");
         assert!(!cli.debug);
+    }
+
+    fn mcp_add_transport_shapes_and_constraints_are_preserved() {
+        let cli = try_parse_cli(&[
+            "chaos",
+            "mcp",
+            "add",
+            "local",
+            "--env",
+            "TOKEN=secret",
+            "--",
+            "node",
+            "server.js",
+        ])
+        .expect("stdio transport should parse");
+        let Some(Subcommand::Mcp(mcp)) = cli.subcommand else {
+            panic!("expected mcp subcommand");
+        };
+        let crate::mcp_cmd::McpSubcommand::Add(add) = mcp.subcommand else {
+            panic!("expected mcp add");
+        };
+        assert_eq!(add.name, "local");
+        assert_eq!(add.transport_args.command, ["node", "server.js"]);
+        assert_eq!(add.transport_args.env.len(), 1);
+        assert_eq!(add.transport_args.env[0].0, "TOKEN");
+        assert_eq!(add.transport_args.env[0].1, "secret");
+        assert_eq!(add.transport_args.url, None);
+
+        let cli = try_parse_cli(&[
+            "chaos",
+            "mcp",
+            "add",
+            "remote",
+            "--url",
+            "https://example.test/mcp",
+            "--bearer-token-env-var",
+            "MCP_TOKEN",
+        ])
+        .expect("HTTP transport should parse");
+        let Some(Subcommand::Mcp(mcp)) = cli.subcommand else {
+            panic!("expected mcp subcommand");
+        };
+        let crate::mcp_cmd::McpSubcommand::Add(add) = mcp.subcommand else {
+            panic!("expected mcp add");
+        };
+        assert!(add.transport_args.command.is_empty());
+        assert_eq!(
+            add.transport_args.url.as_deref(),
+            Some("https://example.test/mcp")
+        );
+        assert_eq!(
+            add.transport_args.bearer_token_env_var.as_deref(),
+            Some("MCP_TOKEN")
+        );
+
+        for args in [
+            &["chaos", "mcp", "add", "missing"][..],
+            &[
+                "chaos",
+                "mcp",
+                "add",
+                "both",
+                "--url",
+                "https://example.test/mcp",
+                "--",
+                "node",
+            ][..],
+            &[
+                "chaos",
+                "mcp",
+                "add",
+                "remote",
+                "--url",
+                "https://example.test/mcp",
+                "--env",
+                "A=B",
+            ][..],
+            &[
+                "chaos",
+                "mcp",
+                "add",
+                "local",
+                "--bearer-token",
+                "secret",
+                "--",
+                "node",
+            ][..],
+        ] {
+            assert!(
+                try_parse_cli(args).is_err(),
+                "invalid MCP transport should fail: {args:?}"
+            );
+        }
+    }
+
+    fn completion_shells_and_global_provider_are_preserved() {
+        let cli = try_parse_cli(&["chaos", "completion"]).expect("default shell should parse");
+        let Some(Subcommand::Completion(completion)) = cli.subcommand else {
+            panic!("expected completion command");
+        };
+        assert_eq!(completion.shell, CompletionShell::Bash);
+
+        for (name, expected) in [
+            ("nushell", CompletionShell::Nushell),
+            ("nu", CompletionShell::Nushell),
+            ("powershell", CompletionShell::PowerShell),
+            ("pwsh", CompletionShell::PowerShell),
+        ] {
+            let cli =
+                try_parse_cli(&["chaos", "completion", name]).expect("shell alias should parse");
+            let Some(Subcommand::Completion(completion)) = cli.subcommand else {
+                panic!("expected completion command");
+            };
+            assert_eq!(completion.shell, expected);
+        }
+
+        let script = MultitoolCli::completion_script(usage::complete::Shell::Bash);
+        assert!(!script.is_empty());
+        assert!(script.contains("chaos"));
+
+        for args in [
+            &["chaos", "--provider", "anthropic", "models"][..],
+            &["chaos", "models", "--provider", "anthropic", "--refresh"][..],
+        ] {
+            let cli = try_parse_cli(args).expect("global provider should parse in either position");
+            assert_eq!(cli.provider.as_deref(), Some("anthropic"));
+            let Some(Subcommand::Models(models)) = cli.subcommand else {
+                panic!("expected models command");
+            };
+            assert_eq!(models.refresh, args.contains(&"--refresh"));
+        }
+    }
+
+    fn global_config_order_and_duplicate_scalar_rejection_are_preserved() {
+        let cli = try_parse_cli(&[
+            "chaos",
+            "-c",
+            "model=first",
+            "mcp",
+            "-c",
+            "model=second",
+            "list",
+        ])
+        .expect("global config flags should parse around subcommands");
+        assert_eq!(
+            cli.config_overrides.raw_overrides,
+            ["model=first", "model=second"]
+        );
+
+        assert!(
+            try_parse_cli(&["chaos", "--provider", "openai", "--provider", "anthropic",]).is_err()
+        );
     }
 }

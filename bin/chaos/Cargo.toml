@@ -19,8 +19,6 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
-clap_complete = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-getopt = { workspace = true }
 chaos-sysctl = { workspace = true }
@@ -55,6 +53,7 @@ tokio = { workspace = true, features = [
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+usage = { workspace = true, features = ["completions"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 alcatraz-linux = { workspace = true }

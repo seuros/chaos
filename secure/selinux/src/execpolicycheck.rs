@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use anyhow::Result;
-use clap::Parser;
 use serde::Serialize;
 
 use crate::Decision;
@@ -13,27 +12,27 @@ use crate::PolicyParser;
 use crate::RuleMatch;
 
 /// Arguments for evaluating a command against one or more execpolicy files.
-#[derive(Debug, Parser, Clone)]
+#[derive(Debug, usage::Args, Clone)]
 pub struct ExecPolicyCheckCommand {
     /// Paths to execpolicy rule files to evaluate (repeatable).
-    #[arg(short = 'r', long = "rules", value_name = "PATH", required = true)]
+    #[usage(short = 'r', long = "rules", value_name = "PATH", required)]
     pub rules: Vec<PathBuf>,
 
     /// Pretty-print the JSON output.
-    #[arg(long)]
+    #[usage(long)]
     pub pretty: bool,
 
     /// Resolve absolute program paths against basename rules, gated by any
     /// `host_executable()` definitions in the loaded policy files.
-    #[arg(long)]
+    #[usage(long)]
     pub resolve_host_executables: bool,
 
     /// Command tokens to check against the policy.
-    #[arg(
+    #[usage(
         value_name = "COMMAND",
-        required = true,
-        trailing_var_arg = true,
-        allow_hyphen_values = true
+        required,
+        trailing_var_arg,
+        allow_hyphen_values
     )]
     pub command: Vec<String>,
 }

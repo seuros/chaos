@@ -197,7 +197,9 @@ fn exec_root_span() -> tracing::Span {
     )
 }
 
-pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
+pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
+    cli.normalize();
+
     if let Err(err) = set_default_originator("chaos_fork".to_string()) {
         tracing::warn!(?err, "Failed to set chaos exec originator override {err:?}");
     }
@@ -986,7 +988,6 @@ mod tests {
     use chaos_ipc::protocol::McpStartupUpdateEvent;
     use chaos_ipc::protocol::TurnCompleteEvent;
     use chaos_snitch::set_parent_from_w3c_trace_context;
-    use clap::Parser;
     use pretty_assertions::assert_eq;
     use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
     use rama::telemetry::opentelemetry::trace::TraceContextExt;
@@ -1045,7 +1046,7 @@ mod tests {
         });
         std::fs::write(&schema_path, serde_json::to_vec(&expected_schema)?)?;
 
-        let cli = Cli::parse_from(vec![
+        let cli = crate::cli::parse_owned_for_test(&[
             "chaos-exec".to_string(),
             "--sandbox".to_string(),
             "workspace-write".to_string(),

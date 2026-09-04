@@ -1,11 +1,9 @@
 //! Standard type to use with the `--approval-mode` CLI option.
 
-use clap::ValueEnum;
-
 use chaos_ipc::protocol::ApprovalPolicy;
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
-#[value(rename_all = "kebab-case")]
+#[derive(Clone, Copy, Debug, usage::ValueEnum)]
+#[usage(rename_all = "kebab-case")]
 pub enum ApprovalModeCliArg {
     /// Only run "trusted" commands (e.g. ls, cat, sed) without asking for user
     /// approval. Will escalate to the user if the model proposes a command that

@@ -23,7 +23,6 @@ chaos-minions = { workspace = true }
 chaos-synopsis = { workspace = true }
 chardetng = { workspace = true }
 jiff = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 chaos-parrot = { workspace = true }
 chaos-clamp = { workspace = true }
 chaos-halluacinate = { workspace = true }
@@ -173,4 +172,4 @@ wiremock = { workspace = true }
 zstd = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["openssl-sys", "wildmatch", "zip", "chaos-locate", "chaos-watchdog", "insta", "clap", "wiremock", "chaos-doas"]
+ignored = ["openssl-sys", "wildmatch", "zip", "chaos-locate", "chaos-watchdog", "insta", "wiremock", "chaos-doas"]

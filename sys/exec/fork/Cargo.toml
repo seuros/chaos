@@ -14,7 +14,6 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 chaos-argv = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-pwd = { workspace = true }
@@ -45,6 +44,7 @@ ts-rs = { workspace = true, features = [
     "serde-json-impl",
     "no-serde-warnings",
 ] }
+usage = { workspace = true }
 uuid = { workspace = true }
 
 

@@ -7,7 +7,6 @@ use crate::socks5;
 use crate::state::NetworkProxyState;
 use anyhow::Context;
 use anyhow::Result;
-use clap::Parser;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
@@ -15,13 +14,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::warn;
-
-#[derive(Debug, Clone, Parser)]
-#[command(
-    name = "chaos-network-proxy",
-    about = "FreeChaOS network sandbox proxy"
-)]
-pub struct Args {}
 
 #[derive(Debug)]
 struct ReservedListeners {

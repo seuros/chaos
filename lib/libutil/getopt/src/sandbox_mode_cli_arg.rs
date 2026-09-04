@@ -7,10 +7,9 @@
 //! `config.toml`.
 
 use chaos_ipc::config_types::SandboxMode;
-use clap::ValueEnum;
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
-#[value(rename_all = "kebab-case")]
+#[derive(Clone, Copy, Debug, usage::ValueEnum)]
+#[usage(rename_all = "kebab-case")]
 pub enum SandboxModeCliArg {
     ReadOnly,
     WorkspaceWrite,

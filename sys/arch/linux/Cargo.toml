@@ -19,7 +19,6 @@ workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 alcatraz-base = { workspace = true }
 chaos-parole = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 chaos-ipc = { workspace = true }
 chaos-realpath = { workspace = true }
 dbus-secret-service-keyring-store = { workspace = true }
@@ -31,6 +30,7 @@ seccompiler = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 url = { workspace = true }
+usage = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 chaos-clamp = { workspace = true }

@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::collections::BTreeSet;
 use std::env;
 use std::ffi::CString;
@@ -39,7 +38,12 @@ const PROXY_ENV_KEYS: &[&str] = &[
     "DOCKER_HTTPS_PROXY",
 ];
 
-#[derive(Debug, Parser)]
+#[derive(Debug, usage::Cli)]
+#[usage(
+    bin = "alcatraz-linux",
+    unknown_flags = "error",
+    args_override_self = false
+)]
 /// CLI surface for the Linux sandbox helper.
 ///
 /// Applies landlock filesystem restrictions and seccomp syscall filters
@@ -47,31 +51,31 @@ const PROXY_ENV_KEYS: &[&str] = &[
 pub struct LandlockCommand {
     /// It is possible that the cwd used in the context of the sandbox policy
     /// is different from the cwd of the process to spawn.
-    #[arg(long = "sandbox-policy-cwd")]
+    #[usage(long = "sandbox-policy-cwd")]
     pub sandbox_policy_cwd: PathBuf,
 
     /// Legacy compatibility policy.
     ///
     /// Newer callers pass split filesystem/network policies as well so the
     /// helper can migrate incrementally without breaking older invocations.
-    #[arg(long = "sandbox-policy", hide = true)]
+    #[usage(long = "sandbox-policy", hide)]
     pub sandbox_policy: Option<SandboxPolicy>,
 
-    #[arg(long = "file-system-sandbox-policy", hide = true)]
+    #[usage(long = "file-system-sandbox-policy", hide)]
     pub vfs_policy: Option<VfsPolicy>,
 
-    #[arg(long = "network-sandbox-policy", hide = true)]
+    #[usage(long = "network-sandbox-policy", hide)]
     pub socket_policy: Option<SocketPolicy>,
 
     /// Internal compatibility flag.
     ///
     /// By default, restricted-network sandboxing uses isolated networking.
     /// If set, sandbox setup switches to proxy-only network mode.
-    #[arg(long = "allow-network-for-proxy", hide = true, default_value_t = false)]
+    #[usage(long = "allow-network-for-proxy", hide)]
     pub allow_network_for_proxy: bool,
 
     /// Full command args to run under the Linux sandbox helper.
-    #[arg(trailing_var_arg = true)]
+    #[usage(trailing_var_arg)]
     pub command: Vec<String>,
 }
 

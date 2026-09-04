@@ -2,70 +2,71 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
-use chaos_ipc::product::OS_NAME;
 use chaos_proc::LogQuery;
 use chaos_proc::LogRow;
 use chaos_proc::LogTailCursor;
 use chaos_proc::StateRuntime;
-use clap::CommandFactory;
-use clap::FromArgMatches;
-use clap::Parser;
 use owo_colors::OwoColorize;
 
-#[derive(Debug, Parser)]
-#[command(name = "chaos-state-logs")]
+#[derive(Debug, usage::Cli)]
+#[usage(
+    bin = "chaos-state-logs",
+    about = "Tail FreeChaOS logs from the runtime SQLite DB with simple filters",
+    unknown_flags = "error",
+    args_override_self = false
+)]
 struct Args {
     /// Path to the ChaOS home directory. Defaults to `CHAOS_HOME`, then
     /// `~/.chaos`.
-    #[arg(long)]
+    #[usage(long)]
     chaos_home: Option<PathBuf>,
 
     /// Direct path to the runtime SQLite database. Overrides --chaos-home.
-    #[arg(long)]
+    #[usage(long)]
     db: Option<PathBuf>,
 
     /// Log level to match exactly (case-insensitive).
-    #[arg(long)]
+    #[usage(long)]
     level: Option<String>,
 
     /// Start timestamp (RFC3339 or unix seconds).
-    #[arg(long, value_name = "RFC3339|UNIX")]
+    #[usage(long, value_name = "RFC3339|UNIX")]
     from: Option<String>,
 
     /// End timestamp (RFC3339 or unix seconds).
-    #[arg(long, value_name = "RFC3339|UNIX")]
+    #[usage(long, value_name = "RFC3339|UNIX")]
     to: Option<String>,
 
     /// Substring match on module_path. Repeat to include multiple substrings.
-    #[arg(long = "module")]
+    #[usage(long = "module")]
     module: Vec<String>,
 
     /// Substring match on file path. Repeat to include multiple substrings.
-    #[arg(long = "file")]
+    #[usage(long = "file")]
     file: Vec<String>,
 
     /// Match one or more thread ids. Repeat to include multiple processes.
-    #[arg(long = "thread-id")]
+    #[usage(long = "thread-id")]
     process_id: Vec<String>,
 
     /// Substring match against the log message.
-    #[arg(long)]
+    #[usage(long)]
     search: Option<String>,
 
     /// Include logs that do not have a thread id.
-    #[arg(long)]
+    #[usage(long)]
     processless: bool,
 
     /// Number of matching rows to show before tailing.
-    #[arg(long, default_value_t = 200)]
+    #[usage(long, default = "200")]
     backfill: usize,
 
     /// Poll interval in milliseconds.
-    #[arg(long, default_value_t = 500)]
+    #[usage(long, default = "500")]
     poll_ms: u64,
 
     /// Show compact output with only time, level, and message.
-    #[arg(long)]
+    #[usage(long)]
     compact: bool,
 }
 
@@ -83,13 +84,7 @@ struct LogFilter {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::from_arg_matches(
-        &Args::command()
-            .about(format!(
-                "Tail {OS_NAME} logs from the runtime SQLite DB with simple filters"
-            ))
-            .get_matches(),
-    )?;
+    let args = Args::parse();
     let db_path = resolve_db_path(&args)?;
     let filter = build_filter(&args)?;
     let chaos_home = db_path

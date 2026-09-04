@@ -7,24 +7,23 @@ use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_pwd::find_chaos_home;
-use clap::Args;
 
-#[derive(Debug, Args)]
+#[derive(Debug, usage::Args)]
 pub struct ModelsCli {
-    /// Override the provider (e.g. openai, anthropic, or a key from [model_providers]).
-    #[arg(long)]
-    pub provider: Option<String>,
-
     /// Force a fresh fetch from the provider, ignoring the local cache.
-    #[arg(long, default_value_t = false)]
+    #[usage(long)]
     pub refresh: bool,
 }
 
-pub async fn run(cli: ModelsCli, config_profile: Option<String>) -> anyhow::Result<()> {
+pub async fn run(
+    cli: ModelsCli,
+    config_profile: Option<String>,
+    model_provider: Option<String>,
+) -> anyhow::Result<()> {
     let chaos_home = find_chaos_home().context("could not locate chaos home directory")?;
 
     let overrides = ConfigOverrides {
-        model_provider: cli.provider,
+        model_provider,
         config_profile,
         ..ConfigOverrides::default()
     };

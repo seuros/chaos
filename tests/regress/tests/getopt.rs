@@ -1,7 +1,7 @@
 //! Public-API tests for `chaos-getopt` — the CLI surface the rest of
 //! the workspace leans on.
 //!
-//! These aren't clap-parser stress tests; they pin the two conversions
+//! These aren't usage-parser stress tests; they pin the two conversions
 //! the rest of the code takes for granted: `SandboxModeCliArg` → policy
 //! enum, and the environment-rendering helper that keeps secrets from
 //! leaking into logs.

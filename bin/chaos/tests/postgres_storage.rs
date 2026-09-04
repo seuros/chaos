@@ -2,7 +2,6 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chaos_kern::runtime_db::{LogEntry, open_or_create_runtime_db_with_config};
-use tokio::process::Command;
 use tokio::time::timeout;
 
 #[test]
@@ -28,34 +27,22 @@ fn console_logging_uses_the_mounted_runtime_database() {
 #[tokio::test]
 async fn unavailable_postgres_fails_without_creating_sqlite() -> anyhow::Result<()> {
     let chaos_home = tempfile::tempdir()?;
-    std::fs::write(
-        chaos_home.path().join("config.toml"),
-        r#"
-storage_url = "postgres://chaos:chaos@127.0.0.1:1/chaos?connect_timeout=1"
-"#,
-    )?;
-
-    let chaos_cli = chaos_which::cargo_bin("chaos")?;
-    let output = timeout(
+    let storage_url = "postgres://chaos:chaos@127.0.0.1:1/chaos?connect_timeout=1";
+    let result = timeout(
         Duration::from_secs(15),
-        Command::new(chaos_cli)
-            .arg("-c")
-            .arg("analytics.enabled=false")
-            .env("CHAOS_HOME", chaos_home.path())
-            .env_remove("CHAOS_SQLITE_HOME")
-            .env_remove("CHAOS_JOURNALD_SOCKET")
-            .kill_on_drop(true)
-            .output(),
+        open_or_create_runtime_db_with_config(
+            Some(storage_url),
+            chaos_home.path(),
+            "test-provider",
+        ),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("timed out waiting for PostgreSQL startup failure"))??;
+    .map_err(|_| anyhow::anyhow!("timed out waiting for PostgreSQL startup failure"))?;
+    let error = match result {
+        Ok(_) => anyhow::bail!("an unavailable configured PostgreSQL backend must fail startup"),
+        Err(error) => error,
+    };
 
-    assert!(
-        !output.status.success(),
-        "an unavailable configured PostgreSQL backend must fail startup"
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
     for relative in [
         "chaos.sqlite",
         "chaos.sqlite-wal",
@@ -65,7 +52,7 @@ storage_url = "postgres://chaos:chaos@127.0.0.1:1/chaos?connect_timeout=1"
     ] {
         assert!(
             !chaos_home.path().join(relative).exists(),
-            "PostgreSQL startup failure unexpectedly created {relative}; stderr: {stderr}"
+            "PostgreSQL startup failure unexpectedly created {relative}; error: {error}"
         );
     }
 

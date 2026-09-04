@@ -622,6 +622,8 @@ fn capability_groups_do_not_filter_external_mcp_or_dynamic_tools() {
 fn attested_review_tools_do_not_depend_on_generic_collaboration() {
     let mut config = capability_group_test_config();
     config.collab_tools = false;
+    let catalog = crate::tools::groups::build_catalog().expect("tool group catalog");
+    let state = crate::tools::groups::new_state(&catalog, false).expect("tool group state");
     let mcp_tools = HashMap::from([(
         "mcp__skynet__submit_review_verdict".to_string(),
         mcp_tool(
@@ -639,7 +641,10 @@ fn attested_review_tools_do_not_depend_on_generic_collaboration() {
         vec![],
         None,
         false,
-        None,
+        Some(ToolGroupFilter {
+            catalog: &catalog,
+            state: &state,
+        }),
     )
     .build()
     .0;

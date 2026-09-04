@@ -73,6 +73,15 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     assign(
         &catalog,
         [
+            "start_attested_review",
+            "resume_attested_review",
+            "cancel_attested_review",
+        ],
+        ToolExposure::Always,
+    )?;
+    assign(
+        &catalog,
+        [
             "shell",
             "container.exec",
             "local_shell",
@@ -92,9 +101,6 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
             "resume_agent",
             "wait_agent",
             "close_agent",
-            "start_attested_review",
-            "resume_attested_review",
-            "cancel_attested_review",
             "spawn_minions_on_csv",
             "report_minion_job_result",
         ],

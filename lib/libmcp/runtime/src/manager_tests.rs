@@ -202,6 +202,11 @@ fn trusted_review_provenance() -> TrustedReviewProvenance {
 }
 
 #[test]
+fn review_provenance_key_matches_server_contract() {
+    assert_eq!(REVIEW_PROVENANCE_META_KEY, "skynet/reviewProvenance");
+}
+
+#[test]
 fn model_supplied_review_provenance_is_rejected() {
     let meta = Some(serde_json::json!({
         REVIEW_PROVENANCE_META_KEY: {

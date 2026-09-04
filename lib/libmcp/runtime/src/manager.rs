@@ -92,7 +92,7 @@ const INITIAL_SUBMIT_ID: &str = "";
 /// Reserved `_meta` key for host-attested review provenance.
 ///
 /// Calls through the ordinary MCP tool path may not set this key.
-pub const REVIEW_PROVENANCE_META_KEY: &str = "io.chaos.review_provenance.v1";
+pub const REVIEW_PROVENANCE_META_KEY: &str = "skynet/reviewProvenance";
 
 const ACCOUNT_SUBJECT_PREFIX: &str = "credential:v1:";
 const MODEL_FAMILY_SUBJECT_PREFIX: &str = "review-subject:v1:";

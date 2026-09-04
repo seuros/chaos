@@ -14,7 +14,7 @@
 //! - `show` — full commit details with subject, body, and trailers
 //! - `blame` — per-line attribution for a file
 //! - `add` — stage explicit repository-relative file paths
-//! - `commit` — create an unsigned commit from the staged index without hooks
+//! - `commit` — create or amend an unsigned commit without hooks
 //! - `branch` — create or delete a local branch
 
 mod add;
@@ -53,6 +53,7 @@ use chaos_traits::catalog::CatalogToolResult;
 use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools;
 pub use commit::CommitResult;
+pub use commit::amend;
 pub use commit::commit;
 pub use diff::DiffFile;
 pub use diff::DiffFormat;
@@ -295,6 +296,30 @@ mod tests {
                 diff.input_schema
             );
         }
+    }
+
+    #[test]
+    fn git_commit_schema_exposes_optional_destructive_amend() {
+        let commit = super::tools::tool_infos()
+            .into_iter()
+            .find(|tool| tool.name == "git_commit")
+            .expect("git_commit");
+        let required = commit.input_schema["required"]
+            .as_array()
+            .expect("required properties");
+
+        assert!(required.iter().any(|value| value == "message"));
+        assert!(required.iter().all(|value| value != "amend"));
+        assert_eq!(
+            commit.input_schema["properties"]["amend"]["type"],
+            "boolean"
+        );
+        let destructive = commit
+            .annotations
+            .as_ref()
+            .and_then(|annotations| annotations.destructive_hint)
+            .unwrap_or(true);
+        assert!(destructive);
     }
 
     #[test]

@@ -170,6 +170,10 @@ pub struct GitAddParams {
 pub struct GitCommitParams {
     /// Commit message. The first line becomes the commit subject.
     message: String,
+    /// Replace HEAD instead of creating a child commit. Staged changes, if any,
+    /// are included; with no staged changes, only the commit message changes.
+    #[serde(default)]
+    amend: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -301,9 +305,9 @@ impl GitServer {
 
     #[mcp_tool(
         name = "git_commit",
-        description = "Create an unsigned commit from the staged index using configured identity. Git hooks are not run.",
+        description = "Create an unsigned commit from the staged index, or replace HEAD when amend=true. Git hooks are not run.",
         read_only = false,
-        destructive = false,
+        destructive = true,
         open_world = false
     )]
     async fn git_commit(
@@ -498,7 +502,12 @@ pub fn execute_git_commit_structured(
     cwd: &Path,
     params: GitCommitParams,
 ) -> Result<serde_json::Value, String> {
-    let result = crate::commit(cwd, &params.message).map_err(|e| e.to_string())?;
+    let result = if params.amend {
+        crate::amend(cwd, &params.message)
+    } else {
+        crate::commit(cwd, &params.message)
+    }
+    .map_err(|e| e.to_string())?;
     to_json_value(result)
 }
 
@@ -907,6 +916,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "initial commit".to_string(),
+                amend: false,
             },
         )
         .expect("commit");
@@ -933,6 +943,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "update tracked file".to_string(),
+                amend: false,
             },
         )
         .expect("followup commit");
@@ -947,6 +958,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "empty".to_string(),
+                amend: false,
             },
         )
         .expect_err("empty commit must fail");
@@ -1069,6 +1081,7 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "update file".to_string(),
+                amend: false,
             },
         )
         .expect("commit while preserving gitlink");
@@ -1093,9 +1106,122 @@ mod tests {
             dir,
             GitCommitParams {
                 message: "change gitlink".to_string(),
+                amend: false,
             },
         )
         .expect_err("staged gitlink change must fail");
         assert!(error.contains("staged submodule changes are not supported: vendor/reference"));
+    }
+
+    #[test]
+    fn execute_git_commit_amends_message_and_includes_staged_changes() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+        fs::write(dir.join("file.txt"), "alpha\n").expect("write file");
+        git(dir, &["add", "file.txt"]);
+        git(dir, &["commit", "-m", "initial"]);
+        fs::write(dir.join("second.txt"), "second\n").expect("write second file");
+        git(dir, &["add", "second.txt"]);
+        git(dir, &["commit", "-m", "second"]);
+
+        let original_sha = git_output(dir, &["rev-parse", "HEAD"]).trim().to_string();
+        let original_parent = git_output(dir, &["rev-parse", "HEAD^"]).trim().to_string();
+        let original_author = git_output(dir, &["show", "-s", "--format=%an|%ae|%at", "HEAD"]);
+
+        let message_only = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "second, revised".to_string(),
+                amend: true,
+            },
+        )
+        .expect("amend message");
+
+        assert_eq!(message_only["subject"], "second, revised");
+        assert_eq!(message_only["committed_paths"], serde_json::json!([]));
+        assert_ne!(
+            message_only["sha"].as_str().expect("amended sha"),
+            original_sha
+        );
+        assert_eq!(
+            git_output(dir, &["rev-parse", "HEAD^"]).trim(),
+            original_parent
+        );
+        assert_eq!(
+            git_output(dir, &["show", "-s", "--format=%an|%ae|%at", "HEAD"]),
+            original_author,
+            "amend must preserve the original author"
+        );
+        assert_eq!(git_output(dir, &["rev-list", "--count", "HEAD"]), "2\n");
+
+        fs::write(dir.join("second.txt"), "updated\n").expect("update second file");
+        execute_git_add_structured(
+            dir,
+            GitAddParams {
+                paths: vec!["second.txt".to_string()],
+            },
+        )
+        .expect("stage amended content");
+        let with_changes = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "second, revised again".to_string(),
+                amend: true,
+            },
+        )
+        .expect("amend with staged change");
+
+        assert_eq!(
+            with_changes["committed_paths"],
+            serde_json::json!(["second.txt"])
+        );
+        assert_eq!(git_output(dir, &["show", "HEAD:second.txt"]), "updated\n");
+        assert_eq!(
+            git_output(dir, &["rev-parse", "HEAD^"]).trim(),
+            original_parent
+        );
+        assert_eq!(git_output(dir, &["rev-list", "--count", "HEAD"]), "2\n");
+
+        git(dir, &["checkout", "--detach", "HEAD"]);
+        let detached = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "detached revision".to_string(),
+                amend: true,
+            },
+        )
+        .expect("amend detached HEAD");
+        assert_eq!(detached["detached"], true);
+        assert_eq!(detached["branch"], serde_json::Value::Null);
+        assert_eq!(
+            git_output(dir, &["rev-parse", "--abbrev-ref", "HEAD"]),
+            "HEAD\n"
+        );
+        assert_eq!(
+            git_output(dir, &["rev-parse", "HEAD^"]).trim(),
+            original_parent
+        );
+    }
+
+    #[test]
+    fn execute_git_commit_rejects_amend_without_head_commit() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+        git(dir, &["init"]);
+
+        let error = execute_git_commit_structured(
+            dir,
+            GitCommitParams {
+                message: "cannot exist".to_string(),
+                amend: true,
+            },
+        )
+        .expect_err("unborn HEAD must not be amendable");
+
+        assert!(error.contains("cannot amend because HEAD has no commit"));
     }
 }

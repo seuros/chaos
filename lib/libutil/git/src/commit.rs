@@ -1,6 +1,12 @@
 use std::ops::ControlFlow;
 use std::path::Path;
 
+use gix::refs::Target;
+use gix::refs::transaction::Change;
+use gix::refs::transaction::LogChange;
+use gix::refs::transaction::PreviousValue;
+use gix::refs::transaction::RefEdit;
+use gix::refs::transaction::RefLog;
 use serde::Serialize;
 
 use crate::error::GitError;
@@ -16,6 +22,14 @@ pub struct CommitResult {
 }
 
 pub fn commit(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
+    commit_inner(cwd, message, false)
+}
+
+pub fn amend(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
+    commit_inner(cwd, message, true)
+}
+
+fn commit_inner(cwd: &Path, message: &str, amend: bool) -> Result<CommitResult, GitError> {
     let message = message.trim();
     if message.is_empty() {
         return Err(GitError::InvalidInput(
@@ -40,6 +54,15 @@ pub fn commit(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
     let parent_id = head.id().map(gix::Id::detach);
     let detached = head.is_detached();
     let branch = head.referent_name().map(|name| name.shorten().to_string());
+    let amend_head_id = match (amend, parent_id) {
+        (true, Some(head_id)) => Some(head_id),
+        (true, None) => {
+            return Err(GitError::InvalidInput(
+                "cannot amend because HEAD has no commit".to_string(),
+            ));
+        }
+        (false, _) => None,
+    };
 
     let head_tree_id = match parent_id {
         Some(parent) => {
@@ -55,7 +78,7 @@ pub fn commit(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
     };
 
     let mut committed_paths = collect_staged_paths(&repo, &index, &head_tree_id)?;
-    if committed_paths.is_empty() {
+    if committed_paths.is_empty() && !amend {
         return Err(GitError::EmptyCommit);
     }
     committed_paths.sort();
@@ -93,9 +116,13 @@ pub fn commit(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
         .map_err(|e| GitError::Operation(e.to_string()))?
         .detach();
 
-    let commit_id = repo
-        .commit("HEAD", message, tree_id, parent_id)
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let commit_id = if let Some(head_id) = amend_head_id {
+        amend_head(&repo, &head, head_id, message, tree_id)?
+    } else {
+        repo.commit("HEAD", message, tree_id, parent_id)
+            .map(gix::Id::detach)
+            .map_err(|e| GitError::Operation(e.to_string()))?
+    };
 
     Ok(CommitResult {
         sha: commit_id.to_string(),
@@ -104,6 +131,54 @@ pub fn commit(cwd: &Path, message: &str) -> Result<CommitResult, GitError> {
         subject: message.lines().next().unwrap_or_default().to_string(),
         committed_paths,
     })
+}
+
+fn amend_head(
+    repo: &gix::Repository,
+    head: &gix::Head<'_>,
+    head_id: gix::ObjectId,
+    message: &str,
+    tree_id: gix::ObjectId,
+) -> Result<gix::ObjectId, GitError> {
+    let previous = repo
+        .find_commit(head_id)
+        .map_err(|error| GitError::Operation(error.to_string()))?;
+    let parents = previous
+        .parent_ids()
+        .map(gix::Id::detach)
+        .collect::<Vec<_>>();
+    let author = previous
+        .author()
+        .map_err(|error| GitError::Operation(error.to_string()))?;
+    let committer = repo
+        .committer()
+        .ok_or_else(|| GitError::Operation("committer identity is missing".to_string()))?
+        .map_err(|error| GitError::Operation(error.to_string()))?;
+    let commit_id = repo
+        .new_commit_as(committer, author, message, tree_id, parents)
+        .map(|commit| commit.id().detach())
+        .map_err(|error| GitError::Operation(error.to_string()))?;
+    let subject = message.lines().next().unwrap_or_default();
+
+    repo.edit_references_as(
+        Some(RefEdit {
+            change: Change::Update {
+                log: LogChange {
+                    mode: RefLog::AndReference,
+                    force_create_reflog: false,
+                    message: format!("commit (amend): {subject}").into(),
+                },
+                expected: PreviousValue::MustExistAndMatch(Target::Object(head_id)),
+                new: Target::Object(commit_id),
+            },
+            name: head.name().to_owned(),
+            deref: true,
+        }),
+        Some(committer),
+    )
+    .map_err(|error| GitError::Operation(error.to_string()))?;
+
+    Ok(commit_id)
 }
 
 fn reject_unsupported_index_entries(index: &gix::index::File) -> Result<(), GitError> {

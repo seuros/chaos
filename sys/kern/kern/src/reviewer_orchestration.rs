@@ -665,6 +665,15 @@ pub(crate) struct SessionReviewerBoundary {
     turn: std::sync::Arc<crate::chaos::TurnContext>,
 }
 
+fn attested_reviewer_spawn_depth(
+    session_source: &chaos_ipc::protocol::SessionSource,
+) -> i32 {
+    // This is a kernel-controlled, single-purpose reviewer rather than generic
+    // delegation. Its configuration disables collaboration before the process
+    // starts, so it cannot use this exemption to create another generation.
+    crate::minions::next_process_spawn_depth(session_source)
+}
+
 impl SessionReviewerBoundary {
     pub(crate) fn new(
         session: std::sync::Arc<crate::chaos::Session>,
@@ -793,13 +802,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             }
         }
 
-        let child_depth = crate::minions::next_process_spawn_depth(&self.turn.session_source);
-        if crate::minions::exceeds_process_spawn_depth_limit(
-            child_depth,
-            self.turn.config.agent_max_depth,
-        ) {
-            bail!("reviewer spawn exceeds agent depth limit");
-        }
+        let child_depth = attested_reviewer_spawn_depth(&self.turn.session_source);
         let mut config = crate::minions::tools::build_agent_spawn_config(
             &self.session.get_base_instructions().await,
             self.turn.as_ref(),
@@ -1006,6 +1009,9 @@ impl ReviewerBoundary for SessionReviewerBoundary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_ipc::ProcessId;
+    use chaos_ipc::protocol::SessionSource;
+    use chaos_ipc::protocol::SubAgentSource;
     use chaos_proc::StateRuntime;
     use serde_json::json;
     use std::collections::HashMap;
@@ -1118,6 +1124,24 @@ mod tests {
 
     fn subject(prefix: &str, byte: char) -> String {
         format!("{prefix}{}", byte.to_string().repeat(64))
+    }
+
+    #[test]
+    fn attested_reviewer_can_cross_the_generic_delegation_depth_boundary() {
+        let supervisor = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+            parent_process_id: ProcessId::new(),
+            depth: 1,
+            agent_nickname: None,
+            agent_role: None,
+        });
+
+        let reviewer_depth = attested_reviewer_spawn_depth(&supervisor);
+
+        assert_eq!(reviewer_depth, 2);
+        assert!(crate::minions::exceeds_process_spawn_depth_limit(
+            reviewer_depth,
+            1
+        ));
     }
 
     fn selection(index: usize, account: char, family: char) -> ReviewerSelection {

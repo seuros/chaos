@@ -23,7 +23,12 @@ build *args:
     cargo build --bin chaos {{args}}
 
 # Install chaos into ~/.cargo/bin (release + target-cpu=native).
-install:
+install: (_install "")
+
+# Install chaos into ~/.cargo/bin using the debug profile.
+debug: (_install "--debug")
+
+_install profile_flag:
     #!/usr/bin/env sh
     set -e
     os=$(uname -s)
@@ -153,8 +158,8 @@ install:
         [ -n "$need_dbus_pkg" ]     && echo "  ensure PKG_CONFIG_PATH points at a directory with dbus-1.pc" >&2
         exit 1
     fi
-    RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force
-    RUSTFLAGS="-C target-cpu=native" cargo install --path srv/journald --locked --force
+    RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force {{profile_flag}}
+    RUSTFLAGS="-C target-cpu=native" cargo install --path srv/journald --locked --force {{profile_flag}}
 
 # Build a portable release tarball: chaos + install.sh.
 # Usage: just dist [output=chaos-dist.tar.gz]

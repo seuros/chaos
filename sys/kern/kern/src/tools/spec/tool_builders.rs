@@ -82,6 +82,27 @@ pub(crate) fn create_switch_mode_tool() -> ToolSpec {
     })
 }
 
+pub(crate) fn create_refresh_models_tool() -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: "refresh_models".to_string(),
+        description: "Force a fresh model catalog fetch for a configured provider, updating its cache. Equivalent to chaos --provider <provider> models --refresh. Returns provider and models; does not switch the session provider. Read chaos://models for cached catalogs."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties: BTreeMap::from([(
+                "provider".to_string(),
+                JsonSchema::String {
+                    description: Some("Configured provider ID.".to_string()),
+                },
+            )]),
+            required: Some(vec!["provider".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 pub(crate) fn create_compaction_control_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (

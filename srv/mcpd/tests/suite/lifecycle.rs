@@ -151,6 +151,11 @@ async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
         !tools.is_empty(),
         "tools/list should succeed immediately after initialize"
     );
+    let refresh = tools
+        .iter()
+        .find(|tool| tool["name"] == "refresh_models")
+        .expect("refresh_models advertised");
+    assert_eq!(refresh["inputSchema"]["required"], json!(["provider"]));
 
     Ok(())
 }
@@ -407,6 +412,61 @@ async fn spool_resource_can_be_read_after_initialize() -> Result<()> {
         })
     );
 
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn refresh_models_fetches_provider_catalog_through_mcp() -> Result<()> {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/models"))
+        .and(wiremock::matchers::header("authorization", "Bearer fixture-key"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "fixture-model", "object": "model", "created": 0, "owned_by": "fixture"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let home = TempDir::new()?;
+    std::fs::write(
+        home.path().join("config.toml"),
+        format!(
+            r#"
+model_provider = "fixture"
+[model_providers.fixture]
+name = "Fixture"
+base_url = "{}"
+wire_api = "responses"
+experimental_bearer_token = "fixture-key"
+"#,
+            server.uri()
+        ),
+    )?;
+    let mut mcp = McpProcess::new(home.path()).await?;
+    mcp.initialize().await?;
+    let request_id = mcp
+        .send_custom_request(
+            "tools/call",
+            Some(json!({"name": "refresh_models", "arguments": {"provider": "fixture"}})),
+        )
+        .await?;
+    let message = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id),
+    )
+    .await??;
+    let JsonRpcMessage::Response(resp) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+    };
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    let result = resp.result.as_ref().expect("tool result");
+    assert_ne!(result["isError"], json!(true), "{result}");
+    assert_eq!(result["structuredContent"]["provider"], "fixture");
+    assert_eq!(
+        result["structuredContent"]["models"][0]["id"],
+        "fixture-model"
+    );
     Ok(())
 }
 

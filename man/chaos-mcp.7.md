@@ -148,6 +148,19 @@ bunx @mcpjam/inspector@latest chaos mcp serve
 
 The server runs over standard MCP stdio transport using JSON-RPC 2.0.
 
+### Refreshing provider models
+
+Call `refresh_models` with the required `provider` argument set to a configured
+provider ID. It forces discovery using that provider's configured credentials,
+updates the catalog cache, and returns an object containing `provider` and `models`.
+It does not start a session or switch the current session's provider.
+Unknown providers, authoritative custom catalogs, and fetch failures return
+errors rather than silently serving stale models.
+
+The tool is also available inside ChaOS sessions and through the session MCP
+bridge. Reading `chaos://models` remains cache-only; use `refresh_models` when
+a provider's catalog is empty or out of date.
+
 ## INTEGRATION
 
 Add FreeChaOS to another MCP client's config:

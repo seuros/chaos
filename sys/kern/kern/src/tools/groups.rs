@@ -67,7 +67,12 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     )?;
     assign(
         &catalog,
-        ["switch_mode", "request_user_input", "request_permissions"],
+        [
+            "switch_mode",
+            "request_user_input",
+            "request_permissions",
+            "refresh_models",
+        ],
         ToolExposure::Always,
     )?;
     assign(
@@ -143,6 +148,7 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         "enable_tools",
         "disable_tools",
         "switch_mode",
+        "refresh_models",
         "request_user_input",
         "request_permissions",
         "shell",

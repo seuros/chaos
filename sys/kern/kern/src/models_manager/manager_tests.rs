@@ -122,6 +122,143 @@ fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
 }
 
 #[tokio::test]
+async fn refresh_models_forces_network_and_propagates_failure() {
+    let home = tempdir().unwrap();
+    let server = MockServer::start().await;
+    let provider = provider_for(server.uri());
+    let manager = manager_over_own_cache(
+        home.path().to_path_buf(),
+        AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("test-key")),
+        provider.clone(),
+    )
+    .await;
+    let providers = HashMap::from([(manager.provider_id().to_string(), provider)]);
+    for slug in ["old-model", "new-model"] {
+        let mock = mount_models_once(
+            &server,
+            ModelsResponse {
+                models: vec![remote_model(slug, slug, 0)],
+            },
+        )
+        .await;
+        let output = crate::builtin_mcp_resources::refresh_models_json(
+            &manager,
+            &providers,
+            manager.provider_id(),
+        )
+        .await
+        .expect("force refresh");
+        let output: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(output["provider"], manager.provider_id());
+        assert_eq!(output["models"][0]["id"], slug);
+        assert_eq!(manager.try_list_models().unwrap()[0].model, slug);
+        assert_eq!(mock.requests().len(), 1, "must bypass fresh cache");
+        server.reset().await;
+    }
+    let cached = manager.cache_manager.load_all().await.unwrap();
+    assert!(
+        cached
+            .iter()
+            .any(|entry| entry.models.iter().any(|model| model.slug == "new-model"))
+    );
+
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let error = crate::builtin_mcp_resources::refresh_models_json(
+        &manager,
+        &providers,
+        manager.provider_id(),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.contains("failed to refresh models"));
+    assert_eq!(manager.try_list_models().unwrap()[0].model, "new-model");
+}
+
+#[tokio::test]
+async fn refresh_models_rebinds_credentials_without_switching_provider() {
+    let home = tempdir().unwrap();
+    let server = MockServer::start().await;
+    login_with_provider_api_key(
+        home.path(),
+        "chosen",
+        "chosen-secret",
+        AuthCredentialsStoreMode::File,
+    )
+    .unwrap();
+    let auth = AuthManager::shared(
+        home.path().to_path_buf(),
+        false,
+        AuthCredentialsStoreMode::File,
+    );
+    let manager = manager_over_own_cache(
+        home.path().to_path_buf(),
+        auth,
+        provider_for("http://127.0.0.1:1".to_string()),
+    )
+    .await;
+    let original_id = manager.provider_id().to_string();
+    let mut chosen = provider_for(server.uri());
+    chosen.requires_openai_auth = true;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(wiremock::matchers::header(
+            "authorization",
+            "Bearer chosen-secret",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ModelsResponse {
+            models: vec![remote_model("chosen-model", "Chosen", 0)],
+        }))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let providers = HashMap::from([("chosen".to_string(), chosen)]);
+    let output = crate::builtin_mcp_resources::refresh_models_json(&manager, &providers, "chosen")
+        .await
+        .unwrap();
+    let output: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(output["provider"], "chosen");
+    assert_eq!(output["models"][0]["id"], "chosen-model");
+    assert_eq!(manager.provider_id(), original_id);
+    assert!(manager.try_list_models().unwrap().is_empty());
+    let groups = manager
+        .list_models_by_provider(&providers, &original_id)
+        .await;
+    assert_eq!(groups[0].models[0].model, "chosen-model");
+    assert!(!groups[0].active);
+}
+
+#[tokio::test]
+async fn refresh_models_rejects_unknown_providers_and_custom_catalogs() {
+    let home = tempdir().unwrap();
+    let manager = ModelsManager::new(
+        home.path().to_path_buf(),
+        AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("test-key")),
+        Some(ModelsResponse { models: vec![] }),
+        CollaborationModesConfig::default(),
+    );
+    let providers = HashMap::from([(
+        manager.provider_id().to_string(),
+        manager.provider().clone(),
+    )]);
+    let error = crate::builtin_mcp_resources::refresh_models_json(&manager, &providers, "unknown")
+        .await
+        .unwrap_err();
+    assert!(error.contains("unknown model provider"));
+    let error = crate::builtin_mcp_resources::refresh_models_json(
+        &manager,
+        &providers,
+        manager.provider_id(),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.contains("custom model catalog"));
+}
+
+#[tokio::test]
 async fn get_model_info_tracks_fallback_usage() {
     let chaos_home = tempdir().expect("temp dir");
     let config = ConfigBuilder::default()

@@ -495,6 +495,29 @@ impl ModelsManager {
         self.refresh_available_models(refresh_strategy).await
     }
 
+    /// Force discovery for an exact provider/account binding without switching
+    /// the session. Unlike `list_models`, discovery errors reach the caller.
+    pub async fn refresh_provider_models(
+        &self,
+        provider_id: &str,
+        provider: &ModelProviderInfo,
+    ) -> CoreResult<Vec<ModelPreset>> {
+        let rebound = self
+            .rebound_to(provider_id, provider.clone())
+            .ok_or_else(|| {
+                ChaosErr::InvalidRequest(
+                    "cannot refresh an authoritative custom model catalog".to_string(),
+                )
+            })?;
+        let target = if self.is_bound_to(provider_id, provider) {
+            self
+        } else {
+            &rebound
+        };
+        target.refresh_models(RefreshStrategy::Online).await?;
+        Ok(target.build_available_models(target.get_remote_models().await))
+    }
+
     // todo(aibrahim): should be visible to core only and sent on session_configured event
     /// Get the model identifier to use, refreshing according to the specified strategy.
     ///

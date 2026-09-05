@@ -10,6 +10,7 @@ use chaos_mcp_runtime::manager::ToolInfo;
 
 use crate::client_common::tools::ToolSpec;
 use crate::tools::groups::ToolGroupFilter;
+use crate::tools::handlers::RefreshModelsHandler;
 use crate::tools::registry::ToolRegistryBuilder;
 
 use super::ToolsConfig;
@@ -21,7 +22,7 @@ use super::tool_builders::{
     create_call_mcp_tool_async_tool, create_cancel_mcp_task_tool, create_close_agent_tool,
     create_compaction_control_tool, create_exec_command_tool,
     create_list_mcp_resource_templates_tool, create_list_mcp_resources_tool,
-    create_read_mcp_resource_tool, create_read_session_history_tool,
+    create_read_mcp_resource_tool, create_read_session_history_tool, create_refresh_models_tool,
     create_report_minion_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_run_synopsis_tool,
     create_search_session_history_tool, create_send_input_tool, create_send_to_supervisor_tool,
@@ -265,6 +266,13 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("call_mcp_tool_async", mcp_task_handler.clone());
         builder.register_handler("cancel_mcp_task", mcp_task_handler);
     }
+
+    push_tool_spec(
+        &mut builder,
+        create_refresh_models_tool(),
+        /*supports_parallel_tool_calls*/ false,
+    );
+    builder.register_handler("refresh_models", Arc::new(RefreshModelsHandler));
 
     if config.mode_allow_update_plan {
         push_tool_spec(

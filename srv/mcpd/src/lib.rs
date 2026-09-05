@@ -39,6 +39,7 @@ mod chaos_tool;
 mod clamp_session_bridge;
 mod elicitation;
 mod exec_approval;
+mod models_tool;
 mod outgoing_message;
 mod patch_approval;
 
@@ -188,6 +189,7 @@ pub async fn run_main(
         runtime_db,
     });
     chaos_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());
+    models_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());
     builtin_resources::resource_router()
         .register_all(mcp_server.resource_manager(), chaos_server.clone());
     builtin_resources::resource_template_router()

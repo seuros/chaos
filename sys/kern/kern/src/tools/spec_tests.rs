@@ -506,7 +506,10 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
     let state = catalog.new_state();
 
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
-    assert_contains_tool_names(&tools, &["enable_tools", "request_user_input"]);
+    assert_contains_tool_names(
+        &tools,
+        &["enable_tools", "request_user_input", "refresh_models"],
+    );
     assert_lacks_tool_name(&tools, "disable_tools");
     for name in [
         "git_status",
@@ -822,6 +825,7 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
     for spec in [
         create_exec_command_tool(true, true),
         create_write_stdin_tool(),
+        super::tool_builders::create_refresh_models_tool(),
         PLAN_TOOL.clone(),
         create_read_session_history_tool(),
         create_search_session_history_tool(),
@@ -1393,6 +1397,7 @@ impl ModelToolTail {
 }
 
 const MODEL_TOOL_TAIL_PREFIX: &[&str] = &[
+    "refresh_models",
     "update_plan",
     "read_session_history",
     "search_session_history",

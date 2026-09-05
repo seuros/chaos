@@ -172,7 +172,7 @@ fn exec_config_overrides(inputs: ExecConfigOverrideInputs) -> ConfigOverrides {
         service_tier: None,
         alcatraz_exe: Some(inputs.alcatraz_exe),
         base_instructions: None,
-        minion_instructions: None,
+        developer_instructions: None,
         personality: None,
         compact_prompt: None,
         ephemeral: inputs.ephemeral.then_some(true),

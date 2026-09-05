@@ -1,4 +1,77 @@
 use super::*;
+use chaos_ipc::protocol::SubAgentSource;
+
+#[tokio::test]
+async fn initial_context_scopes_child_instructions_to_delegated_agents() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    Arc::make_mut(&mut turn_context.config).child_instructions =
+        Some("CHILD_ONLY_BOUNDARY".to_string());
+    turn_context.developer_instructions = Some("SESSION_DEVELOPER_BOUNDARY".to_string());
+    let mut cases = vec![
+        (SessionSource::Cli, false),
+        (SessionSource::VSCode, false),
+        (SessionSource::Exec, false),
+        (SessionSource::Mcp, false),
+        (SessionSource::Api, false),
+        (SessionSource::Unknown, false),
+        (SessionSource::SubAgent(SubAgentSource::Review), false),
+        (SessionSource::SubAgent(SubAgentSource::Compact), false),
+        (
+            SessionSource::SubAgent(SubAgentSource::MemoryConsolidation),
+            false,
+        ),
+        (
+            SessionSource::SubAgent(SubAgentSource::Other("internal".into())),
+            false,
+        ),
+    ];
+    for (depth, role, included) in [
+        (1, None, true),
+        (2, Some("scout".to_string()), true),
+        (
+            1,
+            Some(crate::child_agents::internal_agent_role("review", "test")),
+            false,
+        ),
+    ] {
+        cases.push((
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id: ProcessId::default(),
+                depth,
+                agent_nickname: None,
+                agent_role: role,
+            }),
+            included,
+        ));
+    }
+    for (source, included) in cases {
+        turn_context.session_source = source.clone();
+        let context = session.build_initial_context(&turn_context).await;
+        let rendered = serde_json::to_string(&context).expect("serialize initial context");
+        assert_eq!(
+            rendered.matches("CHILD_ONLY_BOUNDARY").count(),
+            usize::from(included),
+            "wrong child instruction scope for {source:?}",
+        );
+        assert_eq!(
+            rendered.matches("SESSION_DEVELOPER_BOUNDARY").count(),
+            1,
+            "general developer instructions must remain available for {source:?}",
+        );
+    }
+
+    Arc::make_mut(&mut turn_context.config).child_instructions = None;
+    turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: ProcessId::default(),
+        depth: 1,
+        agent_nickname: None,
+        agent_role: None,
+    });
+    let rendered = serde_json::to_string(&session.build_initial_context(&turn_context).await)
+        .expect("serialize default child context");
+    assert!(!rendered.contains("CHILD_ONLY_BOUNDARY"));
+    assert!(rendered.contains("<supervision>"));
+}
 
 #[tokio::test]
 async fn start_managed_network_proxy_applies_execpolicy_network_rules() -> anyhow::Result<()> {
@@ -516,7 +589,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        minion_instructions: None,
+        developer_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -859,7 +932,7 @@ async fn set_rate_limits_retains_previous_credits() {
         settings: Settings {
             model,
             reasoning_effort,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
     let mode_registry = Arc::new(
@@ -880,7 +953,7 @@ async fn set_rate_limits_retains_previous_credits() {
         mode_policy,
         mode_base_reasoning_effort: config.model_reasoning_effort,
         model_reasoning_summary: config.model_reasoning_summary,
-        minion_instructions: config.minion_instructions.clone(),
+        developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,

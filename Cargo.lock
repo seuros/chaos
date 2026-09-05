@@ -1005,6 +1005,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-child-agents"
+version = "47.3.0"
+
+[[package]]
 name = "chaos-clamp"
 version = "47.3.0"
 dependencies = [
@@ -1462,6 +1466,7 @@ dependencies = [
  "chaos-argv",
  "chaos-arsenal",
  "chaos-check",
+ "chaos-child-agents",
  "chaos-clamp",
  "chaos-client",
  "chaos-concierge",
@@ -1480,7 +1485,6 @@ dependencies = [
  "chaos-locate",
  "chaos-lsd",
  "chaos-mcp-runtime",
- "chaos-minions",
  "chaos-model-catalog",
  "chaos-parole",
  "chaos-parrot",
@@ -1676,10 +1680,6 @@ dependencies = [
  "tracing-subscriber",
  "wiremock",
 ]
-
-[[package]]
-name = "chaos-minions"
-version = "47.3.0"
 
 [[package]]
 name = "chaos-model-catalog"

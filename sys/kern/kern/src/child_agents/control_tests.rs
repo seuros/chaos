@@ -2,12 +2,12 @@ use super::*;
 use crate::ChaosAuth;
 use crate::Process;
 use crate::ProcessTable;
+use crate::child_agents::agent_status_from_event;
 use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigBuilder;
 use crate::config_loader::LoaderOverrides;
 use crate::contextual_user_message::SUBAGENT_NOTIFICATION_OPEN_TAG;
-use crate::minions::agent_status_from_event;
 use assert_matches::assert_matches;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::models::ContentItem;
@@ -1019,7 +1019,7 @@ fn sanitize_forked_history_keeps_conversation_and_spawn_call() {
         function_call("call-spawn"),
     ];
 
-    crate::minions::control::sanitize_forked_history(&mut items, "call-spawn");
+    crate::child_agents::control::sanitize_forked_history(&mut items, "call-spawn");
 
     let kept: Vec<String> = items
         .iter()

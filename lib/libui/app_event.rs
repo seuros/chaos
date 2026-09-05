@@ -269,8 +269,8 @@ pub enum AppEvent {
         use_reviewer: bool,
     },
 
-    /// Open the minion picker for a pending review request.
-    OpenReviewMinionPicker {
+    /// Open the child agent picker for a pending review request.
+    OpenReviewChildAgentPicker {
         review_request: ReviewRequest,
     },
 

@@ -49,7 +49,7 @@ async fn agent_role_relative_config_file_resolves_against_config_toml() -> std::
     .await?;
     tokio::fs::write(
         &role_config_path,
-        "minion_instructions = \"Research carefully\"\nmodel = \"serpent\"",
+        "developer_instructions = \"Research carefully\"\nmodel = \"serpent\"",
     )
     .await?;
     tokio::fs::write(
@@ -101,7 +101,7 @@ async fn agent_role_file_metadata_overrides_config_toml_metadata() -> std::io::R
         r#"
 description = "Role metadata from file"
 nickname_candidates = ["Hypatia"]
-minion_instructions = "Research carefully"
+developer_instructions = "Research carefully"
 model = "serpent"
 "#,
     )
@@ -138,8 +138,8 @@ nickname_candidates = ["Noether"]
 }
 
 #[tokio::test]
-async fn agent_role_file_without_minion_instructions_is_dropped_with_warning() -> std::io::Result<()>
-{
+async fn agent_role_file_without_developer_instructions_is_dropped_with_warning()
+-> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
     let nested_cwd = repo_root.path().join("packages").join("app");
@@ -169,7 +169,7 @@ model = "serpent"
         r#"
 name = "reviewer"
 description = "Review role"
-minion_instructions = "Review carefully"
+developer_instructions = "Review carefully"
 model = "serpent"
 "#,
     )
@@ -195,14 +195,15 @@ model = "serpent"
         config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("must define `minion_instructions`"))
+            .any(|warning| warning.contains("must define `developer_instructions`"))
     );
 
     Ok(())
 }
 
 #[tokio::test]
-async fn legacy_agent_role_config_file_allows_missing_minion_instructions() -> std::io::Result<()> {
+async fn legacy_agent_role_config_file_allows_missing_developer_instructions() -> std::io::Result<()>
+{
     let chaos_home = TempDir::new()?;
     let role_config_path = chaos_home.path().join("agents").join("researcher.toml");
     tokio::fs::create_dir_all(
@@ -265,7 +266,7 @@ async fn agent_role_without_description_after_merge_is_dropped_with_warning() ->
     tokio::fs::write(
         &role_config_path,
         r#"
-minion_instructions = "Research carefully"
+developer_instructions = "Research carefully"
 model = "serpent"
 "#,
     )
@@ -325,7 +326,7 @@ async fn discovered_agent_role_file_without_name_is_dropped_with_warning() -> st
         standalone_agents_dir.join("researcher.toml"),
         r#"
 description = "Role metadata from file"
-minion_instructions = "Research carefully"
+developer_instructions = "Research carefully"
 "#,
     )
     .await?;
@@ -334,7 +335,7 @@ minion_instructions = "Research carefully"
         r#"
 name = "reviewer"
 description = "Review role"
-minion_instructions = "Review carefully"
+developer_instructions = "Review carefully"
 "#,
     )
     .await?;
@@ -380,7 +381,7 @@ async fn agent_role_file_name_takes_precedence_over_config_key() -> std::io::Res
         r#"
 name = "archivist"
 description = "Role metadata from file"
-minion_instructions = "Research carefully"
+developer_instructions = "Research carefully"
 model = "serpent"
 "#,
     )
@@ -423,12 +424,12 @@ async fn loads_legacy_split_agent_roles_from_config_toml() -> std::io::Result<()
     .await?;
     tokio::fs::write(
         &researcher_path,
-        "minion_instructions = \"Research carefully\"\nmodel = \"serpent\"",
+        "developer_instructions = \"Research carefully\"\nmodel = \"serpent\"",
     )
     .await?;
     tokio::fs::write(
         &reviewer_path,
-        "minion_instructions = \"Review carefully\"\nmodel = \"gordon\"",
+        "developer_instructions = \"Review carefully\"\nmodel = \"gordon\"",
     )
     .await?;
     tokio::fs::write(
@@ -530,7 +531,7 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
         r#"
 name = "researcher"
 description = "from root"
-minion_instructions = "Research carefully"
+developer_instructions = "Research carefully"
 "#,
     )?;
 
@@ -552,7 +553,7 @@ minion_instructions = "Research carefully"
 name = "reviewer"
 description = "from nested"
 nickname_candidates = ["Atlas"]
-minion_instructions = "Review carefully"
+developer_instructions = "Review carefully"
 "#,
     )?;
 
@@ -573,7 +574,7 @@ minion_instructions = "Review carefully"
 name = "writer"
 description = "from sibling"
 nickname_candidates = ["Sagan"]
-minion_instructions = "Write carefully"
+developer_instructions = "Write carefully"
 "#,
     )?;
 
@@ -662,7 +663,7 @@ nickname_candidates = ["Ada"]
     tokio::fs::write(
         home_agents_dir.join("researcher.toml"),
         r#"
-minion_instructions = "Research carefully"
+developer_instructions = "Research carefully"
 model = "serpent"
 "#,
     )
@@ -670,7 +671,7 @@ model = "serpent"
     tokio::fs::write(
         home_agents_dir.join("critic.toml"),
         r#"
-minion_instructions = "Critique carefully"
+developer_instructions = "Critique carefully"
 model = "gordon"
 "#,
     )
@@ -684,7 +685,7 @@ model = "gordon"
 name = "researcher"
 description = "Research role from file"
 nickname_candidates = ["Hypatia"]
-minion_instructions = "Research from file"
+developer_instructions = "Research from file"
 model = "fireship"
 "#,
     )
@@ -695,7 +696,7 @@ model = "fireship"
 name = "writer"
 description = "Writer role from file"
 nickname_candidates = ["Sagan"]
-minion_instructions = "Write carefully"
+developer_instructions = "Write carefully"
 model = "serpent"
 "#,
     )
@@ -802,7 +803,7 @@ config_file = "./agents/researcher.toml"
     tokio::fs::write(
         home_agents_dir.join("researcher.toml"),
         r#"
-minion_instructions = "Research carefully"
+developer_instructions = "Research carefully"
 model = "serpent"
 "#,
     )
@@ -815,7 +816,7 @@ model = "serpent"
         r#"
 name = "researcher"
 nickname_candidates = ["Hypatia"]
-minion_instructions = "Research from file"
+developer_instructions = "Research from file"
 model = "fireship"
 "#,
     )

@@ -119,7 +119,7 @@ impl ModeRegistry {
                 _ => continue,
             };
             let instructions = preset
-                .minion_instructions
+                .developer_instructions
                 .flatten()
                 .context("built-in collaboration preset is missing instructions")?;
             let reasoning_effort = preset.reasoning_effort.flatten();
@@ -184,7 +184,7 @@ impl ModeRegistry {
             settings: Settings {
                 model: base.model().to_string(),
                 reasoning_effort: definition.reasoning_effort.or(base.reasoning_effort()),
-                minion_instructions: Some(definition.instructions.clone()),
+                developer_instructions: Some(definition.instructions.clone()),
             },
         })
     }

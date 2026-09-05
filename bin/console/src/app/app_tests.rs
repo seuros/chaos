@@ -443,7 +443,7 @@ async fn replay_process_snapshot_restores_draft_and_queued_input() {
             mode: None,
             model: None,
             reasoning_effort: None,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     );
     let expected_input_state = app
@@ -850,7 +850,7 @@ async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() 
             mode: Some(ModeKind::Plan),
             model: Some("gpt-restored".to_string()),
             reasoning_effort: Some(Some(ReasoningEffortConfig::High)),
-            minion_instructions: None,
+            developer_instructions: None,
         });
     app.chat_widget
         .apply_external_edit("draft prompt".to_string());
@@ -871,7 +871,7 @@ async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() 
             mode: Some(ModeKind::Default),
             model: Some("gpt-replacement".to_string()),
             reasoning_effort: Some(Some(ReasoningEffortConfig::Low)),
-            minion_instructions: None,
+            developer_instructions: None,
         });
     while new_op_rx.try_recv().is_ok() {}
 
@@ -910,7 +910,7 @@ async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() 
                     settings: Settings {
                         model: "gpt-restored".to_string(),
                         reasoning_effort: Some(ReasoningEffortConfig::High),
-                        minion_instructions: None,
+                        developer_instructions: None,
                     },
                 })
             );
@@ -933,7 +933,7 @@ async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
             mode: Some(ModeKind::Plan),
             model: Some("gpt-restored".to_string()),
             reasoning_effort: Some(Some(ReasoningEffortConfig::High)),
-            minion_instructions: None,
+            developer_instructions: None,
         });
     let input_state = app
         .chat_widget
@@ -951,7 +951,7 @@ async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
             mode: Some(ModeKind::Default),
             model: Some("gpt-replacement".to_string()),
             reasoning_effort: Some(Some(ReasoningEffortConfig::Low)),
-            minion_instructions: None,
+            developer_instructions: None,
         });
 
     app.replay_process_snapshot(

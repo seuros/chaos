@@ -156,7 +156,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .send_chaos_tool_call(ChaosToolParams {
             prompt: "How are you?".to_string(),
             base_instructions: Some("You are a helpful assistant.".to_string()),
-            minion_instructions: Some("Foreshadow upcoming tool calls.".to_string()),
+            developer_instructions: Some("Foreshadow upcoming tool calls.".to_string()),
             ..Default::default()
         })
         .await?;
@@ -234,7 +234,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
     );
     assert!(
         instruction_contents.contains(&"Foreshadow upcoming tool calls."),
-        "expected minion instructions in instruction messages, got {instruction_contents:?}"
+        "expected developer instructions in instruction messages, got {instruction_contents:?}"
     );
 
     Ok(())

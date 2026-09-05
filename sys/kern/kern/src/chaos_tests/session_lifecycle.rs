@@ -134,7 +134,7 @@ async fn legacy_collaboration_mode_aliases_use_the_current_live_mode() {
                     settings: chaos_ipc::config_types::Settings {
                         model: session_configuration.collaboration_mode.model().to_string(),
                         reasoning_effort: None,
-                        minion_instructions: None,
+                        developer_instructions: None,
                     },
                 }),
                 ..Default::default()
@@ -215,18 +215,18 @@ async fn switch_mode_emits_ui_sync_only_for_main_sessions() {
         .expect("repeat active mode");
     assert_no_session_mode_changed(&rx).await;
 
-    let (minion, minion_turn, minion_rx) = make_session_and_context_with_rx().await;
+    let (child_agent, child_agent_turn, child_agent_rx) = make_session_and_context_with_rx().await;
     {
-        let mut state = minion.state.lock().await;
+        let mut state = child_agent.state.lock().await;
         state.session_configuration.session_source = crate::protocol::SessionSource::SubAgent(
-            crate::protocol::SubAgentSource::Other("test-minion".to_string()),
+            crate::protocol::SubAgentSource::Other("test-child_agent".to_string()),
         );
     }
-    minion
-        .switch_mode(crate::modes::PLAN_MODE_ID, minion_turn.as_ref())
+    child_agent
+        .switch_mode(crate::modes::PLAN_MODE_ID, child_agent_turn.as_ref())
         .await
-        .expect("switch minion to plan");
-    assert_no_session_mode_changed(&minion_rx).await;
+        .expect("switch child agent to plan");
+    assert_no_session_mode_changed(&child_agent_rx).await;
 }
 
 async fn assert_no_session_mode_changed(rx: &async_channel::Receiver<Event>) {

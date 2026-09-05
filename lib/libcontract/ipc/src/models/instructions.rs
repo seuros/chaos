@@ -69,7 +69,7 @@ impl DeveloperInstructions {
     pub fn from_collaboration_mode(collaboration_mode: &CollaborationMode) -> Option<Self> {
         collaboration_mode
             .settings
-            .minion_instructions
+            .developer_instructions
             .as_ref()
             .filter(|instructions| !instructions.is_empty())
             .map(|instructions| {

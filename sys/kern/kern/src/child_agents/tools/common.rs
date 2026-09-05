@@ -1,7 +1,7 @@
 use crate::chaos::Session;
+use crate::child_agents::exceeds_process_spawn_depth_limit;
+use crate::child_agents::next_process_spawn_depth;
 use crate::function_tool::FunctionCallError;
-use crate::minions::exceeds_process_spawn_depth_limit;
-use crate::minions::next_process_spawn_depth;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use std::sync::Arc;

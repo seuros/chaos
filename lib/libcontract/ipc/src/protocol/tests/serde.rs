@@ -274,7 +274,7 @@ fn turn_context_item_serializes_network_when_present() -> Result<()> {
         effort: None,
         summary: ReasoningSummaryConfig::Auto,
         user_instructions: None,
-        minion_instructions: None,
+        developer_instructions: None,
         final_output_json_schema: None,
         truncation_policy: None,
     };

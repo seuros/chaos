@@ -19,7 +19,7 @@ alcatraz = { workspace = true }
 arc-swap = "1.9.2"
 async-channel = { workspace = true }
 base64 = { workspace = true }
-chaos-minions = { workspace = true }
+chaos-child-agents = { workspace = true }
 chaos-synopsis = { workspace = true }
 chardetng = { workspace = true }
 jiff = { workspace = true }

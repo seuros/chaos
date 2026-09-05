@@ -116,7 +116,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
                 settings: Settings {
                     model: session_configured.model.clone(),
                     reasoning_effort: None,
-                    minion_instructions: None,
+                    developer_instructions: None,
                 },
             }),
             personality: None,

@@ -43,8 +43,8 @@ pub(crate) struct ToolsConfig {
     pub default_mode_request_user_input: bool,
     pub dynamic_parent_effort: bool,
     pub experimental_supported_tools: Vec<String>,
-    pub minion_jobs_tools: bool,
-    pub minion_jobs_worker_tools: bool,
+    pub child_agent_jobs_tools: bool,
+    pub child_agent_jobs_worker_tools: bool,
     pub agent_compaction_control: bool,
     pub agent_session_title: bool,
     pub mode_switching: bool,
@@ -58,7 +58,7 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) model_info: &'a ModelInfo,
     pub(crate) available_models: &'a Vec<ModelPreset>,
     pub(crate) approval_policy: ApprovalPolicy,
-    pub(crate) minion_jobs_allowed: bool,
+    pub(crate) child_agent_jobs_allowed: bool,
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
     pub(crate) vfs_policy: &'a VfsPolicy,
@@ -75,7 +75,7 @@ impl ToolsConfig {
             model_info,
             available_models: available_models_ref,
             approval_policy,
-            minion_jobs_allowed,
+            child_agent_jobs_allowed,
             web_search_mode,
             session_source,
             vfs_policy,
@@ -86,8 +86,8 @@ impl ToolsConfig {
             matches!(
                 session_source,
                 SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
-            ) && !crate::minions::is_internal_process_spawn(session_source);
-        let include_minion_jobs = *minion_jobs_allowed;
+            ) && !crate::child_agents::is_internal_process_spawn(session_source);
+        let include_child_agent_jobs = *child_agent_jobs_allowed;
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input = include_request_user_input;
         let include_original_image_detail = can_request_original_image_detail(model_info);
@@ -111,11 +111,11 @@ impl ToolsConfig {
 
         let apply_patch_tool_type = model_info.apply_patch_tool_type.clone();
 
-        let minion_jobs_worker_tools = include_minion_jobs
+        let child_agent_jobs_worker_tools = include_child_agent_jobs
             && matches!(
                 session_source,
                 SessionSource::SubAgent(SubAgentSource::Other(label))
-                    if label.starts_with("minion_job:")
+                    if label.starts_with("child_agent_job:")
             );
 
         Self {
@@ -139,8 +139,8 @@ impl ToolsConfig {
             default_mode_request_user_input: include_default_mode_request_user_input,
             dynamic_parent_effort: false,
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
-            minion_jobs_tools: include_minion_jobs,
-            minion_jobs_worker_tools,
+            child_agent_jobs_tools: include_child_agent_jobs,
+            child_agent_jobs_worker_tools,
             agent_compaction_control: false,
             agent_session_title: false,
             mode_switching: false,

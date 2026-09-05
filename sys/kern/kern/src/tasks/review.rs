@@ -107,13 +107,13 @@ async fn start_review_conversation(
     {
         panic!("by construction Constrained<WebSearchMode> must always support Disabled: {err}");
     }
-    sub_agent_config.minion_jobs_allowed = false;
+    sub_agent_config.child_agent_jobs_allowed = false;
     sub_agent_config.collab_enabled = false;
 
     // Set explicit review rubric for the sub-agent.  If a reviewer persona is
     // active its instructions lead the system prompt so the model adopts the
     // persona before reading the rubric.
-    let base = if let Some(persona_instructions) = sub_agent_config.minion_instructions.take() {
+    let base = if let Some(persona_instructions) = sub_agent_config.developer_instructions.take() {
         format!("{}\n\n{}", persona_instructions, crate::REVIEW_PROMPT)
     } else {
         crate::REVIEW_PROMPT.to_string()

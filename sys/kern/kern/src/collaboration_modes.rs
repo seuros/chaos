@@ -40,7 +40,7 @@ fn plan_preset() -> CollaborationModeMask {
         mode: Some(ModeKind::Plan),
         model: None,
         reasoning_effort: Some(Some(ReasoningEffort::Medium)),
-        minion_instructions: Some(Some(COLLABORATION_MODE_PLAN.to_string())),
+        developer_instructions: Some(Some(COLLABORATION_MODE_PLAN.to_string())),
     }
 }
 
@@ -50,7 +50,7 @@ fn default_preset(collaboration_modes_config: CollaborationModesConfig) -> Colla
         mode: Some(ModeKind::Default),
         model: None,
         reasoning_effort: None,
-        minion_instructions: Some(Some(default_mode_instructions(collaboration_modes_config))),
+        developer_instructions: Some(Some(default_mode_instructions(collaboration_modes_config))),
     }
 }
 
@@ -137,7 +137,7 @@ mod tests {
             .find(|p| p.mode == Some(ModeKind::Default))
             .unwrap();
         let instructions = default
-            .minion_instructions
+            .developer_instructions
             .as_ref()
             .unwrap()
             .as_ref()
@@ -158,7 +158,7 @@ mod tests {
             .find(|p| p.mode == Some(ModeKind::Default))
             .unwrap();
         let instructions = default
-            .minion_instructions
+            .developer_instructions
             .as_ref()
             .unwrap()
             .as_ref()

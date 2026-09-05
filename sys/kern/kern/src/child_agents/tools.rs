@@ -7,10 +7,10 @@
 
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
+use crate::child_agents::AgentStatus;
 use crate::config::Config;
 use crate::error::ChaosErr;
 use crate::function_tool::FunctionCallError;
-use crate::minions::AgentStatus;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -276,7 +276,7 @@ fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallE
     config.model_provider = turn.provider.clone();
     config.model_reasoning_effort = turn.reasoning_effort;
     config.model_reasoning_summary = Some(turn.reasoning_summary);
-    config.minion_instructions = turn.minion_instructions.clone();
+    config.developer_instructions = turn.developer_instructions.clone();
     config.compact_prompt = turn.compact_prompt.clone();
     config.mode_policy_override = Some(turn.mode_policy.clone());
     apply_spawn_agent_runtime_overrides(&mut config, turn)?;
@@ -320,7 +320,7 @@ fn apply_spawn_agent_runtime_overrides(
 
 pub(crate) fn apply_spawn_agent_overrides(config: &mut Config, child_depth: i32) {
     if child_depth >= config.agent_max_depth {
-        config.minion_jobs_allowed = false;
+        config.child_agent_jobs_allowed = false;
         config.collab_enabled = false;
     }
 }

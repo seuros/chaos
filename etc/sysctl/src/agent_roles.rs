@@ -199,13 +199,13 @@ fn agent_role_config_from_toml(
 }
 
 /// Lightweight stand-in for ConfigToml used only to validate agent role files.
-/// Accepts `minion_instructions` and ignores other config fields via flatten.
+/// Accepts `developer_instructions` and ignores other config fields via flatten.
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 struct RawAgentRoleFileToml {
     name: Option<String>,
     description: Option<String>,
     nickname_candidates: Option<Vec<String>>,
-    minion_instructions: Option<String>,
+    developer_instructions: Option<String>,
     topics: Option<Vec<String>>,
     catchphrases: Option<Vec<String>>,
     #[serde(flatten)]
@@ -284,11 +284,11 @@ pub fn parse_agent_role_file_contents(
         )
     })?;
 
-    if is_md && !md_body.is_empty() && parsed.minion_instructions.is_some() {
+    if is_md && !md_body.is_empty() && parsed.developer_instructions.is_some() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
-                "agent role file at {} defines minion_instructions in both frontmatter and body; use one or the other",
+                "agent role file at {} defines developer_instructions in both frontmatter and body; use one or the other",
                 role_file_label.display()
             ),
         ));
@@ -299,15 +299,15 @@ pub fn parse_agent_role_file_contents(
         parsed.description.as_deref(),
     )?;
 
-    let effective_minion_instructions = if is_md && !md_body.is_empty() {
+    let effective_developer_instructions = if is_md && !md_body.is_empty() {
         Some(md_body)
     } else {
-        parsed.minion_instructions.as_deref()
+        parsed.developer_instructions.as_deref()
     };
 
-    validate_agent_role_file_minion_instructions(
+    validate_agent_role_file_developer_instructions(
         role_file_label,
-        effective_minion_instructions,
+        effective_developer_instructions,
         role_name_hint.is_none(),
     )?;
 
@@ -354,7 +354,7 @@ pub fn parse_agent_role_file_contents(
 
     if is_md && !md_body.is_empty() {
         config_table.insert(
-            "minion_instructions".to_string(),
+            "developer_instructions".to_string(),
             TomlValue::String(md_body.to_owned()),
         );
     }
@@ -410,16 +410,16 @@ fn validate_required_agent_role_description(
     }
 }
 
-fn validate_agent_role_file_minion_instructions(
+fn validate_agent_role_file_developer_instructions(
     role_file_label: &Path,
-    minion_instructions: Option<&str>,
+    developer_instructions: Option<&str>,
     require_present: bool,
 ) -> std::io::Result<()> {
-    match minion_instructions.map(str::trim) {
+    match developer_instructions.map(str::trim) {
         Some("") => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!(
-                "agent role file at {}.minion_instructions cannot be blank",
+                "agent role file at {}.developer_instructions cannot be blank",
                 role_file_label.display()
             ),
         )),
@@ -427,7 +427,7 @@ fn validate_agent_role_file_minion_instructions(
         None if require_present => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!(
-                "agent role file at {} must define `minion_instructions`",
+                "agent role file at {} must define `developer_instructions`",
                 role_file_label.display()
             ),
         )),

@@ -64,6 +64,8 @@ mod approvals;
 mod auth_refresh;
 #[path = "chaos_delegate.rs"]
 mod chaos_delegate;
+#[path = "child_agent_jobs.rs"]
+mod child_agent_jobs;
 #[path = "exec.rs"]
 mod exec;
 #[path = "exec_policy.rs"]
@@ -80,8 +82,6 @@ mod list_dir;
 mod live_cli;
 #[path = "mcp_client.rs"]
 mod mcp_client;
-#[path = "minion_jobs.rs"]
-mod minion_jobs;
 #[path = "model_info_overrides.rs"]
 mod model_info_overrides;
 #[path = "model_overrides.rs"]

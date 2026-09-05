@@ -111,7 +111,7 @@ impl chaos_traits::AgentSpawner for Session {
         kern_config.cwd = config.cwd;
 
         let parent_source = self.session_source().await;
-        let depth = crate::minions::next_process_spawn_depth(&parent_source);
+        let depth = crate::child_agents::next_process_spawn_depth(&parent_source);
         let session_source = chaos_ipc::protocol::SessionSource::SubAgent(
             chaos_ipc::protocol::SubAgentSource::ProcessSpawn {
                 parent_process_id: self.conversation_id,

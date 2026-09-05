@@ -1,13 +1,13 @@
 pub mod apply_patch;
 pub(crate) mod cancel_attested_review;
 mod catalog_module;
+pub(crate) mod child_agent_jobs;
 mod compaction_control;
 mod dynamic;
 mod halluacinate;
 mod mcp;
 mod mcp_resource;
 mod mcp_task;
-pub(crate) mod minion_jobs;
 mod parent_effort;
 mod plan;
 mod request_permissions;

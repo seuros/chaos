@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MinionJobStatus {
+pub enum ChildAgentJobStatus {
     Pending,
     Running,
     Completed,
@@ -10,14 +10,14 @@ pub enum MinionJobStatus {
     Cancelled,
 }
 
-impl MinionJobStatus {
+impl ChildAgentJobStatus {
     pub const fn as_str(self) -> &'static str {
         match self {
-            MinionJobStatus::Pending => "pending",
-            MinionJobStatus::Running => "running",
-            MinionJobStatus::Completed => "completed",
-            MinionJobStatus::Failed => "failed",
-            MinionJobStatus::Cancelled => "cancelled",
+            ChildAgentJobStatus::Pending => "pending",
+            ChildAgentJobStatus::Running => "running",
+            ChildAgentJobStatus::Completed => "completed",
+            ChildAgentJobStatus::Failed => "failed",
+            ChildAgentJobStatus::Cancelled => "cancelled",
         }
     }
 
@@ -28,33 +28,35 @@ impl MinionJobStatus {
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
             "cancelled" => Ok(Self::Cancelled),
-            _ => Err(anyhow::anyhow!("invalid minion job status: {value}")),
+            _ => Err(anyhow::anyhow!("invalid child agent job status: {value}")),
         }
     }
 
     pub fn is_final(self) -> bool {
         matches!(
             self,
-            MinionJobStatus::Completed | MinionJobStatus::Failed | MinionJobStatus::Cancelled
+            ChildAgentJobStatus::Completed
+                | ChildAgentJobStatus::Failed
+                | ChildAgentJobStatus::Cancelled
         )
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MinionJobItemStatus {
+pub enum ChildAgentJobItemStatus {
     Pending,
     Running,
     Completed,
     Failed,
 }
 
-impl MinionJobItemStatus {
+impl ChildAgentJobItemStatus {
     pub const fn as_str(self) -> &'static str {
         match self {
-            MinionJobItemStatus::Pending => "pending",
-            MinionJobItemStatus::Running => "running",
-            MinionJobItemStatus::Completed => "completed",
-            MinionJobItemStatus::Failed => "failed",
+            ChildAgentJobItemStatus::Pending => "pending",
+            ChildAgentJobItemStatus::Running => "running",
+            ChildAgentJobItemStatus::Completed => "completed",
+            ChildAgentJobItemStatus::Failed => "failed",
         }
     }
 
@@ -64,16 +66,18 @@ impl MinionJobItemStatus {
             "running" => Ok(Self::Running),
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
-            _ => Err(anyhow::anyhow!("invalid minion job item status: {value}")),
+            _ => Err(anyhow::anyhow!(
+                "invalid child agent job item status: {value}"
+            )),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MinionJob {
+pub struct ChildAgentJob {
     pub id: String,
     pub name: String,
-    pub status: MinionJobStatus,
+    pub status: ChildAgentJobStatus,
     pub instruction: String,
     pub auto_export: bool,
     pub max_runtime_seconds: Option<u64>,
@@ -90,13 +94,13 @@ pub struct MinionJob {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MinionJobItem {
+pub struct ChildAgentJobItem {
     pub job_id: String,
     pub item_id: String,
     pub row_index: i64,
     pub source_id: Option<String>,
     pub row_json: Value,
-    pub status: MinionJobItemStatus,
+    pub status: ChildAgentJobItemStatus,
     pub assigned_process_id: Option<String>,
     pub attempt_count: i64,
     pub result_json: Option<Value>,
@@ -108,7 +112,7 @@ pub struct MinionJobItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MinionJobProgress {
+pub struct ChildAgentJobProgress {
     pub total_items: usize,
     pub pending_items: usize,
     pub running_items: usize,
@@ -117,7 +121,7 @@ pub struct MinionJobProgress {
 }
 
 #[derive(Debug, Clone)]
-pub struct MinionJobCreateParams {
+pub struct ChildAgentJobCreateParams {
     pub id: String,
     pub name: String,
     pub instruction: String,
@@ -130,7 +134,7 @@ pub struct MinionJobCreateParams {
 }
 
 #[derive(Debug, Clone)]
-pub struct MinionJobItemCreateParams {
+pub struct ChildAgentJobItemCreateParams {
     pub item_id: String,
     pub row_index: i64,
     pub source_id: Option<String>,
@@ -138,7 +142,7 @@ pub struct MinionJobItemCreateParams {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-pub(crate) struct MinionJobRow {
+pub(crate) struct ChildAgentJobRow {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) status: String,
@@ -156,10 +160,10 @@ pub(crate) struct MinionJobRow {
     pub(crate) last_error: Option<String>,
 }
 
-impl TryFrom<MinionJobRow> for MinionJob {
+impl TryFrom<ChildAgentJobRow> for ChildAgentJob {
     type Error = anyhow::Error;
 
-    fn try_from(value: MinionJobRow) -> Result<Self, Self::Error> {
+    fn try_from(value: ChildAgentJobRow) -> Result<Self, Self::Error> {
         let output_schema_json = value
             .output_schema_json
             .as_deref()
@@ -174,7 +178,7 @@ impl TryFrom<MinionJobRow> for MinionJob {
         Ok(Self {
             id: value.id,
             name: value.name,
-            status: MinionJobStatus::parse(value.status.as_str())?,
+            status: ChildAgentJobStatus::parse(value.status.as_str())?,
             instruction: value.instruction,
             auto_export: value.auto_export != 0,
             max_runtime_seconds,
@@ -198,7 +202,7 @@ impl TryFrom<MinionJobRow> for MinionJob {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-pub(crate) struct MinionJobItemRow {
+pub(crate) struct ChildAgentJobItemRow {
     pub(crate) job_id: String,
     pub(crate) item_id: String,
     pub(crate) row_index: i64,
@@ -215,17 +219,17 @@ pub(crate) struct MinionJobItemRow {
     pub(crate) reported_at: Option<i64>,
 }
 
-impl TryFrom<MinionJobItemRow> for MinionJobItem {
+impl TryFrom<ChildAgentJobItemRow> for ChildAgentJobItem {
     type Error = anyhow::Error;
 
-    fn try_from(value: MinionJobItemRow) -> Result<Self, Self::Error> {
+    fn try_from(value: ChildAgentJobItemRow) -> Result<Self, Self::Error> {
         Ok(Self {
             job_id: value.job_id,
             item_id: value.item_id,
             row_index: value.row_index,
             source_id: value.source_id,
             row_json: serde_json::from_str(value.row_json.as_str())?,
-            status: MinionJobItemStatus::parse(value.status.as_str())?,
+            status: ChildAgentJobItemStatus::parse(value.status.as_str())?,
             assigned_process_id: value.assigned_process_id,
             attempt_count: value.attempt_count,
             result_json: value

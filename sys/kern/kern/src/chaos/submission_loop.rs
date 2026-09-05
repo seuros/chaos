@@ -92,7 +92,7 @@ pub(super) async fn submission_loop(
                         state.session_configuration.collaboration_mode.with_updates(
                             model.clone(),
                             effort,
-                            /*minion_instructions*/ None,
+                            /*developer_instructions*/ None,
                         )
                     };
                     // If clamped and model changed, forward to claude subprocess.
@@ -334,7 +334,7 @@ pub(super) async fn spawn_review_thread(
             .list_models(RefreshStrategy::OnlineIfUncached)
             .await,
         approval_policy: parent_turn_context.approval_policy.value(),
-        minion_jobs_allowed: config.minion_jobs_allowed,
+        child_agent_jobs_allowed: config.child_agent_jobs_allowed,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
         vfs_policy: &parent_turn_context.vfs_policy,
@@ -383,14 +383,19 @@ pub(super) async fn spawn_review_thread(
     if let Some(ref reviewer) = resolved.reviewer {
         // Start from a clean slate so the parent agent's persona cannot bleed
         // into the review turn if the requested reviewer cannot be applied.
-        per_turn_config.minion_instructions = None;
-        match crate::minions::role::apply_builtin_persona_to_config(&mut per_turn_config, reviewer)
-            .await
+        per_turn_config.developer_instructions = None;
+        match crate::child_agents::role::apply_builtin_persona_to_config(
+            &mut per_turn_config,
+            reviewer,
+        )
+        .await
         {
             Ok(()) => {
                 reviewer_applied = true;
                 if let Some(catchphrase) = pick_catchphrase(reviewer) {
-                    let instructions = per_turn_config.minion_instructions.get_or_insert_default();
+                    let instructions = per_turn_config
+                        .developer_instructions
+                        .get_or_insert_default();
                     instructions.push_str(&format!(
                         "\n\nLet this phrase inspire the spirit and tone of your review: \"{catchphrase}\""
                     ));
@@ -403,13 +408,16 @@ pub(super) async fn spawn_review_thread(
     }
 
     // Only carry reviewer persona instructions into the review turn context.
-    // When no reviewer was selected, clear any inherited minion_instructions so
+    // When no reviewer was selected, clear any inherited developer_instructions so
     // the parent agent's persona does not bleed into a default review. Also
     // clear inherited instructions when a requested reviewer failed to apply.
     if !reviewer_applied {
-        per_turn_config.minion_instructions = None;
+        per_turn_config.developer_instructions = None;
     }
-    let reviewer_instructions = per_turn_config.minion_instructions.clone();
+    let reviewer_instructions = per_turn_config.developer_instructions.clone();
+    // Reviews reuse their caller's session source, which may itself be a child.
+    // Keep the review contract independent even when a child requested it.
+    per_turn_config.child_instructions = None;
     let per_turn_config = Arc::new(per_turn_config);
     let review_turn_id = sub_id.to_string();
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
@@ -433,7 +441,7 @@ pub(super) async fn spawn_review_thread(
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),
         app_server_client_name: parent_turn_context.app_server_client_name.clone(),
-        minion_instructions: reviewer_instructions,
+        developer_instructions: reviewer_instructions,
         user_instructions: None,
         compact_prompt: parent_turn_context.compact_prompt.clone(),
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
@@ -499,7 +507,7 @@ pub(super) async fn spawn_review_thread(
 
 fn pick_catchphrase(reviewer: &str) -> Option<String> {
     use rand::seq::IndexedRandom;
-    let phrases = crate::minions::role::built_in::personas()
+    let phrases = crate::child_agents::role::built_in::personas()
         .get(reviewer)?
         .catchphrases
         .as_deref()?;

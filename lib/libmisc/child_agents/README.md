@@ -1,3 +1,3 @@
-# chaos-minions
+# chaos-child-agents
 
 Task sub-agents spawned by the kernel. Handle delegated tasks: background research, parallel tool execution, multi-file editing, and autonomous sub-sessions.

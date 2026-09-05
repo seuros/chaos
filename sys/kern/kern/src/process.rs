@@ -1,10 +1,10 @@
 use crate::chaos::Chaos;
 use crate::chaos::SteerInputError;
+use crate::child_agents::AgentStatus;
 use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::file_watcher::WatchRegistration;
-use crate::minions::AgentStatus;
 use crate::protocol::Event;
 use crate::protocol::Op;
 use crate::protocol::Submission;

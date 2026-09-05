@@ -139,9 +139,6 @@ pub enum ChaosErr {
     #[error("sandbox error: {0}")]
     Sandbox(#[from] SandboxErr),
 
-    #[error("alcatraz-linux was required but not provided")]
-    LandlockSandboxExecutableNotProvided,
-
     #[error("unsupported operation: {0}")]
     UnsupportedOperation(String),
 
@@ -202,7 +199,6 @@ impl ChaosErr {
             | ChaosErr::RefreshTokenFailed(_)
             | ChaosErr::UnsupportedOperation(_)
             | ChaosErr::Sandbox(_)
-            | ChaosErr::LandlockSandboxExecutableNotProvided
             | ChaosErr::RetryLimit(_)
             | ChaosErr::ContextWindowExceeded
             | ChaosErr::ProcessNotFound(_)

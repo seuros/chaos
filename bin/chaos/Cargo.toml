@@ -18,6 +18,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+alcatraz = { workspace = true }
 anyhow = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-getopt = { workspace = true }
@@ -54,16 +55,6 @@ tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 usage = { workspace = true, features = ["completions"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-alcatraz-linux = { workspace = true }
-
-[target.'cfg(target_os = "freebsd")'.dependencies]
-alcatraz-freebsd = { workspace = true }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-alcatraz-macos = { workspace = true }
-chaos-pf = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }

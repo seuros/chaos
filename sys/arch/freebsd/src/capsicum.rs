@@ -16,6 +16,7 @@
 
 use alcatraz_base::error::AlcatrazError;
 use alcatraz_base::error::Result;
+use alcatraz_base::prepared_command::PreparedCommand;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SocketPolicy;
 use chaos_ipc::protocol::VfsPolicy;
@@ -32,19 +33,12 @@ use tokio::process::Command;
 
 const CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR: &str = "CHAOS_SANDBOX_NETWORK_DISABLED";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedCommand {
-    pub program: PathBuf,
-    pub args: Vec<String>,
-    pub arg0: Option<String>,
-}
-
-/// Build the helper command line for `alcatraz-freebsd`.
+/// Build the helper command line for `alcatraz`.
 ///
 /// The helper mirrors the Linux sandbox helper CLI: policy JSON args first,
 /// then `--`, then the target command.
 #[allow(clippy::too_many_arguments)]
-pub fn prepare_command<P>(
+pub fn prepare_command_from_policies<P>(
     executable: P,
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,
@@ -52,19 +46,21 @@ pub fn prepare_command<P>(
     socket_policy: SocketPolicy,
     sandbox_policy_cwd: &Path,
     allow_network_for_proxy: bool,
-) -> PreparedCommand
+) -> std::io::Result<PreparedCommand>
 where
     P: AsRef<Path>,
 {
-    let sandbox_policy_json = serde_json::to_string(sandbox_policy)
-        .unwrap_or_else(|err| panic!("failed to serialize sandbox policy: {err}"));
-    let file_system_policy_json = serde_json::to_string(vfs_policy)
-        .unwrap_or_else(|err| panic!("failed to serialize filesystem sandbox policy: {err}"));
-    let network_policy_json = serde_json::to_string(&socket_policy)
-        .unwrap_or_else(|err| panic!("failed to serialize network sandbox policy: {err}"));
+    let sandbox_policy_json =
+        serde_json::to_string(sandbox_policy).map_err(std::io::Error::other)?;
+    let file_system_policy_json =
+        serde_json::to_string(vfs_policy).map_err(std::io::Error::other)?;
+    let network_policy_json =
+        serde_json::to_string(&socket_policy).map_err(std::io::Error::other)?;
     let sandbox_policy_cwd = sandbox_policy_cwd
         .to_str()
-        .unwrap_or_else(|| panic!("cwd must be valid UTF-8"))
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "cwd must be valid UTF-8")
+        })?
         .to_string();
 
     let mut args = vec![
@@ -83,11 +79,12 @@ where
     args.push("--".to_string());
     args.extend(command);
 
-    PreparedCommand {
+    Ok(PreparedCommand {
         program: executable.as_ref().to_path_buf(),
         args,
-        arg0: Some("alcatraz-freebsd".to_string()),
-    }
+        env: Default::default(),
+        arg0: Some("alcatraz".to_string()),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -105,7 +102,7 @@ where
 {
     let vfs_policy = vfs_policy_from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
     let socket_policy = SocketPolicy::from(sandbox_policy);
-    let prepared = prepare_command(
+    let prepared = prepare_command_from_policies(
         executable,
         command,
         sandbox_policy,
@@ -113,7 +110,7 @@ where
         socket_policy,
         sandbox_policy_cwd,
         false,
-    );
+    )?;
 
     let mut env = env;
     if let Some(network) = network {
@@ -186,7 +183,7 @@ pub fn apply_sandbox_policy_to_current_thread(
     }
 
     for message in &unsupported_restrictions {
-        eprintln!("alcatraz-freebsd: warning: {message}");
+        eprintln!("alcatraz: warning: {message}");
     }
 
     Err(AlcatrazError::UnsupportedOperation(format!(
@@ -214,7 +211,7 @@ fn apply_procctl_hardening() {
     };
     if ret != 0 {
         let err = std::io::Error::last_os_error();
-        eprintln!("alcatraz-freebsd: warning: procctl(PROC_NO_NEW_PRIVS_CTL) failed: {err}");
+        eprintln!("alcatraz: warning: procctl(PROC_NO_NEW_PRIVS_CTL) failed: {err}");
     }
 
     // PROC_TRACE_CTL — block ptrace attachment (survives exec)
@@ -229,7 +226,7 @@ fn apply_procctl_hardening() {
     };
     if ret != 0 {
         let err = std::io::Error::last_os_error();
-        eprintln!("alcatraz-freebsd: warning: procctl(PROC_TRACE_CTL) failed: {err}");
+        eprintln!("alcatraz: warning: procctl(PROC_TRACE_CTL) failed: {err}");
     }
 }
 
@@ -255,21 +252,19 @@ mod tests {
         let vfs_policy = VfsPolicy::from(&sandbox_policy);
         let socket_policy = SocketPolicy::from(&sandbox_policy);
 
-        let prepared = prepare_command(
-            PathBuf::from("/usr/local/bin/alcatraz-freebsd"),
+        let prepared = prepare_command_from_policies(
+            PathBuf::from("/usr/local/bin/alcatraz"),
             vec!["/bin/echo".to_string(), "hello".to_string()],
             &sandbox_policy,
             &vfs_policy,
             socket_policy,
             Path::new("/tmp"),
             true,
-        );
+        )
+        .expect("command preparation should succeed");
 
-        assert_eq!(
-            prepared.program,
-            PathBuf::from("/usr/local/bin/alcatraz-freebsd")
-        );
-        assert_eq!(prepared.arg0.as_deref(), Some("alcatraz-freebsd"));
+        assert_eq!(prepared.program, PathBuf::from("/usr/local/bin/alcatraz"));
+        assert_eq!(prepared.arg0.as_deref(), Some("alcatraz"));
         assert_eq!(prepared.args[0], "--sandbox-policy-cwd");
         assert_eq!(prepared.args[1], "/tmp");
         assert_eq!(prepared.args[8], "--allow-network-for-proxy");
@@ -284,15 +279,16 @@ mod tests {
         let vfs_policy = VfsPolicy::from(&sandbox_policy);
         let socket_policy = SocketPolicy::from(&sandbox_policy);
 
-        let prepared = prepare_command(
-            PathBuf::from("/usr/local/bin/alcatraz-freebsd"),
+        let prepared = prepare_command_from_policies(
+            PathBuf::from("/usr/local/bin/alcatraz"),
             vec!["/bin/echo".to_string()],
             &sandbox_policy,
             &vfs_policy,
             socket_policy,
             Path::new("/tmp"),
             false,
-        );
+        )
+        .expect("command preparation should succeed");
 
         assert!(
             !prepared

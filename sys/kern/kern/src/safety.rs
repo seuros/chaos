@@ -66,25 +66,9 @@ pub fn assess_patch_safety(
                 user_explicitly_approved: false,
             }
         } else {
-            // Only auto‑approve when we can actually enforce a sandbox. Otherwise
-            // fall back to asking the user because the patch may touch arbitrary
-            // paths outside the project.
-            match get_platform_sandbox() {
-                Some(sandbox_type) => SafetyCheck::AutoApprove {
-                    sandbox_type,
-                    user_explicitly_approved: false,
-                },
-                None => {
-                    if rejects_sandbox_approval {
-                        SafetyCheck::Reject {
-                            reason:
-                                "writing outside of the project; rejected by user approval settings"
-                                    .to_string(),
-                        }
-                    } else {
-                        SafetyCheck::AskUser
-                    }
-                }
+            SafetyCheck::AutoApprove {
+                sandbox_type: get_platform_sandbox(),
+                user_explicitly_approved: false,
             }
         }
     } else if rejects_sandbox_approval {
@@ -97,15 +81,18 @@ pub fn assess_patch_safety(
     }
 }
 
-pub fn get_platform_sandbox() -> Option<SandboxType> {
-    if cfg!(target_os = "macos") {
-        Some(SandboxType::MacosSeatbelt)
-    } else if cfg!(target_os = "linux") {
-        Some(SandboxType::LinuxSeccomp)
-    } else if cfg!(target_os = "freebsd") {
-        Some(SandboxType::FreeBSDCapsicum)
-    } else {
-        None
+pub fn get_platform_sandbox() -> SandboxType {
+    #[cfg(target_os = "macos")]
+    {
+        SandboxType::MacosSeatbelt
+    }
+    #[cfg(target_os = "linux")]
+    {
+        SandboxType::LinuxSeccomp
+    }
+    #[cfg(target_os = "freebsd")]
+    {
+        SandboxType::FreeBSDCapsicum
     }
 }
 

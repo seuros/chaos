@@ -1,0 +1,42 @@
+[package]
+name = "alcatraz"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "alcatraz"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+alcatraz-base = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+alcatraz-linux = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+chaos-clamp = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-kern = { workspace = true }
+chaos-realpath = { workspace = true }
+landlock = { workspace = true }
+pretty_assertions = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = [
+    "io-std",
+    "macros",
+    "process",
+    "rt-multi-thread",
+    "signal",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+alcatraz-macos = { workspace = true }
+
+[target.'cfg(target_os = "freebsd")'.dependencies]
+alcatraz-freebsd = { workspace = true }

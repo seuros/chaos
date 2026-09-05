@@ -1493,9 +1493,7 @@ mod tests {
         let sandbox_state = SandboxState {
             vfs_policy: chaos_ipc::permissions::VfsPolicy::default(),
             socket_policy: chaos_ipc::permissions::SocketPolicy::default(),
-            alcatraz_macos_exe: None,
-            alcatraz_linux_exe: None,
-            alcatraz_freebsd_exe: None,
+            alcatraz_exe: std::path::PathBuf::from("/alcatraz"),
             sandbox_cwd: std::path::PathBuf::from("/"),
         };
         timeout(

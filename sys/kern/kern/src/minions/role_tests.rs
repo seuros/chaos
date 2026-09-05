@@ -259,7 +259,7 @@ async fn apply_role_preserves_unspecified_keys() {
         TomlValue::String("base-model".to_string()),
     )])
     .await;
-    config.alcatraz_linux_exe = Some(PathBuf::from("/tmp/alcatraz-linux"));
+    config.alcatraz_exe = PathBuf::from("/tmp/alcatraz");
     let role_path = write_role_config(
         &home,
         "effort-only.toml",
@@ -283,10 +283,7 @@ async fn apply_role_preserves_unspecified_keys() {
 
     assert_eq!(config.model.as_deref(), Some("base-model"));
     assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::High));
-    assert_eq!(
-        config.alcatraz_linux_exe,
-        Some(PathBuf::from("/tmp/alcatraz-linux"))
-    );
+    assert_eq!(config.alcatraz_exe, PathBuf::from("/tmp/alcatraz"));
 }
 
 #[tokio::test]

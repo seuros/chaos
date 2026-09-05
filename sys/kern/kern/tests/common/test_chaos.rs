@@ -221,7 +221,7 @@ impl TestChaosBuilder {
             hook(home.path());
         }
         if let Ok(path) = chaos_which::cargo_bin("chaos") {
-            config.alcatraz_linux_exe = Some(path);
+            config.alcatraz_exe = path;
         } else if let Ok(exe) = std::env::current_exe()
             && let Some(path) = exe
                 .parent()
@@ -229,7 +229,7 @@ impl TestChaosBuilder {
                 .map(|parent| parent.join("chaos"))
             && path.is_file()
         {
-            config.alcatraz_linux_exe = Some(path);
+            config.alcatraz_exe = path;
         }
 
         let mut mutators = vec![];

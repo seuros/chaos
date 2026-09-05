@@ -52,9 +52,7 @@ pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
 pub struct SandboxState {
     pub vfs_policy: VfsPolicy,
     pub socket_policy: SocketPolicy,
-    pub alcatraz_macos_exe: Option<PathBuf>,
-    pub alcatraz_linux_exe: Option<PathBuf>,
-    pub alcatraz_freebsd_exe: Option<PathBuf>,
+    pub alcatraz_exe: PathBuf,
     pub sandbox_cwd: PathBuf,
 }
 
@@ -451,9 +449,7 @@ impl AsyncManagedClient {
             sandbox_state: Arc::new(StdRwLock::new(SandboxState {
                 vfs_policy: VfsPolicy::default(),
                 socket_policy: SocketPolicy::default(),
-                alcatraz_macos_exe: None,
-                alcatraz_linux_exe: None,
-                alcatraz_freebsd_exe: None,
+                alcatraz_exe: PathBuf::from("/alcatraz"),
                 sandbox_cwd,
             })),
             sandbox_notification_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -752,9 +748,7 @@ mod tests {
         SandboxState {
             vfs_policy: VfsPolicy::default(),
             socket_policy: SocketPolicy::default(),
-            alcatraz_macos_exe: None,
-            alcatraz_linux_exe: None,
-            alcatraz_freebsd_exe: None,
+            alcatraz_exe: PathBuf::from("/alcatraz"),
             sandbox_cwd: PathBuf::from(cwd),
         }
     }

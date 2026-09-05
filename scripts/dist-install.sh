@@ -13,16 +13,10 @@ install_bin() {
 }
 
 install_bin chaos
+install_bin alcatraz
 install_bin chaos_journald
 install_bin chaos-forkve-wrapper
 install_bin chaos-xclient
-
-os=$(uname -s)
-case "$os" in
-    Linux)   ln -sf "$DEST/chaos" "$DEST/alcatraz-linux" ;;
-    FreeBSD) ln -sf "$DEST/chaos" "$DEST/alcatraz-freebsd" ;;
-    Darwin)  ln -sf "$DEST/chaos" "$DEST/alcatraz-macos" ;;
-esac
 
 echo "Installed to $DEST"
 echo "Make sure $DEST is in your PATH."

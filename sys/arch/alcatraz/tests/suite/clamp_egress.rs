@@ -118,7 +118,7 @@ async fn sandboxed_egress_reaches_allowlisted_hosts_only_through_the_proxy() {
     let temporary_home = tempfile::tempdir().expect("create sandbox home");
     let cwd = std::env::current_dir().expect("cwd should exist");
     let sandbox = chaos_kern::clamp_egress::antigravity_sandbox(
-        std::path::Path::new(env!("CARGO_BIN_EXE_alcatraz-linux")),
+        std::path::Path::new(env!("CARGO_BIN_EXE_alcatraz")),
         Some(temporary_home.path()),
         &cwd,
     )

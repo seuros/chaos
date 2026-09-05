@@ -598,9 +598,7 @@ impl Session {
         let sandbox_state = SandboxState {
             vfs_policy: session_configuration.vfs_policy.clone(),
             socket_policy: session_configuration.socket_policy,
-            alcatraz_macos_exe: config.alcatraz_macos_exe.clone(),
-            alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
-            alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),
+            alcatraz_exe: config.alcatraz_exe.clone(),
             sandbox_cwd: session_configuration.cwd.clone(),
         };
         let mut required_mcp_servers: Vec<String> = mcp_servers

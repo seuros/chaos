@@ -3,12 +3,12 @@
 //! Tests for the macOS sandboxing that are specific to Seatbelt.
 //! Tests that apply to both Mac and Linux sandboxing should go in sandbox.rs.
 
-use alcatraz_macos::seatbelt::create_seatbelt_command_args;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::spawn::CHAOS_SANDBOX_ENV_VAR;
 use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
@@ -40,21 +40,33 @@ async fn spawn_command_under_seatbelt(
     _network: Option<&chaos_pf::NetworkProxy>,
     mut env: HashMap<String, String>,
 ) -> std::io::Result<Child> {
-    let alcatraz_macos_exe = chaos_which::cargo_bin("alcatraz-macos")
+    let alcatraz_exe = chaos_which::cargo_bin("alcatraz")
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::NotFound, err))?;
-    let args = create_seatbelt_command_args(command, sandbox_policy, sandbox_cwd, false, None);
-
-    env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-    if !SocketPolicy::from(sandbox_policy).is_enabled() {
+    let socket_policy = SocketPolicy::from(sandbox_policy);
+    let vfs_policy = VfsPolicy::from(sandbox_policy);
+    let prepared = alcatraz::prepare_command(alcatraz::SandboxRequest {
+        executable: &alcatraz_exe,
+        command,
+        file_system_policy: &vfs_policy,
+        network_policy: socket_policy,
+        sandbox_policy_cwd: sandbox_cwd,
+        enforce_managed_network: false,
+        network: None,
+        platform_permissions: None,
+    })?;
+    env.extend(prepared.env);
+    if !socket_policy.is_enabled() {
         env.insert(
             CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
             "1".to_string(),
         );
     }
 
-    let mut cmd = Command::new(alcatraz_macos_exe);
-    cmd.arg0("alcatraz-macos");
-    cmd.args(args);
+    let mut cmd = Command::new(prepared.program);
+    if let Some(arg0) = prepared.arg0 {
+        cmd.arg0(arg0);
+    }
+    cmd.args(prepared.args);
     cmd.current_dir(command_cwd);
     cmd.env_clear();
     cmd.envs(env);

@@ -8,7 +8,7 @@
 //!
 //! On non-Linux platforms, `apply_action()` is called directly in-process
 //! without sandboxing. Each platform will get its own alcatraz sandbox
-//! implementation (alcatraz-macos, alcatraz-freebsd, etc.).
+//! implementation selected by the `alcatraz` facade.
 use crate::exec::ExecToolCallOutput;
 use crate::exec::StreamOutput;
 use crate::tools::sandboxing::Approvable;
@@ -181,7 +181,7 @@ impl ToolRuntime<ApplyPatchRequest, ExecToolCallOutput> for ApplyPatchRuntime {
         }
 
         // Non-Linux: call apply_action() directly. Each platform will get its
-        // own alcatraz sandbox crate (alcatraz-macos, alcatraz-freebsd, etc.).
+        // target-selected Alcatraz sandbox crate.
         #[cfg(not(target_os = "linux"))]
         {
             let _ = attempt;
@@ -264,7 +264,7 @@ impl ApplyPatchRuntime {
             unsafe { libc::close(read_fd) };
 
             // Apply landlock+seccomp sandbox.
-            let sandbox_result = alcatraz_linux::landlock::apply_sandbox_policy_to_current_thread(
+            let sandbox_result = alcatraz::landlock::apply_sandbox_policy_to_current_thread(
                 &sandbox_policy,
                 network_policy,
                 cwd,

@@ -15,15 +15,11 @@ use chaos_ipc::protocol::SocketPolicy;
 use chaos_ipc::protocol::VfsPolicy;
 
 #[derive(Debug, usage::Cli)]
-#[usage(
-    bin = "alcatraz-freebsd",
-    unknown_flags = "error",
-    args_override_self = false
-)]
+#[usage(bin = "alcatraz", unknown_flags = "error", args_override_self = false)]
 /// CLI surface for the FreeBSD sandbox helper.
 ///
 /// Validates which sandbox policy combinations can be enforced safely on
-/// FreeBSD, then execs the target command. Mirrors the alcatraz-linux
+/// FreeBSD, then execs the target command. Mirrors the Linux Alcatraz
 /// interface for consistent cross-platform sandbox invocation.
 pub struct CapsicumCommand {
     /// It is possible that the cwd used in the context of the sandbox policy
@@ -73,7 +69,7 @@ pub fn run_main() -> ! {
     } = CapsicumCommand::parse();
 
     if command.is_empty() {
-        eprintln!("alcatraz-freebsd: no command specified to execute.");
+        eprintln!("alcatraz: no command specified to execute.");
         std::process::exit(1);
     }
 
@@ -88,7 +84,7 @@ pub fn run_main() -> ! {
         socket_policy,
     )
     .unwrap_or_else(|err| {
-        eprintln!("alcatraz-freebsd: {err}");
+        eprintln!("alcatraz: {err}");
         std::process::exit(1);
     });
 
@@ -102,7 +98,7 @@ pub fn run_main() -> ! {
         allow_network_for_proxy,
         /*proxy_routed_network*/ allow_network_for_proxy,
     ) {
-        eprintln!("alcatraz-freebsd: {e}");
+        eprintln!("alcatraz: {e}");
         std::process::exit(1);
     }
 

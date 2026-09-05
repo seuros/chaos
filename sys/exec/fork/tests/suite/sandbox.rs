@@ -1,12 +1,7 @@
 #![cfg(unix)]
-#[cfg(target_os = "macos")]
-use alcatraz_macos::seatbelt::create_seatbelt_command_args;
-#[cfg(target_os = "macos")]
 use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
-#[cfg(target_os = "macos")]
-use chaos_kern::spawn::CHAOS_SANDBOX_ENV_VAR;
-#[cfg(target_os = "macos")]
 use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_kern::spawn::StdioPolicy;
 use chaos_realpath::AbsolutePathBuf;
@@ -19,7 +14,6 @@ use std::process::ExitStatus;
 use std::time::Duration;
 use tokio::fs::create_dir_all;
 use tokio::process::Child;
-#[cfg(target_os = "macos")]
 use tokio::process::Command;
 
 const CHILD_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -41,7 +35,6 @@ async fn wait_for_child(child: &mut Child) -> io::Result<ExitStatus> {
     }
 }
 
-#[cfg(target_os = "macos")]
 async fn spawn_command_under_sandbox(
     command: Vec<String>,
     command_cwd: PathBuf,
@@ -50,74 +43,38 @@ async fn spawn_command_under_sandbox(
     stdio_policy: StdioPolicy,
     mut env: HashMap<String, String>,
 ) -> std::io::Result<Child> {
-    let alcatraz_macos_exe = chaos_which::cargo_bin("alcatraz-macos")
+    let alcatraz_exe = chaos_which::cargo_bin(alcatraz::HELPER_ARG0)
         .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?;
-    let args = create_seatbelt_command_args(command, sandbox_policy, sandbox_cwd, false, None);
-
-    env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-    if !SocketPolicy::from(sandbox_policy).is_enabled() {
+    let socket_policy = SocketPolicy::from(sandbox_policy);
+    let vfs_policy = VfsPolicy::from(sandbox_policy);
+    let prepared = alcatraz::prepare_command(alcatraz::SandboxRequest {
+        executable: &alcatraz_exe,
+        command,
+        file_system_policy: &vfs_policy,
+        network_policy: socket_policy,
+        sandbox_policy_cwd: sandbox_cwd,
+        enforce_managed_network: false,
+        network: None,
+        platform_permissions: None,
+    })?;
+    env.extend(prepared.env);
+    if !socket_policy.is_enabled() {
         env.insert(
             CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
             "1".to_string(),
         );
     }
 
-    let mut cmd = Command::new(alcatraz_macos_exe);
-    cmd.arg0("alcatraz-macos");
-    cmd.args(args);
+    let mut cmd = Command::new(prepared.program);
+    if let Some(arg0) = prepared.arg0 {
+        cmd.arg0(arg0);
+    }
+    cmd.args(prepared.args);
     cmd.current_dir(command_cwd);
     cmd.env_clear();
     cmd.envs(env);
     stdio_policy.apply(&mut cmd);
     cmd.kill_on_drop(true).spawn()
-}
-
-#[cfg(target_os = "linux")]
-async fn spawn_command_under_sandbox(
-    command: Vec<String>,
-    command_cwd: PathBuf,
-    sandbox_policy: &SandboxPolicy,
-    sandbox_cwd: &Path,
-    stdio_policy: StdioPolicy,
-    env: HashMap<String, String>,
-) -> std::io::Result<Child> {
-    use chaos_kern::landlock::spawn_command_under_linux_sandbox;
-    let alcatraz_linux_exe = chaos_which::cargo_bin("chaos")
-        .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?;
-    spawn_command_under_linux_sandbox(
-        alcatraz_linux_exe,
-        command,
-        command_cwd,
-        sandbox_policy,
-        sandbox_cwd,
-        stdio_policy,
-        None,
-        env,
-    )
-    .await
-}
-
-#[cfg(target_os = "freebsd")]
-async fn spawn_command_under_sandbox(
-    command: Vec<String>,
-    command_cwd: PathBuf,
-    sandbox_policy: &SandboxPolicy,
-    sandbox_cwd: &Path,
-    _stdio_policy: StdioPolicy,
-    env: HashMap<String, String>,
-) -> std::io::Result<Child> {
-    let alcatraz_freebsd_exe = chaos_which::cargo_bin("alcatraz-freebsd")
-        .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?;
-    alcatraz_freebsd::spawn_command(
-        alcatraz_freebsd_exe,
-        command,
-        command_cwd,
-        sandbox_policy,
-        sandbox_cwd,
-        None,
-        env,
-    )
-    .await
 }
 
 #[cfg(target_os = "linux")]

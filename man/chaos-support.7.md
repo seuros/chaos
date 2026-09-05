@@ -98,11 +98,11 @@ module docs.
 
 | Platform | Sandbox crate | Mechanism | Kernel / notes | CI tests | Release build | Level |
 |----------|---------------|-----------|----------------|----------|---------------|-------|
-| Linux x86_64 | `alcatraz-linux` | landlock + seccomp + `no_new_privs` | Requires Linux **≥ 6.10** (hard refuse on older) | Yes (`ubuntu-24.04`) | Yes | Supported + CI-tested |
-| Linux aarch64 | `alcatraz-linux` | same | same | Yes (`ubuntu-24.04-arm`) | Yes | Supported + CI-tested |
-| macOS aarch64 | `alcatraz-macos` | seatbelt profiles | Apple sandbox | Yes (`macos-26`) | Yes | Supported + CI-tested |
-| FreeBSD x86_64 | `alcatraz-freebsd` | capsicum | Implemented | **No** PR test job | Yes (self-hosted `blackship`) | Supported; release-built, not CI-tested |
-| DragonFly BSD x86_64 | (build target) | no dedicated `sys/arch` crate in-tree | Release matrix only | No | Yes (self-hosted) | Release-built only |
+| Linux x86_64 | `alcatraz` | landlock + seccomp + `no_new_privs` | Requires Linux **≥ 6.10** (hard refuse on older) | Yes (`ubuntu-24.04`) | Yes | Supported + CI-tested |
+| Linux aarch64 | `alcatraz` | same | same | Yes (`ubuntu-24.04-arm`) | Yes | Supported + CI-tested |
+| macOS aarch64 | `alcatraz` | seatbelt profiles | Apple sandbox | Yes (`macos-26`) | Yes | Supported + CI-tested |
+| FreeBSD x86_64 | `alcatraz` | capsicum | Implemented | **No** PR test job | Yes (self-hosted `blackship`) | Supported; release-built, not CI-tested |
+| DragonFly BSD x86_64 | — | no Alcatraz backend | No dedicated `sys/arch` crate in-tree | No | No | Not supported |
 | OpenBSD | — | README mentions pledge/unveil | **No** `sys/arch/openbsd` crate | No | No | Not supported (aspirational docs only) |
 | Windows | — | — | Explicitly unsupported | No | No | Not supported |
 

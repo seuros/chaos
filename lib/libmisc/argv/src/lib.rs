@@ -8,9 +8,6 @@ use chaos_diff::CHAOS_CORE_APPLY_PATCH_ARG1;
 use chaos_pwd::find_chaos_home;
 use tempfile::TempDir;
 
-const LINUX_SANDBOX_ARG0: &str = "alcatraz-linux";
-const FREEBSD_SANDBOX_ARG0: &str = "alcatraz-freebsd";
-const MACOS_SANDBOX_ARG0: &str = "alcatraz-macos";
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
 const EXECVE_WRAPPER_ARG0: &str = "chaos-execve-wrapper";
@@ -26,31 +23,23 @@ const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 /// start starving. On `falcon` with its ≤ 4 vCPUs this is a no-op.
 const TOKIO_WORKER_THREADS_CAP: usize = 4;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Arg0DispatchPaths {
-    pub alcatraz_linux_exe: Option<PathBuf>,
-    pub alcatraz_freebsd_exe: Option<PathBuf>,
-    pub alcatraz_macos_exe: Option<PathBuf>,
+    pub alcatraz_exe: PathBuf,
 }
 
 /// Keeps the per-session PATH entry alive and locked for the process lifetime.
 pub struct Arg0PathEntryGuard {
     _temp_dir: TempDir,
     _lock_file: File,
-    paths: Arg0DispatchPaths,
 }
 
 impl Arg0PathEntryGuard {
-    fn new(temp_dir: TempDir, lock_file: File, paths: Arg0DispatchPaths) -> Self {
+    fn new(temp_dir: TempDir, lock_file: File) -> Self {
         Self {
             _temp_dir: temp_dir,
             _lock_file: lock_file,
-            paths,
         }
-    }
-
-    pub fn paths(&self) -> &Arg0DispatchPaths {
-        &self.paths
     }
 }
 
@@ -87,15 +76,9 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
         }
     }
 
-    if exe_name == LINUX_SANDBOX_ARG0 {
+    if exe_name == alcatraz::HELPER_ARG0 {
         // Safety: [`run_main`] never returns.
-        alcatraz_linux::run_main();
-    } else if exe_name == FREEBSD_SANDBOX_ARG0 {
-        // Safety: [`run_main`] never returns.
-        alcatraz_freebsd::run_main();
-    } else if exe_name == MACOS_SANDBOX_ARG0 {
-        // Safety: [`run_main`] never returns.
-        alcatraz_macos::run_main();
+        alcatraz::run_main();
     } else if exe_name == APPLY_PATCH_ARG0 || exe_name == MISSPELLED_APPLY_PATCH_ARG0 {
         chaos_diff::main();
     }
@@ -141,9 +124,9 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
 /// us to simulate deploying multiple executables as a single binary on macOS,
 /// Linux, and FreeBSD (but not Windows).
 ///
-/// When the current executable is invoked through the hard-link or alias named
-/// `alcatraz-linux`, `alcatraz-freebsd`, or `alcatraz-macos` we *directly*
-/// execute the corresponding helper `run_main()` (which never returns).
+/// When the current executable is invoked through the platform's Alcatraz
+/// hard-link or alias, we directly execute the compiled-in helper `run_main()`
+/// (which never returns).
 /// Otherwise we:
 ///
 /// 1.  Load `.env` values from `~/.chaos/.env` before creating any threads.
@@ -165,41 +148,14 @@ where
     // Retain the TempDir so it exists for the lifetime of the invocation of
     // this executable. Admittedly, we could invoke `keep()` on it, but it
     // would be nice to avoid leaving temporary directories behind, if possible.
-    let path_entry = arg0_dispatch();
+    let _path_entry = arg0_dispatch();
 
     // Regular invocation – create a Tokio runtime and execute the provided
     // async entry-point.
     let runtime = build_runtime()?;
     runtime.block_on(async move {
-        let current_exe = std::env::current_exe().ok();
         let paths = Arg0DispatchPaths {
-            alcatraz_linux_exe: if cfg!(target_os = "linux") {
-                current_exe.clone().or_else(|| {
-                    path_entry
-                        .as_ref()
-                        .and_then(|path_entry| path_entry.paths().alcatraz_linux_exe.clone())
-                })
-            } else {
-                None
-            },
-            alcatraz_freebsd_exe: if cfg!(target_os = "freebsd") {
-                current_exe.clone().or_else(|| {
-                    path_entry
-                        .as_ref()
-                        .and_then(|path_entry| path_entry.paths().alcatraz_freebsd_exe.clone())
-                })
-            } else {
-                None
-            },
-            alcatraz_macos_exe: if cfg!(target_os = "macos") {
-                current_exe.clone().or_else(|| {
-                    path_entry
-                        .as_ref()
-                        .and_then(|path_entry| path_entry.paths().alcatraz_macos_exe.clone())
-                })
-            } else {
-                None
-            },
+            alcatraz_exe: std::env::current_exe()?,
         };
 
         main_fn(paths).await
@@ -313,12 +269,7 @@ pub fn prepend_path_entry_for_chaos_aliases() -> std::io::Result<Arg0PathEntryGu
     for filename in &[
         APPLY_PATCH_ARG0,
         MISSPELLED_APPLY_PATCH_ARG0,
-        #[cfg(target_os = "linux")]
-        LINUX_SANDBOX_ARG0,
-        #[cfg(target_os = "freebsd")]
-        FREEBSD_SANDBOX_ARG0,
-        #[cfg(target_os = "macos")]
-        MACOS_SANDBOX_ARG0,
+        alcatraz::HELPER_ARG0,
         EXECVE_WRAPPER_ARG0,
     ] {
         let exe = std::env::current_exe()?;
@@ -342,40 +293,7 @@ pub fn prepend_path_entry_for_chaos_aliases() -> std::io::Result<Arg0PathEntryGu
         std::env::set_var("PATH", updated_path_env_var);
     }
 
-    let paths = Arg0DispatchPaths {
-        alcatraz_linux_exe: {
-            #[cfg(target_os = "linux")]
-            {
-                Some(path.join(LINUX_SANDBOX_ARG0))
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                None
-            }
-        },
-        alcatraz_freebsd_exe: {
-            #[cfg(target_os = "freebsd")]
-            {
-                Some(path.join(FREEBSD_SANDBOX_ARG0))
-            }
-            #[cfg(not(target_os = "freebsd"))]
-            {
-                None
-            }
-        },
-        alcatraz_macos_exe: {
-            #[cfg(target_os = "macos")]
-            {
-                Some(path.join(MACOS_SANDBOX_ARG0))
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                None
-            }
-        },
-    };
-
-    Ok(Arg0PathEntryGuard::new(temp_dir, lock_file, paths))
+    Ok(Arg0PathEntryGuard::new(temp_dir, lock_file))
 }
 
 fn janitor_cleanup(temp_root: &Path) -> std::io::Result<()> {

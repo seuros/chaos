@@ -15,10 +15,10 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+alcatraz = { workspace = true }
 arc-swap = "1.9.2"
 async-channel = { workspace = true }
 base64 = { workspace = true }
-alcatraz-macos = { workspace = true }
 chaos-minions = { workspace = true }
 chaos-synopsis = { workspace = true }
 chardetng = { workspace = true }
@@ -123,12 +123,8 @@ wildmatch = { workspace = true }
 zip = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-alcatraz-linux = { workspace = true }
 landlock = { workspace = true }
 seccompiler = { workspace = true }
-
-[target.'cfg(target_os = "freebsd")'.dependencies]
-alcatraz-freebsd = { workspace = true }
 
 # Build OpenSSL from source for musl builds.
 [target.x86_64-unknown-linux-musl.dependencies]

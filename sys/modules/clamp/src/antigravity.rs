@@ -78,7 +78,7 @@ pub struct AntigravityConfig {
 
 /// A helper the CLI is exec'd through so the operating system, not the CLI,
 /// enforces containment. `program` is the platform sandbox helper (for example
-/// `alcatraz-linux`) and `args` are its policy arguments, terminated by `--`.
+/// `alcatraz`) and `args` are its policy arguments, terminated by `--`.
 #[derive(Debug, Clone)]
 pub struct AntigravitySandbox {
     /// Sandbox helper executable.
@@ -1104,8 +1104,8 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
             home: Some(dir.join("home")),
             bridge: Some(test_bridge(dir)),
             sandbox: Some(AntigravitySandbox {
-                program: PathBuf::from("/usr/lib/chaos/alcatraz-linux"),
-                arg0: Some("alcatraz-linux".to_string()),
+                program: PathBuf::from("/usr/lib/chaos/alcatraz"),
+                arg0: Some("alcatraz".to_string()),
                 args: vec!["--allow-network-for-proxy".to_string(), "--".to_string()],
             }),
             egress: Some(AntigravityEgress {
@@ -1120,14 +1120,13 @@ printf '{"event":"result","result":{"conversation_id":"conversation-1","status":
         // The sandbox helper is what runs; `agy` is an argument to it.
         assert_eq!(
             std_command.get_program().to_string_lossy(),
-            "/usr/lib/chaos/alcatraz-linux"
+            "/usr/lib/chaos/alcatraz"
         );
         // A multicall helper dispatches on argv[0]; the standard library has no
         // getter for it, but its `Debug` output brackets the program path and
         // renders an overridden argv[0] as the first argument.
         assert!(
-            format!("{std_command:?}")
-                .contains("[\"/usr/lib/chaos/alcatraz-linux\"] \"alcatraz-linux\""),
+            format!("{std_command:?}").contains("[\"/usr/lib/chaos/alcatraz\"] \"alcatraz\""),
             "helper must be launched under its multicall name: {std_command:?}"
         );
         let args = std_command

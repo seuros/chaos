@@ -328,10 +328,7 @@ pub(crate) struct SandboxAttempt<'a> {
     pub enforce_managed_network: bool,
     pub(crate) manager: &'a SandboxManager,
     pub(crate) sandbox_cwd: &'a Path,
-    pub alcatraz_macos_exe: Option<&'a std::path::PathBuf>,
-    pub alcatraz_linux_exe: Option<&'a std::path::PathBuf>,
-    #[cfg_attr(not(target_os = "freebsd"), allow(dead_code))]
-    pub alcatraz_freebsd_exe: Option<&'a std::path::PathBuf>,
+    pub alcatraz_exe: &'a Path,
 }
 
 impl<'a> SandboxAttempt<'a> {
@@ -351,10 +348,7 @@ impl<'a> SandboxAttempt<'a> {
                 sandbox_policy_cwd: self.sandbox_cwd,
                 #[cfg(target_os = "macos")]
                 macos_seatbelt_profile_extensions: None,
-                alcatraz_macos_exe: self.alcatraz_macos_exe,
-                alcatraz_linux_exe: self.alcatraz_linux_exe,
-                #[cfg(target_os = "freebsd")]
-                alcatraz_freebsd_exe: self.alcatraz_freebsd_exe,
+                alcatraz_exe: self.alcatraz_exe,
             })
     }
 }

@@ -51,7 +51,7 @@ fn root_access_defaults_to_no_sandbox_without_network_requirements() {
 #[test]
 fn root_access_uses_platform_sandbox_with_network_requirements() {
     let manager = SandboxManager::new();
-    let expected = crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None);
+    let expected = crate::safety::get_platform_sandbox();
     let sandbox = manager.select_initial(
         &VfsPolicy::unrestricted(),
         SocketPolicy::Enabled,
@@ -64,7 +64,7 @@ fn root_access_uses_platform_sandbox_with_network_requirements() {
 #[test]
 fn restricted_file_system_uses_platform_sandbox_without_managed_network() {
     let manager = SandboxManager::new();
-    let expected = crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None);
+    let expected = crate::safety::get_platform_sandbox();
     let sandbox = manager.select_initial(
         &VfsPolicy::restricted(vec![VfsEntry {
             path: VfsPath::Special {
@@ -162,7 +162,7 @@ fn transform_preserves_unrestricted_file_system_policy_for_restricted_network() 
             sandbox_policy_cwd: cwd.as_path(),
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
-            alcatraz_linux_exe: None,
+            alcatraz_exe: Path::new("/alcatraz"),
         })
         .expect("transform");
 
@@ -493,7 +493,7 @@ fn transform_additional_permissions_enable_network_for_external_sandbox() {
             sandbox_policy_cwd: cwd.as_path(),
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
-            alcatraz_linux_exe: None,
+            alcatraz_exe: Path::new("/alcatraz"),
         })
         .expect("transform");
 
@@ -563,7 +563,7 @@ fn transform_additional_permissions_preserves_denied_entries() {
             sandbox_policy_cwd: cwd.as_path(),
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
-            alcatraz_linux_exe: None,
+            alcatraz_exe: Path::new("/alcatraz"),
         })
         .expect("transform");
 

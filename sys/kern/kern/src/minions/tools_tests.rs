@@ -1184,7 +1184,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     };
     let temp_dir = tempfile::tempdir().expect("temp dir");
     turn.cwd = temp_dir.path().to_path_buf();
-    turn.alcatraz_linux_exe = Some(PathBuf::from("/bin/echo"));
+    turn.alcatraz_exe = PathBuf::from("/bin/echo");
     let sandbox_policy = pick_allowed_sandbox_policy(
         &turn.config.permissions.sandbox_policy,
         turn.config.permissions.sandbox_policy.get().clone(),
@@ -1207,7 +1207,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     expected.minion_instructions = turn.minion_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
-    expected.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
+    expected.alcatraz_exe = turn.alcatraz_exe.clone();
     expected.cwd = turn.cwd.clone();
     expected
         .permissions
@@ -1265,7 +1265,7 @@ async fn build_agent_resume_config_clears_base_instructions() {
     expected.minion_instructions = turn.minion_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
-    expected.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
+    expected.alcatraz_exe = turn.alcatraz_exe.clone();
     expected.cwd = turn.cwd.clone();
     expected
         .permissions

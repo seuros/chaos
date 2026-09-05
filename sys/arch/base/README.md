@@ -1,5 +1,5 @@
 # alcatraz-base
 
-Shared sandbox trait definitions and error types used by all OS-specific Alcatraz
-implementations. Contains no platform code — only the contract that each platform
-must fulfill.
+Portable sandbox policy types and the shared `SandboxRequest`/`PreparedCommand`
+contract used by OS-specific Alcatraz implementations. This crate contains no
+platform selection or platform execution code.

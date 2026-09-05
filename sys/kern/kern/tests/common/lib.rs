@@ -96,9 +96,8 @@ pub async fn load_default_config_for_test(chaos_home: &TempDir) -> Config {
 #[cfg(target_os = "linux")]
 fn default_test_overrides() -> ConfigOverrides {
     ConfigOverrides {
-        alcatraz_linux_exe: Some(
-            chaos_which::cargo_bin("alcatraz-linux")
-                .expect("should find binary for alcatraz-linux"),
+        alcatraz_exe: Some(
+            chaos_which::cargo_bin("alcatraz").expect("should find alcatraz binary"),
         ),
         ..ConfigOverrides::default()
     }
@@ -107,9 +106,8 @@ fn default_test_overrides() -> ConfigOverrides {
 #[cfg(target_os = "macos")]
 fn default_test_overrides() -> ConfigOverrides {
     ConfigOverrides {
-        alcatraz_macos_exe: Some(
-            chaos_which::cargo_bin("alcatraz-macos")
-                .expect("should find binary for alcatraz-macos"),
+        alcatraz_exe: Some(
+            chaos_which::cargo_bin("alcatraz").expect("should find alcatraz binary"),
         ),
         ..ConfigOverrides::default()
     }
@@ -423,42 +421,6 @@ macro_rules! skip_if_no_network {
                 "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
             );
             return $return_value;
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! alcatraz_linux_exe_or_skip {
-    () => {{
-        #[cfg(target_os = "linux")]
-        {
-            match chaos_which::cargo_bin("alcatraz-linux") {
-                Ok(path) => Some(path),
-                Err(err) => {
-                    eprintln!("alcatraz-linux binary not available, skipping test: {err}");
-                    return;
-                }
-            }
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            None
-        }
-    }};
-    ($return_value:expr $(,)?) => {{
-        #[cfg(target_os = "linux")]
-        {
-            match chaos_which::cargo_bin("alcatraz-linux") {
-                Ok(path) => Some(path),
-                Err(err) => {
-                    eprintln!("alcatraz-linux binary not available, skipping test: {err}");
-                    return $return_value;
-                }
-            }
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            None
         }
     }};
 }

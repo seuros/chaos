@@ -15,7 +15,7 @@ struct TestChaosAliasesGuard {
 const CHAOS_HOME_ENV_VAR: &str = "CHAOS_HOME";
 
 // This code runs before any other tests are run.
-// It allows the test binary to behave like chaos and dispatch to apply_patch and alcatraz-linux
+// It allows the test binary to behave like chaos and dispatch to apply_patch and alcatraz.
 // based on the arg0.
 // NOTE: this doesn't work on ARM
 #[ctor(unsafe)]

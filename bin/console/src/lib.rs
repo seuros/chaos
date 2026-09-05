@@ -242,9 +242,7 @@ pub async fn run_main(
         provider_user_override: cli_model_provider.is_some(),
         model_provider: cli_model_provider,
         config_profile: cli.config_profile.clone(),
-        alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
-        alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
-        alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
+        alcatraz_exe: Some(arg0_paths.alcatraz_exe.clone()),
         additional_writable_roots: additional_dirs,
         ..Default::default()
     };

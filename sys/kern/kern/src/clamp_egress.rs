@@ -27,7 +27,7 @@ use chaos_realpath::AbsolutePathBuf;
 
 /// The helper is the multicall Chaos executable, which selects the sandbox tool
 /// from `argv[0]` rather than a subcommand.
-const LINUX_SANDBOX_ARG0: &str = "alcatraz-linux";
+const LINUX_SANDBOX_ARG0: &str = "alcatraz";
 
 /// Starts the Antigravity egress proxy and returns the environment the CLI
 /// needs to route through it, along with the handle keeping it alive.
@@ -104,13 +104,13 @@ mod tests {
     #[test]
     fn sandbox_args_confine_writes_and_request_proxy_only_networking() {
         let sandbox = antigravity_sandbox(
-            Path::new("/usr/lib/chaos/alcatraz-linux"),
+            Path::new("/usr/lib/chaos/alcatraz"),
             Some(Path::new("/private/agy")),
             Path::new("/srv/work"),
         )
         .expect("build sandbox invocation");
 
-        assert_eq!(sandbox.program, Path::new("/usr/lib/chaos/alcatraz-linux"));
+        assert_eq!(sandbox.program, Path::new("/usr/lib/chaos/alcatraz"));
         assert_eq!(sandbox.args.last().map(String::as_str), Some("--"));
         assert!(
             sandbox

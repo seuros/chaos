@@ -287,8 +287,7 @@ mod reload {
             cwd: Some(config.cwd.clone()),
             model_provider: preserve_current_provider.then(|| config.model_provider_id.clone()),
             active_project_trust: Some(config.active_project_trust.clone()),
-            alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
-            alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),
+            alcatraz_exe: Some(config.alcatraz_exe.clone()),
             ..Default::default()
         }
     }

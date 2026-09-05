@@ -1,11 +1,15 @@
 //! Linux sandbox helper entry point.
 //!
-//! On Linux, `alcatraz-linux` applies landlock filesystem restrictions
+//! On Linux, `alcatraz` applies landlock filesystem restrictions
 //! and seccomp syscall filters in-process, then execs the target command.
 #[cfg(target_os = "linux")]
 pub mod landlock;
 #[cfg(target_os = "linux")]
 mod linux_run_main;
+#[cfg(target_os = "linux")]
+mod prepare;
+#[cfg(target_os = "linux")]
+pub use prepare::prepare_command;
 
 #[cfg(target_os = "linux")]
 pub fn run_main() -> ! {
@@ -14,7 +18,7 @@ pub fn run_main() -> ! {
 
 #[cfg(not(target_os = "linux"))]
 pub fn run_main() -> ! {
-    panic!("alcatraz-linux is only supported on Linux");
+    panic!("alcatraz is only supported on Linux");
 }
 
 /// Register the platform credential store for Linux.

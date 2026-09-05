@@ -6,4 +6,5 @@
 //! logic currently spread across core's sandboxing, exec_policy, and
 //! config modules.
 
+pub mod macos_permissions;
 pub mod sandbox;

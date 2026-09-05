@@ -491,9 +491,7 @@ impl Session {
         let sandbox_state = SandboxState {
             vfs_policy: permission_snapshot.effective_vfs_policy(),
             socket_policy: permission_snapshot.effective_socket_policy(),
-            alcatraz_macos_exe: turn_context.alcatraz_macos_exe.clone(),
-            alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
-            alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),
+            alcatraz_exe: turn_context.alcatraz_exe.clone(),
             sandbox_cwd: turn_context.cwd.clone(),
         };
         let approval_policy =

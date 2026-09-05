@@ -5,10 +5,6 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-[[bin]]
-name = "alcatraz-macos"
-path = "src/main.rs"
-
 [lib]
 name = "alcatraz_macos"
 path = "src/lib.rs"
@@ -17,6 +13,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+alcatraz-base = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-parole = { workspace = true }
 chaos-pf = { workspace = true }

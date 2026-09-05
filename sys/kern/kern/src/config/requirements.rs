@@ -120,11 +120,7 @@ impl Config {
         crate::config::ClampSettings {
             backend: self.clamp_backend,
             antigravity: self.antigravity.resolved(),
-            sandbox_helper: if cfg!(target_os = "linux") {
-                self.alcatraz_linux_exe.clone()
-            } else {
-                None
-            },
+            sandbox_helper: cfg!(target_os = "linux").then(|| self.alcatraz_exe.clone()),
         }
     }
 
@@ -183,9 +179,7 @@ impl Config {
             provider_user_override,
             service_tier: service_tier_override,
             config_profile: config_profile_key,
-            alcatraz_linux_exe,
-            alcatraz_freebsd_exe,
-            alcatraz_macos_exe,
+            alcatraz_exe,
             base_instructions,
             minion_instructions,
             personality,
@@ -638,9 +632,7 @@ impl Config {
             history,
             ephemeral: ephemeral.unwrap_or_default(),
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
-            alcatraz_linux_exe,
-            alcatraz_freebsd_exe,
-            alcatraz_macos_exe,
+            alcatraz_exe: alcatraz_exe.unwrap_or(std::env::current_exe()?),
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
             clamp: cfg.clamp.unwrap_or(false),

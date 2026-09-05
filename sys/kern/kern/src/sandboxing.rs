@@ -11,16 +11,10 @@ use crate::exec::ExecToolCallOutput;
 use crate::exec::SandboxType;
 use crate::exec::StdoutStream;
 use crate::exec::execute_exec_request;
-use crate::landlock::allow_network_for_proxy;
-use crate::landlock::create_linux_sandbox_command_args_for_policies;
-#[cfg(target_os = "macos")]
-use crate::spawn::CHAOS_SANDBOX_ENV_VAR;
 use crate::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use crate::tools::sandboxing::SandboxablePreference;
-use alcatraz_macos::permissions::intersect_seatbelt_profile_extensions;
-use alcatraz_macos::permissions::merge_seatbelt_profile_extensions;
-#[cfg(target_os = "macos")]
-use alcatraz_macos::seatbelt::create_seatbelt_command_args_for_policies_with_extensions;
+use alcatraz::SandboxRequest as AlcatrazSandboxRequest;
+use alcatraz::prepare_command as prepare_platform_command;
 use chaos_ipc::models::FileSystemPermissions;
 #[cfg(target_os = "macos")]
 use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
@@ -33,6 +27,8 @@ use chaos_ipc::permissions::VfsEntry;
 use chaos_ipc::permissions::VfsPath;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsPolicyKind;
+use chaos_parole::macos_permissions::intersect_seatbelt_profile_extensions;
+use chaos_parole::macos_permissions::merge_seatbelt_profile_extensions;
 use chaos_parole::sandbox::has_full_disk_write_access;
 use chaos_pf::NetworkProxy;
 use chaos_realpath::AbsolutePathBuf;
@@ -84,11 +80,7 @@ pub(crate) struct SandboxTransformRequest<'a> {
     pub sandbox_policy_cwd: &'a Path,
     #[cfg(target_os = "macos")]
     pub macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    pub alcatraz_macos_exe: Option<&'a PathBuf>,
-    pub alcatraz_linux_exe: Option<&'a PathBuf>,
-    #[cfg(target_os = "freebsd")]
-    pub alcatraz_freebsd_exe: Option<&'a PathBuf>,
+    pub alcatraz_exe: &'a Path,
 }
 
 pub enum SandboxPreference {
@@ -100,17 +92,6 @@ pub enum SandboxPreference {
 #[derive(Debug, thiserror::Error)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum SandboxTransformError {
-    #[error("missing alcatraz-linux executable path")]
-    MissingLinuxSandboxExecutable,
-    #[cfg(target_os = "freebsd")]
-    #[error("missing alcatraz-freebsd executable path")]
-    MissingFreeBSDSandboxExecutable,
-    #[cfg(target_os = "macos")]
-    #[error("missing alcatraz-macos executable path")]
-    MissingMacOSSandboxExecutable,
-    #[cfg(not(target_os = "macos"))]
-    #[error("seatbelt sandbox is only available on macOS")]
-    SeatbeltUnavailable,
     #[error("failed to project split sandbox policies to a combined policy: {source}")]
     InvalidSandboxPolicyProjection { source: std::io::Error },
 }
@@ -429,22 +410,20 @@ impl SandboxManager {
         pref: SandboxablePreference,
         has_managed_network_requirements: bool,
     ) -> SandboxType {
-        // FreeBSD Capsicum: the alcatraz-freebsd helper applies what it can
+        // FreeBSD Capsicum: the Alcatraz helper applies what it can
         // (procctl hardening) and warns about unenforced dimensions. The
         // helper itself decides enforcement scope — the selector should not
         // reject it.
         match pref {
             SandboxablePreference::Forbid => SandboxType::None,
-            SandboxablePreference::Require => {
-                crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None)
-            }
+            SandboxablePreference::Require => crate::safety::get_platform_sandbox(),
             SandboxablePreference::Auto => {
                 if should_require_platform_sandbox(
                     file_system_policy,
                     network_policy,
                     has_managed_network_requirements,
                 ) {
-                    crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None)
+                    crate::safety::get_platform_sandbox()
                 } else {
                     SandboxType::None
                 }
@@ -466,23 +445,23 @@ impl SandboxManager {
             sandbox_policy_cwd,
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions,
-            #[cfg(target_os = "macos")]
-            alcatraz_macos_exe,
-            #[cfg(not(target_os = "macos"))]
-                alcatraz_macos_exe: _,
-            alcatraz_linux_exe,
-            #[cfg(target_os = "freebsd")]
-            alcatraz_freebsd_exe,
+            alcatraz_exe,
         } = request;
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;
         let additional_permissions = spec.additional_permissions.take();
-        let _effective_macos_seatbelt_profile_extensions = merge_seatbelt_profile_extensions(
+        let effective_macos_seatbelt_profile_extensions = merge_seatbelt_profile_extensions(
             macos_seatbelt_profile_extensions,
             additional_permissions
                 .as_ref()
                 .and_then(|permissions| permissions.macos.as_ref()),
         );
+        let effective_platform_permissions =
+            effective_macos_seatbelt_profile_extensions.map(|macos| PermissionProfile {
+                network: None,
+                file_system: None,
+                macos: Some(macos),
+            });
         let (effective_file_system_policy, effective_network_policy) =
             if let Some(additional_permissions) = additional_permissions {
                 (
@@ -504,87 +483,24 @@ impl SandboxManager {
         command.push(spec.program);
         command.append(&mut spec.args);
 
-        let (command, sandbox_env, arg0_override) = match sandbox {
-            SandboxType::None => (command, HashMap::new(), None),
-            #[cfg(target_os = "macos")]
-            SandboxType::MacosSeatbelt => {
-                let exe = alcatraz_macos_exe
-                    .ok_or(SandboxTransformError::MissingMacOSSandboxExecutable)?;
-                let mut seatbelt_env = HashMap::new();
-                seatbelt_env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-                let mut args = create_seatbelt_command_args_for_policies_with_extensions(
-                    command.clone(),
-                    &effective_file_system_policy,
-                    effective_network_policy,
-                    sandbox_policy_cwd,
-                    enforce_managed_network,
-                    network,
-                    _effective_macos_seatbelt_profile_extensions.as_ref(),
-                );
-                let mut full_command = Vec::with_capacity(1 + args.len());
-                full_command.push(exe.to_string_lossy().to_string());
-                full_command.append(&mut args);
-                (
-                    full_command,
-                    seatbelt_env,
-                    Some("alcatraz-macos".to_string()),
-                )
-            }
-            #[cfg(not(target_os = "macos"))]
-            SandboxType::MacosSeatbelt => return Err(SandboxTransformError::SeatbeltUnavailable),
-            SandboxType::LinuxSeccomp => {
-                let exe = alcatraz_linux_exe
-                    .ok_or(SandboxTransformError::MissingLinuxSandboxExecutable)?;
-                let allow_proxy_network = allow_network_for_proxy(enforce_managed_network);
-                let effective_policy = effective_file_system_policy
-                    .to_sandbox_policy(effective_network_policy, sandbox_policy_cwd)
-                    .map_err(
-                        |source| SandboxTransformError::InvalidSandboxPolicyProjection { source },
-                    )?;
-                let mut args = create_linux_sandbox_command_args_for_policies(
-                    command.clone(),
-                    &effective_policy,
-                    &effective_file_system_policy,
-                    effective_network_policy,
-                    sandbox_policy_cwd,
-                    allow_proxy_network,
-                );
-                let mut full_command = Vec::with_capacity(1 + args.len());
-                full_command.push(exe.to_string_lossy().to_string());
-                full_command.append(&mut args);
-                (
-                    full_command,
-                    HashMap::new(),
-                    Some("alcatraz-linux".to_string()),
-                )
-            }
-            #[cfg(target_os = "freebsd")]
-            SandboxType::FreeBSDCapsicum => {
-                let exe = alcatraz_freebsd_exe
-                    .ok_or(SandboxTransformError::MissingFreeBSDSandboxExecutable)?;
-                let effective_policy = effective_file_system_policy
-                    .to_sandbox_policy(effective_network_policy, sandbox_policy_cwd)
-                    .map_err(
-                        |source| SandboxTransformError::InvalidSandboxPolicyProjection { source },
-                    )?;
-                let prepared = alcatraz_freebsd::prepare_command(
-                    exe,
-                    command.clone(),
-                    &effective_policy,
-                    &effective_file_system_policy,
-                    effective_network_policy,
-                    sandbox_policy_cwd,
-                    enforce_managed_network,
-                );
-                let mut full_command = Vec::with_capacity(1 + prepared.args.len());
-                full_command.push(prepared.program.to_string_lossy().to_string());
-                full_command.extend(prepared.args);
-                (full_command, HashMap::new(), prepared.arg0)
-            }
-            #[cfg(not(target_os = "freebsd"))]
-            SandboxType::FreeBSDCapsicum => {
-                unreachable!("FreeBSD sandbox is only available on FreeBSD")
-            }
+        let (command, sandbox_env, arg0_override) = if sandbox == SandboxType::None {
+            (command, HashMap::new(), None)
+        } else {
+            let prepared = prepare_platform_command(AlcatrazSandboxRequest {
+                executable: alcatraz_exe,
+                command,
+                file_system_policy: &effective_file_system_policy,
+                network_policy: effective_network_policy,
+                sandbox_policy_cwd,
+                enforce_managed_network,
+                network,
+                platform_permissions: effective_platform_permissions.as_ref(),
+            })
+            .map_err(|source| SandboxTransformError::InvalidSandboxPolicyProjection { source })?;
+            let mut command = Vec::with_capacity(1 + prepared.args.len());
+            command.push(prepared.program.to_string_lossy().to_string());
+            command.extend(prepared.args);
+            (command, prepared.env, prepared.arg0)
         };
 
         env.extend(sandbox_env);

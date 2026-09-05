@@ -202,12 +202,7 @@ pub async fn update_permissions(
     };
     let fallback_mcp_runtime = next_session_configuration.as_ref().map(|next| {
         let config = Session::build_per_turn_config(next);
-        (
-            next.cwd.clone(),
-            config.alcatraz_macos_exe,
-            config.alcatraz_linux_exe,
-            config.alcatraz_freebsd_exe,
-        )
+        (next.cwd.clone(), config.alcatraz_exe)
     });
 
     match sess
@@ -257,30 +252,15 @@ pub async fn update_permissions(
                 );
                 let runtime = mcp_turn
                     .as_ref()
-                    .map(|turn| {
-                        (
-                            turn.cwd.clone(),
-                            turn.alcatraz_macos_exe.clone(),
-                            turn.alcatraz_linux_exe.clone(),
-                            turn.alcatraz_freebsd_exe.clone(),
-                        )
-                    })
+                    .map(|turn| (turn.cwd.clone(), turn.alcatraz_exe.clone()))
                     .or(fallback_mcp_runtime);
-                let Some((
-                    sandbox_cwd,
-                    alcatraz_macos_exe,
-                    alcatraz_linux_exe,
-                    alcatraz_freebsd_exe,
-                )) = runtime
-                else {
+                let Some((sandbox_cwd, alcatraz_exe)) = runtime else {
                     panic!("permission update always has an MCP runtime context");
                 };
                 let sandbox_state = crate::SandboxState {
                     vfs_policy,
                     socket_policy,
-                    alcatraz_macos_exe,
-                    alcatraz_linux_exe,
-                    alcatraz_freebsd_exe,
+                    alcatraz_exe,
                     sandbox_cwd,
                 };
                 sess.services

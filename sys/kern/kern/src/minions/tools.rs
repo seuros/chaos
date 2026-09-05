@@ -300,8 +300,7 @@ fn apply_spawn_agent_runtime_overrides(
             FunctionCallError::RespondToModel(format!("approval_policy is invalid: {err}"))
         })?;
     config.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
-    config.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
-    config.alcatraz_freebsd_exe = turn.alcatraz_freebsd_exe.clone();
+    config.alcatraz_exe = turn.alcatraz_exe.clone();
     config.cwd = turn.cwd.clone();
     let sandbox_policy =
         VfsPolicy::to_sandbox_policy(&turn.vfs_policy, turn.socket_policy, &turn.cwd).map_err(

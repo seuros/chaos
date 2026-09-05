@@ -175,9 +175,7 @@ pub struct ExecSandboxContext<'a> {
     pub vfs_policy: &'a VfsPolicy,
     pub socket_policy: SocketPolicy,
     pub sandbox_cwd: &'a Path,
-    pub alcatraz_macos_exe: &'a Option<PathBuf>,
-    pub alcatraz_linux_exe: &'a Option<PathBuf>,
-    pub alcatraz_freebsd_exe: &'a Option<PathBuf>,
+    pub alcatraz_exe: &'a Path,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -186,9 +184,7 @@ pub async fn process_exec_tool_call(
     vfs_policy: &VfsPolicy,
     socket_policy: SocketPolicy,
     sandbox_cwd: &Path,
-    alcatraz_macos_exe: &Option<PathBuf>,
-    alcatraz_linux_exe: &Option<PathBuf>,
-    alcatraz_freebsd_exe: &Option<PathBuf>,
+    alcatraz_exe: &Path,
     stdout_stream: Option<StdoutStream>,
 ) -> Result<ExecToolCallOutput> {
     let exec_req = build_exec_request(
@@ -197,9 +193,7 @@ pub async fn process_exec_tool_call(
             vfs_policy,
             socket_policy,
             sandbox_cwd,
-            alcatraz_macos_exe,
-            alcatraz_linux_exe,
-            alcatraz_freebsd_exe,
+            alcatraz_exe,
         },
     )?;
 
@@ -217,12 +211,7 @@ pub fn build_exec_request(
         vfs_policy,
         socket_policy,
         sandbox_cwd,
-        alcatraz_macos_exe,
-        alcatraz_linux_exe,
-        #[cfg(target_os = "freebsd")]
-        alcatraz_freebsd_exe,
-        #[cfg(not(target_os = "freebsd"))]
-            alcatraz_freebsd_exe: _,
+        alcatraz_exe,
     } = sandbox;
 
     let enforce_managed_network = params.network.is_some();
@@ -273,10 +262,7 @@ pub fn build_exec_request(
             sandbox_policy_cwd: sandbox_cwd,
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
-            alcatraz_macos_exe: alcatraz_macos_exe.as_ref(),
-            alcatraz_linux_exe: alcatraz_linux_exe.as_ref(),
-            #[cfg(target_os = "freebsd")]
-            alcatraz_freebsd_exe: alcatraz_freebsd_exe.as_ref(),
+            alcatraz_exe,
         })
         .map_err(ChaosErr::from)?;
     Ok(exec_req)
@@ -385,25 +371,6 @@ pub(crate) mod errors {
     impl From<SandboxTransformError> for ChaosErr {
         fn from(err: SandboxTransformError) -> Self {
             match err {
-                #[cfg(target_os = "macos")]
-                SandboxTransformError::MissingMacOSSandboxExecutable => {
-                    ChaosErr::UnsupportedOperation(
-                        "alcatraz-macos executable not found".to_string(),
-                    )
-                }
-                SandboxTransformError::MissingLinuxSandboxExecutable => {
-                    ChaosErr::LandlockSandboxExecutableNotProvided
-                }
-                #[cfg(target_os = "freebsd")]
-                SandboxTransformError::MissingFreeBSDSandboxExecutable => {
-                    ChaosErr::UnsupportedOperation(
-                        "alcatraz-freebsd executable not found".to_string(),
-                    )
-                }
-                #[cfg(not(target_os = "macos"))]
-                SandboxTransformError::SeatbeltUnavailable => ChaosErr::UnsupportedOperation(
-                    "seatbelt sandbox is only available on macOS".to_string(),
-                ),
                 SandboxTransformError::InvalidSandboxPolicyProjection { source } => {
                     ChaosErr::Io(source)
                 }

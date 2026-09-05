@@ -142,9 +142,7 @@ struct ExecConfigOverrideInputs {
     ephemeral: bool,
     additional_writable_roots: Vec<PathBuf>,
     model_provider: Option<String>,
-    alcatraz_linux_exe: Option<PathBuf>,
-    alcatraz_freebsd_exe: Option<PathBuf>,
-    alcatraz_macos_exe: Option<PathBuf>,
+    alcatraz_exe: PathBuf,
 }
 
 fn exec_sandbox_mode(
@@ -172,9 +170,7 @@ fn exec_config_overrides(inputs: ExecConfigOverrideInputs) -> ConfigOverrides {
         sandbox_mode: inputs.sandbox_mode,
         cwd: inputs.cwd,
         service_tier: None,
-        alcatraz_linux_exe: inputs.alcatraz_linux_exe,
-        alcatraz_freebsd_exe: inputs.alcatraz_freebsd_exe,
-        alcatraz_macos_exe: inputs.alcatraz_macos_exe,
+        alcatraz_exe: Some(inputs.alcatraz_exe),
         base_instructions: None,
         minion_instructions: None,
         personality: None,
@@ -341,9 +337,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         ephemeral,
         additional_writable_roots: add_dir,
         model_provider: cli_model_provider,
-        alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
-        alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
-        alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
+        alcatraz_exe: arg0_paths.alcatraz_exe.clone(),
     });
 
     let config = ConfigBuilder::default()
@@ -1089,9 +1083,7 @@ mod tests {
             ephemeral,
             additional_writable_roots: add_dir,
             model_provider: Some("test-provider".to_string()),
-            alcatraz_linux_exe: None,
-            alcatraz_freebsd_exe: None,
-            alcatraz_macos_exe: None,
+            alcatraz_exe: PathBuf::from("/alcatraz"),
         });
 
         assert!(json);

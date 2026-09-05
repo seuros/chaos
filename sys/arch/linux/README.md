@@ -1,10 +1,11 @@
 # alcatraz-linux
 
-This crate is responsible for producing:
+This crate provides the Linux implementation selected by the `alcatraz` facade:
 
-- a `alcatraz-linux` standalone executable for Linux that is bundled with the Node.js version of the Chaos CLI
-- a lib crate that exposes the business logic of the executable as `run_main()` so that
-  - the `chaos-fork` CLI can check if its arg0 is `alcatraz-linux` and, if so, execute as if it were `alcatraz-linux`
+- sandbox command preparation and the `run_main()` helper entry point
+  used by the facade's single `alcatraz` executable
+- library APIs so that
+  - the `chaos-fork` CLI can check if its arg0 is `alcatraz` and, if so, execute as the platform helper
   - this should also be true of the `chaos` multitool CLI
 
 **Current Behavior**

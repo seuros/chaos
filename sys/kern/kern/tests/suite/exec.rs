@@ -28,13 +28,13 @@ fn skip_test() -> bool {
     false
 }
 
-fn alcatraz_macos_exe() -> Option<PathBuf> {
-    chaos_which::cargo_bin("alcatraz-macos").ok()
+fn alcatraz_exe() -> PathBuf {
+    chaos_which::cargo_bin("alcatraz").expect("alcatraz executable")
 }
 
 #[expect(clippy::expect_used)]
 async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput> {
-    let sandbox_type = get_platform_sandbox().expect("should be able to get sandbox type");
+    let sandbox_type = get_platform_sandbox();
     assert_eq!(sandbox_type, SandboxType::MacosSeatbelt);
 
     let params = ExecParams {
@@ -55,9 +55,7 @@ async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput
         &VfsPolicy::from(&policy),
         SocketPolicy::from(&policy),
         tmp.path(),
-        &alcatraz_macos_exe(),
-        &None,
-        &None,
+        alcatraz_exe().as_path(),
         None,
     )
     .await

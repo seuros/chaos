@@ -1,5 +1,4 @@
 use super::sandbox_tag_for_vfs_policy;
-use crate::exec::SandboxType;
 use crate::safety::get_platform_sandbox;
 use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -24,8 +23,6 @@ fn external_sandbox_keeps_external_tag_when_linux_sandbox_defaults_apply() {
 fn default_linux_sandbox_uses_platform_sandbox_tag() {
     let actual =
         sandbox_tag_for_vfs_policy(&VfsPolicy::from(&SandboxPolicy::new_read_only_policy()));
-    let expected = get_platform_sandbox()
-        .map(SandboxType::as_metric_tag)
-        .unwrap_or("none");
+    let expected = get_platform_sandbox().as_metric_tag();
     assert_eq!(actual, expected);
 }

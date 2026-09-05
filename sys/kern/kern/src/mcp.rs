@@ -82,9 +82,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
             },
         ]),
         socket_policy: SocketPolicy::Restricted,
-        alcatraz_macos_exe: config.alcatraz_macos_exe.clone(),
-        alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
-        alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),
+        alcatraz_exe: config.alcatraz_exe.clone(),
         sandbox_cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
     };
 

@@ -153,11 +153,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "alcatraz"
+version = "47.2.0"
+dependencies = [
+ "alcatraz-base",
+ "alcatraz-freebsd",
+ "alcatraz-linux",
+ "alcatraz-macos",
+ "chaos-clamp",
+ "chaos-ipc",
+ "chaos-kern",
+ "chaos-realpath",
+ "landlock",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "alcatraz-base"
 version = "47.2.0"
 dependencies = [
  "chaos-ipc",
  "chaos-parole",
+ "chaos-pf",
  "landlock",
  "seccompiler",
  "thiserror 2.0.20",
@@ -189,9 +209,7 @@ name = "alcatraz-linux"
 version = "47.2.0"
 dependencies = [
  "alcatraz-base",
- "chaos-clamp",
  "chaos-ipc",
- "chaos-kern",
  "chaos-parole",
  "chaos-realpath",
  "dbus-secret-service-keyring-store",
@@ -199,12 +217,9 @@ dependencies = [
  "landlock",
  "libc",
  "linux-keyutils-keyring-store",
- "pretty_assertions",
  "seccompiler",
  "serde",
  "serde_json",
- "tempfile",
- "tokio",
  "url",
  "usage-rs",
 ]
@@ -213,6 +228,7 @@ dependencies = [
 name = "alcatraz-macos"
 version = "47.2.0"
 dependencies = [
+ "alcatraz-base",
  "chaos-ipc",
  "chaos-parole",
  "chaos-pf",
@@ -1085,9 +1101,7 @@ version = "47.2.0"
 name = "chaos-argv"
 version = "47.2.0"
 dependencies = [
- "alcatraz-freebsd",
- "alcatraz-linux",
- "alcatraz-macos",
+ "alcatraz",
  "anyhow",
  "chaos-diff",
  "chaos-doas",
@@ -1169,9 +1183,7 @@ dependencies = [
 name = "chaos-cli"
 version = "47.2.0"
 dependencies = [
- "alcatraz-freebsd",
- "alcatraz-linux",
- "alcatraz-macos",
+ "alcatraz",
  "anyhow",
  "assert_cmd",
  "assert_matches",
@@ -1185,7 +1197,6 @@ dependencies = [
  "chaos-kern",
  "chaos-mcpd",
  "chaos-pam",
- "chaos-pf",
  "chaos-pwd",
  "chaos-selinux",
  "chaos-snitch",
@@ -1444,8 +1455,7 @@ dependencies = [
 name = "chaos-fork"
 version = "47.2.0"
 dependencies = [
- "alcatraz-freebsd",
- "alcatraz-macos",
+ "alcatraz",
  "anyhow",
  "assert_cmd",
  "chaos-argv",
@@ -1597,9 +1607,7 @@ dependencies = [
 name = "chaos-kern"
 version = "47.2.0"
 dependencies = [
- "alcatraz-freebsd",
- "alcatraz-linux",
- "alcatraz-macos",
+ "alcatraz",
  "anyhow",
  "arc-swap",
  "assert_cmd",
@@ -1881,6 +1889,7 @@ version = "47.2.0"
 dependencies = [
  "chaos-ipc",
  "chaos-realpath",
+ "pretty_assertions",
 ]
 
 [[package]]

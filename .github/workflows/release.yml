@@ -85,12 +85,10 @@ jobs:
         run: upkg install pkg-config libcap-dev libdbus-1-dev libclang-dev
 
       - uses: dtolnay/rust-toolchain@1.98.0
-        if: matrix.os_label != 'dragonfly-x86_64'
         with:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2.9.1
-        if: matrix.os_label != 'dragonfly-x86_64'
         with:
           key: release-${{ matrix.os_label }}
 
@@ -102,13 +100,13 @@ jobs:
         run: |
           set -euo pipefail
           artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
-          cargo build --release --target ${{ matrix.target }} --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          cargo build --release --target ${{ matrix.target }} --bin chaos --bin alcatraz --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
           release_dir="target/${{ matrix.target }}/release"
-          for bin in chaos chaos_journald chaos-forkve-wrapper chaos-xclient; do
+          for bin in chaos alcatraz chaos_journald chaos-forkve-wrapper chaos-xclient; do
             strip "${release_dir}/$bin" 2>/dev/null || true
           done
           tmp=$(mktemp -d)
-          cp "${release_dir}/chaos" "${release_dir}/chaos_journald" \
+          cp "${release_dir}/chaos" "${release_dir}/alcatraz" "${release_dir}/chaos_journald" \
              "${release_dir}/chaos-forkve-wrapper" "${release_dir}/chaos-xclient" "$tmp/"
           cp scripts/dist-install.sh "$tmp/install.sh"
           tar czf "${artifact}" -C "$tmp" .
@@ -144,15 +142,11 @@ jobs:
           - runner: linux-aarch64
             target: aarch64-unknown-linux-gnu
             os_label: linux-aarch64
-          - runner: dragonfly-x86_64
-            target: x86_64-unknown-dragonfly
-            os_label: dragonfly-x86_64
 
     steps:
       - uses: actions/checkout@v7
 
       - uses: seuros/setup-upkg@master
-        if: matrix.os_label != 'dragonfly-x86_64'
 
       - name: Install Linux build dependencies
         if: matrix.os_label == 'linux-aarch64'
@@ -170,27 +164,11 @@ jobs:
             echo "LIBCLANG_PATH=${libclang_path}" >> "$GITHUB_ENV"
           fi
 
-      - name: Check DragonFlyBSD build prerequisites
-        if: matrix.os_label == 'dragonfly-x86_64'
-        shell: sh
-        run: |
-          set -eu
-          export PATH=/raven/bin:$PATH
-          for cmd in llvm-config pkgconf dbus-daemon rustc cargo; do
-            command -v "$cmd" || { echo "error: $cmd not found"; exit 1; }
-          done
-          echo "PATH=/raven/bin:/usr/local/bin:$PATH" >> "$GITHUB_ENV"
-          if [ -f /raven/lib/libclang.so ]; then
-            echo "LIBCLANG_PATH=/raven/lib" >> "$GITHUB_ENV"
-          fi
-
       - uses: dtolnay/rust-toolchain@1.98.0
-        if: matrix.os_label != 'dragonfly-x86_64'
         with:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2.9.1
-        if: matrix.os_label != 'dragonfly-x86_64'
         with:
           key: release-${{ matrix.os_label }}
 
@@ -202,13 +180,13 @@ jobs:
         run: |
           set -euo pipefail
           artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
-          cargo build --release --target "${{ matrix.target }}" --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
+          cargo build --release --target "${{ matrix.target }}" --bin chaos --bin alcatraz --bin chaos_journald --bin chaos-forkve-wrapper --bin chaos-xclient
           release_dir="target/${{ matrix.target }}/release"
-          for bin in chaos chaos_journald chaos-forkve-wrapper chaos-xclient; do
+          for bin in chaos alcatraz chaos_journald chaos-forkve-wrapper chaos-xclient; do
             strip "${release_dir}/$bin" 2>/dev/null || true
           done
           tmp=$(mktemp -d)
-          cp "${release_dir}/chaos" "${release_dir}/chaos_journald" \
+          cp "${release_dir}/chaos" "${release_dir}/alcatraz" "${release_dir}/chaos_journald" \
              "${release_dir}/chaos-forkve-wrapper" "${release_dir}/chaos-xclient" "$tmp/"
           cp scripts/dist-install.sh "$tmp/install.sh"
           tar czf "${artifact}" -C "$tmp" .

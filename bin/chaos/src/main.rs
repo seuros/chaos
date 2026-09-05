@@ -328,10 +328,7 @@ fn main() -> anyhow::Result<()> {
         // init that spawns background threads (keyring D-Bus, TLS providers)
         // runs only in the regular chaos process — clear of the seccomp filter.
         let _ = rama::tls::rustls::dep::rustls::crypto::ring::default_provider().install_default();
-        #[cfg(target_os = "linux")]
-        alcatraz_linux::register_keyring_store();
-        #[cfg(target_os = "freebsd")]
-        alcatraz_freebsd::register_keyring_store();
+        alcatraz::register_keyring_store();
 
         cli_main(arg0_paths).await?;
         Ok(())
@@ -473,43 +470,11 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         Some(Subcommand::Sandbox(mut sandbox_cmd)) => {
             prepend_root_flags!(sandbox_cmd, root_config_overrides);
-
-            #[cfg(target_os = "linux")]
-            {
-                chaos_boot::debug_sandbox::run_command_under_landlock(
-                    sandbox_cmd,
-                    arg0_paths.alcatraz_linux_exe.clone(),
-                    arg0_paths.alcatraz_freebsd_exe.clone(),
-                )
-                .await?;
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                chaos_boot::debug_sandbox::run_command_under_seatbelt(
-                    sandbox_cmd,
-                    arg0_paths.alcatraz_macos_exe.clone(),
-                    arg0_paths.alcatraz_linux_exe.clone(),
-                    arg0_paths.alcatraz_freebsd_exe.clone(),
-                )
-                .await?;
-            }
-
-            #[cfg(target_os = "freebsd")]
-            {
-                chaos_boot::debug_sandbox::run_command_under_capsicum(
-                    sandbox_cmd,
-                    arg0_paths.alcatraz_linux_exe.clone(),
-                    arg0_paths.alcatraz_freebsd_exe.clone(),
-                )
-                .await?;
-            }
-
-            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
-            {
-                let _ = sandbox_cmd;
-                anyhow::bail!("sandbox is not yet supported on this platform");
-            }
+            chaos_boot::debug_sandbox::run_command_under_sandbox(
+                sandbox_cmd,
+                arg0_paths.alcatraz_exe.clone(),
+            )
+            .await?;
         }
         Some(Subcommand::Execpolicy(ExecpolicyCommand { sub })) => match sub {
             ExecpolicySubcommand::Check(cmd) => run_execpolicycheck(cmd)?,

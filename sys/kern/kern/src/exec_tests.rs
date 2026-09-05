@@ -183,7 +183,7 @@ fn aggregate_output_keeps_stdout_then_stderr_when_under_cap() {
 
 #[test]
 fn process_exec_tool_call_uses_platform_sandbox_for_network_only_restrictions() {
-    let expected = crate::get_platform_sandbox().unwrap_or(SandboxType::None);
+    let expected = crate::get_platform_sandbox();
 
     assert_eq!(
         select_process_exec_tool_sandbox_type(
@@ -291,9 +291,7 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
         &VfsPolicy::from(&SandboxPolicy::RootAccess),
         SocketPolicy::Enabled,
         cwd.as_path(),
-        &None,
-        &None,
-        &None,
+        Path::new("/alcatraz"),
         None,
     )
     .await;

@@ -488,29 +488,11 @@ pub struct Config {
     /// output will be hyperlinked using the specified URI scheme.
     pub file_opener: UriBasedFileOpener,
 
-    /// Path to the `alcatraz-linux` executable. This must be set if
-    /// [`crate::exec::SandboxType::LinuxSeccomp`] is used. Note that this
-    /// cannot be set in the config file: it must be set in code via
-    /// [`ConfigOverrides`].
+    /// Path to the Alcatraz helper compiled for the current target OS.
     ///
-    /// When this program is invoked, arg0 will be set to `alcatraz-linux`.
-    pub alcatraz_linux_exe: Option<PathBuf>,
-
-    /// Path to the `alcatraz-freebsd` executable. This must be set if
-    /// [`crate::exec::SandboxType::FreeBSDCapsicum`] is used. Note that this
-    /// cannot be set in the config file: it must be set in code via
-    /// [`ConfigOverrides`].
-    ///
-    /// When this program is invoked, arg0 will be set to `alcatraz-freebsd`.
-    pub alcatraz_freebsd_exe: Option<PathBuf>,
-
-    /// Path to the `alcatraz-macos` executable. This must be set if
-    /// [`crate::exec::SandboxType::MacosSeatbelt`] is used. Note that this
-    /// cannot be set in the config file: it must be set in code via
-    /// [`ConfigOverrides`].
-    ///
-    /// When this program is invoked, arg0 will be set to `alcatraz-macos`.
-    pub alcatraz_macos_exe: Option<PathBuf>,
+    /// This is always present on supported targets. It defaults to the current
+    /// multicall executable and may be replaced by an internal override.
+    pub alcatraz_exe: PathBuf,
 
     /// Value to use for `reasoning.effort` when making a request using the
     /// Responses API.
@@ -975,9 +957,7 @@ pub struct ConfigOverrides {
     pub provider_user_override: bool,
     pub service_tier: Option<Option<ServiceTier>>,
     pub config_profile: Option<String>,
-    pub alcatraz_linux_exe: Option<PathBuf>,
-    pub alcatraz_freebsd_exe: Option<PathBuf>,
-    pub alcatraz_macos_exe: Option<PathBuf>,
+    pub alcatraz_exe: Option<PathBuf>,
     pub base_instructions: Option<String>,
     pub minion_instructions: Option<String>,
     pub personality: Option<Personality>,

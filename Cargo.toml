@@ -5,6 +5,7 @@ members = [
     "sys/kern/context",
     "sys/vfs",
     # sys/arch — platform sandboxes
+    "sys/arch/alcatraz",
     "sys/arch/base",
     "sys/arch/linux",
     "sys/arch/freebsd",
@@ -138,6 +139,7 @@ chaos-ipc = { path = "lib/libcontract/ipc" }
 chaos-traits = { path = "lib/libcontract/traits" }
 chaos-vfs = { path = "sys/vfs" }
 chaos-recall = { path = "sys/recall" }
+alcatraz = { path = "sys/arch/alcatraz" }
 alcatraz-base = { path = "sys/arch/base" }
 alcatraz-linux = { path = "sys/arch/linux" }
 alcatraz-freebsd = { path = "sys/arch/freebsd" }

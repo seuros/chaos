@@ -39,11 +39,7 @@ const PROXY_ENV_KEYS: &[&str] = &[
 ];
 
 #[derive(Debug, usage::Cli)]
-#[usage(
-    bin = "alcatraz-linux",
-    unknown_flags = "error",
-    args_override_self = false
-)]
+#[usage(bin = "alcatraz", unknown_flags = "error", args_override_self = false)]
 /// CLI surface for the Linux sandbox helper.
 ///
 /// Applies landlock filesystem restrictions and seccomp syscall filters
@@ -95,7 +91,7 @@ pub fn run_main() -> ! {
     } = LandlockCommand::parse();
 
     if command.is_empty() {
-        eprintln!("alcatraz-linux: no command specified to execute.");
+        eprintln!("alcatraz: no command specified to execute.");
         std::process::exit(1);
     }
     let EffectiveSandboxPolicies {
@@ -109,7 +105,7 @@ pub fn run_main() -> ! {
         socket_policy,
     )
     .unwrap_or_else(|err| {
-        eprintln!("alcatraz-linux: {err}");
+        eprintln!("alcatraz: {err}");
         std::process::exit(1);
     });
 
@@ -119,12 +115,12 @@ pub fn run_main() -> ! {
         Vec::new()
     };
     if allow_network_for_proxy && allowed_proxy_ports.is_empty() {
-        eprintln!("alcatraz-linux: {MANAGED_PROXY_ENV_ERROR}");
+        eprintln!("alcatraz: {MANAGED_PROXY_ENV_ERROR}");
         std::process::exit(1);
     }
 
     if needs_direct_runtime_enforcement(&vfs_policy, socket_policy, sandbox_policy_cwd.as_path()) {
-        eprintln!("alcatraz-linux: {UNSUPPORTED_SPLIT_POLICY_ERROR}");
+        eprintln!("alcatraz: {UNSUPPORTED_SPLIT_POLICY_ERROR}");
         std::process::exit(1);
     }
 
@@ -139,7 +135,7 @@ pub fn run_main() -> ! {
         /*proxy_routed_network*/ allow_network_for_proxy,
         &allowed_proxy_ports,
     ) {
-        eprintln!("alcatraz-linux: sandbox error: {e}");
+        eprintln!("alcatraz: sandbox error: {e}");
         std::process::exit(1);
     }
     exec_or_exit(command);
@@ -218,10 +214,7 @@ fn exec_or_exit(command: Vec<String>) -> ! {
 
     // If execvp returns, there was an error.
     let err = std::io::Error::last_os_error();
-    eprintln!(
-        "alcatraz-linux: failed to exec {}: {err}",
-        command[0].as_str()
-    );
+    eprintln!("alcatraz: failed to exec {}: {err}", command[0].as_str());
     std::process::exit(1);
 }
 

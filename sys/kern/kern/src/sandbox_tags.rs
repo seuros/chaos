@@ -1,4 +1,3 @@
-use crate::exec::SandboxType;
 use crate::safety::get_platform_sandbox;
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsPolicy;
@@ -11,9 +10,7 @@ pub(crate) fn sandbox_tag_for_vfs_policy(vfs_policy: &VfsPolicy) -> &'static str
     match vfs_policy.kind {
         VfsPolicyKind::Unrestricted => "none",
         VfsPolicyKind::ExternalSandbox => "external",
-        VfsPolicyKind::Restricted => get_platform_sandbox()
-            .map(SandboxType::as_metric_tag)
-            .unwrap_or("none"),
+        VfsPolicyKind::Restricted => get_platform_sandbox().as_metric_tag(),
     }
 }
 

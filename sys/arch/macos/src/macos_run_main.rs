@@ -9,6 +9,6 @@ pub fn run_main() -> ! {
     let exec_error = Command::new(MACOS_PATH_TO_SEATBELT_EXECUTABLE)
         .args(std::env::args_os().skip(1))
         .exec();
-    eprintln!("alcatraz-macos: failed to exec {MACOS_PATH_TO_SEATBELT_EXECUTABLE}: {exec_error}");
+    eprintln!("alcatraz: failed to exec {MACOS_PATH_TO_SEATBELT_EXECUTABLE}: {exec_error}");
     std::process::exit(1);
 }

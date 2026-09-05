@@ -98,7 +98,7 @@ fn detect_uptime() -> u64 {
 
 // ── Power / Battery ──────────────────────────────────────────────────
 
-fn detect_power() -> (bool, Option<u8>, bool) {
+pub(super) fn detect_power() -> (bool, Option<u8>, bool) {
     // hw.acpi.battery.life — percentage
     // hw.acpi.battery.state — 0=not charging, 1=discharging, 2=charging
     // hw.acpi.acline — 1=on AC, 0=on battery

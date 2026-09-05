@@ -115,7 +115,7 @@ fn detect_uptime() -> u64 {
 
 // ── Power / Battery ──────────────────────────────────────────────────
 
-fn detect_power() -> (bool, Option<u8>, bool) {
+pub(super) fn detect_power() -> (bool, Option<u8>, bool) {
     let supply = Path::new("/sys/class/power_supply");
     if !supply.exists() {
         return (false, None, false);

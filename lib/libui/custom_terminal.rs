@@ -281,6 +281,34 @@ where
         draw(&mut self.backend, updates.into_iter())
     }
 
+    /// Paint a full-width, single-row chrome buffer without changing the
+    /// scrolling viewport or its diff buffers. Restore the real cursor before
+    /// history insertion or viewport rendering continues.
+    pub(crate) fn draw_pinned_row(&mut self, buffer: &Buffer) -> io::Result<()> {
+        if buffer.area.is_empty() {
+            return Ok(());
+        }
+        let area = buffer.area;
+        let bg = buffer[(area.x, area.y)].bg;
+        queue!(
+            self.backend,
+            crossterm::cursor::SavePosition,
+            MoveTo(area.x, area.y),
+            SetAttribute(crossterm::style::Attribute::Reset),
+            SetBackgroundColor(bg.into_crossterm()),
+            Clear(crossterm::terminal::ClearType::UntilNewLine),
+        )?;
+        // The row can have been overwritten by alternate-screen transitions.
+        // Repaint from a cleared baseline rather than cache out-of-viewport
+        // cells. Use the existing cell renderer to handle wide glyphs.
+        draw(
+            &mut self.backend,
+            diff_buffers(&Buffer::empty(area), buffer).into_iter(),
+        )?;
+        queue!(self.backend, crossterm::cursor::RestorePosition)?;
+        Ok(())
+    }
+
     /// Saves the requested screen size for subsequent rendering.
     pub fn resize(&mut self, screen_size: Size) {
         self.last_known_screen_size = screen_size;

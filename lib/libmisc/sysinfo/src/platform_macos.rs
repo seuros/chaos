@@ -102,17 +102,42 @@ fn detect_uptime() -> u64 {
 
 // ── Power / Battery ──────────────────────────────────────────────────
 
-fn detect_power() -> (bool, Option<u8>, bool) {
+pub(super) fn detect_power() -> (bool, Option<u8>, bool) {
     // Use `pmset -g batt` for battery info — simpler than IOKit bindings.
-    let Ok(output) = std::process::Command::new("pmset")
+    let Ok(mut child) = std::process::Command::new("/usr/bin/pmset")
         .args(["-g", "batt"])
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
     else {
         return (false, None, false);
     };
 
-    let text = String::from_utf8_lossy(&output.stdout);
+    // A background refresh must not leave an unbounded command behind.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return (false, None, false);
+            }
+        }
+    }
+    let Ok(output) = child.wait_with_output() else {
+        return (false, None, false);
+    };
+    if !output.status.success() {
+        return (false, None, false);
+    }
+    parse_power(&String::from_utf8_lossy(&output.stdout))
+}
 
+fn parse_power(text: &str) -> (bool, Option<u8>, bool) {
     // No battery on desktops
     if !text.contains("Battery") && !text.contains("InternalBattery") {
         return (false, None, false);
@@ -133,4 +158,31 @@ fn detect_power() -> (bool, Option<u8>, bool) {
         });
 
     (has_battery, battery_level, charger_connected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn power_output_distinguishes_charge_unknown_and_absent_battery() {
+        assert_eq!(
+            parse_power("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t85%; charging;"),
+            (true, Some(85), true)
+        );
+        assert_eq!(
+            parse_power(
+                "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t15%; discharging;"
+            ),
+            (true, Some(15), false)
+        );
+        assert_eq!(
+            parse_power("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\tunknown;"),
+            (true, None, true)
+        );
+        assert_eq!(
+            parse_power("Now drawing from 'AC Power'"),
+            (false, None, false)
+        );
+    }
 }

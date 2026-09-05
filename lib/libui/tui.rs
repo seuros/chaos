@@ -286,6 +286,7 @@ pub struct Tui {
     /// Number of rows reserved at the top of the screen for a sticky top bar.
     /// These rows are never scrolled and the viewport starts below them.
     top_reserved_rows: u16,
+    top_bar: Option<crate::top_bar::Runtime>,
     terminal_title_enabled: bool,
 }
 
@@ -293,6 +294,7 @@ impl Tui {
     pub fn new(terminal: Terminal) -> Self {
         let (draw_tx, _) = broadcast::channel(1);
         let frame_requester = FrameRequester::new(draw_tx.clone());
+        let top_bar = Some(crate::top_bar::Runtime::new(frame_requester.clone()));
 
         // Detect keyboard enhancement support before any EventStream is created so the
         // crossterm poller can acquire its lock without contention.
@@ -316,6 +318,7 @@ impl Tui {
             notification_backend: Some(detect_backend(NotificationMethod::default())),
             alt_screen_enabled: true,
             top_reserved_rows: 1,
+            top_bar,
             terminal_title_enabled: false,
         }
     }
@@ -342,6 +345,11 @@ impl Tui {
     /// Override the number of top rows reserved for chrome outside normal scrollback.
     pub fn set_top_reserved_rows(&mut self, rows: u16) {
         self.top_reserved_rows = rows;
+        if rows == 0 {
+            self.top_bar = None;
+        } else if self.top_bar.is_none() {
+            self.top_bar = Some(crate::top_bar::Runtime::new(self.frame_requester.clone()));
+        }
     }
 
     pub fn top_reserved_rows(&self) -> u16 {
@@ -578,7 +586,7 @@ impl Tui {
             let reserved = if self.alt_screen_active.load(Ordering::Relaxed) {
                 0
             } else {
-                self.top_reserved_rows
+                self.top_reserved_rows.min(size.height)
             };
 
             let max_viewport_height = size.height.saturating_sub(reserved);
@@ -607,9 +615,12 @@ impl Tui {
                 terminal.set_viewport_area(area);
             }
 
-            // Render the sticky top bar at row 0 (outside the viewport).
-            if reserved > 0 {
-                crate::tui::render_top_bar_to_terminal(terminal, size.width)?;
+            // Render bounded widget cells at row 0, independent of the
+            // scrolling viewport. State updates are owned by the runtime.
+            if reserved > 0
+                && let Some(top_bar) = &self.top_bar
+            {
+                terminal.draw_pinned_row(&top_bar.buffer(size.width))?;
             }
 
             if !self.pending_history_lines.is_empty() {
@@ -637,18 +648,6 @@ impl Tui {
                 draw_fn(frame);
             })
         })??;
-
-        // Schedule a redraw at the next minute boundary to keep the top bar clock fresh.
-        if self.top_reserved_rows > 0 && !self.alt_screen_active.load(Ordering::Relaxed) {
-            let secs_until_next_min = {
-                let mut tv: libc::timeval = unsafe { std::mem::zeroed() };
-                unsafe { libc::gettimeofday(&mut tv, std::ptr::null_mut()) };
-                let current_sec = tv.tv_sec % 60;
-                (60 - current_sec).max(1) as u64
-            };
-            self.frame_requester
-                .schedule_frame_in(Duration::from_secs(secs_until_next_min));
-        }
 
         Ok(())
     }
@@ -742,24 +741,4 @@ fn bottom_anchored_viewport_after_resize(
         .saturating_sub(viewport.height)
         .max(reserved);
     Some(resized)
-}
-
-/// Render the sticky top bar directly to the terminal at row 0, outside the viewport.
-fn render_top_bar_to_terminal<B>(
-    terminal: &mut crate::custom_terminal::Terminal<B>,
-    width: u16,
-) -> std::io::Result<()>
-where
-    B: ratatui::backend::Backend<Error = std::io::Error> + std::io::Write,
-{
-    use crossterm::cursor::MoveTo;
-    use crossterm::queue;
-    use crossterm::terminal::{Clear, ClearType};
-
-    let line = crate::top_bar::top_bar_line(width);
-    let writer = terminal.backend_mut();
-    queue!(writer, MoveTo(0, 0))?;
-    queue!(writer, Clear(ClearType::UntilNewLine))?;
-    crate::insert_history::write_spans(writer, line.spans.iter())?;
-    Ok(())
 }

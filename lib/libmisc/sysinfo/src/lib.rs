@@ -5,6 +5,7 @@
 //! of the process.  Platform-specific detection lives in separate files
 //! (`platform_linux.rs`, `platform_macos.rs`, `platform_freebsd.rs`) that
 //! each implement the same `detect() -> SystemInfo` entry point.
+//! Dynamic consumers should use [`power_info`] instead of the cached power fields.
 
 use serde::Serialize;
 use std::sync::OnceLock;
@@ -31,6 +32,32 @@ static SYSINFO: OnceLock<SystemInfo> = OnceLock::new();
 /// Returns the cached system info, computing it on first call.
 pub fn sysinfo() -> &'static SystemInfo {
     SYSINFO.get_or_init(platform::detect)
+}
+
+/// Read the hostname without collecting unrelated hardware facts.
+pub fn hostname() -> String {
+    detect_hostname()
+}
+
+/// A fresh best-effort power snapshot. An unavailable battery is not displayed;
+/// a detected battery with an unreadable percentage has `battery_level: None`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PowerInfo {
+    pub has_battery: bool,
+    pub battery_level: Option<u8>,
+    pub charger_connected: bool,
+}
+
+/// Read current power state, independently of the startup snapshot.
+///
+/// This performs platform I/O; call it from a background worker, not a renderer.
+pub fn power_info() -> PowerInfo {
+    let (has_battery, battery_level, charger_connected) = platform::detect_power();
+    PowerInfo {
+        has_battery,
+        battery_level: battery_level.filter(|level| *level <= 100),
+        charger_connected,
+    }
 }
 
 // ── Struct ───────────────────────────────────────────────────────────

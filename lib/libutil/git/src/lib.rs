@@ -12,6 +12,7 @@
 //! - `git_diff` — scoped structured patches, statistics, changed paths, and checks
 //! - `log` — commit history with optional limit and branch
 //! - `show` — full commit details with subject, body, and trailers
+//! - `show_file` — tracked file contents at a revision
 //! - `blame` — per-line attribution for a file
 //! - `add` — stage explicit repository-relative file paths
 //! - `commit` — create or amend an unsigned commit without hooks
@@ -25,6 +26,7 @@ mod commit;
 mod diff;
 mod error;
 mod ext;
+mod file;
 mod log;
 mod remotes;
 mod repo;
@@ -67,6 +69,8 @@ pub use diff::WhitespaceError;
 pub use diff::diff;
 pub use diff::diff_report;
 pub use error::GitError;
+pub use file::FileAtRev;
+pub use file::show_file;
 pub use log::LogEntry;
 pub use log::log;
 use mcp_host::prelude::*;
@@ -105,6 +109,12 @@ impl CatalogToolDriver for GitToolDriver {
                     let params = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
                     tools::execute_blocking(cwd, params, tools::execute_git_show_structured).await
+                }
+                "git_show_file" => {
+                    let params = serde_json::from_value(request.arguments)
+                        .map_err(|e| format!("invalid arguments: {e}"))?;
+                    tools::execute_blocking(cwd, params, tools::execute_git_show_file_structured)
+                        .await
                 }
                 "git_blame" => {
                     let params = serde_json::from_value(request.arguments)
@@ -327,6 +337,35 @@ mod tests {
             .and_then(|annotations| annotations.destructive_hint)
             .unwrap_or(true);
         assert!(destructive);
+    }
+
+    #[test]
+    fn git_show_file_schema_requires_path_and_uses_integer_line_fields() {
+        let tool = super::git_catalog_tools()
+            .into_iter()
+            .find(|tool| tool.name == "git_show_file")
+            .expect("git_show_file");
+        let required = tool.input_schema["required"]
+            .as_array()
+            .expect("required properties");
+
+        assert!(required.iter().any(|value| value == "file_path"));
+        for name in ["rev", "start_line", "end_line"] {
+            assert!(
+                required.iter().all(|value| value != name),
+                "{name} must remain optional: {}",
+                tool.input_schema
+            );
+        }
+        for name in ["start_line", "end_line"] {
+            let ty = &tool.input_schema["properties"][name]["type"];
+            assert!(
+                *ty == "integer" || *ty == serde_json::json!(["integer", "null"]),
+                "{name} must be advertised as integer: {ty}"
+            );
+        }
+        assert_eq!(tool.read_only_hint, Some(true));
+        assert!(tool.supports_parallel_tool_calls);
     }
 
     #[test]

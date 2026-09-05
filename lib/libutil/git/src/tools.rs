@@ -130,6 +130,23 @@ pub struct GitShowParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
+pub struct GitShowFileParams {
+    /// File path relative to repo root.
+    file_path: String,
+    /// Revision to read (default: HEAD).
+    #[serde(default)]
+    rev: Option<String>,
+    /// Optional 1-indexed start line, inclusive.
+    #[serde(default)]
+    start_line: Option<usize>,
+    /// Optional 1-indexed end line, inclusive.
+    #[serde(default)]
+    end_line: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct GitBlameParams {
     /// File path relative to repo root.
     file_path: String,
@@ -234,6 +251,27 @@ impl GitServer {
     async fn git_show(&self, _ctx: GitCtx<'_>, params: Parameters<GitShowParams>) -> ToolResult {
         output_from_json_result(
             execute_blocking(PathBuf::from("."), params.0, execute_git_show_structured).await,
+        )
+    }
+
+    #[mcp_tool(
+        name = "git_show_file",
+        description = "Show a tracked file at a revision, with optional line range. Untracked worktree edits are ignored.",
+        read_only = true,
+        open_world = false
+    )]
+    async fn git_show_file(
+        &self,
+        _ctx: GitCtx<'_>,
+        params: Parameters<GitShowFileParams>,
+    ) -> ToolResult {
+        output_from_json_result(
+            execute_blocking(
+                PathBuf::from("."),
+                params.0,
+                execute_git_show_file_structured,
+            )
+            .await,
         )
     }
 
@@ -346,6 +384,7 @@ pub fn tool_infos() -> Vec<ToolInfo> {
         GitServer::git_diff_tool_info(),
         GitServer::git_log_tool_info(),
         GitServer::git_show_tool_info(),
+        GitServer::git_show_file_tool_info(),
         GitServer::git_blame_tool_info(),
         GitServer::git_repo_tool_info(),
         GitServer::git_status_tool_info(),
@@ -451,6 +490,25 @@ pub fn execute_git_show_structured(
     to_json_value(entry)
 }
 
+pub fn execute_git_show_file_structured(
+    cwd: &Path,
+    params: GitShowFileParams,
+) -> Result<serde_json::Value, String> {
+    let lines = match (params.start_line, params.end_line) {
+        (Some(start), Some(end)) => Some((start, end)),
+        (None, None) => None,
+        _ => {
+            return Err(
+                "start_line and end_line must either both be provided or both be omitted"
+                    .to_string(),
+            );
+        }
+    };
+    let file = crate::show_file(cwd, &params.file_path, params.rev.as_deref(), lines)
+        .map_err(|e| e.to_string())?;
+    to_json_value(file)
+}
+
 pub fn execute_git_blame_structured(
     cwd: &Path,
     params: GitBlameParams,
@@ -553,19 +611,21 @@ mod tests {
     use super::GitBlameParams;
     use super::GitCommitParams;
     use super::GitDiffParams;
+    use super::GitShowFileParams;
     use super::GitShowParams;
     use super::execute_cancellable_blocking;
     use super::execute_git_add_structured;
     use super::execute_git_blame_structured;
     use super::execute_git_commit_structured;
     use super::execute_git_diff_structured_with_cancel;
+    use super::execute_git_show_file_structured;
     use super::execute_git_show_structured;
     use crate::BlameLine;
     use crate::CommitTrailer;
     use crate::DiffFormat;
     use crate::DiffScope;
+    use crate::FileAtRev;
     use crate::ShowEntry;
-
     fn execute_git_diff_structured(
         cwd: &Path,
         params: GitDiffParams,
@@ -872,6 +932,94 @@ mod tests {
         assert_eq!(shown.trailers.len(), 1);
         assert_eq!(shown.trailers[0].token, "Signed-off-by");
         assert_eq!(shown.trailers[0].value, "Test User <test@example.com>");
+    }
+
+    #[test]
+    fn execute_git_show_file_reads_revision_not_worktree() {
+        let temp = tempdir().expect("tempdir");
+        let dir = temp.path();
+
+        git(dir, &["init"]);
+        git(dir, &["config", "user.name", "Test User"]);
+        git(dir, &["config", "user.email", "test@example.com"]);
+
+        fs::create_dir(dir.join("src")).expect("create src");
+        fs::write(dir.join("src/file.txt"), "alpha\nbeta\ngamma\n").expect("write file");
+        git(dir, &["add", "src/file.txt"]);
+        git(dir, &["commit", "-m", "initial"]);
+        let head = git_output(dir, &["rev-parse", "HEAD"]).trim().to_string();
+
+        fs::write(dir.join("src/file.txt"), "worktree\n").expect("dirty worktree");
+
+        let shown_json = execute_git_show_file_structured(
+            dir,
+            GitShowFileParams {
+                file_path: "src/file.txt".to_string(),
+                rev: None,
+                start_line: None,
+                end_line: None,
+            },
+        )
+        .expect("show file");
+        let shown: FileAtRev = serde_json::from_value(shown_json).expect("parse show file json");
+        assert_eq!(shown.path, "src/file.txt");
+        assert_eq!(shown.rev, "HEAD");
+        assert_eq!(shown.sha, head);
+        assert_eq!(shown.content, "alpha\nbeta\ngamma\n");
+        assert_eq!(shown.total_lines, 3);
+        assert_eq!(shown.start_line, None);
+        assert_eq!(shown.end_line, None);
+
+        let ranged = execute_git_show_file_structured(
+            dir,
+            GitShowFileParams {
+                file_path: "./src/file.txt".to_string(),
+                rev: Some("HEAD".to_string()),
+                start_line: Some(2),
+                end_line: Some(3),
+            },
+        )
+        .expect("show file range");
+        assert_eq!(ranged["content"], "beta\ngamma\n");
+        assert_eq!(ranged["start_line"], 2);
+        assert_eq!(ranged["end_line"], 3);
+        assert_eq!(ranged["total_lines"], 3);
+
+        let missing = execute_git_show_file_structured(
+            dir,
+            GitShowFileParams {
+                file_path: "missing.txt".to_string(),
+                rev: None,
+                start_line: None,
+                end_line: None,
+            },
+        )
+        .expect_err("missing file must fail");
+        assert!(missing.contains("path not found: missing.txt"));
+
+        let incomplete = execute_git_show_file_structured(
+            dir,
+            GitShowFileParams {
+                file_path: "src/file.txt".to_string(),
+                rev: None,
+                start_line: Some(1),
+                end_line: None,
+            },
+        )
+        .expect_err("partial line range must fail");
+        assert!(incomplete.contains("both be provided or both be omitted"));
+
+        let directory = execute_git_show_file_structured(
+            dir,
+            GitShowFileParams {
+                file_path: "src".to_string(),
+                rev: None,
+                start_line: None,
+                end_line: None,
+            },
+        )
+        .expect_err("directory must fail");
+        assert!(directory.contains("path is a directory: src"));
     }
 
     #[test]

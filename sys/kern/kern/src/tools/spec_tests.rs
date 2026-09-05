@@ -1418,6 +1418,7 @@ const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "git_remotes",
     "git_repo",
     "git_show",
+    "git_show_file",
     "git_status",
     "mcp_add_server",
     "mcp_server",

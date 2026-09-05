@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::path::Component;
 use std::path::Path;
 
 use gix::bstr::BString;
@@ -7,6 +6,8 @@ use gix::bstr::ByteSlice;
 use serde::Serialize;
 
 use crate::error::GitError;
+use crate::ext::RepoRelativePathMessages;
+use crate::ext::normalize_repo_relative_path;
 use crate::open_repo;
 
 #[derive(Debug, Clone, Serialize)]
@@ -169,50 +170,14 @@ pub fn add(cwd: &Path, paths: &[String]) -> Result<AddResult, GitError> {
 }
 
 fn normalize_explicit_path(raw: &str) -> Result<BString, GitError> {
-    if raw.trim().is_empty() {
-        return Err(GitError::InvalidInput(
-            "git_add paths must not be empty".to_string(),
-        ));
-    }
-    if raw.as_bytes().contains(&0) {
-        return Err(GitError::InvalidInput(
-            "git_add paths must not contain NUL bytes".to_string(),
-        ));
-    }
-
-    let path = Path::new(raw);
-    if path.is_absolute() {
-        return Err(GitError::InvalidInput(format!(
-            "path must be repository-relative and may not escape the repository: {raw}"
-        )));
-    }
-
-    let mut components = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::Normal(component) => {
-                components.push(component.to_str().ok_or_else(|| {
-                    GitError::InvalidInput(format!("path is not valid UTF-8: {raw}"))
-                })?);
-            }
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err(GitError::InvalidInput(format!(
-                    "path must be repository-relative and may not escape the repository: {raw}"
-                )));
-            }
-        }
-    }
-
-    if components.is_empty() {
-        return Err(GitError::InvalidInput(
-            "repository root cannot be staged; pass files explicitly".to_string(),
-        ));
-    }
-    if components[0].eq_ignore_ascii_case(".git") {
-        return Err(GitError::InvalidInput(
-            "paths inside the Git directory cannot be staged".to_string(),
-        ));
-    }
-    Ok(components.join("/").into())
+    normalize_repo_relative_path(
+        raw,
+        RepoRelativePathMessages {
+            empty: "git_add paths must not be empty",
+            nul: "git_add paths must not contain NUL bytes",
+            root: "repository root cannot be staged; pass files explicitly",
+            git_dir: "paths inside the Git directory cannot be staged",
+        },
+    )
+    .map(Into::into)
 }

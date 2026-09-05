@@ -237,8 +237,7 @@ where
             .await?
             .context("persisted idempotent review run is missing")?;
         require_owner(&run, owner_process_id)?;
-        if expected_attestation_subject
-            .is_some_and(|expected| run.attestation_subject != expected)
+        if expected_attestation_subject.is_some_and(|expected| run.attestation_subject != expected)
         {
             bail!("review idempotency key was reused with a different review scope");
         }

@@ -88,6 +88,8 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::PatchApplyBeginEvent;
 use chaos_ipc::protocol::PatchApplyEndEvent;
 use chaos_ipc::protocol::PatchApplyStatus as CorePatchApplyStatus;
+use chaos_ipc::protocol::PermissionGrantUpdate;
+use chaos_ipc::protocol::PermissionUpdateScope;
 use chaos_ipc::protocol::ProcessNameUpdatedEvent;
 use chaos_ipc::protocol::ProcessRolledBackEvent;
 use chaos_ipc::protocol::RateLimitWindow;
@@ -6505,7 +6507,7 @@ async fn preset_matching_accepts_workspace_write_with_extra_roots() {
     );
 }
 
-#[cfg(test)]
+#[test]
 fn approval_preset_actions_emit_ui_refresh_after_permission_updates() {
     let (tx, mut rx) = make_app_event_sender_with_rx();
     let sandbox = SandboxPolicy::new_workspace_write_policy();
@@ -6528,11 +6530,12 @@ fn approval_preset_actions_emit_ui_refresh_after_permission_updates() {
     let sequence = events
         .iter()
         .map(|event| match event {
-            AppEvent::ChaosOp(Op::OverrideTurnContext {
+            AppEvent::ChaosOp(Op::UpdatePermissions {
+                scope: PermissionUpdateScope::Session,
+                expected_revision: None,
                 approval_policy: Some(ApprovalPolicy::Interactive),
                 sandbox_policy: Some(policy),
-                approvals_reviewer: Some(ApprovalsReviewer::User),
-                ..
+                grants: PermissionGrantUpdate::Unchanged,
             }) if policy == &expected_sandbox => "op",
             AppEvent::UpdateApprovalPolicy(ApprovalPolicy::Interactive) => "approval",
             AppEvent::UpdateSandboxPolicy(policy) if policy == &expected_sandbox => "sandbox",
@@ -6766,9 +6769,8 @@ async fn approvals_popup_navigation_skips_disabled() {
     assert!(
         app_events.iter().any(|ev| matches!(
             ev,
-            AppEvent::ChaosOp(Op::OverrideTurnContext {
+            AppEvent::ChaosOp(Op::UpdatePermissions {
                 approval_policy: Some(ApprovalPolicy::Interactive),
-                personality: None,
                 ..
             })
         )),
@@ -6777,14 +6779,59 @@ async fn approvals_popup_navigation_skips_disabled() {
     assert!(
         !app_events.iter().any(|ev| matches!(
             ev,
-            AppEvent::ChaosOp(Op::OverrideTurnContext {
+            AppEvent::ChaosOp(Op::UpdatePermissions {
                 approval_policy: Some(ApprovalPolicy::Headless),
-                personality: None,
                 ..
             })
         )),
         "disabled preset should not be selected"
     );
+}
+
+#[tokio::test]
+async fn permissions_selection_updates_live_session_while_task_running() {
+    let presets = builtin_approval_presets();
+    let default = presets.iter().find(|preset| preset.id == "auto").unwrap();
+    let full_access = presets
+        .iter()
+        .find(|preset| preset.id == "full-access")
+        .unwrap();
+
+    for (initial, selected, key) in [
+        (default, full_access, KeyCode::Down),
+        (full_access, default, KeyCode::Up),
+    ] {
+        let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+        chat.config.notices.hide_full_access_warning = Some(true);
+        chat.set_approval_policy(initial.approval);
+        chat.set_sandbox_policy(initial.sandbox.clone()).unwrap();
+        chat.on_task_started();
+
+        chat.dispatch_command(SlashCommand::Permissions);
+        assert!(render_bottom_popup(&chat, 80).contains("Update Model Permissions"));
+        chat.handle_key_event(KeyEvent::from(key));
+        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+        while let Ok(event) = rx.try_recv() {
+            if let AppEvent::ChaosOp(op) = event {
+                assert!(chat.submit_op(op));
+            }
+        }
+
+        assert_eq!(
+            op_rx.try_recv().expect("live permission update submitted"),
+            Op::UpdatePermissions {
+                scope: PermissionUpdateScope::Session,
+                expected_revision: None,
+                approval_policy: Some(selected.approval),
+                sandbox_policy: Some(selected.sandbox.clone()),
+                grants: PermissionGrantUpdate::Unchanged,
+            }
+        );
+        assert!(op_rx.try_recv().is_err(), "must not interrupt the turn");
+        assert!(chat.bottom_pane.is_task_running());
+        assert!(chat.agent_turn_running);
+    }
 }
 
 #[cfg(test)]

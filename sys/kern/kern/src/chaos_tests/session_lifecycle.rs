@@ -1,4 +1,93 @@
 use super::*;
+use chaos_ipc::permissions::SocketPolicy;
+use chaos_ipc::protocol::ApprovalPolicy;
+use chaos_ipc::protocol::PermissionGrantUpdate;
+use chaos_ipc::protocol::PermissionUpdateScope;
+
+#[tokio::test]
+async fn update_permissions_changes_running_turn_without_waiting_for_completion() {
+    let (session, turn, rx) = make_session_and_context_with_rx().await;
+    session
+        .spawn_task(
+            Arc::clone(&turn),
+            Vec::new(),
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
+        )
+        .await;
+
+    let (tx_sub, rx_sub) = async_channel::unbounded();
+    let dispatch = tokio::spawn(submission_loop::submission_loop(
+        Arc::clone(&session),
+        session.get_config().await,
+        rx_sub,
+    ));
+
+    for (approval_policy, sandbox_policy) in [
+        (ApprovalPolicy::Headless, SandboxPolicy::RootAccess),
+        (
+            ApprovalPolicy::Interactive,
+            SandboxPolicy::new_workspace_write_policy(),
+        ),
+    ] {
+        let previous = session.permission_snapshot(&turn).await;
+        let expected_vfs = VfsPolicy::from_sandbox_policy(&sandbox_policy, &turn.cwd);
+        let expected_socket = SocketPolicy::from(&sandbox_policy);
+        tx_sub
+            .send(Submission {
+                id: "permissions".to_string(),
+                op: Op::UpdatePermissions {
+                    scope: PermissionUpdateScope::Session,
+                    expected_revision: None,
+                    approval_policy: Some(approval_policy),
+                    sandbox_policy: Some(sandbox_policy),
+                    grants: PermissionGrantUpdate::Unchanged,
+                },
+                trace: None,
+            })
+            .await
+            .expect("submit live permission update");
+
+        let event = tokio::time::timeout(StdDuration::from_secs(2), rx.recv())
+            .await
+            .expect("permission update must not wait for the running turn")
+            .expect("permission update event");
+        assert_eq!(event.id, "permissions");
+        let EventMsg::PermissionsUpdated(updated) = event.msg else {
+            panic!("expected permissions_updated, got {:?}", event.msg);
+        };
+        assert_eq!(updated.scope, PermissionUpdateScope::Session);
+        assert_eq!(updated.approval_policy, approval_policy);
+        assert_eq!(updated.vfs_policy, expected_vfs);
+        assert_eq!(updated.socket_policy, expected_socket);
+
+        let current = session.permission_snapshot(&turn).await;
+        assert!(current.revision > previous.revision);
+        assert_eq!(current.approval_policy, approval_policy);
+        assert_eq!(current.vfs_policy, expected_vfs);
+        assert_eq!(current.socket_policy, expected_socket);
+        let (active, cancellation_token) = session
+            .active_turn_context_and_cancellation_token()
+            .await
+            .expect("same turn should still be running");
+        assert_eq!(active.sub_id, turn.sub_id);
+        assert!(!cancellation_token.is_cancelled());
+
+        let state = session.state.lock().await;
+        assert_eq!(
+            state.session_configuration.approval_policy.value(),
+            approval_policy
+        );
+        assert_eq!(state.session_configuration.vfs_policy, expected_vfs);
+        assert_eq!(state.session_configuration.socket_policy, expected_socket);
+    }
+
+    drop(tx_sub);
+    dispatch.await.expect("submission loop should finish");
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
+}
 
 #[tokio::test]
 async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_only_update() {

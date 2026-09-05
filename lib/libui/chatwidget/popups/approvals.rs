@@ -1,6 +1,8 @@
 //! Approvals and permissions popup methods.
 use crate::app_event::UiCommand;
 use chaos_ipc::product::OS_NAME;
+use chaos_ipc::protocol::PermissionGrantUpdate;
+use chaos_ipc::protocol::PermissionUpdateScope;
 
 use super::super::*;
 
@@ -106,18 +108,14 @@ impl ChatWidget {
     ) -> Vec<SelectionAction> {
         vec![Box::new(move |tx| {
             let sandbox_clone = sandbox.clone();
-            tx.send(AppEvent::ChaosOp(Op::OverrideTurnContext {
-                cwd: None,
+            // Unlike a turn-context override, this also updates the running
+            // turn before its next tool call or retry.
+            tx.send(AppEvent::ChaosOp(Op::UpdatePermissions {
+                scope: PermissionUpdateScope::Session,
+                expected_revision: None,
                 approval_policy: Some(approval),
-                approvals_reviewer: Some(approvals_reviewer),
                 sandbox_policy: Some(sandbox_clone.clone()),
-
-                model: None,
-                effort: None,
-                summary: None,
-                service_tier: None,
-                collaboration_mode: None,
-                personality: None,
+                grants: PermissionGrantUpdate::Unchanged,
             }));
             tx.send(AppEvent::UpdateApprovalPolicy(approval));
             tx.send(AppEvent::UpdateSandboxPolicy(sandbox_clone));

@@ -75,6 +75,15 @@ Windows is not supported.
 For CI vs release coverage and provider wire formats, see
 [chaos-support(7)](./man/chaos-support.7.md).
 
+### Live permissions
+
+Use `/permissions` to change the current session's sandbox and approval policy,
+including while the model is working. The change applies to the running turn's
+next tool call or retry and to subsequent turns; it does not wait for the model
+to finish or interrupt its response. Tool attempts already running retain the
+permissions they started with. Enabling Full Access still requires confirmation
+unless its warning was previously acknowledged.
+
 ---
 
 ## Clamping / Docking

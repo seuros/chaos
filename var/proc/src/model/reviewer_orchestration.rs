@@ -53,6 +53,7 @@ impl ReviewAttemptState {
 pub struct ReviewRun {
     pub id: String,
     pub review_run_subject: String,
+    pub attestation_subject: String,
     pub owner_process_id: String,
     pub created_at: jiff::Timestamp,
     pub updated_at: jiff::Timestamp,
@@ -86,6 +87,7 @@ pub struct ReviewerAttempt {
 pub struct ReviewRunCreateParams {
     pub id: String,
     pub review_run_subject: String,
+    pub attestation_subject: String,
     pub owner_process_id: String,
 }
 
@@ -108,6 +110,7 @@ pub struct ReviewerAttemptCreateParams {
 pub(crate) struct ReviewRunRow {
     pub(crate) id: String,
     pub(crate) review_run_subject: String,
+    pub(crate) attestation_subject: String,
     pub(crate) owner_process_id: String,
     pub(crate) created_at: i64,
     pub(crate) updated_at: i64,
@@ -120,6 +123,7 @@ impl TryFrom<ReviewRunRow> for ReviewRun {
         Ok(Self {
             id: row.id,
             review_run_subject: row.review_run_subject,
+            attestation_subject: row.attestation_subject,
             owner_process_id: row.owner_process_id,
             created_at: timestamp(row.created_at)?,
             updated_at: timestamp(row.updated_at)?,

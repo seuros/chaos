@@ -97,17 +97,42 @@ where
     pub async fn start_run(
         &self,
         owner_process_id: &str,
+        review_scope: Option<&str>,
         selections: Vec<ReviewerSelection>,
     ) -> anyhow::Result<ReviewRun> {
         if owner_process_id.trim().is_empty() {
             bail!("review owner process id cannot be empty");
         }
         validate_diverse_selection(&selections)?;
+        let review_scope = match review_scope {
+            Some(scope) => {
+                let scope = scope.trim();
+                if scope.is_empty() {
+                    bail!("review scope cannot be empty");
+                }
+                Some(scope)
+            }
+            None => None,
+        };
+        let expected_attestation_subject = review_scope.map(review_run_subject);
+        if let Some(run) = self
+            .recover_idempotent_run(
+                owner_process_id,
+                expected_attestation_subject.as_deref(),
+                &selections,
+            )
+            .await?
+        {
+            return Ok(run);
+        }
 
         let run_id = Uuid::new_v4().to_string();
         let run_subject = review_run_subject(&run_id);
+        let attestation_subject = expected_attestation_subject
+            .clone()
+            .unwrap_or_else(|| run_subject.clone());
         let mut attempts = Vec::with_capacity(selections.len());
-        for (ordinal, selection) in selections.into_iter().enumerate() {
+        for (ordinal, selection) in selections.iter().enumerate() {
             let attempt_id = Uuid::new_v4().to_string();
             let attempt_subject = reviewer_attempt_subject(&attempt_id);
             // Construction is the host-only schema gate. It rejects malformed
@@ -115,36 +140,109 @@ where
             TrustedReviewProvenance::new(
                 selection.binding.account_subject.clone(),
                 selection.binding.model_family_subject.clone(),
-                run_subject.clone(),
+                attestation_subject.clone(),
                 attempt_subject.clone(),
                 selection.idempotency_key.clone(),
             )?;
             attempts.push(ReviewerAttemptCreateParams {
                 id: attempt_id,
                 ordinal: i64::try_from(ordinal).context("too many selected reviewers")?,
-                provider_id: selection.binding.provider_id,
-                model: selection.binding.model,
-                account_subject: selection.binding.account_subject,
-                model_family_subject: selection.binding.model_family_subject,
+                provider_id: selection.binding.provider_id.clone(),
+                model: selection.binding.model.clone(),
+                account_subject: selection.binding.account_subject.clone(),
+                model_family_subject: selection.binding.model_family_subject.clone(),
                 reviewer_attempt_subject: attempt_subject,
-                idempotency_key: selection.idempotency_key,
-                prompt: selection.prompt,
-                mcp_server: selection.mcp_server,
-                mcp_tool: selection.mcp_tool,
+                idempotency_key: selection.idempotency_key.clone(),
+                prompt: selection.prompt.clone(),
+                mcp_server: selection.mcp_server.clone(),
+                mcp_tool: selection.mcp_tool.clone(),
             });
         }
 
-        self.db
+        let created = self
+            .db
             .reviewer_orchestrations()
             .create_run(
                 &ReviewRunCreateParams {
                     id: run_id,
                     review_run_subject: run_subject,
+                    attestation_subject,
                     owner_process_id: owner_process_id.to_string(),
                 },
                 &attempts,
             )
-            .await
+            .await;
+        match created {
+            Ok(run) => Ok(run),
+            Err(error) => match self
+                .recover_idempotent_run(
+                    owner_process_id,
+                    expected_attestation_subject.as_deref(),
+                    &selections,
+                )
+                .await
+            {
+                Ok(Some(run)) => Ok(run),
+                Ok(None) => Err(error),
+                Err(recovery_error) => {
+                    Err(error.context(format!("idempotent recovery failed: {recovery_error:#}")))
+                }
+            },
+        }
+    }
+
+    async fn recover_idempotent_run(
+        &self,
+        owner_process_id: &str,
+        expected_attestation_subject: Option<&str>,
+        selections: &[ReviewerSelection],
+    ) -> anyhow::Result<Option<ReviewRun>> {
+        let store = self.db.reviewer_orchestrations();
+        let mut attempts = Vec::with_capacity(selections.len());
+        for selection in selections {
+            if let Some(attempt) = store
+                .get_attempt_by_idempotency_key(&selection.idempotency_key)
+                .await?
+            {
+                attempts.push(attempt);
+            }
+        }
+        if attempts.is_empty() {
+            return Ok(None);
+        }
+        if attempts.len() != selections.len() {
+            bail!("review idempotency key was reused with a different review request");
+        }
+
+        let run_id = attempts[0].run_id.as_str();
+        for (ordinal, (attempt, selection)) in attempts.iter().zip(selections).enumerate() {
+            let ordinal =
+                i64::try_from(ordinal).context("too many selected reviewers during recovery")?;
+            if attempt.run_id != run_id
+                || attempt.ordinal != ordinal
+                || attempt.provider_id != selection.binding.provider_id
+                || attempt.model != selection.binding.model
+                || attempt.account_subject != selection.binding.account_subject
+                || attempt.model_family_subject != selection.binding.model_family_subject
+                || attempt.prompt != selection.prompt
+                || attempt.mcp_server != selection.mcp_server
+                || attempt.mcp_tool != selection.mcp_tool
+            {
+                bail!("review idempotency key was reused with a different review request");
+            }
+        }
+
+        let run = store
+            .get_run(run_id)
+            .await?
+            .context("persisted idempotent review run is missing")?;
+        require_owner(&run, owner_process_id)?;
+        if expected_attestation_subject
+            .is_some_and(|expected| run.attestation_subject != expected)
+        {
+            bail!("review idempotency key was reused with a different review scope");
+        }
+        Ok(Some(run))
     }
 
     /// Continue every non-terminal attempt from its persisted state.
@@ -353,7 +451,7 @@ where
                     let provenance = TrustedReviewProvenance::new(
                         attempt.account_subject.clone(),
                         attempt.model_family_subject.clone(),
-                        run.review_run_subject.clone(),
+                        run.attestation_subject.clone(),
                         attempt.reviewer_attempt_subject.clone(),
                         attempt.idempotency_key.clone(),
                     )
@@ -1183,7 +1281,11 @@ mod tests {
         let boundary = FakeBoundary::default();
         let orchestrator = ReviewerOrchestrator::new(db, boundary.clone());
         let run = orchestrator
-            .start_run(OWNER, vec![selection(0, 'a', 'b'), selection(1, 'c', 'd')])
+            .start_run(
+                OWNER,
+                None,
+                vec![selection(0, 'a', 'b'), selection(1, 'c', 'd')],
+            )
             .await
             .unwrap();
         let attempts = orchestrator.resume_run(OWNER, &run.id).await.unwrap();
@@ -1208,12 +1310,114 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn exact_start_replay_recovers_the_persisted_run() {
+        let db = database().await;
+        let orchestrator = ReviewerOrchestrator::new(db.clone(), FakeBoundary::default());
+        let selected = selection(0, 'a', 'b');
+        let created = orchestrator
+            .start_run(OWNER, None, vec![selected.clone()])
+            .await
+            .unwrap();
+
+        let replayed = orchestrator
+            .start_run(OWNER, None, vec![selected])
+            .await
+            .unwrap();
+
+        assert_eq!(replayed, created);
+        assert_eq!(
+            db.reviewer_orchestrations()
+                .list_attempts(&created.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn independent_runs_share_one_scoped_attestation_subject() {
+        let db = database().await;
+        let orchestrator = ReviewerOrchestrator::new(db, FakeBoundary::default());
+        let first = orchestrator
+            .start_run(
+                "owner-one",
+                Some("review-round-1"),
+                vec![selection(0, 'a', 'b')],
+            )
+            .await
+            .unwrap();
+        let second = orchestrator
+            .start_run(
+                "owner-two",
+                Some("review-round-1"),
+                vec![selection(1, 'c', 'd')],
+            )
+            .await
+            .unwrap();
+
+        assert_ne!(first.id, second.id);
+        assert_ne!(first.review_run_subject, second.review_run_subject);
+        assert_eq!(first.attestation_subject, second.attestation_subject);
+    }
+
+    #[tokio::test]
+    async fn start_replay_rejects_changed_content() {
+        let db = database().await;
+        let orchestrator = ReviewerOrchestrator::new(db, FakeBoundary::default());
+        let selected = selection(0, 'a', 'b');
+        orchestrator
+            .start_run(OWNER, None, vec![selected.clone()])
+            .await
+            .unwrap();
+        let mut changed = selected;
+        changed.prompt.push_str(" with changed criteria");
+
+        let error = orchestrator
+            .start_run(OWNER, None, vec![changed])
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("reused with a different review request")
+        );
+    }
+
+    #[tokio::test]
+    async fn start_replay_rejects_changed_review_scope() {
+        let db = database().await;
+        let orchestrator = ReviewerOrchestrator::new(db, FakeBoundary::default());
+        let selected = selection(0, 'a', 'b');
+        orchestrator
+            .start_run(OWNER, Some("review-round-1"), vec![selected.clone()])
+            .await
+            .unwrap();
+
+        let error = orchestrator
+            .start_run(OWNER, Some("review-round-2"), vec![selected])
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("reused with a different review scope")
+        );
+    }
+
+    #[tokio::test]
     async fn duplicate_credential_is_rejected_before_spawn_or_submission() {
         let db = database().await;
         let boundary = FakeBoundary::default();
         let orchestrator = ReviewerOrchestrator::new(db, boundary.clone());
         let error = orchestrator
-            .start_run(OWNER, vec![selection(0, 'a', 'b'), selection(1, 'a', 'c')])
+            .start_run(
+                OWNER,
+                None,
+                vec![selection(0, 'a', 'b'), selection(1, 'a', 'c')],
+            )
             .await
             .unwrap_err();
 
@@ -1230,7 +1434,7 @@ mod tests {
         boundary.state.lock().await.mismatch_model = true;
         let orchestrator = ReviewerOrchestrator::new(db.clone(), boundary.clone());
         let run = orchestrator
-            .start_run(OWNER, vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, None, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
         let error = orchestrator.resume_run(OWNER, &run.id).await.unwrap_err();
@@ -1255,7 +1459,7 @@ mod tests {
         boundary.state.lock().await.drop_first_ack = true;
         let orchestrator = ReviewerOrchestrator::new(db.clone(), boundary.clone());
         let run = orchestrator
-            .start_run(OWNER, vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, None, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
 
@@ -1306,7 +1510,7 @@ mod tests {
         );
         let orchestrator = ReviewerOrchestrator::new(db.clone(), boundary.clone());
         let run = orchestrator
-            .start_run(OWNER, vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, None, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
         let error = orchestrator.resume_run(OWNER, &run.id).await.unwrap_err();
@@ -1332,7 +1536,7 @@ mod tests {
         let db = database().await;
         let orchestrator = ReviewerOrchestrator::new(db, FakeBoundary::default());
         let run = orchestrator
-            .start_run(OWNER, vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, None, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
 
@@ -1356,7 +1560,7 @@ mod tests {
             .insert("next".to_string(), ReviewerOutput::Pending);
         let orchestrator = ReviewerOrchestrator::new(db, boundary.clone());
         let run = orchestrator
-            .start_run(OWNER, vec![selection(0, 'a', 'b')])
+            .start_run(OWNER, None, vec![selection(0, 'a', 'b')])
             .await
             .unwrap();
         let attempts = orchestrator.resume_run(OWNER, &run.id).await.unwrap();

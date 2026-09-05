@@ -56,6 +56,24 @@ impl ReviewerOrchestrations {
         }
     }
 
+    pub async fn get_attempt_by_idempotency_key(
+        &self,
+        idempotency_key: &str,
+    ) -> anyhow::Result<Option<ReviewerAttempt>> {
+        match &self.db {
+            RuntimeDbHandle::Postgres(runtime) => {
+                runtime
+                    .get_reviewer_attempt_by_idempotency_key(idempotency_key)
+                    .await
+            }
+            RuntimeDbHandle::Sqlite(runtime) => {
+                runtime
+                    .get_reviewer_attempt_by_idempotency_key(idempotency_key)
+                    .await
+            }
+        }
+    }
+
     /// Compare-and-swap one declared lifecycle transition.
     ///
     /// `false` means another owner already advanced the attempt. Callers must
@@ -276,6 +294,7 @@ mod tests {
         ReviewRunCreateParams {
             id: "run-1".to_string(),
             review_run_subject: format!("review-run:v1:{}", "a".repeat(64)),
+            attestation_subject: format!("review-run:v1:{}", "b".repeat(64)),
             owner_process_id: "owner-process-1".to_string(),
         }
     }

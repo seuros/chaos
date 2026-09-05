@@ -28,6 +28,7 @@ struct StartAttestedReviewArgs {
     model: String,
     server: String,
     idempotency_key: String,
+    review_scope: Option<String>,
 }
 
 pub struct StartAttestedReviewHandler;
@@ -88,6 +89,7 @@ impl ToolHandler for StartAttestedReviewHandler {
         let run = orchestrator
             .start_run(
                 &owner_process_id,
+                args.review_scope.as_deref(),
                 vec![ReviewerSelection {
                     binding,
                     prompt,
@@ -148,6 +150,15 @@ pub(crate) fn tool() -> ToolSpec {
             },
         ),
         (
+            "review_scope".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Stable public review-round scope. Independent reviewer runs for the same round must pass the same value so ChaOS emits one shared opaque run subject."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
             "idempotency_key".to_string(),
             JsonSchema::String {
                 description: Some(
@@ -159,7 +170,7 @@ pub(crate) fn tool() -> ToolSpec {
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: TOOL_NAME.to_string(),
-        description: "Start one host-attested independent review through a selected MCP server's currently visible `submit_review_verdict` capability. ChaOS binds an exact configured provider/account and canonical model family, runs the reviewer with strict structured output, persists the state machine before side effects, and submits the verdict with protected provenance. Use only after the user authorized independent or multi-model review. Returns a run id immediately; use resume_attested_review until terminal."
+        description: "Start one host-attested independent review through a selected MCP server's currently visible `submit_review_verdict` capability. ChaOS binds an exact configured provider/account and canonical model family, runs the reviewer with strict structured output, persists the state machine before side effects, and submits the verdict with protected provenance. Pass the same review_scope for every independent reviewer in one review round. Use only after the user authorized independent or multi-model review. Returns a run id immediately; use resume_attested_review until terminal."
             .to_string(),
         strict: false,
         defer_loading: None,

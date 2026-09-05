@@ -20,13 +20,14 @@ impl StateRuntime {
         sqlx::query(
             r#"
 INSERT INTO review_runs (
-    id, review_run_subject, owner_process_id, created_at, updated_at
+    id, review_run_subject, attestation_subject, owner_process_id, created_at, updated_at
 )
-VALUES (?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&run.id)
         .bind(&run.review_run_subject)
+        .bind(&run.attestation_subject)
         .bind(&run.owner_process_id)
         .bind(now)
         .bind(now)
@@ -77,6 +78,7 @@ INSERT INTO reviewer_attempts (
         Ok(ReviewRun {
             id: run.id.clone(),
             review_run_subject: run.review_run_subject.clone(),
+            attestation_subject: run.attestation_subject.clone(),
             owner_process_id: run.owner_process_id.clone(),
             created_at: jiff::Timestamp::from_second(now)?,
             updated_at: jiff::Timestamp::from_second(now)?,
@@ -86,7 +88,7 @@ INSERT INTO reviewer_attempts (
     pub(crate) async fn get_review_run(&self, run_id: &str) -> anyhow::Result<Option<ReviewRun>> {
         sqlx::query_as::<_, ReviewRunRow>(
             r#"
-SELECT id, review_run_subject, owner_process_id, created_at, updated_at
+SELECT id, review_run_subject, attestation_subject, owner_process_id, created_at, updated_at
 FROM review_runs
 WHERE id = ?
             "#,
@@ -136,6 +138,28 @@ WHERE id = ?
             "#,
         )
         .bind(attempt_id)
+        .fetch_optional(self.pool())
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+    }
+
+    pub(crate) async fn get_reviewer_attempt_by_idempotency_key(
+        &self,
+        idempotency_key: &str,
+    ) -> anyhow::Result<Option<ReviewerAttempt>> {
+        sqlx::query_as::<_, ReviewerAttemptRow>(
+            r#"
+SELECT
+    id, run_id, ordinal, state, provider_id, model, account_subject,
+    model_family_subject, reviewer_attempt_subject, idempotency_key,
+    prompt, mcp_server, mcp_tool, process_id, raw_output, submission_json,
+    failure, created_at, updated_at, completed_at
+FROM reviewer_attempts
+WHERE idempotency_key = ?
+            "#,
+        )
+        .bind(idempotency_key)
         .fetch_optional(self.pool())
         .await?
         .map(TryInto::try_into)
@@ -213,13 +237,14 @@ impl PostgresRuntime {
         sqlx::query(
             r#"
 INSERT INTO review_runs (
-    id, review_run_subject, owner_process_id, created_at, updated_at
+    id, review_run_subject, attestation_subject, owner_process_id, created_at, updated_at
 )
-VALUES ($1, $2, $3, $4, $5)
+VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(&run.id)
         .bind(&run.review_run_subject)
+        .bind(&run.attestation_subject)
         .bind(&run.owner_process_id)
         .bind(now)
         .bind(now)
@@ -270,6 +295,7 @@ INSERT INTO reviewer_attempts (
         Ok(ReviewRun {
             id: run.id.clone(),
             review_run_subject: run.review_run_subject.clone(),
+            attestation_subject: run.attestation_subject.clone(),
             owner_process_id: run.owner_process_id.clone(),
             created_at: jiff::Timestamp::from_second(now)?,
             updated_at: jiff::Timestamp::from_second(now)?,
@@ -279,7 +305,7 @@ INSERT INTO reviewer_attempts (
     pub(crate) async fn get_review_run(&self, run_id: &str) -> anyhow::Result<Option<ReviewRun>> {
         sqlx::query_as::<_, ReviewRunRow>(
             r#"
-SELECT id, review_run_subject, owner_process_id, created_at, updated_at
+SELECT id, review_run_subject, attestation_subject, owner_process_id, created_at, updated_at
 FROM review_runs
 WHERE id = $1
             "#,
@@ -331,6 +357,29 @@ WHERE id = $1
             "#,
         )
         .bind(attempt_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+    }
+
+    pub(crate) async fn get_reviewer_attempt_by_idempotency_key(
+        &self,
+        idempotency_key: &str,
+    ) -> anyhow::Result<Option<ReviewerAttempt>> {
+        sqlx::query_as::<_, ReviewerAttemptRow>(
+            r#"
+SELECT
+    id, run_id, ordinal, state, provider_id, model, account_subject,
+    model_family_subject, reviewer_attempt_subject, idempotency_key,
+    prompt, mcp_server, mcp_tool, process_id, raw_output,
+    submission_json::text AS submission_json,
+    failure, created_at, updated_at, completed_at
+FROM reviewer_attempts
+WHERE idempotency_key = $1
+            "#,
+        )
+        .bind(idempotency_key)
         .fetch_optional(&self.pool)
         .await?
         .map(TryInto::try_into)

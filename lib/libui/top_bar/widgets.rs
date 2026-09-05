@@ -16,6 +16,7 @@ pub(super) mod os;
 pub(super) mod persistence;
 pub(super) mod sandbox;
 pub(super) mod storage;
+pub(super) mod version;
 
 pub(super) fn initial_widgets(
     name: String,
@@ -23,6 +24,7 @@ pub(super) fn initial_widgets(
     persistence: watch::Receiver<PersistenceStatus>,
 ) -> Vec<BarWidget> {
     vec![
+        version::new(),
         hostname::new(name),
         storage::new(persistence.clone()),
         self::persistence::new(persistence),

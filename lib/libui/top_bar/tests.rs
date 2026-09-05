@@ -39,6 +39,7 @@ fn text(buffer: &Buffer) -> String {
 }
 
 pub(crate) fn top_bar_suite() {
+    version_presentation_and_resizing();
     shared_content_measures_unicode_and_uses_container_palette();
     watched_state_selects_coalesces_and_retains_snapshots();
     clock_fills_row_and_hides_whole_below_minimum_width();
@@ -57,6 +58,45 @@ pub(crate) fn top_bar_suite() {
     {
         pinned_widget_row_preserves_cursor_viewport_and_history();
         pinned_full_bar_clears_backend_and_warning_transitions();
+    }
+}
+
+fn version_presentation_and_resizing() {
+    let base = chaos_ipc::product::display_name_with_version();
+    let sha = "abc123456789abcdef0123456789abcdef01234567";
+    for (debug, revision, suffix) in [
+        (false, None, ""),
+        (false, Some(sha), ""),
+        (true, None, ""),
+        (true, Some(""), ""),
+        (true, Some(sha), " abc1234"),
+    ] {
+        let label = format!("{base}{suffix}");
+        let mut widget = BarWidget::text(
+            "version",
+            Side::Left,
+            170,
+            widgets::version::present(debug, revision),
+        );
+        let width = crate::width::display_width(&label) as u16;
+        assert_eq!(widget.spec().min_width, usize::from(width));
+        let update = widget.refresh(&"2026-09-05T12:34:00Z[UTC]".parse().unwrap());
+        assert!(!update.changed);
+        assert_eq!(update.next, None);
+        let widgets = [widget];
+        let wide = render(&widgets, width + 2);
+        assert_eq!(text(&wide), format!(" {label} "));
+        let palette = crate::theme::palette();
+        assert_eq!(
+            wide[(1, 0)].fg,
+            if debug {
+                palette.warning
+            } else {
+                palette.top_bar_fg
+            }
+        );
+        assert!(text(&render(&widgets, width + 1)).trim().is_empty());
+        assert_eq!(render(&widgets, width + 2), wide);
     }
 }
 
@@ -283,6 +323,7 @@ fn full_bar_preserves_visual_order_and_priorities() {
     assert_eq!(
         order,
         [
+            ("version", 170),
             ("hostname", 180),
             ("os", 100),
             ("architecture", 80),
@@ -295,11 +336,17 @@ fn full_bar_preserves_visual_order_and_priorities() {
             ("clock", 220),
         ]
     );
-    let expected = " host │ linux (arch) │ x86_64 │ seccomp │ podman │ tmux %3 SQLITE │ ⚠ log │ ● 87% │ 12:34 ";
-    let width = crate::width::display_width(expected) as u16;
+    let version_width = widgets[0].spec().min_width as u16;
+    let version = text(&render(&widgets[..1], version_width + 2));
+    let expected = format!(
+        " {} │ host │ linux (arch) │ x86_64 │ seccomp │ podman │ tmux %3 SQLITE │ ⚠ log │ ● 87% │ 12:34 ",
+        version.trim()
+    );
+    let width = crate::width::display_width(&expected) as u16;
     let wide = render(&widgets, width);
     assert_eq!(text(&wide), expected);
     let narrow = text(&render(&widgets, width - 1));
+    assert!(narrow.contains(version.trim()));
     assert!(
         !narrow.contains("x86_64"),
         "the lowest-priority widget goes first"

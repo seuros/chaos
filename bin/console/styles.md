@@ -25,6 +25,7 @@ Left-to-right order within each side is independent of visibility priority:
 
 | Side | Widget | Priority |
 |---|---|---:|
+| Left | FreeChaOS version | 170 |
 | Left | Hostname | 180 |
 | Left | OS/distro | 100 |
 | Left | Architecture | 80 |
@@ -47,6 +48,9 @@ Left-to-right order within each side is independent of visibility priority:
   redraws on changes; do not perform I/O or create timers inside rendering.
 - The clock refreshes on wall-clock minute boundaries, including while hidden.
   Disabling the bar or dropping the UI cancels its updater.
+- Version: `FreeChaOS (vX.Y.Z)`, normal foreground. Debug builds use warning color
+  and append an optional seven-character source SHA, captured at build time—not
+  from the opened project. No dirty marker or debug label.
 - The hostname is collected once. Power is read immediately and every 30 seconds
   on a background worker, never under the rendering lock. No overlapping reads
   or catch-up bursts; on macOS each `pmset` read has a two-second deadline.

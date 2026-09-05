@@ -267,12 +267,9 @@ impl MetricsClient {
         )
     }
 
-    pub fn start_timer(
-        &self,
-        name: &str,
-        tags: &[(&str, &str)],
-    ) -> std::result::Result<Timer, MetricsError> {
-        Ok(Timer::new(name, tags, self))
+    /// Start a timer. Metric and tag validation occurs when the timer records.
+    pub fn start_timer(&self, name: &str, tags: &[(&str, &str)]) -> Timer {
+        Timer::new(name, tags, self)
     }
 
     /// Collect a runtime metrics snapshot without shutting down the provider.
@@ -364,10 +361,7 @@ fn build_otlp_metric_exporter(
             let default_tls = crate::config::OtelTlsConfig::default();
             let tls_ref = tls.as_ref().unwrap_or(&default_tls);
             let client =
-                crate::otlp::build_http_client(tls_ref, OTEL_EXPORTER_OTLP_METRICS_TIMEOUT)
-                    .map_err(|err| MetricsError::InvalidConfig {
-                        message: err.to_string(),
-                    })?;
+                crate::otlp::build_http_client(tls_ref, OTEL_EXPORTER_OTLP_METRICS_TIMEOUT);
             exporter_builder = exporter_builder.with_http_client(client);
 
             exporter_builder

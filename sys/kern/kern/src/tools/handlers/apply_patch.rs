@@ -43,23 +43,16 @@ fn file_paths_for_action(action: &ApplyPatchAction) -> Vec<AbsolutePathBuf> {
     let cwd = action.cwd.as_path();
 
     for (path, change) in action.changes() {
-        if let Some(key) = to_abs_path(cwd, path) {
-            keys.push(key);
-        }
+        keys.push(AbsolutePathBuf::resolve_path_against_base(path, cwd));
 
         if let ApplyPatchFileChange::Update { move_path, .. } = change
             && let Some(dest) = move_path
-            && let Some(key) = to_abs_path(cwd, dest)
         {
-            keys.push(key);
+            keys.push(AbsolutePathBuf::resolve_path_against_base(dest, cwd));
         }
     }
 
     keys
-}
-
-fn to_abs_path(cwd: &Path, path: &Path) -> Option<AbsolutePathBuf> {
-    AbsolutePathBuf::resolve_path_against_base(path, cwd).ok()
 }
 
 fn write_permissions_for_paths(file_paths: &[AbsolutePathBuf]) -> Option<PermissionProfile> {
@@ -84,7 +77,9 @@ fn write_permissions_for_paths(file_paths: &[AbsolutePathBuf]) -> Option<Permiss
         ..Default::default()
     })?;
 
-    crate::sandboxing::normalize_additional_permissions(permissions).ok()
+    Some(crate::sandboxing::normalize_additional_permissions(
+        permissions,
+    ))
 }
 
 async fn effective_patch_permissions(

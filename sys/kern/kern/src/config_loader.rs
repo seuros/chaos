@@ -139,7 +139,7 @@ pub async fn load_config_layers_state(
     // Add a layer for $CHAOS_HOME/config.toml if it exists. Note if the file
     // exists, but is malformed, then this error should be propagated to the
     // user.
-    let user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, chaos_home)?;
+    let user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, chaos_home);
     let user_layer = load_config_toml_for_required_layer(&user_file, |config_toml| {
         ConfigLayerEntry::new(
             ConfigLayerSource::User {
@@ -842,7 +842,7 @@ async fn load_project_layers(
     dirs.reverse();
 
     let mut layers = Vec::new();
-    let project_mcp_json = project_root.join(PROJECT_MCP_JSON_FILE)?;
+    let project_mcp_json = project_root.join(PROJECT_MCP_JSON_FILE);
     match tokio::fs::read_to_string(project_mcp_json.as_path()).await {
         Ok(contents) => match parse_project_mcp_json(&contents) {
             Ok(config) => layers.push(project_mcp_layer_entry(
@@ -886,7 +886,7 @@ async fn load_project_layers(
         if dot_chaos_abs == chaos_home_abs || dot_chaos_normalized == chaos_home_normalized {
             continue;
         }
-        let config_file = dot_chaos_abs.join(CONFIG_TOML_FILE)?;
+        let config_file = dot_chaos_abs.join(CONFIG_TOML_FILE);
         match tokio::fs::read_to_string(&config_file).await {
             Ok(contents) => {
                 let config: TomlValue = match toml::from_str(&contents) {
@@ -991,7 +991,7 @@ foo = "xyzzy"
         expected_toml_value.insert(
             "model_instructions_file".to_string(),
             TomlValue::String(
-                AbsolutePathBuf::resolve_path_against_base("./some_file.md", base_dir)?
+                AbsolutePathBuf::resolve_path_against_base("./some_file.md", base_dir)
                     .as_path()
                     .to_string_lossy()
                     .to_string(),

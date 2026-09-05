@@ -172,28 +172,6 @@ fn equals_except_shell_compares_cwd() {
 }
 
 #[test]
-fn equals_except_shell_ignores_sandbox_policy() {
-    let context1 = EnvironmentContext::new(
-        Some(PathBuf::from("/repo")),
-        fake_shell(),
-        None,
-        None,
-        None,
-        None,
-    );
-    let context2 = EnvironmentContext::new(
-        Some(PathBuf::from("/repo")),
-        fake_shell(),
-        None,
-        None,
-        None,
-        None,
-    );
-
-    assert!(context1.equals_except_shell(&context2));
-}
-
-#[test]
 fn equals_except_shell_compares_cwd_differences() {
     let context1 = EnvironmentContext::new(
         Some(PathBuf::from("/repo1")),

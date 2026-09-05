@@ -281,13 +281,9 @@ where
         draw(&mut self.backend, updates.into_iter())
     }
 
-    /// Updates the Terminal so that internal buffers match the requested area.
-    ///
-    /// Requested area will be saved to remain consistent when rendering. This leads to a full clear
-    /// of the screen.
-    pub fn resize(&mut self, screen_size: Size) -> io::Result<()> {
+    /// Saves the requested screen size for subsequent rendering.
+    pub fn resize(&mut self, screen_size: Size) {
         self.last_known_screen_size = screen_size;
-        Ok(())
     }
 
     /// Sets the viewport area.
@@ -302,7 +298,7 @@ where
     pub fn autoresize(&mut self) -> io::Result<()> {
         let screen_size = self.size()?;
         if screen_size != self.last_known_screen_size {
-            self.resize(screen_size)?;
+            self.resize(screen_size);
         }
         Ok(())
     }

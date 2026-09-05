@@ -269,8 +269,7 @@ fn restricted_file_system_policy_treats_root_with_carveouts_as_scoped_access() {
         .last()
         .and_then(|path| AbsolutePathBuf::from_absolute_path(path).ok())
         .expect("filesystem root");
-    let blocked =
-        AbsolutePathBuf::resolve_path_against_base("blocked", cwd.path()).expect("resolve blocked");
+    let blocked = AbsolutePathBuf::resolve_path_against_base("blocked", cwd.path());
     let expected_blocked = AbsolutePathBuf::from_absolute_path(
         cwd.path()
             .canonicalize()
@@ -321,8 +320,7 @@ fn restricted_file_system_policy_derives_effective_paths() {
     let canonical_cwd = cwd.path().canonicalize().expect("canonicalize cwd");
     let cwd_absolute =
         AbsolutePathBuf::from_absolute_path(&canonical_cwd).expect("absolute tempdir");
-    let secret = AbsolutePathBuf::resolve_path_against_base("secret", cwd.path())
-        .expect("resolve unreadable path");
+    let secret = AbsolutePathBuf::resolve_path_against_base("secret", cwd.path());
     let expected_secret = AbsolutePathBuf::from_absolute_path(canonical_cwd.join("secret"))
         .expect("canonical secret");
     let expected_agents = AbsolutePathBuf::from_absolute_path(canonical_cwd.join(".agents"))
@@ -387,10 +385,8 @@ fn restricted_file_system_policy_derives_effective_paths() {
 fn restricted_file_system_policy_treats_read_entries_as_read_only_subpaths() {
     let cwd = TempDir::new().expect("tempdir");
     let canonical_cwd = cwd.path().canonicalize().expect("canonicalize cwd");
-    let docs =
-        AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
-    let docs_public = AbsolutePathBuf::resolve_path_against_base("docs/public", cwd.path())
-        .expect("resolve docs/public");
+    let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
+    let docs_public = AbsolutePathBuf::resolve_path_against_base("docs/public", cwd.path());
     let expected_docs =
         AbsolutePathBuf::from_absolute_path(canonical_cwd.join("docs")).expect("canonical docs");
     let expected_docs_public =
@@ -426,8 +422,7 @@ fn restricted_file_system_policy_treats_read_entries_as_read_only_subpaths() {
 #[test]
 fn legacy_workspace_write_nested_readable_root_stays_writable() {
     let cwd = TempDir::new().expect("tempdir");
-    let docs =
-        AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
+    let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
     let canonical_cwd = cwd.path().canonicalize().expect("canonicalize cwd");
     let policy = SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],
@@ -475,12 +470,9 @@ fn file_system_policy_rejects_legacy_bridge_for_non_workspace_writes() {
 #[test]
 fn legacy_sandbox_policy_semantics_survive_split_bridge() {
     let cwd = TempDir::new().expect("tempdir");
-    let readable_root = AbsolutePathBuf::resolve_path_against_base("readable", cwd.path())
-        .expect("resolve readable root");
-    let writable_root = AbsolutePathBuf::resolve_path_against_base("writable", cwd.path())
-        .expect("resolve writable root");
-    let nested_readable_root = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path())
-        .expect("resolve nested readable root");
+    let readable_root = AbsolutePathBuf::resolve_path_against_base("readable", cwd.path());
+    let writable_root = AbsolutePathBuf::resolve_path_against_base("writable", cwd.path());
+    let nested_readable_root = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
     let policies = [
         SandboxPolicy::RootAccess,
         SandboxPolicy::ExternalSandbox {

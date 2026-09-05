@@ -451,10 +451,7 @@ fn default_read_only_subpaths_for_writable_root(
     writable_root: &AbsolutePathBuf,
 ) -> Vec<AbsolutePathBuf> {
     let mut subpaths: Vec<AbsolutePathBuf> = Vec::new();
-    #[allow(clippy::expect_used)]
-    let top_level_git = writable_root
-        .join(".git")
-        .expect(".git is a valid relative path");
+    let top_level_git = writable_root.join(".git");
     let top_level_git_is_file = top_level_git.as_path().is_file();
     let top_level_git_is_dir = top_level_git.as_path().is_dir();
     if top_level_git_is_dir || top_level_git_is_file {
@@ -468,8 +465,7 @@ fn default_read_only_subpaths_for_writable_root(
     }
 
     for subdir in &[".agents", ".chaos"] {
-        #[allow(clippy::expect_used)]
-        let top_level_codex = writable_root.join(subdir).expect("valid relative path");
+        let top_level_codex = writable_root.join(subdir);
         if top_level_codex.as_path().is_dir() {
             subpaths.push(top_level_codex);
         }

@@ -125,8 +125,7 @@ impl TextArea {
     }
 
     pub fn set_cursor(&mut self, pos: usize) {
-        self.cursor_pos = pos.clamp(0, self.text.len());
-        self.cursor_pos = self.clamp_pos_to_nearest_boundary(self.cursor_pos);
+        self.cursor_pos = self.clamp_pos_to_nearest_boundary(pos);
         self.preferred_col = None;
     }
 
@@ -162,37 +161,15 @@ impl TextArea {
         while next < self.text.len() && !self.text.is_char_boundary(next) {
             next += 1;
         }
-        if pos.saturating_sub(prev) <= next.saturating_sub(pos) {
-            prev
-        } else {
-            next
-        }
+        if pos - prev <= next - pos { prev } else { next }
     }
 
     pub(super) fn clamp_pos_to_nearest_boundary(&self, pos: usize) -> usize {
         let pos = self.clamp_pos_to_char_boundary(pos);
         if let Some(idx) = self.find_element_containing(pos) {
             let e = &self.elements[idx];
-            let dist_start = pos.saturating_sub(e.range.start);
-            let dist_end = e.range.end.saturating_sub(pos);
-            if dist_start <= dist_end {
-                self.clamp_pos_to_char_boundary(e.range.start)
-            } else {
-                self.clamp_pos_to_char_boundary(e.range.end)
-            }
-        } else {
-            pos
-        }
-    }
-
-    pub(super) fn clamp_pos_for_insertion(&self, pos: usize) -> usize {
-        let pos = self.clamp_pos_to_char_boundary(pos);
-        // Do not allow inserting into the middle of an element
-        if let Some(idx) = self.find_element_containing(pos) {
-            let e = &self.elements[idx];
-            // Choose closest edge for insertion
-            let dist_start = pos.saturating_sub(e.range.start);
-            let dist_end = e.range.end.saturating_sub(pos);
+            let dist_start = pos - e.range.start;
+            let dist_end = e.range.end - pos;
             if dist_start <= dist_end {
                 self.clamp_pos_to_char_boundary(e.range.start)
             } else {

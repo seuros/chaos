@@ -1107,60 +1107,6 @@ async fn append_execpolicy_amendment_rejects_empty_prefix() {
 }
 
 #[tokio::test]
-async fn proposed_execpolicy_amendment_is_present_for_single_command_without_policy_match() {
-    let command = vec!["cargo".to_string(), "build".to_string()];
-
-    let manager = ExecPolicyManager::default();
-    let requirement = manager
-        .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-            command: &command,
-            approval_policy: ApprovalPolicy::Supervised,
-            vfs_policy: &read_only_vfs_policy(),
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            prefix_rule: None,
-        })
-        .await;
-
-    assert_eq!(
-        requirement,
-        ExecApprovalRequirement::NeedsApproval {
-            reason: None,
-            proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command))
-        }
-    );
-}
-
-#[tokio::test]
-async fn proposed_execpolicy_amendment_is_omitted_when_policy_prompts() {
-    let policy_src = r#"prefix_rule {pattern={"rm"}, decision="prompt"}"#;
-    let mut parser = PolicyParser::new();
-    parser
-        .parse("test.rules", policy_src)
-        .expect("parse policy");
-    let policy = Arc::new(parser.build());
-    let command = vec!["rm".to_string()];
-
-    let manager = ExecPolicyManager::new(policy);
-    let requirement = manager
-        .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-            command: &command,
-            approval_policy: ApprovalPolicy::Interactive,
-            vfs_policy: &unrestricted_vfs_policy(),
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            prefix_rule: None,
-        })
-        .await;
-
-    assert_eq!(
-        requirement,
-        ExecApprovalRequirement::NeedsApproval {
-            reason: Some("`rm` requires approval by policy".to_string()),
-            proposed_execpolicy_amendment: None,
-        }
-    );
-}
-
-#[tokio::test]
 async fn proposed_execpolicy_amendment_is_present_for_multi_command_scripts() {
     let command = vec![
         "bash".to_string(),

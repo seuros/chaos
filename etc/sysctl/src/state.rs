@@ -2,13 +2,13 @@ use crate::config_requirements::ConfigRequirements;
 use crate::config_requirements::ConfigRequirementsToml;
 
 use super::fingerprint::record_origins;
+use super::fingerprint::toml_to_json;
 use super::fingerprint::version_for_toml;
 use super::merge::merge_toml_values;
 use chaos_ipc::api::ConfigLayer;
 use chaos_ipc::api::ConfigLayerMetadata;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_realpath::AbsolutePathBuf;
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use toml::Value as TomlValue;
 
@@ -82,7 +82,7 @@ impl ConfigLayerEntry {
         ConfigLayer {
             name: self.name.clone(),
             version: self.version.clone(),
-            config: serde_json::to_value(&self.config).unwrap_or(JsonValue::Null),
+            config: toml_to_json(&self.config),
             disabled_reason: self.disabled_reason.clone(),
         }
     }

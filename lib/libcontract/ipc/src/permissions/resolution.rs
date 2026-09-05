@@ -288,7 +288,7 @@ impl VfsPolicy {
                                     if suffix.as_os_str().is_empty() {
                                         return None;
                                     }
-                                    root.join(suffix).ok()
+                                    Some(root.join(suffix))
                                 })
                             }
                         } else {
@@ -581,7 +581,7 @@ fn resolve_candidate_path(path: &Path, cwd: &Path) -> Option<AbsolutePathBuf> {
     if path.is_absolute() {
         AbsolutePathBuf::from_absolute_path(path).ok()
     } else {
-        AbsolutePathBuf::resolve_path_against_base(path, cwd).ok()
+        Some(AbsolutePathBuf::resolve_path_against_base(path, cwd))
     }
 }
 
@@ -682,9 +682,7 @@ fn resolve_vfs_special_path(
         VfsSpecialPath::ProjectRoots { subpath } => {
             let cwd = cwd?;
             match subpath.as_ref() {
-                Some(subpath) => {
-                    AbsolutePathBuf::resolve_path_against_base(subpath, cwd.as_path()).ok()
-                }
+                Some(subpath) => Some(cwd.join(subpath)),
                 None => Some(cwd.clone()),
             }
         }
@@ -749,10 +747,7 @@ fn default_read_only_subpaths_for_writable_root(
     writable_root: &AbsolutePathBuf,
 ) -> Vec<AbsolutePathBuf> {
     let mut subpaths: Vec<AbsolutePathBuf> = Vec::new();
-    #[allow(clippy::expect_used)]
-    let top_level_git = writable_root
-        .join(".git")
-        .expect(".git is a valid relative path");
+    let top_level_git = writable_root.join(".git");
     // This applies to typical repos (directory .git), worktrees/submodules
     // (file .git with gitdir pointer), and bare repos when the gitdir is the
     // writable root itself.
@@ -771,8 +766,7 @@ fn default_read_only_subpaths_for_writable_root(
     // Make .agents/skills and the project config folder (.chaos) read-only to
     // the agent, by default.
     for subdir in &[".agents", ".chaos"] {
-        #[allow(clippy::expect_used)]
-        let top_level_codex = writable_root.join(subdir).expect("valid relative path");
+        let top_level_codex = writable_root.join(subdir);
         if top_level_codex.as_path().is_dir() {
             subpaths.push(top_level_codex);
         }

@@ -314,9 +314,9 @@ fn seed_keyring_and_fallback_auth_file_for_delete<F>(
     compute_key: F,
 ) -> anyhow::Result<(String, PathBuf)>
 where
-    F: FnOnce() -> std::io::Result<String>,
+    F: FnOnce() -> String,
 {
-    let key = compute_key()?;
+    let key = compute_key();
     mock_keyring.save(KEYRING_SERVICE, &key, "{}")?;
     let auth_file = get_auth_file(chaos_home);
     std::fs::write(&auth_file, "stale")?;
@@ -329,9 +329,9 @@ fn seed_keyring_with_auth<F>(
     auth: &AuthDotJson,
 ) -> anyhow::Result<()>
 where
-    F: FnOnce() -> std::io::Result<String>,
+    F: FnOnce() -> String,
 {
-    let key = compute_key()?;
+    let key = compute_key();
     let serialized = serde_json::to_string(&normalized(auth))?;
     mock_keyring.save(KEYRING_SERVICE, &key, &serialized)?;
     Ok(())
@@ -413,13 +413,12 @@ fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
 }
 
 #[test]
-fn keyring_auth_storage_compute_store_key_for_home_directory() -> anyhow::Result<()> {
+fn keyring_auth_storage_compute_store_key_for_home_directory() {
     let chaos_home = PathBuf::from("~/.chaos");
 
-    let key = compute_store_key(chaos_home.as_path())?;
+    let key = compute_store_key(chaos_home.as_path());
 
     assert_eq!(key, "cli|b05defd32ba63b04");
-    Ok(())
 }
 
 #[test]
@@ -454,7 +453,7 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
 
     storage.save(&auth)?;
 
-    let key = compute_store_key(chaos_home.path())?;
+    let key = compute_store_key(chaos_home.path());
     assert_keyring_saved_auth_and_removed_fallback(&mock_keyring, &key, chaos_home.path(), &auth);
     Ok(())
 }
@@ -531,7 +530,7 @@ fn auto_auth_storage_load_falls_back_when_keyring_errors() -> anyhow::Result<()>
         chaos_home.path().to_path_buf(),
         Arc::new(mock_keyring.clone()),
     );
-    let key = compute_store_key(chaos_home.path())?;
+    let key = compute_store_key(chaos_home.path());
     mock_keyring.set_error(&key, KeyringError::Invalid("error".into(), "load".into()));
 
     let expected = auth_with_prefix("fallback");
@@ -550,7 +549,7 @@ fn auto_auth_storage_save_prefers_keyring() -> anyhow::Result<()> {
         chaos_home.path().to_path_buf(),
         Arc::new(mock_keyring.clone()),
     );
-    let key = compute_store_key(chaos_home.path())?;
+    let key = compute_store_key(chaos_home.path());
 
     let stale = auth_with_prefix("stale");
     storage.file_storage.save(&stale)?;
@@ -575,7 +574,7 @@ fn auto_auth_storage_save_falls_back_when_keyring_errors() -> anyhow::Result<()>
         chaos_home.path().to_path_buf(),
         Arc::new(mock_keyring.clone()),
     );
-    let key = compute_store_key(chaos_home.path())?;
+    let key = compute_store_key(chaos_home.path());
     mock_keyring.set_error(&key, KeyringError::Invalid("error".into(), "save".into()));
 
     let auth = auth_with_prefix("fallback");

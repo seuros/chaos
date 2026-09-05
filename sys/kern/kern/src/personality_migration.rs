@@ -4,6 +4,7 @@ use crate::rollout::list::ProcessSortKey;
 use crate::runtime_db;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::protocol::SessionSource;
+use chaos_realpath::AbsolutePathBuf;
 use std::io;
 use std::path::Path;
 use tokio::fs::OpenOptions;
@@ -44,7 +45,7 @@ pub async fn maybe_migrate_personality(
     let sqlite_home = config_toml
         .sqlite_home
         .as_ref()
-        .map(|path| path.to_path_buf())
+        .map(AbsolutePathBuf::to_path_buf)
         .unwrap_or_else(|| chaos_home.to_path_buf());
     if !has_recorded_sessions(
         config_toml.storage_url.as_deref(),

@@ -36,9 +36,7 @@ impl ToolHandler for RequestPermissionsHandler {
 
         let mut args: RequestPermissionsArgs =
             parse_arguments_with_base_path(&arguments, turn.cwd.as_path())?;
-        args.permissions = normalize_additional_permissions(args.permissions.into())
-            .map(chaos_ipc::request_permissions::RequestPermissionProfile::from)
-            .map_err(FunctionCallError::RespondToModel)?;
+        args.permissions = normalize_additional_permissions(args.permissions.into()).into();
         if args.permissions.is_empty() {
             return Err(FunctionCallError::RespondToModel(
                 "request_permissions requires at least one permission".to_string(),

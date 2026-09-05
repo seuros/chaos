@@ -70,7 +70,7 @@ fn turn_metadata_state_uses_platform_sandbox_tag() {
 
     let state = TurnMetadataState::new("turn-a".to_string(), cwd, &vfs_policy);
 
-    let header = state.current_header_value().expect("header");
+    let header = state.current_header_value();
     let json: Value = serde_json::from_str(&header).expect("json");
     let sandbox_name = json.get("sandbox").and_then(Value::as_str);
 

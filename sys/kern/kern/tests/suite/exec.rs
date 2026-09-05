@@ -28,11 +28,14 @@ fn skip_test() -> bool {
     false
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "a missing test executable is a fixture failure"
+)]
 fn alcatraz_exe() -> PathBuf {
     chaos_which::cargo_bin("alcatraz").expect("alcatraz executable")
 }
 
-#[expect(clippy::expect_used)]
 async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput> {
     let sandbox_type = get_platform_sandbox();
     assert_eq!(sandbox_type, SandboxType::MacosSeatbelt);

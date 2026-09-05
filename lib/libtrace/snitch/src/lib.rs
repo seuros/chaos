@@ -64,5 +64,5 @@ pub fn start_global_timer(name: &str, tags: &[(&str, &str)]) -> MetricsResult<Ti
     let Some(metrics) = crate::metrics::global() else {
         return Err(MetricsError::ExporterDisabled);
     };
-    metrics.start_timer(name, tags)
+    Ok(metrics.start_timer(name, tags))
 }

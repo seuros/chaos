@@ -8,7 +8,7 @@ impl TextArea {
     }
 
     pub fn insert_str_at(&mut self, pos: usize, text: &str) {
-        let pos = self.clamp_pos_for_insertion(pos);
+        let pos = self.clamp_pos_to_nearest_boundary(pos);
         self.text.insert_str(pos, text);
         self.wrap_cache.replace(None);
         if pos <= self.cursor_pos {

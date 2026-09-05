@@ -61,8 +61,12 @@ pub(crate) struct TurnMetadataBag {
 }
 
 impl TurnMetadataBag {
-    fn to_header_value(&self) -> Option<String> {
-        serde_json::to_string(self).ok()
+    #[allow(
+        clippy::expect_used,
+        reason = "metadata contains only strings, booleans and string-keyed maps"
+    )]
+    fn to_header_value(&self) -> String {
+        serde_json::to_string(self).expect("turn metadata serializes to JSON")
     }
 }
 
@@ -102,17 +106,19 @@ pub async fn build_turn_metadata_header(cwd: &Path, sandbox: Option<&str>) -> Op
         return None;
     }
 
-    build_turn_metadata_bag(
-        /*turn_id*/ None,
-        sandbox.map(ToString::to_string),
-        repo_root,
-        Some(WorkspaceGitMetadata {
-            associated_remote_urls,
-            latest_git_commit_hash,
-            has_changes,
-        }),
+    Some(
+        build_turn_metadata_bag(
+            /*turn_id*/ None,
+            sandbox.map(ToString::to_string),
+            repo_root,
+            Some(WorkspaceGitMetadata {
+                associated_remote_urls,
+                latest_git_commit_hash,
+                has_changes,
+            }),
+        )
+        .to_header_value(),
     )
-    .to_header_value()
 }
 
 #[derive(Clone, Debug)]
@@ -135,9 +141,7 @@ impl TurnMetadataState {
             /*repo_root*/ None,
             /*workspace_git_metadata*/ None,
         );
-        let base_header = base_metadata
-            .to_header_value()
-            .unwrap_or_else(|| "{}".to_string());
+        let base_header = base_metadata.to_header_value();
 
         Self {
             cwd,
@@ -149,23 +153,19 @@ impl TurnMetadataState {
         }
     }
 
-    pub(crate) fn current_header_value(&self) -> Option<String> {
-        if let Some(header) = self
-            .enriched_header
+    pub(crate) fn current_header_value(&self) -> String {
+        self.enriched_header
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
             .cloned()
-        {
-            return Some(header);
-        }
-        Some(self.base_header.clone())
+            .unwrap_or_else(|| self.base_header.clone())
     }
 
     pub(crate) fn spawn_git_enrichment_task(&self) {
-        if self.repo_root.is_none() {
+        let Some(repo_root) = self.repo_root.clone() else {
             return;
-        }
+        };
 
         let mut task_guard = self
             .enrichment_task
@@ -178,10 +178,6 @@ impl TurnMetadataState {
         let state = self.clone();
         *task_guard = Some(tokio::spawn(async move {
             let workspace_git_metadata = state.fetch_workspace_git_metadata().await;
-            let Some(repo_root) = state.repo_root.clone() else {
-                return;
-            };
-
             let enriched_metadata = build_turn_metadata_bag(
                 state.base_metadata.turn_id.clone(),
                 state.base_metadata.sandbox.clone(),
@@ -192,12 +188,11 @@ impl TurnMetadataState {
                 return;
             }
 
-            if let Some(header_value) = enriched_metadata.to_header_value() {
-                *state
-                    .enriched_header
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(header_value);
-            }
+            let header_value = enriched_metadata.to_header_value();
+            *state
+                .enriched_header
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(header_value);
         }));
     }
 

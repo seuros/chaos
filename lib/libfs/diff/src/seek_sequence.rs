@@ -5,7 +5,7 @@
 /// patterns intended to match file endings are applied at the end), and fall back to searching
 /// from `start` if needed.
 ///
-/// Special cases handled defensively:
+/// Special cases:
 ///  • Empty `pattern` → returns `Some(start)` (no-op match)
 ///  • `pattern.len() > lines.len()` → returns `None` (cannot match, avoids
 ///    out‑of‑bounds panic that occurred pre‑2025‑04‑12)
@@ -26,19 +26,16 @@ pub(crate) fn seek_sequence(
     if pattern.len() > lines.len() {
         return None;
     }
-    let search_start = if eof && lines.len() >= pattern.len() {
-        lines.len() - pattern.len()
-    } else {
-        start
-    };
+    let last_start = lines.len() - pattern.len();
+    let search_start = if eof { last_start } else { start };
     // Exact match first.
-    for i in search_start..=lines.len().saturating_sub(pattern.len()) {
+    for i in search_start..=last_start {
         if lines[i..i + pattern.len()] == *pattern {
             return Some(i);
         }
     }
     // Then rstrip match.
-    for i in search_start..=lines.len().saturating_sub(pattern.len()) {
+    for i in search_start..=last_start {
         let mut ok = true;
         for (p_idx, pat) in pattern.iter().enumerate() {
             if lines[i + p_idx].trim_end() != pat.trim_end() {
@@ -51,7 +48,7 @@ pub(crate) fn seek_sequence(
         }
     }
     // Finally, trim both sides to allow more lenience.
-    for i in search_start..=lines.len().saturating_sub(pattern.len()) {
+    for i in search_start..=last_start {
         let mut ok = true;
         for (p_idx, pat) in pattern.iter().enumerate() {
             if lines[i + p_idx].trim() != pat.trim() {
@@ -93,7 +90,7 @@ pub(crate) fn seek_sequence(
             .collect::<String>()
     }
 
-    for i in search_start..=lines.len().saturating_sub(pattern.len()) {
+    for i in search_start..=last_start {
         let mut ok = true;
         for (p_idx, pat) in pattern.iter().enumerate() {
             if normalise(&lines[i + p_idx]) != normalise(pat) {

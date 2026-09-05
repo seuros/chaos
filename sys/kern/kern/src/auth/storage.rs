@@ -161,7 +161,7 @@ impl AuthStorageBackend for FileAuthStorage {
 const KEYRING_SERVICE: &str = "Chaos Auth";
 
 // turns chaos_home path into a stable, short key string
-fn compute_store_key(chaos_home: &Path) -> std::io::Result<String> {
+fn compute_store_key(chaos_home: &Path) -> String {
     let canonical = chaos_home
         .canonicalize()
         .unwrap_or_else(|_| chaos_home.to_path_buf());
@@ -170,8 +170,7 @@ fn compute_store_key(chaos_home: &Path) -> std::io::Result<String> {
     hasher.update(path_str.as_bytes());
     let digest = hasher.finalize();
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    let truncated = hex.get(..16).unwrap_or(&hex);
-    Ok(format!("cli|{truncated}"))
+    format!("cli|{}", &hex[..16])
 }
 
 #[derive(Clone, Debug)]
@@ -220,7 +219,7 @@ impl KeyringAuthStorage {
 
 impl AuthStorageBackend for KeyringAuthStorage {
     fn load(&self) -> std::io::Result<Option<AuthDotJson>> {
-        let key = compute_store_key(&self.chaos_home)?;
+        let key = compute_store_key(&self.chaos_home);
         let Some(auth) = self.load_from_keyring(&key)? else {
             return Ok(None);
         };
@@ -232,7 +231,7 @@ impl AuthStorageBackend for KeyringAuthStorage {
     }
 
     fn save(&self, auth: &AuthDotJson) -> std::io::Result<()> {
-        let key = compute_store_key(&self.chaos_home)?;
+        let key = compute_store_key(&self.chaos_home);
         // Simpler error mapping per style: prefer method reference over closure
         let normalized = auth.normalized();
         let serialized = serde_json::to_string(&normalized).map_err(std::io::Error::other)?;
@@ -244,7 +243,7 @@ impl AuthStorageBackend for KeyringAuthStorage {
     }
 
     fn delete(&self) -> std::io::Result<bool> {
-        let key = compute_store_key(&self.chaos_home)?;
+        let key = compute_store_key(&self.chaos_home);
         let keyring_removed = self
             .keyring_store
             .delete(KEYRING_SERVICE, &key)
@@ -317,7 +316,7 @@ impl EphemeralAuthStorage {
     where
         F: FnOnce(&mut HashMap<String, AuthDotJson>, String) -> std::io::Result<T>,
     {
-        let key = compute_store_key(&self.chaos_home)?;
+        let key = compute_store_key(&self.chaos_home);
         let mut store = EPHEMERAL_AUTH_STORE
             .lock()
             .map_err(|_| std::io::Error::other("failed to lock ephemeral auth storage"))?;

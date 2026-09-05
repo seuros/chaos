@@ -118,7 +118,7 @@ async fn run_distill_task_inner(
             &sess,
             turn_context.as_ref(),
             &mut client_session,
-            turn_metadata_header.as_deref(),
+            Some(turn_metadata_header.as_str()),
             &prompt,
         )
         .await;

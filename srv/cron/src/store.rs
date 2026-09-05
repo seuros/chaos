@@ -561,9 +561,7 @@ mod tests {
     const TEST_DATABASE_URL_ENV: &str = "TEST_DATABASE_URL";
 
     fn daily_schedule_json() -> String {
-        Schedule::Interval { seconds: 86_400 }
-            .to_json()
-            .expect("serialize schedule")
+        Schedule::Interval { seconds: 86_400 }.to_json()
     }
 
     fn postgres_test_url() -> Option<String> {

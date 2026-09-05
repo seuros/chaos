@@ -49,7 +49,29 @@ fn token_info_for(model_slug: &str, config: &Config, usage: &TokenUsage) -> Toke
     }
 }
 
-fn sanitize_directory(lines: Vec<String>) -> Vec<String> {
+fn sanitize_status(mut lines: Vec<String>) -> Vec<String> {
+    // Check the real rendered version before normalizing release-only churn.
+    const SNAPSHOT_VERSION: &str = "(v0.0.0)";
+    let current_version = format!("(v{})", env!("CARGO_PKG_VERSION"));
+    let header = lines
+        .iter_mut()
+        .find(|line| line.contains(">_ FreeChaOS "))
+        .expect("status header");
+    let (prefix, suffix) = header
+        .split_once(&current_version)
+        .expect("status header must render the current package version");
+    let padding = suffix
+        .strip_suffix('│')
+        .expect("status header right border");
+    assert!(
+        padding.bytes().all(|byte| byte == b' '),
+        "expected only padding after the version badge, got {padding:?}"
+    );
+    // The shortest valid Cargo version only adds padding; retain the actual
+    // header width so layout regressions still fail the snapshots.
+    let padding_width = padding.len() + current_version.len() - SNAPSHOT_VERSION.len();
+    *header = format!("{prefix}{SNAPSHOT_VERSION}{}│", " ".repeat(padding_width));
+
     lines
         .into_iter()
         .map(|line| {
@@ -179,7 +201,7 @@ async fn status_snapshot_includes_reasoning_details() {
         reasoning_effort_override,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 
@@ -288,7 +310,7 @@ async fn status_snapshot_includes_forked_from() {
         None,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 
@@ -343,7 +365,7 @@ async fn status_snapshot_includes_monthly_limit() {
         None,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 
@@ -624,7 +646,7 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
         reasoning_effort_override,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(70));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
 
     assert_snapshot!(sanitized);
 }
@@ -666,7 +688,7 @@ async fn status_snapshot_shows_missing_limits_message() {
         None,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 
@@ -728,7 +750,7 @@ async fn status_snapshot_includes_credits_and_limits() {
         None,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 
@@ -778,7 +800,7 @@ async fn status_snapshot_shows_empty_limits_message() {
         None,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 
@@ -837,7 +859,7 @@ async fn status_snapshot_shows_stale_limits_message() {
         None,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 
@@ -900,7 +922,7 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         None,
     );
     let rendered_lines = plain_line_strings(&composite.display_lines(80));
-    let sanitized = sanitize_directory(rendered_lines).join("\n");
+    let sanitized = sanitize_status(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
 

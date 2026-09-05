@@ -98,7 +98,7 @@ pub(crate) enum SandboxTransformError {
 
 pub(crate) fn normalize_additional_permissions(
     additional_permissions: PermissionProfile,
-) -> Result<PermissionProfile, String> {
+) -> PermissionProfile {
     let network = additional_permissions
         .network
         .filter(|network| !network.is_empty());
@@ -116,11 +116,11 @@ pub(crate) fn normalize_additional_permissions(
         .filter(|file_system| !file_system.is_empty());
     let macos = additional_permissions.macos;
 
-    Ok(PermissionProfile {
+    PermissionProfile {
         network,
         file_system,
         macos,
-    })
+    }
 }
 
 pub(crate) fn merge_permission_profiles(

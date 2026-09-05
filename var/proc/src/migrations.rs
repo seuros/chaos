@@ -58,7 +58,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(sqlite_versions, postgres_versions);
-        assert_eq!(sqlite_versions.last().copied(), Some(13));
+        assert_eq!(sqlite_versions.last().copied(), Some(14));
     }
 
     #[tokio::test]

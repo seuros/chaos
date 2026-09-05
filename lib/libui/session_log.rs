@@ -49,21 +49,17 @@ impl SessionLogger {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
         };
-        match serde_json::to_string(&value) {
-            Ok(serialized) => {
-                if let Err(e) = guard.write_all(serialized.as_bytes()) {
-                    tracing::warn!("session log write error: {}", e);
-                    return;
-                }
-                if let Err(e) = guard.write_all(b"\n") {
-                    tracing::warn!("session log write error: {}", e);
-                    return;
-                }
-                if let Err(e) = guard.flush() {
-                    tracing::warn!("session log flush error: {}", e);
-                }
-            }
-            Err(e) => tracing::warn!("session log serialize error: {}", e),
+        let serialized = value.to_string();
+        if let Err(e) = guard.write_all(serialized.as_bytes()) {
+            tracing::warn!("session log write error: {}", e);
+            return;
+        }
+        if let Err(e) = guard.write_all(b"\n") {
+            tracing::warn!("session log write error: {}", e);
+            return;
+        }
+        if let Err(e) = guard.flush() {
+            tracing::warn!("session log flush error: {}", e);
         }
     }
 

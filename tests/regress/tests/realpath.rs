@@ -20,13 +20,11 @@ fn resolve_path_against_base_handles_absolute_and_relative_inputs() {
 
     // Absolute input wins: base is ignored.
     let abs_input = absolute_dir.path().join("file.txt");
-    let resolved =
-        AbsolutePathBuf::resolve_path_against_base(&abs_input, base_dir.path()).expect("absolute");
+    let resolved = AbsolutePathBuf::resolve_path_against_base(&abs_input, base_dir.path());
     assert_eq!(resolved.as_path(), abs_input.as_path());
 
     // Relative input gets joined onto the base.
-    let resolved =
-        AbsolutePathBuf::resolve_path_against_base("file.txt", base_dir.path()).expect("relative");
+    let resolved = AbsolutePathBuf::resolve_path_against_base("file.txt", base_dir.path());
     assert_eq!(
         resolved.as_path(),
         base_dir.path().join("file.txt").as_path()

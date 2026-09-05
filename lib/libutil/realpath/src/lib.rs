@@ -41,13 +41,15 @@ impl AbsolutePathBuf {
         path.to_path_buf()
     }
 
+    /// Expand and normalize `path` against an absolute base without accessing
+    /// the filesystem to resolve path components.
     pub fn resolve_path_against_base<P: AsRef<Path>, B: AsRef<Path>>(
         path: P,
         base_path: B,
-    ) -> std::io::Result<Self> {
+    ) -> Self {
         let expanded = Self::maybe_expand_home_directory(path.as_ref());
         let absolute_path = expanded.absolutize_from(base_path.as_ref());
-        Ok(Self(absolute_path.into_owned()))
+        Self(absolute_path.into_owned())
     }
 
     pub fn from_absolute_path<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
@@ -61,7 +63,7 @@ impl AbsolutePathBuf {
         Self::from_absolute_path(current_dir)
     }
 
-    pub fn join<P: AsRef<Path>>(&self, path: P) -> std::io::Result<Self> {
+    pub fn join<P: AsRef<Path>>(&self, path: P) -> Self {
         Self::resolve_path_against_base(path, &self.0)
     }
 
@@ -174,9 +176,7 @@ impl<'de> Deserialize<'de> for AbsolutePathBuf {
     {
         let path = PathBuf::deserialize(deserializer)?;
         ABSOLUTE_PATH_BASE.with(|cell| match cell.borrow().as_deref() {
-            Some(base) => {
-                Ok(Self::resolve_path_against_base(path, base).map_err(SerdeError::custom)?)
-            }
+            Some(base) => Ok(Self::resolve_path_against_base(path, base)),
             None if path.is_absolute() => {
                 Self::from_absolute_path(path).map_err(SerdeError::custom)
             }

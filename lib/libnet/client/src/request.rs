@@ -2,7 +2,6 @@ use bytes::Bytes;
 use rama::http::HeaderMap;
 use rama::http::Method;
 use rama::http::StatusCode;
-use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -35,8 +34,9 @@ impl Request {
         }
     }
 
-    pub fn with_json<T: Serialize>(mut self, body: &T) -> Self {
-        self.body = serde_json::to_value(body).ok();
+    /// Attach an already-serialized JSON value as the request body.
+    pub fn with_json(mut self, body: Value) -> Self {
+        self.body = Some(body);
         self
     }
 

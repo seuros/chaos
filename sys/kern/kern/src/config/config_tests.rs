@@ -966,6 +966,7 @@ fn load_precedence_fixture_config(
         ConfigOverrides {
             config_profile: profile.map(str::to_owned),
             cwd: Some(fixture.cwd()),
+            alcatraz_exe: Some(PathBuf::from("/alcatraz")),
             ..Default::default()
         },
         fixture.chaos_home(),

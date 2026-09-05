@@ -382,8 +382,10 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Review(review_args)) => {
-            let mut exec_cli = ExecCli::default();
-            exec_cli.command = Some(ExecCommand::Review(review_args));
+            let mut exec_cli = ExecCli {
+                command: Some(ExecCommand::Review(review_args)),
+                ..Default::default()
+            };
             prepend_root_flags!(exec_cli, root_config_overrides);
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }

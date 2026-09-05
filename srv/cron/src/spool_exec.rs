@@ -100,13 +100,15 @@ pub(crate) fn spool_executor(
     })
 }
 
+/// Constructing the backend adapters is infallible; storage and provider
+/// failures are reported when the returned executor runs a job.
 pub fn spool_executor_from_provider(
     registry: Arc<SpoolRegistry>,
     provider: &ChaosVfs,
-) -> Result<JobExecutor, String> {
+) -> JobExecutor {
     let spool_store = BackendSpoolStore::from_provider(provider);
     let cron_store = BackendCronStorage::from_provider(provider);
-    Ok(spool_executor(registry, spool_store, cron_store))
+    spool_executor(registry, spool_store, cron_store)
 }
 
 async fn disable_cron_job(cron_store: &BackendCronStorage, job_id: &str) -> Result<(), String> {
@@ -209,9 +211,7 @@ mod tests {
         CronJob {
             id: "job-1".into(),
             name: "spool-poll".into(),
-            schedule: crate::schedule::Schedule::Interval { seconds: 60 }
-                .to_json()
-                .expect("serialize schedule"),
+            schedule: crate::schedule::Schedule::Interval { seconds: 60 }.to_json(),
             command: String::new(),
             scope: CronScope::Project,
             project_path: None,
@@ -256,9 +256,7 @@ mod tests {
     }
 
     async fn seed_cron_row(pool: &sqlx::SqlitePool, job_id: &str, manifest_id: &str) {
-        let schedule = crate::schedule::Schedule::Interval { seconds: 60 }
-            .to_json()
-            .expect("serialize schedule");
+        let schedule = crate::schedule::Schedule::Interval { seconds: 60 }.to_json();
         sqlx::query(
             "INSERT INTO cron_jobs \
              (id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id) \
@@ -292,8 +290,6 @@ mod tests {
             .await
             .expect("provider");
         let pool = provider.sqlite_pool().expect("sqlite pool");
-        let store = BackendSpoolStore::from_provider(&provider);
-        let cron_store = BackendCronStorage::from_provider(&provider);
         seed_row(&pool, "manifest-A").await;
         seed_cron_row(&pool, "job-1", "manifest-A").await;
 
@@ -313,7 +309,7 @@ mod tests {
         registry.register(backend);
         let registry = Arc::new(registry);
 
-        let executor = spool_executor(registry, store, cron_store);
+        let executor = spool_executor_from_provider(registry, &provider);
         let job = fake_cron_job("manifest-A");
 
         // Tick 1: InProgress → row unchanged.

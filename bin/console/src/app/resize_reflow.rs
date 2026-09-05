@@ -98,7 +98,7 @@ impl App {
         tui.terminal.set_viewport_area(area);
         // The resize is handled: tell the terminal so the draw that follows does not also try to
         // reposition the viewport for a size change this rebuild already absorbed.
-        tui.terminal.resize(size)?;
+        tui.terminal.resize(size);
 
         self.has_emitted_history_lines = !lines.is_empty();
         if !lines.is_empty() {

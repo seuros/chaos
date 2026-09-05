@@ -442,7 +442,7 @@ pub(crate) async fn run_turn(
             Arc::clone(&turn_diff_tracker),
             &mut client_session,
             &mut turn_progress,
-            turn_metadata_header.as_deref(),
+            Some(turn_metadata_header.as_str()),
             sampling_request_input,
             &mut server_model_warning_emitted_for_turn,
             cancellation_token.child_token(),

@@ -39,22 +39,6 @@ pub enum SetOriginatorError {
     AlreadyInitialized,
 }
 
-fn build_originator(value: String) -> Originator {
-    match HeaderValue::from_str(&value) {
-        Ok(header_value) => Originator {
-            value,
-            header_value,
-        },
-        Err(e) => {
-            tracing::error!("Invalid originator value, falling back to default: {e}");
-            Originator {
-                value: DEFAULT_ORIGINATOR.to_string(),
-                header_value: HeaderValue::from_static(DEFAULT_ORIGINATOR),
-            }
-        }
-    }
-}
-
 pub fn set_default_originator(value: String) -> Result<(), SetOriginatorError> {
     let Ok(header_value) = HeaderValue::from_str(&value) else {
         return Err(SetOriginatorError::InvalidHeaderValue);
@@ -68,10 +52,17 @@ pub fn set_default_originator(value: String) -> Result<(), SetOriginatorError> {
 }
 
 pub fn originator() -> &'static Originator {
-    ORIGINATOR.get_or_init(|| build_originator(DEFAULT_ORIGINATOR.to_string()))
+    ORIGINATOR.get_or_init(|| Originator {
+        value: DEFAULT_ORIGINATOR.to_string(),
+        header_value: HeaderValue::from_static(DEFAULT_ORIGINATOR),
+    })
 }
 
 pub fn get_chaos_user_agent() -> String {
+    chaos_user_agent().0
+}
+
+fn chaos_user_agent() -> (String, HeaderValue) {
     let os_info = os_info::get();
     let originator = originator();
     let prefix = format!(
@@ -94,39 +85,34 @@ pub fn get_chaos_user_agent() -> String {
         .map_or_else(String::new, |value| format!(" ({value})"));
 
     let candidate = format!("{prefix}{suffix}");
-    sanitize_user_agent(candidate, &prefix)
+    sanitize_user_agent(candidate)
 }
 
 /// Sanitize the user agent string.
 ///
 /// Invalid characters are replaced with an underscore.
 ///
-/// If the user agent fails to parse, it falls back to fallback and then to ORIGINATOR.
-fn sanitize_user_agent(candidate: String, fallback: &str) -> String {
-    if HeaderValue::from_str(candidate.as_str()).is_ok() {
-        return candidate;
+/// Returns both the display string and the validated HTTP header so callers
+/// do not need to validate the sanitized value again.
+#[allow(
+    clippy::expect_used,
+    reason = "sanitization produces only printable ASCII"
+)]
+fn sanitize_user_agent(candidate: String) -> (String, HeaderValue) {
+    if let Ok(header) = HeaderValue::from_str(&candidate) {
+        return (candidate, header);
     }
 
     let sanitized: String = candidate
         .chars()
         .map(|ch| if matches!(ch, ' '..='~') { ch } else { '_' })
         .collect();
-    if !sanitized.is_empty() && HeaderValue::from_str(sanitized.as_str()).is_ok() {
-        tracing::warn!(
-            "Sanitized Chaos user agent because provided suffix contained invalid header characters"
-        );
-        sanitized
-    } else if HeaderValue::from_str(fallback).is_ok() {
-        tracing::warn!(
-            "Falling back to base Chaos user agent because provided suffix could not be sanitized"
-        );
-        fallback.to_string()
-    } else {
-        tracing::warn!(
-            "Falling back to default Chaos originator because base user agent string is invalid"
-        );
-        originator().value.clone()
-    }
+    let header =
+        HeaderValue::from_str(&sanitized).expect("printable ASCII is a valid HTTP header value");
+    tracing::warn!(
+        "Sanitized Chaos user agent because provided suffix contained invalid header characters"
+    );
+    (sanitized, header)
 }
 
 /// Create an HTTP client with default `originator` and `User-Agent` headers set.
@@ -146,9 +132,7 @@ pub fn build_http_client() -> ChaosHttpClient {
 pub fn default_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert("originator", originator().header_value.clone());
-    if let Ok(user_agent) = HeaderValue::from_str(&get_chaos_user_agent()) {
-        headers.insert(USER_AGENT, user_agent);
-    }
+    headers.insert(USER_AGENT, chaos_user_agent().1);
     headers
 }
 

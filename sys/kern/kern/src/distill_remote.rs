@@ -226,7 +226,7 @@ async fn request_remote_compaction_v2_attempt(
             turn_context.reasoning_effort,
             turn_context.reasoning_summary,
             turn_context.config.service_tier,
-            turn_metadata_header.as_deref(),
+            Some(turn_metadata_header.as_str()),
         )
         .await?;
     let output = collect_compaction_output(stream).await?;

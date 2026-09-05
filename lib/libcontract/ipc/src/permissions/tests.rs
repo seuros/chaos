@@ -53,7 +53,7 @@ fn effective_runtime_roots_canonicalize_symlinked_paths() {
 
     let link_root =
         AbsolutePathBuf::from_absolute_path(&link_root).expect("absolute symlinked root");
-    let link_blocked = link_root.join("blocked").expect("symlinked blocked path");
+    let link_blocked = link_root.join("blocked");
     let expected_root = AbsolutePathBuf::from_absolute_path(
         real_root.canonicalize().expect("canonicalize real root"),
     )
@@ -148,16 +148,12 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_under_symlinked_roots() 
 
     let link_root =
         AbsolutePathBuf::from_absolute_path(&link_root).expect("absolute symlinked root");
-    let link_private = link_root
-        .join("linked-private")
-        .expect("symlinked linked-private path");
+    let link_private = link_root.join("linked-private");
     let expected_root = AbsolutePathBuf::from_absolute_path(
         real_root.canonicalize().expect("canonicalize real root"),
     )
     .expect("absolute canonical root");
-    let expected_linked_private = expected_root
-        .join("linked-private")
-        .expect("expected linked-private path");
+    let expected_linked_private = expected_root.join("linked-private");
     let unexpected_decoy =
         AbsolutePathBuf::from_absolute_path(decoy.canonicalize().expect("canonicalize decoy"))
             .expect("absolute canonical decoy");
@@ -201,16 +197,12 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_that_escape_root() {
 
     let link_root =
         AbsolutePathBuf::from_absolute_path(&link_root).expect("absolute symlinked root");
-    let link_private = link_root
-        .join("linked-private")
-        .expect("symlinked linked-private path");
+    let link_private = link_root.join("linked-private");
     let expected_root = AbsolutePathBuf::from_absolute_path(
         real_root.canonicalize().expect("canonicalize real root"),
     )
     .expect("absolute canonical root");
-    let expected_linked_private = expected_root
-        .join("linked-private")
-        .expect("expected linked-private path");
+    let expected_linked_private = expected_root.join("linked-private");
     let unexpected_decoy =
         AbsolutePathBuf::from_absolute_path(decoy.canonicalize().expect("canonicalize decoy"))
             .expect("absolute canonical decoy");
@@ -249,14 +241,12 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_that_alias_root() {
     symlink_dir(&root, &alias).expect("create alias symlink");
 
     let root = AbsolutePathBuf::from_absolute_path(&root).expect("absolute root");
-    let alias = root.join("alias-root").expect("alias root path");
+    let alias = root.join("alias-root");
     let expected_root = AbsolutePathBuf::from_absolute_path(
         root.as_path().canonicalize().expect("canonicalize root"),
     )
     .expect("absolute canonical root");
-    let expected_alias = expected_root
-        .join("alias-root")
-        .expect("expected alias path");
+    let expected_alias = expected_root.join("alias-root");
 
     let policy = VfsPolicy::restricted(vec![
         VfsEntry {
@@ -359,13 +349,10 @@ fn tmpdir_special_path_canonicalizes_symlinked_tmpdir() {
 #[test]
 fn resolve_access_with_cwd_uses_most_specific_entry() {
     let cwd = TempDir::new().expect("tempdir");
-    let docs =
-        AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
-    let docs_private = AbsolutePathBuf::resolve_path_against_base("docs/private", cwd.path())
-        .expect("resolve docs/private");
+    let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
+    let docs_private = AbsolutePathBuf::resolve_path_against_base("docs/private", cwd.path());
     let docs_private_public =
-        AbsolutePathBuf::resolve_path_against_base("docs/private/public", cwd.path())
-            .expect("resolve docs/private/public");
+        AbsolutePathBuf::resolve_path_against_base("docs/private/public", cwd.path());
     let policy = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {
@@ -412,8 +399,7 @@ fn resolve_access_with_cwd_uses_most_specific_entry() {
 #[test]
 fn split_only_nested_carveouts_need_direct_runtime_enforcement() {
     let cwd = TempDir::new().expect("tempdir");
-    let docs =
-        AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
+    let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
     let policy = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {
@@ -439,8 +425,7 @@ fn split_only_nested_carveouts_need_direct_runtime_enforcement() {
 #[test]
 fn writable_root_declaration_order_does_not_force_direct_runtime_enforcement() {
     let cwd = TempDir::new().expect("tempdir");
-    let home =
-        AbsolutePathBuf::resolve_path_against_base("home", cwd.path()).expect("resolve home");
+    let home = AbsolutePathBuf::resolve_path_against_base("home", cwd.path());
     // A private writable root declared before the temporary directory: the
     // projection back through `SandboxPolicy` emits the temporary directory
     // first, and a policy that grants the same access must still be
@@ -476,8 +461,7 @@ fn writable_root_declaration_order_does_not_force_direct_runtime_enforcement() {
 #[test]
 fn root_write_with_read_only_child_is_not_full_disk_write() {
     let cwd = TempDir::new().expect("tempdir");
-    let docs =
-        AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
+    let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
     let policy = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {
@@ -502,8 +486,7 @@ fn root_write_with_read_only_child_is_not_full_disk_write() {
 #[test]
 fn root_deny_does_not_materialize_as_unreadable_root() {
     let cwd = TempDir::new().expect("tempdir");
-    let docs =
-        AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
+    let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
     let expected_docs = AbsolutePathBuf::from_absolute_path(
         cwd.path()
             .canonicalize()
@@ -566,8 +549,7 @@ fn duplicate_root_deny_prevents_full_disk_write_access() {
 #[test]
 fn same_specificity_write_override_keeps_full_disk_write_access() {
     let cwd = TempDir::new().expect("tempdir");
-    let docs =
-        AbsolutePathBuf::resolve_path_against_base("docs", cwd.path()).expect("resolve docs");
+    let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
     let policy = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {

@@ -148,7 +148,7 @@ impl SessionTelemetry {
             return Err(MetricsError::ExporterDisabled);
         };
         let tags = self.tags_with_metadata(tags)?;
-        metrics.start_timer(name, &tags)
+        Ok(metrics.start_timer(name, &tags))
     }
 
     pub fn shutdown_metrics(&self) -> MetricsResult<()> {

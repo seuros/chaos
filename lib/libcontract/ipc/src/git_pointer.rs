@@ -48,16 +48,7 @@ pub(crate) fn resolve_gitdir_from_file(dot_git: &AbsolutePathBuf) -> Option<Abso
             return None;
         }
     };
-    let gitdir_path = match AbsolutePathBuf::resolve_path_against_base(gitdir_raw, base) {
-        Ok(path) => path,
-        Err(err) => {
-            error!(
-                "Failed to resolve gitdir path {gitdir_raw} from {path}: {err}",
-                path = dot_git.as_path().display()
-            );
-            return None;
-        }
-    };
+    let gitdir_path = AbsolutePathBuf::resolve_path_against_base(gitdir_raw, base);
     if !gitdir_path.as_path().exists() {
         error!(
             "Resolved gitdir path {path} does not exist.",

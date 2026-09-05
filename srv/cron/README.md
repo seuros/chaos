@@ -3,6 +3,12 @@
 Scheduled task execution for the operator. Runs recurring jobs outside of active
 model turns.
 
+Scheduler and spool-executor construction are infallible. `spawn_scheduler`
+returns the shutdown sender only to the caller that installs the process-wide
+scheduler; concurrent or repeated callers receive `None`. Storage, command,
+provider, network, and serialization failures are still reported while jobs
+run.
+
 ## Local Postgres validation
 
 The Postgres arms of this crate's suite skip themselves unless

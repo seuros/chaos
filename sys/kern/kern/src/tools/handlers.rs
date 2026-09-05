@@ -200,7 +200,7 @@ pub(crate) fn normalize_and_validate_additional_permissions(
         if additional_permissions.macos.is_some() {
             return Err("`additional_permissions.macos` is only supported on macOS".to_string());
         }
-        let normalized = normalize_additional_permissions(additional_permissions)?;
+        let normalized = normalize_additional_permissions(additional_permissions);
         if normalized.is_empty() {
             return Err(
                 "`additional_permissions` must include at least one requested permission in `network`, `file_system`, or `macos`"

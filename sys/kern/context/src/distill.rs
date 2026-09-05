@@ -154,7 +154,7 @@ fn build_compacted_history_with_limit(
             let tokens = approx_token_count(message);
             if tokens <= remaining {
                 selected_messages.push(message.clone());
-                remaining = remaining.saturating_sub(tokens);
+                remaining -= tokens;
             } else {
                 let truncated = truncate_text(message, TruncationPolicy::Tokens(remaining));
                 selected_messages.push(truncated);

@@ -138,7 +138,7 @@ pub(super) fn tool_spec_to_abi_tool(tool: &ToolSpec) -> Option<AbiToolDef> {
         ToolSpec::Function(tool) => Some(AbiToolDef::Function(FunctionToolDef {
             name: tool.name.clone(),
             description: tool.description.clone(),
-            parameters: serde_json::to_value(&tool.parameters).ok()?,
+            parameters: serde_json::Value::from(&tool.parameters),
             strict: tool.strict,
         })),
         ToolSpec::Freeform(tool) => Some(AbiToolDef::Freeform(FreeformToolDef {

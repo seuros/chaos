@@ -454,14 +454,15 @@ const RESIZED_IMAGE_BYTES_ESTIMATE: i64 = 7373;
 // Use a direct 32px patch count only for `detail: "original"`;
 // all other image inputs continue to use `RESIZED_IMAGE_BYTES_ESTIMATE`.
 const ORIGINAL_IMAGE_PATCH_SIZE: u32 = 32;
-const ORIGINAL_IMAGE_ESTIMATE_CACHE_SIZE: usize = 32;
+#[allow(
+    clippy::expect_used,
+    reason = "the nonzero literal is checked at compile time"
+)]
+const ORIGINAL_IMAGE_ESTIMATE_CACHE_SIZE: NonZeroUsize =
+    NonZeroUsize::new(32).expect("image estimate cache capacity is nonzero");
 
 static ORIGINAL_IMAGE_ESTIMATE_CACHE: LazyLock<BlockingLruCache<[u8; 20], Option<i64>>> =
-    LazyLock::new(|| {
-        BlockingLruCache::new(
-            NonZeroUsize::new(ORIGINAL_IMAGE_ESTIMATE_CACHE_SIZE).unwrap_or(NonZeroUsize::MIN),
-        )
-    });
+    LazyLock::new(|| BlockingLruCache::new(ORIGINAL_IMAGE_ESTIMATE_CACHE_SIZE));
 
 pub(crate) fn estimate_response_item_model_visible_bytes(item: &ResponseItem) -> i64 {
     match item {

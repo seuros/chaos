@@ -51,7 +51,12 @@ struct ImageCacheKey {
 }
 
 static IMAGE_CACHE: LazyLock<BlockingLruCache<ImageCacheKey, EncodedImage>> =
-    LazyLock::new(|| BlockingLruCache::new(NonZeroUsize::new(32).unwrap_or(NonZeroUsize::MIN)));
+    LazyLock::new(|| BlockingLruCache::new(IMAGE_CACHE_CAPACITY));
+
+const IMAGE_CACHE_CAPACITY: NonZeroUsize = {
+    #[allow(clippy::expect_used)]
+    NonZeroUsize::new(32).expect("image cache capacity is non-zero")
+};
 
 pub fn load_and_resize_to_fit(path: &Path) -> Result<EncodedImage, ImageProcessingError> {
     load_for_prompt(path, PromptImageMode::ResizeToFit)

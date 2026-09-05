@@ -60,25 +60,22 @@ async fn test_create_client_sets_default_headers() {
 }
 
 #[test]
-fn test_invalid_suffix_is_sanitized() {
+fn test_user_agent_sanitization() {
     let prefix = "chaos_cli_rs/0.0.0";
-    let suffix = "bad\rsuffix";
-
-    assert_eq!(
-        sanitize_user_agent(format!("{prefix} ({suffix})"), prefix),
-        "chaos_cli_rs/0.0.0 (bad_suffix)"
-    );
-}
-
-#[test]
-fn test_invalid_suffix_is_sanitized2() {
-    let prefix = "chaos_cli_rs/0.0.0";
-    let suffix = "bad\0suffix";
-
-    assert_eq!(
-        sanitize_user_agent(format!("{prefix} ({suffix})"), prefix),
-        "chaos_cli_rs/0.0.0 (bad_suffix)"
-    );
+    for (suffix, expected) in [
+        ("bad\rsuffix", "bad_suffix"),
+        ("bad\0suffix", "bad_suffix"),
+        ("café", "caf_"),
+    ] {
+        let (value, header) = sanitize_user_agent(format!("{prefix} ({suffix})"));
+        assert_eq!(value, format!("{prefix} ({expected})"));
+        assert_eq!(header.as_bytes(), value.as_bytes());
+    }
+    for candidate in ["", prefix, "chaos_cli_rs/0.0.0 (tab\tsuffix)"] {
+        let (value, header) = sanitize_user_agent(candidate.to_string());
+        assert_eq!(value, candidate);
+        assert_eq!(header.as_bytes(), candidate.as_bytes());
+    }
 }
 
 #[test]

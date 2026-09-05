@@ -201,7 +201,7 @@ pub(super) fn format_mcp_invocation(invocation: McpInvocation) -> Line<'static> 
     let args_str = invocation
         .arguments
         .as_ref()
-        .map(|v: &serde_json::Value| serde_json::to_string(v).unwrap_or_else(|_| v.to_string()))
+        .map(serde_json::Value::to_string)
         .unwrap_or_default();
 
     let invocation_spans = vec![

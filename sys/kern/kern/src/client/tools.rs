@@ -153,7 +153,7 @@ fn clamp_resolve_input_path(
     keys.iter()
         .find_map(|key| object.get(*key))
         .and_then(|value| value.as_str())
-        .and_then(|path| AbsolutePathBuf::resolve_path_against_base(path, cwd).ok())
+        .map(|path| AbsolutePathBuf::resolve_path_against_base(path, cwd))
 }
 
 fn clamp_read_permission(path: AbsolutePathBuf) -> PermissionProfile {

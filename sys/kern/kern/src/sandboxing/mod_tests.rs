@@ -24,16 +24,16 @@ use chaos_ipc::models::MacOsPreferencesPermission;
 use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 use chaos_ipc::models::NetworkPermissions;
 use chaos_ipc::models::PermissionProfile;
+use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsAccessMode;
-use chaos_ipc::permissions::VfsPath;
 use chaos_ipc::permissions::VfsEntry;
+use chaos_ipc::permissions::VfsPath;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsSpecialPath;
-use chaos_ipc::permissions::SocketPolicy;
 use chaos_realpath::AbsolutePathBuf;
-use std::fs::canonicalize;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
+use std::fs::canonicalize;
 use tempfile::TempDir;
 
 #[test]
@@ -99,8 +99,7 @@ fn root_write_policy_with_carveouts_still_uses_platform_sandbox() {
     let blocked = AbsolutePathBuf::resolve_path_against_base(
         "blocked",
         std::env::current_dir().expect("current dir"),
-    )
-    .expect("blocked path");
+    );
     let policy = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {
@@ -166,14 +165,8 @@ fn transform_preserves_unrestricted_file_system_policy_for_restricted_network() 
         })
         .expect("transform");
 
-    assert_eq!(
-        exec_request.vfs_policy,
-        VfsPolicy::unrestricted()
-    );
-    assert_eq!(
-        exec_request.socket_policy,
-        SocketPolicy::Restricted
-    );
+    assert_eq!(exec_request.vfs_policy, VfsPolicy::unrestricted());
+    assert_eq!(exec_request.socket_policy, SocketPolicy::Restricted);
 }
 
 #[test]
@@ -192,8 +185,7 @@ fn normalize_additional_permissions_preserves_network() {
             write: Some(vec![path.clone()]),
         }),
         ..Default::default()
-    })
-    .expect("permissions");
+    });
 
     assert_eq!(
         permissions.network,
@@ -219,8 +211,7 @@ fn normalize_additional_permissions_drops_empty_nested_profiles() {
             write: None,
         }),
         macos: None,
-    })
-    .expect("permissions");
+    });
 
     assert_eq!(permissions, PermissionProfile::default());
 }
@@ -231,8 +222,7 @@ fn normalize_additional_permissions_preserves_default_macos_preferences_permissi
     let permissions = normalize_additional_permissions(PermissionProfile {
         macos: Some(MacOsSeatbeltProfileExtensions::default()),
         ..Default::default()
-    })
-    .expect("permissions");
+    });
 
     assert_eq!(
         permissions,
@@ -300,8 +290,7 @@ fn normalize_additional_permissions_preserves_macos_permissions() {
             macos_contacts: MacOsContactsPermission::None,
         }),
         ..Default::default()
-    })
-    .expect("permissions");
+    });
 
     assert_eq!(
         permissions.macos,
@@ -503,10 +492,7 @@ fn transform_additional_permissions_enable_network_for_external_sandbox() {
             network_access: NetworkAccess::Enabled,
         }
     );
-    assert_eq!(
-        exec_request.socket_policy,
-        SocketPolicy::Enabled
-    );
+    assert_eq!(exec_request.socket_policy, SocketPolicy::Enabled);
 }
 
 #[test]
@@ -518,8 +504,8 @@ fn transform_additional_permissions_preserves_denied_entries() {
         canonicalize(temp_dir.path()).expect("canonicalize temp dir"),
     )
     .expect("absolute temp dir");
-    let allowed_path = workspace_root.join("allowed").expect("allowed path");
-    let denied_path = workspace_root.join("denied").expect("denied path");
+    let allowed_path = workspace_root.join("allowed");
+    let denied_path = workspace_root.join("denied");
     let exec_request = manager
         .transform(super::SandboxTransformRequest {
             spec: super::CommandSpec {
@@ -586,10 +572,7 @@ fn transform_additional_permissions_preserves_denied_entries() {
             },
         ])
     );
-    assert_eq!(
-        exec_request.socket_policy,
-        SocketPolicy::Restricted
-    );
+    assert_eq!(exec_request.socket_policy, SocketPolicy::Restricted);
 }
 
 #[test]
@@ -599,8 +582,8 @@ fn merge_vfs_policy_with_additional_permissions_preserves_unreadable_roots() {
         canonicalize(temp_dir.path()).expect("canonicalize temp dir"),
     )
     .expect("absolute temp dir");
-    let allowed_path = cwd.join("allowed").expect("allowed path");
-    let denied_path = cwd.join("denied").expect("denied path");
+    let allowed_path = cwd.join("allowed");
+    let denied_path = cwd.join("denied");
     let merged_policy = merge_vfs_policy_with_additional_permissions(
         &VfsPolicy::restricted(vec![
             VfsEntry {
@@ -643,7 +626,7 @@ fn effective_vfs_policy_returns_base_policy_without_additional_permissions() {
         canonicalize(temp_dir.path()).expect("canonicalize temp dir"),
     )
     .expect("absolute temp dir");
-    let denied_path = cwd.join("denied").expect("denied path");
+    let denied_path = cwd.join("denied");
     let base_policy = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {
@@ -669,8 +652,8 @@ fn effective_vfs_policy_merges_additional_write_roots() {
         canonicalize(temp_dir.path()).expect("canonicalize temp dir"),
     )
     .expect("absolute temp dir");
-    let allowed_path = cwd.join("allowed").expect("allowed path");
-    let denied_path = cwd.join("denied").expect("denied path");
+    let allowed_path = cwd.join("allowed");
+    let denied_path = cwd.join("denied");
     let base_policy = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {
@@ -693,8 +676,7 @@ fn effective_vfs_policy_merges_additional_write_roots() {
         ..Default::default()
     };
 
-    let effective_policy =
-        effective_vfs_policy(&base_policy, Some(&additional_permissions));
+    let effective_policy = effective_vfs_policy(&base_policy, Some(&additional_permissions));
 
     assert_eq!(
         effective_policy.entries.contains(&VfsEntry {

@@ -247,8 +247,7 @@ impl ConfigService {
         edits: Vec<(String, JsonValue, MergeStrategy)>,
     ) -> Result<ConfigWriteResponse, ConfigServiceError> {
         let allowed_path =
-            AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, &self.chaos_home)
-                .map_err(|err| ConfigServiceError::io("failed to resolve user config path", err))?;
+            AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, &self.chaos_home);
         let provided_path = match file_path {
             Some(path) => AbsolutePathBuf::from_absolute_path(PathBuf::from(path))
                 .map_err(|err| ConfigServiceError::io("failed to resolve user config path", err))?,

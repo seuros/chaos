@@ -1613,7 +1613,7 @@ mod tests {
         assert_eq!(page.num_scanned_records, 2);
         assert!(!page.reached_scan_limit);
         assert_eq!(
-            page.next_cursor.as_ref().map(|cursor| cursor.id()),
+            page.next_cursor.as_ref().map(super::Cursor::id),
             Some(next_id)
         );
         assert_eq!(

@@ -73,7 +73,7 @@ async fn cli_overrides_resolve_relative_paths_against_cwd() -> std::io::Result<(
         .build()
         .await?;
 
-    let expected = AbsolutePathBuf::resolve_path_against_base("run-logs", cwd_path)?;
+    let expected = AbsolutePathBuf::resolve_path_against_base("run-logs", cwd_path);
     assert_eq!(config.log_dir, expected.to_path_buf());
     Ok(())
 }
@@ -187,8 +187,7 @@ async fn returns_empty_when_all_layers_missing() {
     assert_eq!(
         &ConfigLayerEntry {
             name: super::ConfigLayerSource::User {
-                file: AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, tmp.path())
-                    .expect("resolve user config.toml path")
+                file: AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, tmp.path()),
             },
             config: TomlValue::Table(toml::map::Map::new()),
             raw_toml: None,

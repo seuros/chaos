@@ -117,6 +117,31 @@ This backlog captures concrete duplicate or near-duplicate code found by paralle
   - Files: `bin/chaos/tests/mcp_list.rs`, `bin/chaos/src/mcp_cmd.rs`, `var/proc/src/runtime.rs`, `sys/kern/kern/src/config/config_tests/mcp_servers.rs`, `sys/kern/kern/tests/suite/mcp_client.rs`
   - Add fixture/builder functions for default enabled MCP server config.
 
+## Completed invariant and test cleanup
+
+- Removed success-only error layers from cron startup, OTLP client and metric timer
+  construction, relative path resolution/joining, permission normalization, auth
+  storage-key construction, and terminal resize bookkeeping.
+- Removed repeated bounds checks where preceding branches prove operand ordering.
+  Kept checks on external patch input, UTF-8 positions, and actual exhausted budgets.
+- Removed impossible JSON serialization defaults for concrete values and retained
+  validated user-agent headers instead of reparsing them at insertion.
+- Removed six redundant test bodies:
+  - Two unified-diff cases in `lib/libfs/diff/src/invocation.rs`; the owners remain
+    in `lib/libfs/diff/src/lib.rs`.
+  - Two exec-policy amendment cases already covered by the approval-requirement
+    cases in `sys/kern/kern/src/exec_policy_tests.rs`.
+  - The stale sandbox-policy comparison case in `environment_context_tests.rs`,
+    identical to the equal-CWD comparison.
+  - The release-only missing-function-output case in `history_tests.rs`, already
+    covered by its unconditional equivalent.
+- Combined the two user-agent invalid-suffix tests into one input matrix without
+  dropping either input.
+
+Kernel-local auth fixture helpers remain: the shared `chaos-auth-test-fixtures`
+crate depends on `chaos-kern`, so it cannot replace those helpers without revisiting
+the dependency direction. No fixture-only or cross-backend copies were deleted.
+
 ## Suggested execution order
 
 1. `srv/pf` response helper consolidation.

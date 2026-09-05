@@ -123,7 +123,7 @@ impl TextArea {
     }
 
     pub fn insert_element(&mut self, text: &str) -> u64 {
-        let start = self.clamp_pos_for_insertion(self.cursor_pos);
+        let start = self.clamp_pos_to_nearest_boundary(self.cursor_pos);
         self.insert_str_at(start, text);
         let end = start + text.len();
         let id = self.add_element(start..end);

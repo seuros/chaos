@@ -233,8 +233,7 @@ impl App {
         emit_project_config_warnings(&app_event_tx, &config);
         tui.set_notification_method(config.tui_notification_method);
 
-        let harness_overrides =
-            normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd)?;
+        let harness_overrides = normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd);
         let auth_manager = auth_manager.clone();
         let process_table = process_table.clone();
         let model = process_table

@@ -252,7 +252,7 @@ pub fn truncate_function_output_items_with_policy(
 
                 if cost <= remaining_budget {
                     out.push(FunctionCallOutputContentItem::InputText { text: text.clone() });
-                    remaining_budget = remaining_budget.saturating_sub(cost);
+                    remaining_budget -= cost;
                 } else {
                     let snippet_policy = match policy {
                         TruncationPolicy::Bytes(_) => TruncationPolicy::Bytes(remaining_budget),

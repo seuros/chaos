@@ -68,8 +68,17 @@ impl Schedule {
     }
 
     /// Serialize to the JSON form stored in the `cron_jobs.schedule` column.
-    pub fn to_json(&self) -> anyhow::Result<String> {
-        serde_json::to_string(self).context("failed to serialize schedule")
+    ///
+    /// This does not validate field ranges. Call [`Self::validate`] first when
+    /// accepting a new schedule; [`Self::parse`] and [`Self::next_after`]
+    /// continue to validate and can fail.
+    #[allow(
+        clippy::expect_used,
+        reason = "Schedule contains only JSON-serializable integers and a fieldless enum"
+    )]
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self)
+            .expect("Schedule contains only JSON-serializable integers and a fieldless enum")
     }
 
     /// Check that field values are in range (e.g. `hour < 24`).
@@ -143,7 +152,7 @@ mod tests {
     #[test]
     fn interval_round_trips_and_advances() {
         let sched = Schedule::Interval { seconds: 300 };
-        let json = sched.to_json().expect("serialize");
+        let json = sched.to_json();
         let parsed = Schedule::parse(&json).expect("parse");
         let ts = Timestamp::from_second(1000).expect("ts");
         assert_eq!(parsed.next_after(ts).expect("next"), 1300);
@@ -152,7 +161,7 @@ mod tests {
     #[test]
     fn interval_rejects_non_positive_seconds() {
         let sched = Schedule::Interval { seconds: 0 };
-        let json = sched.to_json().expect("serialize");
+        let json = sched.to_json();
         assert!(Schedule::parse(&json).is_err());
     }
 
@@ -230,7 +239,7 @@ mod tests {
             hour: 24,
             minute: 0,
         };
-        let json = sched.to_json().expect("serialize");
+        let json = sched.to_json();
         assert!(Schedule::parse(&json).is_err());
     }
 }

@@ -147,17 +147,8 @@ pub(crate) fn diff_report_with_cancel(
     };
 
     let mut staged_paths = BTreeSet::new();
-    if scope != DiffScope::Worktree {
-        collect_tree_index_paths(
-            &repo,
-            &index,
-            base_tree
-                .as_ref()
-                .expect("base tree for staged or all scope"),
-            paths,
-            &mut staged_paths,
-            &cancel,
-        )?;
+    if let Some(base_tree) = &base_tree {
+        collect_tree_index_paths(&repo, &index, base_tree, paths, &mut staged_paths, &cancel)?;
     }
     let mut unstaged_paths = BTreeSet::new();
     if scope != DiffScope::Staged {
@@ -193,15 +184,9 @@ pub(crate) fn diff_report_with_cancel(
             continue;
         }
 
-        let old_content = match scope {
-            DiffScope::Worktree => index_blob_content(&repo, &index, &path)?,
-            DiffScope::Staged | DiffScope::All => tree_blob_content(
-                &repo,
-                base_tree
-                    .as_ref()
-                    .expect("base tree for staged or all scope"),
-                &path,
-            )?,
+        let old_content = match &base_tree {
+            None => index_blob_content(&repo, &index, &path)?,
+            Some(base_tree) => tree_blob_content(&repo, base_tree, &path)?,
         };
         let new_content = match scope {
             DiffScope::Staged => index_blob_content(&repo, &index, &path)?,

@@ -210,8 +210,7 @@ fn function_tool_to_mcp(tool: ResponsesApiTool) -> McpTool {
         name: tool.name,
         title: None,
         description: Some(tool.description),
-        input_schema: serde_json::to_value(tool.parameters)
-            .unwrap_or_else(|_| serde_json::json!({})),
+        input_schema: serde_json::Value::from(&tool.parameters),
         output_schema: tool.output_schema,
         annotations: None,
         icons: None,

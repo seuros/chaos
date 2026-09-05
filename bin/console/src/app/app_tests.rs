@@ -151,7 +151,7 @@ fn normalize_harness_overrides_resolves_relative_add_dirs() -> Result<()> {
         additional_writable_roots: vec![PathBuf::from("rel")],
         ..Default::default()
     };
-    let normalized = normalize_harness_overrides_for_cwd(overrides, &base_cwd)?;
+    let normalized = normalize_harness_overrides_for_cwd(overrides, &base_cwd);
 
     assert_eq!(
         normalized.additional_writable_roots,

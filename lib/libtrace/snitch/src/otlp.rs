@@ -1,20 +1,18 @@
 use crate::config::OtelTlsConfig;
 use crate::rama_otel_client::RamaOtelClient;
-use std::error::Error;
 
 /// Build an HTTP client for OTLP HTTP exporters.
 ///
 /// Returns a rama-based `RamaOtelClient` that implements the OpenTelemetry
 /// `HttpClient` trait. OTEL exporters that run on non-tokio threads use
-/// `block_in_place` or a dedicated thread to drive the async client.
-pub(crate) fn build_http_client(
-    _tls: &OtelTlsConfig,
-    _timeout_var: &str,
-) -> Result<RamaOtelClient, Box<dyn Error>> {
+/// `block_in_place` or a dedicated thread to drive the async client. Client
+/// construction itself is infallible; exporter and request failures remain
+/// fallible.
+pub(crate) fn build_http_client(_tls: &OtelTlsConfig, _timeout_var: &str) -> RamaOtelClient {
     // TODO: wire TLS config (custom CA, mTLS) into rama's rustls layer
     // when OTLP endpoints require it. For now, use the default client
     // which trusts system roots.
-    Ok(RamaOtelClient::new())
+    RamaOtelClient::new()
 }
 
 pub(crate) fn current_tokio_runtime_is_multi_thread() -> bool {
@@ -27,9 +25,9 @@ pub(crate) fn current_tokio_runtime_is_multi_thread() -> bool {
 pub(crate) fn build_async_http_client(
     _tls: Option<&OtelTlsConfig>,
     _timeout_var: &str,
-) -> Result<RamaOtelClient, Box<dyn Error>> {
+) -> RamaOtelClient {
     // TODO: wire TLS config into rama's rustls layer for custom CA/mTLS.
-    Ok(RamaOtelClient::new())
+    RamaOtelClient::new()
 }
 
 #[cfg(test)]

@@ -39,7 +39,7 @@ pub fn format_and_truncate_tool_result(text: &str, max_lines: usize, line_width:
 /// Relevant issue: https://github.com/ratatui/ratatui/issues/293
 pub fn format_json_compact(text: &str) -> Option<String> {
     let json = serde_json::from_str::<serde_json::Value>(text).ok()?;
-    let json_pretty = serde_json::to_string_pretty(&json).unwrap_or_else(|_| json.to_string());
+    let json_pretty = format!("{json:#}");
 
     // Convert multi-line pretty JSON to compact single-line format by removing newlines and excess whitespace
     let mut result = String::new();

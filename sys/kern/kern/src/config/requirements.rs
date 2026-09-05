@@ -227,7 +227,7 @@ impl Config {
         let additional_writable_roots: Vec<AbsolutePathBuf> = additional_writable_roots
             .into_iter()
             .map(|path| AbsolutePathBuf::resolve_path_against_base(path, &resolved_cwd))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect();
         let active_project_trust =
             active_project_trust_override.unwrap_or(ProjectTrust { trust_level: None });
         let permission_config_syntax = validation::resolve_permission_config_syntax(

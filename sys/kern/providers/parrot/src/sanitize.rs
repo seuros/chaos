@@ -57,6 +57,16 @@ pub enum JsonSchema {
     },
 }
 
+impl From<&JsonSchema> for JsonValue {
+    #[allow(clippy::expect_used)]
+    fn from(schema: &JsonSchema) -> Self {
+        // JsonSchema contains only JSON primitives, string-keyed maps, and
+        // recursive JsonSchema values, so its derived Serialize impl cannot
+        // produce a serde_json data-model error.
+        serde_json::to_value(schema).expect("JsonSchema is always representable as JSON")
+    }
+}
+
 /// Whether additional properties are allowed, and if so, any required schema
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]

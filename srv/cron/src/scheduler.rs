@@ -87,28 +87,28 @@ static SCHEDULER_GUARD: OnceLock<watch::Sender<bool>> = OnceLock::new();
 /// Spawn the global cron scheduler if it hasn't been started yet.
 ///
 /// Uses `OnceLock` to guarantee at most one scheduler instance per process.
-/// Returns the shutdown sender on first call, `Ok(None)` on subsequent calls,
-/// or an error when the storage provider cannot supply a supported backend.
+/// Returns the shutdown sender on first call and `None` on subsequent or
+/// concurrent calls that lose the initialization race.
 /// The scheduler runs in a background `tokio::spawn` task until the shutdown
 /// sender is dropped or `true` is sent.
 pub fn spawn_global(
     provider: &ChaosVfs,
     executor: JobExecutor,
-) -> Result<Option<&'static watch::Sender<bool>>, String> {
+) -> Option<&'static watch::Sender<bool>> {
     if SCHEDULER_GUARD.get().is_some() {
-        return Ok(None);
+        return None;
     }
 
     let store = BackendCronStorage::from_provider(provider);
     let (shutdown_tx, shutdown_rx) = Scheduler::shutdown_channel();
     if SCHEDULER_GUARD.set(shutdown_tx).is_err() {
-        return Ok(None);
+        return None;
     }
 
     let scheduler = Scheduler::new(store, executor, DEFAULT_TICK_INTERVAL, shutdown_rx);
     tokio::spawn(scheduler.run());
 
-    Ok(SCHEDULER_GUARD.get())
+    SCHEDULER_GUARD.get()
 }
 
 /// The scheduler runs a background tick loop, checking for due jobs

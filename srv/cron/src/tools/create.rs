@@ -73,10 +73,7 @@ impl CronServer {
 /// The job is persisted to the mounted filesystem. Missing DB access is
 /// treated as an execution error rather than a validation-only success,
 /// because cron jobs are always expected to persist.
-pub async fn execute(
-    params: &CronCreateParams,
-    owner: &OwnerContext,
-) -> Result<String, String> {
+pub async fn execute(params: &CronCreateParams, owner: &OwnerContext) -> Result<String, String> {
     execute_structured(params, owner)
         .await
         .map(|value| value.to_string())
@@ -98,10 +95,7 @@ async fn execute_with_storage_structured<S: CronStorage>(
         .schedule
         .validate()
         .map_err(|e| format!("invalid schedule: {e}"))?;
-    let schedule_json = params
-        .schedule
-        .to_json()
-        .map_err(|e| format!("invalid schedule: {e}"))?;
+    let schedule_json = params.schedule.to_json();
 
     // Validate scope
     let scope: crate::CronScope = params

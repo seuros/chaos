@@ -15,8 +15,8 @@ use crate::OwnerContext;
 use crate::job::CreateJobParams;
 use crate::spool_store::BackendSpoolStore;
 use crate::spool_submit::submit_manifest_from_provider;
-use crate::tools::owner_context_from_cron_ctx;
 use crate::tools::cron_vfs;
+use crate::tools::owner_context_from_cron_ctx;
 use chaos_abi::ContentItem;
 use chaos_abi::ResponseItem;
 use chaos_abi::TurnRequest;
@@ -91,10 +91,7 @@ impl CronServer {
 }
 
 /// Standalone execution — callable from both MCP and kernel adapter.
-pub async fn execute(
-    params: &SpoolSubmitParams,
-    owner: &OwnerContext,
-) -> Result<String, String> {
+pub async fn execute(params: &SpoolSubmitParams, owner: &OwnerContext) -> Result<String, String> {
     execute_structured(params, owner)
         .await
         .map(|value| value.to_string())
@@ -138,14 +135,12 @@ async fn execute_structured_on(
 
     // Validate the schedule BEFORE we push anything at the backend — a bad
     // schedule would leave us with a live batch and no way to poll it.
-    let poll_schedule_json = match params.poll_schedule.validate().and_then(|_| params.poll_schedule.to_json()) {
-        Ok(json) => json,
-        Err(e) => {
-            let msg = format!("invalid poll_schedule: {e}");
-            persist_failed_attempt(provider, params, &msg).await;
-            return Err(msg);
-        }
-    };
+    if let Err(e) = params.poll_schedule.validate() {
+        let msg = format!("invalid poll_schedule: {e}");
+        persist_failed_attempt(provider, params, &msg).await;
+        return Err(msg);
+    }
+    let poll_schedule_json = params.poll_schedule.to_json();
 
     let project_path = match owner.project_path.clone() {
         Some(project_path) => project_path,
@@ -208,11 +203,7 @@ async fn execute_structured_on(
     }))
 }
 
-async fn persist_failed_attempt(
-    provider: &ChaosVfs,
-    params: &SpoolSubmitParams,
-    error: &str,
-) {
+async fn persist_failed_attempt(provider: &ChaosVfs, params: &SpoolSubmitParams, error: &str) {
     if params.items.is_empty() {
         return;
     }
@@ -281,13 +272,13 @@ pub fn mount(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_vfs::MountConfig;
     use chaos_abi::SpoolBackend;
     use chaos_abi::SpoolError;
     use chaos_abi::SpoolItem;
     use chaos_abi::SpoolPhase;
     use chaos_abi::SpoolRegistry;
     use chaos_abi::SpoolStatusReport;
+    use chaos_vfs::MountConfig;
     use sqlx::Row;
     use std::future::Future;
     use std::pin::Pin;

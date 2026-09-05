@@ -62,12 +62,10 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
         config.model_provider_id.clone(),
     );
 
-    if let Err(err) = chaos_cron::spawn_scheduler(
+    let _ = chaos_cron::spawn_scheduler(
         vfs,
         scheduler_executor(vfs, config.sqlite_home.as_path()).await,
-    ) {
-        warn!("failed to initialize cron scheduler storage backend: {err}");
-    }
+    );
 
     // Install the shared ration usage store so adapters built later in
     // boot can attach sniffers via `chaos_libration::registry::sniffer_for`.
@@ -93,13 +91,7 @@ async fn scheduler_executor(provider: &ChaosVfs, sqlite_home: &Path) -> chaos_cr
     // the second install being dropped.
     let _ = chaos_abi::set_shared_spool_registry(registry.clone());
 
-    let spool = match chaos_cron::spool_executor_from_provider(registry, provider) {
-        Ok(executor) => executor,
-        Err(err) => {
-            warn!("spool backends configured, but spool execution is unavailable: {err}");
-            return shell;
-        }
-    };
+    let spool = chaos_cron::spool_executor_from_provider(registry, provider);
 
     chaos_cron::dispatch_executor(shell, spool)
 }

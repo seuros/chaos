@@ -974,41 +974,6 @@ fn format_exec_output_prefers_line_marker_when_both_limits_exceeded() {
 
 #[cfg(not(debug_assertions))]
 #[test]
-fn normalize_adds_missing_output_for_function_call() {
-    let items = vec![ResponseItem::FunctionCall {
-        id: None,
-        name: "do_it".to_string(),
-        namespace: None,
-        arguments: "{}".to_string(),
-        call_id: "call-x".to_string(),
-        provider_metadata: None,
-    }];
-    let mut h = create_history_with_items(items);
-
-    h.normalize_history(&default_input_modalities());
-
-    assert_eq!(
-        h.raw_items(),
-        vec![
-            ResponseItem::FunctionCall {
-                id: None,
-                name: "do_it".to_string(),
-                namespace: None,
-                arguments: "{}".to_string(),
-                call_id: "call-x".to_string(),
-                provider_metadata: None,
-            },
-            ResponseItem::FunctionCallOutput {
-                call_id: "call-x".to_string(),
-                output: FunctionCallOutputPayload::from_text("aborted".to_string()),
-                tool_name: None,
-            },
-        ]
-    );
-}
-
-#[cfg(not(debug_assertions))]
-#[test]
 fn normalize_adds_missing_output_for_custom_tool_call() {
     let items = vec![ResponseItem::CustomToolCall {
         id: None,

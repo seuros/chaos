@@ -445,18 +445,14 @@ pub(crate) struct App {
 fn normalize_harness_overrides_for_cwd(
     mut overrides: ConfigOverrides,
     base_cwd: &Path,
-) -> Result<ConfigOverrides> {
-    if overrides.additional_writable_roots.is_empty() {
-        return Ok(overrides);
-    }
-
+) -> ConfigOverrides {
     let mut normalized = Vec::with_capacity(overrides.additional_writable_roots.len());
     for root in overrides.additional_writable_roots.drain(..) {
-        let absolute = AbsolutePathBuf::resolve_path_against_base(root, base_cwd)?;
+        let absolute = AbsolutePathBuf::resolve_path_against_base(root, base_cwd);
         normalized.push(absolute.into_path_buf());
     }
     overrides.additional_writable_roots = normalized;
-    Ok(overrides)
+    overrides
 }
 
 #[cfg(test)]

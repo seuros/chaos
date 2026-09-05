@@ -35,9 +35,9 @@ pub(super) fn record_origins(
 }
 
 pub fn version_for_toml(value: &TomlValue) -> String {
-    let json = serde_json::to_value(value).unwrap_or(JsonValue::Null);
+    let json = toml_to_json(value);
     let canonical = canonical_json(&json);
-    let serialized = serde_json::to_vec(&canonical).unwrap_or_default();
+    let serialized = canonical.to_string();
     let mut hasher = Sha256::new();
     hasher.update(serialized);
     let hash = hasher.finalize();
@@ -48,20 +48,52 @@ pub fn version_for_toml(value: &TomlValue) -> String {
     format!("sha256:{hex}")
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "TOML values have only string keys and JSON-serializable values"
+)]
+pub(super) fn toml_to_json(value: &TomlValue) -> JsonValue {
+    serde_json::to_value(value).expect("TOML values serialize to JSON")
+}
+
 fn canonical_json(value: &JsonValue) -> JsonValue {
     match value {
         JsonValue::Object(map) => {
             let mut sorted = serde_json::Map::new();
-            let mut keys = map.keys().cloned().collect::<Vec<_>>();
-            keys.sort();
-            for key in keys {
-                if let Some(val) = map.get(&key) {
-                    sorted.insert(key, canonical_json(val));
-                }
+            let mut entries = map.iter().collect::<Vec<_>>();
+            entries.sort_unstable_by_key(|(key, _)| *key);
+            for (key, val) in entries {
+                sorted.insert(key.clone(), canonical_json(val));
             }
             JsonValue::Object(sorted)
         }
         JsonValue::Array(items) => JsonValue::Array(items.iter().map(canonical_json).collect()),
         other => other.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fingerprint_preserves_sorted_json_and_toml_scalar_encoding() -> Result<(), toml::de::Error> {
+        let value: TomlValue = toml::from_str(
+            r#"
+array = [1, true, "x", nan, inf, -inf]
+date = 1979-05-27T07:32:00Z
+[nested]
+z = 1
+a = 2
+"#,
+        )?;
+        let expected = r#"{"array":[1,true,"x",null,null,null],"date":{"$__toml_private_datetime":"1979-05-27T07:32:00Z"},"nested":{"a":2,"z":1}}"#;
+
+        assert_eq!(canonical_json(&toml_to_json(&value)).to_string(), expected);
+        assert_eq!(
+            version_for_toml(&value),
+            "sha256:1348a76030004e52572f238e6712175271a397be93b4d56f9c7e99300578b4ca"
+        );
+        Ok(())
     }
 }

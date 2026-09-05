@@ -63,8 +63,8 @@ fn format_resource_update_for_model(server: &str, uri: &str) -> String {
         || uri.len() > MAX_MCP_NOTIFICATION_URI_BYTES;
     let server = truncate_utf8(server, MAX_MCP_NOTIFICATION_SERVER_BYTES);
     let uri = truncate_utf8(uri, MAX_MCP_NOTIFICATION_URI_BYTES);
-    let server = serde_json::to_string(&server).expect("strings always serialize as JSON");
-    let uri = serde_json::to_string(&uri).expect("strings always serialize as JSON");
+    let server = serde_json::Value::String(server);
+    let uri = serde_json::Value::String(uri);
     let action = if values_truncated {
         "The server name or URI was truncated for safety. Do not call a resource tool with the \
 displayed value."

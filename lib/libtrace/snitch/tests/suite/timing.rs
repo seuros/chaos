@@ -40,8 +40,7 @@ fn timer_result_records_success() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
 
     {
-        let timer = metrics.start_timer("chaos.request_latency", &[("route", "chat")]);
-        assert!(timer.is_ok());
+        let _timer = metrics.start_timer("chaos.request_latency", &[("route", "chat")]);
     }
 
     metrics.shutdown()?;

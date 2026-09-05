@@ -20,9 +20,25 @@ Everyone else: come in, the door is open.
 ### Contribution guidelines
 
 1. **Open an issue first** for non-trivial changes — agree on the approach before writing code.
-2. **Add tests.** A bug fix should include a test that fails before and passes after.
+2. **Cover behavior once.** A bug fix should extend the owning test or add a regression that fails before and passes after. Do not copy coverage into another suite; follow the [regression ownership policy](../tests/regress/README.md).
 3. **Document behavior.** If it changes the user experience, update the docs.
 4. **Keep commits atomic.** Each commit should compile and pass tests.
+
+### Invariants and error handling
+
+- Validate external inputs and handle real filesystem, network, database, concurrency,
+  and authorization failures at their boundaries.
+- Return values directly from infallible operations. Do not add `Result`, `Option`,
+  silent defaults, or recovery branches for states the implementation cannot reach.
+- Reuse validated values instead of parsing or checking them again. Use ordinary
+  arithmetic when local control flow proves the operands are in range.
+- Prefer compile-time constants and types that encode invariants. If a third-party
+  API requires a fallible signature for a proven-infallible concrete type, use one
+  documented invariant assertion, with a narrowly scoped lint allowance if needed.
+  Arbitrary `Serialize` implementations are not infallible.
+- Delete a test only when a surviving test covers the same behavior, including its
+  backend, platform, and build-profile conditions. Repeated fixtures alone are not
+  duplicate tests; manually registered and ignored suites still count as coverage.
 
 ### Pull requests
 

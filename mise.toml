@@ -1,2 +1,4 @@
 [tools]
 rust = "1.98.0"
+# Explicit backend also works with mise versions predating the mr-boxington alias.
+"github:jdx/mr-boxington" = { version = "1.8.3", os = ["linux", "macos"] }

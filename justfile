@@ -1,6 +1,10 @@
 set working-directory := "."
 set positional-arguments
 
+# Opt in to the shared compiler cache with `just cargo=mbx <recipe>`.
+# Plain Cargo remains the default, including on hosts without an mbx release.
+cargo := "cargo"
+
 # Display help
 help:
     just -l
@@ -8,7 +12,7 @@ help:
 # Run chaos (debug build)
 alias c := chaos
 chaos *args:
-    cargo run --bin chaos -- {{args}}
+    {{cargo}} run --bin chaos -- {{args}}
 
 # Run chaos with max optimization: release profile (fat LTO, single
 # codegen unit, stripped symbols) plus `-C target-cpu=native` so the
@@ -16,11 +20,11 @@ chaos *args:
 # project, so portable codegen is wasted on a daily-driver binary.
 alias b := bigbang
 bigbang *args:
-    RUSTFLAGS="-C target-cpu=native" cargo run --release --bin chaos -- {{args}}
+    RUSTFLAGS="-C target-cpu=native" {{cargo}} run --release --bin chaos -- {{args}}
 
 # Build the chaos binary (debug profile).
 build *args:
-    cargo build --bin chaos {{args}}
+    {{cargo}} build --bin chaos {{args}}
 
 # Install chaos into ~/.cargo/bin (release + target-cpu=native).
 install: (_install "")
@@ -158,8 +162,8 @@ _install profile_flag:
         [ -n "$need_dbus_pkg" ]     && echo "  ensure PKG_CONFIG_PATH points at a directory with dbus-1.pc" >&2
         exit 1
     fi
-    RUSTFLAGS="-C target-cpu=native" cargo install --path bin/chaos --locked --force {{profile_flag}}
-    RUSTFLAGS="-C target-cpu=native" cargo install --path srv/journald --locked --force {{profile_flag}}
+    RUSTFLAGS="-C target-cpu=native" {{cargo}} install --path bin/chaos --locked --force {{profile_flag}}
+    RUSTFLAGS="-C target-cpu=native" {{cargo}} install --path srv/journald --locked --force {{profile_flag}}
 
 # Build a portable release tarball: chaos + install.sh.
 # Usage: just dist [output=chaos-dist.tar.gz]
@@ -168,7 +172,7 @@ _install profile_flag:
 dist output="chaos-dist.tar.gz":
     #!/usr/bin/env sh
     set -e
-    cargo build --release --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper
+    {{cargo}} build --release --bin chaos --bin chaos_journald --bin chaos-forkve-wrapper
     for bin in chaos chaos_journald chaos-forkve-wrapper; do
         strip "target/release/$bin" 2>/dev/null || true
     done
@@ -187,19 +191,19 @@ fmt:
 
 # Clippy with all features, deny warnings
 clippy:
-    scripts/with-local-qa-tmp.sh cargo clippy --workspace --all-features --tests -- -D warnings
+    scripts/with-local-qa-tmp.sh {{cargo}} clippy --workspace --all-features --tests -- -D warnings
 
 # Check compilation without building
 check:
-    scripts/with-local-qa-tmp.sh cargo check --workspace --all-targets --all-features
+    scripts/with-local-qa-tmp.sh {{cargo}} check --workspace --all-targets --all-features
 
 # Run tests with all features
 test *args:
-    scripts/with-local-qa-tmp.sh cargo nextest run --workspace --all-features --no-fail-fast {{args}}
+    scripts/with-local-qa-tmp.sh {{cargo}} nextest run --workspace --all-features --no-fail-fast {{args}}
 
 # Run the bounded Postgres validation set against a mounted filesystem.
 postgres-validate database_url:
-    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" cargo nextest run -p chaos-vfs -p chaos-cron -p chaos-proc -p chaos-recall --all-features --no-fail-fast
+    scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" {{cargo}} nextest run -p chaos-vfs -p chaos-cron -p chaos-proc -p chaos-recall --all-features --no-fail-fast
 
 # Lint + check + clippy (no tests)
 qq: fmt check clippy
@@ -225,13 +229,13 @@ outdated:
 
 # Fix clippy warnings automatically
 fix:
-    scripts/with-local-qa-tmp.sh cargo clippy --fix --workspace --all-features --tests --allow-dirty
+    scripts/with-local-qa-tmp.sh {{cargo}} clippy --fix --workspace --all-features --tests --allow-dirty
 
 # Run the MCP server
 mcp-server-run *args:
-    cargo run -p chaos-mcpd -- {{args}}
+    {{cargo}} run -p chaos-mcpd -- {{args}}
 
 # Write hooks JSON schema fixtures
 [no-cd]
 write-hooks-schema:
-    cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures
+    {{cargo}} run -p chaos-dtrace --bin write_hooks_schema_fixtures

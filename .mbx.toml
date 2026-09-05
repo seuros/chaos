@@ -1,0 +1,8 @@
+# Keep Cargo in charge of build-script execution: bin/chaos/build.rs reads the
+# clock, and native dependencies probe the host's libclang/pkg-config setup.
+build_script_execution = false
+
+# CI previously hit sqlite3_unlock_notify link failures under sccache. Keep
+# native compilers unwrapped until mbx's C/C++ path is qualified on our matrix.
+# Rust compilation caching remains enabled.
+cc = false

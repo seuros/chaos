@@ -15,6 +15,8 @@ Everyone else: come in, the door is open.
 - Fork the repo, create a topic branch from `master` — e.g. `feat/something-useful`.
 - Keep changes focused. Unrelated fixes go in separate PRs.
 - Run `just fmt` and `just test` before opening a PR.
+- For optional shared compiler caching, use `just cargo=mbx qa` after following
+  the [build-cache setup](../man/chaos-install.7.md#shared-build-cache).
 - No invitation required. No gatekeeping. Sign your commits (`git commit -s`).
 
 ### Contribution guidelines

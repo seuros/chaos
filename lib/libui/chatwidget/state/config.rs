@@ -53,7 +53,7 @@ impl ChatWidget {
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             /*model*/ None,
             Some(effort),
-            /*minion_instructions*/ None,
+            /*developer_instructions*/ None,
         );
         if self.collaboration_modes_enabled()
             && let Some(mask) = self.active_collaboration_mask.as_mut()
@@ -81,7 +81,7 @@ impl ChatWidget {
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             Some(model.to_string()),
             /*effort*/ None,
-            /*minion_instructions*/ None,
+            /*developer_instructions*/ None,
         );
         if self.collaboration_modes_enabled()
             && let Some(mask) = self.active_collaboration_mask.as_mut()

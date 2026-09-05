@@ -5,10 +5,10 @@
 //! journald; PostgreSQL journal access uses the mounted database directly.
 
 pub mod backfill;
+pub mod child_agent_jobs;
 mod extract;
 pub mod memories;
 mod migrations;
-pub mod minion_jobs;
 mod model;
 pub mod reviewer_orchestrations;
 mod runtime;
@@ -32,14 +32,14 @@ pub use model::Anchor;
 pub use model::BackfillState;
 pub use model::BackfillStats;
 pub use model::BackfillStatus;
+pub use model::ChildAgentJob;
+pub use model::ChildAgentJobCreateParams;
+pub use model::ChildAgentJobItem;
+pub use model::ChildAgentJobItemCreateParams;
+pub use model::ChildAgentJobItemStatus;
+pub use model::ChildAgentJobProgress;
+pub use model::ChildAgentJobStatus;
 pub use model::ExtractionOutcome;
-pub use model::MinionJob;
-pub use model::MinionJobCreateParams;
-pub use model::MinionJobItem;
-pub use model::MinionJobItemCreateParams;
-pub use model::MinionJobItemStatus;
-pub use model::MinionJobProgress;
-pub use model::MinionJobStatus;
 pub use model::ProcessMetadata;
 pub use model::ProcessMetadataBuilder;
 pub use model::ProcessesPage;

@@ -692,7 +692,7 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
             model_info: &model_info,
             available_models: &available_models,
             approval_policy: ApprovalPolicy::Interactive,
-            minion_jobs_allowed: false,
+            child_agent_jobs_allowed: false,
             web_search_mode: None,
             session_source,
             vfs_policy: &VfsPolicy::unrestricted(),
@@ -707,14 +707,14 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
     };
 
     let child_source = process_spawn_source(ProcessId::new(), 1, None);
-    let internal_role = crate::minions::internal_agent_role("attested-review", "test");
+    let internal_role = crate::child_agents::internal_agent_role("attested-review", "test");
     let internal_source = process_spawn_source(ProcessId::new(), 1, Some(internal_role.as_str()));
     for (source, collab_enabled, expected) in [
         (SessionSource::Cli, true, false),
         (child_source.clone(), false, true),
         (internal_source.clone(), false, false),
         (
-            SessionSource::SubAgent(SubAgentSource::Other("minion_job:test".to_string())),
+            SessionSource::SubAgent(SubAgentSource::Other("child_agent_job:test".to_string())),
             true,
             false,
         ),
@@ -1176,7 +1176,8 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     let base_instructions = BaseInstructions {
         text: "base".to_string(),
     };
-    turn.minion_instructions = Some("dev".to_string());
+    Arc::make_mut(&mut turn.config).child_instructions = Some("child-defaults".to_string());
+    turn.developer_instructions = Some("dev".to_string());
     turn.compact_prompt = Some("compact".to_string());
     turn.shell_environment_policy = ShellEnvironmentPolicy {
         use_profile: true,
@@ -1198,13 +1199,14 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .expect("approval policy set");
 
     let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    assert_eq!(config.child_instructions.as_deref(), Some("child-defaults"));
     let mut expected = (*turn.config).clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
     expected.model_provider = turn.provider.clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
-    expected.minion_instructions = turn.minion_instructions.clone();
+    expected.developer_instructions = turn.developer_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     expected.alcatraz_exe = turn.alcatraz_exe.clone();
@@ -1249,12 +1251,14 @@ async fn build_agent_resume_config_clears_base_instructions() {
     let (_session, mut turn) = make_session_and_context().await;
     let mut base_config = (*turn.config).clone();
     base_config.base_instructions = Some("caller-base".to_string());
+    base_config.child_instructions = Some("child-defaults".to_string());
     turn.config = Arc::new(base_config);
     turn.approval_policy
         .set(ApprovalPolicy::Interactive)
         .expect("approval policy set");
 
     let config = build_agent_resume_config(&turn, 0).expect("resume config");
+    assert_eq!(config.child_instructions.as_deref(), Some("child-defaults"));
 
     let mut expected = (*turn.config).clone();
     expected.base_instructions = None;
@@ -1262,7 +1266,7 @@ async fn build_agent_resume_config_clears_base_instructions() {
     expected.model_provider = turn.provider.clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
-    expected.minion_instructions = turn.minion_instructions.clone();
+    expected.developer_instructions = turn.developer_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     expected.alcatraz_exe = turn.alcatraz_exe.clone();

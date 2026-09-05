@@ -29,7 +29,7 @@ fn collaboration_mode_for_model(model: String) -> CollaborationMode {
         settings: Settings {
             model,
             reasoning_effort: None,
-            minion_instructions: Some("exercise approvals in collaboration mode".to_string()),
+            developer_instructions: Some("exercise approvals in collaboration mode".to_string()),
         },
     }
 }

@@ -399,7 +399,7 @@ fn make_test_collaboration_mode(config: &Config) -> (CollaborationMode, ModelInf
         settings: Settings {
             model,
             reasoning_effort,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
     (collaboration_mode, model_info)
@@ -428,7 +428,7 @@ fn make_test_session_config(
         mode_policy,
         mode_base_reasoning_effort: config.model_reasoning_effort,
         model_reasoning_summary: config.model_reasoning_summary,
-        minion_instructions: config.minion_instructions.clone(),
+        developer_instructions: config.developer_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,

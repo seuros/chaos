@@ -405,7 +405,7 @@ pub struct TurnContextItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub minion_instructions: Option<String>,
+    pub developer_instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_output_json_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -448,7 +448,7 @@ impl<'de> Deserialize<'de> for TurnContextItem {
             #[serde(default)]
             user_instructions: Option<String>,
             #[serde(default)]
-            minion_instructions: Option<String>,
+            developer_instructions: Option<String>,
             #[serde(default)]
             final_output_json_schema: Option<Value>,
             #[serde(default)]
@@ -476,7 +476,7 @@ impl<'de> Deserialize<'de> for TurnContextItem {
             effort: de.effort,
             summary: de.summary,
             user_instructions: de.user_instructions,
-            minion_instructions: de.minion_instructions,
+            developer_instructions: de.developer_instructions,
             final_output_json_schema: de.final_output_json_schema,
             truncation_policy: de.truncation_policy,
         })

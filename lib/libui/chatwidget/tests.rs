@@ -2146,7 +2146,7 @@ async fn make_chatwidget_manual(
         settings: Settings {
             model: resolved_model.clone(),
             reasoning_effort,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
     let current_collaboration_mode = base_mode;

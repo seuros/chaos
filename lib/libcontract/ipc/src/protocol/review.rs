@@ -62,7 +62,7 @@ pub struct ReviewRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub user_facing_hint: Option<String>,
-    /// Optional minion persona name to use as the reviewer.
+    /// Optional child agent persona name to use as the reviewer.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reviewer: Option<String>,

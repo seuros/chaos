@@ -83,6 +83,10 @@ pub(crate) use tests::make_session_configuration_for_tests;
 #[cfg(test)]
 pub(crate) use crate::AuthManager;
 #[cfg(test)]
+pub(crate) use crate::child_agents::AgentControl;
+#[cfg(test)]
+pub(crate) use crate::child_agents::AgentStatus;
+#[cfg(test)]
 pub(crate) use crate::client::ModelClient;
 #[cfg(test)]
 pub(crate) use crate::collaboration_modes::CollaborationModesConfig;
@@ -102,10 +106,6 @@ pub(crate) use crate::exec_policy::ExecPolicyManager;
 pub(crate) use crate::file_watcher::FileWatcher;
 #[cfg(test)]
 pub(crate) use crate::mcp::McpManager;
-#[cfg(test)]
-pub(crate) use crate::minions::AgentControl;
-#[cfg(test)]
-pub(crate) use crate::minions::AgentStatus;
 #[cfg(test)]
 pub(crate) use crate::models_manager::manager::ModelsManager;
 #[cfg(test)]

@@ -1,5 +1,5 @@
 [package]
-name = "chaos-minions"
+name = "chaos-child-agents"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

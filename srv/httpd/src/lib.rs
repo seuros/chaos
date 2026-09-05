@@ -104,7 +104,7 @@ pub async fn run_main(
         service_tier: None,
         alcatraz_exe: Some(arg0_paths.alcatraz_exe.clone()),
         base_instructions: None,
-        minion_instructions: None,
+        developer_instructions: None,
         personality: None,
         compact_prompt: None,
         ephemeral: serve_cli.ephemeral.then_some(true),

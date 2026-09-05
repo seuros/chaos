@@ -89,7 +89,7 @@ impl Session {
                 &session_configuration.collaboration_mode.with_updates(
                     /*model*/ None,
                     Some(session_configuration.mode_base_reasoning_effort),
-                    /*minion_instructions*/ None,
+                    /*developer_instructions*/ None,
                 ),
             )?;
             session_configuration.mode_policy.active_mode = mode_id.to_string();
@@ -172,7 +172,7 @@ impl Session {
                 .try_list_models()
                 .unwrap_or_default(),
             approval_policy: permission_snapshot.approval_policy,
-            minion_jobs_allowed: config.minion_jobs_allowed,
+            child_agent_jobs_allowed: config.child_agent_jobs_allowed,
             web_search_mode: base.tools_config.web_search_mode,
             session_source: base.session_source.clone(),
             vfs_policy: &effective_vfs_policy,

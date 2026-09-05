@@ -6,10 +6,10 @@ use super::{
     apply_spawn_agent_runtime_overrides, build_agent_spawn_config, function_arguments,
     parse_arguments, process_spawn_source, tool_output_json_text, tool_output_response_item,
 };
+use crate::child_agents::control::{AgentControl, SpawnAgentOptions};
+use crate::child_agents::role::apply_role_to_config;
+use crate::child_agents::status::is_final;
 use crate::config::Config;
-use crate::minions::control::{AgentControl, SpawnAgentOptions};
-use crate::minions::role::apply_role_to_config;
-use crate::minions::status::is_final;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use chaos_synopsis::{

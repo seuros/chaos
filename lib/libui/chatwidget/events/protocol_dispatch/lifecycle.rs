@@ -74,7 +74,7 @@ impl ChatWidget {
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             Some(model_for_header.clone()),
             Some(event.reasoning_effort),
-            /*minion_instructions*/ None,
+            /*developer_instructions*/ None,
         );
         if let Some(mask) = self.active_collaboration_mask.as_mut() {
             mask.model = Some(model_for_header.clone());
@@ -129,7 +129,7 @@ impl ChatWidget {
             mode: Some(event.mode_kind),
             model: Some(event.model),
             reasoning_effort: Some(event.reasoning_effort),
-            minion_instructions: None,
+            developer_instructions: None,
         });
     }
 

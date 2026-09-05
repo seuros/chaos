@@ -467,7 +467,7 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
         settings: Settings {
             model: session_configured.model.clone(),
             reasoning_effort: None,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
 
@@ -543,7 +543,7 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
         settings: Settings {
             model: session_configured.model.clone(),
             reasoning_effort: None,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
 
@@ -651,7 +651,7 @@ async fn plan_mode_streaming_citations_are_stripped_across_added_deltas_and_done
         settings: Settings {
             model: session_configured.model.clone(),
             reasoning_effort: None,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
 
@@ -837,7 +837,7 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
         settings: Settings {
             model: session_configured.model.clone(),
             reasoning_effort: None,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
 
@@ -950,7 +950,7 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
         settings: Settings {
             model: session_configured.model.clone(),
             reasoning_effort: None,
-            minion_instructions: None,
+            developer_instructions: None,
         },
     };
 

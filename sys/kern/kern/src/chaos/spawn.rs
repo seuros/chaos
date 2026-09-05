@@ -23,6 +23,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::AuthManager;
+use crate::child_agents::AgentControl;
+use crate::child_agents::AgentStatus;
 use crate::config::Config;
 use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
@@ -30,8 +32,6 @@ use crate::error::Result as ChaosResult;
 use crate::exec_policy::ExecPolicyManager;
 use crate::file_watcher::FileWatcher;
 use crate::mcp::McpManager;
-use crate::minions::AgentControl;
-use crate::minions::AgentStatus;
 use crate::models_manager::manager::ModelsManager;
 use crate::process::ProcessConfigSnapshot;
 use crate::rollout::map_session_init_error;
@@ -150,7 +150,7 @@ impl Chaos {
         if let SessionSource::SubAgent(SubAgentSource::ProcessSpawn { depth, .. }) = session_source
             && depth >= config.agent_max_depth
         {
-            config.minion_jobs_allowed = false;
+            config.child_agent_jobs_allowed = false;
             config.collab_enabled = false;
         }
 
@@ -245,7 +245,7 @@ impl Chaos {
             settings: Settings {
                 model: model.clone(),
                 reasoning_effort: config.model_reasoning_effort,
-                minion_instructions: None,
+                developer_instructions: None,
             },
         };
         let mode_registry = Arc::new(
@@ -273,7 +273,7 @@ impl Chaos {
             mode_base_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier: config.service_tier,
-            minion_instructions: config.minion_instructions.clone(),
+            developer_instructions: config.developer_instructions.clone(),
             user_instructions,
             personality: config.personality,
             base_instructions,

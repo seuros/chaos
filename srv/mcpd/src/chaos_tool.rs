@@ -92,9 +92,9 @@ pub struct ChaosToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_instructions: Option<String>,
 
-    /// Minion instructions injected as a developer role message.
+    /// Session instructions injected as a developer role message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub minion_instructions: Option<String>,
+    pub developer_instructions: Option<String>,
 
     /// Prompt used when compacting the conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -154,7 +154,7 @@ impl ChaosToolParams {
             sandbox,
             config: cli_overrides,
             base_instructions,
-            minion_instructions,
+            developer_instructions,
             compact_prompt,
         } = self;
 
@@ -170,7 +170,7 @@ impl ChaosToolParams {
             sandbox_mode: sandbox.map(Into::into),
             alcatraz_exe: Some(arg0_paths.alcatraz_exe.clone()),
             base_instructions,
-            minion_instructions,
+            developer_instructions,
             compact_prompt,
             ..Default::default()
         };

@@ -58,7 +58,7 @@ impl ToolHandler for ParentEffortHandler {
         let collaboration_mode = turn.collaboration_mode.with_updates(
             /*model*/ None,
             Some(Some(args.effort)),
-            /*minion_instructions*/ None,
+            /*developer_instructions*/ None,
         );
         session
             .update_settings(SessionSettingsUpdate {

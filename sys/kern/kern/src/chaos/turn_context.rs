@@ -76,7 +76,7 @@ pub(crate) struct TurnContext {
     pub(crate) current_date: Option<String>,
     pub(crate) timezone: Option<String>,
     pub(crate) app_server_client_name: Option<String>,
-    pub(crate) minion_instructions: Option<String>,
+    pub(crate) developer_instructions: Option<String>,
     pub(crate) compact_prompt: Option<String>,
     pub(crate) user_instructions: Option<String>,
     pub(crate) collaboration_mode: CollaborationMode,
@@ -141,7 +141,7 @@ impl TurnContext {
         let collaboration_mode = self.collaboration_mode.with_updates(
             Some(model.clone()),
             Some(reasoning_effort),
-            /*minion_instructions*/ None,
+            /*developer_instructions*/ None,
         );
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
@@ -149,7 +149,7 @@ impl TurnContext {
                 .list_models(RefreshStrategy::OnlineIfUncached)
                 .await,
             approval_policy: self.approval_policy.value(),
-            minion_jobs_allowed: config.minion_jobs_allowed,
+            child_agent_jobs_allowed: config.child_agent_jobs_allowed,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
             vfs_policy: &self.vfs_policy,
@@ -191,7 +191,7 @@ impl TurnContext {
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
             app_server_client_name: self.app_server_client_name.clone(),
-            minion_instructions: self.minion_instructions.clone(),
+            developer_instructions: self.developer_instructions.clone(),
             compact_prompt: self.compact_prompt.clone(),
             user_instructions: self.user_instructions.clone(),
             collaboration_mode,
@@ -243,7 +243,7 @@ impl TurnContext {
             effort: self.reasoning_effort,
             summary: self.reasoning_summary,
             user_instructions: self.user_instructions.clone(),
-            minion_instructions: self.minion_instructions.clone(),
+            developer_instructions: self.developer_instructions.clone(),
             final_output_json_schema: self.final_output_json_schema.clone(),
             truncation_policy: Some(self.truncation_policy.into()),
         }
@@ -297,8 +297,8 @@ pub(crate) struct SessionConfiguration {
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(super) service_tier: Option<ServiceTier>,
 
-    /// Minion instructions that supplement the base instructions.
-    pub(super) minion_instructions: Option<String>,
+    /// Session or role developer instructions that supplement the base instructions.
+    pub(super) developer_instructions: Option<String>,
 
     /// Model instructions that are appended to the base instructions.
     pub(super) user_instructions: Option<String>,
@@ -389,7 +389,7 @@ impl SessionConfiguration {
             let base_collaboration_mode = collaboration_mode.with_updates(
                 /*model*/ None,
                 Some(next_configuration.mode_base_reasoning_effort),
-                /*minion_instructions*/ None,
+                /*developer_instructions*/ None,
             );
             next_configuration.collaboration_mode = self
                 .mode_registry
@@ -482,7 +482,7 @@ pub(super) fn make_turn_context(
         model_info: &model_info,
         available_models: &models_manager.try_list_models().unwrap_or_default(),
         approval_policy: session_configuration.approval_policy.value(),
-        minion_jobs_allowed: per_turn_config.minion_jobs_allowed,
+        child_agent_jobs_allowed: per_turn_config.child_agent_jobs_allowed,
         web_search_mode: Some(per_turn_config.web_search_mode.value()),
         session_source: session_source.clone(),
         vfs_policy: &session_configuration.vfs_policy,
@@ -530,7 +530,7 @@ pub(super) fn make_turn_context(
         current_date: Some(current_date),
         timezone: Some(timezone),
         app_server_client_name: session_configuration.app_server_client_name.clone(),
-        minion_instructions: session_configuration.minion_instructions.clone(),
+        developer_instructions: session_configuration.developer_instructions.clone(),
         compact_prompt: session_configuration.compact_prompt.clone(),
         user_instructions: session_configuration.user_instructions.clone(),
         collaboration_mode: session_configuration.collaboration_mode.clone(),

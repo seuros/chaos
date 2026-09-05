@@ -328,7 +328,7 @@ pub async fn user_input_or_turn(sess: &Arc<Session>, sub_id: String, op: Op) {
                     settings: Settings {
                         model: model.clone(),
                         reasoning_effort: effort,
-                        minion_instructions: None,
+                        developer_instructions: None,
                     },
                 })
             });

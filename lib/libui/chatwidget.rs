@@ -547,7 +547,7 @@ impl ChatWidget {
             settings: Settings {
                 model: header_model.clone(),
                 reasoning_effort: None,
-                minion_instructions: None,
+                developer_instructions: None,
             },
         };
         (

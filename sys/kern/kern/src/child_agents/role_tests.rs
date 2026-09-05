@@ -229,7 +229,7 @@ async fn apply_role_ignores_agent_metadata_fields_in_user_role_file() {
 name = "archivist"
 description = "Role metadata"
 nickname_candidates = ["Hypatia"]
-minion_instructions = "Stay focused"
+developer_instructions = "Stay focused"
 model = "role-model"
 "#,
     )
@@ -263,7 +263,7 @@ async fn apply_role_preserves_unspecified_keys() {
     let role_path = write_role_config(
         &home,
         "effort-only.toml",
-        "minion_instructions = \"Stay focused\"\nmodel_reasoning_effort = \"high\"",
+        "developer_instructions = \"Stay focused\"\nmodel_reasoning_effort = \"high\"",
     )
     .await;
     config.agent_roles.insert(
@@ -317,7 +317,7 @@ model_provider = "test-provider"
     let role_path = write_role_config(
         &home,
         "empty-role.toml",
-        "minion_instructions = \"Stay focused\"",
+        "developer_instructions = \"Stay focused\"",
     )
     .await;
     config.agent_roles.insert(
@@ -368,7 +368,7 @@ model_verbosity = "low"
     let role_path = write_role_config(
         &home,
         "top-level-profile-settings-role.toml",
-        r#"minion_instructions = "Stay focused"
+        r#"developer_instructions = "Stay focused"
 model = "role-model"
 model_reasoning_effort = "high"
 model_reasoning_summary = "detailed"
@@ -441,7 +441,7 @@ model_provider = "role-provider"
     let role_path = write_role_config(
         &home,
         "profile-role.toml",
-        "minion_instructions = \"Stay focused\"\nprofile = \"role-profile\"",
+        "developer_instructions = \"Stay focused\"\nprofile = \"role-profile\"",
     )
     .await;
     config.agent_roles.insert(
@@ -501,7 +501,7 @@ model_provider = "base-provider"
     let role_path = write_role_config(
         &home,
         "provider-role.toml",
-        "minion_instructions = \"Stay focused\"\nmodel_provider = \"role-provider\"",
+        "developer_instructions = \"Stay focused\"\nmodel_provider = \"role-provider\"",
     )
     .await;
     config.agent_roles.insert(
@@ -562,7 +562,7 @@ model_reasoning_effort = "low"
     let role_path = write_role_config(
         &home,
         "profile-edit-role.toml",
-        r#"minion_instructions = "Stay focused"
+        r#"developer_instructions = "Stay focused"
 
 [profiles.base-profile]
 model_provider = "role-provider"
@@ -608,7 +608,7 @@ async fn apply_role_does_not_materialize_default_sandbox_workspace_write_fields(
     let role_path = write_role_config(
         &home,
         "sandbox-role.toml",
-        r#"minion_instructions = "Stay focused"
+        r#"developer_instructions = "Stay focused"
 
 [sandbox_workspace_write]
 writable_roots = ["./sandbox-root"]
@@ -673,7 +673,7 @@ async fn apply_role_takes_precedence_over_existing_session_flags_for_same_key() 
     let role_path = write_role_config(
         &home,
         "model-role.toml",
-        "minion_instructions = \"Stay focused\"\nmodel = \"role-model\"",
+        "developer_instructions = \"Stay focused\"\nmodel = \"role-model\"",
     )
     .await;
     config.agent_roles.insert(
@@ -751,7 +751,7 @@ fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
     let role_path = tempdir.path().join("researcher.toml");
     fs::write(
             &role_path,
-            "minion_instructions = \"Research carefully\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
+            "developer_instructions = \"Research carefully\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
         )
         .expect("write role config");
     let user_defined_roles = BTreeMap::from([(
@@ -777,7 +777,7 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
     let role_path = tempdir.path().join("reviewer.toml");
     fs::write(
         &role_path,
-        "minion_instructions = \"Review carefully\"\nmodel_reasoning_effort = \"medium\"\n",
+        "developer_instructions = \"Review carefully\"\nmodel_reasoning_effort = \"medium\"\n",
     )
     .expect("write role config");
     let user_defined_roles = BTreeMap::from([(
@@ -802,5 +802,63 @@ fn built_in_config_file_contents_returns_none_for_unknown_path() {
     assert_eq!(
         built_in::config_file_contents(Path::new("missing.toml")),
         None
+    );
+}
+#[tokio::test]
+async fn role_instructions_preserve_project_child_defaults() {
+    let home = TempDir::new().expect("create temp dir");
+    tokio::fs::write(
+        home.path().join("config.toml"),
+        "child_instructions = \"CHILD_DEFAULTS\"\ndeveloper_instructions = \"PARENT_ROLE\"\n",
+    )
+    .await
+    .expect("write config");
+    let config = ConfigBuilder::default()
+        .chaos_home(home.path().to_path_buf())
+        .fallback_cwd(Some(home.path().to_path_buf()))
+        .build()
+        .await
+        .expect("load config");
+    assert_eq!(config.child_instructions.as_deref(), Some("CHILD_DEFAULTS"));
+    assert_eq!(
+        config.developer_instructions.as_deref(),
+        Some("PARENT_ROLE")
+    );
+    for role in ["default", "scout", "task"] {
+        let mut child_config = config.clone();
+        apply_role_to_config(&mut child_config, Some(role))
+            .await
+            .expect("apply child role");
+        assert_eq!(
+            child_config.child_instructions.as_deref(),
+            Some("CHILD_DEFAULTS"),
+            "role {role} must not replace project child defaults",
+        );
+        assert!(child_config.developer_instructions.is_some());
+        if role == "default" {
+            // The default role intentionally adds no persona layer.
+            assert_eq!(
+                child_config.developer_instructions.as_deref(),
+                Some("PARENT_ROLE")
+            );
+        } else {
+            assert_ne!(
+                child_config.developer_instructions.as_deref(),
+                Some("PARENT_ROLE")
+            );
+        }
+    }
+    let mut reviewer_config = config;
+    apply_builtin_persona_to_config(&mut reviewer_config, "gopher")
+        .await
+        .expect("apply reviewer persona");
+    assert_eq!(
+        reviewer_config.child_instructions.as_deref(),
+        Some("CHILD_DEFAULTS")
+    );
+    assert!(reviewer_config.developer_instructions.is_some());
+    assert_ne!(
+        reviewer_config.developer_instructions.as_deref(),
+        Some("PARENT_ROLE")
     );
 }

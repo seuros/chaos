@@ -41,7 +41,7 @@ use super::RealtimeAudioConfig;
 use super::RealtimeConfig;
 
 use super::{
-    DEFAULT_AGENT_MAX_DEPTH, DEFAULT_AGENT_MAX_THREADS, DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
+    DEFAULT_AGENT_MAX_DEPTH, DEFAULT_AGENT_MAX_THREADS, DEFAULT_CHILD_AGENT_JOB_MAX_RUNTIME_SECONDS,
 };
 
 fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
@@ -181,7 +181,7 @@ impl Config {
             config_profile: config_profile_key,
             alcatraz_exe,
             base_instructions,
-            minion_instructions,
+            developer_instructions,
             personality,
             compact_prompt,
             ephemeral,
@@ -404,18 +404,18 @@ impl Config {
                 "agents.max_depth must be at least 1",
             ));
         }
-        let minion_job_max_runtime_seconds = cfg
+        let child_agent_job_max_runtime_seconds = cfg
             .agents
             .as_ref()
             .and_then(|agents| agents.job_max_runtime_seconds)
-            .or(DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS);
-        if minion_job_max_runtime_seconds == Some(0) {
+            .or(DEFAULT_CHILD_AGENT_JOB_MAX_RUNTIME_SECONDS);
+        if child_agent_job_max_runtime_seconds == Some(0) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "agents.job_max_runtime_seconds must be at least 1",
             ));
         }
-        if let Some(max_runtime_seconds) = minion_job_max_runtime_seconds
+        if let Some(max_runtime_seconds) = child_agent_job_max_runtime_seconds
             && max_runtime_seconds > i64::MAX as u64
         {
             return Err(std::io::Error::new(
@@ -472,7 +472,8 @@ impl Config {
         let file_base_instructions =
             Self::try_read_non_empty_file(model_instructions_path, "model instructions file")?;
         let base_instructions = base_instructions.or(file_base_instructions);
-        let minion_instructions = minion_instructions.or(cfg.minion_instructions);
+        let developer_instructions = developer_instructions.or(cfg.developer_instructions);
+        let child_instructions = cfg.child_instructions;
         let personality = personality
             .or(config_profile.personality)
             .or(cfg.personality)
@@ -610,7 +611,8 @@ impl Config {
             user_instructions,
             base_instructions,
             personality,
-            minion_instructions,
+            developer_instructions,
+            child_instructions,
             compact_prompt,
             cli_auth_credentials_store_mode: cfg.cli_auth_credentials_store.unwrap_or_default(),
             mcp_servers,
@@ -622,7 +624,7 @@ impl Config {
             agent_max_threads,
             agent_max_depth,
             agent_roles,
-            minion_job_max_runtime_seconds,
+            child_agent_job_max_runtime_seconds,
             chaos_home,
             mode_policy_override: None,
             sqlite_home,
@@ -677,7 +679,7 @@ impl Config {
             web_search_mode: constrained_web_search_mode.value,
             web_search_config,
             collab_enabled: true,
-            minion_jobs_allowed: cfg.minion_jobs_allowed.unwrap_or(true),
+            child_agent_jobs_allowed: cfg.child_agent_jobs_allowed.unwrap_or(true),
             background_terminal_max_timeout,
             active_profile: active_profile_name,
             active_project_trust,

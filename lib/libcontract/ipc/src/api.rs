@@ -382,7 +382,7 @@ pub struct Config {
     #[serde(default)]
     pub profiles: HashMap<String, ProfileV2>,
     pub instructions: Option<String>,
-    pub minion_instructions: Option<String>,
+    pub developer_instructions: Option<String>,
     pub compact_prompt: Option<String>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,

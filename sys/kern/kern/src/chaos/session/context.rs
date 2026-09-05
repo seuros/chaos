@@ -71,15 +71,19 @@ impl Session {
             )
             .into_text(),
         );
-        if let Some(minion_instructions) = turn_context.minion_instructions.as_deref() {
-            developer_sections.push(minion_instructions.to_string());
+        if let Some(developer_instructions) = turn_context.developer_instructions.as_deref() {
+            developer_sections.push(developer_instructions.to_string());
         }
         if matches!(
             turn_context.session_source,
             SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
-        ) && !crate::minions::is_internal_process_spawn(&turn_context.session_source)
+        ) && !crate::child_agents::is_internal_process_spawn(&turn_context.session_source)
         {
-            developer_sections.push(crate::minions::SUPERVISED_SUBAGENT_INSTRUCTIONS.to_string());
+            if let Some(child_instructions) = turn_context.config.child_instructions.as_deref() {
+                developer_sections.push(child_instructions.to_string());
+            }
+            developer_sections
+                .push(crate::child_agents::SUPERVISED_SUBAGENT_INSTRUCTIONS.to_string());
         }
         if let Some(collab_instructions) =
             chaos_ipc::models::DeveloperInstructions::from_collaboration_mode(&collaboration_mode)

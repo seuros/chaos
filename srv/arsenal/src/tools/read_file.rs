@@ -555,6 +555,8 @@ mod tests {
             props.contains_key("limit"),
             "schema must have limit property"
         );
+        assert_eq!(props["offset"]["type"], "integer");
+        assert_eq!(props["limit"]["type"], "integer");
         assert!(props.contains_key("mode"), "schema must have mode property");
         assert!(
             props.contains_key("indentation"),
@@ -579,7 +581,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_unknown_arguments() {
+    async fn rejects_invalid_arguments() {
+        for field in ["offset", "limit", "anchor_line", "max_levels", "max_lines"] {
+            for value in [
+                serde_json::json!(1.0),
+                serde_json::json!(1.5),
+                serde_json::json!(-1),
+                serde_json::json!("1"),
+                serde_json::json!(1e100),
+            ] {
+                let mut args = serde_json::json!({"file_path": "/tmp/example.rs"});
+                if matches!(field, "offset" | "limit") {
+                    args[field] = value;
+                } else {
+                    args["indentation"] = serde_json::json!({field: value});
+                }
+                let err = execute(&args).await.expect_err("invalid line argument");
+                assert!(err.starts_with("invalid arguments:"), "{err}");
+                assert!(err.contains("usize"), "{err}");
+            }
+        }
         let result = execute(&serde_json::json!({
             "file_path": "/tmp/example.rs",
             "indentation": {

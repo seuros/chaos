@@ -725,7 +725,8 @@ fn strip_descriptions_schema(schema: &mut JsonSchema) {
     match schema {
         JsonSchema::Boolean { description }
         | JsonSchema::String { description }
-        | JsonSchema::Number { description } => {
+        | JsonSchema::Number { description }
+        | JsonSchema::Integer { description } => {
             *description = None;
         }
         JsonSchema::Array { items, description } => {
@@ -2192,7 +2193,33 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
 }
 
 #[test]
-fn test_mcp_tool_integer_normalized_to_number() {
+fn test_mcp_tool_integer_preserved() {
+    let input = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "offset": {"type": "integer", "description": "Starting line"},
+            "ratio": {"type": "number"},
+            "indentation": {"$ref": "#/$defs/Indentation"}
+        },
+        "$defs": {
+            "Indentation": {
+                "type": "object",
+                "properties": {
+                    "anchor_line": {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+                }
+            }
+        }
+    });
+    let schema = chaos_parrot::sanitize::parse_tool_input_schema(&input).unwrap();
+    let wire = serde_json::Value::from(&schema);
+    assert_eq!(wire["properties"]["offset"]["type"], "integer");
+    assert_eq!(wire["properties"]["offset"]["description"], "Starting line");
+    assert_eq!(wire["properties"]["ratio"]["type"], "number");
+    assert_eq!(
+        wire["properties"]["indentation"]["properties"]["anchor_line"]["type"],
+        "integer"
+    );
+
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let available_models = Vec::new();
@@ -2233,7 +2260,7 @@ fn test_mcp_tool_integer_normalized_to_number() {
             parameters: JsonSchema::Object {
                 properties: BTreeMap::from([(
                     "page".to_string(),
-                    JsonSchema::Number { description: None }
+                    JsonSchema::Integer { description: None }
                 )]),
                 required: None,
                 additional_properties: None,

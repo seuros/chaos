@@ -656,9 +656,46 @@ pub(crate) mod tests {
         insta::assert_snapshot!(rendered);
     }
 
+    #[test]
+    fn internal_tool_call_has_no_prefix_in_all_states() {
+        for width in [40, 120] {
+            let invocation = McpInvocation {
+                server: None,
+                tool: "read_mcp_resource".into(),
+                arguments: Some(json!({"uri": "chaos://sessions"})),
+            };
+            for state in 0..3 {
+                let mut cell =
+                    new_active_mcp_tool_call("internal".into(), invocation.clone(), false);
+                match state {
+                    1 => {
+                        cell.complete(
+                            Duration::from_millis(10),
+                            Ok(CallToolResult {
+                                content: vec![text_block("done")],
+                                is_error: None,
+                                structured_content: None,
+                                meta: None,
+                            }),
+                        );
+                    }
+                    2 => {
+                        cell.complete(Duration::from_millis(10), Err("test error".into()));
+                    }
+                    _ => {}
+                }
+                for lines in [cell.display_lines(width), cell.transcript_lines(width)] {
+                    let rendered = render_lines(&lines).join("\n");
+                    assert!(rendered.contains("read_mcp_resource"));
+                    assert!(!rendered.contains(".read_mcp_resource"));
+                }
+            }
+        }
+    }
+
     fn active_mcp_tool_call_snapshot() {
         let invocation = McpInvocation {
-            server: "search".into(),
+            server: Some("search".into()),
             tool: "find_docs".into(),
             arguments: Some(json!({
                 "query": "ratatui styling",
@@ -674,7 +711,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_success_snapshot() {
         let invocation = McpInvocation {
-            server: "search".into(),
+            server: Some("search".into()),
             tool: "find_docs".into(),
             arguments: Some(json!({
                 "query": "ratatui styling",
@@ -702,7 +739,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_image_after_text_returns_extra_cell() {
         let invocation = McpInvocation {
-            server: "image".into(),
+            server: Some("image".into()),
             tool: "generate".into(),
             arguments: Some(json!({
                 "prompt": "tiny image",
@@ -730,7 +767,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_accepts_data_url_image_blocks() {
         let invocation = McpInvocation {
-            server: "image".into(),
+            server: Some("image".into()),
             tool: "generate".into(),
             arguments: Some(json!({
                 "prompt": "tiny image",
@@ -756,7 +793,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_skips_invalid_image_blocks() {
         let invocation = McpInvocation {
-            server: "image".into(),
+            server: Some("image".into()),
             tool: "generate".into(),
             arguments: Some(json!({
                 "prompt": "tiny image",
@@ -781,7 +818,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_error_snapshot() {
         let invocation = McpInvocation {
-            server: "search".into(),
+            server: Some("search".into()),
             tool: "find_docs".into(),
             arguments: Some(json!({
                 "query": "ratatui styling",
@@ -802,7 +839,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_multiple_outputs_snapshot() {
         let invocation = McpInvocation {
-            server: "search".into(),
+            server: Some("search".into()),
             tool: "find_docs".into(),
             arguments: Some(json!({
                 "query": "ratatui styling",
@@ -840,7 +877,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_wrapped_outputs_snapshot() {
         let invocation = McpInvocation {
-            server: "metrics".into(),
+            server: Some("metrics".into()),
             tool: "get_nearby_metric".into(),
             arguments: Some(json!({
                 "query": "very_long_query_that_needs_wrapping_to_display_properly_in_the_history",
@@ -870,7 +907,7 @@ pub(crate) mod tests {
 
     fn completed_mcp_tool_call_multiple_outputs_inline_snapshot() {
         let invocation = McpInvocation {
-            server: "metrics".into(),
+            server: Some("metrics".into()),
             tool: "summary".into(),
             arguments: Some(json!({
                 "metric": "trace.latency",

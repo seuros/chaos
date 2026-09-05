@@ -325,7 +325,7 @@ fn custom_mcp_tool_question_offers_session_remember_without_always_allow() {
 #[test]
 fn custom_servers_support_persistent_approval() {
     let invocation = McpInvocation {
-        server: "custom_server".to_string(),
+        server: Some("custom_server".to_string()),
         tool: "run_action".to_string(),
         arguments: None,
     };
@@ -479,7 +479,7 @@ async fn personal_mcp_approvals_only_use_the_user_config_layer() {
     config.config_layer_stack = stack;
     turn_context.config = Arc::new(config);
     let invocation = McpInvocation {
-        server: "chrome".to_string(),
+        server: Some("chrome".to_string()),
         tool: "navigate".to_string(),
         arguments: None,
     };
@@ -495,7 +495,7 @@ async fn personal_mcp_approvals_only_use_the_user_config_layer() {
         configured_mcp_tool_approval_mode(
             &turn_context,
             &McpInvocation {
-                server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
+                server: Some(CHAOS_APPS_MCP_SERVER_NAME.to_string()),
                 tool: "create_event".to_string(),
                 arguments: None,
             },
@@ -508,7 +508,7 @@ async fn personal_mcp_approvals_only_use_the_user_config_layer() {
 #[test]
 fn codex_apps_connectors_support_persistent_approval() {
     let invocation = McpInvocation {
-        server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
+        server: Some(CHAOS_APPS_MCP_SERVER_NAME.to_string()),
         tool: "calendar/list_events".to_string(),
         arguments: None,
     };
@@ -943,7 +943,7 @@ async fn approve_mode_skips_when_annotations_do_not_require_approval() {
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
     let invocation = McpInvocation {
-        server: "custom_server".to_string(),
+        server: Some("custom_server".to_string()),
         tool: "read_only_tool".to_string(),
         arguments: None,
     };
@@ -1008,7 +1008,7 @@ async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
     let invocation = McpInvocation {
-        server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
+        server: Some(CHAOS_APPS_MCP_SERVER_NAME.to_string()),
         tool: "dangerous_tool".to_string(),
         arguments: Some(serde_json::json!({ "id": 1 })),
     };

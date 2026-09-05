@@ -23,7 +23,6 @@ use crate::tools::context::ExecCommandToolOutput;
 use crate::truncate::approx_token_count;
 use crate::unified_exec::ExecTaskSnapshot;
 
-pub(crate) const INTERNAL_TASK_SERVER_NAME: &str = "chaos_local";
 const DEFAULT_POLL_INTERVAL_MS: u64 = 250;
 
 #[derive(Debug, Clone)]
@@ -278,7 +277,6 @@ pub(crate) async fn attach_exec_task(
         .await;
 
     output.task_id = Some(task.task_id.clone());
-    output.task_server = Some(INTERNAL_TASK_SERVER_NAME.to_string());
 
     let Some(process_id) = output.process_id else {
         let _ = session

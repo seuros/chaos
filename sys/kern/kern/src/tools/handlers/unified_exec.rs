@@ -212,7 +212,6 @@ impl ToolHandler for UnifiedExecHandler {
                         original_token_count: None,
                         session_command: None,
                         task_id: None,
-                        task_server: None,
                     };
                     internal_tasks::attach_exec_task(context.session.clone(), &mut output)
                         .await

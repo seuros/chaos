@@ -14,12 +14,68 @@ use ts_rs::TS;
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
 pub struct McpInvocation {
-    /// Name of the MCP server as defined in the config.
-    pub server: String,
-    /// Name of the tool as given by the MCP server.
+    /// Configured MCP server, absent for internal tool invocations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub server: Option<String>,
+    /// Bare internal tool name, or the name given by the MCP server.
     pub tool: String,
     /// Arguments to the tool call.
     pub arguments: Option<serde_json::Value>,
+}
+
+impl McpInvocation {
+    pub fn display_name(&self) -> String {
+        match &self.server {
+            Some(server) => format!("{server}.{}", self.tool),
+            None => self.tool.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod invocation_tests {
+    use super::*;
+
+    #[test]
+    fn internal_invocation_omits_server_and_prefix() {
+        let invocation = McpInvocation {
+            server: None,
+            tool: "read_mcp_resource".into(),
+            arguments: None,
+        };
+        let value = serde_json::to_value(&invocation).unwrap();
+        assert!(value.get("server").is_none());
+        assert_eq!(invocation.display_name(), "read_mcp_resource");
+        assert_eq!(
+            serde_json::from_value::<McpInvocation>(value).unwrap(),
+            invocation
+        );
+        let schema = serde_json::to_value(schemars::schema_for!(McpInvocation)).unwrap();
+        assert!(
+            !schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("server"))
+        );
+        assert!(McpInvocation::decl(&ts_rs::Config::default()).contains("server?: string"));
+    }
+
+    #[test]
+    fn external_invocation_retains_server_and_prefix() {
+        let invocation = McpInvocation {
+            server: Some("external".into()),
+            tool: "search".into(),
+            arguments: None,
+        };
+        let value = serde_json::to_value(&invocation).unwrap();
+        assert_eq!(value["server"], "external");
+        assert_eq!(invocation.display_name(), "external.search");
+        assert_eq!(
+            serde_json::from_value::<McpInvocation>(value).unwrap(),
+            invocation
+        );
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]

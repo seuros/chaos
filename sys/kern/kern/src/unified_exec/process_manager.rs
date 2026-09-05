@@ -304,7 +304,6 @@ impl UnifiedExecProcessManager {
             original_token_count: Some(original_token_count),
             session_command: Some(request.command.clone()),
             task_id: None,
-            task_server: None,
         };
 
         Ok(response)
@@ -407,7 +406,6 @@ impl UnifiedExecProcessManager {
             original_token_count: Some(original_token_count),
             session_command: Some(session_command.clone()),
             task_id: None,
-            task_server: None,
         };
 
         Ok(response)

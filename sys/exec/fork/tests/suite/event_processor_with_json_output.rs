@@ -156,7 +156,7 @@ fn mcp_tool_call_item(
     status: McpToolCallStatus,
 ) -> ProcessItemDetails {
     ProcessItemDetails::McpToolCall(McpToolCallItem {
-        server: server.to_string(),
+        server: Some(server.to_string()),
         tool: tool.to_string(),
         arguments,
         result,
@@ -484,7 +484,7 @@ fn mcp_tool_call_begin_and_end_emit_item_events() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
     let arguments = json!({ "key": "value" });
     let invocation = McpInvocation {
-        server: "server_a".to_string(),
+        server: Some("server_a".to_string()),
         tool: "tool_x".to_string(),
         arguments: Some(arguments.clone()),
     };
@@ -540,7 +540,7 @@ fn mcp_tool_call_failure_sets_failed_status() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
     let arguments = json!({ "param": 42 });
     let invocation = McpInvocation {
-        server: "server_b".to_string(),
+        server: Some("server_b".to_string()),
         tool: "tool_y".to_string(),
         arguments: Some(arguments.clone()),
     };
@@ -589,7 +589,7 @@ fn mcp_tool_call_failure_sets_failed_status() {
 fn mcp_tool_call_defaults_arguments_and_preserves_structured_content() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
     let invocation = McpInvocation {
-        server: "server_c".to_string(),
+        server: Some("server_c".to_string()),
         tool: "tool_z".to_string(),
         arguments: None,
     };

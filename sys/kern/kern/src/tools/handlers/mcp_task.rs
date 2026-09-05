@@ -9,7 +9,6 @@ use serde::Serialize;
 
 use crate::chaos::TurnContext;
 use crate::function_tool::FunctionCallError;
-use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -17,6 +16,65 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
 pub struct McpTaskHandler;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chaos_ipc::models::function_call_output_content_items_to_text;
+    use mcp_host::protocol::types::TaskStatus;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn serverless_cancel_routes_to_internal_task_store() {
+        let (session, mut turn) = crate::chaos::make_session_and_context().await;
+        turn.approval_policy
+            .set(chaos_ipc::protocol::ApprovalPolicy::Headless)
+            .unwrap();
+        let session = Arc::new(session);
+        let turn = Arc::new(turn);
+        let task = session
+            .services
+            .internal_task_store
+            .create_task(
+                None,
+                TaskStatus::Completed,
+                None,
+                Some(json!({"output": "done"})),
+            )
+            .await;
+        let output = handle_cancel_task(
+            session.clone(),
+            turn.clone(),
+            "cancel".into(),
+            TaskIdArgs {
+                server: None,
+                task_id: task.task_id.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        let text = function_call_output_content_items_to_text(&output.body).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["taskId"], task.task_id);
+        assert!(value.get("server").is_none());
+        for server in [Some("chaos_local".into()), Some("not-configured".into())] {
+            assert!(
+                handle_cancel_task(
+                    session.clone(),
+                    turn.clone(),
+                    "cancel-invalid".into(),
+                    TaskIdArgs {
+                        server,
+                        task_id: task.task_id.clone()
+                    },
+                )
+                .await
+                .is_err()
+            );
+        }
+        assert!(serde_json::from_value::<CallToolAsyncArgs>(json!({"tool": "demo"})).is_err());
+    }
+}
 
 // ── args ──────────────────────────────────────────────────────────────────────
 
@@ -32,7 +90,7 @@ struct CallToolAsyncArgs {
 
 #[derive(Debug, Deserialize)]
 struct TaskIdArgs {
-    server: String,
+    server: Option<String>,
     task_id: String,
 }
 
@@ -40,7 +98,8 @@ struct TaskIdArgs {
 
 #[derive(Debug, Serialize)]
 struct TaskPayload {
-    server: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    server: Option<String>,
     #[serde(flatten)]
     task: Task,
 }
@@ -109,6 +168,7 @@ async fn handle_call_tool_async(
     call_id: String,
     args: CallToolAsyncArgs,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
+    super::mcp_resource::normalize_resource_server(Some(args.server.clone()))?;
     let task = crate::mcp_tool_call::handle_mcp_tool_call_async(
         session,
         &turn,
@@ -121,7 +181,7 @@ async fn handle_call_tool_async(
     .await?;
 
     to_output(TaskPayload {
-        server: args.server,
+        server: Some(args.server),
         task,
     })
 }
@@ -135,26 +195,24 @@ async fn handle_cancel_task(
     call_id: String,
     args: TaskIdArgs,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
-    let task = if args.server == INTERNAL_TASK_SERVER_NAME {
-        session
-            .cancel_internal_task(args.task_id.as_str())
-            .await
-            .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?
-    } else {
+    let server = super::mcp_resource::normalize_resource_server(args.server)?;
+    let task = if let Some(server) = &server {
         crate::mcp_tool_call::handle_mcp_cancel_task(
             session,
             &turn,
             call_id,
-            args.server.clone(),
+            server.clone(),
             args.task_id,
         )
         .await?
+    } else {
+        session
+            .cancel_internal_task(args.task_id.as_str())
+            .await
+            .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?
     };
 
-    to_output(TaskPayload {
-        server: args.server,
-        task,
-    })
+    to_output(TaskPayload { server, task })
 }
 
 // ── catalog registration ──────────────────────────────────────────────────────

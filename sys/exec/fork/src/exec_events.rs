@@ -298,13 +298,44 @@ pub struct McpToolCallItemError {
 /// A call to an MCP tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct McpToolCallItem {
-    pub server: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub server: Option<String>,
     pub tool: String,
     #[serde(default)]
     pub arguments: JsonValue,
     pub result: Option<McpToolCallItemResult>,
     pub error: Option<McpToolCallItemError>,
     pub status: McpToolCallStatus,
+}
+
+#[cfg(test)]
+mod serverless_tests {
+    use super::*;
+
+    #[test]
+    fn tool_items_preserve_optional_server_metadata() {
+        assert!(McpToolCallItem::decl(&ts_rs::Config::default()).contains("server?: string"));
+        for server in [None, Some("external".to_string())] {
+            let item = McpToolCallItem {
+                server: server.clone(),
+                tool: "read_mcp_resource".into(),
+                arguments: serde_json::json!({"uri": "chaos://sessions"}),
+                result: None,
+                error: None,
+                status: McpToolCallStatus::InProgress,
+            };
+            let value = serde_json::to_value(&item).unwrap();
+            assert_eq!(
+                value.get("server").and_then(JsonValue::as_str),
+                server.as_deref()
+            );
+            assert_eq!(
+                serde_json::from_value::<McpToolCallItem>(value).unwrap(),
+                item
+            );
+        }
+    }
 }
 
 /// A web search request.

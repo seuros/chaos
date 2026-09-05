@@ -22,6 +22,45 @@ use pretty_assertions::assert_eq;
 
 use super::*;
 
+#[test]
+fn internal_resource_and_task_schemas_allow_omitted_server() {
+    for spec in [
+        tool_builders::create_read_mcp_resource_tool(),
+        tool_builders::create_set_mcp_resource_subscription_tool(),
+        create_cancel_mcp_task_tool(),
+    ] {
+        let ToolSpec::Function(tool) = spec else {
+            panic!("function tool")
+        };
+        let schema = serde_json::to_value(tool.parameters).unwrap();
+        assert!(schema["properties"].get("server").is_some());
+        assert!(
+            !schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("server"))
+        );
+        assert!(!tool.name.contains('.'));
+    }
+    let ToolSpec::Function(tool) = create_call_mcp_tool_async_tool() else {
+        panic!("function tool")
+    };
+    let schema = serde_json::to_value(tool.parameters).unwrap();
+    assert!(
+        schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("server"))
+    );
+    for schema in [
+        schemas::unified_exec_output_schema(),
+        schemas::spawn_agent_output_schema(),
+    ] {
+        assert!(schema["properties"].get("task_server").is_none());
+        assert!(schema["properties"].get("task_id").is_some());
+    }
+}
+
 fn mcp_tool(
     name: &str,
     description: &str,

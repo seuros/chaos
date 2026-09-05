@@ -5,11 +5,11 @@ use chaos_ipc::openai_models::ModelPreset;
 use chaos_parrot::sanitize::JsonSchema;
 use chaos_parrot::sanitize::ResponsesApiTool;
 
+use crate::client_common::tools::ToolSpec;
+use crate::collaboration_modes::CollaborationModesConfig;
 use crate::minions::tools::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
-use crate::client_common::tools::ToolSpec;
-use crate::collaboration_modes::CollaborationModesConfig;
 use crate::tools::handlers::request_permissions_tool_description;
 use crate::tools::handlers::request_user_input_tool_description;
 use mcp_host::prelude::ToolGroupCatalog;
@@ -1348,7 +1348,7 @@ pub(crate) fn create_list_mcp_resources_tool() -> ToolSpec {
             "server".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Optional MCP server name. When omitted, lists resources from every configured server."
+                    "Optional MCP server name. When omitted, lists internal resources and resources from every configured server. Internal entries have no server field."
                         .to_string(),
                 ),
             },
@@ -1384,7 +1384,7 @@ pub(crate) fn create_list_mcp_resource_templates_tool() -> ToolSpec {
             "server".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Optional MCP server name. When omitted, lists resource templates from all configured servers."
+                    "Optional MCP server name. When omitted, lists internal resource templates and templates from all configured servers. Internal entries have no server field."
                         .to_string(),
                 ),
             },
@@ -1422,13 +1422,13 @@ pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: "read_mcp_resource".to_string(),
         description:
-            "Read a specific resource from an MCP server given the server name and resource URI."
+            "Read a resource by URI. Omit server for internal resources and tasks; specify the configured server for external MCP resources and tasks."
                 .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
             properties,
-            required: Some(vec!["server".to_string(), "uri".to_string()]),
+            required: Some(vec!["uri".to_string()]),
             additional_properties: Some(false.into()),
         },
         output_schema: None,
@@ -1450,13 +1450,12 @@ pub(crate) fn create_set_mcp_resource_subscription_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "set_mcp_resource_subscription".to_string(),
-        description: "Subscribe to or unsubscribe from update notifications for an MCP resource. The server must advertise resource subscription support. Resources may be transient and do not need to currently exist or appear in resources/list.".to_string(),
+        description: "Subscribe to or unsubscribe from update notifications for an MCP resource. External servers must advertise resource subscription support. Omit server for internal resources: subscribing returns a one-time snapshot with no active subscription; unsubscribing is a no-op. Resources may be transient and need not appear in resources/list.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec![
-                "server".to_string(),
                 "uri".to_string(),
                 "subscribed".to_string(),
             ]),
@@ -1472,7 +1471,7 @@ fn mcp_resource_uri_properties(uri_description: &str) -> BTreeMap<String, JsonSc
             "server".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                    "Omit for internal resources and tasks. For external MCP resources, use the configured server name from list_mcp_resources."
                         .to_string(),
                 ),
             },
@@ -1535,7 +1534,9 @@ pub(crate) fn create_cancel_mcp_task_tool() -> ToolSpec {
         (
             "server".to_string(),
             JsonSchema::String {
-                description: Some("MCP server name.".to_string()),
+                description: Some(
+                    "Omit for internal tasks; required for external MCP tasks.".to_string(),
+                ),
             },
         ),
         (
@@ -1553,7 +1554,7 @@ pub(crate) fn create_cancel_mcp_task_tool() -> ToolSpec {
         defer_loading: None,
         parameters: JsonSchema::Object {
             properties,
-            required: Some(vec!["server".to_string(), "task_id".to_string()]),
+            required: Some(vec!["task_id".to_string()]),
             additional_properties: Some(false.into()),
         },
         output_schema: None,

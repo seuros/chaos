@@ -25,11 +25,7 @@ pub(crate) fn unified_exec_output_schema() -> JsonValue {
             },
             "task_id": {
                 "type": "string",
-                "description": "Task identifier for polling command lifecycle through tasks:// resources."
-            },
-            "task_server": {
-                "type": "string",
-                "description": "Server name to pass to read_mcp_resource/cancel_mcp_task for the task."
+                "description": "Task identifier for polling command lifecycle through tasks:// resources. Omit server for internal tasks."
             },
             "original_token_count": {
                 "type": "integer",
@@ -90,14 +86,10 @@ pub(crate) fn spawn_agent_output_schema() -> JsonValue {
             },
             "task_id": {
                 "type": "string",
-                "description": "Task identifier for polling agent lifecycle through tasks:// resources."
-            },
-            "task_server": {
-                "type": "string",
-                "description": "Server name to pass to read_mcp_resource/cancel_mcp_task for the task."
+                "description": "Task identifier for polling agent lifecycle through tasks:// resources. Omit server for internal tasks."
             }
         },
-        "required": ["agent_id", "nickname", "task_id", "task_server"],
+        "required": ["agent_id", "nickname", "task_id"],
         "additionalProperties": false
     })
 }

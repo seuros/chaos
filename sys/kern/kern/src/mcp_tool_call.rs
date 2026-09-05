@@ -85,7 +85,7 @@ pub(crate) async fn handle_mcp_tool_call(
     );
 
     let invocation = McpInvocation {
-        server: server.clone(),
+        server: Some(server.clone()),
         tool: tool_name.clone(),
         arguments: arguments_value.clone(),
     };
@@ -460,7 +460,7 @@ async fn maybe_request_mcp_tool_approval(
     );
     let question_id = format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}");
     let rendered_template = render_mcp_tool_approval_template(
-        &invocation.server,
+        invocation.server.as_deref().expect("external MCP server"),
         metadata.and_then(|metadata| metadata.connector_id.as_deref()),
         metadata.and_then(|metadata| metadata.connector_name.as_deref()),
         metadata.and_then(|metadata| metadata.tool_title.as_deref()),
@@ -472,7 +472,7 @@ async fn maybe_request_mcp_tool_approval(
         .or_else(|| build_mcp_tool_approval_display_params(invocation.arguments.as_ref()));
     let mut question = build_mcp_tool_approval_question(
         question_id.clone(),
-        &invocation.server,
+        invocation.server.as_deref().expect("external MCP server"),
         &invocation.tool,
         metadata.and_then(|metadata| metadata.connector_name.as_deref()),
         prompt_options,
@@ -489,7 +489,7 @@ async fn maybe_request_mcp_tool_approval(
         sess.as_ref(),
         turn_context.as_ref(),
         McpToolApprovalElicitationRequest {
-            server: &invocation.server,
+            server: invocation.server.as_deref().expect("external MCP server"),
             metadata,
             tool_params: rendered_template
                 .as_ref()
@@ -558,7 +558,7 @@ fn session_mcp_tool_approval_key(
     let connector_id = metadata.and_then(|metadata| metadata.connector_id.clone());
 
     Some(McpToolApprovalKey {
-        server: invocation.server.clone(),
+        server: invocation.server.clone()?,
         connector_id,
         tool_name: invocation.tool.clone(),
     })
@@ -588,7 +588,10 @@ fn configured_mcp_tool_approval_mode(
     let connector = metadata
         .and_then(|metadata| metadata.connector_id.as_deref())
         .and_then(|connector_id| configured_connector(user_config, connector_id));
-    let personal = configured_personal_mcp_approval(user_config, &invocation.server);
+    let personal = invocation
+        .server
+        .as_deref()
+        .and_then(|server| configured_personal_mcp_approval(user_config, server));
     resolve_mcp_tool_approval_mode(connector.as_ref(), personal.as_ref(), &invocation.tool)
 }
 
@@ -1192,7 +1195,7 @@ pub(crate) async fn handle_mcp_tool_call_async(
     );
 
     let invocation = McpInvocation {
-        server: server.clone(),
+        server: Some(server.clone()),
         tool: tool.clone(),
         arguments: arguments.clone(),
     };
@@ -1321,7 +1324,7 @@ pub(crate) async fn handle_mcp_cancel_task(
     use crate::function_tool::FunctionCallError;
 
     let invocation = McpInvocation {
-        server: server.clone(),
+        server: Some(server.clone()),
         tool: "tasks/cancel".to_string(),
         arguments: Some(serde_json::json!({ "taskId": task_id })),
     };

@@ -183,7 +183,7 @@ pub(super) fn format_receiver_list(ids: &[chaos_ipc::ProcessId]) -> String {
 
 pub(super) fn format_mcp_invocation(invocation: &McpInvocation) -> String {
     // Build fully-qualified tool name: server.tool
-    let fq_tool_name = format!("{}.{}", invocation.server, invocation.tool);
+    let fq_tool_name = invocation.display_name();
 
     // Format arguments as compact JSON so they fit on one line.
     let args_str = invocation

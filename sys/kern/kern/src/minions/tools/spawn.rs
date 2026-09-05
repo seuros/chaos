@@ -11,12 +11,11 @@ use super::{
     function_arguments, input_preview, parse_arguments, parse_collab_input, process_spawn_source,
     tool_output_json_text, tool_output_response_item,
 };
+use crate::internal_tasks;
 use crate::minions::control::SpawnAgentOptions;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::apply_role_to_config;
 use crate::minions::role::collect_roles_by_topics;
-use crate::internal_tasks;
-use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
 use rand::prelude::IndexedRandom as _;
 
 pub(crate) struct Handler;
@@ -218,7 +217,6 @@ impl ToolHandler for Handler {
             agent_id: new_process_id.to_string(),
             nickname,
             task_id: task.task_id,
-            task_server: INTERNAL_TASK_SERVER_NAME.to_string(),
         })
     }
 }
@@ -248,7 +246,6 @@ pub(crate) struct SpawnAgentResult {
     agent_id: String,
     nickname: Option<String>,
     task_id: String,
-    task_server: String,
 }
 
 impl_tool_output!(SpawnAgentResult, "spawn_agent");

@@ -19,8 +19,8 @@ use crate::chaos_tool::ChaosMcpServer;
 type ResourceReadFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<ResourceContent>, ResourceError>> + Send + 'a>>;
 
-fn to_pretty_json<T: Serialize>(value: &T, context: &str) -> Result<String, String> {
-    serde_json::to_string_pretty(value)
+fn to_json<T: Serialize>(value: &T, context: &str) -> Result<String, String> {
+    serde_json::to_string(value)
         .map_err(|err| format!("failed to serialize {context} resource: {err}"))
 }
 
@@ -51,7 +51,7 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
                 })
             })
             .collect::<Vec<_>>();
-        to_pretty_json(&sessions, &format!("{OS_NAME} processes"))
+        to_json(&sessions, &format!("{OS_NAME} processes"))
     }
 
     async fn session_detail_json(&self, process_id: ProcessId) -> Result<String, String> {
@@ -75,7 +75,7 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
             .await
             .get(&process_id)
             .cloned();
-        to_pretty_json(
+        to_json(
             &json!({
                 "process_id": process_id.to_string(),
                 "title": title,

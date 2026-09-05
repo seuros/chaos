@@ -267,7 +267,7 @@ impl ToolHandler for CompactionControlHandler {
             "accepted agent compaction control"
         );
 
-        let output = serde_json::to_string_pretty(&Output {
+        let output = serde_json::to_string(&Output {
             accepted: true,
             action: action_name,
             window_number,

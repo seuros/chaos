@@ -525,9 +525,8 @@ pub(crate) fn render_clamp_content_items(content: &[ContentItem]) -> String {
         .join("\n")
 }
 
-pub(crate) fn render_json_pretty<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_string_pretty(value)
-        .unwrap_or_else(|err| format!("<serialization error: {err}>"))
+pub(crate) fn render_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_else(|err| format!("<serialization error: {err}>"))
 }
 
 pub(crate) fn clamp_elide_large_text(text: &str) -> String {
@@ -572,7 +571,7 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             "<local_shell_call call_id=\"{}\" status=\"{}\">\n{}\n</local_shell_call>",
             call_id.as_deref().unwrap_or(""),
             serde_json::to_string(status).unwrap_or_else(|_| "\"unknown\"".to_string()),
-            render_json_pretty(action)
+            render_json(action)
         )),
         ResponseItem::FunctionCall {
             name,
@@ -595,7 +594,7 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             "<tool_search_call call_id=\"{}\" status=\"{}\" execution=\"{execution}\">\n{}\n</tool_search_call>",
             call_id.as_deref().unwrap_or(""),
             status.as_deref().unwrap_or(""),
-            render_json_pretty(arguments)
+            render_json(arguments)
         )),
         ResponseItem::FunctionCallOutput {
             call_id, output, ..
@@ -604,12 +603,7 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             call_id, output, ..
         } => Some(format!(
             "<tool_output call_id=\"{call_id}\">\n{}\n</tool_output>",
-            clamp_elide_large_text(
-                &output
-                    .body
-                    .to_text()
-                    .unwrap_or_else(|| render_json_pretty(output))
-            )
+            clamp_elide_large_text(&output.body.to_text().unwrap_or_else(|| render_json(output)))
         )),
         ResponseItem::CustomToolCall {
             call_id,
@@ -629,12 +623,12 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
         } => Some(format!(
             "<tool_search_output call_id=\"{}\" status=\"{status}\" execution=\"{execution}\">\n{}\n</tool_search_output>",
             call_id.as_deref().unwrap_or(""),
-            render_json_pretty(tools)
+            render_json(tools)
         )),
         ResponseItem::WebSearchCall { status, action, .. } => Some(format!(
             "<web_search_call status=\"{}\">\n{}\n</web_search_call>",
             status.as_deref().unwrap_or(""),
-            action.as_ref().map(render_json_pretty).unwrap_or_default()
+            action.as_ref().map(render_json).unwrap_or_default()
         )),
         ResponseItem::ImageGenerationCall {
             status,

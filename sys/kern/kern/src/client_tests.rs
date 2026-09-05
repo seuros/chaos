@@ -299,6 +299,10 @@ fn clamp_tool_routing_rejects_unregistered_tools() {
 
 #[test]
 fn render_clamp_full_prompt_preserves_prior_messages_and_tool_outputs() {
+    assert_eq!(
+        super::tools::render_json(&serde_json::json!({"text": "first\nsecond"})),
+        r#"{"text":"first\nsecond"}"#
+    );
     let prompt = crate::client_common::Prompt {
         input: vec![
             ResponseItem::Message {

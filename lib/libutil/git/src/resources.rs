@@ -84,7 +84,7 @@ fn read_branches(
     }
 
     Ok(CatalogResourceResult {
-        text: serde_json::to_string_pretty(&info).map_err(|error| error.to_string())?,
+        text: serde_json::to_string(&info).map_err(|error| error.to_string())?,
         mime_type: "application/json".to_string(),
     })
 }
@@ -172,6 +172,10 @@ mod tests {
             },
         )
         .expect("read branches");
+        assert!(
+            !result.text.contains('\n'),
+            "model-facing JSON must be compact"
+        );
         let value: serde_json::Value =
             serde_json::from_str(&result.text).expect("parse resource JSON");
         assert_eq!(value["local"], serde_json::json!(["feature/local"]));

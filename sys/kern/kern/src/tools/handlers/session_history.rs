@@ -137,7 +137,7 @@ impl ToolHandler for SessionHistoryHandler {
                     &journal,
                     args,
                 )?;
-                serde_json::to_string_pretty(&payload)
+                serde_json::to_string(&payload)
             }
             "search_session_history" => {
                 let args: SearchSessionHistoryArgs = parse_arguments(&arguments)?;
@@ -146,7 +146,7 @@ impl ToolHandler for SessionHistoryHandler {
                     &journal,
                     args,
                 )?;
-                serde_json::to_string_pretty(&payload)
+                serde_json::to_string(&payload)
             }
             _ => {
                 return Err(FunctionCallError::RespondToModel(format!(

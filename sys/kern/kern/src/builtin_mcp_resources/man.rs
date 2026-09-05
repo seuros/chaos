@@ -112,7 +112,7 @@ pub fn index_json() -> Result<String, String> {
             })
             .collect(),
     };
-    serde_json::to_string_pretty(&index)
+    serde_json::to_string(&index)
         .map_err(|err| format!("failed to serialize manual index resource: {err}"))
 }
 
@@ -190,8 +190,9 @@ mod tests {
 
     #[test]
     fn index_lists_only_agent_facing_pages_with_resource_uris() {
-        let value: serde_json::Value =
-            serde_json::from_str(&index_json().expect("manual index")).expect("parse index");
+        let text = index_json().expect("manual index");
+        assert!(!text.contains('\n'), "model-facing JSON must be compact");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("parse index");
         let pages = value["pages"].as_array().expect("pages array");
         assert_eq!(pages.len(), 4);
         assert_eq!(pages[0]["id"], "chaos-mcp.7");

@@ -196,8 +196,9 @@ fn json_resource(text: String) -> ChaosBuiltinResourceContent {
     }
 }
 
-fn to_pretty_json<T: Serialize>(value: &T, context: &str) -> Result<String, String> {
-    serde_json::to_string_pretty(value)
+// Resource text is model-facing: avoid spending context on JSON indentation.
+fn to_json<T: Serialize>(value: &T, context: &str) -> Result<String, String> {
+    serde_json::to_string(value)
         .map_err(|err| format!("failed to serialize {context} resource: {err}"))
 }
 
@@ -235,7 +236,7 @@ pub async fn sessions_json_from_runtime_db(
         None => Vec::new(),
     };
 
-    to_pretty_json(&sessions, "ChaOS processes")
+    to_json(&sessions, "ChaOS processes")
 }
 
 pub async fn session_detail_json_from_runtime_db(
@@ -251,7 +252,7 @@ pub async fn session_detail_json_from_runtime_db(
         .map_err(|err| format!("failed to read ChaOS process {process_id}: {err}"))?
         .ok_or_else(|| format!("process not found: {process_id}"))?;
 
-    to_pretty_json(
+    to_json(
         &json!({
             "process_id": process.id.to_string(),
             "title": process.title,
@@ -308,7 +309,7 @@ pub fn models_json_from_provider_models(groups: &[ProviderModels]) -> Result<Str
         })
         .collect::<Vec<_>>();
 
-    to_pretty_json(&providers, "ChaOS models")
+    to_json(&providers, "ChaOS models")
 }
 
 pub fn modes_json_from_chaos_home(chaos_home: &Path) -> Result<String, String> {
@@ -414,7 +415,7 @@ pub fn mcp_json_from_servers(
         })
         .collect::<Vec<_>>();
 
-    to_pretty_json(
+    to_json(
         &json!({
             "revision": revision,
             "servers": servers,
@@ -586,6 +587,7 @@ mod tests {
             Some(&startup_statuses),
         )
         .expect("MCP status JSON");
+        assert!(!text.contains('\n'), "model-facing JSON must be compact");
         let value: serde_json::Value = serde_json::from_str(&text).expect("parse status JSON");
 
         assert_eq!(value["revision"], 3);

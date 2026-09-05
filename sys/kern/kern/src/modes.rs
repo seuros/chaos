@@ -232,7 +232,7 @@ impl ModeRegistry {
                 })
             })
             .collect::<Vec<_>>();
-        serde_json::to_string_pretty(&json!({
+        serde_json::to_string(&json!({
             "active_mode": policy.active_mode,
             "switching_allowed": policy.switching_allowed,
             "scope": scope,
@@ -502,6 +502,10 @@ Secret full instructions that must not appear in the metadata resource.
         };
 
         let resource = registry.resource_json(&policy).expect("serialize resource");
+        assert!(
+            !resource.contains('\n'),
+            "model-facing JSON must be compact"
+        );
         let resource: serde_json::Value = serde_json::from_str(&resource).expect("parse resource");
 
         assert_eq!(resource["active_mode"], PLAN_MODE_ID);

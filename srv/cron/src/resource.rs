@@ -35,7 +35,7 @@ async fn list_crons_with_storage<S: CronStorage>(storage: &S) -> Result<String, 
         })
         .collect();
 
-    serde_json::to_string_pretty(&items).map_err(|e| format!("failed to serialize cron jobs: {e}"))
+    serde_json::to_string(&items).map_err(|e| format!("failed to serialize cron jobs: {e}"))
 }
 
 /// List all spool jobs as a JSON string.
@@ -68,5 +68,5 @@ pub async fn list_spool() -> Result<String, String> {
         })
         .collect();
 
-    serde_json::to_string_pretty(&items).map_err(|e| format!("failed to serialize spool jobs: {e}"))
+    serde_json::to_string(&items).map_err(|e| format!("failed to serialize spool jobs: {e}"))
 }

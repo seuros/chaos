@@ -3,6 +3,8 @@ use crate::ChaosAuth;
 use crate::auth::AuthCredentialsStoreMode;
 use crate::auth::login_with_provider_api_key;
 use crate::config::ConfigBuilder;
+use crate::model_provider_info::ProviderAuthCapabilities;
+use crate::model_provider_info::ProviderAuthMethod;
 use crate::model_provider_info::WireApi;
 use chaos_ipc::openai_models::ModelsResponse;
 use core_test_support::responses::mount_models_once;
@@ -839,7 +841,13 @@ async fn two_provider_account_bindings_use_their_own_cached_catalog_and_subject(
         AuthCredentialsStoreMode::File,
     );
     let provider_a = account_provider("Provider A", "https://a.example.test/v1");
-    let provider_b = account_provider("Provider B", "https://b.example.test/v1");
+    let provider_b = ModelProviderInfo {
+        requires_openai_auth: false,
+        auth: Some(ProviderAuthCapabilities {
+            methods: vec![ProviderAuthMethod::ApiKey],
+        }),
+        ..account_provider("Provider B", "https://b.example.test/v1")
+    };
     let manager = manager_over_own_cache(
         chaos_home.path().to_path_buf(),
         root_auth.for_provider("account-a"),
@@ -876,6 +884,19 @@ async fn two_provider_account_bindings_use_their_own_cached_catalog_and_subject(
         .usable_cached_models_for_provider("account-b", &provider_b)
         .await
         .expect("account b cached catalog");
+    let providers = HashMap::from([
+        ("account-a".to_string(), provider_a),
+        ("account-b".to_string(), provider_b.clone()),
+        ("missing-account".to_string(), provider_b.clone()),
+    ]);
+    let groups = manager
+        .list_models_by_provider(&providers, "account-a")
+        .await;
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].provider_id, "account-a");
+    assert_eq!(groups[1].provider_id, "account-b");
+    assert_eq!(groups[1].models, models_b);
+    assert!(!manager.provider_is_usable("missing-account", &provider_b));
     let subject_a = root_auth
         .credential_subject_fingerprint_for_provider(
             "account-a",
@@ -908,6 +929,40 @@ async fn two_provider_account_bindings_use_their_own_cached_catalog_and_subject(
     assert_ne!(subject_a, subject_b);
     assert!(!subject_a.as_str().contains("secret-a"));
     assert!(!subject_b.as_str().contains("secret-b"));
+}
+
+#[tokio::test]
+async fn provider_usability_requires_a_supported_stored_auth_mode() {
+    use ProviderAuthMethod::{ApiKey, ChatgptAccount, XaiAccount};
+
+    let chaos_home = tempdir().expect("temp dir");
+    for (auth, supported_method) in [
+        (ChaosAuth::from_api_key("test-stored-key"), ApiKey),
+        (
+            ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
+            ChatgptAccount,
+        ),
+    ] {
+        let manager = ModelsManager::new(
+            chaos_home.path().to_path_buf(),
+            AuthManager::from_auth_for_testing(auth),
+            None,
+            CollaborationModesConfig::default(),
+        );
+        for method in [ApiKey, ChatgptAccount, XaiAccount] {
+            let provider = ModelProviderInfo {
+                auth: Some(ProviderAuthCapabilities {
+                    methods: vec![method],
+                }),
+                ..provider_for("https://auth.example.test/v1".to_string())
+            };
+            assert_eq!(
+                manager.provider_is_usable(manager.provider_id(), &provider),
+                method == supported_method,
+                "stored {supported_method:?} credentials with {method:?} support"
+            );
+        }
+    }
 }
 
 #[tokio::test]

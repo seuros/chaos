@@ -25,6 +25,11 @@ run and pass that server's name and idempotency key.
 derives their opaque subjects inside the host, persists the run and attempt,
 and starts a read-only reviewer process.
 
+Stored API keys count as configured credentials when the provider supports
+API-key authentication; subscription login is not required. Stored credentials
+must match a supported authentication method. The host still requires an exact
+cached model and independently verifies account and model-family provenance.
+
 `resume_attested_review` advances the persisted state machine. It can be called
 again after a timeout or lost acknowledgement. A submission retry uses the
 same stored JSON, idempotency key, and protected provenance.

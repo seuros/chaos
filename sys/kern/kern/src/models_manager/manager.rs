@@ -446,9 +446,9 @@ impl ModelsManager {
 
     /// Whether credentials for `provider` resolve without prompting the user.
     ///
-    /// Account credentials are looked up per provider rather than through the
+    /// Stored credentials are looked up per provider rather than through the
     /// session's active auth mode, so signing into one provider does not hide
-    /// the others.
+    /// the others. Stored API keys do not require subscription-login support.
     fn provider_is_usable(&self, provider_id: &str, provider: &ModelProviderInfo) -> bool {
         if !provider.requires_managed_auth() {
             return true;
@@ -459,8 +459,13 @@ impl ModelsManager {
         if matches!(provider.api_key(), Ok(Some(_))) {
             return true;
         }
-        provider.supports_account_auth()
-            && self.auth_manager.auth_for_provider(provider_id).is_some()
+        self.auth_manager
+            .auth_for_provider(provider_id)
+            .is_some_and(|auth| match auth.auth_mode() {
+                AuthMode::ApiKey => provider.supports_api_key_auth(),
+                AuthMode::Chatgpt => provider.supports_chatgpt_account_auth(),
+                AuthMode::Xai => provider.supports_xai_account_auth(),
+            })
     }
 
     /// List collaboration mode presets.

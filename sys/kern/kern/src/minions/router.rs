@@ -39,7 +39,7 @@ use tracing::Instrument;
 use tracing::warn;
 
 use crate::AuthManager;
-use crate::child_agents::control::AgentControl;
+use crate::minions::control::AgentControl;
 use crate::config::Config;
 use crate::error::Result as ChaosResult;
 use crate::process_table::NewProcess;
@@ -270,7 +270,7 @@ fn span_from_packet_path(path: Option<&chaos_ipc::protocol::W3cTraceContext>) ->
 #[cfg(test)]
 mod tests {
     //! Focused unit tests for the pieces of this module that aren't
-    //! covered end-to-end by `child_agents::control::tests` (which exercise
+    //! covered end-to-end by `minions::control::tests` (which exercise
     //! Spawn / Resume / Fork through a real `ProcessTable`).
     //!
     //! Adapter-level trace carrier propagation and full-mailbox

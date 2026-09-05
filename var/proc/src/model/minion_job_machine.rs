@@ -1,11 +1,11 @@
 pub(crate) mod job {
-    use crate::ChildAgentJobStatus;
+    use crate::MinionJobStatus;
     use state_machines::state_machine;
 
     // Agent job lifecycle: Pending → Running → Completed/Failed/Cancelled
     // Cancellation is allowed from Pending or Running.
     state_machine! {
-        name: ChildAgentJobLifecycle,
+        name: MinionJobLifecycle,
         dynamic: true,
         initial: Pending,
         states: [Pending, Running, Completed, Failed, Cancelled],
@@ -27,35 +27,35 @@ pub(crate) mod job {
     }
 
     #[derive(Debug)]
-    pub(crate) struct ChildAgentJobWorkflow {
-        machine: DynamicChildAgentJobLifecycle<()>,
+    pub(crate) struct MinionJobWorkflow {
+        machine: DynamicMinionJobLifecycle<()>,
     }
 
-    impl ChildAgentJobWorkflow {
+    impl MinionJobWorkflow {
         pub(crate) fn new() -> Self {
             Self {
-                machine: DynamicChildAgentJobLifecycle::new(()),
+                machine: DynamicMinionJobLifecycle::new(()),
             }
         }
 
         /// Reconstruct the workflow at a known persisted state by replaying
         /// the minimal events needed to reach it.
-        pub(crate) fn from_status(status: ChildAgentJobStatus) -> Self {
+        pub(crate) fn from_status(status: MinionJobStatus) -> Self {
             let mut wf = Self::new();
             match status {
-                ChildAgentJobStatus::Pending => {}
-                ChildAgentJobStatus::Running => {
+                MinionJobStatus::Pending => {}
+                MinionJobStatus::Running => {
                     wf.start();
                 }
-                ChildAgentJobStatus::Completed => {
+                MinionJobStatus::Completed => {
                     wf.start();
                     wf.complete();
                 }
-                ChildAgentJobStatus::Failed => {
+                MinionJobStatus::Failed => {
                     wf.start();
                     wf.fail();
                 }
-                ChildAgentJobStatus::Cancelled => {
+                MinionJobStatus::Cancelled => {
                     wf.cancel();
                 }
             }
@@ -64,30 +64,30 @@ pub(crate) mod job {
 
         pub(crate) fn start(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobLifecycleEvent::Start)
+                .handle(MinionJobLifecycleEvent::Start)
                 .is_ok()
         }
 
         pub(crate) fn complete(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobLifecycleEvent::Complete)
+                .handle(MinionJobLifecycleEvent::Complete)
                 .is_ok()
         }
 
         pub(crate) fn fail(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobLifecycleEvent::Fail)
+                .handle(MinionJobLifecycleEvent::Fail)
                 .is_ok()
         }
 
         pub(crate) fn cancel(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobLifecycleEvent::Cancel)
+                .handle(MinionJobLifecycleEvent::Cancel)
                 .is_ok()
         }
 
         #[cfg(test)]
-        pub(crate) fn current_state(&self) -> ChildAgentJobLifecycleState {
+        pub(crate) fn current_state(&self) -> MinionJobLifecycleState {
             self.machine.current_state()
         }
     }
@@ -98,57 +98,57 @@ pub(crate) mod job {
 
         #[test]
         fn workflow_transitions_and_persisted_status_replay() {
-            let mut wf = ChildAgentJobWorkflow::new();
-            assert_eq!(wf.current_state(), ChildAgentJobLifecycleState::Pending);
+            let mut wf = MinionJobWorkflow::new();
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Pending);
 
             assert!(wf.start());
-            assert_eq!(wf.current_state(), ChildAgentJobLifecycleState::Running);
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Running);
 
             assert!(wf.complete());
-            assert_eq!(wf.current_state(), ChildAgentJobLifecycleState::Completed);
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Completed);
 
-            let mut wf = ChildAgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             wf.start();
             assert!(wf.fail());
-            assert_eq!(wf.current_state(), ChildAgentJobLifecycleState::Failed);
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Failed);
 
-            let mut wf = ChildAgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             assert!(wf.cancel());
-            assert_eq!(wf.current_state(), ChildAgentJobLifecycleState::Cancelled);
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Cancelled);
 
-            let mut wf = ChildAgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             wf.start();
             assert!(wf.cancel());
-            assert_eq!(wf.current_state(), ChildAgentJobLifecycleState::Cancelled);
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Cancelled);
 
-            let mut wf = ChildAgentJobWorkflow::new();
+            let mut wf = MinionJobWorkflow::new();
             assert!(!wf.complete());
-            assert_eq!(wf.current_state(), ChildAgentJobLifecycleState::Pending);
+            assert_eq!(wf.current_state(), MinionJobLifecycleState::Pending);
 
             let cases = [
                 (
-                    ChildAgentJobStatus::Pending,
-                    ChildAgentJobLifecycleState::Pending,
+                    MinionJobStatus::Pending,
+                    MinionJobLifecycleState::Pending,
                 ),
                 (
-                    ChildAgentJobStatus::Running,
-                    ChildAgentJobLifecycleState::Running,
+                    MinionJobStatus::Running,
+                    MinionJobLifecycleState::Running,
                 ),
                 (
-                    ChildAgentJobStatus::Completed,
-                    ChildAgentJobLifecycleState::Completed,
+                    MinionJobStatus::Completed,
+                    MinionJobLifecycleState::Completed,
                 ),
                 (
-                    ChildAgentJobStatus::Failed,
-                    ChildAgentJobLifecycleState::Failed,
+                    MinionJobStatus::Failed,
+                    MinionJobLifecycleState::Failed,
                 ),
                 (
-                    ChildAgentJobStatus::Cancelled,
-                    ChildAgentJobLifecycleState::Cancelled,
+                    MinionJobStatus::Cancelled,
+                    MinionJobLifecycleState::Cancelled,
                 ),
             ];
             for (status, expected) in cases {
-                let wf = ChildAgentJobWorkflow::from_status(status);
+                let wf = MinionJobWorkflow::from_status(status);
                 assert_eq!(wf.current_state(), expected);
             }
         }
@@ -156,13 +156,13 @@ pub(crate) mod job {
 }
 
 pub(crate) mod item {
-    use crate::ChildAgentJobItemStatus;
+    use crate::MinionJobItemStatus;
     use state_machines::state_machine;
 
     // Agent job item lifecycle: Pending → Running → Completed/Failed
     // Items can be retried: Running → Pending.
     state_machine! {
-        name: ChildAgentJobItemLifecycle,
+        name: MinionJobItemLifecycle,
         dynamic: true,
         initial: Pending,
         states: [Pending, Running, Completed, Failed],
@@ -183,30 +183,30 @@ pub(crate) mod item {
     }
 
     #[derive(Debug)]
-    pub(crate) struct ChildAgentJobItemWorkflow {
-        machine: DynamicChildAgentJobItemLifecycle<()>,
+    pub(crate) struct MinionJobItemWorkflow {
+        machine: DynamicMinionJobItemLifecycle<()>,
     }
 
-    impl ChildAgentJobItemWorkflow {
+    impl MinionJobItemWorkflow {
         pub(crate) fn new() -> Self {
             Self {
-                machine: DynamicChildAgentJobItemLifecycle::new(()),
+                machine: DynamicMinionJobItemLifecycle::new(()),
             }
         }
 
         /// Reconstruct the workflow at a known persisted state.
-        pub(crate) fn from_status(status: ChildAgentJobItemStatus) -> Self {
+        pub(crate) fn from_status(status: MinionJobItemStatus) -> Self {
             let mut wf = Self::new();
             match status {
-                ChildAgentJobItemStatus::Pending => {}
-                ChildAgentJobItemStatus::Running => {
+                MinionJobItemStatus::Pending => {}
+                MinionJobItemStatus::Running => {
                     wf.start();
                 }
-                ChildAgentJobItemStatus::Completed => {
+                MinionJobItemStatus::Completed => {
                     wf.start();
                     wf.complete();
                 }
-                ChildAgentJobItemStatus::Failed => {
+                MinionJobItemStatus::Failed => {
                     wf.start();
                     wf.fail();
                 }
@@ -216,30 +216,30 @@ pub(crate) mod item {
 
         pub(crate) fn start(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobItemLifecycleEvent::Start)
+                .handle(MinionJobItemLifecycleEvent::Start)
                 .is_ok()
         }
 
         pub(crate) fn complete(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobItemLifecycleEvent::Complete)
+                .handle(MinionJobItemLifecycleEvent::Complete)
                 .is_ok()
         }
 
         pub(crate) fn fail(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobItemLifecycleEvent::Fail)
+                .handle(MinionJobItemLifecycleEvent::Fail)
                 .is_ok()
         }
 
         pub(crate) fn retry(&mut self) -> bool {
             self.machine
-                .handle(ChildAgentJobItemLifecycleEvent::Retry)
+                .handle(MinionJobItemLifecycleEvent::Retry)
                 .is_ok()
         }
 
         #[cfg(test)]
-        pub(crate) fn current_state(&self) -> ChildAgentJobItemLifecycleState {
+        pub(crate) fn current_state(&self) -> MinionJobItemLifecycleState {
             self.machine.current_state()
         }
     }
@@ -250,50 +250,50 @@ pub(crate) mod item {
 
         #[test]
         fn workflow_transitions_retry_and_persisted_status_replay() {
-            let mut wf = ChildAgentJobItemWorkflow::new();
-            assert_eq!(wf.current_state(), ChildAgentJobItemLifecycleState::Pending);
+            let mut wf = MinionJobItemWorkflow::new();
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Pending);
 
             assert!(wf.start());
-            assert_eq!(wf.current_state(), ChildAgentJobItemLifecycleState::Running);
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Running);
 
             assert!(wf.complete());
             assert_eq!(
                 wf.current_state(),
-                ChildAgentJobItemLifecycleState::Completed
+                MinionJobItemLifecycleState::Completed
             );
 
-            let mut wf = ChildAgentJobItemWorkflow::new();
+            let mut wf = MinionJobItemWorkflow::new();
             wf.start();
             assert!(wf.retry());
-            assert_eq!(wf.current_state(), ChildAgentJobItemLifecycleState::Pending);
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Pending);
 
             assert!(wf.start());
-            assert_eq!(wf.current_state(), ChildAgentJobItemLifecycleState::Running);
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Running);
 
-            let mut wf = ChildAgentJobItemWorkflow::new();
+            let mut wf = MinionJobItemWorkflow::new();
             assert!(!wf.retry());
-            assert_eq!(wf.current_state(), ChildAgentJobItemLifecycleState::Pending);
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Pending);
 
             let cases = [
                 (
-                    ChildAgentJobItemStatus::Pending,
-                    ChildAgentJobItemLifecycleState::Pending,
+                    MinionJobItemStatus::Pending,
+                    MinionJobItemLifecycleState::Pending,
                 ),
                 (
-                    ChildAgentJobItemStatus::Running,
-                    ChildAgentJobItemLifecycleState::Running,
+                    MinionJobItemStatus::Running,
+                    MinionJobItemLifecycleState::Running,
                 ),
                 (
-                    ChildAgentJobItemStatus::Completed,
-                    ChildAgentJobItemLifecycleState::Completed,
+                    MinionJobItemStatus::Completed,
+                    MinionJobItemLifecycleState::Completed,
                 ),
                 (
-                    ChildAgentJobItemStatus::Failed,
-                    ChildAgentJobItemLifecycleState::Failed,
+                    MinionJobItemStatus::Failed,
+                    MinionJobItemLifecycleState::Failed,
                 ),
             ];
             for (status, expected) in cases {
-                let wf = ChildAgentJobItemWorkflow::from_status(status);
+                let wf = MinionJobItemWorkflow::from_status(status);
                 assert_eq!(wf.current_state(), expected);
             }
         }

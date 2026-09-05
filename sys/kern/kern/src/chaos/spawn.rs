@@ -23,8 +23,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::AuthManager;
-use crate::child_agents::AgentControl;
-use crate::child_agents::AgentStatus;
+use crate::minions::AgentControl;
+use crate::minions::AgentStatus;
 use crate::config::Config;
 use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
@@ -150,7 +150,7 @@ impl Chaos {
         if let SessionSource::SubAgent(SubAgentSource::ProcessSpawn { depth, .. }) = session_source
             && depth >= config.agent_max_depth
         {
-            config.child_agent_jobs_allowed = false;
+            config.minion_jobs_allowed = false;
             config.collab_enabled = false;
         }
 

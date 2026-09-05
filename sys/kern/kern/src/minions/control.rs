@@ -1,12 +1,12 @@
-use crate::child_agents::AgentStatus;
-use crate::child_agents::guards::Guards;
-use crate::child_agents::role::DEFAULT_ROLE_NAME;
-use crate::child_agents::role::resolve_role_config;
-use crate::child_agents::router::ForkArgs;
-use crate::child_agents::router::ProcessTableOp;
-use crate::child_agents::router::ResumeArgs;
-use crate::child_agents::router::SpawnArgs;
-use crate::child_agents::status::is_final;
+use crate::minions::AgentStatus;
+use crate::minions::guards::Guards;
+use crate::minions::role::DEFAULT_ROLE_NAME;
+use crate::minions::role::resolve_role_config;
+use crate::minions::router::ForkArgs;
+use crate::minions::router::ProcessTableOp;
+use crate::minions::router::ResumeArgs;
+use crate::minions::router::SpawnArgs;
+use crate::minions::status::is_final;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::process_table::NewProcess;
@@ -108,7 +108,7 @@ fn agent_nickname_candidates(
     let role_name = role_name.unwrap_or(DEFAULT_ROLE_NAME);
     let role_candidates =
         resolve_role_config(config, role_name).and_then(|role| role.nickname_candidates.clone());
-    chaos_child_agents::nickname_candidates(role_candidates)
+    chaos_minions::nickname_candidates(role_candidates)
 }
 
 /// Control-plane handle for multi-agent operations.
@@ -638,7 +638,7 @@ impl AgentControl {
             }
             if matched_process_id.replace(process_id).is_some() {
                 return Err(ChaosErr::InvalidRequest(format!(
-                    "multiple direct child agents use role `{agent_role}`"
+                    "multiple direct minions use role `{agent_role}`"
                 )));
             }
         }
@@ -701,7 +701,7 @@ impl AgentControl {
                 continue;
             };
             let snapshot = thread.config_snapshot().await;
-            if crate::child_agents::is_internal_process_spawn(&snapshot.session_source) {
+            if crate::minions::is_internal_process_spawn(&snapshot.session_source) {
                 continue;
             }
             let SessionSource::SubAgent(SubAgentSource::ProcessSpawn {

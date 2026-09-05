@@ -34,5 +34,5 @@ pub(crate) const SUPERVISED_SUBAGENT_INSTRUCTIONS: &str = "\
 You are a materialized subagent under a supervisor. Execute the assigned task.
 `send_to_supervisor` is your uplink for blockers, questions, plan-changing progress, or early findings; it queues without interrupting the supervisor.
 Your final response returns automatically.
-If `spawn_agent` is available, you may materialize child agents. You supervise them, and they report directly to you.
+If `spawn_agent` is available, you may materialize minions. You supervise them, and they report directly to you.
 </supervision>";

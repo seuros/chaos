@@ -183,7 +183,7 @@ pub(crate) async fn review_title_after_reconnect(session: Arc<Session>, history:
         .await;
     let mut reviewer_config = config.as_ref().clone();
     reviewer_config.ephemeral = true;
-    reviewer_config.child_agent_jobs_allowed = false;
+    reviewer_config.minion_jobs_allowed = false;
     reviewer_config.collab_enabled = false;
     reviewer_config.terminal_title = TerminalTitleMode::Off;
     if let Err(err) = reviewer_config

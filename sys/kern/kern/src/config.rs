@@ -104,7 +104,7 @@ pub use types::ApprovalsReviewer;
 /// the context window.
 pub(crate) const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
 pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
-pub(crate) const DEFAULT_CHILD_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
+pub(crate) const DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
@@ -373,8 +373,8 @@ pub struct Config {
     /// Session or role instructions injected as a developer message.
     pub developer_instructions: Option<String>,
 
-    /// Additional instructions for delegated child agents, never the main session.
-    pub child_instructions: Option<String>,
+    /// Additional instructions for delegated minions, never the main session.
+    pub minion_instructions: Option<String>,
 
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
@@ -451,8 +451,8 @@ pub struct Config {
 
     /// Maximum number of agent threads that can be open concurrently.
     pub agent_max_threads: Option<usize>,
-    /// Maximum runtime in seconds for child agent job tasks before they are failed.
-    pub child_agent_job_max_runtime_seconds: Option<u64>,
+    /// Maximum runtime in seconds for minion job tasks before they are failed.
+    pub minion_job_max_runtime_seconds: Option<u64>,
 
     /// Maximum nesting depth allowed for spawned agent threads.
     pub agent_max_depth: i32,
@@ -566,13 +566,13 @@ pub struct Config {
     pub web_search_config: Option<WebSearchConfig>,
 
     /// Whether collab tools (spawn/delegate) are available. Set to `false`
-    /// for child agents at max depth or review workers.
+    /// for minions at max depth or review workers.
     pub collab_enabled: bool,
 
-    /// Whether child-agent job fanout tools (e.g. `spawn_child_agents_on_csv`) are
+    /// Whether minion-job fanout tools (e.g. `spawn_minions_on_csv`) are
     /// available. Set to `false` for sub-agents at max depth and for
-    /// review workers or child agents.
-    pub child_agent_jobs_allowed: bool,
+    /// review workers or minions.
+    pub minion_jobs_allowed: bool,
 
     /// Maximum poll window for background terminal output (`write_stdin`), in milliseconds.
     /// Default: `300000` (5 minutes).
@@ -699,10 +699,10 @@ pub struct ConfigToml {
     #[serde(default)]
     pub developer_instructions: Option<String>,
 
-    /// Additional instructions inserted only for delegated child agents.
+    /// Additional instructions inserted only for delegated minions.
     /// Main sessions and internal review/compaction workers do not receive these.
     #[serde(default)]
-    pub child_instructions: Option<String>,
+    pub minion_instructions: Option<String>,
 
     /// Optional path to a file containing model instructions that will override
     /// the built-in instructions for the selected model. Users are STRONGLY
@@ -866,8 +866,8 @@ pub struct ConfigToml {
     /// Agent-related settings (thread limits, etc.).
     pub agents: Option<AgentsToml>,
 
-    /// Whether child-agent job fanout tools are available. Defaults to `true`.
-    pub child_agent_jobs_allowed: Option<bool>,
+    /// Whether minion-job fanout tools are available. Defaults to `true`.
+    pub minion_jobs_allowed: Option<bool>,
 
     /// Markers used to detect the project root when searching parent
     /// directories for `.chaos` folders. Defaults to [".git"] when unset.

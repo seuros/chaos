@@ -5,9 +5,9 @@ use chaos_ipc::openai_models::ModelPreset;
 use chaos_parrot::sanitize::JsonSchema;
 use chaos_parrot::sanitize::ResponsesApiTool;
 
-use crate::child_agents::tools::DEFAULT_WAIT_TIMEOUT_MS;
-use crate::child_agents::tools::MAX_WAIT_TIMEOUT_MS;
-use crate::child_agents::tools::MIN_WAIT_TIMEOUT_MS;
+use crate::minions::tools::DEFAULT_WAIT_TIMEOUT_MS;
+use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
+use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
 use crate::client_common::tools::ToolSpec;
 use crate::collaboration_modes::CollaborationModesConfig;
 use crate::tools::handlers::request_permissions_tool_description;
@@ -612,7 +612,7 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
         (
             "agent_type".to_string(),
             JsonSchema::String {
-                description: Some(crate::child_agents::role::spawn_tool_spec::build(
+                description: Some(crate::minions::role::spawn_tool_spec::build(
                     &config.agent_roles,
                 )),
             },
@@ -672,7 +672,7 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             "mode".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Optional initial mode id for the child. When allowed_modes is omitted, this creates a fixed single-mode child with no switch_mode tool. Use mode `plan` for a fixed planner child agent."
+                    "Optional initial mode id for the child. When allowed_modes is omitted, this creates a fixed single-mode child with no switch_mode tool. Use mode `plan` for a fixed planner minion."
                         .to_string(),
                 ),
             },
@@ -749,7 +749,7 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
 }
 
 pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
-    let available_roles = crate::child_agents::role::spawn_tool_spec::build(&config.agent_roles);
+    let available_roles = crate::minions::role::spawn_tool_spec::build(&config.agent_roles);
     let job_properties = BTreeMap::from([
         (
             "id".to_string(),
@@ -850,7 +850,7 @@ pub(crate) fn spawn_agent_models_description(models: &[ModelPreset]) -> String {
         .join("\n")
 }
 
-pub(crate) fn create_spawn_child_agents_on_csv_tool() -> ToolSpec {
+pub(crate) fn create_spawn_minions_on_csv_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
         "csv_path".to_string(),
@@ -914,8 +914,8 @@ pub(crate) fn create_spawn_child_agents_on_csv_tool() -> ToolSpec {
         },
     );
     ToolSpec::Function(ResponsesApiTool {
-        name: "spawn_child_agents_on_csv".to_string(),
-        description: "Process a CSV by spawning one task sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each task must call `report_child_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
+        name: "spawn_minions_on_csv".to_string(),
+        description: "Process a CSV by spawning one task sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each task must call `report_minion_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -928,7 +928,7 @@ pub(crate) fn create_spawn_child_agents_on_csv_tool() -> ToolSpec {
     })
 }
 
-pub(crate) fn create_report_child_agent_job_result_tool() -> ToolSpec {
+pub(crate) fn create_report_minion_job_result_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
         "job_id".to_string(),
@@ -960,9 +960,9 @@ pub(crate) fn create_report_child_agent_job_result_tool() -> ToolSpec {
         },
     );
     ToolSpec::Function(ResponsesApiTool {
-        name: "report_child_agent_job_result".to_string(),
+        name: "report_minion_job_result".to_string(),
         description:
-            "Worker-only tool to report a result for a child agent job item. Main agents should not call this."
+            "Worker-only tool to report a result for a minion job item. Main agents should not call this."
                 .to_string(),
         strict: false,
         defer_loading: None,

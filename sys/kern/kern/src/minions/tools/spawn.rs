@@ -11,10 +11,10 @@ use super::{
     function_arguments, input_preview, parse_arguments, parse_collab_input, process_spawn_source,
     tool_output_json_text, tool_output_response_item,
 };
-use crate::child_agents::control::SpawnAgentOptions;
-use crate::child_agents::role::DEFAULT_ROLE_NAME;
-use crate::child_agents::role::apply_role_to_config;
-use crate::child_agents::role::collect_roles_by_topics;
+use crate::minions::control::SpawnAgentOptions;
+use crate::minions::role::DEFAULT_ROLE_NAME;
+use crate::minions::role::apply_role_to_config;
+use crate::minions::role::collect_roles_by_topics;
 use crate::internal_tasks;
 use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
 use rand::prelude::IndexedRandom as _;
@@ -202,7 +202,7 @@ impl ToolHandler for Handler {
         let new_process_id = spawned.process_id;
         let role_tag = role_name.unwrap_or(DEFAULT_ROLE_NAME);
         turn.session_telemetry.counter(
-            "chaos.multi_agent.spawn",
+            "chaos.minions.spawn",
             /*inc*/ 1,
             &[("role", role_tag)],
         );

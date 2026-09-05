@@ -2,9 +2,9 @@ use super::*;
 use chaos_ipc::protocol::SubAgentSource;
 
 #[tokio::test]
-async fn initial_context_scopes_child_instructions_to_delegated_agents() {
+async fn initial_context_scopes_minion_instructions_to_minions() {
     let (session, mut turn_context) = make_session_and_context().await;
-    Arc::make_mut(&mut turn_context.config).child_instructions =
+    Arc::make_mut(&mut turn_context.config).minion_instructions =
         Some("CHILD_ONLY_BOUNDARY".to_string());
     turn_context.developer_instructions = Some("SESSION_DEVELOPER_BOUNDARY".to_string());
     let mut cases = vec![
@@ -30,7 +30,7 @@ async fn initial_context_scopes_child_instructions_to_delegated_agents() {
         (2, Some("scout".to_string()), true),
         (
             1,
-            Some(crate::child_agents::internal_agent_role("review", "test")),
+            Some(crate::minions::internal_agent_role("review", "test")),
             false,
         ),
     ] {
@@ -60,7 +60,7 @@ async fn initial_context_scopes_child_instructions_to_delegated_agents() {
         );
     }
 
-    Arc::make_mut(&mut turn_context.config).child_instructions = None;
+    Arc::make_mut(&mut turn_context.config).minion_instructions = None;
     turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
         parent_process_id: ProcessId::default(),
         depth: 1,

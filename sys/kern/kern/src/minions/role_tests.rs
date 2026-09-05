@@ -809,7 +809,7 @@ async fn role_instructions_preserve_project_child_defaults() {
     let home = TempDir::new().expect("create temp dir");
     tokio::fs::write(
         home.path().join("config.toml"),
-        "child_instructions = \"CHILD_DEFAULTS\"\ndeveloper_instructions = \"PARENT_ROLE\"\n",
+        "minion_instructions = \"CHILD_DEFAULTS\"\ndeveloper_instructions = \"PARENT_ROLE\"\n",
     )
     .await
     .expect("write config");
@@ -819,7 +819,7 @@ async fn role_instructions_preserve_project_child_defaults() {
         .build()
         .await
         .expect("load config");
-    assert_eq!(config.child_instructions.as_deref(), Some("CHILD_DEFAULTS"));
+    assert_eq!(config.minion_instructions.as_deref(), Some("CHILD_DEFAULTS"));
     assert_eq!(
         config.developer_instructions.as_deref(),
         Some("PARENT_ROLE")
@@ -830,7 +830,7 @@ async fn role_instructions_preserve_project_child_defaults() {
             .await
             .expect("apply child role");
         assert_eq!(
-            child_config.child_instructions.as_deref(),
+            child_config.minion_instructions.as_deref(),
             Some("CHILD_DEFAULTS"),
             "role {role} must not replace project child defaults",
         );
@@ -853,7 +853,7 @@ async fn role_instructions_preserve_project_child_defaults() {
         .await
         .expect("apply reviewer persona");
     assert_eq!(
-        reviewer_config.child_instructions.as_deref(),
+        reviewer_config.minion_instructions.as_deref(),
         Some("CHILD_DEFAULTS")
     );
     assert!(reviewer_config.developer_instructions.is_some());

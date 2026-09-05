@@ -334,7 +334,7 @@ pub(super) async fn spawn_review_thread(
             .list_models(RefreshStrategy::OnlineIfUncached)
             .await,
         approval_policy: parent_turn_context.approval_policy.value(),
-        child_agent_jobs_allowed: config.child_agent_jobs_allowed,
+        minion_jobs_allowed: config.minion_jobs_allowed,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
         vfs_policy: &parent_turn_context.vfs_policy,
@@ -384,7 +384,7 @@ pub(super) async fn spawn_review_thread(
         // Start from a clean slate so the parent agent's persona cannot bleed
         // into the review turn if the requested reviewer cannot be applied.
         per_turn_config.developer_instructions = None;
-        match crate::child_agents::role::apply_builtin_persona_to_config(
+        match crate::minions::role::apply_builtin_persona_to_config(
             &mut per_turn_config,
             reviewer,
         )
@@ -417,7 +417,7 @@ pub(super) async fn spawn_review_thread(
     let reviewer_instructions = per_turn_config.developer_instructions.clone();
     // Reviews reuse their caller's session source, which may itself be a child.
     // Keep the review contract independent even when a child requested it.
-    per_turn_config.child_instructions = None;
+    per_turn_config.minion_instructions = None;
     let per_turn_config = Arc::new(per_turn_config);
     let review_turn_id = sub_id.to_string();
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
@@ -507,7 +507,7 @@ pub(super) async fn spawn_review_thread(
 
 fn pick_catchphrase(reviewer: &str) -> Option<String> {
     use rand::seq::IndexedRandom;
-    let phrases = crate::child_agents::role::built_in::personas()
+    let phrases = crate::minions::role::built_in::personas()
         .get(reviewer)?
         .catchphrases
         .as_deref()?;

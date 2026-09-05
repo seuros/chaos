@@ -1,5 +1,5 @@
 //! Review workflow popup methods: branch picker, commit picker, custom prompt,
-//! and child agent reviewer picker.
+//! and minion reviewer picker.
 use super::super::*;
 use chaos_ipc::protocol::ReviewRequest;
 use std::path::Path;
@@ -7,7 +7,7 @@ use std::path::Path;
 impl ChatWidget {
     /// Open the review target picker.
     ///
-    /// When `use_reviewer` is true, each target path chains through the child agent
+    /// When `use_reviewer` is true, each target path chains through the minion
     /// picker before firing the review op.
     pub fn open_review_popup(&mut self, use_reviewer: bool) {
         let mut items: Vec<SelectionItem> = Vec::new();
@@ -20,7 +20,7 @@ impl ChatWidget {
 
         items.push(SelectionItem {
             name: reviewer_label.to_string(),
-            description: Some("Pick a child agent persona to perform the review".into()),
+            description: Some("Pick a minion persona to perform the review".into()),
             is_current: use_reviewer,
             actions: vec![Box::new(move |tx: &AppEventSender| {
                 tx.send(AppEvent::OpenReviewPopup {
@@ -189,7 +189,7 @@ impl ChatWidget {
                     reviewer: None,
                 };
                 if use_reviewer {
-                    tx.send(AppEvent::OpenReviewChildAgentPicker { review_request: rr });
+                    tx.send(AppEvent::OpenReviewMinionPicker { review_request: rr });
                 } else {
                     tx.send(AppEvent::ChaosOp(Op::Review { review_request: rr }));
                 }
@@ -198,9 +198,9 @@ impl ChatWidget {
         self.bottom_pane.show_view(Box::new(view));
     }
 
-    /// Show a child agent persona picker. The chosen persona is set as the reviewer
+    /// Show a minion persona picker. The chosen persona is set as the reviewer
     /// on `review_request` before firing the review op.
-    pub fn show_review_child_agent_picker(&mut self, review_request: ReviewRequest) {
+    pub fn show_review_minion_picker(&mut self, review_request: ReviewRequest) {
         let personas = chaos_kern::list_personas();
         let mut items: Vec<SelectionItem> = Vec::with_capacity(personas.len() + 1);
 
@@ -250,12 +250,12 @@ impl ChatWidget {
     }
 }
 
-/// Build a `SelectionAction` that either opens the child agent picker (when
+/// Build a `SelectionAction` that either opens the minion picker (when
 /// `use_reviewer` is true) or fires the review op directly.
 fn build_review_action(use_reviewer: bool, review_request: ReviewRequest) -> SelectionAction {
     if use_reviewer {
         Box::new(move |tx: &AppEventSender| {
-            tx.send(AppEvent::OpenReviewChildAgentPicker {
+            tx.send(AppEvent::OpenReviewMinionPicker {
                 review_request: review_request.clone(),
             });
         })

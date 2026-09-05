@@ -19,7 +19,7 @@ use chaos_ipc::protocol::Event;
 use chaos_mcp_runtime::McpServerNotification;
 
 use crate::chaos::permissions::PermissionActor;
-use crate::child_agents::AgentStatus;
+use crate::minions::AgentStatus;
 use crate::state::ActiveTurn;
 use crate::state::SessionServices;
 use crate::state::SessionState;

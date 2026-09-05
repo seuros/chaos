@@ -52,7 +52,7 @@ mod file_watcher;
 mod flags;
 pub mod git_info;
 
-mod child_agents;
+mod minions;
 mod internal_tasks;
 pub mod landlock;
 pub mod mcp;
@@ -146,7 +146,7 @@ pub use rollout::list::parse_cursor;
 pub use rollout::policy::EventPersistenceMode;
 /// Returns the built-in persona catalog (excludes operational roles like default/scout/task).
 pub fn list_personas() -> &'static std::collections::BTreeMap<String, config::AgentRoleConfig> {
-    child_agents::role::built_in::personas()
+    minions::role::built_in::personas()
 }
 mod function_tool;
 mod state;

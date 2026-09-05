@@ -202,12 +202,12 @@ pub fn log_inbound_app_event(event: &AppEvent) {
             });
             LOGGER.write_json_line(value);
         }
-        AppEvent::OpenReviewChildAgentPicker { .. } => {
+        AppEvent::OpenReviewMinionPicker { .. } => {
             let value = json!({
                 "ts": now_ts(),
                 "dir": "to_tui",
                 "kind": "app_event",
-                "variant": "OpenReviewChildAgentPicker",
+                "variant": "OpenReviewMinionPicker",
             });
             LOGGER.write_json_line(value);
         }

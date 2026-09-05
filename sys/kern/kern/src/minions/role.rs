@@ -399,11 +399,11 @@ pub(crate) mod built_in {
     use include_dir::include_dir;
 
     /// Core operational roles: default, scout, task, sentinel, …
-    static BUILTINS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/child_agents/builtins");
+    static BUILTINS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/minions/builtins");
 
     /// Personality overlays: dhh, gordon, fireship, primeagen, carmack, …
     /// Drop a new `.md` file here — no code changes required.
-    static PERSONAS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/child_agents/personas");
+    static PERSONAS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/minions/personas");
 
     /// Returns the cached persona-only role declarations (excludes operational builtins).
     pub(crate) fn personas() -> &'static BTreeMap<String, AgentRoleConfig> {

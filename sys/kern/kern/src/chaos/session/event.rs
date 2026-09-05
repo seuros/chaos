@@ -10,7 +10,7 @@ use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::user_input::UserInput;
 use tracing::debug;
 
-use crate::child_agents::agent_status_from_event;
+use crate::minions::agent_status_from_event;
 use crate::parse_turn_item;
 use crate::turn_timing::record_turn_ttfm_metric;
 

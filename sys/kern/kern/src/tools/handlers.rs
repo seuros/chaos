@@ -1,7 +1,7 @@
 pub mod apply_patch;
 pub(crate) mod cancel_attested_review;
 mod catalog_module;
-pub(crate) mod child_agent_jobs;
+pub(crate) mod minion_jobs;
 mod compaction_control;
 mod dynamic;
 mod halluacinate;

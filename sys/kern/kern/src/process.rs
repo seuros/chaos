@@ -1,6 +1,6 @@
 use crate::chaos::Chaos;
 use crate::chaos::SteerInputError;
-use crate::child_agents::AgentStatus;
+use crate::minions::AgentStatus;
 use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;

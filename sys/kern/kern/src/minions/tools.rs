@@ -7,7 +7,7 @@
 
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
-use crate::child_agents::AgentStatus;
+use crate::minions::AgentStatus;
 use crate::config::Config;
 use crate::error::ChaosErr;
 use crate::function_tool::FunctionCallError;
@@ -247,7 +247,7 @@ fn input_preview(items: &[UserInput]) -> String {
 /// The returned config starts from the parent's effective config and then refreshes the
 /// runtime-owned fields carried on `turn`, including model selection, reasoning settings,
 /// approval policy, sandbox, and cwd. Role-specific overrides are layered after this step;
-/// skipping this helper and cloning stale config state directly can send the child agent out with
+/// skipping this helper and cloning stale config state directly can send the minion out with
 /// the wrong provider or runtime policy.
 pub(crate) fn build_agent_spawn_config(
     base_instructions: &BaseInstructions,
@@ -287,7 +287,7 @@ fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallE
 /// Copies runtime-only turn state onto a child config before it is handed to `AgentControl`.
 ///
 /// These values are chosen by the live turn rather than persisted config, so leaving them stale
-/// can make a child agent disagree with its parent about approval policy, cwd, or sandboxing.
+/// can make a minion disagree with its parent about approval policy, cwd, or sandboxing.
 fn apply_spawn_agent_runtime_overrides(
     config: &mut Config,
     turn: &TurnContext,
@@ -320,7 +320,7 @@ fn apply_spawn_agent_runtime_overrides(
 
 pub(crate) fn apply_spawn_agent_overrides(config: &mut Config, child_depth: i32) {
     if child_depth >= config.agent_max_depth {
-        config.child_agent_jobs_allowed = false;
+        config.minion_jobs_allowed = false;
         config.collab_enabled = false;
     }
 }

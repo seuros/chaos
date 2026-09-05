@@ -766,7 +766,7 @@ fn attested_reviewer_spawn_depth(session_source: &chaos_ipc::protocol::SessionSo
     // This is a kernel-controlled, single-purpose reviewer rather than generic
     // delegation. Its configuration disables collaboration before the process
     // starts, so it cannot use this exemption to create another generation.
-    crate::child_agents::next_process_spawn_depth(session_source)
+    crate::minions::next_process_spawn_depth(session_source)
 }
 
 impl SessionReviewerBoundary {
@@ -791,7 +791,7 @@ impl SessionReviewerBoundary {
 
     async fn reviewer_from_spawned(
         &self,
-        spawned: crate::child_agents::control::SpawnedAgent,
+        spawned: crate::minions::control::SpawnedAgent,
     ) -> anyhow::Result<SpawnedReviewer> {
         let account_subject = match spawned.provenance.account_subject {
             Some(subject) => subject,
@@ -859,7 +859,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             bail!("selected provider credential changed before reviewer spawn");
         }
 
-        let agent_role = crate::child_agents::internal_agent_role("attested-review", attempt_id);
+        let agent_role = crate::minions::internal_agent_role("attested-review", attempt_id);
         if let Some(spawned) = self
             .session
             .services
@@ -898,12 +898,12 @@ impl ReviewerBoundary for SessionReviewerBoundary {
         }
 
         let child_depth = attested_reviewer_spawn_depth(&self.turn.session_source);
-        let mut config = crate::child_agents::tools::build_agent_spawn_config(
+        let mut config = crate::minions::tools::build_agent_spawn_config(
             &self.session.get_base_instructions().await,
             self.turn.as_ref(),
         )
         .map_err(|error| anyhow::anyhow!("{error}"))?;
-        crate::child_agents::tools::apply_requested_spawn_agent_provider_binding(
+        crate::minions::tools::apply_requested_spawn_agent_provider_binding(
             &self.session,
             &mut config,
             &binding.provider_id,
@@ -912,9 +912,9 @@ impl ReviewerBoundary for SessionReviewerBoundary {
         )
         .await
         .map_err(|error| anyhow::anyhow!("{error}"))?;
-        crate::child_agents::tools::apply_spawn_agent_overrides(&mut config, child_depth);
+        crate::minions::tools::apply_spawn_agent_overrides(&mut config, child_depth);
         config.collab_enabled = false;
-        config.child_agent_jobs_allowed = false;
+        config.minion_jobs_allowed = false;
         let final_output_json_schema = config
             .model_providers
             .get(&binding.provider_id)
@@ -959,7 +959,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             agent_nickname: None,
             agent_role: Some(agent_role.clone()),
         });
-        let options = crate::child_agents::control::SpawnAgentOptions {
+        let options = crate::minions::control::SpawnAgentOptions {
             suppress_parent_completion_notification: true,
             final_output_json_schema,
             ..Default::default()
@@ -979,7 +979,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
                 .effective_spawn_provenance(process_id)
                 .await
                 .map_err(|error| anyhow::anyhow!("{error}"))?;
-            crate::child_agents::control::SpawnedAgent {
+            crate::minions::control::SpawnedAgent {
                 process_id,
                 provenance,
             }
@@ -1020,7 +1020,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
     }
 
     async fn reviewer_output(&self, process_id: &str) -> anyhow::Result<ReviewerOutput> {
-        use crate::child_agents::AgentStatus;
+        use crate::minions::AgentStatus;
         use chaos_ipc::ProcessId;
         let process_id =
             ProcessId::from_string(process_id).context("invalid reviewer process id")?;
@@ -1085,7 +1085,7 @@ impl ReviewerBoundary for SessionReviewerBoundary {
     }
 
     async fn cancel_reviewer(&self, process_id: &str) -> anyhow::Result<()> {
-        use crate::child_agents::AgentStatus;
+        use crate::minions::AgentStatus;
 
         let process_id =
             chaos_ipc::ProcessId::from_string(process_id).context("invalid reviewer process id")?;
@@ -1241,7 +1241,7 @@ mod tests {
         let reviewer_depth = attested_reviewer_spawn_depth(&supervisor);
 
         assert_eq!(reviewer_depth, 2);
-        assert!(crate::child_agents::exceeds_process_spawn_depth_limit(
+        assert!(crate::minions::exceeds_process_spawn_depth_limit(
             reviewer_depth,
             1
         ));

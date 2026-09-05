@@ -3,10 +3,10 @@ use chaos_uptime::format_duration;
 use std::io::Write;
 use std::time::Duration;
 
-use super::ChildAgentJobProgressMessage;
+use super::MinionJobProgressMessage;
 use super::EventProcessorWithHumanOutput;
 
-pub(super) struct ChildAgentJobProgressStats {
+pub(super) struct MinionJobProgressStats {
     pub(super) processed: usize,
     pub(super) total: usize,
     pub(super) percent: i64,
@@ -23,10 +23,10 @@ pub(super) fn should_print_final_message_to_stdout(
     final_message.is_some() && !(stdout_is_terminal && stderr_is_terminal)
 }
 
-pub(super) fn format_child_agent_job_progress_line(
+pub(super) fn format_minion_job_progress_line(
     columns: Option<usize>,
     job_label: &str,
-    stats: ChildAgentJobProgressStats,
+    stats: MinionJobProgressStats,
     eta: &str,
 ) -> String {
     let rest = format!(
@@ -76,11 +76,11 @@ pub(super) fn format_child_agent_job_progress_line(
 }
 
 impl EventProcessorWithHumanOutput {
-    pub(super) fn parse_child_agent_job_progress(
+    pub(super) fn parse_minion_job_progress(
         message: &str,
-    ) -> Option<ChildAgentJobProgressMessage> {
-        let payload = message.strip_prefix("child_agent_job_progress:")?;
-        serde_json::from_str::<ChildAgentJobProgressMessage>(payload).ok()
+    ) -> Option<MinionJobProgressMessage> {
+        let payload = message.strip_prefix("minion_job_progress:")?;
+        serde_json::from_str::<MinionJobProgressMessage>(payload).ok()
     }
 
     pub(super) fn is_silent_event(msg: &EventMsg) -> bool {
@@ -160,7 +160,7 @@ impl EventProcessorWithHumanOutput {
         }
     }
 
-    pub(super) fn render_child_agent_job_progress(&mut self, update: ChildAgentJobProgressMessage) {
+    pub(super) fn render_minion_job_progress(&mut self, update: MinionJobProgressMessage) {
         let total = update.total_items.max(1);
         let processed = update.completed_items + update.failed_items;
         let percent = (processed as f64 / total as f64 * 100.0).round() as i64;
@@ -173,10 +173,10 @@ impl EventProcessorWithHumanOutput {
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|value| *value > 0);
-        let line = format_child_agent_job_progress_line(
+        let line = format_minion_job_progress_line(
             columns,
             job_label.as_str(),
-            ChildAgentJobProgressStats {
+            MinionJobProgressStats {
                 processed,
                 total,
                 percent,

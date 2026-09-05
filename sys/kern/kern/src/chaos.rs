@@ -83,9 +83,9 @@ pub(crate) use tests::make_session_configuration_for_tests;
 #[cfg(test)]
 pub(crate) use crate::AuthManager;
 #[cfg(test)]
-pub(crate) use crate::child_agents::AgentControl;
+pub(crate) use crate::minions::AgentControl;
 #[cfg(test)]
-pub(crate) use crate::child_agents::AgentStatus;
+pub(crate) use crate::minions::AgentStatus;
 #[cfg(test)]
 pub(crate) use crate::client::ModelClient;
 #[cfg(test)]

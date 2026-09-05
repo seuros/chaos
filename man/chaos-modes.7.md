@@ -14,7 +14,7 @@ Every installation includes the `default` and `plan` modes. Additional modes
 can be installed as Markdown files without rebuilding the kernel.
 
 Mode state is isolated per process. Switching a root session changes its TUI
-mode indicator. Switching a child agent changes only that child agent and does not change
+mode indicator. Switching a minion changes only that minion and does not change
 the parent or sibling sessions.
 
 ## BUILT-IN MODES
@@ -67,7 +67,7 @@ The orchestrator controls a child's initial mode, allowed modes, and ability to
 switch. A child cannot enable a mode or capability unavailable in the active
 parent mode.
 
-Create a fixed planning child agent by selecting `plan` and omitting
+Create a fixed planning minion by selecting `plan` and omitting
 `allowed_modes`. Create a switchable child with an explicit catalog:
 
 ```json
@@ -78,7 +78,7 @@ Create a fixed planning child agent by selecting `plan` and omitting
 }
 ```
 
-A child agent can switch its own mode when permitted, but its switch does not update
+A minion can switch its own mode when permitted, but its switch does not update
 the root session's TUI.
 
 ## CUSTOM MODES

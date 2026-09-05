@@ -95,7 +95,7 @@ impl ToolHandler for Handler {
             return Err(err);
         }
         turn.session_telemetry
-            .counter("chaos.multi_agent.resume", /*inc*/ 1, &[]);
+            .counter("chaos.minions.resume", /*inc*/ 1, &[]);
 
         Ok(ResumeAgentResult { status })
     }

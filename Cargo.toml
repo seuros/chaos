@@ -77,7 +77,7 @@ members = [
     "lib/libmisc/argv",
     "lib/libmisc/pam",
     "lib/libmisc/keyring",
-    "lib/libmisc/child_agents",
+    "lib/libmisc/minions",
     "lib/libmisc/synopsis",
     "lib/libmisc/init",
     "lib/libmisc/session",
@@ -200,7 +200,7 @@ chaos-diff = { path = "lib/libfs/diff" }
 chaos-argv = { path = "lib/libmisc/argv" }
 chaos-pam = { path = "lib/libmisc/pam" }
 chaos-keyring = { path = "lib/libmisc/keyring" }
-chaos-child-agents = { path = "lib/libmisc/child_agents" }
+chaos-minions = { path = "lib/libmisc/minions" }
 chaos-synopsis = { path = "lib/libmisc/synopsis" }
 chaos-coreboot = { path = "lib/libmisc/init" }
 chaos-session = { path = "lib/libmisc/session" }
@@ -466,7 +466,7 @@ ignored = [
     "chaos-ration",
     "chaos-libration",
     "fd-lock",
-    "chaos-child-agents",
+    "chaos-minions",
     "chaos-parole",
     "chaos-recall",
 ]

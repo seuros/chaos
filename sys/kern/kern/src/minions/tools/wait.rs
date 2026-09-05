@@ -8,7 +8,7 @@ use super::{
     ToolOutput, ToolPayload, agent_id, build_wait_agent_statuses, collab_agent_error,
     function_arguments, parse_arguments, tool_output_json_text, tool_output_response_item,
 };
-use crate::child_agents::status::is_final;
+use crate::minions::status::is_final;
 use futures::FutureExt;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;

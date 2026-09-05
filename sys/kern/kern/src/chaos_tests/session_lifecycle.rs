@@ -314,7 +314,7 @@ async fn switch_mode_emits_ui_sync_only_for_main_sessions() {
     child_agent
         .switch_mode(crate::modes::PLAN_MODE_ID, child_agent_turn.as_ref())
         .await
-        .expect("switch child agent to plan");
+        .expect("switch minion to plan");
     assert_no_session_mode_changed(&child_agent_rx).await;
 }
 

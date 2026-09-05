@@ -2,7 +2,7 @@ use super::*;
 use crate::ChaosAuth;
 use crate::Process;
 use crate::ProcessTable;
-use crate::child_agents::agent_status_from_event;
+use crate::minions::agent_status_from_event;
 use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigBuilder;
@@ -1019,7 +1019,7 @@ fn sanitize_forked_history_keeps_conversation_and_spawn_call() {
         function_call("call-spawn"),
     ];
 
-    crate::child_agents::control::sanitize_forked_history(&mut items, "call-spawn");
+    crate::minions::control::sanitize_forked_history(&mut items, "call-spawn");
 
     let kept: Vec<String> = items
         .iter()

@@ -18,7 +18,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::chaos::Session;
-use crate::child_agents::status::is_final as is_final_agent_status;
+use crate::minions::status::is_final as is_final_agent_status;
 use crate::tools::context::ExecCommandToolOutput;
 use crate::truncate::approx_token_count;
 use crate::unified_exec::ExecTaskSnapshot;

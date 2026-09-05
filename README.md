@@ -52,8 +52,8 @@ locked into being a coding agent.
 File reading, shell access, Telegram, Google Play — if it speaks MCP, it's a driver.
 Plug in, wire up, ship.
 
-For delegated workers and parent/child instruction boundaries, see
-[Child agents](./docs/child-agents.md).
+For delegated workers and minion instruction boundaries, see
+[Minions](./lib/libmisc/minions/README.md).
 
 ---
 

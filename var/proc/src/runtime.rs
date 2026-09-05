@@ -1,10 +1,10 @@
-use crate::ChildAgentJob;
-use crate::ChildAgentJobCreateParams;
-use crate::ChildAgentJobItem;
-use crate::ChildAgentJobItemCreateParams;
-use crate::ChildAgentJobItemStatus;
-use crate::ChildAgentJobProgress;
-use crate::ChildAgentJobStatus;
+use crate::MinionJob;
+use crate::MinionJobCreateParams;
+use crate::MinionJobItem;
+use crate::MinionJobItemCreateParams;
+use crate::MinionJobItemStatus;
+use crate::MinionJobProgress;
+use crate::MinionJobStatus;
 use crate::LogEntry;
 use crate::LogQuery;
 use crate::LogRow;
@@ -15,7 +15,7 @@ use crate::SortKey;
 use crate::apply_rollout_item;
 use crate::migrations::POSTGRES_STATE_MIGRATOR;
 use crate::migrations::STATE_MIGRATOR;
-use crate::model::ChildAgentJobRow;
+use crate::model::MinionJobRow;
 use crate::model::ProcessRow;
 use crate::model::anchor_from_item;
 use crate::model::datetime_to_epoch_seconds;
@@ -51,7 +51,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 mod backfill;
-mod child_agent_jobs;
+mod minion_jobs;
 mod logs;
 mod memories;
 mod message_history;
@@ -521,70 +521,70 @@ impl RuntimeDbHandle {
             log_id: u64,
             offset: usize,
         ) -> anyhow::Result<Option<chaos_ipc::message_history::HistoryEntry>>;
-        pub(crate) async fn create_child_agent_job(
+        pub(crate) async fn create_minion_job(
             &self,
-            params: &ChildAgentJobCreateParams,
-            items: &[ChildAgentJobItemCreateParams],
-        ) -> anyhow::Result<ChildAgentJob>;
-        pub(crate) async fn get_child_agent_job(&self, job_id: &str) -> anyhow::Result<Option<ChildAgentJob>>;
-        pub(crate) async fn list_child_agent_job_items(
+            params: &MinionJobCreateParams,
+            items: &[MinionJobItemCreateParams],
+        ) -> anyhow::Result<MinionJob>;
+        pub(crate) async fn get_minion_job(&self, job_id: &str) -> anyhow::Result<Option<MinionJob>>;
+        pub(crate) async fn list_minion_job_items(
             &self,
             job_id: &str,
-            status: Option<ChildAgentJobItemStatus>,
+            status: Option<MinionJobItemStatus>,
             limit: Option<usize>,
-        ) -> anyhow::Result<Vec<ChildAgentJobItem>>;
-        pub(crate) async fn get_child_agent_job_item(
+        ) -> anyhow::Result<Vec<MinionJobItem>>;
+        pub(crate) async fn get_minion_job_item(
             &self,
             job_id: &str,
             item_id: &str,
-        ) -> anyhow::Result<Option<ChildAgentJobItem>>;
-        pub(crate) async fn mark_child_agent_job_running(&self, job_id: &str) -> anyhow::Result<()>;
-        pub(crate) async fn mark_child_agent_job_completed(&self, job_id: &str) -> anyhow::Result<()>;
-        pub(crate) async fn mark_child_agent_job_failed(
+        ) -> anyhow::Result<Option<MinionJobItem>>;
+        pub(crate) async fn mark_minion_job_running(&self, job_id: &str) -> anyhow::Result<()>;
+        pub(crate) async fn mark_minion_job_completed(&self, job_id: &str) -> anyhow::Result<()>;
+        pub(crate) async fn mark_minion_job_failed(
             &self,
             job_id: &str,
             error_message: &str,
         ) -> anyhow::Result<()>;
-        pub(crate) async fn mark_child_agent_job_cancelled(
+        pub(crate) async fn mark_minion_job_cancelled(
             &self,
             job_id: &str,
             reason: &str,
         ) -> anyhow::Result<bool>;
-        pub(crate) async fn is_child_agent_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool>;
-        pub(crate) async fn mark_child_agent_job_item_running_with_thread(
+        pub(crate) async fn is_minion_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool>;
+        pub(crate) async fn mark_minion_job_item_running_with_thread(
             &self,
             job_id: &str,
             item_id: &str,
             process_id: &str,
         ) -> anyhow::Result<bool>;
-        pub(crate) async fn mark_child_agent_job_item_pending(
+        pub(crate) async fn mark_minion_job_item_pending(
             &self,
             job_id: &str,
             item_id: &str,
             error_message: Option<&str>,
         ) -> anyhow::Result<bool>;
-        pub(crate) async fn report_child_agent_job_item_result(
+        pub(crate) async fn report_minion_job_item_result(
             &self,
             job_id: &str,
             item_id: &str,
             reporting_process_id: &str,
             result_json: &Value,
         ) -> anyhow::Result<bool>;
-        pub(crate) async fn mark_child_agent_job_item_completed(
+        pub(crate) async fn mark_minion_job_item_completed(
             &self,
             job_id: &str,
             item_id: &str,
         ) -> anyhow::Result<bool>;
-        pub(crate) async fn mark_child_agent_job_item_failed(
+        pub(crate) async fn mark_minion_job_item_failed(
             &self,
             job_id: &str,
             item_id: &str,
             error_message: &str,
         ) -> anyhow::Result<bool>;
-        pub(crate) async fn get_child_agent_job_progress(
+        pub(crate) async fn get_minion_job_progress(
             &self,
             job_id: &str,
-        ) -> anyhow::Result<ChildAgentJobProgress>;
+        ) -> anyhow::Result<MinionJobProgress>;
     }
 }
 
@@ -1348,11 +1348,11 @@ LIMIT 1 OFFSET $1
         .transpose()
     }
 
-    async fn create_child_agent_job(
+    async fn create_minion_job(
         &self,
-        params: &ChildAgentJobCreateParams,
-        items: &[ChildAgentJobItemCreateParams],
-    ) -> anyhow::Result<ChildAgentJob> {
+        params: &MinionJobCreateParams,
+        items: &[MinionJobItemCreateParams],
+    ) -> anyhow::Result<MinionJob> {
         let now = jiff::Timestamp::now().as_second();
         let input_headers_json = serde_json::to_value(&params.input_headers)?;
         let max_runtime_seconds = params
@@ -1384,7 +1384,7 @@ INSERT INTO agent_jobs (
         )
         .bind(params.id.as_str())
         .bind(params.name.as_str())
-        .bind(ChildAgentJobStatus::Pending.as_str())
+        .bind(MinionJobStatus::Pending.as_str())
         .bind(params.instruction.as_str())
         .bind(params.auto_export)
         .bind(max_runtime_seconds)
@@ -1423,7 +1423,7 @@ INSERT INTO agent_job_items (
             .bind(item.row_index)
             .bind(item.source_id.as_deref())
             .bind(&item.row_json)
-            .bind(ChildAgentJobItemStatus::Pending.as_str())
+            .bind(MinionJobItemStatus::Pending.as_str())
             .bind(now)
             .bind(now)
             .execute(&mut *tx)
@@ -1433,12 +1433,12 @@ INSERT INTO agent_job_items (
         tx.commit().await?;
 
         let job_id = params.id.as_str();
-        self.get_child_agent_job(job_id)
+        self.get_minion_job(job_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("failed to load created child agent job {job_id}"))
+            .ok_or_else(|| anyhow::anyhow!("failed to load created minion job {job_id}"))
     }
 
-    async fn get_child_agent_job(&self, job_id: &str) -> anyhow::Result<Option<ChildAgentJob>> {
+    async fn get_minion_job(&self, job_id: &str) -> anyhow::Result<Option<MinionJob>> {
         let row = sqlx::query(
             r#"
 SELECT
@@ -1464,15 +1464,15 @@ WHERE id = $1
         .bind(job_id)
         .fetch_optional(&self.pool)
         .await?;
-        row.as_ref().map(child_agent_job_from_pg_row).transpose()
+        row.as_ref().map(minion_job_from_pg_row).transpose()
     }
 
-    async fn list_child_agent_job_items(
+    async fn list_minion_job_items(
         &self,
         job_id: &str,
-        status: Option<ChildAgentJobItemStatus>,
+        status: Option<MinionJobItemStatus>,
         limit: Option<usize>,
-    ) -> anyhow::Result<Vec<ChildAgentJobItem>> {
+    ) -> anyhow::Result<Vec<MinionJobItem>> {
         let mut builder = QueryBuilder::<sqlx::Postgres>::new(
             r#"
 SELECT
@@ -1505,14 +1505,14 @@ WHERE job_id =
             builder.push_bind(limit as i64);
         }
         let rows = builder.build().fetch_all(&self.pool).await?;
-        rows.iter().map(child_agent_job_item_from_pg_row).collect()
+        rows.iter().map(minion_job_item_from_pg_row).collect()
     }
 
-    async fn get_child_agent_job_item(
+    async fn get_minion_job_item(
         &self,
         job_id: &str,
         item_id: &str,
-    ) -> anyhow::Result<Option<ChildAgentJobItem>> {
+    ) -> anyhow::Result<Option<MinionJobItem>> {
         let row = sqlx::query(
             r#"
 SELECT
@@ -1539,14 +1539,14 @@ WHERE job_id = $1 AND item_id = $2
         .fetch_optional(&self.pool)
         .await?;
         row.as_ref()
-            .map(child_agent_job_item_from_pg_row)
+            .map(minion_job_item_from_pg_row)
             .transpose()
     }
 
-    async fn mark_child_agent_job_running(&self, job_id: &str) -> anyhow::Result<()> {
-        let status = self.get_child_agent_job_status(job_id).await?;
+    async fn mark_minion_job_running(&self, job_id: &str) -> anyhow::Result<()> {
+        let status = self.get_minion_job_status(job_id).await?;
         anyhow::ensure!(
-            status == ChildAgentJobStatus::Pending,
+            status == MinionJobStatus::Pending,
             "cannot transition job {job_id} from {status:?} to Running"
         );
 
@@ -1563,7 +1563,7 @@ SET
 WHERE id = $4 AND status = $5
             "#,
         )
-        .bind(ChildAgentJobStatus::Running.as_str())
+        .bind(MinionJobStatus::Running.as_str())
         .bind(now)
         .bind(now)
         .bind(job_id)
@@ -1573,10 +1573,10 @@ WHERE id = $4 AND status = $5
         Ok(())
     }
 
-    async fn mark_child_agent_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
-        let status = self.get_child_agent_job_status(job_id).await?;
+    async fn mark_minion_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
+        let status = self.get_minion_job_status(job_id).await?;
         anyhow::ensure!(
-            status == ChildAgentJobStatus::Running,
+            status == MinionJobStatus::Running,
             "cannot transition job {job_id} from {status:?} to Completed"
         );
 
@@ -1588,7 +1588,7 @@ SET status = $1, updated_at = $2, completed_at = $3, last_error = NULL
 WHERE id = $4 AND status = $5
             "#,
         )
-        .bind(ChildAgentJobStatus::Completed.as_str())
+        .bind(MinionJobStatus::Completed.as_str())
         .bind(now)
         .bind(now)
         .bind(job_id)
@@ -1598,16 +1598,16 @@ WHERE id = $4 AND status = $5
         Ok(())
     }
 
-    async fn mark_child_agent_job_failed(
+    async fn mark_minion_job_failed(
         &self,
         job_id: &str,
         error_message: &str,
     ) -> anyhow::Result<()> {
-        let status = self.get_child_agent_job_status(job_id).await?;
+        let status = self.get_minion_job_status(job_id).await?;
         anyhow::ensure!(
             matches!(
                 status,
-                ChildAgentJobStatus::Pending | ChildAgentJobStatus::Running
+                MinionJobStatus::Pending | MinionJobStatus::Running
             ),
             "cannot transition job {job_id} from {status:?} to Failed"
         );
@@ -1620,7 +1620,7 @@ SET status = $1, updated_at = $2, completed_at = $3, last_error = $4
 WHERE id = $5 AND status = $6
             "#,
         )
-        .bind(ChildAgentJobStatus::Failed.as_str())
+        .bind(MinionJobStatus::Failed.as_str())
         .bind(now)
         .bind(now)
         .bind(error_message)
@@ -1631,15 +1631,15 @@ WHERE id = $5 AND status = $6
         Ok(())
     }
 
-    async fn mark_child_agent_job_cancelled(
+    async fn mark_minion_job_cancelled(
         &self,
         job_id: &str,
         reason: &str,
     ) -> anyhow::Result<bool> {
-        let status = self.get_child_agent_job_status(job_id).await?;
+        let status = self.get_minion_job_status(job_id).await?;
         if !matches!(
             status,
-            ChildAgentJobStatus::Pending | ChildAgentJobStatus::Running
+            MinionJobStatus::Pending | MinionJobStatus::Running
         ) {
             return Ok(false);
         }
@@ -1652,7 +1652,7 @@ SET status = $1, updated_at = $2, completed_at = $3, last_error = $4
 WHERE id = $5 AND status = $6
             "#,
         )
-        .bind(ChildAgentJobStatus::Cancelled.as_str())
+        .bind(MinionJobStatus::Cancelled.as_str())
         .bind(now)
         .bind(now)
         .bind(reason)
@@ -1663,20 +1663,20 @@ WHERE id = $5 AND status = $6
         Ok(result.rows_affected() > 0)
     }
 
-    async fn get_child_agent_job_status(
+    async fn get_minion_job_status(
         &self,
         job_id: &str,
-    ) -> anyhow::Result<ChildAgentJobStatus> {
+    ) -> anyhow::Result<MinionJobStatus> {
         let row = sqlx::query("SELECT status FROM agent_jobs WHERE id = $1")
             .bind(job_id)
             .fetch_optional(&self.pool)
             .await?;
-        let row = row.ok_or_else(|| anyhow::anyhow!("child agent job {job_id} not found"))?;
+        let row = row.ok_or_else(|| anyhow::anyhow!("minion job {job_id} not found"))?;
         let status: String = row.try_get("status")?;
-        ChildAgentJobStatus::parse(status.as_str())
+        MinionJobStatus::parse(status.as_str())
     }
 
-    async fn is_child_agent_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool> {
+    async fn is_minion_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool> {
         let row = sqlx::query(
             r#"
 SELECT status
@@ -1691,10 +1691,10 @@ WHERE id = $1
             return Ok(false);
         };
         let status: String = row.try_get("status")?;
-        Ok(ChildAgentJobStatus::parse(status.as_str())? == ChildAgentJobStatus::Cancelled)
+        Ok(MinionJobStatus::parse(status.as_str())? == MinionJobStatus::Cancelled)
     }
 
-    async fn mark_child_agent_job_item_running_with_thread(
+    async fn mark_minion_job_item_running_with_thread(
         &self,
         job_id: &str,
         item_id: &str,
@@ -1713,18 +1713,18 @@ SET
 WHERE job_id = $4 AND item_id = $5 AND status = $6
             "#,
         )
-        .bind(ChildAgentJobItemStatus::Running.as_str())
+        .bind(MinionJobItemStatus::Running.as_str())
         .bind(process_id)
         .bind(now)
         .bind(job_id)
         .bind(item_id)
-        .bind(ChildAgentJobItemStatus::Pending.as_str())
+        .bind(MinionJobItemStatus::Pending.as_str())
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn mark_child_agent_job_item_pending(
+    async fn mark_minion_job_item_pending(
         &self,
         job_id: &str,
         item_id: &str,
@@ -1742,18 +1742,18 @@ SET
 WHERE job_id = $4 AND item_id = $5 AND status = $6
             "#,
         )
-        .bind(ChildAgentJobItemStatus::Pending.as_str())
+        .bind(MinionJobItemStatus::Pending.as_str())
         .bind(now)
         .bind(error_message)
         .bind(job_id)
         .bind(item_id)
-        .bind(ChildAgentJobItemStatus::Running.as_str())
+        .bind(MinionJobItemStatus::Running.as_str())
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn report_child_agent_job_item_result(
+    async fn report_minion_job_item_result(
         &self,
         job_id: &str,
         item_id: &str,
@@ -1781,14 +1781,14 @@ WHERE
         .bind(now)
         .bind(job_id)
         .bind(item_id)
-        .bind(ChildAgentJobItemStatus::Running.as_str())
+        .bind(MinionJobItemStatus::Running.as_str())
         .bind(reporting_process_id)
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn mark_child_agent_job_item_completed(
+    async fn mark_minion_job_item_completed(
         &self,
         job_id: &str,
         item_id: &str,
@@ -1809,18 +1809,18 @@ WHERE
     AND result_json IS NOT NULL
             "#,
         )
-        .bind(ChildAgentJobItemStatus::Completed.as_str())
+        .bind(MinionJobItemStatus::Completed.as_str())
         .bind(now)
         .bind(now)
         .bind(job_id)
         .bind(item_id)
-        .bind(ChildAgentJobItemStatus::Running.as_str())
+        .bind(MinionJobItemStatus::Running.as_str())
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn mark_child_agent_job_item_failed(
+    async fn mark_minion_job_item_failed(
         &self,
         job_id: &str,
         item_id: &str,
@@ -1842,22 +1842,22 @@ WHERE
     AND status = $7
             "#,
         )
-        .bind(ChildAgentJobItemStatus::Failed.as_str())
+        .bind(MinionJobItemStatus::Failed.as_str())
         .bind(now)
         .bind(now)
         .bind(error_message)
         .bind(job_id)
         .bind(item_id)
-        .bind(ChildAgentJobItemStatus::Running.as_str())
+        .bind(MinionJobItemStatus::Running.as_str())
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn get_child_agent_job_progress(
+    async fn get_minion_job_progress(
         &self,
         job_id: &str,
-    ) -> anyhow::Result<ChildAgentJobProgress> {
+    ) -> anyhow::Result<MinionJobProgress> {
         let row = sqlx::query(
             r#"
 SELECT
@@ -1870,10 +1870,10 @@ FROM agent_job_items
 WHERE job_id = $5
             "#,
         )
-        .bind(ChildAgentJobItemStatus::Pending.as_str())
-        .bind(ChildAgentJobItemStatus::Running.as_str())
-        .bind(ChildAgentJobItemStatus::Completed.as_str())
-        .bind(ChildAgentJobItemStatus::Failed.as_str())
+        .bind(MinionJobItemStatus::Pending.as_str())
+        .bind(MinionJobItemStatus::Running.as_str())
+        .bind(MinionJobItemStatus::Completed.as_str())
+        .bind(MinionJobItemStatus::Failed.as_str())
         .bind(job_id)
         .fetch_one(&self.pool)
         .await?;
@@ -1883,7 +1883,7 @@ WHERE job_id = $5
         let running_items: Option<i64> = row.try_get("running_items")?;
         let completed_items: Option<i64> = row.try_get("completed_items")?;
         let failed_items: Option<i64> = row.try_get("failed_items")?;
-        Ok(ChildAgentJobProgress {
+        Ok(MinionJobProgress {
             total_items: usize::try_from(total_items).unwrap_or_default(),
             pending_items: usize::try_from(pending_items.unwrap_or_default()).unwrap_or_default(),
             running_items: usize::try_from(running_items.unwrap_or_default()).unwrap_or_default(),
@@ -1931,7 +1931,7 @@ fn process_from_pg_row(row: &PgRow) -> anyhow::Result<crate::ProcessMetadata> {
     })
 }
 
-fn child_agent_job_from_pg_row(row: &PgRow) -> anyhow::Result<ChildAgentJob> {
+fn minion_job_from_pg_row(row: &PgRow) -> anyhow::Result<MinionJob> {
     let output_schema_json = row
         .try_get::<Option<String>, _>("output_schema_json")?
         .as_deref()
@@ -1945,10 +1945,10 @@ fn child_agent_job_from_pg_row(row: &PgRow) -> anyhow::Result<ChildAgentJob> {
         .transpose()
         .map_err(|_| anyhow::anyhow!("invalid max_runtime_seconds value"))?;
     let status: String = row.try_get("status")?;
-    Ok(ChildAgentJob {
+    Ok(MinionJob {
         id: row.try_get("id")?,
         name: row.try_get("name")?,
-        status: ChildAgentJobStatus::parse(status.as_str())?,
+        status: MinionJobStatus::parse(status.as_str())?,
         instruction: row.try_get("instruction")?,
         auto_export: row.try_get::<i64, _>("auto_export")? != 0,
         max_runtime_seconds,
@@ -1970,15 +1970,15 @@ fn child_agent_job_from_pg_row(row: &PgRow) -> anyhow::Result<ChildAgentJob> {
     })
 }
 
-fn child_agent_job_item_from_pg_row(row: &PgRow) -> anyhow::Result<ChildAgentJobItem> {
+fn minion_job_item_from_pg_row(row: &PgRow) -> anyhow::Result<MinionJobItem> {
     let status: String = row.try_get("status")?;
-    Ok(ChildAgentJobItem {
+    Ok(MinionJobItem {
         job_id: row.try_get("job_id")?,
         item_id: row.try_get("item_id")?,
         row_index: row.try_get("row_index")?,
         source_id: row.try_get("source_id")?,
         row_json: serde_json::from_str(row.try_get::<String, _>("row_json")?.as_str())?,
-        status: ChildAgentJobItemStatus::parse(status.as_str())?,
+        status: MinionJobItemStatus::parse(status.as_str())?,
         assigned_process_id: row.try_get("assigned_process_id")?,
         attempt_count: row.try_get("attempt_count")?,
         result_json: row

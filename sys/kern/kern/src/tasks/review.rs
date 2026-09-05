@@ -107,7 +107,7 @@ async fn start_review_conversation(
     {
         panic!("by construction Constrained<WebSearchMode> must always support Disabled: {err}");
     }
-    sub_agent_config.child_agent_jobs_allowed = false;
+    sub_agent_config.minion_jobs_allowed = false;
     sub_agent_config.collab_enabled = false;
 
     // Set explicit review rubric for the sub-agent.  If a reviewer persona is

@@ -149,7 +149,7 @@ impl TurnContext {
                 .list_models(RefreshStrategy::OnlineIfUncached)
                 .await,
             approval_policy: self.approval_policy.value(),
-            child_agent_jobs_allowed: config.child_agent_jobs_allowed,
+            minion_jobs_allowed: config.minion_jobs_allowed,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
             vfs_policy: &self.vfs_policy,
@@ -482,7 +482,7 @@ pub(super) fn make_turn_context(
         model_info: &model_info,
         available_models: &models_manager.try_list_models().unwrap_or_default(),
         approval_policy: session_configuration.approval_policy.value(),
-        child_agent_jobs_allowed: per_turn_config.child_agent_jobs_allowed,
+        minion_jobs_allowed: per_turn_config.minion_jobs_allowed,
         web_search_mode: Some(per_turn_config.web_search_mode.value()),
         session_source: session_source.clone(),
         vfs_policy: &session_configuration.vfs_policy,

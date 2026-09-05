@@ -22,12 +22,12 @@ use super::tool_builders::{
     create_compaction_control_tool, create_exec_command_tool,
     create_list_mcp_resource_templates_tool, create_list_mcp_resources_tool,
     create_read_mcp_resource_tool, create_read_session_history_tool,
-    create_report_child_agent_job_result_tool, create_request_permissions_tool,
+    create_report_minion_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_run_synopsis_tool,
     create_search_session_history_tool, create_send_input_tool, create_send_to_supervisor_tool,
     create_set_mcp_resource_subscription_tool, create_set_parent_effort_tool,
     create_set_session_title_tool, create_shell_command_tool, create_shell_tool,
-    create_spawn_agent_tool, create_spawn_child_agents_on_csv_tool, create_switch_mode_tool,
+    create_spawn_agent_tool, create_spawn_minions_on_csv_tool, create_switch_mode_tool,
     create_test_sync_tool, create_tool_group_control_tool, create_view_image_tool,
     create_wait_agent_tool, create_write_stdin_tool,
 };
@@ -92,13 +92,13 @@ pub(crate) fn build_specs_with_discoverable_tools(
     plan_mode: bool,
     tool_groups: Option<ToolGroupFilter<'_>>,
 ) -> ToolRegistryBuilder {
-    use crate::child_agents::tools::CloseAgentHandler;
-    use crate::child_agents::tools::ResumeAgentHandler;
-    use crate::child_agents::tools::RunSynopsisHandler;
-    use crate::child_agents::tools::SendInputHandler;
-    use crate::child_agents::tools::SpawnAgentHandler;
-    use crate::child_agents::tools::SupervisorHandler;
-    use crate::child_agents::tools::WaitAgentHandler;
+    use crate::minions::tools::CloseAgentHandler;
+    use crate::minions::tools::ResumeAgentHandler;
+    use crate::minions::tools::RunSynopsisHandler;
+    use crate::minions::tools::SendInputHandler;
+    use crate::minions::tools::SpawnAgentHandler;
+    use crate::minions::tools::SupervisorHandler;
+    use crate::minions::tools::WaitAgentHandler;
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::CancelAttestedReviewHandler;
     use crate::tools::handlers::CatalogModuleHandler;
@@ -617,25 +617,25 @@ pub(crate) fn build_specs_with_discoverable_tools(
         );
     }
 
-    if config.child_agent_jobs_tools {
-        use crate::tools::handlers::child_agent_jobs::BatchJobHandler;
-        let child_agent_jobs_handler = Arc::new(BatchJobHandler);
+    if config.minion_jobs_tools {
+        use crate::tools::handlers::minion_jobs::BatchJobHandler;
+        let minion_jobs_handler = Arc::new(BatchJobHandler);
         push_tool_spec(
             &mut builder,
-            create_spawn_child_agents_on_csv_tool(),
+            create_spawn_minions_on_csv_tool(),
             /*supports_parallel_tool_calls*/ false,
         );
         builder.register_handler(
-            "spawn_child_agents_on_csv",
-            child_agent_jobs_handler.clone(),
+            "spawn_minions_on_csv",
+            minion_jobs_handler.clone(),
         );
-        if config.child_agent_jobs_worker_tools {
+        if config.minion_jobs_worker_tools {
             push_tool_spec(
                 &mut builder,
-                create_report_child_agent_job_result_tool(),
+                create_report_minion_job_result_tool(),
                 /*supports_parallel_tool_calls*/ false,
             );
-            builder.register_handler("report_child_agent_job_result", child_agent_jobs_handler);
+            builder.register_handler("report_minion_job_result", minion_jobs_handler);
         }
     }
 

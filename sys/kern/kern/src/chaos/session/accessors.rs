@@ -45,7 +45,7 @@ impl Session {
     /// Effective config to use for child spawns.
     ///
     /// Prefer the currently active turn's config when a task is running so
-    /// child agents inherit live turn overrides (approval/sandbox/cwd/model
+    /// minions inherit live turn overrides (approval/sandbox/cwd/model
     /// provider/etc.) rather than the session's init-time config snapshot.
     /// When no turn is active, rebuild from the latest `SessionConfiguration`
     /// so session-level updates are still reflected.

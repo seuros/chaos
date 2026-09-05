@@ -139,7 +139,7 @@ impl Guards {
                 active_agents.nickname_reset_count += 1;
                 if let Some(metrics) = chaos_snitch::metrics::global() {
                     let _ = metrics.counter(
-                        "chaos.multi_agent.nickname_pool_reset",
+                        "chaos.minions.nickname_pool_reset",
                         /*inc*/ 1,
                         &[],
                     );

@@ -28,5 +28,9 @@ serde_json = { workspace = true }
 url = { workspace = true }
 usage = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+
 [package.metadata.cargo-shear]
 ignored = ["serde"]

@@ -201,9 +201,11 @@ dependencies = [
  "landlock",
  "libc",
  "linux-keyutils-keyring-store",
+ "pretty_assertions",
  "seccompiler",
  "serde",
  "serde_json",
+ "tempfile",
  "url",
  "usage-rs",
 ]

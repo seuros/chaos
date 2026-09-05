@@ -1291,6 +1291,7 @@ fn processes_page_from_db(db_page: chaos_proc::ProcessesPage) -> ProcessesPage {
                 agent_nickname: item.agent_nickname,
                 agent_role: item.agent_role,
                 model_provider: Some(item.model_provider),
+                tokens_used: Some(item.tokens_used),
                 cli_version: Some(item.cli_version),
                 created_at: Some(item.created_at.to_string()),
                 updated_at: Some(item.updated_at.to_string()),
@@ -1627,6 +1628,8 @@ mod tests {
         let expected_cwd = PathBuf::from("/tmp/project");
         assert_eq!(item.process_id, Some(process_id));
         assert_eq!(item.first_user_message.as_deref(), Some("Fix resume"));
+        assert_eq!(item.model_provider.as_deref(), Some("openai"));
+        assert_eq!(item.tokens_used, Some(42));
         assert_eq!(item.cwd.as_deref(), Some(expected_cwd.as_path()));
         assert_eq!(item.source, Some(SessionSource::Cli));
         assert_eq!(item.git_branch.as_deref(), Some("main"));

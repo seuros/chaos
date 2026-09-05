@@ -465,6 +465,7 @@ async fn run_ratatui_app(
                     Some(process_id) => {
                         resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
                             process_id,
+                            saved_provider: None,
                         })
                     }
                     None => return missing_session_exit(id_str, "fork"),
@@ -484,7 +485,7 @@ async fn run_ratatui_app(
                     Ok(page) => match page.items.first() {
                         Some(item) => match item.process_id {
                             Some(process_id) => resume_picker::SessionSelection::Fork(
-                                resume_picker::SessionTarget { process_id },
+                                resume_picker::SessionTarget { process_id, saved_provider: None },
                             ),
                             None => resume_picker::SessionSelection::StartFresh,
                         },
@@ -514,6 +515,7 @@ async fn run_ratatui_app(
                 Some(process_id) => {
                     resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
                         process_id,
+                        saved_provider: None,
                     })
                 }
                 None => return missing_session_exit(id_str, "resume"),
@@ -545,7 +547,7 @@ async fn run_ratatui_app(
                     Some(item) => {
                         match item.process_id {
                             Some(process_id) => resume_picker::SessionSelection::Resume(
-                                resume_picker::SessionTarget { process_id },
+                                resume_picker::SessionTarget { process_id, saved_provider: None },
                             ),
                             None => resume_picker::SessionSelection::StartFresh,
                         }
@@ -622,6 +624,10 @@ async fn run_ratatui_app(
         }
         _ => config,
     };
+
+    if let Some((_, target)) = action_and_target_session_if_resume_or_fork {
+        target.apply_saved_provider(&mut config).await?;
+    }
 
     // Configure syntax highlighting theme from the final config — onboarding
     // and resume/fork can both reload config with a different tui_theme, so

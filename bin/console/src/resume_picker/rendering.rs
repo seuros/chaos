@@ -160,6 +160,40 @@ pub(super) fn search_line(state: &PickerState) -> Line<'_> {
     Line::from(format!("Search: {}", state.query))
 }
 
+pub(super) fn selected_details(state: &PickerState) -> [Line<'static>; 2] {
+    let Some(row) = state.filtered_rows.get(state.selected) else {
+        return [Line::default(), Line::default()];
+    };
+    let provider = row.model_provider.as_deref().unwrap_or("unknown");
+    let tokens = row
+        .tokens_used
+        .map(|tokens| tokens.max(0).to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let details = Line::from(format!(
+        "Saved provider: {provider} | Total tokens: {tokens} (cumulative usage)"
+    ));
+    let notice = if row
+        .model_provider
+        .as_deref()
+        .is_some_and(|provider| provider != state.default_provider)
+    {
+        let message = if state.keep_current_for.contains(&row.process_id) {
+            format!(
+                "Keeping {} and the current model. Press Tab to switch back to {provider}.",
+                state.default_provider
+            )
+        } else {
+            format!(
+                "Opening this switches back to {provider}. Press Tab to keep the current model."
+            )
+        };
+        Line::from(message.yellow())
+    } else {
+        Line::from("Total tokens is historical usage, not current context size.".dim())
+    };
+    [details, notice]
+}
+
 pub(super) fn render_column_headers(
     frame: &mut crate::custom_terminal::Frame,
     area: Rect,

@@ -47,6 +47,8 @@ pub struct ProcessItem {
     pub agent_role: Option<String>,
     /// Model provider from session metadata.
     pub model_provider: Option<String>,
+    /// Last recorded cumulative token usage (not current context size).
+    pub tokens_used: Option<i64>,
     /// CLI version from session metadata.
     pub cli_version: Option<String>,
     /// RFC3339 timestamp string for when the session was created, if available.

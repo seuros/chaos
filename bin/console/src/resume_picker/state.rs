@@ -113,6 +113,7 @@ pub(super) struct PickerState {
     pub(super) sort_key: ProcessSortKey,
     pub(super) process_name_cache: HashMap<ProcessId, Option<String>>,
     pub(super) inline_error: Option<String>,
+    pub(super) keep_current_for: HashSet<ProcessId>,
 }
 
 impl PickerState {
@@ -150,6 +151,7 @@ impl PickerState {
             sort_key: ProcessSortKey::UpdatedAt,
             process_name_cache: HashMap::new(),
             inline_error: None,
+            keep_current_for: HashSet::new(),
         }
     }
 
@@ -170,7 +172,11 @@ impl PickerState {
             }
             KeyCode::Enter => {
                 if let Some(row) = self.filtered_rows.get(self.selected) {
-                    return Ok(Some(self.action.selection(row.process_id)));
+                    let saved_provider = row.model_provider.clone().filter(|provider| {
+                        provider != &self.default_provider
+                            && !self.keep_current_for.contains(&row.process_id)
+                    });
+                    return Ok(Some(self.action.selection(row.process_id, saved_provider)));
                 }
             }
             KeyCode::Up => {
@@ -205,6 +211,19 @@ impl PickerState {
                 self.request_frame();
             }
             KeyCode::Tab => {
+                if let Some(row) = self.filtered_rows.get(self.selected)
+                    && row
+                        .model_provider
+                        .as_deref()
+                        .is_some_and(|p| p != self.default_provider)
+                {
+                    if !self.keep_current_for.remove(&row.process_id) {
+                        self.keep_current_for.insert(row.process_id);
+                    }
+                }
+                self.request_frame();
+            }
+            KeyCode::BackTab => {
                 self.toggle_sort_key();
                 self.request_frame();
             }

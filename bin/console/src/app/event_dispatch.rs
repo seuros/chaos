@@ -165,13 +165,40 @@ impl App {
                             }
                         };
                         self.apply_runtime_policy_overrides(&mut resume_config);
+                        // Reload the selected cwd's policies, not its model defaults.
+                        // Tab means keep the model that is active in the composer.
+                        resume_config.model_provider_id = self.config.model_provider_id.clone();
+                        resume_config.model_provider = self.config.model_provider.clone();
+                        resume_config.model = Some(self.chat_widget.current_model().to_string());
+                        resume_config.model_reasoning_effort =
+                            self.chat_widget.config_ref().model_reasoning_effort;
+                        if let Err(err) = target_session.apply_saved_provider(&mut resume_config).await
+                        {
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to restore saved provider: {err}"
+                            ));
+                            return Ok(AppRunControl::Continue);
+                        }
+                        let provider_changed =
+                            resume_config.model_provider_id != self.config.model_provider_id;
+                        let resume_server = if provider_changed {
+                            Arc::new(chaos_kern::ProcessTable::new(
+                                &resume_config,
+                                self.auth_manager.clone(),
+                                self.server.session_source(),
+                                chaos_kern::models_manager::CollaborationModesConfig {
+                                    default_mode_request_user_input: true,
+                                },
+                            ))
+                        } else {
+                            self.server.clone()
+                        };
                         let summary = session_summary(
                             self.chat_widget.token_usage(),
                             self.chat_widget.process_id(),
                             self.chat_widget.process_name(),
                         );
-                        match self
-                            .server
+                        match resume_server
                             .resume_process(
                                 resume_config.clone(),
                                 target_session.process_id,
@@ -182,6 +209,7 @@ impl App {
                         {
                             Ok(resumed) => {
                                 self.shutdown_current_process().await;
+                                self.server = resume_server;
                                 self.config = resume_config;
                                 tui.set_notification_method(self.config.tui_notification_method);
                                 self.file_search.update_search_dir(self.config.cwd.clone());
@@ -189,6 +217,7 @@ impl App {
                                     tui,
                                     self.config.clone(),
                                 );
+                                init.model = self.config.model.clone();
                                 let (_, process, session_configured) = resumed.into_parts();
                                 init.halluacinate = process.halluacinate_handle();
                                 self.chat_widget = ChatWidget::new_from_existing(

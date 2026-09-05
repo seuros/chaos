@@ -29,6 +29,16 @@ FreeChaOS ships with these providers preconfigured:
 Any other provider — DeepSeek, Groq, Ollama, MiniMax, Kimi, TensorZero,
 self-hosted gateways — is a config entry away.
 
+## SESSION PICKER
+
+The resume and fork pickers show sessions across providers. When the selected
+session uses another provider, opening it automatically restores that provider
+and its saved model. A notice explains the switch; press **Tab** before opening
+to keep the current model instead, or Tab again to restore automatic switching.
+The override is per session within the picker. **Shift+Tab** changes the sort order.
+This does not change your saved provider defaults. Missing providers or saved
+model metadata produce an error rather than silently using another model.
+
 ## WIRE FORMATS
 
 Providers speak one of four wire formats:

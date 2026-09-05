@@ -173,6 +173,7 @@ fn startup_waiting_gate_is_only_for_fresh_or_exit_session_selection() {
         App::should_wait_for_initial_session(&SessionSelection::Resume(
             crate::resume_picker::SessionTarget {
                 process_id: ProcessId::new(),
+                saved_provider: None,
             }
         )),
         false
@@ -181,6 +182,7 @@ fn startup_waiting_gate_is_only_for_fresh_or_exit_session_selection() {
         App::should_wait_for_initial_session(&SessionSelection::Fork(
             crate::resume_picker::SessionTarget {
                 process_id: ProcessId::new(),
+                saved_provider: None,
             }
         )),
         false
@@ -218,6 +220,7 @@ fn startup_waiting_gate_not_applied_for_resume_or_fork_session_selection() {
     let wait_for_resume = App::should_wait_for_initial_session(&SessionSelection::Resume(
         crate::resume_picker::SessionTarget {
             process_id: ProcessId::new(),
+            saved_provider: None,
         },
     ));
     assert_eq!(
@@ -227,6 +230,7 @@ fn startup_waiting_gate_not_applied_for_resume_or_fork_session_selection() {
     let wait_for_fork = App::should_wait_for_initial_session(&SessionSelection::Fork(
         crate::resume_picker::SessionTarget {
             process_id: ProcessId::new(),
+            saved_provider: None,
         },
     ));
     assert_eq!(

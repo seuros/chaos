@@ -36,6 +36,38 @@ use self::state::PickerState;
 #[derive(Debug, Clone)]
 pub struct SessionTarget {
     pub process_id: ProcessId,
+    pub saved_provider: Option<String>,
+}
+
+impl SessionTarget {
+    /// Apply the picker's automatic restoration without changing persisted defaults.
+    pub(crate) async fn apply_saved_provider(&self, config: &mut Config) -> Result<()> {
+        let Some(provider_id) = self.saved_provider.as_ref() else {
+            return Ok(());
+        };
+        let provider = config.model_providers.get(provider_id).cloned().ok_or_else(|| {
+            color_eyre::eyre::eyre!("Saved provider {provider_id} is unavailable. Press Tab in the picker to keep the current model.")
+        })?;
+        let journal = RolloutRecorder::get_journal_for_process(self.process_id).await?;
+        let context = journal
+            .items
+            .iter()
+            .rev()
+            .find_map(|entry| match &entry.item {
+                chaos_ipc::protocol::RolloutItem::TurnContext(context) => Some(context),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                color_eyre::eyre::eyre!(
+                    "Session has no saved model. Press Tab in the picker to keep the current model."
+                )
+            })?;
+        config.model = Some(context.model.clone());
+        config.model_reasoning_effort = context.effort;
+        config.model_provider_id = provider_id.clone();
+        config.model_provider = provider;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -67,8 +99,11 @@ impl SessionPickerAction {
         }
     }
 
-    fn selection(self, process_id: ProcessId) -> SessionSelection {
-        let target_session = SessionTarget { process_id };
+    fn selection(self, process_id: ProcessId, saved_provider: Option<String>) -> SessionSelection {
+        let target_session = SessionTarget {
+            process_id,
+            saved_provider,
+        };
         match self {
             SessionPickerAction::Resume => SessionSelection::Resume(target_session),
             SessionPickerAction::Fork => SessionSelection::Fork(target_session),
@@ -107,7 +142,10 @@ impl Drop for AltScreenGuard<'_> {
 ///
 /// The picker displays sessions in a table with timestamp columns (created/updated),
 /// git branch, working directory, and conversation preview. Users can toggle
-/// between sorting by creation time and last-updated time using the Tab key.
+/// between sorting by creation time and last-updated time using Shift+Tab.
+/// Selected-session details show the saved provider and cumulative token usage,
+/// When providers differ, opening restores the saved provider and model. Tab
+/// toggles keeping the current model instead, without a confirmation dialog.
 ///
 /// Sessions are loaded on-demand via cursor-based pagination. The backend
 /// `RolloutRecorder::list_processes` returns pages ordered by the selected sort key,
@@ -115,8 +153,7 @@ impl Drop for AltScreenGuard<'_> {
 /// new sessions appear during pagination.
 ///
 /// Filtering happens in two layers:
-/// 1. Provider and source filtering at the backend (only interactive CLI sessions
-///    for the current model provider).
+/// 1. Source filtering at the backend (interactive CLI sessions across providers).
 /// 2. Working-directory filtering at the picker (unless `--all` is passed).
 pub async fn run_resume_picker(
     tui: &mut Tui,
@@ -205,7 +242,7 @@ async fn run_session_picker(
                     }
                     TuiEvent::Draw => {
                         if let Ok(size) = alt.tui.terminal.size() {
-                            let list_height = size.height.saturating_sub(4) as usize;
+                            let list_height = size.height.saturating_sub(6) as usize;
                             state.update_view_rows(list_height);
                             state.ensure_minimum_rows_for_view(list_height);
                         }
@@ -229,11 +266,13 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
     tui.draw(height, |frame| {
         let area = frame.area();
-        let [header, search, columns, list, hint] = Layout::vertical([
+        let [header, search, columns, list, details, notice, hint] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Min(area.height.saturating_sub(4)),
+            Constraint::Min(0),
+            Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .areas(area);
@@ -257,6 +296,9 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
         // Column headers and list
         render_column_headers(frame, columns, &metrics, state.sort_key);
         render_list(frame, list, state, &metrics);
+        let [details_line, notice_line] = rendering::selected_details(state);
+        frame.render_widget(details_line, details);
+        frame.render_widget(notice_line, notice);
 
         // Hint line
         let action_label = state.action.action_label();
@@ -270,7 +312,7 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
             key_hint::ctrl(KeyCode::Char('c')).into(),
             " to quit ".dim(),
             "    ".dim(),
-            key_hint::plain(KeyCode::Tab).into(),
+            "Shift+Tab".into(),
             " to toggle sort ".dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Up).into(),
@@ -375,6 +417,11 @@ pub(crate) mod tests {
         set_query_loads_until_match_and_respects_scan_cap().await;
     }
 
+    #[tokio::test]
+    async fn picker_regressions() {
+        resume_picker_suite().await;
+    }
+
     fn head_to_row_uses_first_user_message() {
         let item = ProcessItem {
             process_id: Some(ProcessId::new()),
@@ -412,6 +459,8 @@ pub(crate) mod tests {
         let item = ProcessItem {
             process_id: Some(ProcessId::new()),
             first_user_message: Some("Hello".to_string()),
+            model_provider: Some("xai".to_string()),
+            tokens_used: Some(123456),
             created_at: Some("2025-01-01T00:00:00Z".into()),
             updated_at: Some("2025-01-01T01:00:00Z".into()),
             ..Default::default()
@@ -423,6 +472,44 @@ pub(crate) mod tests {
 
         assert_eq!(row.created_at, Some(expected_created));
         assert_eq!(row.updated_at, Some(expected_updated));
+        assert_eq!(row.model_provider.as_deref(), Some("xai"));
+        assert_eq!(row.tokens_used, Some(123456));
+
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            Arc::new(|_: PageLoadRequest| {}),
+            "openai".to_string(),
+            false,
+            None,
+            SessionPickerAction::Resume,
+        );
+        state.filtered_rows = vec![row];
+        let [details, notice] = super::rendering::selected_details(&state);
+        assert!(details.to_string().contains("Saved provider: xai"));
+        assert!(details.to_string().contains("Total tokens: 123456"));
+        assert!(
+            notice
+                .to_string()
+                .contains("Opening this switches back to xai")
+        );
+        assert!(
+            notice
+                .to_string()
+                .contains("Press Tab to keep the current model")
+        );
+        state.default_provider = "xai".to_string();
+        let [_, notice] = super::rendering::selected_details(&state);
+        assert!(!notice.to_string().contains("Active provider:"));
+        state.filtered_rows[0].tokens_used = None;
+        state.filtered_rows[0].model_provider = None;
+        let [details, _] = super::rendering::selected_details(&state);
+        assert!(details.to_string().contains("Saved provider: unknown"));
+        assert!(details.to_string().contains("Total tokens: unknown"));
+        state.filtered_rows.clear();
+        assert_eq!(
+            super::rendering::selected_details(&state),
+            [Line::default(), Line::default()]
+        );
     }
 
     fn row_display_preview_prefers_process_name() {
@@ -434,6 +521,8 @@ pub(crate) mod tests {
             updated_at: None,
             cwd: None,
             git_branch: None,
+            model_provider: None,
+            tokens_used: None,
         };
 
         assert_eq!(row.display_preview(), "My session");
@@ -466,6 +555,8 @@ pub(crate) mod tests {
                 updated_at: Some(now.checked_sub(42_i64.seconds()).unwrap()),
                 cwd: None,
                 git_branch: None,
+                model_provider: None,
+                tokens_used: None,
             },
             Row {
                 preview: String::from("Investigate lazy pagination cap"),
@@ -475,6 +566,8 @@ pub(crate) mod tests {
                 updated_at: Some(now.checked_sub(35_i64.minutes()).unwrap()),
                 cwd: None,
                 git_branch: None,
+                model_provider: None,
+                tokens_used: None,
             },
             Row {
                 preview: String::from("Explain the codebase"),
@@ -484,6 +577,8 @@ pub(crate) mod tests {
                 updated_at: Some(now.checked_sub(2_i64.hours()).unwrap()),
                 cwd: None,
                 git_branch: None,
+                model_provider: None,
+                tokens_used: None,
             },
         ];
         state.all_rows = rows.clone();
@@ -711,7 +806,7 @@ pub(crate) mod tests {
         }
 
         state
-            .handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+            .handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
             .await
             .unwrap();
 
@@ -782,6 +877,8 @@ pub(crate) mod tests {
             updated_at: None,
             cwd: None,
             git_branch: None,
+            model_provider: None,
+            tokens_used: None,
         };
         state.all_rows = vec![row.clone()];
         state.filtered_rows = vec![row];
@@ -793,10 +890,83 @@ pub(crate) mod tests {
 
         assert!(matches!(
             selection,
-            Some(SessionSelection::Resume(SessionTarget { process_id: selected }))
+            Some(SessionSelection::Resume(SessionTarget { process_id: selected, saved_provider: None }))
                 if selected == process_id
         ));
         assert_eq!(state.inline_error, None);
+    }
+
+    #[tokio::test]
+    async fn provider_switch_defaults_and_tab_override() {
+        for action in [SessionPickerAction::Resume, SessionPickerAction::Fork] {
+            let mut state = PickerState::new(
+                FrameRequester::test_dummy(),
+                Arc::new(|_: PageLoadRequest| {}),
+                "openai".to_string(),
+                true,
+                None,
+                action,
+            );
+            state.filtered_rows = rows_from_items(vec![
+                ProcessItem {
+                    process_id: Some(ProcessId::new()),
+                    model_provider: Some("xai".into()),
+                    ..Default::default()
+                },
+                ProcessItem {
+                    process_id: Some(ProcessId::new()),
+                    model_provider: Some("xai".into()),
+                    ..Default::default()
+                },
+            ]);
+            for expected in [Some("xai"), None, Some("xai")] {
+                let selection = state
+                    .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let target = match selection {
+                    SessionSelection::Resume(target) | SessionSelection::Fork(target) => target,
+                    _ => panic!("expected session target"),
+                };
+                assert_eq!(target.saved_provider.as_deref(), expected);
+                state
+                    .handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+                    .await
+                    .unwrap();
+                assert_eq!(state.sort_key, ProcessSortKey::UpdatedAt);
+            }
+            assert!(
+                super::rendering::selected_details(&state)[1]
+                    .to_string()
+                    .contains("Keeping openai")
+            );
+            state
+                .handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+                .await
+                .unwrap();
+            assert!(
+                super::rendering::selected_details(&state)[1]
+                    .to_string()
+                    .contains("Opening this switches back to xai")
+            );
+            state.filtered_rows[1].model_provider = Some("openai".into());
+            let selection = state
+                .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(
+                selection,
+                SessionSelection::Resume(SessionTarget {
+                    saved_provider: None,
+                    ..
+                }) | SessionSelection::Fork(SessionTarget {
+                    saved_provider: None,
+                    ..
+                })
+            ));
+        }
     }
 
     async fn up_at_bottom_does_not_scroll_when_visible() {

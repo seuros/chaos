@@ -15,6 +15,8 @@ pub(super) struct Row {
     pub(super) updated_at: Option<Timestamp>,
     pub(super) cwd: Option<PathBuf>,
     pub(super) git_branch: Option<String>,
+    pub(super) model_provider: Option<String>,
+    pub(super) tokens_used: Option<i64>,
 }
 
 impl Row {
@@ -66,6 +68,8 @@ pub(super) fn head_to_row(item: &ProcessItem) -> Row {
         updated_at,
         cwd: item.cwd.clone(),
         git_branch: item.git_branch.clone(),
+        model_provider: item.model_provider.clone(),
+        tokens_used: item.tokens_used,
     }
 }
 

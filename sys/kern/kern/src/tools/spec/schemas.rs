@@ -16,11 +16,11 @@ pub(crate) fn unified_exec_output_schema() -> JsonValue {
                 "description": "Elapsed wall time spent waiting for output in seconds."
             },
             "exit_code": {
-                "type": "number",
+                "type": "integer",
                 "description": "Process exit code when the command finished during this call."
             },
             "session_id": {
-                "type": "number",
+                "type": "integer",
                 "description": "Session identifier to pass to write_stdin when the process is still running."
             },
             "task_id": {
@@ -32,7 +32,7 @@ pub(crate) fn unified_exec_output_schema() -> JsonValue {
                 "description": "Server name to pass to read_mcp_resource/cancel_mcp_task for the task."
             },
             "original_token_count": {
-                "type": "number",
+                "type": "integer",
                 "description": "Approximate token count before output truncation."
             },
             "output": {

@@ -2274,6 +2274,61 @@ fn test_mcp_tool_integer_preserved() {
 }
 
 #[test]
+fn kernel_integer_tool_fields_are_advertised_as_integer() {
+    fn assert_integer(schema: &JsonSchema, field: &str) {
+        let JsonSchema::Object { properties, .. } = schema else {
+            panic!("{field} parent is not an object");
+        };
+        match properties.get(field) {
+            Some(JsonSchema::Integer { .. }) => {}
+            other => panic!("{field} should be integer, got {other:?}"),
+        }
+    }
+
+    let ToolSpec::Function(tool) = create_read_session_history_tool() else {
+        panic!("read_session_history should be a function tool");
+    };
+    for field in ["before_seq", "max_items", "max_bytes"] {
+        assert_integer(&tool.parameters, field);
+    }
+
+    let ToolSpec::Function(tool) = create_search_session_history_tool() else {
+        panic!("search_session_history should be a function tool");
+    };
+    for field in ["before_seq", "max_results", "max_bytes"] {
+        assert_integer(&tool.parameters, field);
+    }
+
+    let ToolSpec::Function(tool) = create_exec_command_tool(true, false) else {
+        panic!("exec_command should be a function tool");
+    };
+    for field in ["yield_time_ms", "max_output_tokens"] {
+        assert_integer(&tool.parameters, field);
+    }
+
+    let ToolSpec::Function(tool) = create_write_stdin_tool() else {
+        panic!("write_stdin should be a function tool");
+    };
+    for field in ["session_id", "yield_time_ms", "max_output_tokens"] {
+        assert_integer(&tool.parameters, field);
+    }
+
+    let ToolSpec::Function(tool) = crate::tools::handlers::resume_attested_review::tool() else {
+        panic!("resume_attested_review should be a function tool");
+    };
+    assert_integer(&tool.parameters, "wait_ms");
+
+    let output = super::schemas::unified_exec_output_schema();
+    assert_eq!(output["properties"]["wall_time_seconds"]["type"], "number");
+    assert_eq!(output["properties"]["exit_code"]["type"], "integer");
+    assert_eq!(output["properties"]["session_id"]["type"], "integer");
+    assert_eq!(
+        output["properties"]["original_token_count"]["type"],
+        "integer"
+    );
+}
+
+#[test]
 fn test_mcp_tool_array_without_items_gets_default_string_items() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);

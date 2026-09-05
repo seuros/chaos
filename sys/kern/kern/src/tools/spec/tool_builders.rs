@@ -147,7 +147,7 @@ pub(crate) fn create_read_session_history_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "before_seq".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Exclusive sequence cursor returned by an earlier call. When omitted, reads immediately before the latest compaction, or from the journal end if no compaction has occurred."
                         .to_string(),
@@ -156,7 +156,7 @@ pub(crate) fn create_read_session_history_tool() -> ToolSpec {
         ),
         (
             "max_items".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Maximum transcript entries to return. Defaults to 40 and is capped at 100."
                         .to_string(),
@@ -165,7 +165,7 @@ pub(crate) fn create_read_session_history_tool() -> ToolSpec {
         ),
         (
             "max_bytes".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Approximate maximum transcript text bytes to return. Defaults to 24000 and is capped at 64000."
                         .to_string(),
@@ -201,7 +201,7 @@ pub(crate) fn create_search_session_history_tool() -> ToolSpec {
         ),
         (
             "before_seq".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Exclusive sequence cursor returned by an earlier search. When omitted, searches the whole journal."
                         .to_string(),
@@ -210,7 +210,7 @@ pub(crate) fn create_search_session_history_tool() -> ToolSpec {
         ),
         (
             "max_results".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Maximum matching entries to return. Defaults to 20 and is capped at 50."
                         .to_string(),
@@ -219,7 +219,7 @@ pub(crate) fn create_search_session_history_tool() -> ToolSpec {
         ),
         (
             "max_bytes".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Approximate maximum excerpt bytes to return. Defaults to 24000 and is capped at 64000."
                         .to_string(),
@@ -314,7 +314,7 @@ pub(crate) fn create_exec_command_tool(
         ),
         (
             "yield_time_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "How long to wait (in milliseconds) for output before yielding.".to_string(),
                 ),
@@ -322,7 +322,7 @@ pub(crate) fn create_exec_command_tool(
         ),
         (
             "max_output_tokens".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Maximum number of tokens to return. Excess output will be truncated."
                         .to_string(),
@@ -364,7 +364,7 @@ pub(crate) fn create_write_stdin_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "session_id".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some("Identifier of the running unified exec session.".to_string()),
             },
         ),
@@ -376,7 +376,7 @@ pub(crate) fn create_write_stdin_tool() -> ToolSpec {
         ),
         (
             "yield_time_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "How long to wait (in milliseconds) for output before yielding.".to_string(),
                 ),
@@ -384,7 +384,7 @@ pub(crate) fn create_write_stdin_tool() -> ToolSpec {
         ),
         (
             "max_output_tokens".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Maximum number of tokens to return. Excess output will be truncated."
                         .to_string(),
@@ -426,7 +426,7 @@ pub(crate) fn create_shell_tool(exec_permission_approvals_enabled: bool) -> Tool
         ),
         (
             "timeout_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some("The timeout for the command in milliseconds".to_string()),
             },
         ),
@@ -474,7 +474,7 @@ pub(crate) fn create_shell_command_tool(
         ),
         (
             "timeout_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some("The timeout for the command in milliseconds".to_string()),
             },
         ),
@@ -797,7 +797,7 @@ pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
         ),
         (
             "timeout_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Overall timeout in milliseconds. Defaults to 1800000 and is clamped between 10000 and 3600000."
                         .to_string(),
@@ -881,7 +881,7 @@ pub(crate) fn create_spawn_child_agents_on_csv_tool() -> ToolSpec {
     );
     properties.insert(
         "max_concurrency".to_string(),
-        JsonSchema::Number {
+        JsonSchema::Integer {
             description: Some(
                 "Maximum concurrent tasks for this job. Defaults to 16 and is capped by config."
                     .to_string(),
@@ -890,7 +890,7 @@ pub(crate) fn create_spawn_child_agents_on_csv_tool() -> ToolSpec {
     );
     properties.insert(
         "max_workers".to_string(),
-        JsonSchema::Number {
+        JsonSchema::Integer {
             description: Some(
                 "Alias for max_concurrency. Set to 1 to run sequentially.".to_string(),
             ),
@@ -898,7 +898,7 @@ pub(crate) fn create_spawn_child_agents_on_csv_tool() -> ToolSpec {
     );
     properties.insert(
         "max_runtime_seconds".to_string(),
-        JsonSchema::Number {
+        JsonSchema::Integer {
             description: Some(
                 "Maximum runtime per task before it is failed. Defaults to 1800 seconds."
                     .to_string(),
@@ -1091,7 +1091,7 @@ pub(crate) fn create_wait_agent_tool() -> ToolSpec {
     );
     properties.insert(
         "timeout_ms".to_string(),
-        JsonSchema::Number {
+        JsonSchema::Integer {
             description: Some(format!(
                 "Optional timeout in milliseconds. Defaults to {DEFAULT_WAIT_TIMEOUT_MS}, min {MIN_WAIT_TIMEOUT_MS}, max {MAX_WAIT_TIMEOUT_MS}. Prefer longer waits (minutes) to avoid busy polling."
             )),
@@ -1264,7 +1264,7 @@ pub(crate) fn create_test_sync_tool() -> ToolSpec {
         ),
         (
             "participants".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Number of tool calls that must arrive before the barrier opens".to_string(),
                 ),
@@ -1272,7 +1272,7 @@ pub(crate) fn create_test_sync_tool() -> ToolSpec {
         ),
         (
             "timeout_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Maximum time in milliseconds to wait at the barrier".to_string(),
                 ),
@@ -1283,7 +1283,7 @@ pub(crate) fn create_test_sync_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "sleep_before_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Optional delay in milliseconds before any other action".to_string(),
                 ),
@@ -1291,7 +1291,7 @@ pub(crate) fn create_test_sync_tool() -> ToolSpec {
         ),
         (
             "sleep_after_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(
                     "Optional delay in milliseconds after completing the barrier".to_string(),
                 ),
@@ -1489,7 +1489,7 @@ pub(crate) fn create_call_mcp_tool_async_tool() -> ToolSpec {
         ),
         (
             "ttl".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some("Task lifetime in milliseconds.".to_string()),
             },
         ),

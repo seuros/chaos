@@ -97,7 +97,7 @@ pub(crate) fn tool() -> ToolSpec {
         ),
         (
             "wait_ms".to_string(),
-            JsonSchema::Number {
+            JsonSchema::Integer {
                 description: Some(format!(
                     "Maximum time to poll this invocation. Defaults to {DEFAULT_WAIT_MS} and is capped at {MAX_WAIT_MS}."
                 )),

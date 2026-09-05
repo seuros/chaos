@@ -16,7 +16,6 @@ install_bin chaos
 install_bin alcatraz
 install_bin chaos_journald
 install_bin chaos-forkve-wrapper
-install_bin chaos-xclient
 
 echo "Installed to $DEST"
 echo "Make sure $DEST is in your PATH."

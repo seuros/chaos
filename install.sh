@@ -66,7 +66,6 @@ main() {
     install_bin "$tmpdir/alcatraz" "alcatraz"
     install_bin "$tmpdir/chaos_journald" "chaos_journald"
     install_bin "$tmpdir/chaos-forkve-wrapper" "chaos-forkve-wrapper"
-    install_bin "$tmpdir/chaos-xclient" "chaos-xclient"
 
     say "installed chaos to $INSTALL_DIR/chaos"
 

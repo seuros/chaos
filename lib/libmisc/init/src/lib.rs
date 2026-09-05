@@ -11,8 +11,8 @@
 //! This crate is intentionally tiny. Config loading is frontend-specific
 //! (CLI parsing, onboarding flows, env overrides) and stays in each binary.
 //! This crate only covers the shared "given a config, wire the managers"
-//! step, so `bin/console`, `bin/xclient`, and any future frontend can stand
-//! on the same initialisation code.
+//! step, so `bin/console` and any future frontend can stand on the same
+//! initialisation code.
 //!
 //! # Example
 //!

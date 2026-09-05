@@ -2,10 +2,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
-use ts_rs::TS;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema, TS,
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -27,18 +26,7 @@ impl SocketPolicy {
 /// conflict precedence rather than by capability breadth: `none` beats
 /// `write`, and `write` beats `read`.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    Display,
-    JsonSchema,
-    TS,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Display, JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]

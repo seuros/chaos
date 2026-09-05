@@ -1,12 +1,10 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 /// Chaos errors that we expose to clients.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
 pub enum ChaosErrorInfo {
     ContextWindowExceeded,
     UsageLimitExceeded,
@@ -42,7 +40,6 @@ pub enum ChaosErrorInfo {
         http_status_code: Option<u16>,
     },
     #[serde(rename = "process_rollback_failed")]
-    #[ts(rename = "process_rollback_failed")]
     ProcessRollbackFailed,
     Other,
 }
@@ -69,7 +66,7 @@ impl ChaosErrorInfo {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ErrorEvent {
     pub message: String,
     #[serde(default)]
@@ -85,12 +82,12 @@ impl ErrorEvent {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct WarningEvent {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct StreamErrorEvent {
     pub message: String,
     #[serde(default)]

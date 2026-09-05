@@ -4,14 +4,12 @@ use crate::ProcessId;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 use super::ReasoningEffortConfig;
 
 /// Agent lifecycle status, derived from emitted events.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
 pub enum AgentStatus {
     /// Agent is waiting for initialization.
     #[default]
@@ -30,7 +28,7 @@ pub enum AgentStatus {
     NotFound,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct CollabAgentRef {
     /// Process ID of the receiver/new agent.
     pub process_id: ProcessId,
@@ -42,7 +40,7 @@ pub struct CollabAgentRef {
     pub agent_role: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct CollabAgentStatusEntry {
     /// Process ID of the receiver/new agent.
     pub process_id: ProcessId,
@@ -56,7 +54,7 @@ pub struct CollabAgentStatusEntry {
     pub status: AgentStatus,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabAgentSpawnBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
@@ -77,7 +75,7 @@ pub struct CollabAgentSpawnBeginEvent {
     pub missing_topics: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabAgentSpawnEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
@@ -104,7 +102,7 @@ pub struct CollabAgentSpawnEndEvent {
     pub status: AgentStatus,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabAgentInteractionBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
@@ -119,7 +117,7 @@ pub struct CollabAgentInteractionBeginEvent {
     pub prompt: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabAgentInteractionEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
@@ -142,7 +140,7 @@ pub struct CollabAgentInteractionEndEvent {
     pub status: AgentStatus,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabWaitingBeginEvent {
     /// Process ID of the sender.
     #[serde(rename = "sender_process_id")]
@@ -157,7 +155,7 @@ pub struct CollabWaitingBeginEvent {
     pub call_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabWaitingEndEvent {
     /// Process ID of the sender.
     #[serde(rename = "sender_process_id")]
@@ -171,7 +169,7 @@ pub struct CollabWaitingEndEvent {
     pub statuses: HashMap<ProcessId, AgentStatus>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabCloseBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
@@ -183,7 +181,7 @@ pub struct CollabCloseBeginEvent {
     pub receiver_process_id: ProcessId,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabCloseEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
@@ -204,7 +202,7 @@ pub struct CollabCloseEndEvent {
     pub status: AgentStatus,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabResumeBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
@@ -222,7 +220,7 @@ pub struct CollabResumeBeginEvent {
     pub receiver_agent_role: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct CollabResumeEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,

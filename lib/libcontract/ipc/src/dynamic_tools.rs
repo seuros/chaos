@@ -3,7 +3,6 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use ts_rs::TS;
 
 /// Session-scoped local tool registration used by Chaos host apps.
 ///
@@ -11,7 +10,7 @@ use ts_rs::TS;
 /// initialize handshake, no `tools/list`, and no `notifications/tools/list_changed`
 /// lifecycle attached to this type. Callers that need negotiated MCP semantics
 /// should expose a real MCP server instead of sending extra MCP-only fields here.
-#[derive(Debug, Clone, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DynamicToolSpec {
     pub name: String,
@@ -21,7 +20,7 @@ pub struct DynamicToolSpec {
     pub defer_loading: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DynamicToolCallRequest {
     pub call_id: String,
@@ -30,16 +29,15 @@ pub struct DynamicToolCallRequest {
     pub arguments: JsonValue,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DynamicToolResponse {
     pub content_items: Vec<DynamicToolCallOutputContentItem>,
     pub success: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
-#[ts(tag = "type")]
 pub enum DynamicToolCallOutputContentItem {
     #[serde(rename_all = "camelCase")]
     InputText { text: String },

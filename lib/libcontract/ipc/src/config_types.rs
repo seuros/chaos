@@ -3,7 +3,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
 use strum_macros::EnumIter;
-use ts_rs::TS;
 
 use crate::openai_models::ReasoningEffort;
 
@@ -11,7 +10,7 @@ use crate::openai_models::ReasoningEffort;
 /// debugging and understanding the model's reasoning process.
 /// See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#reasoning-summaries
 #[derive(
-    Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS,
+    Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -27,18 +26,7 @@ pub enum ReasoningSummary {
 /// Controls output length/detail on GPT-5 models via the Responses API.
 /// Serialized with lowercase values to match the OpenAI API.
 #[derive(
-    Hash,
-    Debug,
-    Serialize,
-    Deserialize,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Display,
-    JsonSchema,
-    TS,
+    Hash, Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -49,9 +37,7 @@ pub enum Verbosity {
     High,
 }
 
-#[derive(
-    Deserialize, Debug, Clone, Copy, PartialEq, Default, Serialize, Display, JsonSchema, TS,
-)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Default, Serialize, Display, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum SandboxMode {
@@ -71,7 +57,7 @@ pub const SANDBOX_MODE_WORKSPACE_WRITE: &str = "workspace-write";
 pub const SANDBOX_MODE_ROOT_ACCESS: &str = "root-access";
 
 #[derive(
-    Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Display, JsonSchema, TS,
+    Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Display, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -93,7 +79,6 @@ pub enum ApprovalsReviewer {
     Eq,
     Display,
     JsonSchema,
-    TS,
     PartialOrd,
     Ord,
     EnumIter,
@@ -107,7 +92,7 @@ pub enum Personality {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS, Default,
+    Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, Default,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -118,7 +103,7 @@ pub enum WebSearchMode {
     Live,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum WebSearchContextSize {
@@ -127,7 +112,7 @@ pub enum WebSearchContextSize {
     High,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct WebSearchLocation {
     pub country: Option<String>,
@@ -147,7 +132,7 @@ impl WebSearchLocation {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct WebSearchToolConfig {
     pub context_size: Option<WebSearchContextSize>,
@@ -173,14 +158,14 @@ impl WebSearchToolConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct WebSearchFilters {
     pub allowed_domains: Option<Vec<String>>,
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Display, JsonSchema, TS,
+    Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Display, JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -189,7 +174,7 @@ pub enum WebSearchUserLocationType {
     Approximate,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct WebSearchUserLocation {
     #[serde(default)]
@@ -200,7 +185,7 @@ pub struct WebSearchUserLocation {
     pub timezone: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct WebSearchConfig {
     pub filters: Option<WebSearchFilters>,
@@ -234,7 +219,7 @@ impl From<WebSearchToolConfig> for WebSearchConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum ServiceTier {
@@ -242,7 +227,7 @@ pub enum ServiceTier {
     Flex,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum ForcedLoginMethod {
@@ -252,7 +237,7 @@ pub enum ForcedLoginMethod {
 
 /// Represents the trust level for a project directory.
 /// This determines the approval policy and sandbox mode applied.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Display, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum TrustLevel {
@@ -281,7 +266,7 @@ pub enum TrustLevel {
 ///
 /// The CLI flag `--no-alt-screen` can override this setting at runtime.
 #[derive(
-    Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS,
+    Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -296,9 +281,7 @@ pub enum AltScreenMode {
 }
 
 /// Initial collaboration mode to use when the TUI starts.
-#[derive(
-    Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema, TS, Default,
-)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModeKind {
     Plan,
@@ -307,12 +290,10 @@ pub enum ModeKind {
     #[doc(hidden)]
     #[serde(skip_serializing, skip_deserializing)]
     #[schemars(skip)]
-    #[ts(skip)]
     PairProgramming,
     #[doc(hidden)]
     #[serde(skip_serializing, skip_deserializing)]
     #[schemars(skip)]
-    #[ts(skip)]
     Execute,
 }
 
@@ -338,7 +319,7 @@ impl ModeKind {
 }
 
 /// Collaboration mode for a Chaos session.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub struct CollaborationMode {
     pub mode: ModeKind,
@@ -408,7 +389,7 @@ impl CollaborationMode {
 }
 
 /// Settings for a collaboration mode.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Settings {
     pub model: String,
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -417,7 +398,7 @@ pub struct Settings {
 
 /// A mask for collaboration mode settings, allowing partial updates.
 /// All fields except `name` are optional, enabling selective updates.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CollaborationModeMask {
     pub name: String,
     pub mode: Option<ModeKind>,

@@ -2,20 +2,19 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
-use ts_rs::TS;
 
 use super::VfsAccessMode;
 use super::VfsPath;
 use super::VfsSpecialPath;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct VfsEntry {
     pub path: VfsPath,
     pub access: VfsAccessMode,
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema, TS,
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -26,7 +25,7 @@ pub enum VfsPolicyKind {
     ExternalSandbox,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct VfsPolicy {
     pub kind: VfsPolicyKind,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

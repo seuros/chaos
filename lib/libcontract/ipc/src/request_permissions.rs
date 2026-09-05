@@ -4,9 +4,8 @@ use crate::models::PermissionProfile;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionGrantScope {
     #[default]
@@ -14,7 +13,7 @@ pub enum PermissionGrantScope {
     Session,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RequestPermissionProfile {
     pub network: Option<NetworkPermissions>,
@@ -46,21 +45,21 @@ impl From<PermissionProfile> for RequestPermissionProfile {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct RequestPermissionsArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     pub permissions: RequestPermissionProfile,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct RequestPermissionsResponse {
     pub permissions: RequestPermissionProfile,
     #[serde(default)]
     pub scope: PermissionGrantScope,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct RequestPermissionsEvent {
     /// Responses API call id for the associated tool call, if available.
     pub call_id: String,

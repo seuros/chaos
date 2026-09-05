@@ -3,9 +3,8 @@ use std::path::PathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookEventName {
     SessionStart,
@@ -13,7 +12,7 @@ pub enum HookEventName {
     Stop,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookHandlerType {
     Command,
@@ -21,21 +20,21 @@ pub enum HookHandlerType {
     Agent,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookExecutionMode {
     Sync,
     Async,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookScope {
     Process,
     Turn,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookRunStatus {
     Running,
@@ -45,7 +44,7 @@ pub enum HookRunStatus {
     Stopped,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HookOutputEntryKind {
     Warning,
@@ -55,14 +54,14 @@ pub enum HookOutputEntryKind {
     Error,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct HookOutputEntry {
     pub kind: HookOutputEntryKind,
     pub text: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct HookRunSummary {
     pub id: String,
@@ -74,23 +73,20 @@ pub struct HookRunSummary {
     pub display_order: i64,
     pub status: HookRunStatus,
     pub status_message: Option<String>,
-    #[ts(type = "number")]
     pub started_at: i64,
-    #[ts(type = "number | null")]
     pub completed_at: Option<i64>,
-    #[ts(type = "number | null")]
     pub duration_ms: Option<i64>,
     pub entries: Vec<HookOutputEntry>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct HookStartedEvent {
     pub turn_id: Option<String>,
     pub run: HookRunSummary,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct HookCompletedEvent {
     pub turn_id: Option<String>,

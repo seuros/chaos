@@ -1,7 +1,6 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 use super::response::ContentItem;
 use super::response::ResponseItem;
@@ -12,7 +11,7 @@ use crate::protocol::COLLABORATION_MODE_OPEN_TAG;
 pub const BASE_INSTRUCTIONS_DEFAULT: &str = include_str!("../prompts/base_instructions/default.md");
 
 /// Base instructions for the model in a thread. Corresponds to the `instructions` field in the ResponsesAPI.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename = "base_instructions", rename_all = "snake_case")]
 pub struct BaseInstructions {
     pub text: String,
@@ -28,7 +27,7 @@ impl Default for BaseInstructions {
 
 /// Developer-provided guidance that is injected into a turn as a developer role
 /// message.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename = "developer_instructions", rename_all = "snake_case")]
 pub struct DeveloperInstructions {
     text: String,

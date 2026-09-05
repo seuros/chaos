@@ -2,9 +2,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::PathBuf;
-use ts_rs::TS;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ParsedCommand {
     Read {

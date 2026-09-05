@@ -1,7 +1,6 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 use super::function_call::FunctionCallOutputPayload;
 use super::shell::LocalShellAction;
@@ -11,7 +10,7 @@ use super::shell::ReasoningItemReasoningSummary;
 use super::shell::WebSearchAction;
 use crate::mcp::CallToolResult;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseInputItem {
     Message {
@@ -22,7 +21,6 @@ pub enum ResponseInputItem {
         call_id: String,
         output: FunctionCallOutputPayload,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         tool_name: Option<String>,
     },
     McpToolCallOutput {
@@ -33,19 +31,17 @@ pub enum ResponseInputItem {
         call_id: String,
         output: FunctionCallOutputPayload,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         tool_name: Option<String>,
     },
     ToolSearchOutput {
         call_id: String,
         status: String,
         execution: String,
-        #[ts(type = "unknown[]")]
         tools: Vec<serde_json::Value>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentItem {
     InputText {
@@ -60,14 +56,13 @@ pub enum ContentItem {
     /// Inline document resource (e.g. a git diff) attached to a user message.
     Document {
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         name: Option<String>,
         mime_type: String,
         text: String,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 /// Classifies an assistant message as interim commentary or final answer text.
 ///
@@ -83,40 +78,34 @@ pub enum MessagePhase {
     FinalAnswer,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseItem {
     Message {
         #[serde(default, skip_serializing)]
-        #[ts(skip)]
         id: Option<String>,
         role: String,
         content: Vec<ContentItem>,
         // Do not use directly, no available consistently across all providers.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         end_turn: Option<bool>,
         // Optional output-message phase (for example: "commentary", "final_answer").
         // Availability varies by provider/model, so downstream consumers must
         // preserve fallback behavior when this is absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         phase: Option<MessagePhase>,
     },
     Reasoning {
         #[serde(default, skip_serializing)]
-        #[ts(skip)]
         id: String,
         summary: Vec<ReasoningItemReasoningSummary>,
         #[serde(default, skip_serializing_if = "should_serialize_reasoning_content")]
-        #[ts(optional)]
         content: Option<Vec<ReasoningItemContent>>,
         encrypted_content: Option<String>,
     },
     LocalShellCall {
         /// Legacy id field retained for compatibility with older payloads.
         #[serde(default, skip_serializing)]
-        #[ts(skip)]
         id: Option<String>,
         /// Set when using the Responses API.
         call_id: Option<String>,
@@ -125,11 +114,9 @@ pub enum ResponseItem {
     },
     FunctionCall {
         #[serde(default, skip_serializing)]
-        #[ts(skip)]
         id: Option<String>,
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         namespace: Option<String>,
         // The Responses API returns the function call arguments as a *string* that contains
         // JSON, not as an already‑parsed object. We keep it as a raw string here and let
@@ -143,19 +130,15 @@ pub enum ResponseItem {
         /// returns `extra_content.google.thought_signature` and rejects the
         /// follow-up tool result when that signature is missing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         provider_metadata: Option<serde_json::Value>,
     },
     ToolSearchCall {
         #[serde(default, skip_serializing)]
-        #[ts(skip)]
         id: Option<String>,
         call_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         status: Option<String>,
         execution: String,
-        #[ts(type = "unknown")]
         arguments: serde_json::Value,
     },
     // NOTE: The `output` field for `function_call_output` uses a dedicated payload type with
@@ -167,15 +150,12 @@ pub enum ResponseItem {
         call_id: String,
         output: FunctionCallOutputPayload,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         tool_name: Option<String>,
     },
     CustomToolCall {
         #[serde(default, skip_serializing)]
-        #[ts(skip)]
         id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         status: Option<String>,
 
         call_id: String,
@@ -189,14 +169,12 @@ pub enum ResponseItem {
         call_id: String,
         output: FunctionCallOutputPayload,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         tool_name: Option<String>,
     },
     ToolSearchOutput {
         call_id: Option<String>,
         status: String,
         execution: String,
-        #[ts(type = "unknown[]")]
         tools: Vec<serde_json::Value>,
     },
     // Emitted by the Responses API when the agent triggers a web search.
@@ -209,13 +187,10 @@ pub enum ResponseItem {
     // }
     WebSearchCall {
         #[serde(default, skip_serializing)]
-        #[ts(skip)]
         id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         status: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         action: Option<WebSearchAction>,
     },
     // Emitted by the Responses API when the agent triggers image generation.
@@ -231,7 +206,6 @@ pub enum ResponseItem {
         id: String,
         status: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         revised_prompt: Option<String>,
         result: String,
     },

@@ -11,7 +11,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
-use ts_rs::TS;
 
 use super::AgentMessageContentDeltaEvent;
 use super::AgentMessageEvent;
@@ -90,7 +89,7 @@ pub struct Event {
 }
 
 /// Response to GetHistoryEntryRequest.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct GetHistoryEntryResponseEvent {
     pub offset: usize,
     pub log_id: u64,
@@ -101,9 +100,8 @@ pub struct GetHistoryEntryResponseEvent {
 
 /// Response event from the agent
 /// NOTE: Make sure none of these values have optional types, as it will mess up the extension code-gen.
-#[derive(Debug, Clone, Deserialize, Serialize, Display, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, Display, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(tag = "type")]
 #[strum(serialize_all = "snake_case")]
 pub enum EventMsg {
     /// Error while executing a submission

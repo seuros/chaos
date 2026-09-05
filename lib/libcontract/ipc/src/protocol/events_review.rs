@@ -8,10 +8,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
-use ts_rs::TS;
 
 /// User's decision in response to an ExecApprovalRequest.
-#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, Display, JsonSchema, TS)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, Display, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewDecision {
     /// User has approved this command and the agent should execute it.
@@ -64,9 +63,8 @@ impl ReviewDecision {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(tag = "type")]
 pub enum FileChange {
     Add {
         content: String,
@@ -80,7 +78,7 @@ pub enum FileChange {
     },
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Chunk {
     /// 1-based line index of the first line in the original file
     pub orig_index: u32,
@@ -88,7 +86,7 @@ pub struct Chunk {
     pub inserted_lines: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PatchApplyBeginEvent {
     /// Identifier so this can be paired with the PatchApplyEnd event.
     pub call_id: String,
@@ -102,7 +100,7 @@ pub struct PatchApplyBeginEvent {
     pub changes: HashMap<PathBuf, FileChange>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PatchApplyEndEvent {
     /// Identifier for the PatchApplyBegin that finished.
     pub call_id: String,
@@ -123,7 +121,7 @@ pub struct PatchApplyEndEvent {
     pub status: PatchApplyStatus,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PatchApplyStatus {
     Completed,
@@ -131,7 +129,7 @@ pub enum PatchApplyStatus {
     Declined,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ExitedReviewModeEvent {
     pub review_output: Option<super::ReviewOutputEvent>,
 }

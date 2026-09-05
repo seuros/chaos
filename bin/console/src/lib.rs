@@ -485,7 +485,10 @@ async fn run_ratatui_app(
                     Ok(page) => match page.items.first() {
                         Some(item) => match item.process_id {
                             Some(process_id) => resume_picker::SessionSelection::Fork(
-                                resume_picker::SessionTarget { process_id, saved_provider: None },
+                                resume_picker::SessionTarget {
+                                    process_id,
+                                    saved_provider: None,
+                                },
                             ),
                             None => resume_picker::SessionSelection::StartFresh,
                         },
@@ -544,14 +547,15 @@ async fn run_ratatui_app(
                         (None, _) => true,
                     }
                 }) {
-                    Some(item) => {
-                        match item.process_id {
-                            Some(process_id) => resume_picker::SessionSelection::Resume(
-                                resume_picker::SessionTarget { process_id, saved_provider: None },
-                            ),
-                            None => resume_picker::SessionSelection::StartFresh,
+                    Some(item) => match item.process_id {
+                        Some(process_id) => {
+                            resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
+                                process_id,
+                                saved_provider: None,
+                            })
                         }
-                    }
+                        None => resume_picker::SessionSelection::StartFresh,
+                    },
                     None => resume_picker::SessionSelection::StartFresh,
                 },
                 Err(_) => resume_picker::SessionSelection::StartFresh,

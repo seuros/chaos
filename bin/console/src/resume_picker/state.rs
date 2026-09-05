@@ -216,10 +216,9 @@ impl PickerState {
                         .model_provider
                         .as_deref()
                         .is_some_and(|p| p != self.default_provider)
+                    && !self.keep_current_for.remove(&row.process_id)
                 {
-                    if !self.keep_current_for.remove(&row.process_id) {
-                        self.keep_current_for.insert(row.process_id);
-                    }
+                    self.keep_current_for.insert(row.process_id);
                 }
                 self.request_frame();
             }

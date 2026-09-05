@@ -172,7 +172,9 @@ impl App {
                         resume_config.model = Some(self.chat_widget.current_model().to_string());
                         resume_config.model_reasoning_effort =
                             self.chat_widget.config_ref().model_reasoning_effort;
-                        if let Err(err) = target_session.apply_saved_provider(&mut resume_config).await
+                        if let Err(err) = target_session
+                            .apply_saved_provider(&mut resume_config)
+                            .await
                         {
                             self.chat_widget.add_error_message(format!(
                                 "Failed to restore saved provider: {err}"

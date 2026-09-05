@@ -526,6 +526,22 @@ struct ResourceSubscriptionPayload {
     subscribed: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ResourceSubscriptionResponse {
+    Mcp(ResourceSubscriptionPayload),
+    Local {
+        server: String,
+        uri: String,
+        subscribed: bool,
+        subscription_supported: bool,
+        fallback: &'static str,
+        message: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        snapshot: Option<ReadResourceResult>,
+    },
+}
+
 impl ToolHandler for McpResourceHandler {
     type Output = FunctionToolOutput;
 
@@ -852,6 +868,7 @@ async fn handle_read_resource(
     let ResourceUriArgs { server, uri } = args;
     let server = normalize_required_string("server", server)?;
     let uri = normalize_required_string("uri", uri)?;
+    let server = resolve_resource_server(&session, server, &uri)?;
 
     let invocation = McpInvocation {
         server: server.clone(),
@@ -863,27 +880,7 @@ async fn handle_read_resource(
     let start = Instant::now();
 
     let payload_result: Result<ReadResourcePayload, FunctionCallError> = async {
-        let result = if let Some(op) = parse_task_uri(&uri) {
-            read_task_resource(&session, &server, &uri, op).await?
-        } else if server == INTERNAL_TASK_SERVER_NAME {
-            match read_static_resource(&session, turn.as_ref(), &uri).await? {
-                Some(result) => result,
-                None => read_inline_resource(&session, turn.as_ref(), &uri).await?,
-            }
-        } else {
-            session
-                .read_resource(
-                    &server,
-                    ReadResourceRequestParams {
-                        uri: uri.clone(),
-                        meta: None,
-                    },
-                )
-                .await
-                .map_err(|err| {
-                    FunctionCallError::RespondToModel(format!("resources/read failed: {err:#}"))
-                })?
-        };
+        let result = read_resource_contents(&session, turn.as_ref(), &server, &uri).await?;
 
         Ok(ReadResourcePayload {
             server,
@@ -904,6 +901,73 @@ async fn handle_read_resource(
     .await
 }
 
+fn resolve_resource_server(
+    session: &Session,
+    server: String,
+    uri: &str,
+) -> Result<String, FunctionCallError> {
+    let server_exists = session
+        .services
+        .mcp_registry
+        .configs_snapshot()
+        .contains_key(&server);
+    resolve_resource_server_name(server, uri, server_exists)
+}
+
+fn resolve_resource_server_name(
+    server: String,
+    uri: &str,
+    server_exists: bool,
+) -> Result<String, FunctionCallError> {
+    // Never steal a configured server's URI, even if that server is unavailable.
+    if server_exists || server == INTERNAL_TASK_SERVER_NAME {
+        return Ok(server);
+    }
+    let builtin = builtin_mcp_resources::resolve_resource_uri(uri)
+        .map_err(FunctionCallError::RespondToModel)?
+        .is_some();
+    let global = builtin
+        || inventory::iter::<CatalogResourceDriverRegistration>
+            .into_iter()
+            .any(|registration| (registration.driver)().matches(uri));
+    if global {
+        Ok(INTERNAL_TASK_SERVER_NAME.to_string())
+    } else {
+        // Unknown URIs and server-scoped task IDs retain normal server errors.
+        Ok(server)
+    }
+}
+
+// Keep fallback reads on the normal resource path, including visibility checks.
+async fn read_resource_contents(
+    session: &Arc<Session>,
+    turn: &TurnContext,
+    server: &str,
+    uri: &str,
+) -> Result<ReadResourceResult, FunctionCallError> {
+    if let Some(op) = parse_task_uri(uri) {
+        read_task_resource(session, server, uri, op).await
+    } else if server == INTERNAL_TASK_SERVER_NAME {
+        match read_static_resource(session, turn, uri).await? {
+            Some(result) => Ok(result),
+            None => read_inline_resource(session, turn, uri).await,
+        }
+    } else {
+        session
+            .read_resource(
+                server,
+                ReadResourceRequestParams {
+                    uri: uri.to_string(),
+                    meta: None,
+                },
+            )
+            .await
+            .map_err(|err| {
+                FunctionCallError::RespondToModel(format!("resources/read failed: {err:#}"))
+            })
+    }
+}
+
 async fn handle_resource_subscription(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
@@ -918,6 +982,7 @@ async fn handle_resource_subscription(
     } = args;
     let server = normalize_required_string("server", server)?;
     let uri = normalize_required_string("uri", uri)?;
+    let server = resolve_resource_server(&session, server, &uri)?;
 
     let invocation = McpInvocation {
         server: server.clone(),
@@ -928,11 +993,22 @@ async fn handle_resource_subscription(
     emit_tool_call_begin(&session, turn.as_ref(), &call_id, invocation.clone()).await;
     let start = Instant::now();
 
-    let payload_result: Result<ResourceSubscriptionPayload, FunctionCallError> = async {
+    let payload_result: Result<ResourceSubscriptionResponse, FunctionCallError> = async {
         if server == INTERNAL_TASK_SERVER_NAME {
-            return Err(FunctionCallError::RespondToModel(
-                "resource subscriptions are only available for configured MCP servers".to_string(),
-            ));
+            let snapshot = if subscribed {
+                Some(read_resource_contents(&session, turn.as_ref(), &server, &uri).await?)
+            } else {
+                None
+            };
+            return Ok(ResourceSubscriptionResponse::Local {
+                server,
+                uri,
+                subscribed: false,
+                subscription_supported: false,
+                fallback: if subscribed { "read_once" } else { "no_op" },
+                message: "Internal resources do not support update notifications. No subscription is active. Use read_mcp_resource to refresh when needed.",
+                snapshot,
+            });
         }
 
         let (method, result) = if subscribed {
@@ -950,11 +1026,13 @@ async fn handle_resource_subscription(
             FunctionCallError::RespondToModel(format!("{method} failed: {err:#}"))
         })?;
 
-        Ok(ResourceSubscriptionPayload {
-            server,
-            uri,
-            subscribed,
-        })
+        Ok(ResourceSubscriptionResponse::Mcp(
+            ResourceSubscriptionPayload {
+                server,
+                uri,
+                subscribed,
+            },
+        ))
     }
     .await;
 

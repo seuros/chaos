@@ -105,13 +105,138 @@ fn resource_subscription_payload_reports_current_state() {
     };
 
     assert_eq!(
-        serde_json::to_value(&unsubscribed).expect("serialize subscription payload"),
+        serde_json::to_value(ResourceSubscriptionResponse::Mcp(unsubscribed))
+            .expect("serialize subscription payload"),
         json!({
             "server": "srv",
             "uri": "memo://id",
             "subscribed": false
         })
     );
+}
+
+#[tokio::test]
+async fn internal_subscription_falls_back_to_snapshot_and_unsubscribe_is_noop() {
+    let (session, turn) = crate::chaos::make_session_and_context().await;
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    let uri = "chaos://sessions";
+    let expected = read_resource_contents(&session, &turn, INTERNAL_TASK_SERVER_NAME, uri)
+        .await
+        .expect("read internal resource");
+    for subscribed in [true, false] {
+        let output = handle_resource_subscription(
+            session.clone(),
+            turn.clone(),
+            "subscription-fallback".to_string(),
+            Some(json!({
+                "server": "chaos_local",
+                "uri": uri,
+                "subscribed": subscribed
+            })),
+        )
+        .await
+        .expect("internal subscription should degrade gracefully");
+        assert_eq!(output.success, Some(true));
+        let text = function_call_output_content_items_to_text(&output.body).expect("text output");
+        let value: Value = serde_json::from_str(&text).expect("JSON payload");
+        assert_eq!(value["server"], "chaos_local");
+        assert_eq!(value["uri"], uri);
+        assert_eq!(value["subscribed"], false);
+        assert_eq!(value["subscription_supported"], false);
+        assert!(
+            value["message"]
+                .as_str()
+                .unwrap()
+                .contains("No subscription is active")
+        );
+        if subscribed {
+            assert_eq!(value["fallback"], "read_once");
+            assert_eq!(value["snapshot"], serde_json::to_value(&expected).unwrap());
+        } else {
+            assert_eq!(value["fallback"], "no_op");
+            assert!(value.get("snapshot").is_none());
+        }
+    }
+}
+
+#[tokio::test]
+async fn subscription_fallback_does_not_hide_invalid_resources_or_external_server_errors() {
+    let (session, turn) = crate::chaos::make_session_and_context().await;
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    for (server, uri) in [
+        ("chaos_local", "chaos://not-a-resource"),
+        ("not-configured", "memo://unknown"),
+    ] {
+        let result = handle_resource_subscription(
+            session.clone(),
+            turn.clone(),
+            "subscription-error".to_string(),
+            Some(json!({"server": server, "uri": uri, "subscribed": true})),
+        )
+        .await;
+        assert!(result.is_err(), "must not mask errors for {server}/{uri}");
+    }
+}
+
+#[test]
+fn global_resource_routing_preserves_configured_servers_and_scoped_uris() {
+    for server in ["chaos", "local", "guessed-server"] {
+        assert_eq!(
+            resolve_resource_server_name(server.into(), "chaos://sessions", false).unwrap(),
+            INTERNAL_TASK_SERVER_NAME
+        );
+        assert_eq!(
+            resolve_resource_server_name(server.into(), "chaos://sessions", true).unwrap(),
+            server
+        );
+        for uri in ["memo://unknown", "chaos://unknown", "tasks://get/123"] {
+            assert_eq!(
+                resolve_resource_server_name(server.into(), uri, false).unwrap(),
+                server
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn guessed_servers_read_global_resources_directly() {
+    let (session, turn) = crate::chaos::make_session_and_context().await;
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    for server in ["chaos_local", "chaos", "local", "guessed-server"] {
+        let output = handle_read_resource(
+            session.clone(),
+            turn.clone(),
+            "global-read".into(),
+            Some(json!({"server": server, "uri": "chaos://sessions"})),
+        )
+        .await
+        .expect("global URI should resolve despite guessed server");
+        let text = function_call_output_content_items_to_text(&output.body).unwrap();
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(output.success, Some(true));
+        assert_eq!(value["server"], INTERNAL_TASK_SERVER_NAME);
+        assert_eq!(value["uri"], "chaos://sessions");
+        assert!(value["contents"].is_array());
+        assert!(
+            value.get("snapshot").is_none(),
+            "reads must return contents directly"
+        );
+    }
+    let output = handle_resource_subscription(
+        session,
+        turn,
+        "global-subscribe".into(),
+        Some(json!({"server": "local", "uri": "chaos://sessions", "subscribed": true})),
+    )
+    .await
+    .expect("subscriptions should use the same global resolution");
+    let text = function_call_output_content_items_to_text(&output.body).unwrap();
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["server"], INTERNAL_TASK_SERVER_NAME);
+    assert_eq!(value["fallback"], "read_once");
 }
 
 #[test]

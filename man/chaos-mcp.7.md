@@ -195,6 +195,25 @@ state is available when the resource is read from an active ChaOS session; the
 standalone `chaos mcp serve` endpoint reports it as unavailable because it has no
 single session to inspect.
 
+### Resource tool rules
+
+- Read internal resources with `read_mcp_resource({"server":"chaos_local","uri":"chaos://sessions"})`
+  (replace the URI as needed). Do not subscribe to `chaos_local`.
+- Server resolution checks configured servers first. If the named server does
+  not exist and the URI is a recognized global resource, the call resolves to
+  `chaos_local` automatically. Consume the returned contents directly; use the
+  returned server name for subsequent calls. This is not limited to known aliases.
+- If a subscription call returns `fallback: "read_once"`, consume `snapshot`
+  as a successful read. Do not retry the subscription or report it as a failure.
+- `subscribed: false` means no updates will arrive. Do not claim to be watching
+  the resource. Call `read_mcp_resource` again only when fresh data is needed.
+- `fallback: "no_op"` acknowledges unsubscribe; no further action is needed.
+- For configured MCP servers, subscribe only when subscription support is
+  advertised. Existing servers' errors are not redirected to `chaos_local`.
+  Unknown URIs and server-scoped `tasks://` URIs do not receive global fallback.
+- If a read fails, use the error to correct the server, URI, or access issue;
+  do not assume the fallback bypasses resource access checks.
+
 ### Events and approvals
 
 While a conversation runs, the server emits `chaos/event` notifications for

@@ -187,7 +187,7 @@ pub(super) fn selected_details(state: &PickerState) -> [Line<'static>; 2] {
                 "Opening this switches back to {provider}. Press Tab to keep the current model."
             )
         };
-        Line::from(message.yellow())
+        Line::from(message.cyan())
     } else {
         Line::from("Total tokens is historical usage, not current context size.".dim())
     };

@@ -23,7 +23,6 @@ use crossterm::style::SetColors;
 use crossterm::style::SetForegroundColor;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
-use ratatui::layout::Size;
 use ratatui::prelude::Backend;
 use ratatui::prelude::IntoCrossterm;
 use ratatui::style::Color;
@@ -31,8 +30,11 @@ use ratatui::style::Modifier;
 use ratatui::text::Line;
 use ratatui::text::Span;
 
+#[cfg(all(test, feature = "vt100-tests"))]
+mod scrollback_tests;
+
 /// Insert `lines` above the viewport using the terminal's backend writer
-/// (avoids direct stdout references).
+/// (avoids direct stdout references). The caller must redraw the viewport.
 pub fn insert_history_lines<B>(
     terminal: &mut crate::custom_terminal::Terminal<B>,
     lines: Vec<Line>,
@@ -43,8 +45,9 @@ where
     insert_history_lines_inner(terminal, lines, 0)
 }
 
-/// Like [`insert_history_lines`] but reserves `top_reserved_rows` at the top
-/// of the screen (e.g. for a sticky top bar) that will not be scrolled.
+/// Like [`insert_history_lines`] but leaves room for `top_reserved_rows` of
+/// chrome. The caller must repaint these rows after insertion, in the same
+/// synchronized update, so chrome never enters terminal-native scrollback.
 pub fn insert_history_lines_with_reserved<B>(
     terminal: &mut crate::custom_terminal::Terminal<B>,
     lines: Vec<Line>,
@@ -64,12 +67,15 @@ fn insert_history_lines_inner<B>(
 where
     B: Backend<Error = io::Error> + Write,
 {
-    let screen_size = terminal.backend().size().unwrap_or(Size::new(0, 0));
-
+    if lines.is_empty() {
+        return Ok(());
+    }
+    let screen_size = terminal.size()?;
+    if screen_size.width == 0 || screen_size.height == 0 {
+        return Ok(());
+    }
     let mut area = terminal.viewport_area;
-    let mut should_update_area = false;
-    let last_cursor_pos = terminal.last_known_cursor_pos;
-    let writer = terminal.backend_mut();
+    let reserved = top_reserved_rows.min(area.top());
 
     // Pre-wrap lines for terminal scrollback. Three paths:
     //
@@ -99,115 +105,133 @@ where
             .sum::<usize>();
         wrapped.extend(line_wrapped);
     }
-    let wrapped_lines = wrapped_rows as u16;
-    let cursor_top = if area.bottom() < screen_size.height {
-        // If the viewport is not at the bottom of the screen, scroll it down to make room.
-        // Don't scroll it past the bottom of the screen.
-        let scroll_amount = wrapped_lines.min(screen_size.height - area.bottom());
-
-        // Emit ANSI to scroll the lower region (from the top of the viewport to the bottom
-        // of the screen) downward by `scroll_amount` lines. We do this by:
-        //   1) Limiting the scroll region to [area.top()+1 .. screen_height] (1-based bounds)
-        //   2) Placing the cursor at the top margin of that region
-        //   3) Emitting Reverse Index (RI, ESC M) `scroll_amount` times
-        //   4) Resetting the scroll region back to full screen
-        let top_1based = area.top() + 1; // Convert 0-based row to 1-based for DECSTBM
-        queue!(writer, SetScrollRegion(top_1based..screen_size.height))?;
-        queue!(writer, MoveTo(0, area.top()))?;
-        for _ in 0..scroll_amount {
-            // Reverse Index (RI): ESC M
-            queue!(writer, Print("\x1bM"))?;
-        }
-        queue!(writer, ResetScrollRegion)?;
-
-        let cursor_top = area.top().saturating_sub(1);
-        area.y += scroll_amount;
-        should_update_area = true;
-        cursor_top
-    } else {
-        area.top().saturating_sub(1)
-    };
-
-    // Limit the scroll region to the lines from the top of the screen to the
-    // top of the viewport. With this in place, when we add lines inside this
-    // area, only the lines in this area will be scrolled. We place the cursor
-    // at the end of the scroll region, and add lines starting there.
-    //
-    // ┌─Screen───────────────────────┐
-    // │ [Top bar – reserved]        │  ← top_reserved_rows (pinned)
-    // │┌╌Scroll region╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐│
-    // │┆                            ┆│
-    // │┆                            ┆│
-    // │┆                            ┆│
-    // │█╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘│
-    // │╭─Viewport───────────────────╮│
-    // ││                            ││
-    // │╰────────────────────────────╯│
-    // └──────────────────────────────┘
-    // Start scroll region below any reserved top rows (1-based).
-    let scroll_region_start = top_reserved_rows + 1; // 1-based
-    queue!(writer, SetScrollRegion(scroll_region_start..area.top()))?;
-
-    // NB: we are using MoveTo instead of set_cursor_position here to avoid messing with the
-    // terminal's last_known_cursor_position, which hopefully will still be accurate after we
-    // fetch/restore the cursor position. insert_history_lines should be cursor-position-neutral :)
-    queue!(writer, MoveTo(0, cursor_top))?;
-
-    for line in wrapped {
-        queue!(writer, Print("\r\n"))?;
-        // URL lines can be wider than the terminal and will
-        // character-wrap onto continuation rows. Pre-clear those rows
-        // so stale content from a previously longer line is erased.
-        let physical_rows = line.width().max(1).div_ceil(wrap_width);
-        if physical_rows > 1 {
-            queue!(writer, SavePosition)?;
-            for _ in 1..physical_rows {
-                queue!(writer, MoveDown(1), MoveToColumn(0))?;
-                queue!(writer, Clear(ClearType::UntilNewLine))?;
+    let wrapped_lines = u16::try_from(wrapped_rows).unwrap_or(u16::MAX);
+    with_unpinned_scrollback(terminal, reserved, |writer| {
+        queue!(writer, MoveTo(0, area.top() - reserved))?;
+        for (index, line) in wrapped.iter().enumerate() {
+            if index > 0 {
+                queue!(writer, Print("\r\n"))?;
             }
-            queue!(writer, RestorePosition)?;
+            write_history_line(writer, line, wrap_width)?;
         }
-        queue!(
-            writer,
-            SetColors(Colors::new(
-                line.style
-                    .fg
-                    .map(IntoCrossterm::into_crossterm)
-                    .unwrap_or(CColor::Reset),
-                line.style
-                    .bg
-                    .map(IntoCrossterm::into_crossterm)
-                    .unwrap_or(CColor::Reset)
-            ))
-        )?;
-        queue!(writer, Clear(ClearType::UntilNewLine))?;
-        // Merge line-level style into each span so that ANSI colors reflect
-        // line styles (e.g., blockquotes with green fg).
-        let merged_spans: Vec<Span> = line
-            .spans
-            .iter()
-            .map(|s| Span {
-                style: s.style.patch(line.style),
-                content: s.content.clone(),
-            })
-            .collect();
-        write_spans(writer, merged_spans.iter())?;
-    }
 
-    queue!(writer, ResetScrollRegion)?;
+        // Make room for the composer and the header before repinning it. Only
+        // full-screen line feeds reliably retain history across terminals.
+        for _ in 0..area.height.saturating_add(reserved) {
+            queue!(writer, Print("\r\n"), Clear(ClearType::UntilNewLine))?;
+        }
+        Ok(())
+    })?;
 
-    // Restore the cursor position to where it was before we started.
-    queue!(writer, MoveTo(last_cursor_pos.x, last_cursor_pos.y))?;
-
-    let _ = writer;
-    if should_update_area {
+    area.y = area
+        .top()
+        .saturating_add(wrapped_lines)
+        .min(screen_size.height.saturating_sub(area.height));
+    if area != terminal.viewport_area {
         terminal.set_viewport_area(area);
     }
-    if wrapped_lines > 0 {
-        terminal.note_history_rows_inserted(wrapped_lines);
-    }
-
+    terminal.note_history_rows_inserted(wrapped_lines);
     Ok(())
+}
+
+/// Make room for a growing viewport without discarding the oldest history.
+/// The caller must reposition/redraw the viewport and repaint reserved chrome.
+pub(crate) fn scroll_history_up<B>(
+    terminal: &mut crate::custom_terminal::Terminal<B>,
+    scroll_by: u16,
+    top_reserved_rows: u16,
+) -> io::Result<()>
+where
+    B: Backend<Error = io::Error> + Write,
+{
+    let screen_size = terminal.size()?;
+    if scroll_by == 0 || screen_size.width == 0 || screen_size.height == 0 {
+        return Ok(());
+    }
+    let reserved = top_reserved_rows.min(terminal.viewport_area.top());
+    with_unpinned_scrollback(terminal, reserved, |writer| {
+        queue!(writer, MoveTo(0, screen_size.height - 1))?;
+        for _ in 0..scroll_by {
+            queue!(writer, Print("\r\n"))?;
+        }
+        Ok(())
+    })
+}
+
+/// Remove chrome, operate on the full screen, then restore space for chrome.
+/// A nonzero DECSTBM top margin discards history instead of saving scrollback;
+/// even a zero top margin with a partial bottom margin is unreliable (WezTerm).
+fn with_unpinned_scrollback<B>(
+    terminal: &mut crate::custom_terminal::Terminal<B>,
+    reserved: u16,
+    write_history: impl FnOnce(&mut B) -> io::Result<()>,
+) -> io::Result<()>
+where
+    B: Backend<Error = io::Error> + Write,
+{
+    let cursor = terminal.last_known_cursor_pos;
+    queue!(
+        terminal.backend_mut(),
+        ResetScrollRegion,
+        SetAttribute(crossterm::style::Attribute::Reset),
+        SetColors(Colors::new(CColor::Reset, CColor::Reset))
+    )?;
+    // Clear the composer before any scrolling can push it into history, and
+    // invalidate its diff baseline even if its geometry will stay unchanged.
+    terminal.clear()?;
+    let writer = terminal.backend_mut();
+    if reserved > 0 {
+        queue!(writer, MoveTo(0, 0))?;
+        write!(writer, "\x1b[{reserved}M")?; // DL: remove the header, not history.
+    }
+    write_history(writer)?;
+    if reserved > 0 {
+        queue!(writer, MoveTo(0, 0))?;
+        write!(writer, "\x1b[{reserved}L")?; // IL: restore blank header rows.
+    }
+    queue!(writer, MoveTo(cursor.x, cursor.y))?;
+    Ok(())
+}
+
+fn write_history_line(
+    writer: &mut impl Write,
+    line: &Line<'_>,
+    wrap_width: usize,
+) -> io::Result<()> {
+    // URL lines can be wider than the terminal and character-wrap onto
+    // continuation rows. Clear them so stale text is not left behind.
+    let physical_rows = line.width().max(1).div_ceil(wrap_width);
+    if physical_rows > 1 {
+        queue!(writer, SavePosition)?;
+        for _ in 1..physical_rows {
+            queue!(writer, MoveDown(1), MoveToColumn(0))?;
+            queue!(writer, Clear(ClearType::UntilNewLine))?;
+        }
+        queue!(writer, RestorePosition)?;
+    }
+    queue!(
+        writer,
+        SetColors(Colors::new(
+            line.style
+                .fg
+                .map(IntoCrossterm::into_crossterm)
+                .unwrap_or(CColor::Reset),
+            line.style
+                .bg
+                .map(IntoCrossterm::into_crossterm)
+                .unwrap_or(CColor::Reset)
+        )),
+        Clear(ClearType::UntilNewLine)
+    )?;
+    let merged_spans: Vec<Span> = line
+        .spans
+        .iter()
+        .map(|s| Span {
+            style: s.style.patch(line.style),
+            content: s.content.clone(),
+        })
+        .collect();
+    write_spans(writer, merged_spans.iter())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

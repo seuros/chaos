@@ -109,12 +109,33 @@ pub(crate) trait PagerOverlay {
     fn render_hints(&self, area: Rect, buf: &mut Buffer);
 
     fn render(&mut self, area: Rect, buf: &mut Buffer) {
-        let top_h = area.height.saturating_sub(3);
+        let top_h = area.height.saturating_sub(PAGER_HINT_ROWS);
         let top = Rect::new(area.x, area.y, area.width, top_h);
-        let bottom = Rect::new(area.x, area.y + top_h, area.width, 3);
+        let bottom = Rect::new(area.x, area.y + top_h, area.width, PAGER_HINT_ROWS);
         self.view().render(top, buf);
         self.render_hints(bottom, buf);
     }
+}
+
+const PAGER_HINT_ROWS: u16 = 3;
+
+/// The pager's area before (or after) its first draw. An inline overlay may
+/// still have the small composer viewport when its opening wheel event arrives.
+fn pager_area(tui: &tui::Tui) -> Rect {
+    let size = tui.terminal.last_known_screen_size;
+    let reserved = if tui.is_alt_screen_active() {
+        0
+    } else {
+        tui.top_reserved_rows().min(size.height)
+    };
+    Rect::new(
+        0,
+        reserved,
+        size.width,
+        size.height
+            .saturating_sub(reserved)
+            .saturating_sub(PAGER_HINT_ROWS),
+    )
 }
 
 pub(crate) const KEY_UP: KeyBinding = key_hint::plain(KeyCode::Up);

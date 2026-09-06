@@ -12,7 +12,8 @@ use crate::tui;
 
 use super::{
     KEY_CTRL_B, KEY_CTRL_D, KEY_CTRL_F, KEY_CTRL_U, KEY_DOWN, KEY_END, KEY_HOME, KEY_J, KEY_K,
-    KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_SHIFT_SPACE, KEY_SPACE, KEY_UP, render_offset_content,
+    KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_SHIFT_SPACE, KEY_SPACE, KEY_UP, pager_area,
+    render_offset_content,
 };
 
 /// Generic widget for rendering a pager view.
@@ -160,7 +161,8 @@ impl PagerView {
         tui: &mut tui::Tui,
         key_event: KeyEvent,
     ) -> Result<()> {
-        let content_area = self.content_area(tui.terminal.viewport_area);
+        let area = pager_area(tui);
+        let content_area = self.content_area(area);
         let current_offset = self.resolved_scroll_offset_for_area(content_area);
         match key_event {
             e if KEY_UP.is_press(e) || KEY_K.is_press(e) => {
@@ -173,11 +175,11 @@ impl PagerView {
                 || KEY_SHIFT_SPACE.is_press(e)
                 || KEY_CTRL_B.is_press(e) =>
             {
-                let page_height = self.page_height(tui.terminal.viewport_area);
+                let page_height = self.page_height(area);
                 self.scroll_offset = current_offset.saturating_sub(page_height);
             }
             e if KEY_PAGE_DOWN.is_press(e) || KEY_SPACE.is_press(e) || KEY_CTRL_F.is_press(e) => {
-                let page_height = self.page_height(tui.terminal.viewport_area);
+                let page_height = self.page_height(area);
                 self.scroll_offset = current_offset.saturating_add(page_height);
             }
             e if KEY_CTRL_D.is_press(e) => {
@@ -208,7 +210,7 @@ impl PagerView {
         tui: &mut tui::Tui,
         mouse_event: MouseEvent,
     ) -> Result<()> {
-        if !self.apply_mouse_scroll(mouse_event.kind, tui.terminal.viewport_area) {
+        if !self.apply_mouse_scroll(mouse_event.kind, pager_area(tui)) {
             return Ok(());
         }
         tui.frame_requester()

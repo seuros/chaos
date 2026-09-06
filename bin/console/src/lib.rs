@@ -32,7 +32,6 @@ use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_kern::path_utils;
 use chaos_kern::runtime_db::get_runtime_db;
 use chaos_kern::terminal::Multiplexer;
-use chaos_kern::terminal::TerminalName;
 use chaos_proc::RuntimeDbHandle;
 use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
@@ -654,13 +653,6 @@ async fn run_ratatui_app(
 
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
-    if terminal_needs_unbounded_main_scrollback(chaos_kern::terminal::terminal_info().name) {
-        // The main transcript renders in the normal terminal buffer even when
-        // overlays are allowed to use alt-screen. WezTerm does not add
-        // bounded-scroll-region output (DECSTBM) to native scrollback, so keep
-        // the main transcript unbounded there.
-        tui.set_top_reserved_rows(0);
-    }
     let managers = boot_core(&config);
 
     let app_result = App::run(
@@ -780,10 +772,6 @@ fn restore() {
     }
 }
 
-fn terminal_needs_unbounded_main_scrollback(terminal: TerminalName) -> bool {
-    matches!(terminal, TerminalName::WezTerm)
-}
-
 /// Determine whether to use the terminal's alternate screen buffer.
 ///
 /// The alternate screen buffer provides a cleaner fullscreen experience without polluting
@@ -899,8 +887,6 @@ mod tests {
         super::pager_overlay::tests::pager_overlay_suite();
         super::resume_picker::tests::resume_picker_suite().await;
 
-        wezterm_main_scrollback_stays_unbounded_even_when_alt_screen_is_available();
-        non_wezterm_main_scrollback_keeps_reserved_top_row();
         boot_core_returns_valid_managers()
             .await
             .expect("boot_core_returns_valid_managers");
@@ -913,18 +899,6 @@ mod tests {
         theme_warning_uses_final_config()
             .await
             .expect("theme_warning_uses_final_config");
-    }
-
-    fn wezterm_main_scrollback_stays_unbounded_even_when_alt_screen_is_available() {
-        assert!(terminal_needs_unbounded_main_scrollback(
-            TerminalName::WezTerm
-        ));
-    }
-
-    fn non_wezterm_main_scrollback_keeps_reserved_top_row() {
-        assert!(!terminal_needs_unbounded_main_scrollback(
-            TerminalName::Unknown
-        ));
     }
 
     async fn boot_core_returns_valid_managers() -> std::io::Result<()> {

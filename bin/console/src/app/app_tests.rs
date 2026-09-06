@@ -44,6 +44,10 @@ use std::sync::atomic::AtomicBool;
 use tempfile::tempdir;
 use tokio::time;
 
+#[cfg(feature = "vt100-tests")]
+#[path = "app_tests/mouse_scroll.rs"]
+mod mouse_scroll;
+
 pub(crate) async fn app_tests_suite() {
     super::agent_navigation::tests::agent_navigation_state_preserves_order_wraps_and_formats_labels(
     );

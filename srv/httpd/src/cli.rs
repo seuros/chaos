@@ -11,16 +11,16 @@ pub struct ServeCli {
     #[usage(long = "port", default = "4000")]
     pub port: u16,
 
-    /// Bearer token for `/api/trigger`. Falls back to `CHAOS_BEARER_TOKEN` env
+    /// Bearer token for triggers and live monitoring. Falls back to `CHAOS_BEARER_TOKEN` env
     /// var. Empty tokens are rejected.
     #[usage(long = "bearer-token", env = "CHAOS_BEARER_TOKEN")]
     pub bearer_token: Option<String>,
 
-    /// Per-trigger wall-clock timeout in seconds.
+    /// Per-trigger wall-clock timeout in seconds, including body reading.
     #[usage(long = "timeout", default = "600")]
     pub timeout: u64,
 
-    /// Maximum concurrent Chaos processes started by HTTP requests.
+    /// Maximum concurrent triggers, including bodies being read and process cleanup.
     #[usage(long = "max-concurrent", default = "4")]
     pub max_concurrent: usize,
 

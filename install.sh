@@ -58,9 +58,16 @@ main() {
 
     say "downloading $url"
     curl -fSL --progress-bar -o "$tmpdir/$archive" "$url"
+    curl -fsSL -o "$tmpdir/$archive.sha256" "$url.sha256"
+    verify_checksum "$tmpdir/$archive" "$tmpdir/$archive.sha256"
 
     tar xzf "$tmpdir/$archive" -C "$tmpdir"
 
+    # Check the complete bundle before replacing any installed binary.
+    for name in chaos alcatraz chaos_journald chaos-forkve-wrapper; do
+        [ -f "$tmpdir/$name" ] && [ ! -L "$tmpdir/$name" ] \
+            || err "release archive is missing a regular file: $name"
+    done
     mkdir -p "$INSTALL_DIR"
     install_bin "$tmpdir/chaos" "chaos"
     install_bin "$tmpdir/alcatraz" "alcatraz"
@@ -74,6 +81,30 @@ main() {
         say "WARNING: $INSTALL_DIR is not in your PATH"
         say "add it with:  export PATH=\"$INSTALL_DIR:\$PATH\""
     fi
+}
+
+verify_checksum() {
+    # Release assets use sha256sum's "<digest>  <filename>" format. Hash the
+    # downloaded path ourselves rather than trusting paths in the manifest.
+    expected="$(awk 'NR == 1 { print $1 }' "$2")"
+    [ "$(wc -l < "$2" | tr -d ' ')" = 1 ] \
+        || err "invalid SHA-256 manifest"
+    [ "${#expected}" = 64 ] || err "invalid SHA-256 digest"
+    case "$expected" in *[!0-9a-fA-F]*) err "invalid SHA-256 digest" ;; esac
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$1")"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$1")"
+    elif command -v sha256 >/dev/null 2>&1; then
+        actual="$(sha256 -q "$1")"
+    else
+        err "required command not found: sha256sum, shasum, or sha256"
+    fi
+    actual="${actual%% *}"
+    [ "$actual" = "$(printf '%s' "$expected" | tr 'A-F' 'a-f')" ] \
+        || err "release archive SHA-256 mismatch; nothing installed"
+    say "verified SHA-256"
 }
 
 install_bin() {

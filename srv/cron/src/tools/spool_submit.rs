@@ -376,6 +376,7 @@ mod tests {
         let owner = OwnerContext {
             project_path: Some("/tmp/project".into()),
             session_id: Some("session-1".into()),
+            ..Default::default()
         };
 
         let summary = execute_structured_on(&provider, &params, &owner)
@@ -450,6 +451,7 @@ mod tests {
         let owner = OwnerContext {
             project_path: Some("/tmp".into()),
             session_id: Some("s".into()),
+            ..Default::default()
         };
 
         let err = execute_structured_on(&provider, &params, &owner)
@@ -495,6 +497,7 @@ mod tests {
         let owner = OwnerContext {
             project_path: Some("/tmp/project".into()),
             session_id: Some("session-1".into()),
+            ..Default::default()
         };
 
         let first = SpoolSubmitParams {

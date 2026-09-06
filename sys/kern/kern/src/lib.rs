@@ -78,6 +78,7 @@ pub mod path_utils;
 pub mod personality_migration;
 mod sandbox_tags;
 pub mod sandboxing;
+mod scheduled_exec;
 mod session_prefix;
 mod stream_events_utils;
 pub mod test_support;

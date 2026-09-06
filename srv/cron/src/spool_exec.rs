@@ -223,6 +223,7 @@ mod tests {
             updated_at: 0,
             kind: JobKind::SPOOL_TAG.into(),
             manifest_id: Some(manifest_id.into()),
+            execution_policy: None,
         }
     }
 

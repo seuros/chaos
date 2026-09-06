@@ -191,6 +191,8 @@ pub fn mcp_call_tool_result_output_schema(structured_content_schema: JsonValue) 
 /// - Normalizes union types (`["string", "null"]`) to a single type.
 /// - Expands local `$ref` pointers and unwraps nullable `anyOf`/`oneOf`
 ///   wrappers into the underlying non-null schema when possible.
+/// - Projects unions of objects onto their combined properties and common
+///   required fields. Handlers remain responsible for variant validation.
 /// - Fills required child fields (e.g. array items, object properties) with
 ///   permissive defaults when absent.
 pub fn sanitize_json_schema(value: &mut JsonValue) {
@@ -265,10 +267,13 @@ fn resolve_local_ref_object(
 
 fn collapse_single_schema_combiners(map: &serde_json::Map<String, JsonValue>) -> Option<JsonValue> {
     for combiner in ["anyOf", "oneOf"] {
-        if let Some(options) = map.get(combiner).and_then(JsonValue::as_array)
-            && let Some(branch) = select_single_non_null_branch(options)
-        {
-            return Some(merge_schema_branch(map, combiner, branch.clone()));
+        if let Some(options) = map.get(combiner).and_then(JsonValue::as_array) {
+            let branch = select_single_non_null_branch(options)
+                .cloned()
+                .or_else(|| merge_object_schema_branches(options));
+            if let Some(branch) = branch {
+                return Some(merge_schema_branch(map, combiner, branch));
+            }
         }
     }
 
@@ -279,6 +284,61 @@ fn collapse_single_schema_combiners(map: &serde_json::Map<String, JsonValue>) ->
     }
 
     None
+}
+
+/// The limited wire model cannot express tagged unions. Keep their object
+/// shape rather than advertising a JSON string that the handler cannot accept.
+fn merge_object_schema_branches(options: &[JsonValue]) -> Option<JsonValue> {
+    let branches: Vec<_> = options
+        .iter()
+        .filter(|branch| !is_null_schema(branch))
+        .collect();
+    if branches.is_empty()
+        || branches.iter().any(|branch| {
+            branch.get("type").and_then(JsonValue::as_str) != Some("object")
+                || !branch.get("properties").is_some_and(JsonValue::is_object)
+        })
+    {
+        return None;
+    }
+    let mut properties = serde_json::Map::new();
+    let mut required = branches[0]
+        .get("required")
+        .and_then(JsonValue::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for branch in branches {
+        required.retain(|name| {
+            branch
+                .get("required")
+                .and_then(JsonValue::as_array)
+                .is_some_and(|names| names.contains(name))
+        });
+        for (name, schema) in branch.get("properties")?.as_object()? {
+            if let Some(existing) = properties.get_mut(name) {
+                if existing != schema {
+                    // Constraints such as a discriminator's const differ by
+                    // variant. Keep the common type, not the first const.
+                    let common_type = existing
+                        .get("type")
+                        .filter(|ty| Some(*ty) == schema.get("type"))
+                        .cloned();
+                    let mut union = json!({"anyOf": [existing.clone(), schema.clone()]});
+                    if let Some(ty) = common_type {
+                        union["type"] = ty;
+                    }
+                    *existing = union;
+                }
+            } else {
+                properties.insert(name.clone(), schema.clone());
+            }
+        }
+    }
+    Some(json!({
+        "type": "object",
+        "properties": properties,
+        "required": required
+    }))
 }
 
 fn select_single_non_null_branch(options: &[JsonValue]) -> Option<&JsonValue> {

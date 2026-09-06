@@ -41,6 +41,27 @@ impl ToolHandler for CatalogModuleHandler {
         let arguments = extract_function_arguments(payload, &tool_name)?;
         let args_value = parse_json_arguments(&arguments)?;
 
+        // Persistent shell execution needs trusted policy that the generic
+        // catalog request (and model-supplied JSON) cannot provide.
+        if tool_name == "cron_create" {
+            let params: chaos_cron::tools::create::CronCreateParams =
+                serde_json::from_value(args_value).map_err(|err| {
+                    FunctionCallError::RespondToModel(format!("invalid arguments: {err}"))
+                })?;
+            let policy = crate::scheduled_exec::authorize(&session, &turn, &params.command)
+                .await
+                .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
+            let owner = chaos_cron::OwnerContext {
+                project_path: Some(turn.cwd.to_string_lossy().to_string()),
+                session_id: Some(session.conversation_id.to_string()),
+                execution_policy: Some(policy),
+            };
+            let output = chaos_cron::tools::create::execute(&params, &owner)
+                .await
+                .map_err(FunctionCallError::RespondToModel)?;
+            return Ok(FunctionToolOutput::from_text(output, Some(true)));
+        }
+
         let config = session.get_config().await;
         let project_root = crate::config_loader::project_mcp_json_path_for_stack(
             &config.config_layer_stack,

@@ -8,24 +8,26 @@ use ratatui::widgets::{Paragraph, Widget};
 const WIDTH: u16 = 24;
 const HEIGHT: u16 = 8;
 
-fn draw_chrome(terminal: &mut Terminal<VT100Backend>, reserved: u16) {
+fn draw_chrome(terminal: &mut Terminal<VT100Backend>, reserved: u16) -> io::Result<()> {
     for row in 0..reserved {
         let area = Rect::new(0, row, WIDTH, 1);
         let mut buffer = Buffer::empty(area);
         Line::from(format!("header {row}")).render(area, &mut buffer);
-        terminal.draw_pinned_row(&buffer).unwrap();
+        terminal.draw_pinned_row(&buffer)?;
     }
-    terminal
-        .draw(|frame| {
-            let lines: Vec<Line> = (0..frame.area().height)
-                .map(|row| Line::from(format!("draft {row}")))
-                .collect();
-            frame.render_widget(Paragraph::new(lines), frame.area());
-        })
-        .unwrap();
+    terminal.draw(|frame| {
+        let lines: Vec<Line> = (0..frame.area().height)
+            .map(|row| Line::from(format!("draft {row}")))
+            .collect();
+        frame.render_widget(Paragraph::new(lines), frame.area());
+    })
 }
 
-fn assert_thread(terminal: &Terminal<VT100Backend>, reserved: u16, expected: &[String]) {
+fn assert_thread(
+    terminal: &Terminal<VT100Backend>,
+    reserved: u16,
+    expected: &[String],
+) -> io::Result<()> {
     let mut screen = terminal.backend().vt100().screen().clone();
     screen.set_scrollback(usize::MAX);
     let scrollback_len = screen.scrollback();
@@ -38,7 +40,12 @@ fn assert_thread(terminal: &Terminal<VT100Backend>, reserved: u16, expected: &[S
     let mut history = Vec::new();
     for offset in (1..=scrollback_len).rev() {
         screen.set_scrollback(offset);
-        history.push(screen.rows(0, WIDTH).next().unwrap());
+        history.push(
+            screen
+                .rows(0, WIDTH)
+                .next()
+                .ok_or_else(|| io::Error::other("scrollback screen has no first row"))?,
+        );
     }
     screen.set_scrollback(0);
     let rows: Vec<String> = screen.rows(0, WIDTH).collect();
@@ -57,17 +64,18 @@ fn assert_thread(terminal: &Terminal<VT100Backend>, reserved: u16, expected: &[S
             format!("draft {row}")
         );
     }
+    Ok(())
 }
 
 #[test]
-fn native_scrollback_retains_thread_and_excludes_chrome() {
+fn native_scrollback_retains_thread_and_excludes_chrome() -> io::Result<()> {
     for reserved in [0, 1, 2] {
         for viewport_height in [1, 3, HEIGHT - reserved] {
             for batch_size in [1, 4, 30] {
                 let backend = VT100Backend::with_scrollback(WIDTH, HEIGHT, 100);
                 let mut terminal = Terminal::with_options(backend).unwrap();
                 terminal.set_viewport_area(Rect::new(0, reserved, WIDTH, viewport_height));
-                draw_chrome(&mut terminal, reserved);
+                draw_chrome(&mut terminal, reserved)?;
 
                 let expected: Vec<String> = (0..30).map(|row| format!("message {row}")).collect();
                 let mut inserted = 0;
@@ -79,21 +87,22 @@ fn native_scrollback_retains_thread_and_excludes_chrome() {
                     )
                     .unwrap();
                     inserted += batch.len();
-                    draw_chrome(&mut terminal, reserved);
-                    assert_thread(&terminal, reserved, &expected[..inserted]);
+                    draw_chrome(&mut terminal, reserved)?;
+                    assert_thread(&terminal, reserved, &expected[..inserted])?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 #[test]
-fn native_scrollback_survives_composer_growth() {
+fn native_scrollback_survives_composer_growth() -> io::Result<()> {
     for reserved in [0, 1, 2] {
         let backend = VT100Backend::with_scrollback(WIDTH, HEIGHT, 100);
         let mut terminal = Terminal::with_options(backend).unwrap();
         terminal.set_viewport_area(Rect::new(0, reserved, WIDTH, 1));
-        draw_chrome(&mut terminal, reserved);
+        draw_chrome(&mut terminal, reserved)?;
         let mut expected: Vec<String> = (0..14).map(|row| format!("message {row}")).collect();
         insert_history_lines_with_reserved(
             &mut terminal,
@@ -101,7 +110,7 @@ fn native_scrollback_survives_composer_growth() {
             reserved,
         )
         .unwrap();
-        draw_chrome(&mut terminal, reserved);
+        draw_chrome(&mut terminal, reserved)?;
 
         for new_height in 2..=HEIGHT - reserved {
             let mut area = terminal.viewport_area;
@@ -109,8 +118,8 @@ fn native_scrollback_survives_composer_growth() {
             scroll_history_up(&mut terminal, area.bottom() - HEIGHT, reserved).unwrap();
             area.y = HEIGHT - new_height;
             terminal.set_viewport_area(area);
-            draw_chrome(&mut terminal, reserved);
-            assert_thread(&terminal, reserved, &expected);
+            draw_chrome(&mut terminal, reserved)?;
+            assert_thread(&terminal, reserved, &expected)?;
         }
 
         expected.push("after growth".to_string());
@@ -120,18 +129,19 @@ fn native_scrollback_survives_composer_growth() {
             reserved,
         )
         .unwrap();
-        draw_chrome(&mut terminal, reserved);
-        assert_thread(&terminal, reserved, &expected);
+        draw_chrome(&mut terminal, reserved)?;
+        assert_thread(&terminal, reserved, &expected)?;
     }
+    Ok(())
 }
 
 #[test]
-fn native_scrollback_preserves_wrapped_urls_and_blank_rows() {
+fn native_scrollback_preserves_wrapped_urls_and_blank_rows() -> io::Result<()> {
     for reserved in [0, 1] {
         let backend = VT100Backend::with_scrollback(WIDTH, HEIGHT, 100);
         let mut terminal = Terminal::with_options(backend).unwrap();
         terminal.set_viewport_area(Rect::new(0, reserved, WIDTH, 2));
-        draw_chrome(&mut terminal, reserved);
+        draw_chrome(&mut terminal, reserved)?;
         let prefix = "https://example.com/";
         let url = format!(
             "{prefix}{}",
@@ -150,18 +160,19 @@ fn native_scrollback_preserves_wrapped_urls_and_blank_rows() {
             reserved,
         )
         .unwrap();
-        draw_chrome(&mut terminal, reserved);
+        draw_chrome(&mut terminal, reserved)?;
 
-        assert_thread(&terminal, reserved, &expected);
+        assert_thread(&terminal, reserved, &expected)?;
     }
+    Ok(())
 }
 
 #[test]
-fn empty_history_keeps_screen_and_cursor_unchanged() {
+fn empty_history_keeps_screen_and_cursor_unchanged() -> io::Result<()> {
     let backend = VT100Backend::with_scrollback(WIDTH, HEIGHT, 100);
     let mut terminal = Terminal::with_options(backend).unwrap();
     terminal.set_viewport_area(Rect::new(0, 1, WIDTH, 3));
-    draw_chrome(&mut terminal, 1);
+    draw_chrome(&mut terminal, 1)?;
     let before = terminal.backend().vt100().screen().state_formatted();
     let viewport = terminal.viewport_area;
 
@@ -172,4 +183,5 @@ fn empty_history_keeps_screen_and_cursor_unchanged() {
         before
     );
     assert_eq!(terminal.viewport_area, viewport);
+    Ok(())
 }

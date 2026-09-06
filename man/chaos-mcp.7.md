@@ -187,6 +187,47 @@ Add FreeChaOS to another MCP client's config:
 The older split between `chaos` and `chaos-reply` has been replaced by this
 single unified `chaos` tool.
 
+### Scheduled shell commands
+
+Pass `schedule` as a JSON object, not a JSON-encoded string. For example,
+`{"kind":"interval","seconds":30}` runs every 30 seconds. Daily schedules use
+`{"kind":"daily","hour":9,"minute":0}` and weekly schedules add
+`"weekday":"mon"` with `"kind":"weekly"`.
+
+The native `cron_create` tool persists a kernel-issued command/policy binding,
+not a raw command to run with the next process's privileges. Shell jobs use
+`/bin/sh -c` (non-login), the normal sandbox runner, bounded output, and a
+60-second execution deadline. Policy/config loading has a separate 10-second
+deadline. Shutdown waits for the current bounded shell run before stopping.
+
+Creation requires unattended command authorization under both current session
+rules and config-file rules. A command needing approval must have an
+operator-managed durable execpolicy allow rule; one-shot approvals, temporary
+filesystem/network grants, and allow-rule sandbox bypass are not persisted.
+The base filesystem/network policy and shell environment must match the
+config-file configuration. Managed proxies and external-sandbox profiles are
+not supported for shell cron.
+
+Before every run, including after restart, the kernel reloads config/rules and
+checks the saved command, ownership, filesystem/network policy, and launching
+process's constraints. Policy differences fail closed: recreate the job under
+the new configuration. The environment is freshly filtered using the current
+config-file shell environment policy; shell snapshots and credentials are not
+stored in the job.
+The environment policy must also match the launching process's policy; restart
+the scheduler under matching configuration after changing it.
+
+Legacy shell jobs without a policy must be recreated, not merely re-enabled.
+Direct MCP catalog calls cannot manufacture this authorization. Use
+`cron_toggle` to disable/delete future runs or change config-file rules to
+revoke authorization; changing a turn's temporary grant is not a durable job
+revocation. Disabling does not interrupt an already-running command.
+
+The scheduler is still process-local: do not run multiple scheduler processes
+against the same store when duplicate shell effects are unacceptable. Durable
+claims, retries, and per-run records remain separate work. Spool polling is
+unchanged.
+
 ### Resources
 
 | URI | Description |

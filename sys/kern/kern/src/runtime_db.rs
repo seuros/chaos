@@ -62,10 +62,7 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
         config.model_provider_id.clone(),
     );
 
-    let _ = chaos_cron::spawn_scheduler(
-        vfs,
-        scheduler_executor(vfs, config.sqlite_home.as_path()).await,
-    );
+    let _ = chaos_cron::spawn_scheduler(vfs, scheduler_executor(vfs, config).await);
 
     // Install the shared ration usage store so adapters built later in
     // boot can attach sniffers via `chaos_libration::registry::sniffer_for`.
@@ -77,9 +74,9 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
     Ok(Some(runtime))
 }
 
-async fn scheduler_executor(provider: &ChaosVfs, sqlite_home: &Path) -> chaos_cron::JobExecutor {
-    let shell = chaos_cron::shell_executor();
-    let registry = spool_registry_from_env(sqlite_home).await;
+async fn scheduler_executor(provider: &ChaosVfs, config: &Config) -> chaos_cron::JobExecutor {
+    let shell = crate::scheduled_exec::executor(config);
+    let registry = spool_registry_from_env(&config.sqlite_home).await;
     if registry.is_empty() {
         return shell;
     }

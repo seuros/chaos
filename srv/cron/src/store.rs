@@ -49,8 +49,8 @@ impl CronStore {
             let id = next_id();
 
             match sqlx::query(
-                "INSERT INTO cron_jobs (id, name, schedule, command, scope, project_path, session_id, enabled, next_run_at, created_at, updated_at, kind, manifest_id)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
+                "INSERT INTO cron_jobs (id, name, schedule, command, scope, project_path, session_id, enabled, next_run_at, created_at, updated_at, kind, manifest_id, execution_policy)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&id)
             .bind(&params.name)
@@ -64,6 +64,7 @@ impl CronStore {
             .bind(now)
             .bind(&params.kind)
             .bind(&params.manifest_id)
+            .bind(&params.execution_policy)
             .execute(&self.pool)
             .await
             {
@@ -83,6 +84,7 @@ impl CronStore {
                         updated_at: now,
                         kind: params.kind.clone(),
                         manifest_id: params.manifest_id.clone(),
+                        execution_policy: params.execution_policy.clone(),
                     });
                 }
                 Err(err) if is_unique_id_collision(&err) => continue,
@@ -101,9 +103,7 @@ impl CronStore {
         scope: Option<CronScope>,
         project_path: Option<&str>,
     ) -> anyhow::Result<Vec<CronJob>> {
-        let mut query = String::from(
-            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id FROM cron_jobs WHERE 1=1",
-        );
+        let mut query = String::from("SELECT * FROM cron_jobs WHERE 1=1");
         if scope.is_some() {
             query.push_str(" AND scope = ?");
         }
@@ -127,12 +127,10 @@ impl CronStore {
 
     /// Fetch a single job by ID.
     pub async fn get(&self, id: &str) -> anyhow::Result<Option<CronJob>> {
-        let row = sqlx::query(
-            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id FROM cron_jobs WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row = sqlx::query("SELECT * FROM cron_jobs WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
 
         Ok(row.as_ref().map(row_to_job))
     }
@@ -226,8 +224,7 @@ impl CronStore {
     /// a parameterised query for arbitrary timestamps (tests, replay).
     pub async fn due_jobs(&self, now: i64) -> anyhow::Result<Vec<CronJob>> {
         let rows = sqlx::query(
-            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-             FROM cron_jobs
+            "SELECT * FROM cron_jobs
              WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
              ORDER BY next_run_at ASC",
         )
@@ -241,12 +238,9 @@ impl CronStore {
 
     /// Fetch all jobs due right now using the `due_cron_jobs` view.
     pub async fn due_now(&self) -> anyhow::Result<Vec<CronJob>> {
-        let rows = sqlx::query(
-            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-             FROM due_cron_jobs",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = sqlx::query("SELECT * FROM due_cron_jobs")
+            .fetch_all(&self.pool)
+            .await?;
 
         let jobs = rows.iter().map(row_to_job).collect();
         Ok(jobs)
@@ -288,8 +282,8 @@ impl PostgresCronStore {
             let id = next_id();
 
             match sqlx::query(
-                "INSERT INTO cron_jobs (id, name, schedule, command, scope, project_path, session_id, enabled, next_run_at, created_at, updated_at, kind, manifest_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9, $10, $11, $12)",
+                "INSERT INTO cron_jobs (id, name, schedule, command, scope, project_path, session_id, enabled, next_run_at, created_at, updated_at, kind, manifest_id, execution_policy)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9, $10, $11, $12, $13)",
             )
             .bind(&id)
             .bind(&params.name)
@@ -303,6 +297,7 @@ impl PostgresCronStore {
             .bind(now)
             .bind(&params.kind)
             .bind(&params.manifest_id)
+            .bind(&params.execution_policy)
             .execute(&self.pool)
             .await
             {
@@ -322,6 +317,7 @@ impl PostgresCronStore {
                         updated_at: now,
                         kind: params.kind.clone(),
                         manifest_id: params.manifest_id.clone(),
+                        execution_policy: params.execution_policy.clone(),
                     });
                 }
                 Err(err) if is_unique_id_collision(&err) => continue,
@@ -342,8 +338,7 @@ impl PostgresCronStore {
         let rows = match (scope, project_path) {
             (Some(scope), Some(project_path)) => {
                 sqlx::query(
-                    "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-                     FROM cron_jobs
+                    "SELECT * FROM cron_jobs
                      WHERE scope = $1 AND project_path = $2
                      ORDER BY created_at DESC",
                 )
@@ -354,8 +349,7 @@ impl PostgresCronStore {
             }
             (Some(scope), None) => {
                 sqlx::query(
-                    "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-                     FROM cron_jobs
+                    "SELECT * FROM cron_jobs
                      WHERE scope = $1
                      ORDER BY created_at DESC",
                 )
@@ -365,8 +359,7 @@ impl PostgresCronStore {
             }
             (None, Some(project_path)) => {
                 sqlx::query(
-                    "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-                     FROM cron_jobs
+                    "SELECT * FROM cron_jobs
                      WHERE project_path = $1
                      ORDER BY created_at DESC",
                 )
@@ -376,8 +369,7 @@ impl PostgresCronStore {
             }
             (None, None) => {
                 sqlx::query(
-                    "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-                     FROM cron_jobs
+                    "SELECT * FROM cron_jobs
                      ORDER BY created_at DESC",
                 )
                 .fetch_all(&self.pool)
@@ -388,12 +380,10 @@ impl PostgresCronStore {
     }
 
     pub async fn get(&self, id: &str) -> anyhow::Result<Option<CronJob>> {
-        let row = sqlx::query(
-            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id FROM cron_jobs WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row = sqlx::query("SELECT * FROM cron_jobs WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
 
         Ok(row.as_ref().map(row_to_job_postgres))
     }
@@ -477,8 +467,7 @@ impl PostgresCronStore {
 
     pub async fn due_jobs(&self, now: i64) -> anyhow::Result<Vec<CronJob>> {
         let rows = sqlx::query(
-            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-             FROM cron_jobs
+            "SELECT * FROM cron_jobs
              WHERE enabled = TRUE AND next_run_at IS NOT NULL AND next_run_at <= $1
              ORDER BY next_run_at ASC",
         )
@@ -490,12 +479,9 @@ impl PostgresCronStore {
     }
 
     pub async fn due_now(&self) -> anyhow::Result<Vec<CronJob>> {
-        let rows = sqlx::query(
-            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at, kind, manifest_id
-             FROM due_cron_jobs",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = sqlx::query("SELECT * FROM due_cron_jobs")
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(rows.iter().map(row_to_job_postgres).collect())
     }
@@ -531,6 +517,7 @@ fn row_to_job(row: &SqliteRow) -> CronJob {
         updated_at: row.get("updated_at"),
         kind: row.get("kind"),
         manifest_id: row.get("manifest_id"),
+        execution_policy: row.get("execution_policy"),
     }
 }
 
@@ -551,6 +538,7 @@ fn row_to_job_postgres(row: &PgRow) -> CronJob {
         updated_at: row.get("updated_at"),
         kind: row.get("kind"),
         manifest_id: row.get("manifest_id"),
+        execution_policy: row.get("execution_policy"),
     }
 }
 
@@ -650,15 +638,17 @@ mod tests {
             .expect("open runtime db");
         let store = CronStore::new(pool.clone());
 
+        let mut params = CreateJobParams::shell(
+            "session-job".to_string(),
+            daily_schedule_json(),
+            "echo hi".to_string(),
+            CronScope::Session,
+            None,
+            Some("session-123".to_string()),
+        );
+        params.execution_policy = Some(r#"{"version":1}"#.to_string());
         let job = store
-            .create(&CreateJobParams::shell(
-                "session-job".to_string(),
-                daily_schedule_json(),
-                "echo hi".to_string(),
-                CronScope::Session,
-                None,
-                Some("session-123".to_string()),
-            ))
+            .create(&params)
             .await
             .expect("create session cron job");
 
@@ -666,6 +656,13 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, job.id);
         assert_eq!(listed[0].session_id.as_deref(), Some("session-123"));
+        assert_eq!(listed[0].execution_policy, params.execution_policy);
+        assert!(
+            serde_json::to_value(&listed[0])
+                .unwrap()
+                .get("execution_policy")
+                .is_none()
+        );
 
         let fetched = store
             .get(&job.id)
@@ -673,6 +670,7 @@ mod tests {
             .expect("get cron job")
             .expect("job exists");
         assert_eq!(fetched.session_id.as_deref(), Some("session-123"));
+        assert_eq!(fetched.execution_policy, params.execution_policy);
 
         sqlx::query("UPDATE cron_jobs SET next_run_at = 0 WHERE id = ?")
             .bind(&job.id)
@@ -683,6 +681,11 @@ mod tests {
         let due = store.due_jobs(1).await.expect("list due jobs");
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].session_id.as_deref(), Some("session-123"));
+        assert_eq!(due[0].execution_policy, params.execution_policy);
+        assert_eq!(
+            store.due_now().await.unwrap()[0].execution_policy,
+            params.execution_policy
+        );
     }
 
     #[tokio::test]
@@ -795,15 +798,17 @@ mod tests {
         let project_path = test_project_path("round-trip");
         let session_id = format!("postgres-session-{}", std::process::id());
 
+        let mut params = CreateJobParams::shell(
+            "postgres-session-job".to_string(),
+            daily_schedule_json(),
+            "echo hi".to_string(),
+            CronScope::Session,
+            Some(project_path.clone()),
+            Some(session_id.clone()),
+        );
+        params.execution_policy = Some(r#"{"version":1}"#.to_string());
         let job = store
-            .create(&CreateJobParams::shell(
-                "postgres-session-job".to_string(),
-                daily_schedule_json(),
-                "echo hi".to_string(),
-                CronScope::Session,
-                Some(project_path.clone()),
-                Some(session_id.clone()),
-            ))
+            .create(&params)
             .await
             .expect("create postgres session cron job");
 
@@ -814,6 +819,7 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, job.id);
         assert_eq!(listed[0].session_id.as_deref(), Some(session_id.as_str()));
+        assert_eq!(listed[0].execution_policy, params.execution_policy);
 
         let fetched = store
             .get(&job.id)
@@ -822,6 +828,7 @@ mod tests {
             .expect("job exists");
         assert_eq!(fetched.session_id.as_deref(), Some(session_id.as_str()));
         assert_eq!(fetched.project_path.as_deref(), Some(project_path.as_str()));
+        assert_eq!(fetched.execution_policy, params.execution_policy);
 
         sqlx::query("UPDATE cron_jobs SET next_run_at = $1 WHERE id = $2")
             .bind(0_i64)
@@ -836,11 +843,20 @@ mod tests {
             .find(|candidate| candidate.id == job.id)
             .expect("the forced-due job should be due");
         assert_eq!(due_job.session_id.as_deref(), Some(session_id.as_str()));
+        assert_eq!(due_job.execution_policy, params.execution_policy);
 
         let due_now = store.due_now().await.expect("list due-now jobs");
         assert!(
             due_now.iter().any(|candidate| candidate.id == job.id),
             "due_cron_jobs view should include the forced-due job"
+        );
+        assert_eq!(
+            due_now
+                .iter()
+                .find(|candidate| candidate.id == job.id)
+                .unwrap()
+                .execution_policy,
+            params.execution_policy
         );
 
         store

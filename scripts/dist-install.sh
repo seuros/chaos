@@ -1,21 +1,19 @@
 #!/bin/sh
-set -e
+set -eu
 DEST=${1:-$HOME/.local/bin}
-mkdir -p "$DEST"
+BINARIES="chaos alcatraz chaos_journald chaos-forkve-wrapper"
 
-install_bin() {
-    if [ -f "$1" ]; then
-        cp "$1" "$DEST/$1"
-        chmod +x "$DEST/$1"
-    else
-        echo "warning: $1 not found, skipping" >&2
+# Reject an incomplete bundle before replacing any installed binary.
+for name in $BINARIES; do
+    if [ ! -f "$name" ] || [ -L "$name" ]; then
+        echo "error: release archive is missing a regular file: $name" >&2
+        exit 1
     fi
-}
-
-install_bin chaos
-install_bin alcatraz
-install_bin chaos_journald
-install_bin chaos-forkve-wrapper
+done
+mkdir -p "$DEST"
+for name in $BINARIES; do
+    install -m 755 "$name" "$DEST/$name"
+done
 
 echo "Installed to $DEST"
 echo "Make sure $DEST is in your PATH."

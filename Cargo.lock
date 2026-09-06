@@ -1411,6 +1411,7 @@ dependencies = [
  "rama",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

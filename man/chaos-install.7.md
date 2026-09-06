@@ -22,6 +22,20 @@ In an installed system, this page would typically be installed as
 
 ## BUILD AND INSTALL
 
+### Prebuilt releases
+
+The repository's `install.sh` downloads a release archive and its `.sha256`
+asset, verifies SHA-256 before extraction, then checks all four required
+binaries before replacing any installed binary. It requires `sha256sum`,
+`shasum`, or FreeBSD `sha256`. Missing/malformed checksums, digest mismatches,
+and incomplete bundles stop installation.
+The bundled `scripts/dist-install.sh` likewise rejects incomplete bundles
+before replacing binaries; it does not download or authenticate archives.
+
+This is integrity checking against the same GitHub release, not an independent
+signature or provenance guarantee. Replacement of the four binaries is still
+sequential, not a transactional bundle update.
+
 ### Install from source
 
 Ask `chaos` to set up your environment. Then:

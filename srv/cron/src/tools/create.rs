@@ -25,7 +25,7 @@ pub struct CronCreateParams {
     /// `{"kind":"weekly","weekday":"mon","hour":9,"minute":0}` (UTC).
     pub schedule: crate::schedule::Schedule,
 
-    /// The command or prompt to execute on each tick.
+    /// Shell command to execute on each tick, under the persisted sandbox policy.
     pub command: String,
 
     /// Scope: "project" (persists across sessions), "session" (dies with session),
@@ -45,12 +45,14 @@ pub struct OwnerContext {
     pub project_path: Option<String>,
     /// Session ID for session/agent-scoped jobs.
     pub session_id: Option<String>,
+    /// Durable shell authorization injected by the kernel, never by MCP input.
+    pub execution_policy: Option<String>,
 }
 
 impl CronServer {
     #[mcp_tool(
         name = "cron_create",
-        description = "Schedule a recurring cron job: interval, daily, or weekly (UTC).",
+        description = "Schedule a recurring shell command: interval, daily, or weekly (UTC). Requires durable command authorization and matching config-file sandbox permissions; temporary grants and sandbox bypass are not persisted. Each run is limited to 60 seconds.",
         destructive = false,
         open_world = false
     )]
@@ -91,6 +93,9 @@ async fn execute_with_storage_structured<S: CronStorage>(
     storage: &S,
     owner: &OwnerContext,
 ) -> Result<serde_json::Value, String> {
+    let execution_policy = owner.execution_policy.as_ref().ok_or_else(|| {
+        "shell cron jobs require kernel-issued durable execution authorization".to_string()
+    })?;
     params
         .schedule
         .validate()
@@ -120,7 +125,7 @@ async fn execute_with_storage_structured<S: CronStorage>(
         _ => None,
     };
 
-    let create_params = CreateJobParams::shell(
+    let mut create_params = CreateJobParams::shell(
         params.name.clone(),
         schedule_json,
         params.command.clone(),
@@ -128,6 +133,7 @@ async fn execute_with_storage_structured<S: CronStorage>(
         project_path,
         session_id,
     );
+    create_params.execution_policy = Some(execution_policy.clone());
 
     let job = storage
         .create(&create_params)

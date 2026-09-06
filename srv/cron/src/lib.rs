@@ -21,7 +21,6 @@ pub use schedule::Schedule;
 pub use scheduler::JobExecutor;
 pub use scheduler::Scheduler;
 pub use scheduler::dispatch_executor;
-pub use scheduler::shell_executor;
 pub use scheduler::spawn_global as spawn_scheduler;
 pub use spool_exec::spool_executor_from_provider;
 pub use spool_submit::submit_manifest_from_provider;
@@ -46,6 +45,7 @@ impl CatalogToolDriver for CronToolDriver {
             let owner = OwnerContext {
                 project_path: Some(request.cwd.to_string_lossy().to_string()),
                 session_id: Some(request.session_id),
+                execution_policy: None,
             };
             let result = match request.tool_name.as_str() {
                 "cron_create" => {

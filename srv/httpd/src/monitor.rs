@@ -127,7 +127,7 @@ pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
-        .header(CACHE_CONTROL, "no-cache")
+        .header(CACHE_CONTROL, "no-store")
         .header("x-accel-buffering", "no")
         .body(Body::from_stream(stream))
         .unwrap()
@@ -213,10 +213,15 @@ const MONITOR_HTML: &str = r#"<!doctype html>
   </style>
 </head>
 <body>
-  <main data-init="@get('/monitor/events')">
+  <main>
     <h1>Chaos monitor</h1>
+    <form data-on:submit__prevent="@get('/monitor/events', {headers: {Authorization: 'Bearer ' + el.elements.namedItem('monitor-token').value}, filterSignals: {include: /^$/}, retry: 'never'})">
+      <label>Bearer token <input type="password" id="monitor-token" autocomplete="off" required></label>
+      <button type="submit">Connect</button>
+    </form>
+    <p>The token stays in this page, not in URLs or browser storage. Reload to disconnect.</p>
     <section id="monitor-summary">
-      <div><strong>Status:</strong> connecting…</div>
+      <div><strong>Status:</strong> disconnected — enter the server token to connect.</div>
     </section>
     <h2>Events</h2>
     <ol id="monitor-log"></ol>

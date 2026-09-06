@@ -96,6 +96,10 @@ pub struct CronJob {
     /// When `kind == "spool"`, the `spool_jobs` row this cron drives.
     #[serde(default)]
     pub manifest_id: Option<String>,
+    /// Opaque kernel-issued shell policy. Never accepted from model arguments
+    /// or exposed through resource/list responses. Legacy jobs have no policy.
+    #[serde(default, skip_serializing)]
+    pub execution_policy: Option<String>,
 }
 
 fn default_kind() -> String {
@@ -113,6 +117,7 @@ pub struct CreateJobParams {
     pub session_id: Option<String>,
     pub kind: String,
     pub manifest_id: Option<String>,
+    pub execution_policy: Option<String>,
 }
 
 impl CreateJobParams {
@@ -134,6 +139,7 @@ impl CreateJobParams {
             session_id,
             kind: JobKind::SHELL_TAG.to_string(),
             manifest_id: None,
+            execution_policy: None,
         }
     }
 
@@ -155,6 +161,7 @@ impl CreateJobParams {
             session_id,
             kind: JobKind::SPOOL_TAG.to_string(),
             manifest_id: Some(manifest_id),
+            execution_policy: None,
         }
     }
 }

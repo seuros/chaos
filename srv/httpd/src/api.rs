@@ -8,6 +8,7 @@ use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
 use rama::http::body::util::BodyExt;
+use rama::http::body::util::LengthLimitError;
 use rama::service::service_fn;
 use tracing::{Instrument, error, info_span, warn};
 
@@ -31,6 +32,23 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     let method = request.method().clone();
     let path_cow = request.uri().path().map(|path| path.as_encoded_str());
     let path = path_cow.as_deref().unwrap_or("");
+
+    // The monitor page is a static login shell; only authenticated callers may
+    // subscribe to live state. Authenticate before touching either request body.
+    if matches!(path, "/api/trigger" | "/monitor/events") {
+        let auth_header = request
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok());
+        if let Err(msg) = auth::validate_bearer(auth_header, &state.bearer_token) {
+            let mut response =
+                json_response(StatusCode::UNAUTHORIZED, &ApiErrorResponse::error(msg));
+            response
+                .headers_mut()
+                .insert("www-authenticate", "Bearer".parse().unwrap());
+            return response;
+        }
+    }
 
     match (method.clone(), path) {
         (Method::GET, "/monitor") => monitor::page_response(),
@@ -59,21 +77,7 @@ fn handle_health() -> Response {
 }
 
 async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
-    // Auth check.
-    let auth_header = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok());
-    if let Err(msg) = auth::validate_bearer(auth_header, &state.bearer_token) {
-        return Response::builder()
-            .status(StatusCode::UNAUTHORIZED)
-            .header("content-type", "application/json")
-            .header("www-authenticate", "Bearer")
-            .body(Body::from(
-                serde_json::to_vec(&ApiErrorResponse::error(msg)).unwrap_or_default(),
-            ))
-            .unwrap();
-    }
+    let deadline = tokio::time::Instant::now() + state.timeout;
 
     // Content-Type check: accept "application/json" with optional params
     // (e.g. "application/json; charset=utf-8") but not subtypes like
@@ -103,25 +107,53 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         );
     }
 
-    // Collect body bytes.
-    let body_bytes = match request.into_body().collect().await {
-        Ok(collected) => collected.to_bytes(),
-        Err(e) => {
+    // Bound ingress as well as agent execution. Do not buffer a body while
+    // waiting for capacity, and keep the permit until process cleanup finishes.
+    let _permit = match state.semaphore.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return json_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                &ApiErrorResponse::error("too many concurrent requests"),
+            );
+        }
+    };
+
+    // Rama's limiter stops polling as soon as a frame crosses the byte cap,
+    // including chunked bodies and clients without a Content-Length header.
+    let body_bytes = match tokio::time::timeout_at(
+        deadline,
+        request.into_body().limited(state.body_limit).collect(),
+    )
+    .await
+    {
+        Ok(Ok(collected)) => collected.to_bytes(),
+        Ok(Err(e))
+            if matches!(
+                e.kind(),
+                rama::http::body::CollectErrorKind::Stream(source)
+                    if source.is::<LengthLimitError>()
+            ) =>
+        {
+            return json_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                &ApiErrorResponse::error("request body too large"),
+            );
+        }
+        Ok(Err(e)) => {
             error!(error = %e, "failed to read request body");
             return json_response(
                 StatusCode::BAD_REQUEST,
                 &ApiErrorResponse::error("failed to read request body"),
             );
         }
+        Err(_) => {
+            return json_response(
+                StatusCode::REQUEST_TIMEOUT,
+                &ApiErrorResponse::timeout("request body deadline exceeded"),
+            );
+        }
     };
-
-    // Post-collection size guard (Content-Length can be absent or lying).
-    if body_bytes.len() > state.body_limit {
-        return json_response(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            &ApiErrorResponse::error("request body too large"),
-        );
-    }
 
     // Deserialize.
     let trigger_req: TriggerRequest = match serde_json::from_slice(&body_bytes) {
@@ -170,17 +202,6 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         _ => {}
     }
 
-    // Acquire concurrency permit.
-    let _permit = match state.semaphore.clone().try_acquire_owned() {
-        Ok(permit) => permit,
-        Err(_) => {
-            return json_response(
-                StatusCode::TOO_MANY_REQUESTS,
-                &ApiErrorResponse::error("too many concurrent requests")
-                    .with_caller_fields(caller_session_id, Some(conversation_id)),
-            );
-        }
-    };
     state.monitor.publish(
         monitor::MonitorEventKind::TriggerAccepted,
         Some(conversation_id.clone()),
@@ -203,10 +224,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
     let timeout = state.timeout;
 
     async move {
-        // Single wall-clock deadline covering both process start and execution.
-        let deadline = tokio::time::Instant::now() + timeout;
-
-        // Start the process under the shared deadline.
+        // Body reading, process start, and execution share one deadline.
         let started =
             match tokio::time::timeout_at(deadline, runner::start(&process_table, config)).await {
                 Ok(Ok(s)) => s,
@@ -370,4 +388,159 @@ fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response 
         .header("content-type", "application/json")
         .body(Body::from(json))
         .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chaos_kern::ChaosAuth;
+    use chaos_kern::config::ConfigBuilder;
+    use chaos_kern::test_support::auth_manager_from_auth_with_home;
+    use chaos_kern::test_support::process_table_with_models_provider_and_home;
+    use rama::futures::stream;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::Poll;
+    use std::time::Duration;
+    use tokio::sync::Semaphore;
+
+    #[tokio::test]
+    async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
+        let home = tempfile::tempdir().unwrap();
+        let config = ConfigBuilder::default()
+            .chaos_home(home.path().to_path_buf())
+            .fallback_cwd(Some(home.path().to_path_buf()))
+            .build()
+            .await
+            .unwrap();
+        let auth = ChaosAuth::from_api_key("test");
+        let process_table = process_table_with_models_provider_and_home(
+            auth.clone(),
+            config.model_provider.clone(),
+            home.path().to_path_buf(),
+        );
+        let state = Arc::new(ServerState {
+            config: Arc::new(config),
+            process_table: Arc::new(process_table),
+            auth_manager: auth_manager_from_auth_with_home(auth, home.path().to_path_buf()),
+            bearer_token: Arc::from("test-token"),
+            semaphore: Arc::new(Semaphore::new(1)),
+            max_concurrent: 1,
+            timeout: Duration::from_secs(1),
+            body_limit: 8,
+            monitor: monitor::MonitorState::new(),
+        });
+        for (method, path, bearer, expected) in [
+            ("GET", "/api/health", None, StatusCode::OK),
+            ("GET", "/monitor", None, StatusCode::OK),
+            ("GET", "/monitor/events", None, StatusCode::UNAUTHORIZED),
+            (
+                "GET",
+                "/monitor/events?token=test-token",
+                None,
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                "GET",
+                "/monitor/events",
+                Some("Bearer wrong"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                "GET",
+                "/monitor/events",
+                Some("Bearer test-token"),
+                StatusCode::OK,
+            ),
+            ("POST", "/api/trigger", None, StatusCode::UNAUTHORIZED),
+            (
+                "POST",
+                "/api/trigger",
+                Some("Bearer wrong"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                "GET",
+                "/api/trigger",
+                Some("Bearer test-token"),
+                StatusCode::METHOD_NOT_ALLOWED,
+            ),
+        ] {
+            let mut request = Request::builder().method(method).uri(path);
+            if let Some(bearer) = bearer {
+                request = request.header("authorization", bearer);
+            }
+            let response = handle(state.clone(), request.body(Body::empty()).unwrap()).await;
+            assert_eq!(response.status(), expected, "{method} {path}");
+            if expected == StatusCode::UNAUTHORIZED {
+                assert_eq!(response.headers()["www-authenticate"], "Bearer");
+            } else if path == "/monitor/events" && expected == StatusCode::OK {
+                assert_eq!(response.headers()["cache-control"], "no-store");
+                let frame = response.into_body().frame().await.unwrap().unwrap();
+                assert!(
+                    String::from_utf8_lossy(frame.data_ref().unwrap()).contains("monitor-summary")
+                );
+            }
+        }
+
+        let trigger = |body| {
+            Request::builder()
+                .method("POST")
+                .uri("/api/trigger")
+                .header("authorization", "Bearer test-token")
+                .header("content-type", "application/json")
+                .body(body)
+                .unwrap()
+        };
+        let polls = Arc::new(AtomicUsize::new(0));
+        let chunked_body = || {
+            let polls = polls.clone();
+            Body::from_stream(stream::poll_fn(move |_| {
+                polls.fetch_add(1, Ordering::SeqCst);
+                Poll::Ready(Some(Ok::<_, Infallible>("1234")))
+            }))
+        };
+        // Both header preflight and capacity rejection must leave the stream
+        // entirely unread. In particular, 429 cannot depend on JSON parsing.
+        let mut oversized = trigger(chunked_body());
+        oversized
+            .headers_mut()
+            .insert("content-length", "9".parse().unwrap());
+        assert_eq!(
+            handle(state.clone(), oversized).await.status(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+        let permit = state.semaphore.acquire().await.unwrap();
+        assert_eq!(
+            handle(state.clone(), trigger(chunked_body()))
+                .await
+                .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+        drop(permit);
+        // An endless chunked stream stops at the first overflowing frame,
+        // rather than merely returning 413 after collecting the entire body.
+        assert_eq!(
+            handle(state.clone(), trigger(chunked_body()))
+                .await
+                .status(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+        assert_eq!(polls.load(Ordering::SeqCst), 3);
+        assert_eq!(state.semaphore.available_permits(), 1);
+        assert_eq!(
+            handle(state.clone(), trigger(Body::from("{}")))
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+
+        tokio::time::pause();
+        let stalled = Body::from_stream(stream::pending::<Result<String, Infallible>>());
+        assert_eq!(
+            handle(state.clone(), trigger(stalled)).await.status(),
+            StatusCode::REQUEST_TIMEOUT
+        );
+        assert_eq!(state.semaphore.available_permits(), 1);
+    }
 }

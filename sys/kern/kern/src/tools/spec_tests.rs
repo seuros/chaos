@@ -2239,6 +2239,27 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
 
 #[test]
 fn test_mcp_tool_integer_preserved() {
+    // Exercise the real catalog schema: Schedule is a referenced tagged union,
+    // not a string containing JSON. Cover all variants through the wire adapter.
+    let cron = chaos_cron::tools::create::tool_info();
+    let cron_schema = chaos_parrot::sanitize::parse_tool_input_schema(&cron.input_schema).unwrap();
+    let wire = serde_json::Value::from(&cron_schema);
+    let schedule = &wire["properties"]["schedule"];
+    assert_eq!(schedule["type"], "object");
+    assert_eq!(schedule["required"], serde_json::json!(["kind"]));
+    for field in ["seconds", "hour", "minute"] {
+        assert_eq!(schedule["properties"][field]["type"], "integer", "{field}");
+    }
+    assert_eq!(schedule["properties"]["weekday"]["type"], "string");
+    for schedule in [
+        serde_json::json!({"kind": "interval", "seconds": 30}),
+        serde_json::json!({"kind": "daily", "hour": 9, "minute": 0}),
+        serde_json::json!({"kind": "weekly", "weekday": "mon", "hour": 9, "minute": 0}),
+    ] {
+        serde_json::from_value::<chaos_cron::tools::create::CronCreateParams>(
+            serde_json::json!({"name": "smoke", "command": "echo cron-smoke-test", "schedule": schedule}),
+        ).unwrap();
+    }
     let input = serde_json::json!({
         "type": "object",
         "properties": {

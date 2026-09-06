@@ -1,12 +1,12 @@
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
+use crate::config::Config;
+use crate::error::ChaosErr;
+use crate::function_tool::FunctionCallError;
 use crate::minions::exceeds_process_spawn_depth_limit;
 use crate::minions::next_process_spawn_depth;
 use crate::minions::status::is_final;
 use crate::minions::tools::build_agent_spawn_config;
-use crate::config::Config;
-use crate::error::ChaosErr;
-use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -201,9 +201,7 @@ impl ToolHandler for BatchJobHandler {
         };
 
         match tool_name.as_str() {
-            "spawn_minions_on_csv" => {
-                spawn_minions_on_csv::handle(session, turn, arguments).await
-            }
+            "spawn_minions_on_csv" => spawn_minions_on_csv::handle(session, turn, arguments).await,
             "report_minion_job_result" => {
                 report_minion_job_result::handle(session, arguments).await
             }
@@ -216,7 +214,7 @@ impl ToolHandler for BatchJobHandler {
 
 mod spawn_minions_on_csv {
     use super::{
-        Arc, MinionJobFailureSummary, FunctionCallError, FunctionToolOutput, HashSet, PathBuf,
+        Arc, FunctionCallError, FunctionToolOutput, HashSet, MinionJobFailureSummary, PathBuf,
         Session, SpawnMinionsOnCsvArgs, SpawnMinionsOnCsvResult, TurnContext, Uuid,
         build_runner_options, default_output_csv_path, ensure_unique_headers,
         export_job_csv_snapshot, normalize_max_runtime_seconds, parse_arguments, parse_csv,
@@ -341,9 +339,7 @@ mod spawn_minions_on_csv {
             )
             .await
             .map_err(|err| {
-                FunctionCallError::RespondToModel(format!(
-                    "failed to create minion job: {err}"
-                ))
+                FunctionCallError::RespondToModel(format!("failed to create minion job: {err}"))
             })?;
 
         let requested_concurrency = args.max_concurrency.or(args.max_workers);
@@ -563,9 +559,7 @@ async fn build_runner_options(
 }
 
 fn normalize_concurrency(requested: Option<usize>, max_threads: Option<usize>) -> usize {
-    let requested = requested
-        .unwrap_or(DEFAULT_MINION_JOB_CONCURRENCY)
-        .max(1);
+    let requested = requested.unwrap_or(DEFAULT_MINION_JOB_CONCURRENCY).max(1);
     let requested = requested.min(MAX_MINION_JOB_CONCURRENCY);
     if let Some(max_threads) = max_threads {
         requested.min(max_threads.max(1))
@@ -797,9 +791,7 @@ async fn run_minion_job_loop(
         let message = format!("minion job completed with {failed_items} failed items");
         let _ = session.notify_background_event(&turn, message).await;
     }
-    db.minion_jobs()
-        .mark_completed(job_id.as_str())
-        .await?;
+    db.minion_jobs().mark_completed(job_id.as_str()).await?;
     let progress = db.minion_jobs().progress(job_id.as_str()).await?;
     progress_emitter
         .maybe_emit(

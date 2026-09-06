@@ -87,11 +87,7 @@ impl Respond for StopAfterFirstResponder {
         if !self.seen_main.swap(true, Ordering::SeqCst) {
             return sse_response(sse(vec![
                 ev_response_created("resp-main"),
-                ev_function_call(
-                    "call-spawn",
-                    "spawn_minions_on_csv",
-                    &self.spawn_args_json,
-                ),
+                ev_function_call("call-spawn", "spawn_minions_on_csv", &self.spawn_args_json),
                 ev_completed("resp-main"),
             ]));
         }
@@ -138,11 +134,7 @@ impl Respond for MinionJobsResponder {
         if !self.seen_main.swap(true, Ordering::SeqCst) {
             return sse_response(sse(vec![
                 ev_response_created("resp-main"),
-                ev_function_call(
-                    "call-spawn",
-                    "spawn_minions_on_csv",
-                    &self.spawn_args_json,
-                ),
+                ev_function_call("call-spawn", "spawn_minions_on_csv", &self.spawn_args_json),
                 ev_completed("resp-main"),
             ]));
         }
@@ -231,9 +223,7 @@ async fn report_minion_job_result_rejects_wrong_thread() -> Result<()> {
     let test = test_chaos().build(&server).await?;
 
     let input_path = test.cwd_path().join("minion_jobs_wrong_thread.csv");
-    let output_path = test
-        .cwd_path()
-        .join("minion_jobs_wrong_process_out.csv");
+    let output_path = test.cwd_path().join("minion_jobs_wrong_process_out.csv");
     fs::write(&input_path, "path\nfile-1\n")?;
 
     let args = json!({
@@ -265,11 +255,7 @@ async fn report_minion_job_result_rejects_wrong_thread() -> Result<()> {
                 .cloned()
         })
         .expect("job_id from csv");
-    let job = db
-        .minion_jobs()
-        .get(job_id.as_str())
-        .await?
-        .expect("job");
+    let job = db.minion_jobs().get(job_id.as_str()).await?.expect("job");
     let items = db
         .minion_jobs()
         .list_items(job.id.as_str(), None, Some(10))
@@ -410,11 +396,7 @@ async fn spawn_minions_on_csv_stop_halts_future_items() -> Result<()> {
         })
         .expect("job_id from csv");
     let db = test.process.runtime_db().expect("runtime db");
-    let job = db
-        .minion_jobs()
-        .get(job_id.as_str())
-        .await?
-        .expect("job");
+    let job = db.minion_jobs().get(job_id.as_str()).await?.expect("job");
     assert_eq!(job.status, chaos_proc::MinionJobStatus::Cancelled);
     let progress = db.minion_jobs().progress(job_id.as_str()).await?;
     assert_eq!(progress.total_items, 3);

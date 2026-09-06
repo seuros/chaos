@@ -23,8 +23,6 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::AuthManager;
-use crate::minions::AgentControl;
-use crate::minions::AgentStatus;
 use crate::config::Config;
 use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
@@ -32,6 +30,8 @@ use crate::error::Result as ChaosResult;
 use crate::exec_policy::ExecPolicyManager;
 use crate::file_watcher::FileWatcher;
 use crate::mcp::McpManager;
+use crate::minions::AgentControl;
+use crate::minions::AgentStatus;
 use crate::models_manager::manager::ModelsManager;
 use crate::process::ProcessConfigSnapshot;
 use crate::rollout::map_session_init_error;

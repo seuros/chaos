@@ -633,10 +633,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
             create_spawn_minions_on_csv_tool(),
             /*supports_parallel_tool_calls*/ false,
         );
-        builder.register_handler(
-            "spawn_minions_on_csv",
-            minion_jobs_handler.clone(),
-        );
+        builder.register_handler("spawn_minions_on_csv", minion_jobs_handler.clone());
         if config.minion_jobs_worker_tools {
             push_tool_spec(
                 &mut builder,

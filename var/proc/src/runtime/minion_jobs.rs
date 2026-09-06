@@ -1,7 +1,7 @@
 use super::{
     MinionJob, MinionJobCreateParams, MinionJobItem, MinionJobItemCreateParams,
-    MinionJobItemStatus, MinionJobProgress, MinionJobRow, MinionJobStatus,
-    QueryBuilder, Row, Sqlite, StateRuntime, Value,
+    MinionJobItemStatus, MinionJobProgress, MinionJobRow, MinionJobStatus, QueryBuilder, Row,
+    Sqlite, StateRuntime, Value,
 };
 use crate::model::MinionJobItemRow;
 use crate::model::minion_job_machine::item::MinionJobItemWorkflow;
@@ -104,10 +104,7 @@ INSERT INTO agent_job_items (
             .ok_or_else(|| anyhow::anyhow!("failed to load created minion job {job_id}"))
     }
 
-    pub(crate) async fn get_minion_job(
-        &self,
-        job_id: &str,
-    ) -> anyhow::Result<Option<MinionJob>> {
+    pub(crate) async fn get_minion_job(&self, job_id: &str) -> anyhow::Result<Option<MinionJob>> {
         let row = sqlx::query_as::<_, MinionJobRow>(
             r#"
 SELECT
@@ -331,10 +328,7 @@ WHERE id = ? AND status = ?
         Ok(result.rows_affected() > 0)
     }
 
-    async fn get_minion_job_status(
-        &self,
-        job_id: &str,
-    ) -> anyhow::Result<MinionJobStatus> {
+    async fn get_minion_job_status(&self, job_id: &str) -> anyhow::Result<MinionJobStatus> {
         let row = sqlx::query(
             r#"
 SELECT status FROM agent_jobs WHERE id = ?

@@ -1,3 +1,6 @@
+use crate::LogEntry;
+use crate::LogQuery;
+use crate::LogRow;
 use crate::MinionJob;
 use crate::MinionJobCreateParams;
 use crate::MinionJobItem;
@@ -5,9 +8,6 @@ use crate::MinionJobItemCreateParams;
 use crate::MinionJobItemStatus;
 use crate::MinionJobProgress;
 use crate::MinionJobStatus;
-use crate::LogEntry;
-use crate::LogQuery;
-use crate::LogRow;
 use crate::ProcessMetadata;
 use crate::ProcessMetadataBuilder;
 use crate::ProcessesPage;
@@ -51,10 +51,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 mod backfill;
-mod minion_jobs;
 mod logs;
 mod memories;
 mod message_history;
+mod minion_jobs;
 mod processes;
 mod reviewer_orchestration;
 #[cfg(test)]
@@ -1538,9 +1538,7 @@ WHERE job_id = $1 AND item_id = $2
         .bind(item_id)
         .fetch_optional(&self.pool)
         .await?;
-        row.as_ref()
-            .map(minion_job_item_from_pg_row)
-            .transpose()
+        row.as_ref().map(minion_job_item_from_pg_row).transpose()
     }
 
     async fn mark_minion_job_running(&self, job_id: &str) -> anyhow::Result<()> {
@@ -1605,10 +1603,7 @@ WHERE id = $4 AND status = $5
     ) -> anyhow::Result<()> {
         let status = self.get_minion_job_status(job_id).await?;
         anyhow::ensure!(
-            matches!(
-                status,
-                MinionJobStatus::Pending | MinionJobStatus::Running
-            ),
+            matches!(status, MinionJobStatus::Pending | MinionJobStatus::Running),
             "cannot transition job {job_id} from {status:?} to Failed"
         );
 
@@ -1631,16 +1626,9 @@ WHERE id = $5 AND status = $6
         Ok(())
     }
 
-    async fn mark_minion_job_cancelled(
-        &self,
-        job_id: &str,
-        reason: &str,
-    ) -> anyhow::Result<bool> {
+    async fn mark_minion_job_cancelled(&self, job_id: &str, reason: &str) -> anyhow::Result<bool> {
         let status = self.get_minion_job_status(job_id).await?;
-        if !matches!(
-            status,
-            MinionJobStatus::Pending | MinionJobStatus::Running
-        ) {
+        if !matches!(status, MinionJobStatus::Pending | MinionJobStatus::Running) {
             return Ok(false);
         }
 
@@ -1663,10 +1651,7 @@ WHERE id = $5 AND status = $6
         Ok(result.rows_affected() > 0)
     }
 
-    async fn get_minion_job_status(
-        &self,
-        job_id: &str,
-    ) -> anyhow::Result<MinionJobStatus> {
+    async fn get_minion_job_status(&self, job_id: &str) -> anyhow::Result<MinionJobStatus> {
         let row = sqlx::query("SELECT status FROM agent_jobs WHERE id = $1")
             .bind(job_id)
             .fetch_optional(&self.pool)
@@ -1854,10 +1839,7 @@ WHERE
         Ok(result.rows_affected() > 0)
     }
 
-    async fn get_minion_job_progress(
-        &self,
-        job_id: &str,
-    ) -> anyhow::Result<MinionJobProgress> {
+    async fn get_minion_job_progress(&self, job_id: &str) -> anyhow::Result<MinionJobProgress> {
         let row = sqlx::query(
             r#"
 SELECT

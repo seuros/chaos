@@ -27,6 +27,7 @@ export TMP="$TMPDIR"
 export TEMP="$TMPDIR"
 export DARWIN_USER_TEMP_DIR="$TMPDIR"
 export DARWIN_USER_CACHE_DIR="${DARWIN_USER_CACHE_DIR:-$repo_root/.tmp/qa/cache}"
+export CHAOS_HOME="${CHAOS_QA_HOME:-$repo_root/.tmp/qa/home}"
 
 # Keep the default QA path hermetic. Runtime-storage environment variables are
 # useful for manual Postgres validation, but letting them leak into the general
@@ -36,6 +37,6 @@ export DARWIN_USER_CACHE_DIR="${DARWIN_USER_CACHE_DIR:-$repo_root/.tmp/qa/cache}
 unset CHAOS_STORAGE_URL
 unset CHAOS_SQLITE_HOME
 
-mkdir -p "$DARWIN_USER_CACHE_DIR"
+mkdir -p "$DARWIN_USER_CACHE_DIR" "$CHAOS_HOME"
 
 exec "$@"

@@ -82,8 +82,7 @@ impl Session {
             if let Some(minion_instructions) = turn_context.config.minion_instructions.as_deref() {
                 developer_sections.push(minion_instructions.to_string());
             }
-            developer_sections
-                .push(crate::minions::SUPERVISED_SUBAGENT_INSTRUCTIONS.to_string());
+            developer_sections.push(crate::minions::SUPERVISED_SUBAGENT_INSTRUCTIONS.to_string());
         }
         if let Some(collab_instructions) =
             chaos_ipc::models::DeveloperInstructions::from_collaboration_mode(&collaboration_mode)

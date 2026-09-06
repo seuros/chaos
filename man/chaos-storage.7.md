@@ -39,6 +39,26 @@ This access does not automatically restore old history into the active context
 or require an agent to preserve anything. It gives the continuing agent a
 deliberate route back when a compaction summary proves incomplete.
 
+## JOURNAL WRITER OWNERSHIP
+
+Only one writer may own a session journal at a time. Resume and durability
+errors include the underlying journal failure. A lease conflict identifies
+the session, current writer, and lease expiry time.
+
+Close the other instance of that session before retrying. A crashed writer's
+lease normally expires within 30 seconds; a live writer renews it. Do not
+delete lease rows to force a resume, as that can allow competing writers.
+Closing a subagent waits for its session loop to finish before returning, so
+an immediate resume does not race its previous journal writer.
+
+Journald protocol 5 includes background-task journal records. Older sidecars
+are incompatible even when their package version matches. PostgreSQL journal
+access is direct and does not use a sidecar.
+
+Local QA uses `.tmp/qa/home` instead of the operator's `CHAOS_HOME`; override
+that test home with `CHAOS_QA_HOME`. `just test` builds the current journald
+binary before running the suite so SQLite tests do not launch a stale binary.
+
 ## SQLITE
 
 The default. On first run FreeChaOS creates `chaos.sqlite` under the chaos

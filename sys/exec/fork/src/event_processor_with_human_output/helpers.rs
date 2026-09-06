@@ -3,8 +3,8 @@ use chaos_uptime::format_duration;
 use std::io::Write;
 use std::time::Duration;
 
-use super::MinionJobProgressMessage;
 use super::EventProcessorWithHumanOutput;
+use super::MinionJobProgressMessage;
 
 pub(super) struct MinionJobProgressStats {
     pub(super) processed: usize,
@@ -76,9 +76,7 @@ pub(super) fn format_minion_job_progress_line(
 }
 
 impl EventProcessorWithHumanOutput {
-    pub(super) fn parse_minion_job_progress(
-        message: &str,
-    ) -> Option<MinionJobProgressMessage> {
+    pub(super) fn parse_minion_job_progress(message: &str) -> Option<MinionJobProgressMessage> {
         let payload = message.strip_prefix("minion_job_progress:")?;
         serde_json::from_str::<MinionJobProgressMessage>(payload).ok()
     }

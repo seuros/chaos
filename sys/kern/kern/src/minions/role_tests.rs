@@ -819,7 +819,10 @@ async fn role_instructions_preserve_project_child_defaults() {
         .build()
         .await
         .expect("load config");
-    assert_eq!(config.minion_instructions.as_deref(), Some("CHILD_DEFAULTS"));
+    assert_eq!(
+        config.minion_instructions.as_deref(),
+        Some("CHILD_DEFAULTS")
+    );
     assert_eq!(
         config.developer_instructions.as_deref(),
         Some("PARENT_ROLE")

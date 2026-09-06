@@ -8880,6 +8880,7 @@ async fn chatwidget_markdown_code_blocks_vt100_snapshot() {
     let backend = VT100Backend::new(width, height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
     // Place viewport at the last line so that history lines insert above it
+    term.set_viewport_area(Rect::new(0, height - 1, width, 1));
 
     // Simulate streaming via AgentMessageContentDelta in 2-character chunks.
     let source: &str = r#"

@@ -7,10 +7,10 @@
 
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
-use crate::minions::AgentStatus;
 use crate::config::Config;
 use crate::error::ChaosErr;
 use crate::function_tool::FunctionCallError;
+use crate::minions::AgentStatus;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;

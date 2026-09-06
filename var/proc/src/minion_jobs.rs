@@ -39,9 +39,7 @@ impl<'a> MinionJobs<'a> {
         status: Option<MinionJobItemStatus>,
         limit: Option<usize>,
     ) -> anyhow::Result<Vec<MinionJobItem>> {
-        self.db
-            .list_minion_job_items(job_id, status, limit)
-            .await
+        self.db.list_minion_job_items(job_id, status, limit).await
     }
 
     pub async fn get_item(
@@ -61,9 +59,7 @@ impl<'a> MinionJobs<'a> {
     }
 
     pub async fn mark_failed(&self, job_id: &str, error_message: &str) -> anyhow::Result<()> {
-        self.db
-            .mark_minion_job_failed(job_id, error_message)
-            .await
+        self.db.mark_minion_job_failed(job_id, error_message).await
     }
 
     pub async fn mark_cancelled(&self, job_id: &str, reason: &str) -> anyhow::Result<bool> {

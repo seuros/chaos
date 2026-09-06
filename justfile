@@ -199,7 +199,8 @@ check:
 
 # Run tests with all features
 test *args:
-    scripts/with-local-qa-tmp.sh {{cargo}} nextest run --workspace --all-features --no-fail-fast {{args}}
+    scripts/with-local-qa-tmp.sh {{cargo}} build -p chaos_journald --bin chaos_journald
+    scripts/with-local-qa-tmp.sh {{cargo}} nextest run --workspace --all-features --no-fail-fast "$@"
 
 # Run the bounded Postgres validation set against a mounted filesystem.
 postgres-validate database_url:

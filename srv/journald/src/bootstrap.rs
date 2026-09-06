@@ -221,6 +221,10 @@ mod tests {
     fn compatibility_requires_exact_server_identity_and_protocol() {
         assert!(hello_is_compatible(&compatible_hello()));
 
+        let mut legacy_journal = compatible_hello();
+        legacy_journal.protocol_version = 4;
+        assert!(!hello_is_compatible(&legacy_journal));
+
         let mut stale_version = compatible_hello();
         stale_version.server_version = "47.0.0".to_string();
         assert!(!hello_is_compatible(&stale_version));

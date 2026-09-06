@@ -39,9 +39,9 @@ use tracing::Instrument;
 use tracing::warn;
 
 use crate::AuthManager;
-use crate::minions::control::AgentControl;
 use crate::config::Config;
 use crate::error::Result as ChaosResult;
+use crate::minions::control::AgentControl;
 use crate::process_table::NewProcess;
 use crate::process_table::ProcessTableState;
 use crate::shell_environment::ShellEnvironment;

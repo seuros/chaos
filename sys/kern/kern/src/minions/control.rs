@@ -619,10 +619,14 @@ impl AgentControl {
         state.send_op(agent_id, Op::Interrupt).await
     }
 
-    /// Submit a shutdown request to an existing agent thread.
+    /// Shut down an agent and release its journal writer before removing it.
     pub(crate) async fn shutdown_agent(&self, agent_id: ProcessId) -> ChaosResult<String> {
         let state = self.upgrade()?;
+        let process = state.get_process(agent_id).await?;
         let result = state.send_op(agent_id, Op::Shutdown {}).await;
+        if result.is_ok() {
+            process.chaos.session_loop_termination.clone().await;
+        }
         let _ = state.remove_process(&agent_id).await;
         self.state.release_spawned_thread(agent_id);
         result

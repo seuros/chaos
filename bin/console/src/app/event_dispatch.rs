@@ -860,8 +860,7 @@ impl App {
                 self.chat_widget.open_review_popup(use_reviewer);
             }
             AppEvent::OpenReviewMinionPicker { review_request } => {
-                self.chat_widget
-                    .show_review_minion_picker(review_request);
+                self.chat_widget.show_review_minion_picker(review_request);
             }
             AppEvent::SubmitUserMessageWithMode {
                 text,

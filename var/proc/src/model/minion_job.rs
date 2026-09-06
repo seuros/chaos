@@ -35,9 +35,7 @@ impl MinionJobStatus {
     pub fn is_final(self) -> bool {
         matches!(
             self,
-            MinionJobStatus::Completed
-                | MinionJobStatus::Failed
-                | MinionJobStatus::Cancelled
+            MinionJobStatus::Completed | MinionJobStatus::Failed | MinionJobStatus::Cancelled
         )
     }
 }
@@ -66,9 +64,7 @@ impl MinionJobItemStatus {
             "running" => Ok(Self::Running),
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
-            _ => Err(anyhow::anyhow!(
-                "invalid minion job item status: {value}"
-            )),
+            _ => Err(anyhow::anyhow!("invalid minion job item status: {value}")),
         }
     }
 }

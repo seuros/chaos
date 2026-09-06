@@ -39,7 +39,9 @@ pub enum JournalError {
     #[error("process not found: {0}")]
     ProcessNotFound(chaos_ipc::ProcessId),
 
-    #[error("lease conflict for process {process_id}")]
+    #[error(
+        "lease conflict for process {process_id}: writer {current_owner_id} holds the lease until {expires_at}; close the other session instance and retry after the lease expires"
+    )]
     LeaseConflict {
         process_id: chaos_ipc::ProcessId,
         current_owner_id: String,

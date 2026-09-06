@@ -218,17 +218,24 @@ impl ToolHandler for Handler {
         let source = chaos_ipc::background_tasks::TaskSource::Agent {
             process_id: new_process_id,
         };
-        let task = session
+        let task = match session
             .services
             .internal_task_store
             .find_source(&source)
             .await
-            .map(|task| internal_tasks::mcp_task(&task))
-            .ok_or_else(|| {
-                FunctionCallError::RespondToModel(
-                    "spawned agent has no registered completion task".into(),
+        {
+            Some(task) => internal_tasks::mcp_task(&task),
+            None => {
+                internal_tasks::register_agent_task(
+                    session.clone(),
+                    new_process_id,
+                    None,
+                    status,
+                    Some(&invocation_call_id),
                 )
-            })?;
+                .await
+            }
+        };
         session
             .services
             .internal_task_store

@@ -63,9 +63,7 @@ pub(crate) mod job {
         }
 
         pub(crate) fn start(&mut self) -> bool {
-            self.machine
-                .handle(MinionJobLifecycleEvent::Start)
-                .is_ok()
+            self.machine.handle(MinionJobLifecycleEvent::Start).is_ok()
         }
 
         pub(crate) fn complete(&mut self) -> bool {
@@ -75,15 +73,11 @@ pub(crate) mod job {
         }
 
         pub(crate) fn fail(&mut self) -> bool {
-            self.machine
-                .handle(MinionJobLifecycleEvent::Fail)
-                .is_ok()
+            self.machine.handle(MinionJobLifecycleEvent::Fail).is_ok()
         }
 
         pub(crate) fn cancel(&mut self) -> bool {
-            self.machine
-                .handle(MinionJobLifecycleEvent::Cancel)
-                .is_ok()
+            self.machine.handle(MinionJobLifecycleEvent::Cancel).is_ok()
         }
 
         #[cfg(test)]
@@ -126,22 +120,13 @@ pub(crate) mod job {
             assert_eq!(wf.current_state(), MinionJobLifecycleState::Pending);
 
             let cases = [
-                (
-                    MinionJobStatus::Pending,
-                    MinionJobLifecycleState::Pending,
-                ),
-                (
-                    MinionJobStatus::Running,
-                    MinionJobLifecycleState::Running,
-                ),
+                (MinionJobStatus::Pending, MinionJobLifecycleState::Pending),
+                (MinionJobStatus::Running, MinionJobLifecycleState::Running),
                 (
                     MinionJobStatus::Completed,
                     MinionJobLifecycleState::Completed,
                 ),
-                (
-                    MinionJobStatus::Failed,
-                    MinionJobLifecycleState::Failed,
-                ),
+                (MinionJobStatus::Failed, MinionJobLifecycleState::Failed),
                 (
                     MinionJobStatus::Cancelled,
                     MinionJobLifecycleState::Cancelled,
@@ -257,10 +242,7 @@ pub(crate) mod item {
             assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Running);
 
             assert!(wf.complete());
-            assert_eq!(
-                wf.current_state(),
-                MinionJobItemLifecycleState::Completed
-            );
+            assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Completed);
 
             let mut wf = MinionJobItemWorkflow::new();
             wf.start();

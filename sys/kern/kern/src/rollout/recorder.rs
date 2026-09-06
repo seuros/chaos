@@ -412,9 +412,9 @@ impl RolloutRecorder {
 
         let mut journal_sink = journal_sink;
         if persisted && journal_sink.append_items(&[]).await != JournalAppendOutcome::Persisted {
-            return Err(IoError::other(
-                "cannot claim journal writer for resumed process",
-            ));
+            return Err(journal_sink.failure(&format!(
+                "cannot claim journal writer for resumed process {session_id_for_default}"
+            )));
         }
         if config.unattended_recovery()
             && let JournalSinkState::Active(writer) = &journal_sink.state
@@ -748,6 +748,7 @@ enum JournalAppendOutcome {
 struct JournalSink {
     state: JournalSinkState,
     breaker: AsyncCircuitBreaker,
+    last_error: Option<String>,
 }
 
 enum JournalSinkState {
@@ -774,6 +775,7 @@ impl JournalSink {
     fn pending(config: PendingJournalConfig) -> Self {
         let process_id = config.process_id;
         Self {
+            last_error: None,
             state: JournalSinkState::Pending {
                 config,
                 items: Vec::new(),
@@ -785,6 +787,13 @@ impl JournalSink {
                 JOURNAL_HALF_OPEN_TIMEOUT,
                 1,
             ),
+        }
+    }
+
+    fn failure(&self, context: &str) -> IoError {
+        match &self.last_error {
+            Some(error) => IoError::other(format!("{context}: {error}")),
+            None => IoError::other(context.to_string()),
         }
     }
 
@@ -862,6 +871,7 @@ impl JournalSink {
                     .await;
                 match connect_result {
                     Ok(writer) => {
+                        self.last_error = None;
                         health::set_persistence_health(PersistenceHealth::Healthy);
                         self.state = JournalSinkState::Active(writer);
                         JournalAppendOutcome::Persisted
@@ -875,6 +885,7 @@ impl JournalSink {
                     }
                     Err(BreakerError::Operation(err)) => {
                         warn!("failed to initialize journal sink: {err}");
+                        self.last_error = Some(err);
                         health::set_persistence_health(PersistenceHealth::Failed);
                         self.state = JournalSinkState::Pending {
                             config,
@@ -887,6 +898,7 @@ impl JournalSink {
             JournalSinkState::Active(mut writer) => {
                 match self.breaker.call(|| writer.append_items(items)).await {
                     Ok(()) => {
+                        self.last_error = None;
                         health::set_persistence_health(PersistenceHealth::Healthy);
                         self.state = JournalSinkState::Active(writer);
                         JournalAppendOutcome::Persisted
@@ -898,6 +910,7 @@ impl JournalSink {
                     }
                     Err(BreakerError::Operation(err)) => {
                         warn!("journal append deferred after failure: {err}");
+                        self.last_error = Some(err);
                         health::set_persistence_health(PersistenceHealth::Failed);
                         self.state = JournalSinkState::Active(writer);
                         JournalAppendOutcome::Deferred
@@ -1558,7 +1571,7 @@ async fn rollout_writer(
                     JournalSinkState::Active(writer) => {
                         writer.ensure_lease().await.map_err(IoError::other)
                     }
-                    _ => Err(IoError::other("journal has no confirmed writer lease")),
+                    _ => Err(journal_sink.failure("journal has no confirmed writer lease")),
                 };
                 let result = match result {
                     Ok(())
@@ -1567,9 +1580,9 @@ async fn rollout_writer(
                     {
                         Ok(())
                     }
-                    Ok(()) => Err(IoError::other(
-                        "journal commit deferred; state is not durable",
-                    )),
+                    Ok(()) => {
+                        Err(journal_sink.failure("journal commit deferred; state is not durable"))
+                    }
                     Err(error) => Err(error),
                 };
                 let _ = ack.send(result);
@@ -1750,6 +1763,21 @@ mod tests {
             mode: JournalSinkMode::Create,
         });
         sink.state = JournalSinkState::Disabled;
+        let expires_at: Timestamp = "2026-09-06T18:00:30Z".parse().unwrap();
+        sink.last_error = Some(
+            chaos_journald::JournalError::LeaseConflict {
+                process_id: ProcessId::new(),
+                current_owner_id: "other-writer".into(),
+                expires_at,
+            }
+            .to_string(),
+        );
+        let resume_error = sink
+            .failure("cannot claim journal writer for resumed process")
+            .to_string();
+        assert!(resume_error.contains("other-writer"));
+        assert!(resume_error.contains(&expires_at.to_string()));
+        assert!(resume_error.contains("close the other session instance"));
         let (tx, rx) = mpsc::unbounded_channel();
         let writer = tokio::spawn(rollout_writer(
             true,
@@ -1768,7 +1796,9 @@ mod tests {
         done.await.unwrap();
         let (ack, done) = oneshot::channel();
         tx.send(RolloutCmd::Confirm { ack }).unwrap();
-        assert!(done.await.unwrap().is_err());
+        let error = done.await.unwrap().unwrap_err().to_string();
+        assert!(error.contains("journal has no confirmed writer lease"));
+        assert!(error.contains("other-writer"));
         drop(tx);
         writer.await.unwrap().unwrap();
     }

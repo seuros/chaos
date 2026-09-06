@@ -243,6 +243,7 @@ impl Session {
                 }
                 RolloutItem::ResponseItem(_)
                 | RolloutItem::EventMsg(_)
+                | RolloutItem::BackgroundTask(_)
                 | RolloutItem::CompactionControl(_)
                 | RolloutItem::SessionMeta(_) => {}
             }
@@ -312,6 +313,7 @@ impl Session {
                     history.drop_last_n_user_turns(rollback.num_turns);
                 }
                 RolloutItem::EventMsg(_)
+                | RolloutItem::BackgroundTask(_)
                 | RolloutItem::CompactionControl(_)
                 | RolloutItem::TurnContext(_)
                 | RolloutItem::SessionMeta(_) => {}

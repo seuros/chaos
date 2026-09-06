@@ -554,6 +554,7 @@ pub(super) async fn make_managed_client(
 
     let handler = ChaosClientHandler {
         server_name: server_name.clone(),
+        endpoint: crate::task_observer::endpoint_identity(&config.transport),
         tx_event,
         notification_tx,
         elicitation_requests,

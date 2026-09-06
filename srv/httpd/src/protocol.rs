@@ -27,6 +27,10 @@ pub struct TriggerRequest {
     /// Per-request model selection is forbidden. If present, reject with 400.
     #[serde(default)]
     pub model: Option<String>,
+    /// Keep the process alive until kernel background activity is quiescent.
+    #[serde(default)]
+    pub wait_background: bool,
+    pub background_timeout_seconds: Option<std::num::NonZeroU64>,
 }
 
 /// Token usage snapshot mirroring `TokenCountEvent.info`.

@@ -1,4 +1,5 @@
 mod accessors;
+mod completions;
 mod context;
 mod event;
 mod history;
@@ -36,6 +37,7 @@ pub(crate) struct Session {
     pub(super) out_of_band_elicitation_paused: watch::Sender<bool>,
     pub(crate) state: Mutex<SessionState>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
+    pub(crate) completions: completions::CompletionMailbox,
     pub(crate) permission_actor: PermissionActor,
 
     pub(crate) services: SessionServices,

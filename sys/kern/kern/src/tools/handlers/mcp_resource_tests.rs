@@ -246,6 +246,7 @@ async fn serverless_task_resources_list_poll_and_read_results() {
             TaskStatus::Completed,
             None,
             Some(json!({"output": "done"})),
+            None,
         )
         .await;
     for uri in [

@@ -1,10 +1,11 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+pub(crate) use crate::background_tasks::TaskRegistry as InternalTaskStore;
 use anyhow::Context;
 use anyhow::anyhow;
 use chaos_ipc::ProcessId;
+use chaos_ipc::background_tasks::{BackgroundTask, TaskSource, TaskState};
 use chaos_ipc::protocol::AgentStatus;
 use chaos_mcp_runtime::ListTasksResult;
 use chaos_mcp_runtime::McpTask;
@@ -13,8 +14,6 @@ use serde_json::Value;
 use serde_json::json;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::sync::Mutex;
-use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::chaos::Session;
@@ -31,18 +30,6 @@ pub(crate) enum InternalTaskHandle {
     Exec { process_id: i32 },
 }
 
-#[derive(Debug, Clone)]
-struct InternalTaskRecord {
-    task: McpTask,
-    handle: Option<InternalTaskHandle>,
-    result: Option<Value>,
-}
-
-#[derive(Default)]
-pub(crate) struct InternalTaskStore {
-    tasks: Mutex<HashMap<String, InternalTaskRecord>>,
-}
-
 impl InternalTaskStore {
     pub(crate) async fn create_task(
         &self,
@@ -50,35 +37,46 @@ impl InternalTaskStore {
         status: TaskStatus,
         status_message: Option<String>,
         result: Option<Value>,
+        call_id: Option<&str>,
     ) -> McpTask {
         let now = now_timestamp();
-        let task = McpTask {
-            task_id: Uuid::new_v4().to_string(),
-            status,
+        let source = handle.map(|handle| match handle {
+            InternalTaskHandle::Exec { process_id } => TaskSource::Exec {
+                session_id: process_id,
+            },
+            InternalTaskHandle::Agent { agent_id } => TaskSource::Agent {
+                process_id: agent_id,
+            },
+        });
+        let task = BackgroundTask {
+            id: call_id
+                .map(Self::submission_id)
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            source: source.clone(),
+            state: native_status(status),
             status_message,
             created_at: now.clone(),
-            last_updated_at: now,
-            ttl: None,
-            poll_interval: (!task_status_is_final(status)).then_some(DEFAULT_POLL_INTERVAL_MS),
+            updated_at: now,
+            result,
+            origin_call_id: call_id.map(str::to_owned),
+            origin_turn_id: None,
+            execution_id: None,
+            ready: call_id.is_none(),
+            notify: matches!(source, Some(TaskSource::Agent { .. }))
+                || !task_status_is_final(status),
+            delivered: false,
         };
-        self.tasks.lock().await.insert(
-            task.task_id.clone(),
-            InternalTaskRecord {
-                task: task.clone(),
-                handle,
-                result,
-            },
-        );
-        task
+        self.register(task.clone()).await;
+        mcp_task(&task)
     }
 
     pub(crate) async fn list_tasks(&self) -> ListTasksResult {
         let mut tasks = self
-            .tasks
-            .lock()
+            .list()
             .await
-            .values()
-            .map(|record| record.task.clone())
+            .iter()
+            .filter(|task| !matches!(task.source, Some(TaskSource::Mcp { .. })))
+            .map(mcp_task)
             .collect::<Vec<_>>();
         tasks.sort_by(|a, b| {
             a.created_at
@@ -93,27 +91,27 @@ impl InternalTaskStore {
     }
 
     pub(crate) async fn get_task(&self, task_id: &str) -> Option<McpTask> {
-        self.tasks
-            .lock()
-            .await
-            .get(task_id)
-            .map(|record| record.task.clone())
+        self.get(task_id).await.as_ref().map(mcp_task)
     }
 
     pub(crate) async fn get_task_result(&self, task_id: &str) -> Option<Value> {
-        self.tasks
-            .lock()
-            .await
-            .get(task_id)
-            .and_then(|record| record.result.clone())
+        self.get(task_id).await.and_then(|task| task.result)
     }
 
     pub(crate) async fn get_task_handle(&self, task_id: &str) -> Option<InternalTaskHandle> {
-        self.tasks
-            .lock()
-            .await
-            .get(task_id)
-            .and_then(|record| record.handle.clone())
+        let task = self.get(task_id).await?;
+        if task.state.is_terminal() {
+            return None;
+        }
+        match task.source? {
+            TaskSource::Exec { session_id } => Some(InternalTaskHandle::Exec {
+                process_id: session_id,
+            }),
+            TaskSource::Agent { process_id } => Some(InternalTaskHandle::Agent {
+                agent_id: process_id,
+            }),
+            TaskSource::Mcp { .. } | TaskSource::AgentMessage { .. } => None,
+        }
     }
 
     pub(crate) async fn update_task(
@@ -122,25 +120,42 @@ impl InternalTaskStore {
         status: TaskStatus,
         status_message: Option<String>,
         result: Option<Value>,
-        clear_handle: bool,
+        _clear_handle: bool,
     ) -> Option<McpTask> {
-        let mut tasks = self.tasks.lock().await;
-        let record = tasks.get_mut(task_id)?;
-        if task_status_is_final(record.task.status) {
-            return Some(record.task.clone());
-        }
-        record.task.status = status;
-        record.task.status_message = status_message;
-        record.task.last_updated_at = now_timestamp();
-        record.task.poll_interval =
-            (!task_status_is_final(status)).then_some(DEFAULT_POLL_INTERVAL_MS);
-        if let Some(result) = result {
-            record.result = Some(result);
-        }
-        if clear_handle {
-            record.handle = None;
-        }
-        Some(record.task.clone())
+        self.complete(task_id, native_status(status), status_message, result)
+            .await
+            .as_ref()
+            .map(mcp_task)
+    }
+}
+
+pub(crate) fn native_status(status: TaskStatus) -> TaskState {
+    match status {
+        TaskStatus::Working => TaskState::Running,
+        TaskStatus::InputRequired => TaskState::InputRequired,
+        TaskStatus::Completed => TaskState::Succeeded,
+        TaskStatus::Failed => TaskState::Failed,
+        TaskStatus::Cancelled => TaskState::Cancelled,
+    }
+}
+
+pub(crate) fn mcp_task(task: &BackgroundTask) -> McpTask {
+    McpTask {
+        task_id: task.id.clone(),
+        status: match task.state {
+            TaskState::Submitting | TaskState::Running => TaskStatus::Working,
+            TaskState::InputRequired => TaskStatus::InputRequired,
+            TaskState::Succeeded => TaskStatus::Completed,
+            TaskState::Failed | TaskState::Lost | TaskState::SubmissionUnknown => {
+                TaskStatus::Failed
+            }
+            TaskState::Cancelled => TaskStatus::Cancelled,
+        },
+        status_message: task.status_message.clone(),
+        created_at: task.created_at.clone(),
+        last_updated_at: task.updated_at.clone(),
+        ttl: None,
+        poll_interval: (!task.state.is_terminal()).then_some(DEFAULT_POLL_INTERVAL_MS),
     }
 }
 
@@ -149,6 +164,7 @@ pub(crate) async fn register_agent_task(
     agent_id: ProcessId,
     nickname: Option<String>,
     initial_status: AgentStatus,
+    call_id: Option<&str>,
 ) -> McpTask {
     let task = session
         .services
@@ -159,6 +175,7 @@ pub(crate) async fn register_agent_task(
             Some(agent_status_message(&initial_status)),
             is_final_agent_status(&initial_status)
                 .then(|| agent_result_value(agent_id, nickname.clone(), &initial_status)),
+            call_id,
         )
         .await;
 
@@ -176,37 +193,115 @@ pub(crate) async fn register_agent_task(
             .await;
         return task;
     }
-    let task_id = task.task_id.clone();
+    match session
+        .services
+        .agent_control
+        .subscribe_status(agent_id)
+        .await
+    {
+        Ok(rx) => watch_agent_task(
+            &session,
+            task.task_id.clone(),
+            agent_id,
+            nickname,
+            rx,
+            false,
+        ),
+        Err(error) => {
+            session
+                .services
+                .internal_task_store
+                .complete(
+                    &task.task_id,
+                    TaskState::Lost,
+                    Some(format!("cannot observe child: {error}")),
+                    None,
+                )
+                .await;
+        }
+    }
+    task
+}
 
-    tokio::spawn(async move {
-        let mut status_rx = match session
+/// Enroll another execution generation only for an already-enrolled child.
+/// Internal reviewers/orchestrators which suppressed completion stay suppressed.
+pub(crate) async fn prepare_agent_input(
+    session: &Arc<Session>,
+    agent_id: ProcessId,
+    call_id: &str,
+) -> anyhow::Result<()> {
+    let Some(previous) = session
+        .services
+        .internal_task_store
+        .find_source(&TaskSource::Agent {
+            process_id: agent_id,
+        })
+        .await
+    else {
+        return Ok(());
+    };
+    let rx = session
+        .services
+        .agent_control
+        .subscribe_status(agent_id)
+        .await?;
+    let status = rx.borrow().clone();
+    let wait_for_change = is_final_agent_status(&status);
+    if !previous.state.is_terminal() {
+        if !wait_for_change {
+            return Ok(());
+        }
+        session
             .services
-            .agent_control
-            .subscribe_status(agent_id)
-            .await
-        {
-            Ok(rx) => rx,
-            Err(err) => {
-                let _ = session
-                    .services
-                    .internal_task_store
-                    .update_task(
-                        &task_id,
-                        TaskStatus::Failed,
-                        Some(format!("failed to watch agent task: {err}")),
-                        Some(json!({
-                            "agent_id": agent_id.to_string(),
-                            "nickname": nickname,
-                            "error": err.to_string(),
-                        })),
-                        true,
-                    )
-                    .await;
-                return;
-            }
-        };
+            .internal_task_store
+            .complete(
+                &previous.id,
+                native_status(agent_task_status(&status)),
+                Some(agent_status_message(&status)),
+                Some(agent_result_value(agent_id, None, &status)),
+            )
+            .await;
+    }
+    session.begin_background_submission(call_id).await?;
+    let task = session
+        .services
+        .internal_task_store
+        .create_task(
+            Some(InternalTaskHandle::Agent { agent_id }),
+            TaskStatus::Working,
+            None,
+            None,
+            Some(call_id),
+        )
+        .await;
+    session.checkpoint_background_tasks().await?;
+    watch_agent_task(session, task.task_id, agent_id, None, rx, wait_for_change);
+    Ok(())
+}
 
+fn watch_agent_task(
+    session: &Arc<Session>,
+    task_id: String,
+    agent_id: ProcessId,
+    nickname: Option<String>,
+    mut status_rx: tokio::sync::watch::Receiver<AgentStatus>,
+    wait_for_change: bool,
+) {
+    let cancel = session
+        .services
+        .internal_task_store
+        .observer_cancel
+        .child_token();
+    let weak = Arc::downgrade(session);
+    tokio::spawn(async move {
+        if wait_for_change {
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                _ = status_rx.changed() => {}
+            }
+        }
         loop {
+            let Some(session) = weak.upgrade() else { break };
             let status = status_rx.borrow().clone();
             if is_final_agent_status(&status) {
                 let _ = session
@@ -223,7 +318,13 @@ pub(crate) async fn register_agent_task(
                 break;
             }
 
-            if status_rx.changed().await.is_err() {
+            drop(session);
+            let changed = tokio::select! {
+                _ = cancel.cancelled() => break,
+                result = status_rx.changed() => result,
+            };
+            if changed.is_err() {
+                let Some(session) = weak.upgrade() else { break };
                 let latest = session.services.agent_control.get_status(agent_id).await;
                 let final_status = if is_final_agent_status(&latest) {
                     latest
@@ -249,8 +350,6 @@ pub(crate) async fn register_agent_task(
             }
         }
     });
-
-    task
 }
 
 pub(crate) async fn attach_exec_task(
@@ -273,10 +372,16 @@ pub(crate) async fn attach_exec_task(
                 None => exec_status_message(output.exit_code),
             }),
             (output.process_id.is_none()).then(|| exec_result_from_output(output)),
+            Some(&output.event_call_id),
         )
         .await;
 
     output.task_id = Some(task.task_id.clone());
+    session
+        .services
+        .internal_task_store
+        .set_origin(&task.task_id, &output.event_call_id)
+        .await;
 
     let Some(process_id) = output.process_id else {
         let _ = session
@@ -293,24 +398,38 @@ pub(crate) async fn attach_exec_task(
         return Ok(());
     };
     let task_id = task.task_id.clone();
+    let mut completion = session
+        .services
+        .unified_exec_manager
+        .subscribe_completion(process_id)
+        .await
+        .map_err(|error| anyhow!(error.to_string()))?;
 
     tokio::spawn(async move {
         loop {
-            match session
-                .services
-                .unified_exec_manager
-                .task_snapshot(process_id)
-                .await
-            {
-                Ok(ExecTaskSnapshot::Running) => {
-                    sleep(Duration::from_millis(DEFAULT_POLL_INTERVAL_MS)).await;
+            let snapshot = completion.borrow_and_update().clone();
+            match snapshot {
+                ExecTaskSnapshot::Running => {
+                    if completion.changed().await.is_err() {
+                        session
+                            .services
+                            .internal_task_store
+                            .complete(
+                                &task_id,
+                                TaskState::Lost,
+                                Some("process completion channel closed".into()),
+                                None,
+                            )
+                            .await;
+                        break;
+                    }
                 }
-                Ok(ExecTaskSnapshot::Exited {
+                ExecTaskSnapshot::Exited {
                     exit_code,
                     command,
                     output,
                     wall_time,
-                }) => {
+                } => {
                     let _ = session
                         .services
                         .internal_task_store
@@ -321,20 +440,6 @@ pub(crate) async fn attach_exec_task(
                             Some(exec_result_from_snapshot(
                                 exit_code, command, output, wall_time,
                             )),
-                            true,
-                        )
-                        .await;
-                    break;
-                }
-                Err(err) => {
-                    let _ = session
-                        .services
-                        .internal_task_store
-                        .update_task(
-                            &task_id,
-                            TaskStatus::Failed,
-                            Some(format!("failed to observe exec task: {err}")),
-                            Some(json!({ "error": err.to_string() })),
                             true,
                         )
                         .await;

@@ -1046,6 +1046,7 @@ dependencies = [
  "chaos-selinux",
  "chaos-snitch",
  "chaos-sysctl",
+ "chaos-taskd",
  "chaos-which",
  "libc",
  "mimalloc",
@@ -1312,6 +1313,7 @@ dependencies = [
  "chaos-proc",
  "chaos-pwd",
  "chaos-realpath",
+ "chaos-session",
  "chaos-snitch",
  "chaos-uptime",
  "chaos-which",
@@ -1405,6 +1407,7 @@ dependencies = [
  "chaos-getopt",
  "chaos-ipc",
  "chaos-kern",
+ "chaos-session",
  "rama",
  "serde",
  "serde_json",
@@ -1658,6 +1661,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-kern",
  "chaos-proc",
+ "chaos-session",
  "chaos-sh",
  "core_test_support",
  "mcp-host",
@@ -1880,6 +1884,7 @@ dependencies = [
 name = "chaos-regress"
 version = "47.3.0"
 dependencies = [
+ "anyhow",
  "chaos-amphetamine",
  "chaos-apropos",
  "chaos-conv",
@@ -1887,12 +1892,15 @@ dependencies = [
  "chaos-glob",
  "chaos-ipc",
  "chaos-jail-report",
+ "chaos-kern",
  "chaos-lex",
  "chaos-realpath",
  "chaos-scm",
+ "chaos-session",
  "chaos-tmpfs",
  "chaos-uptime",
  "chaos-wchar",
+ "core_test_support",
  "dirs 6.0.0",
  "pretty_assertions",
  "serde_json",
@@ -2040,6 +2048,23 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "chaos-taskd"
+version = "47.3.0"
+dependencies = [
+ "anyhow",
+ "chaos-argv",
+ "chaos-coreboot",
+ "chaos-getopt",
+ "chaos-ipc",
+ "chaos-kern",
+ "chaos-session",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "usage-rs",
 ]
 
 [[package]]

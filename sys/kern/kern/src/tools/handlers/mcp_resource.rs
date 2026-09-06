@@ -864,6 +864,29 @@ async fn handle_read_resource(
     let payload_result: Result<ReadResourcePayload, FunctionCallError> = async {
         let result =
             read_resource_contents(&session, turn.as_ref(), server.as_deref(), &uri).await?;
+        if let Some(TaskUri::Result { task_id }) = parse_task_uri(&uri) {
+            let id = if let Some(server) = server.as_deref() {
+                if let Some(source) = session.mcp_task_source(server, task_id) {
+                    session
+                        .services
+                        .internal_task_store
+                        .find_source(&source)
+                        .await
+                        .map(|task| task.id)
+                } else {
+                    None
+                }
+            } else {
+                Some(task_id.to_owned())
+            };
+            if let Some(id) = id {
+                session
+                    .services
+                    .internal_task_store
+                    .result_read(id, &call_id)
+                    .await;
+            }
+        }
 
         Ok(ReadResourcePayload {
             server,

@@ -115,6 +115,8 @@ enum Subcommand {
 
     /// Run Chaos as an HTTP trigger server.
     Serve(chaos_httpd::ServeCli),
+    /// Recover durable background work through the kernel.
+    Taskd(chaos_taskd::TaskdCli),
 
     /// List available models for the active provider.
     Models(ModelsCli),
@@ -399,6 +401,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         Some(Subcommand::Serve(serve_cli)) => {
             chaos_httpd::run_main(arg0_paths.clone(), root_config_overrides, serve_cli).await?;
+        }
+        Some(Subcommand::Taskd(cli)) => {
+            chaos_taskd::run_main(arg0_paths.clone(), root_config_overrides, cli).await?;
         }
         Some(Subcommand::Resume(ResumeCommand {
             session_id,

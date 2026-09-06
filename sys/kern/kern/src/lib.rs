@@ -52,6 +52,8 @@ mod file_watcher;
 mod flags;
 pub mod git_info;
 
+pub mod background_recovery;
+mod background_tasks;
 mod internal_tasks;
 pub mod landlock;
 pub mod mcp;

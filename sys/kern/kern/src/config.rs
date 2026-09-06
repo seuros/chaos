@@ -470,6 +470,8 @@ pub struct Config {
     /// Kernel-only mode policy carrier used when an orchestrator spawns a
     /// child session. This is never loaded from user config directly.
     pub(crate) mode_policy_override: Option<crate::modes::ModePolicy>,
+    /// Kernel-only admission flag; never accepted from config.toml.
+    pub(crate) unattended_recovery: bool,
 
     /// Directory where Chaos stores the SQLite runtime DB.
     pub sqlite_home: PathBuf,

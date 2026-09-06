@@ -739,6 +739,12 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
         .await
         .expect("start supervisor");
     let supervisor_id = parent_thread.process_id;
+    parent_thread
+        .process
+        .chaos
+        .session
+        .suspend_completion_wakes(chaos_ipc::background_tasks::WakePolicy::Interrupted)
+        .await;
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
         parent_process_id: supervisor_id,
         depth: 1,
@@ -775,17 +781,35 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
         .expect("child should message supervisor");
     let (_, success) = expect_text_output(output);
     assert_eq!(success, Some(true));
-    assert!(manager.captured_ops().iter().any(|(id, op)| {
-        *id == supervisor_id
-            && matches!(
-                op,
-                Op::UserInput { items, .. }
-                    if matches!(
-                        items.as_slice(),
-                        [UserInput::Text { text, .. }] if text == "status update"
-                    )
-            )
-    }));
+    assert!(
+        !manager
+            .captured_ops()
+            .iter()
+            .any(|(id, op)| *id == supervisor_id && matches!(op, Op::UserInput { .. }))
+    );
+    let registry = &parent_thread
+        .process
+        .chaos
+        .session
+        .services
+        .internal_task_store;
+    assert_eq!(
+        registry.subscribe().borrow().wake_policy,
+        chaos_ipc::background_tasks::WakePolicy::Interrupted
+    );
+    let message = registry
+        .find_source(&chaos_ipc::background_tasks::TaskSource::AgentMessage {
+            process_id: session.conversation_id,
+        })
+        .await
+        .expect("retained contextual message");
+    assert!(
+        message
+            .result
+            .unwrap()
+            .to_string()
+            .contains("status update")
+    );
 
     let mut root_turn = (*child_turn).clone();
     root_turn.session_source = SessionSource::Cli;
@@ -1199,7 +1223,10 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .expect("approval policy set");
 
     let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
-    assert_eq!(config.minion_instructions.as_deref(), Some("child-defaults"));
+    assert_eq!(
+        config.minion_instructions.as_deref(),
+        Some("child-defaults")
+    );
     let mut expected = (*turn.config).clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
@@ -1258,7 +1285,10 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .expect("approval policy set");
 
     let config = build_agent_resume_config(&turn, 0).expect("resume config");
-    assert_eq!(config.minion_instructions.as_deref(), Some("child-defaults"));
+    assert_eq!(
+        config.minion_instructions.as_deref(),
+        Some("child-defaults")
+    );
 
     let mut expected = (*turn.config).clone();
     expected.base_instructions = None;

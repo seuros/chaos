@@ -40,6 +40,7 @@ mod tests {
                 TaskStatus::Completed,
                 None,
                 Some(json!({"output": "done"})),
+                None,
             )
             .await;
         let output = handle_cancel_task(

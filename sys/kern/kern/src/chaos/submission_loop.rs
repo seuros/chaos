@@ -42,6 +42,7 @@ pub(crate) fn initial_replay_event_msgs(
             }
             RolloutItem::SessionMeta(_)
             | RolloutItem::TurnContext(_)
+            | RolloutItem::BackgroundTask(_)
             | RolloutItem::CompactionControl(_)
             | RolloutItem::Compacted(_) => {}
         }
@@ -60,7 +61,51 @@ pub(super) async fn submission_loop(
     rx_sub: Receiver<Submission>,
 ) {
     // To break out of this loop, send Op::Shutdown.
-    while let Ok(sub) = rx_sub.recv().await {
+    let mut maintenance = tokio::time::interval(std::time::Duration::from_secs(10));
+    maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let ownership_lost = sess
+        .services
+        .rollout
+        .lock()
+        .await
+        .as_ref()
+        .map(crate::rollout::RolloutRecorder::ownership_lost)
+        .unwrap_or_default();
+    loop {
+        let sub = tokio::select! {
+            biased;
+            _ = ownership_lost.cancelled() => {
+                sess.services.internal_task_store.set_blocked(Some("journal ownership lost".into())).await;
+                handlers::shutdown(&sess, "ownership-lost".into()).await;
+                break;
+            },
+            sub = rx_sub.recv() => match sub {
+                Ok(sub) => sub,
+                Err(_) => break,
+            },
+            _ = sess.completions.changed.notified() => {
+                finalize_finished_tasks(&sess).await;
+                sess.admit_completion_turn().await;
+                continue;
+            },
+            _ = sess.services.internal_task_store.changed.notified() => {
+                if let Err(error) = sess.checkpoint_background_tasks().await {
+                    warn!(%error, "background lifecycle checkpoint deferred");
+                }
+                sess.admit_completion_turn().await;
+                continue;
+            },
+            _ = maintenance.tick() => {
+                if let Err(error) = sess.checkpoint_background_tasks().await {
+                    warn!(%error, "background lifecycle maintenance deferred");
+                }
+                sess.admit_completion_turn().await;
+                continue;
+            },
+        };
+        // Owner input wins over background admission, but must see completed
+        // foreground work as idle rather than steering into a finished future.
+        finalize_finished_tasks(&sess).await;
         debug!(?sub, "Submission");
         let dispatch_span = submission_dispatch_span(&sub);
         let should_exit = async {
@@ -279,6 +324,13 @@ pub(super) async fn submission_loop(
     debug!("Agent loop exited");
 }
 
+async fn finalize_finished_tasks(sess: &Arc<Session>) {
+    let finished = std::mem::take(&mut *sess.completions.finished.lock().await);
+    for (context, message) in finished {
+        sess.on_task_finished(context, message).await;
+    }
+}
+
 pub(crate) fn submission_dispatch_span(sub: &Submission) -> tracing::Span {
     let op_name = sub.op.kind();
     let span_name = format!("op.dispatch.{op_name}");
@@ -384,11 +436,8 @@ pub(super) async fn spawn_review_thread(
         // Start from a clean slate so the parent agent's persona cannot bleed
         // into the review turn if the requested reviewer cannot be applied.
         per_turn_config.developer_instructions = None;
-        match crate::minions::role::apply_builtin_persona_to_config(
-            &mut per_turn_config,
-            reviewer,
-        )
-        .await
+        match crate::minions::role::apply_builtin_persona_to_config(&mut per_turn_config, reviewer)
+            .await
         {
             Ok(()) => {
                 reviewer_applied = true;

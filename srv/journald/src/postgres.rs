@@ -727,6 +727,7 @@ fn journal_item_type(item: &RolloutItem) -> &'static str {
         RolloutItem::CompactionControl(_) => "compaction_control",
         RolloutItem::TurnContext(_) => "turn_context",
         RolloutItem::EventMsg(_) => "event_msg",
+        RolloutItem::BackgroundTask(_) => "background_task",
     }
 }
 

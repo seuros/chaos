@@ -37,7 +37,6 @@ use tokio::sync::Mutex;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::sandboxing::SandboxPermissions;
-use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
 
 mod async_watcher;
 mod errors;
@@ -149,10 +148,10 @@ struct ProcessEntry {
     network_approval_id: Option<String>,
     session: Weak<Session>,
     last_used: tokio::time::Instant,
-    started_at: tokio::time::Instant,
-    transcript: Arc<tokio::sync::Mutex<HeadTailBuffer>>,
+    completion: tokio::sync::watch::Receiver<ExecTaskSnapshot>,
 }
 
+#[derive(Clone)]
 pub(crate) enum ExecTaskSnapshot {
     Running,
     Exited {

@@ -459,8 +459,12 @@ async fn maybe_request_mcp_tool_approval(
         persistent_approval_key.as_ref(),
     );
     let question_id = format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}");
+    let Some(server) = invocation.server.as_deref() else {
+        tracing::warn!("cannot request external MCP approval without a server");
+        return Some(McpToolApprovalDecision::Cancel);
+    };
     let rendered_template = render_mcp_tool_approval_template(
-        invocation.server.as_deref().expect("external MCP server"),
+        server,
         metadata.and_then(|metadata| metadata.connector_id.as_deref()),
         metadata.and_then(|metadata| metadata.connector_name.as_deref()),
         metadata.and_then(|metadata| metadata.tool_title.as_deref()),
@@ -472,7 +476,7 @@ async fn maybe_request_mcp_tool_approval(
         .or_else(|| build_mcp_tool_approval_display_params(invocation.arguments.as_ref()));
     let mut question = build_mcp_tool_approval_question(
         question_id.clone(),
-        invocation.server.as_deref().expect("external MCP server"),
+        server,
         &invocation.tool,
         metadata.and_then(|metadata| metadata.connector_name.as_deref()),
         prompt_options,
@@ -489,7 +493,7 @@ async fn maybe_request_mcp_tool_approval(
         sess.as_ref(),
         turn_context.as_ref(),
         McpToolApprovalElicitationRequest {
-            server: invocation.server.as_deref().expect("external MCP server"),
+            server,
             metadata,
             tool_params: rendered_template
                 .as_ref()
@@ -1263,6 +1267,13 @@ pub(crate) async fn handle_mcp_tool_call_async(
 
     maybe_mark_process_memory_mode_polluted(sess.as_ref(), turn_context.as_ref()).await;
 
+    sess.begin_background_submission(&call_id)
+        .await
+        .map_err(|error| {
+            FunctionCallError::RespondToModel(format!(
+                "task not submitted: journal unavailable: {error}"
+            ))
+        })?;
     let start = Instant::now();
     let outcome = sess
         .call_tool_async(&server, &tool, arguments, request_meta, ttl)
@@ -1272,6 +1283,14 @@ pub(crate) async fn handle_mcp_tool_call_async(
 
     let (end_result, return_value) = match outcome {
         Ok(task) => {
+            sess.track_mcp_task(&server, task.clone(), &call_id)
+                .await
+                .map_err(|error| {
+                    FunctionCallError::RespondToModel(format!(
+                        "task {} was accepted but tracking failed: {error}",
+                        task.task_id
+                    ))
+                })?;
             let text = serde_json::to_string(&task).unwrap_or_default();
             let result = Ok(CallToolResult {
                 content: vec![serde_json::json!({"type": "text", "text": text})],

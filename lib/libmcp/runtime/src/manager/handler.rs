@@ -124,6 +124,7 @@ async fn emit_resource_update(
 /// Handler that bridges mcp-guest callbacks to the core event system.
 pub(super) struct ChaosClientHandler {
     pub(super) server_name: String,
+    pub(super) endpoint: String,
     pub(super) tx_event: Sender<Event>,
     pub(super) notification_tx: Option<Sender<McpServerNotification>>,
     pub(super) elicitation_requests: ElicitationRequestManager,
@@ -141,6 +142,23 @@ pub(super) struct ChaosClientHandler {
 }
 
 impl ClientHandler for ChaosClientHandler {
+    fn on_task_status(&self, task: mcp_guest::protocol::Task) -> ClientHandlerFuture<'_> {
+        let tx = self.notification_tx.clone();
+        let server = self.server_name.clone();
+        let endpoint = self.endpoint.clone();
+        Box::pin(async move {
+            if let Some(tx) = tx {
+                let _ = tx
+                    .send(McpServerNotification::TaskStatus {
+                        server,
+                        endpoint,
+                        task,
+                    })
+                    .await;
+            }
+        })
+    }
+
     fn list_roots(&self) -> ClientHandlerResultFuture<'_, ListRootsResult> {
         let cwd = self
             .cwd

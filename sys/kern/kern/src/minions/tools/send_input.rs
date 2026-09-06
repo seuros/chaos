@@ -115,12 +115,39 @@ async fn send_input_to_agent(
             .into(),
         )
         .await;
-    let result = session
-        .services
-        .agent_control
-        .send_input(receiver_process_id, input_items)
+    crate::internal_tasks::prepare_agent_input(session, receiver_process_id, &call_id)
         .await
-        .map_err(|err| collab_agent_error(receiver_process_id, err));
+        .map_err(|error| {
+            FunctionCallError::RespondToModel(format!("agent input not sent: {error}"))
+        })?;
+    let is_supervisor = matches!(&turn.session_source,
+        SessionSource::SubAgent(SubAgentSource::ProcessSpawn { parent_process_id, .. })
+            if *parent_process_id == receiver_process_id);
+    let result = if is_supervisor {
+        session
+            .services
+            .agent_control
+            .send_supervisor_message(receiver_process_id, session.conversation_id, input_items)
+            .await
+    } else {
+        session
+            .services
+            .agent_control
+            .send_input(receiver_process_id, input_items)
+            .await
+    }
+    .map_err(|err| collab_agent_error(receiver_process_id, err));
+    if !is_supervisor && let Ok(execution_id) = &result {
+        session
+            .services
+            .internal_task_store
+            .correlate(
+                &crate::background_tasks::TaskRegistry::submission_id(&call_id),
+                None,
+                Some(execution_id.clone()),
+            )
+            .await;
+    }
     let status = session
         .services
         .agent_control

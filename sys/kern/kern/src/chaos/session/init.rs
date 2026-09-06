@@ -30,8 +30,6 @@ use tracing::warn;
 use crate::AuthManager;
 use crate::ChaosAuth;
 use crate::SandboxState;
-use crate::minions::AgentControl;
-use crate::minions::AgentStatus;
 use crate::config::Config;
 use crate::config::StartedNetworkProxy;
 use crate::config::resolve_web_search_mode_for_turn;
@@ -40,6 +38,8 @@ use crate::file_watcher::FileWatcher;
 use crate::git_info::get_git_repo_root;
 use crate::mcp::McpManager;
 use crate::mcp::auth::compute_auth_statuses;
+use crate::minions::AgentControl;
+use crate::minions::AgentStatus;
 use crate::models_manager::manager::ModelsManager;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::RolloutRecorderParams;
@@ -163,7 +163,7 @@ impl Session {
         exec_policy: ExecPolicyManager,
         tx_event: Sender<Event>,
         agent_status: watch::Sender<AgentStatus>,
-        initial_history: InitialHistory,
+        mut initial_history: InitialHistory,
         session_source: SessionSource,
         mcp_manager: Arc<McpManager>,
         file_watcher: Arc<FileWatcher>,
@@ -274,6 +274,16 @@ impl Session {
             error!("failed to initialize rollout recorder: {e:#}");
             e
         })?;
+        if config.unattended_recovery
+            && config.model_provider.requires_managed_auth()
+            && auth.is_none()
+            && config.model_provider.api_key().ok().flatten().is_none()
+        {
+            if let Some(recorder) = rollout_recorder {
+                let _ = recorder.shutdown().await;
+            }
+            anyhow::bail!("background recovery requires current provider credentials");
+        }
         let (history_log_id, history_entry_count) = async {
             if is_subagent {
                 (0, 0)
@@ -545,6 +555,7 @@ impl Session {
             out_of_band_elicitation_paused,
             state: Mutex::new(state),
             active_turn: Mutex::new(None),
+            completions: Default::default(),
             permission_actor,
             services,
             next_internal_sub_id: AtomicU64::new(0),
@@ -688,6 +699,29 @@ impl Session {
             }
         };
 
+        if let InitialHistory::Resumed(_) = &initial_history {
+            // The writer has now been claimed. Re-read under that ownership so
+            // a last append by the previous owner cannot be missed.
+            if sess.services.rollout.lock().await.is_some() {
+                initial_history =
+                    RolloutRecorder::get_rollout_history_for_process(conversation_id).await?;
+            }
+            if config.unattended_recovery
+                && let Err(error) = crate::background_recovery::validate_claimed(
+                    &config,
+                    &initial_history.get_rollout_items(),
+                )
+                .await
+            {
+                let _ = sess.services.mcp_registry.shutdown().await;
+                if let Some(recorder) = sess.services.rollout.lock().await.take() {
+                    let _ = recorder.shutdown().await;
+                }
+                return Err(error);
+            }
+            sess.recover_background_tasks(&initial_history.get_rollout_items())
+                .await;
+        }
         sess.record_initial_history(initial_history).await;
         {
             let mut state = sess.state.lock().await;

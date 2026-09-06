@@ -335,6 +335,7 @@ fn render_journal_entry(entry: &JournalEntry) -> Option<TranscriptEntry> {
         ),
         RolloutItem::SessionMeta(_)
         | RolloutItem::TurnContext(_)
+        | RolloutItem::BackgroundTask(_)
         | RolloutItem::CompactionControl(_)
         | RolloutItem::EventMsg(_) => {
             return None;

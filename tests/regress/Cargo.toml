@@ -12,6 +12,10 @@ path = "src/lib.rs"
 workspace = true
 
 [dev-dependencies]
+anyhow = { workspace = true }
+chaos-kern = { workspace = true }
+chaos-session = { workspace = true }
+core_test_support = { workspace = true }
 chaos-amphetamine = { workspace = true }
 chaos-apropos = { workspace = true }
 chaos-conv = { workspace = true }

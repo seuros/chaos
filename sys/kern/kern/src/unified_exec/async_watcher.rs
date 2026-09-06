@@ -113,6 +113,7 @@ pub(crate) fn spawn_exit_watcher(
     process_id: i32,
     transcript: Arc<Mutex<HeadTailBuffer>>,
     started_at: Instant,
+    completion: tokio::sync::watch::Sender<super::ExecTaskSnapshot>,
 ) {
     let exit_token = process.cancellation_token();
     let output_drained = process.output_drained_notify();
@@ -123,6 +124,12 @@ pub(crate) fn spawn_exit_watcher(
 
         let exit_code = process.exit_code().unwrap_or(-1);
         let duration = Instant::now().saturating_duration_since(started_at);
+        completion.send_replace(super::ExecTaskSnapshot::Exited {
+            exit_code: process.exit_code(),
+            command: command.clone(),
+            output: transcript.lock().await.to_bytes(),
+            wall_time: duration,
+        });
         emit_exec_end_for_unified_exec(
             session_ref,
             turn_ref,

@@ -938,6 +938,26 @@ async fn maybe_persist_mcp_tool_approval_reloads_session_config() {
 }
 
 #[tokio::test]
+async fn approval_without_external_server_is_cancelled() {
+    let (session, turn_context) = make_session_and_context().await;
+    let invocation = McpInvocation {
+        server: None,
+        tool: "tool".to_string(),
+        arguments: None,
+    };
+    let decision = maybe_request_mcp_tool_approval(
+        &Arc::new(session),
+        &Arc::new(turn_context),
+        "missing-server",
+        &invocation,
+        None,
+        AppToolApproval::Prompt,
+    )
+    .await;
+    assert_eq!(decision, Some(McpToolApprovalDecision::Cancel));
+}
+
+#[tokio::test]
 async fn approve_mode_skips_when_annotations_do_not_require_approval() {
     let (session, turn_context) = make_session_and_context().await;
     let session = Arc::new(session);

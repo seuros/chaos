@@ -13,11 +13,9 @@ pub(in crate::top_bar) fn new() -> BarWidget {
 
 pub(in crate::top_bar) fn present(debug: bool, sha: Option<&str>) -> Content {
     let mut label = chaos_ipc::product::display_name_with_version();
-    if debug {
-        if let Some(sha) = sha.filter(|sha| !sha.is_empty()) {
-            label.push(' ');
-            label.extend(sha.chars().take(7));
-        }
+    if debug && let Some(sha) = sha.filter(|sha| !sha.is_empty()) {
+        label.push(' ');
+        label.extend(sha.chars().take(7));
     }
     Content::new(label).tone(if debug { Tone::Warning } else { Tone::Normal })
 }

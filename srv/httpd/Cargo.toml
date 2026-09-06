@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+chaos-session = { workspace = true }
 anyhow = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-coreboot = { workspace = true }

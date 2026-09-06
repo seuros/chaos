@@ -581,15 +581,15 @@ mod tests {
             ("legacy array", serde_json::json!([model.clone()]), None),
             (
                 "missing format",
-                serde_json::json!({ "models": [model.clone()] }),
+                serde_json::json!({ "models": [model] }),
                 None,
             ),
             (
                 "unknown format",
-                serde_json::json!({ "format": "raw_catalog_v2", "models": [model.clone()] }),
+                serde_json::json!({ "format": "raw_catalog_v2", "models": [model] }),
                 None,
             ),
-            ("marked envelope", envelope, Some(vec![model.clone()])),
+            ("marked envelope", envelope, Some(vec![model])),
         ];
 
         for (label, input, expected) in cases {

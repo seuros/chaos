@@ -29,6 +29,19 @@ impl Session {
 
     async fn handle_mcp_server_notification(&self, notification: McpServerNotification) {
         let text = match notification {
+            McpServerNotification::TaskStatus {
+                server,
+                endpoint,
+                task,
+            } => {
+                let source = chaos_ipc::background_tasks::TaskSource::Mcp {
+                    server,
+                    endpoint,
+                    remote_task_id: task.task_id.clone(),
+                };
+                self.apply_mcp_task_observation(&source, task).await;
+                return;
+            }
             McpServerNotification::ResourceUpdated { server, uri } => {
                 format_resource_update_for_model(&server, &uri)
             }

@@ -33,6 +33,7 @@ impl ToolHandler for Handler {
             call_id,
             ..
         } = invocation;
+        let invocation_call_id = call_id.clone();
         let arguments = function_arguments(payload)?;
         let args: SpawnAgentArgs = parse_arguments(&arguments)?;
 
@@ -135,6 +136,14 @@ impl ToolHandler for Handler {
                 .map_err(FunctionCallError::RespondToModel)?,
         );
 
+        session
+            .begin_background_submission(&invocation_call_id)
+            .await
+            .map_err(|error| {
+                FunctionCallError::RespondToModel(format!(
+                    "agent not started: journal unavailable: {error}"
+                ))
+            })?;
         let result = session
             .services
             .agent_control
@@ -147,6 +156,7 @@ impl ToolHandler for Handler {
                     role_name,
                 )),
                 SpawnAgentOptions {
+                    completion_call_id: Some(invocation_call_id.clone()),
                     fork_parent_spawn_call_id: args.fork_context.then(|| call_id.clone()),
                     ..SpawnAgentOptions::default()
                 },
@@ -205,13 +215,25 @@ impl ToolHandler for Handler {
             /*inc*/ 1,
             &[("role", role_tag)],
         );
-        let task = internal_tasks::register_agent_task(
-            session.clone(),
-            new_process_id,
-            nickname.clone(),
-            status,
-        )
-        .await;
+        let source = chaos_ipc::background_tasks::TaskSource::Agent {
+            process_id: new_process_id,
+        };
+        let task = session
+            .services
+            .internal_task_store
+            .find_source(&source)
+            .await
+            .map(|task| internal_tasks::mcp_task(&task))
+            .ok_or_else(|| {
+                FunctionCallError::RespondToModel(
+                    "spawned agent has no registered completion task".into(),
+                )
+            })?;
+        session
+            .services
+            .internal_task_store
+            .set_origin(&task.task_id, &invocation_call_id)
+            .await;
 
         Ok(SpawnAgentResult {
             agent_id: new_process_id.to_string(),

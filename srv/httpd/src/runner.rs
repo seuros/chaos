@@ -6,6 +6,7 @@ use chaos_ipc::user_input::UserInput;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
+use chaos_session::background::{BackgroundWait, DEFAULT_BACKGROUND_TIMEOUT, WaitEvent};
 use tracing::{info, warn};
 
 use crate::protocol::{TokenUsageEntry, TokenUsageResponse, TriggerRequest};
@@ -69,11 +70,32 @@ pub(crate) async fn execute(
 
     // Drain events.
     let mut usage: Option<TokenUsageResponse> = None;
+    let mut text = String::new();
+    let mut wait = BackgroundWait::new(
+        process,
+        request.wait_background,
+        request
+            .background_timeout_seconds
+            .map(|seconds| std::time::Duration::from_secs(seconds.get()))
+            .unwrap_or(DEFAULT_BACKGROUND_TIMEOUT),
+    );
 
     let outcome = loop {
-        match process.next_event().await {
-            Ok(event) => match event.msg {
+        match wait.next(process).await {
+            WaitEvent::Complete => {
+                break TriggerOutcome {
+                    process_id,
+                    text,
+                    is_error: false,
+                    usage,
+                };
+            }
+            WaitEvent::Event(event) => match event.msg {
                 EventMsg::TurnComplete(ev) => {
+                    if request.wait_background {
+                        text = ev.last_agent_message.unwrap_or_default();
+                        continue;
+                    }
                     break TriggerOutcome {
                         process_id,
                         text: ev.last_agent_message.unwrap_or_default(),
@@ -140,7 +162,7 @@ pub(crate) async fn execute(
                 // are passthrough — no action needed.
                 _ => {}
             },
-            Err(e) => {
+            WaitEvent::Stopped(e) => {
                 break TriggerOutcome {
                     process_id,
                     text: format!("runtime error: {e}"),

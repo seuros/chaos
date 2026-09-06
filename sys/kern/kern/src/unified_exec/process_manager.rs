@@ -423,25 +423,17 @@ impl UnifiedExecProcessManager {
         Ok(())
     }
 
-    pub(crate) async fn task_snapshot(
+    pub(crate) async fn subscribe_completion(
         &self,
         process_id: i32,
-    ) -> Result<ExecTaskSnapshot, UnifiedExecError> {
-        let status = self.refresh_process_state(process_id).await;
-        match status {
-            ProcessStatus::Alive { .. } => Ok(ExecTaskSnapshot::Running),
-            ProcessStatus::Exited { exit_code, entry } => {
-                let output = entry.transcript.lock().await.to_bytes();
-                let wall_time = entry.started_at.elapsed();
-                Ok(ExecTaskSnapshot::Exited {
-                    exit_code,
-                    command: entry.command.clone(),
-                    output,
-                    wall_time,
-                })
-            }
-            ProcessStatus::Unknown => Err(UnifiedExecError::UnknownProcessId { process_id }),
-        }
+    ) -> Result<watch::Receiver<ExecTaskSnapshot>, UnifiedExecError> {
+        self.process_store
+            .lock()
+            .await
+            .processes
+            .get(&process_id)
+            .map(|entry| entry.completion.clone())
+            .ok_or(UnifiedExecError::UnknownProcessId { process_id })
     }
 
     async fn refresh_process_state(&self, process_id: i32) -> ProcessStatus {
@@ -537,6 +529,7 @@ impl UnifiedExecProcessManager {
         network_approval_id: Option<String>,
         transcript: Arc<tokio::sync::Mutex<HeadTailBuffer>>,
     ) {
+        let (completion_tx, completion) = watch::channel(ExecTaskSnapshot::Running);
         let entry = ProcessEntry {
             process: Arc::clone(&process),
             call_id: context.call_id.clone(),
@@ -546,8 +539,7 @@ impl UnifiedExecProcessManager {
             network_approval_id,
             session: Arc::downgrade(&context.session),
             last_used: started_at,
-            started_at,
-            transcript: Arc::clone(&transcript),
+            completion,
         };
         let (number_processes, pruned_entry) = {
             let mut store = self.process_store.lock().await;
@@ -582,6 +574,7 @@ impl UnifiedExecProcessManager {
             process_id,
             transcript,
             started_at,
+            completion_tx,
         );
     }
 

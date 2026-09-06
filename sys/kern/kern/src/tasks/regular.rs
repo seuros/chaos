@@ -12,8 +12,12 @@ use tracing::trace_span;
 use super::SessionTask;
 use super::SessionTaskContext;
 
-#[derive(Default)]
-pub(crate) struct RegularTask;
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum RegularTask {
+    #[default]
+    Owner,
+    Completion,
+}
 
 impl SessionTask for RegularTask {
     fn kind(&self) -> TaskKind {
@@ -35,7 +39,7 @@ impl SessionTask for RegularTask {
             let sess = session.clone_session();
             let run_turn_span = trace_span!("run_turn");
             sess.set_server_reasoning_included(/*included*/ false).await;
-            run_turn(sess, ctx, input, None, cancellation_token)
+            run_turn(sess, ctx, input, *self, None, cancellation_token)
                 .instrument(run_turn_span)
                 .await
         })

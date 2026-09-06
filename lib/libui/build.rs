@@ -48,8 +48,8 @@ fn source_sha(root: &Path) -> Option<String> {
             watch(Path::new(&path));
         }
     }
-    if let Some(reference) = git(root, &["symbolic-ref", "-q", "HEAD"]) {
-        if let Some(path) = git(
+    if let Some(path) = git(root, &["symbolic-ref", "-q", "HEAD"]).and_then(|reference| {
+        git(
             root,
             &[
                 "rev-parse",
@@ -57,22 +57,25 @@ fn source_sha(root: &Path) -> Option<String> {
                 "--git-path",
                 &reference,
             ],
-        ) {
-            watch(Path::new(&path));
-        }
+        )
+    }) {
+        watch(Path::new(&path));
     }
     let sha = git(root, &["rev-parse", "--verify", "HEAD^{commit}"])?;
     ((sha.len() == 40 || sha.len() == 64) && sha.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .then_some(sha)
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=build.rs");
     let manifest =
-        PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest dir"));
+        PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "Cargo manifest dir")
+        })?);
     let root = manifest.join("../..");
     println!(
         "cargo::rustc-env=CHAOS_BUILD_SHA={}",
         source_sha(&root).unwrap_or_default()
     );
+    Ok(())
 }

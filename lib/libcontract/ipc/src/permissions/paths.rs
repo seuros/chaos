@@ -4,18 +4,15 @@ use chaos_realpath::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-#[ts(tag = "kind")]
 pub enum VfsSpecialPath {
     Root,
     Minimal,
     CurrentWorkingDirectory,
     ProjectRoots {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         subpath: Option<PathBuf>,
     },
     Tmpdir,
@@ -31,7 +28,6 @@ pub enum VfsSpecialPath {
     Unknown {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         subpath: Option<PathBuf>,
     },
 }
@@ -49,9 +45,8 @@ impl VfsSpecialPath {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(tag = "type")]
 pub enum VfsPath {
     Path { path: AbsolutePathBuf },
     Special { value: VfsSpecialPath },

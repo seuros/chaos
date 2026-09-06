@@ -319,10 +319,54 @@ pub struct McpServerInstructions {
 }
 
 /// Structured server notifications consumed by the kernel.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum McpServerNotification {
-    ResourceUpdated { server: String, uri: String },
+    ResourceUpdated {
+        server: String,
+        uri: String,
+    },
+    TaskStatus {
+        server: String,
+        endpoint: String,
+        task: mcp_guest::protocol::Task,
+    },
 }
+
+impl PartialEq for McpServerNotification {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::ResourceUpdated { server: a, uri: u },
+                Self::ResourceUpdated { server: b, uri: v },
+            ) => a == b && u == v,
+            (
+                Self::TaskStatus {
+                    server: a,
+                    endpoint: x,
+                    task: t,
+                },
+                Self::TaskStatus {
+                    server: b,
+                    endpoint: y,
+                    task: s,
+                },
+            ) => {
+                a == b
+                    && x == y
+                    && t.task_id == s.task_id
+                    && t.status == s.status
+                    && t.status_message == s.status_message
+                    && t.created_at == s.created_at
+                    && t.last_updated_at == s.last_updated_at
+                    && t.ttl == s.ttl
+                    && t.poll_interval == s.poll_interval
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for McpServerNotification {}
 
 async fn emit_update(tx_event: &Sender<Event>, update: McpStartupUpdateEvent) {
     let _ = tx_event
@@ -1052,7 +1096,7 @@ impl McpConnectionManager {
             .session
             .get_task(task_id)
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("tasks/get failed for `{server}` ({task_id})"))
     }
 

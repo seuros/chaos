@@ -33,6 +33,9 @@ pub trait RolloutConfig: Send + Sync {
     fn cwd(&self) -> &Path;
     fn model_provider_id(&self) -> &str;
     fn generate_memories(&self) -> bool;
+    fn unattended_recovery(&self) -> bool {
+        false
+    }
 }
 
 impl_config_arc_forward!(RolloutConfig {
@@ -41,6 +44,7 @@ impl_config_arc_forward!(RolloutConfig {
     fn cwd(&self) -> &Path;
     fn model_provider_id(&self) -> &str;
     fn generate_memories(&self) -> bool;
+    fn unattended_recovery(&self) -> bool;
 });
 
 /// Config surface for the memory subsystem (phase1, phase2, start).

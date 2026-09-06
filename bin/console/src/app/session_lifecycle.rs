@@ -9,6 +9,7 @@ use super::{
     emit_project_config_warnings, normalize_harness_overrides_for_cwd, select, session_summary,
     tui, unbounded_channel,
 };
+use crate::pager_overlay::Overlay;
 use chaos_ipc::protocol::Op;
 use chaos_kern::ChaosAuth;
 use chaos_kern::models_manager::CollaborationModesConfig;
@@ -426,6 +427,13 @@ impl App {
 
         let exit_reason_result = {
             loop {
+                // The main thread owns the wheel, not the shell scrollback.
+                // Reconcile after nested pickers/overlays restore terminal modes.
+                tui.set_mouse_capture_enabled(
+                    app.overlay
+                        .as_ref()
+                        .is_none_or(Overlay::wants_mouse_capture),
+                );
                 let control = select! {
                     Some(event) = app_event_rx.recv() => {
                         match app.handle_event(tui, event).await {

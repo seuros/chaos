@@ -48,7 +48,7 @@ pub enum TranscriptEntry {
         output: String,
     },
     Tool {
-        server: String,
+        server: Option<String>,
         tool: String,
         result: Option<Result<String, String>>,
     },

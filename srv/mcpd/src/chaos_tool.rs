@@ -99,6 +99,9 @@ pub struct ChaosToolParams {
     /// Prompt used when compacting the conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compact_prompt: Option<String>,
+    #[serde(default)]
+    pub wait_background: bool,
+    pub background_timeout_seconds: Option<std::num::NonZeroU64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -156,6 +159,8 @@ impl ChaosToolParams {
             base_instructions,
             developer_instructions,
             compact_prompt,
+            wait_background: _,
+            background_timeout_seconds: _,
         } = self;
 
         let overrides = ConfigOverrides {
@@ -227,6 +232,11 @@ impl ChaosMcpServer {
             }
         };
 
+        let wait_background = params.wait_background;
+        let background_timeout = params
+            .background_timeout_seconds
+            .map(|seconds| std::time::Duration::from_secs(seconds.get()))
+            .unwrap_or(chaos_session::background::DEFAULT_BACKGROUND_TIMEOUT);
         // Build config only for new processes
         let (prompt, config) = if existing_process_id.is_some() {
             (params.prompt, None)
@@ -250,6 +260,8 @@ impl ChaosMcpServer {
             running_requests: self.running_requests.clone(),
             process_names: self.process_names.clone(),
             progress_token,
+            wait_background,
+            background_timeout,
         })
         .await;
 

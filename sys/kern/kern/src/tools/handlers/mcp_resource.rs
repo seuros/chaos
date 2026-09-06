@@ -27,7 +27,6 @@ use crate::catalog::CatalogSource;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::function_tool::FunctionCallError;
-use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
 use crate::protocol::EventMsg;
 use crate::protocol::McpInvocation;
 use crate::protocol::McpToolCallBeginEvent;
@@ -61,40 +60,48 @@ struct ListResourceTemplatesArgs {
 
 #[derive(Debug, Deserialize)]
 struct ResourceUriArgs {
-    server: String,
+    server: Option<String>,
     uri: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct ResourceSubscriptionArgs {
-    server: String,
+    server: Option<String>,
     uri: String,
     subscribed: bool,
 }
 
 #[derive(Debug, Serialize)]
 struct ResourceWithServer {
-    server: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    server: Option<String>,
     #[serde(flatten)]
     resource: ResourceInfo,
 }
 
 impl ResourceWithServer {
     fn new(server: String, resource: ResourceInfo) -> Self {
-        Self { server, resource }
+        Self {
+            server: Some(server),
+            resource,
+        }
     }
 }
 
 #[derive(Debug, Serialize)]
 struct ResourceTemplateWithServer {
-    server: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    server: Option<String>,
     #[serde(flatten)]
     template: ResourceTemplateInfo,
 }
 
 impl ResourceTemplateWithServer {
     fn new(server: String, template: ResourceTemplateInfo) -> Self {
-        Self { server, template }
+        Self {
+            server: Some(server),
+            template,
+        }
     }
 }
 
@@ -253,26 +260,22 @@ fn chaos_resources(session: &Session) -> Vec<ResourceInfo> {
     resources
 }
 
-#[cfg(test)]
-fn merge_inline_resources(
-    mut resources_by_server: HashMap<String, Vec<ResourceInfo>>,
-) -> HashMap<String, Vec<ResourceInfo>> {
-    resources_by_server
-        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
-        .or_default()
-        .extend(chaos_inline_resources());
-    resources_by_server
-}
-
 fn merge_chaos_resources(
-    mut resources_by_server: HashMap<String, Vec<ResourceInfo>>,
+    resources_by_server: HashMap<String, Vec<ResourceInfo>>,
     session: &Session,
-) -> HashMap<String, Vec<ResourceInfo>> {
-    resources_by_server
-        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
-        .or_default()
-        .extend(chaos_resources(session));
-    resources_by_server
+) -> ListResourcesPayload {
+    let mut payload = ListResourcesPayload::from_all_servers(resources_by_server);
+    payload
+        .resources
+        .extend(
+            chaos_resources(session)
+                .into_iter()
+                .map(|resource| ResourceWithServer {
+                    server: None,
+                    resource,
+                }),
+        );
+    payload
 }
 
 fn chaos_inline_resource_templates() -> Vec<ResourceTemplateInfo> {
@@ -334,26 +337,22 @@ fn chaos_resource_templates(session: &Session) -> Vec<ResourceTemplateInfo> {
     templates
 }
 
-#[cfg(test)]
-fn merge_inline_resource_templates(
-    mut templates_by_server: HashMap<String, Vec<ResourceTemplateInfo>>,
-) -> HashMap<String, Vec<ResourceTemplateInfo>> {
-    templates_by_server
-        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
-        .or_default()
-        .extend(chaos_inline_resource_templates());
-    templates_by_server
-}
-
 fn merge_chaos_resource_templates(
-    mut templates_by_server: HashMap<String, Vec<ResourceTemplateInfo>>,
+    templates_by_server: HashMap<String, Vec<ResourceTemplateInfo>>,
     session: &Session,
-) -> HashMap<String, Vec<ResourceTemplateInfo>> {
-    templates_by_server
-        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
-        .or_default()
-        .extend(chaos_resource_templates(session));
-    templates_by_server
+) -> ListResourceTemplatesPayload {
+    let mut payload = ListResourceTemplatesPayload::from_all_servers(templates_by_server);
+    payload
+        .resource_templates
+        .extend(
+            chaos_resource_templates(session)
+                .into_iter()
+                .map(|template| ResourceTemplateWithServer {
+                    server: None,
+                    template,
+                }),
+        );
+    payload
 }
 
 fn inline_text_resource_result(
@@ -513,7 +512,8 @@ async fn read_static_resource(
 
 #[derive(Debug, Serialize)]
 struct ReadResourcePayload {
-    server: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    server: Option<String>,
     uri: String,
     #[serde(flatten)]
     result: ReadResourceResult,
@@ -531,7 +531,6 @@ struct ResourceSubscriptionPayload {
 enum ResourceSubscriptionResponse {
     Mcp(ResourceSubscriptionPayload),
     Local {
-        server: String,
         uri: String,
         subscribed: bool,
         subscription_supported: bool,
@@ -622,11 +621,11 @@ async fn handle_list_resources(
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let args: ListResourcesArgs = parse_args_with_default(arguments.clone())?;
     let ListResourcesArgs { server, cursor } = args;
-    let server = normalize_optional_string(server);
+    let server = normalize_resource_server(server)?;
     let cursor = normalize_optional_string(cursor);
 
     let invocation = McpInvocation {
-        server: server.clone().unwrap_or_else(|| "chaos".to_string()),
+        server: None,
         tool: "list_mcp_resources".to_string(),
         arguments: arguments.clone(),
     };
@@ -636,13 +635,7 @@ async fn handle_list_resources(
 
     let payload_result: Result<ListResourcesPayload, FunctionCallError> = async {
         if let Some(server_name) = server.clone() {
-            let result = if server_name == INTERNAL_TASK_SERVER_NAME {
-                ListResourcesResult {
-                    resources: chaos_resources(&session),
-                    next_cursor: None,
-                    meta: None,
-                }
-            } else {
+            let result = {
                 let params = cursor.clone().map(|value| PaginatedRequestParams {
                     cursor: Some(value),
                 });
@@ -665,9 +658,7 @@ async fn handle_list_resources(
             }
 
             let resources = session.services.mcp_registry.list_all_resources().await;
-            Ok(ListResourcesPayload::from_all_servers(
-                merge_chaos_resources(resources, &session),
-            ))
+            Ok(merge_chaos_resources(resources, &session))
         }
     }
     .await;
@@ -691,11 +682,11 @@ async fn handle_list_resource_templates(
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let args: ListResourceTemplatesArgs = parse_args_with_default(arguments.clone())?;
     let ListResourceTemplatesArgs { server, cursor } = args;
-    let server = normalize_optional_string(server);
+    let server = normalize_resource_server(server)?;
     let cursor = normalize_optional_string(cursor);
 
     let invocation = McpInvocation {
-        server: server.clone().unwrap_or_else(|| "chaos".to_string()),
+        server: None,
         tool: "list_mcp_resource_templates".to_string(),
         arguments: arguments.clone(),
     };
@@ -705,13 +696,7 @@ async fn handle_list_resource_templates(
 
     let payload_result: Result<ListResourceTemplatesPayload, FunctionCallError> = async {
         if let Some(server_name) = server.clone() {
-            let result = if server_name == INTERNAL_TASK_SERVER_NAME {
-                ListResourceTemplatesResult {
-                    resource_templates: chaos_resource_templates(&session),
-                    next_cursor: None,
-                    meta: None,
-                }
-            } else {
+            let result = {
                 let params = cursor.clone().map(|value| PaginatedRequestParams {
                     cursor: Some(value),
                 });
@@ -740,9 +725,7 @@ async fn handle_list_resource_templates(
                 .mcp_registry
                 .list_all_resource_templates()
                 .await;
-            Ok(ListResourceTemplatesPayload::from_all_servers(
-                merge_chaos_resource_templates(templates, &session),
-            ))
+            Ok(merge_chaos_resource_templates(templates, &session))
         }
     }
     .await;
@@ -792,42 +775,35 @@ fn parse_task_uri(uri: &str) -> Option<TaskUri<'_>> {
 
 async fn read_task_resource(
     session: &Session,
-    server: &str,
+    server: Option<&str>,
     uri: &str,
     op: TaskUri<'_>,
 ) -> Result<ReadResourceResult, FunctionCallError> {
     let text = match op {
         TaskUri::List => {
-            let result = if server == INTERNAL_TASK_SERVER_NAME {
-                session.list_internal_tasks().await
-            } else {
+            let result = if let Some(server) = server {
                 session.list_mcp_tasks(server).await.map_err(|e| {
                     FunctionCallError::RespondToModel(format!("tasks/list failed: {e:#}"))
                 })?
+            } else {
+                session.list_internal_tasks().await
             };
             serde_json::to_string(&result)
         }
         TaskUri::Get { task_id } => {
-            let task = if server == INTERNAL_TASK_SERVER_NAME {
-                session.get_internal_task(task_id).await.map_err(|e| {
+            let task = if let Some(server) = server {
+                session.get_mcp_task(server, task_id).await.map_err(|e| {
                     FunctionCallError::RespondToModel(format!("tasks/get failed: {e:#}"))
                 })?
             } else {
-                session.get_mcp_task(server, task_id).await.map_err(|e| {
+                session.get_internal_task(task_id).await.map_err(|e| {
                     FunctionCallError::RespondToModel(format!("tasks/get failed: {e:#}"))
                 })?
             };
             serde_json::to_string(&task)
         }
         TaskUri::Result { task_id } => {
-            let result = if server == INTERNAL_TASK_SERVER_NAME {
-                session
-                    .get_internal_task_result(task_id)
-                    .await
-                    .map_err(|e| {
-                        FunctionCallError::RespondToModel(format!("tasks/result failed: {e:#}"))
-                    })?
-            } else {
+            let result = if let Some(server) = server {
                 let result: McpToolCallResult = session
                     .get_mcp_task_result(server, task_id)
                     .await
@@ -839,6 +815,13 @@ async fn read_task_resource(
                         "failed to serialize task result payload: {e}"
                     ))
                 })?
+            } else {
+                session
+                    .get_internal_task_result(task_id)
+                    .await
+                    .map_err(|e| {
+                        FunctionCallError::RespondToModel(format!("tasks/result failed: {e:#}"))
+                    })?
             };
             serde_json::to_string(&result)
         }
@@ -866,12 +849,11 @@ async fn handle_read_resource(
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let args: ResourceUriArgs = parse_args(arguments.clone())?;
     let ResourceUriArgs { server, uri } = args;
-    let server = normalize_required_string("server", server)?;
+    let server = normalize_resource_server(server)?;
     let uri = normalize_required_string("uri", uri)?;
-    let server = resolve_resource_server(&session, server, &uri)?;
 
     let invocation = McpInvocation {
-        server: server.clone(),
+        server: None,
         tool: "read_mcp_resource".to_string(),
         arguments: arguments.clone(),
     };
@@ -880,7 +862,31 @@ async fn handle_read_resource(
     let start = Instant::now();
 
     let payload_result: Result<ReadResourcePayload, FunctionCallError> = async {
-        let result = read_resource_contents(&session, turn.as_ref(), &server, &uri).await?;
+        let result =
+            read_resource_contents(&session, turn.as_ref(), server.as_deref(), &uri).await?;
+        if let Some(TaskUri::Result { task_id }) = parse_task_uri(&uri) {
+            let id = if let Some(server) = server.as_deref() {
+                if let Some(source) = session.mcp_task_source(server, task_id) {
+                    session
+                        .services
+                        .internal_task_store
+                        .find_source(&source)
+                        .await
+                        .map(|task| task.id)
+                } else {
+                    None
+                }
+            } else {
+                Some(task_id.to_owned())
+            };
+            if let Some(id) = id {
+                session
+                    .services
+                    .internal_task_store
+                    .result_read(id, &call_id)
+                    .await;
+            }
+        }
 
         Ok(ReadResourcePayload {
             server,
@@ -901,58 +907,31 @@ async fn handle_read_resource(
     .await
 }
 
-fn resolve_resource_server(
-    session: &Session,
-    server: String,
-    uri: &str,
-) -> Result<String, FunctionCallError> {
-    let server_exists = session
-        .services
-        .mcp_registry
-        .configs_snapshot()
-        .contains_key(&server);
-    resolve_resource_server_name(server, uri, server_exists)
+pub(super) fn normalize_resource_server(
+    server: Option<String>,
+) -> Result<Option<String>, FunctionCallError> {
+    let server = server
+        .map(|server| normalize_required_string("server", server))
+        .transpose()?;
+    if server.as_deref() == Some("chaos_local") {
+        return Err(FunctionCallError::RespondToModel(
+            "chaos_local is no longer supported; omit server for internal resources and tasks"
+                .into(),
+        ));
+    }
+    Ok(server)
 }
 
-fn resolve_resource_server_name(
-    server: String,
-    uri: &str,
-    server_exists: bool,
-) -> Result<String, FunctionCallError> {
-    // Never steal a configured server's URI, even if that server is unavailable.
-    if server_exists || server == INTERNAL_TASK_SERVER_NAME {
-        return Ok(server);
-    }
-    let builtin = builtin_mcp_resources::resolve_resource_uri(uri)
-        .map_err(FunctionCallError::RespondToModel)?
-        .is_some();
-    let global = builtin
-        || inventory::iter::<CatalogResourceDriverRegistration>
-            .into_iter()
-            .any(|registration| (registration.driver)().matches(uri));
-    if global {
-        Ok(INTERNAL_TASK_SERVER_NAME.to_string())
-    } else {
-        // Unknown URIs and server-scoped task IDs retain normal server errors.
-        Ok(server)
-    }
-}
-
-// Keep fallback reads on the normal resource path, including visibility checks.
+// Internal reads retain normal resource visibility checks.
 async fn read_resource_contents(
     session: &Arc<Session>,
     turn: &TurnContext,
-    server: &str,
+    server: Option<&str>,
     uri: &str,
 ) -> Result<ReadResourceResult, FunctionCallError> {
     if let Some(op) = parse_task_uri(uri) {
         read_task_resource(session, server, uri, op).await
-    } else if server == INTERNAL_TASK_SERVER_NAME {
-        match read_static_resource(session, turn, uri).await? {
-            Some(result) => Ok(result),
-            None => read_inline_resource(session, turn, uri).await,
-        }
-    } else {
+    } else if let Some(server) = server {
         session
             .read_resource(
                 server,
@@ -965,6 +944,11 @@ async fn read_resource_contents(
             .map_err(|err| {
                 FunctionCallError::RespondToModel(format!("resources/read failed: {err:#}"))
             })
+    } else {
+        match read_static_resource(session, turn, uri).await? {
+            Some(result) => Ok(result),
+            None => read_inline_resource(session, turn, uri).await,
+        }
     }
 }
 
@@ -980,12 +964,11 @@ async fn handle_resource_subscription(
         uri,
         subscribed,
     } = args;
-    let server = normalize_required_string("server", server)?;
+    let server = normalize_resource_server(server)?;
     let uri = normalize_required_string("uri", uri)?;
-    let server = resolve_resource_server(&session, server, &uri)?;
 
     let invocation = McpInvocation {
-        server: server.clone(),
+        server: None,
         tool: "set_mcp_resource_subscription".to_string(),
         arguments: arguments.clone(),
     };
@@ -994,14 +977,13 @@ async fn handle_resource_subscription(
     let start = Instant::now();
 
     let payload_result: Result<ResourceSubscriptionResponse, FunctionCallError> = async {
-        if server == INTERNAL_TASK_SERVER_NAME {
+        let Some(server) = server else {
             let snapshot = if subscribed {
-                Some(read_resource_contents(&session, turn.as_ref(), &server, &uri).await?)
+                Some(read_resource_contents(&session, turn.as_ref(), None, &uri).await?)
             } else {
                 None
             };
             return Ok(ResourceSubscriptionResponse::Local {
-                server,
                 uri,
                 subscribed: false,
                 subscription_supported: false,
@@ -1009,7 +991,7 @@ async fn handle_resource_subscription(
                 message: "Internal resources do not support update notifications. No subscription is active. Use read_mcp_resource to refresh when needed.",
                 snapshot,
             });
-        }
+        };
 
         let (method, result) = if subscribed {
             (

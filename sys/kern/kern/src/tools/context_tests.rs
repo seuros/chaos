@@ -215,7 +215,6 @@ fn exec_command_tool_output_formats_truncated_response() {
             "rm -rf /tmp/example.sqlite".to_string(),
         ]),
         task_id: None,
-        task_server: None,
     }
     .to_response_item("call-42", &payload);
 

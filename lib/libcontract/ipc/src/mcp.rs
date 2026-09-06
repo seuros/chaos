@@ -1,19 +1,17 @@
 //! Types used when representing Model Context Protocol (MCP) values inside the
 //! Chaos protocol.
 //!
-//! We intentionally keep these types TS/JSON-schema friendly (via `ts-rs` and
-//! `schemars`) so they can be embedded in Chaos's own protocol structures.
+//! These types support Serde serialization and JSON Schema generation via
+//! `schemars` so they can be embedded in Chaos's own protocol structures.
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 /// ID of a request, which can be either a string or an integer.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RequestId {
     String(String),
-    #[ts(type = "number")]
     Integer(i64),
 }
 
@@ -27,102 +25,79 @@ impl std::fmt::Display for RequestId {
 }
 
 /// Definition for a tool the client can call.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Tool {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     pub input_schema: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub output_schema: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub annotations: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub icons: Option<Vec<serde_json::Value>>,
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub meta: Option<serde_json::Value>,
 }
 
 /// A known resource that the server is capable of reading.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Resource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub annotations: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub mime_type: Option<String>,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[ts(type = "number")]
     pub size: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     pub uri: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub icons: Option<Vec<serde_json::Value>>,
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub meta: Option<serde_json::Value>,
 }
 
 /// A template description for resources available on the server.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceTemplate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub annotations: Option<serde_json::Value>,
     pub uri_template: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub mime_type: Option<String>,
 }
 
 /// The server's response to a tool call.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CallToolResult {
     pub content: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub structured_content: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub is_error: Option<bool>,
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub meta: Option<serde_json::Value>,
 }
 
 // === Adapter helpers ===
 //
-// These types and conversions intentionally live in `chaos-protocol` so other crates can convert
-// “wire-shaped” MCP JSON (typically coming from MCP model structs serialized with serde) into our
-// TS/JsonSchema-friendly protocol types without depending on `mcp-types`.
+// Convert MCP JSON payloads into ChaOS IPC types.
 
 fn deserialize_lossy_opt_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
 where

@@ -23,6 +23,7 @@ use chaos_ipc::user_input::UserInput;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config as ChaosConfig;
+use chaos_session::background::{BackgroundWait, WaitEvent};
 use mcp_host::protocol::types::RequestId;
 use tokio::sync::Mutex;
 
@@ -72,6 +73,8 @@ pub(crate) struct RunChaosSessionArgs {
     pub running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
     pub process_names: ProcessNameCache,
     pub progress_token: Option<String>,
+    pub wait_background: bool,
+    pub background_timeout: std::time::Duration,
 }
 
 /// Resolved process — either newly created or resumed from an existing ID.
@@ -97,6 +100,8 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         running_requests,
         process_names,
         progress_token,
+        wait_background,
+        background_timeout,
     } = args;
 
     // Send progress if the client requested it.
@@ -213,6 +218,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
     }
 
     // Phase 3: event loop
+    let wait = BackgroundWait::new(&process, wait_background, background_timeout);
     let outcome = run_event_loop(
         process_id,
         process,
@@ -220,6 +226,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         request_id,
         running_requests,
         process_names,
+        wait,
     )
     .await;
 
@@ -243,12 +250,23 @@ async fn run_event_loop(
     request_id: RequestId,
     running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
     process_names: ProcessNameCache,
+    mut wait: BackgroundWait,
 ) -> SessionOutcome {
     let request_id_str = request_id.to_string();
+    let wait_background = wait.is_enabled();
+    let mut text = String::new();
 
     loop {
-        match process.next_event().await {
-            Ok(event) => {
+        match wait.next(&process).await {
+            WaitEvent::Complete => {
+                running_requests.lock().await.remove(&request_id);
+                return SessionOutcome {
+                    process_id,
+                    text,
+                    is_error: false,
+                };
+            }
+            WaitEvent::Event(event) => {
                 outgoing
                     .send_event_as_notification(
                         &event,
@@ -334,6 +352,13 @@ async fn run_event_loop(
                     EventMsg::TurnComplete(TurnCompleteEvent {
                         last_agent_message, ..
                     }) => {
+                        if wait_background {
+                            text = last_agent_message.unwrap_or_default();
+                            continue;
+                        }
+                        // A persistent MCP session no longer has a waiting
+                        // caller; retain results without unattended sampling.
+                        let _ = process.submit(Op::Interrupt).await;
                         running_requests.lock().await.remove(&request_id);
                         return SessionOutcome {
                             process_id,
@@ -419,7 +444,9 @@ async fn run_event_loop(
                     }
                 }
             }
-            Err(e) => {
+            WaitEvent::Stopped(e) => {
+                let _ = process.submit(Op::Interrupt).await;
+                running_requests.lock().await.remove(&request_id);
                 return SessionOutcome {
                     process_id,
                     text: format!("{OS_NAME} runtime error: {e}"),

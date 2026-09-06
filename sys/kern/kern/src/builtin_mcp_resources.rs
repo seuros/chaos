@@ -88,7 +88,7 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 7] = [
         kind: ChaosBuiltinResourceKind::Models,
         uri: CHAOS_MODELS_URI,
         name: "models",
-        description: "List every model preset available to this ChaOS installation",
+        description: "List cached model presets by provider. Use refresh_models to fetch a provider's latest catalog.",
         mime_type: JSON_MIME_TYPE,
     },
     ChaosBuiltinResourceSpec {
@@ -310,6 +310,28 @@ pub fn models_json_from_provider_models(groups: &[ProviderModels]) -> Result<Str
         .collect::<Vec<_>>();
 
     to_json(&providers, "ChaOS models")
+}
+
+/// Shared by the native session tool (including the MCP bridge) and mcpd.
+pub async fn refresh_models_json(
+    manager: &crate::models_manager::manager::ModelsManager,
+    providers: &HashMap<String, crate::ModelProviderInfo>,
+    provider_id: &str,
+) -> Result<String, String> {
+    let provider = providers
+        .get(provider_id)
+        .ok_or_else(|| format!("unknown model provider `{provider_id}`"))?;
+    let models = manager
+        .refresh_provider_models(provider_id, provider)
+        .await
+        .map_err(|err| format!("failed to refresh models for `{provider_id}`: {err}"))?;
+    to_json(
+        &json!({
+            "provider": provider_id,
+            "models": models.iter().map(model_json).collect::<Vec<_>>(),
+        }),
+        "refreshed models",
+    )
 }
 
 pub fn modes_json_from_chaos_home(chaos_home: &Path) -> Result<String, String> {

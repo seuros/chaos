@@ -42,6 +42,12 @@ pub struct Cli {
     /// Run without persisting session history.
     #[usage(long = "ephemeral", global)]
     pub ephemeral: bool,
+    /// Wait for background tasks and kernel continuation turns before returning.
+    #[usage(long = "wait-background", global)]
+    pub wait_background: bool,
+    /// Background wait limit in seconds (default 600; maximum 86400).
+    #[usage(long = "background-timeout", global)]
+    pub background_timeout: Option<std::num::NonZeroU64>,
 
     /// Internal: start from a serialized Stop-hook transcript snapshot.
     #[usage(long = "fork-snapshot", value_name = "FILE", hide)]

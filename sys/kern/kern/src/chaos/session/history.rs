@@ -107,6 +107,10 @@ impl Session {
                 }
             }
             InitialHistory::Forked(rollout_items) => {
+                let rollout_items = rollout_items
+                    .into_iter()
+                    .filter(|item| !matches!(item, RolloutItem::BackgroundTask(_)))
+                    .collect::<Vec<_>>();
                 self.apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
                 // Forks inherit transcript history, not a pending decision made
@@ -224,7 +228,16 @@ impl Session {
         items: &[ResponseItem],
     ) {
         self.record_into_history(items, turn_context).await;
-        self.persist_rollout_response_items(items).await;
+        if items.iter().any(|item| {
+            matches!(
+                item,
+                ResponseItem::FunctionCallOutput { .. } | ResponseItem::CustomToolCallOutput { .. }
+            )
+        }) {
+            self.persist_task_responses(items).await;
+        } else {
+            self.persist_rollout_response_items(items).await;
+        }
         self.send_raw_response_items(turn_context, items).await;
     }
 

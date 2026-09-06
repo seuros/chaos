@@ -91,6 +91,12 @@ impl Session {
             warn!("Failed to notify MCP servers of roots change: {e:#}");
         }
 
+        if let Some(schema) = &updates.final_output_json_schema {
+            self.services
+                .internal_task_store
+                .set_output_schema(schema.clone())
+                .await;
+        }
         Ok(self
             .new_turn_from_configuration(
                 sub_id,
@@ -156,9 +162,10 @@ impl Session {
             sub_id,
         );
 
-        if let Some(final_schema) = final_output_json_schema {
-            turn_context.final_output_json_schema = final_schema;
-        }
+        turn_context.final_output_json_schema = match final_output_json_schema {
+            Some(schema) => schema,
+            None => self.services.internal_task_store.output_schema().await,
+        };
         turn_context
     }
 
@@ -313,6 +320,8 @@ impl Session {
             Some(at) => {
                 let ts = at.turn_state.lock().await;
                 ts.has_deliverable_input()
+                    || (ts.accepts_mailbox_delivery()
+                        && !self.services.internal_task_store.pending().await.is_empty())
             }
             None => false,
         }
@@ -368,6 +377,8 @@ impl Session {
     pub async fn interrupt_task(self: &Arc<Self>) {
         use tracing::info;
         info!("interrupt received: abort current task, if any");
+        self.suspend_completion_wakes(chaos_ipc::background_tasks::WakePolicy::Interrupted)
+            .await;
         let has_active_turn = { self.active_turn.lock().await.is_some() };
         if has_active_turn {
             self.abort_all_tasks(chaos_ipc::protocol::TurnAbortReason::Interrupted)

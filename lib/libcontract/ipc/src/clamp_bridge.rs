@@ -1,12 +1,11 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 use crate::mcp::Tool;
 use crate::models::ResponseInputItem;
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClampBridgeRequest {
     ListTools {
@@ -15,12 +14,11 @@ pub enum ClampBridgeRequest {
     CallTool {
         token: String,
         name: String,
-        #[ts(type = "unknown")]
         arguments: serde_json::Value,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClampBridgeResponse {
     Tools { tools: Vec<Tool> },

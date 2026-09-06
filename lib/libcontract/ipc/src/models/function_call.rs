@@ -3,11 +3,10 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::ser::Serializer;
-use ts_rs::TS;
 
 use crate::mcp::CallToolResult;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageDetail {
     Auto,
@@ -18,7 +17,7 @@ pub enum ImageDetail {
 
 /// Responses API compatible content items that can be returned by a tool call.
 /// This is a subset of ContentItem with the types we support as function call outputs.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FunctionCallOutputContentItem {
     // Do not rename, these are serialized and used directly in the responses API.
@@ -29,7 +28,6 @@ pub enum FunctionCallOutputContentItem {
     InputImage {
         image_url: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         detail: Option<ImageDetail>,
     },
 }
@@ -88,13 +86,13 @@ impl From<crate::dynamic_tools::DynamicToolCallOutputContentItem>
 ///
 /// `body` serializes directly as the wire value for `function_call_output.output`.
 /// `success` remains internal metadata for downstream handling.
-#[derive(Debug, Default, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Default, Clone, PartialEq, JsonSchema)]
 pub struct FunctionCallOutputPayload {
     pub body: FunctionCallOutputBody,
     pub success: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(untagged)]
 pub enum FunctionCallOutputBody {
     Text(String),

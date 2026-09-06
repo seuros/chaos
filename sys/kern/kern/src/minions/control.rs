@@ -1,3 +1,5 @@
+use crate::error::ChaosErr;
+use crate::error::Result as ChaosResult;
 use crate::minions::AgentStatus;
 use crate::minions::guards::Guards;
 use crate::minions::role::DEFAULT_ROLE_NAME;
@@ -6,15 +8,11 @@ use crate::minions::router::ForkArgs;
 use crate::minions::router::ProcessTableOp;
 use crate::minions::router::ResumeArgs;
 use crate::minions::router::SpawnArgs;
-use crate::minions::status::is_final;
-use crate::error::ChaosErr;
-use crate::error::Result as ChaosResult;
 use crate::process_table::NewProcess;
 use crate::process_table::ProcessTableState;
 use crate::rollout::RolloutRecorder;
 use crate::runtime_db;
 use crate::session_prefix::format_subagent_context_line;
-use crate::session_prefix::format_subagent_notification_message;
 use crate::shell_environment::ShellEnvironment;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputPayload;
@@ -41,6 +39,7 @@ pub(crate) struct SpawnAgentOptions {
     pub(crate) fork_parent_spawn_call_id: Option<String>,
     pub(crate) suppress_parent_completion_notification: bool,
     pub(crate) final_output_json_schema: Option<Value>,
+    pub(crate) completion_call_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -419,20 +418,29 @@ impl AgentControl {
         // TODO(jif) add helper for drain
         state.notify_process_created(process_id);
 
-        if let Err(error) = self
+        let submitted = self
             .send_input_with_schema(process_id, items, final_output_json_schema)
-            .await
-        {
-            // Once the spawn reservation is committed, callers only learn the process ID after
-            // the initial prompt is accepted. Clean up here so an input failure cannot leave an
-            // unreachable child process behind.
-            if !matches!(&error, ChaosErr::InternalAgentDied) {
-                let _ = self.shutdown_agent(process_id).await;
+            .await;
+        let execution_id = match submitted {
+            Ok(id) => id,
+            Err(error) => {
+                // Once the spawn reservation is committed, callers only learn the process ID after
+                // the initial prompt is accepted. Clean up here so an input failure cannot leave an
+                // unreachable child process behind.
+                if !matches!(&error, ChaosErr::InternalAgentDied) {
+                    let _ = self.shutdown_agent(process_id).await;
+                }
+                return Err(error);
             }
-            return Err(error);
-        }
+        };
         if !options.suppress_parent_completion_notification {
-            self.maybe_start_completion_watcher(process_id, notification_source);
+            self.maybe_start_completion_watcher(
+                process_id,
+                notification_source,
+                options.completion_call_id.as_deref(),
+                Some(&execution_id),
+            )
+            .await;
         }
 
         Ok(SpawnedAgent {
@@ -462,7 +470,7 @@ impl AgentControl {
         config: crate::config::Config,
         process_id: ProcessId,
         session_source: SessionSource,
-        options: SpawnAgentOptions,
+        _options: SpawnAgentOptions,
     ) -> ChaosResult<ProcessId> {
         let state = self.upgrade()?;
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
@@ -505,7 +513,6 @@ impl AgentControl {
             }
             other => other,
         };
-        let notification_source = session_source.clone();
         let inherited_shell_environment = self
             .inherited_shell_environment_for_source(&state, Some(&session_source))
             .await;
@@ -530,9 +537,9 @@ impl AgentControl {
         // Resumed processes are re-registered in-memory and need the same listener
         // attachment path as freshly spawned processes.
         state.notify_process_created(process_id);
-        if !options.suppress_parent_completion_notification {
-            self.maybe_start_completion_watcher(process_id, Some(notification_source));
-        }
+        // Reopening a child is not a new execution generation. Its next input
+        // enrolls new work; replaying its previous final status would duplicate
+        // a completion already owned by the parent.
 
         Ok(process_id)
     }
@@ -544,6 +551,43 @@ impl AgentControl {
         items: Vec<UserInput>,
     ) -> ChaosResult<String> {
         self.send_input_with_schema(agent_id, items, None).await
+    }
+
+    pub(crate) async fn send_supervisor_message(
+        &self,
+        parent_id: ProcessId,
+        sender_id: ProcessId,
+        items: Vec<UserInput>,
+    ) -> ChaosResult<String> {
+        let state = self.upgrade()?;
+        let parent = state.get_process(parent_id).await?;
+        let id = format!("agent-message:{}", uuid::Uuid::new_v4());
+        let now = jiff::Timestamp::now().to_string();
+        parent
+            .chaos
+            .session
+            .services
+            .internal_task_store
+            .register(chaos_ipc::background_tasks::BackgroundTask {
+                id: id.clone(),
+                source: Some(chaos_ipc::background_tasks::TaskSource::AgentMessage {
+                    process_id: sender_id,
+                }),
+                state: chaos_ipc::background_tasks::TaskState::Succeeded,
+                status_message: None,
+                created_at: now.clone(),
+                updated_at: now,
+                result: Some(serde_json::json!({ "sender_id": sender_id, "items": items })),
+                origin_call_id: None,
+                ready: true,
+                notify: true,
+                delivered: false,
+                origin_turn_id: None,
+                execution_id: None,
+            })
+            .await;
+        // Contextual data never clears an interrupt or creates a fake user turn.
+        Ok(id)
     }
 
     async fn send_input_with_schema(
@@ -728,10 +772,12 @@ impl AgentControl {
     ///
     /// This is only enabled for `SubAgentSource::ProcessSpawn`, where a parent thread exists and
     /// can receive completion notifications.
-    fn maybe_start_completion_watcher(
+    async fn maybe_start_completion_watcher(
         &self,
         child_process_id: ProcessId,
         session_source: Option<SessionSource>,
+        call_id: Option<&str>,
+        execution_id: Option<&str>,
     ) {
         let Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
             parent_process_id, ..
@@ -739,39 +785,25 @@ impl AgentControl {
         else {
             return;
         };
-        let control = self.clone();
-        tokio::spawn(async move {
-            let status = match control.subscribe_status(child_process_id).await {
-                Ok(mut status_rx) => {
-                    let mut status = status_rx.borrow().clone();
-                    while !is_final(&status) {
-                        if status_rx.changed().await.is_err() {
-                            status = control.get_status(child_process_id).await;
-                            break;
-                        }
-                        status = status_rx.borrow().clone();
-                    }
-                    status
-                }
-                Err(_) => control.get_status(child_process_id).await,
-            };
-            if !is_final(&status) {
-                return;
-            }
-
-            let Ok(state) = control.upgrade() else {
-                return;
-            };
-            let Ok(parent_thread) = state.get_process(parent_process_id).await else {
-                return;
-            };
-            parent_thread
-                .inject_user_message_without_turn(format_subagent_notification_message(
-                    &child_process_id.to_string(),
-                    &status,
-                ))
-                .await;
-        });
+        let Ok(state) = self.upgrade() else { return };
+        let Ok(parent) = state.get_process(parent_process_id).await else {
+            return;
+        };
+        let task = crate::internal_tasks::register_agent_task(
+            Arc::clone(&parent.chaos.session),
+            child_process_id,
+            None,
+            self.get_status(child_process_id).await,
+            call_id,
+        )
+        .await;
+        parent
+            .chaos
+            .session
+            .services
+            .internal_task_store
+            .correlate(&task.task_id, None, execution_id.map(str::to_owned))
+            .await;
     }
 
     fn upgrade(&self) -> ChaosResult<Arc<ProcessTableState>> {

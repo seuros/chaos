@@ -250,16 +250,21 @@ impl Session {
         server: &str,
         task_id: &str,
     ) -> anyhow::Result<McpTask> {
+        self.owned_mcp_task(server, task_id).await?;
         let registry = self.services.mcp_registry.clone();
         let breaker_server = server.to_string();
         let dispatch_server = breaker_server.clone();
         let task_id = task_id.to_string();
         with_circuit_breaker(&breaker_server, move || async move {
-            registry
-                .execute(&dispatch_server, move |manager, server| async move {
-                    manager.get_task(&server, &task_id).await
-                })
-                .await
+            let manager = registry
+                .execute(&dispatch_server, |manager, _| async move { Ok(manager) })
+                .await?;
+            tokio::time::timeout(
+                Duration::from_secs(30),
+                manager.get_task(&dispatch_server, &task_id),
+            )
+            .await
+            .map_err(anyhow::Error::from)?
         })
         .await
     }
@@ -269,33 +274,65 @@ impl Session {
         server: &str,
         task_id: &str,
     ) -> anyhow::Result<McpToolCallResult> {
+        if let Some(task) = self.owned_mcp_task(server, task_id).await?
+            && let Some(result) = task.result
+        {
+            if result.get("truncated").and_then(serde_json::Value::as_bool) == Some(true) {
+                return serde_json::from_value(serde_json::json!({
+                    "content": [{"type": "text", "text": serde_json::to_string(&result)?}],
+                    "isError": false,
+                }))
+                .map_err(anyhow::Error::from);
+            }
+            return serde_json::from_value(result).map_err(anyhow::Error::from);
+        }
         let registry = self.services.mcp_registry.clone();
         let breaker_server = server.to_string();
         let dispatch_server = breaker_server.clone();
         let task_id = task_id.to_string();
         with_circuit_breaker(&breaker_server, move || async move {
-            registry
-                .execute(&dispatch_server, move |manager, server| async move {
-                    manager.get_task_result(&server, &task_id).await
-                })
-                .await
+            // Admission is serialized, observation is not. A slow remote
+            // tasks/result cannot hold the server actor hostage to cancellation
+            // or permission/configuration changes.
+            let manager = registry
+                .execute(&dispatch_server, |manager, _| async move { Ok(manager) })
+                .await?;
+            tokio::time::timeout(
+                Duration::from_secs(30),
+                manager.get_task_result(&dispatch_server, &task_id),
+            )
+            .await
+            .map_err(anyhow::Error::from)?
         })
         .await
     }
 
     pub async fn cancel_mcp_task(&self, server: &str, task_id: &str) -> anyhow::Result<McpTask> {
+        let owned = self.owned_mcp_task(server, task_id).await?;
         let registry = self.services.mcp_registry.clone();
         let breaker_server = server.to_string();
         let dispatch_server = breaker_server.clone();
         let task_id = task_id.to_string();
-        with_circuit_breaker(&breaker_server, move || async move {
+        let task = with_circuit_breaker(&breaker_server, move || async move {
             registry
                 .execute(&dispatch_server, move |manager, server| async move {
                     manager.cancel_task(&server, &task_id).await
                 })
                 .await
         })
-        .await
+        .await?;
+        if let Some(record) = owned {
+            self.services
+                .internal_task_store
+                .complete(
+                    &record.id,
+                    crate::internal_tasks::native_status(task.status),
+                    task.status_message.clone(),
+                    None,
+                )
+                .await;
+        }
+        Ok(task)
     }
 
     pub async fn call_tool(

@@ -25,14 +25,12 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use strum_macros::Display;
-use ts_rs::TS;
 
 // ===========================================================================
 // Auth
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
-#[ts(type = "string")]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct GitSha(pub String);
 
 impl GitSha {
@@ -42,7 +40,7 @@ impl GitSha {
 }
 
 /// Authentication mode for managed model-provider credentials.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Display, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthMode {
     /// OpenAI API key provided by the caller and stored by Chaos.
@@ -56,7 +54,6 @@ pub enum AuthMode {
     /// ChatGPT auth tokens are supplied by an external host app and are only
     /// stored in memory. Token refresh must be handled by the external host app.
     #[serde(rename = "chatgptAuthTokens")]
-    #[ts(rename = "chatgptAuthTokens")]
     #[strum(serialize = "chatgptAuthTokens")]
     ChatgptAuthTokens,
 }
@@ -65,7 +62,7 @@ pub enum AuthMode {
 // V1 Config Types
 // ===========================================================================
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema, TS)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserSavedConfig {
     pub approval_policy: Option<ApprovalPolicy>,
@@ -83,7 +80,7 @@ pub struct UserSavedConfig {
     pub profiles: HashMap<String, Profile>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema, TS)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
     pub model: Option<String>,
@@ -95,14 +92,14 @@ pub struct Profile {
     pub chatgpt_base_url: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema, TS)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Tools {
     pub web_search: Option<bool>,
     pub view_image: Option<bool>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema, TS)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxSettings {
     #[serde(default)]
@@ -116,9 +113,8 @@ pub struct SandboxSettings {
 // V2 ApprovalPolicy (v2-specific variant with Granular)
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-#[ts(rename_all = "kebab-case", export_to = "v2/")]
 pub enum ApprovalPolicyV2 {
     Supervised,
     Interactive,
@@ -136,9 +132,8 @@ pub enum ApprovalPolicyV2 {
 // V2 ApprovalsReviewer
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case", export_to = "v2/")]
 /// Configures who approval requests are routed to for review. Examples
 /// include sandbox escapes, blocked network access, MCP approval prompts, and
 /// ARC escalations. Currently only `user` is supported.
@@ -150,9 +145,8 @@ pub enum ApprovalsReviewerV2 {
 // V2 SandboxMode
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-#[ts(rename_all = "kebab-case", export_to = "v2/")]
 pub enum SandboxModeV2 {
     ReadOnly,
     WorkspaceWrite,
@@ -163,14 +157,11 @@ pub enum SandboxModeV2 {
 // Config Layer
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
-#[ts(tag = "type")]
-#[ts(export_to = "v2/")]
 pub enum ConfigLayerSource {
     /// System-wide config layer from a file (e.g. `/etc/chaos/config.toml`).
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     System {
         /// This is the path to the system config.toml file, though it is not
         /// guaranteed to exist.
@@ -182,7 +173,6 @@ pub enum ConfigLayerSource {
     /// - writable by the user
     /// - generally outside the workspace directory
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     User {
         /// This is the path to the user's config.toml file, though it is not
         /// guaranteed to exist.
@@ -192,12 +182,10 @@ pub enum ConfigLayerSource {
     /// Path to a .chaos/ folder within a project. There could be multiple of
     /// these between `cwd` and the project/repo root.
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     Project { dot_codex_folder: AbsolutePathBuf },
 
     /// Project-scoped MCP configuration sourced from `<project-root>/.mcp.json`.
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     ProjectMcp { file: AbsolutePathBuf },
 
     /// Session-layer overrides supplied via `-c`/`--config`.
@@ -230,9 +218,8 @@ impl PartialOrd for ConfigLayerSource {
 // Sandbox / Tools / Profile (V2)
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct SandboxWorkspaceWrite {
     #[serde(default)]
     pub writable_roots: Vec<PathBuf>,
@@ -244,17 +231,15 @@ pub struct SandboxWorkspaceWrite {
     pub exclude_slash_tmp: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct ToolsV2 {
     pub web_search: Option<WebSearchToolConfig>,
     pub view_image: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct ProfileV2 {
     pub model: Option<String>,
     pub model_provider: Option<String>,
@@ -278,9 +263,8 @@ pub struct ProfileV2 {
 // Analytics
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct AnalyticsConfig {
     pub enabled: Option<bool>,
     #[serde(default, flatten)]
@@ -291,18 +275,16 @@ pub struct AnalyticsConfig {
 // Apps
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub enum AppToolApproval {
     Auto,
     Prompt,
     Approve,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct AppsDefaultConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
@@ -312,25 +294,22 @@ pub struct AppsDefaultConfig {
     pub open_world_enabled: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct AppToolConfig {
     pub enabled: Option<bool>,
     pub approval_mode: Option<AppToolApproval>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct AppToolsConfig {
     #[serde(default, flatten)]
     pub tools: HashMap<String, AppToolConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct AppConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
@@ -341,9 +320,8 @@ pub struct AppConfig {
     pub tools: Option<AppToolsConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct AppsConfig {
     #[serde(default, rename = "_default")]
     pub default: Option<AppsDefaultConfig>,
@@ -359,9 +337,8 @@ const fn default_enabled() -> bool {
 // Config
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export_to = "v2/")]
 pub struct Config {
     pub model: Option<String>,
     pub review_model: Option<String>,
@@ -399,17 +376,15 @@ pub struct Config {
 // Config Service (layers, read, write)
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigLayerMetadata {
     pub name: ConfigLayerSource,
     pub version: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigLayer {
     pub name: ConfigLayerSource,
     pub version: String,
@@ -418,34 +393,30 @@ pub struct ConfigLayer {
     pub disabled_reason: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub enum MergeStrategy {
     Replace,
     Upsert,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub enum WriteStatus {
     Ok,
     OkOverridden,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct OverriddenMetadata {
     pub message: String,
     pub overriding_layer: ConfigLayerMetadata,
     pub effective_value: JsonValue,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigWriteResponse {
     pub status: WriteStatus,
     pub version: String,
@@ -454,9 +425,8 @@ pub struct ConfigWriteResponse {
     pub overridden_metadata: Option<OverriddenMetadata>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub enum ConfigWriteErrorCode {
     ConfigLayerReadonly,
     ConfigVersionConflict,
@@ -466,22 +436,19 @@ pub enum ConfigWriteErrorCode {
     UserLayerNotFound,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigReadParams {
     #[serde(default)]
     pub include_layers: bool,
     /// Optional working directory to resolve project config layers. If specified,
     /// return the effective config as seen from that directory (i.e., including any
     /// project layers between `cwd` and the project/repo root).
-    #[ts(optional = nullable)]
     pub cwd: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigReadResponse {
     pub config: Config,
     pub origins: HashMap<String, ConfigLayerMetadata>,
@@ -489,38 +456,31 @@ pub struct ConfigReadResponse {
     pub layers: Option<Vec<ConfigLayer>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigValueWriteParams {
     pub key_path: String,
     pub value: JsonValue,
     pub merge_strategy: MergeStrategy,
     /// Path to the config file to write; defaults to the user's `config.toml` when omitted.
-    #[ts(optional = nullable)]
     pub file_path: Option<String>,
-    #[ts(optional = nullable)]
     pub expected_version: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigBatchWriteParams {
     pub edits: Vec<ConfigEdit>,
     /// Path to the config file to write; defaults to the user's `config.toml` when omitted.
-    #[ts(optional = nullable)]
     pub file_path: Option<String>,
-    #[ts(optional = nullable)]
     pub expected_version: Option<String>,
     /// When true, hot-reload the updated user config into all loaded threads after writing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reload_user_config: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigEdit {
     pub key_path: String,
     pub value: JsonValue,
@@ -531,9 +491,8 @@ pub struct ConfigEdit {
 // Apps (metadata / branding)
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 /// EXPERIMENTAL - app metadata returned by app-list APIs.
 pub struct AppBranding {
     pub category: Option<String>,
@@ -544,16 +503,14 @@ pub struct AppBranding {
     pub is_discoverable_app: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct AppReview {
     pub status: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct AppScreenshot {
     pub url: Option<String>,
     #[serde(alias = "file_id")]
@@ -562,9 +519,8 @@ pub struct AppScreenshot {
     pub user_prompt: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct AppMetadata {
     pub review: Option<AppReview>,
     pub categories: Option<Vec<String>>,
@@ -580,9 +536,8 @@ pub struct AppMetadata {
     pub show_in_composer_when_unlinked: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 /// EXPERIMENTAL - app metadata returned by app-list APIs.
 pub struct AppInfo {
     pub id: String,
@@ -611,19 +566,16 @@ pub struct AppInfo {
 // MCP Elicitation
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub enum McpServerElicitationAction {
     Accept,
     Decline,
     Cancel,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct McpServerElicitationRequestParams {
     pub process_id: String,
     /// Active Chaos turn when this elicitation was observed, if app-server could correlate one.
@@ -642,32 +594,26 @@ pub struct McpServerElicitationRequestParams {
 ///
 /// This matches the `requestedSchema` shape from the MCP 2025-11-25
 /// `ElicitRequestFormParams` schema.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationSchema {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
-    #[ts(optional, rename = "$schema")]
     pub schema_uri: Option<String>,
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationObjectType,
     pub properties: BTreeMap<String, McpElicitationPrimitiveSchema>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub required: Option<Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationObjectType {
     Object,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(untagged)]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationPrimitiveSchema {
     Enum(McpElicitationEnumSchema),
     String(McpElicitationStringSchema),
@@ -675,43 +621,33 @@ pub enum McpElicitationPrimitiveSchema {
     Boolean(McpElicitationBooleanSchema),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationStringSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationStringType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub min_length: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub max_length: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub format: Option<McpElicitationStringFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationStringType {
     String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-#[ts(rename_all = "kebab-case", export_to = "v2/")]
 pub enum McpElicitationStringFormat {
     Email,
     Uri,
@@ -719,261 +655,197 @@ pub enum McpElicitationStringFormat {
     DateTime,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationNumberSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationNumberType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub minimum: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub maximum: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<f64>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationNumberType {
     Number,
     Integer,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationBooleanSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationBooleanType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationBooleanType {
     Boolean,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(untagged)]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationEnumSchema {
     SingleSelect(McpElicitationSingleSelectEnumSchema),
     MultiSelect(McpElicitationMultiSelectEnumSchema),
     Legacy(McpElicitationLegacyTitledEnumSchema),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationLegacyTitledEnumSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationStringType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(rename = "enum")]
-    #[ts(rename = "enum")]
     pub enum_: Vec<String>,
     #[serde(rename = "enumNames", skip_serializing_if = "Option::is_none")]
-    #[ts(optional, rename = "enumNames")]
     pub enum_names: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(untagged)]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationSingleSelectEnumSchema {
     Untitled(McpElicitationUntitledSingleSelectEnumSchema),
     Titled(McpElicitationTitledSingleSelectEnumSchema),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationUntitledSingleSelectEnumSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationStringType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(rename = "enum")]
-    #[ts(rename = "enum")]
     pub enum_: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationTitledSingleSelectEnumSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationStringType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(rename = "oneOf")]
-    #[ts(rename = "oneOf")]
     pub one_of: Vec<McpElicitationConstOption>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(untagged)]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationMultiSelectEnumSchema {
     Untitled(McpElicitationUntitledMultiSelectEnumSchema),
     Titled(McpElicitationTitledMultiSelectEnumSchema),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationUntitledMultiSelectEnumSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationArrayType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub min_items: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub max_items: Option<u64>,
     pub items: McpElicitationUntitledEnumItems,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationTitledMultiSelectEnumSchema {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationArrayType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub min_items: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub max_items: Option<u64>,
     pub items: McpElicitationTitledEnumItems,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub default: Option<Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-#[ts(export_to = "v2/")]
 pub enum McpElicitationArrayType {
     Array,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationUntitledEnumItems {
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
     pub type_: McpElicitationStringType,
     #[serde(rename = "enum")]
-    #[ts(rename = "enum")]
     pub enum_: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationTitledEnumItems {
     #[serde(rename = "anyOf", alias = "oneOf")]
-    #[ts(rename = "anyOf")]
     pub any_of: Vec<McpElicitationConstOption>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[ts(export_to = "v2/")]
 pub struct McpElicitationConstOption {
     #[serde(rename = "const")]
-    #[ts(rename = "const")]
     pub const_: String,
     pub title: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(tag = "mode", rename_all = "camelCase")]
-#[ts(tag = "mode")]
-#[ts(export_to = "v2/")]
 pub enum McpServerElicitationRequest {
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     Form {
         #[serde(rename = "_meta")]
-        #[ts(rename = "_meta")]
         meta: Option<JsonValue>,
         message: String,
         requested_schema: McpElicitationSchema,
     },
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     Url {
         #[serde(rename = "_meta")]
-        #[ts(rename = "_meta")]
         meta: Option<JsonValue>,
         message: String,
         url: String,
@@ -981,9 +853,8 @@ pub enum McpServerElicitationRequest {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct McpServerElicitationRequestResponse {
     pub action: McpServerElicitationAction,
     /// Structured user input for accepted elicitations, mirroring MCP `CreateElicitationResult`.
@@ -992,7 +863,6 @@ pub struct McpServerElicitationRequestResponse {
     pub content: Option<JsonValue>,
     /// Optional client metadata for form-mode action handling.
     #[serde(rename = "_meta")]
-    #[ts(rename = "_meta")]
     pub meta: Option<JsonValue>,
 }
 
@@ -1000,9 +870,8 @@ pub struct McpServerElicitationRequestResponse {
 // Warnings
 // ===========================================================================
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct TextPosition {
     /// 1-based line number.
     pub line: usize,
@@ -1010,17 +879,15 @@ pub struct TextPosition {
     pub column: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct TextRange {
     pub start: TextPosition,
     pub end: TextPosition,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct ConfigWarningNotification {
     /// Concise summary of the warning.
     pub summary: String,
@@ -1028,10 +895,8 @@ pub struct ConfigWarningNotification {
     pub details: Option<String>,
     /// Optional path to the config file that triggered the warning.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub path: Option<String>,
     /// Optional range for the error location inside the config file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub range: Option<TextRange>,
 }

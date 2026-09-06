@@ -11,12 +11,11 @@ use super::{
     function_arguments, input_preview, parse_arguments, parse_collab_input, process_spawn_source,
     tool_output_json_text, tool_output_response_item,
 };
+use crate::internal_tasks;
 use crate::minions::control::SpawnAgentOptions;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::apply_role_to_config;
 use crate::minions::role::collect_roles_by_topics;
-use crate::internal_tasks;
-use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
 use rand::prelude::IndexedRandom as _;
 
 pub(crate) struct Handler;
@@ -34,6 +33,7 @@ impl ToolHandler for Handler {
             call_id,
             ..
         } = invocation;
+        let invocation_call_id = call_id.clone();
         let arguments = function_arguments(payload)?;
         let args: SpawnAgentArgs = parse_arguments(&arguments)?;
 
@@ -136,6 +136,14 @@ impl ToolHandler for Handler {
                 .map_err(FunctionCallError::RespondToModel)?,
         );
 
+        session
+            .begin_background_submission(&invocation_call_id)
+            .await
+            .map_err(|error| {
+                FunctionCallError::RespondToModel(format!(
+                    "agent not started: journal unavailable: {error}"
+                ))
+            })?;
         let result = session
             .services
             .agent_control
@@ -148,6 +156,7 @@ impl ToolHandler for Handler {
                     role_name,
                 )),
                 SpawnAgentOptions {
+                    completion_call_id: Some(invocation_call_id.clone()),
                     fork_parent_spawn_call_id: args.fork_context.then(|| call_id.clone()),
                     ..SpawnAgentOptions::default()
                 },
@@ -206,19 +215,30 @@ impl ToolHandler for Handler {
             /*inc*/ 1,
             &[("role", role_tag)],
         );
-        let task = internal_tasks::register_agent_task(
-            session.clone(),
-            new_process_id,
-            nickname.clone(),
-            status,
-        )
-        .await;
+        let source = chaos_ipc::background_tasks::TaskSource::Agent {
+            process_id: new_process_id,
+        };
+        let task = session
+            .services
+            .internal_task_store
+            .find_source(&source)
+            .await
+            .map(|task| internal_tasks::mcp_task(&task))
+            .ok_or_else(|| {
+                FunctionCallError::RespondToModel(
+                    "spawned agent has no registered completion task".into(),
+                )
+            })?;
+        session
+            .services
+            .internal_task_store
+            .set_origin(&task.task_id, &invocation_call_id)
+            .await;
 
         Ok(SpawnAgentResult {
             agent_id: new_process_id.to_string(),
             nickname,
             task_id: task.task_id,
-            task_server: INTERNAL_TASK_SERVER_NAME.to_string(),
         })
     }
 }
@@ -248,7 +268,6 @@ pub(crate) struct SpawnAgentResult {
     agent_id: String,
     nickname: Option<String>,
     task_id: String,
-    task_server: String,
 }
 
 impl_tool_output!(SpawnAgentResult, "spawn_agent");

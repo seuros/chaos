@@ -140,10 +140,16 @@ pub fn native_server_side_tools_for_url(base_url: Option<&str>) -> Vec<String> {
 pub struct ModelProviderInfo {
     /// Friendly display name.
     pub name: String,
-    /// Explicit family for catalogs that do not publish per-model family
-    /// metadata. Defaults to unknown and is never inferred from URLs or names.
+    /// Last-resort family fallback; unknown by default.
     #[serde(default)]
     pub model_family: ModelFamily,
+    /// Exact-ID families used after catalog and registry lookup.
+    #[serde(
+        default,
+        skip_serializing_if = "HashMap::is_empty",
+        deserialize_with = "deserialize_model_family_overrides"
+    )]
+    pub model_family_overrides: HashMap<String, ModelFamily>,
     /// Base URL for the provider's OpenAI-compatible API.
     pub base_url: Option<String>,
     /// Environment variable that stores the user's API key for this provider.
@@ -213,7 +219,48 @@ pub struct ModelProviderInfo {
     pub native_server_side_tools: Vec<String>,
 }
 
+fn deserialize_model_family_overrides<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<String, ModelFamily>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let families = HashMap::<String, ModelFamily>::deserialize(deserializer)?;
+    if families.iter().any(|(model, family)| {
+        model.is_empty()
+            || model.trim() != model
+            || model.contains(['*', '?'])
+            || family.is_unknown()
+    }) {
+        return Err(serde::de::Error::custom(
+            "model_family_overrides requires nonempty exact model IDs without surrounding whitespace \
+             or wildcards, and known canonical families",
+        ));
+    }
+    Ok(families)
+}
+
 impl ModelProviderInfo {
+    pub(crate) fn family_for_model(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+        catalog_family: &ModelFamily,
+    ) -> ModelFamily {
+        if !catalog_family.is_unknown() {
+            return catalog_family.clone();
+        }
+        if let Some(family) =
+            crate::model_identity_registry::family(provider_id, self.base_url.as_deref(), model_id)
+        {
+            return family;
+        }
+        self.model_family_overrides
+            .get(model_id)
+            .unwrap_or(&self.model_family)
+            .clone()
+    }
+
     pub(crate) fn effective_base_url(&self, auth_mode: Option<AuthMode>) -> String {
         if self.supports_xai_account_auth() && matches!(auth_mode, Some(AuthMode::Xai)) {
             return XAI_ACCOUNT_DEFAULT_BASE_URL.to_string();
@@ -379,6 +426,7 @@ impl ModelProviderInfo {
         ModelProviderInfo {
             name: ANTHROPIC_PROVIDER_NAME.into(),
             model_family: ModelFamily::new("anthropic"),
+            model_family_overrides: HashMap::new(),
             base_url: Some(ANTHROPIC_DEFAULT_BASE_URL.into()),
             env_key: Some("ANTHROPIC_API_KEY".into()),
             env_key_instructions: Some(
@@ -411,6 +459,7 @@ impl ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
             model_family: ModelFamily::new("openai"),
+            model_family_overrides: HashMap::new(),
             base_url,
             env_key: None,
             env_key_instructions: None,
@@ -487,6 +536,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
     ModelProviderInfo {
         name: "gpt-oss".into(),
         model_family: ModelFamily::new("openai"),
+        model_family_overrides: HashMap::new(),
         base_url: Some(base_url.into()),
         env_key: None,
         env_key_instructions: None,

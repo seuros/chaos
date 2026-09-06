@@ -263,7 +263,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
     let EventMsg::McpToolCallBegin(begin) = begin_event else {
         unreachable!("event guard guarantees McpToolCallBegin");
     };
-    assert_eq!(begin.invocation.server, server_name);
+    assert_eq!(begin.invocation.server.as_deref(), Some(server_name));
     assert_eq!(begin.invocation.tool, "echo");
 
     let end_event = wait_for_event(&fixture.process, |ev| {
@@ -595,7 +595,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
         McpToolCallBeginEvent {
             call_id: call_id.to_string(),
             invocation: McpInvocation {
-                server: server_name.to_string(),
+                server: Some(server_name.to_string()),
                 tool: "image".to_string(),
                 arguments: Some(json!({})),
             },
@@ -613,7 +613,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
     assert_eq!(
         end.invocation,
         McpInvocation {
-            server: server_name.to_string(),
+            server: Some(server_name.to_string()),
             tool: "image".to_string(),
             arguments: Some(json!({})),
         }
@@ -919,7 +919,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
     let EventMsg::McpToolCallBegin(begin) = begin_event else {
         unreachable!("event guard guarantees McpToolCallBegin");
     };
-    assert_eq!(begin.invocation.server, server_name);
+    assert_eq!(begin.invocation.server.as_deref(), Some(server_name));
     assert_eq!(begin.invocation.tool, "echo");
 
     let end_event = wait_for_event(&fixture.process, |ev| {
@@ -1296,7 +1296,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
     let EventMsg::McpToolCallBegin(begin) = begin_event else {
         unreachable!("event guard guarantees McpToolCallBegin");
     };
-    assert_eq!(begin.invocation.server, server_name);
+    assert_eq!(begin.invocation.server.as_deref(), Some(server_name));
     assert_eq!(begin.invocation.tool, "echo");
 
     let end_event = wait_for_event(&fixture.process, |ev| {
@@ -1523,7 +1523,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
     let EventMsg::McpToolCallBegin(begin) = begin_event else {
         unreachable!("event guard guarantees McpToolCallBegin");
     };
-    assert_eq!(begin.invocation.server, server_name);
+    assert_eq!(begin.invocation.server.as_deref(), Some(server_name));
     assert_eq!(begin.invocation.tool, "echo");
 
     let end_event = wait_for_event(&fixture.process, |ev| {

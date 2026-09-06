@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::path::Display;
 use std::path::Path;
 use std::path::PathBuf;
-use ts_rs::TS;
 
 /// A path that is guaranteed to be absolute and normalized (though it is not
 /// guaranteed to be canonicalized or exist on the filesystem).
@@ -18,7 +17,7 @@ use ts_rs::TS;
 /// using [AbsolutePathBufGuard::new]. If no base path is set, the
 /// deserialization will fail unless the path being deserialized is already
 /// absolute.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 pub struct AbsolutePathBuf(PathBuf);
 
 impl AbsolutePathBuf {

@@ -24,6 +24,9 @@ use crate::config::Config;
 // ---------------------------------------------------------------------------
 
 impl RolloutConfig for Config {
+    fn unattended_recovery(&self) -> bool {
+        self.unattended_recovery
+    }
     fn chaos_home(&self) -> &Path {
         &self.chaos_home
     }

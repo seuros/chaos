@@ -11,10 +11,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
-use ts_rs::TS;
 
 #[derive(
-    Debug, Clone, Copy, Display, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS, Default,
+    Debug, Clone, Copy, Display, Deserialize, Serialize, PartialEq, Eq, JsonSchema, Default,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ExecCommandSource {
@@ -25,7 +24,7 @@ pub enum ExecCommandSource {
     UnifiedExecInteraction,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecCommandStatus {
     Completed,
@@ -33,13 +32,12 @@ pub enum ExecCommandStatus {
     Declined,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ExecCommandBeginEvent {
     /// Identifier so this can be paired with the ExecCommandEnd event.
     pub call_id: String,
     /// Identifier for the underlying PTY process (when available).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub process_id: Option<String>,
     /// Turn ID that this command belongs to.
     pub turn_id: String,
@@ -53,17 +51,15 @@ pub struct ExecCommandBeginEvent {
     pub source: ExecCommandSource,
     /// Raw input sent to a unified exec session (if this is an interaction event).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub interaction_input: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ExecCommandEndEvent {
     /// Identifier for the ExecCommandBegin that finished.
     pub call_id: String,
     /// Identifier for the underlying PTY process (when available).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub process_id: Option<String>,
     /// Turn ID that this command belongs to.
     pub turn_id: String,
@@ -77,7 +73,6 @@ pub struct ExecCommandEndEvent {
     pub source: ExecCommandSource,
     /// Raw input sent to a unified exec session (if this is an interaction event).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub interaction_input: Option<String>,
 
     /// Captured stdout
@@ -90,7 +85,6 @@ pub struct ExecCommandEndEvent {
     /// The command's exit code.
     pub exit_code: i32,
     /// The duration of the command execution.
-    #[ts(type = "string")]
     pub duration: Duration,
     /// Formatted output from the command, as seen by the model.
     pub formatted_output: String,
@@ -98,14 +92,14 @@ pub struct ExecCommandEndEvent {
     pub status: ExecCommandStatus,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecOutputStream {
     Stdout,
     Stderr,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct ExecCommandOutputDeltaEvent {
     /// Identifier for the ExecCommandBegin that produced this chunk.
     pub call_id: String,
@@ -114,11 +108,10 @@ pub struct ExecCommandOutputDeltaEvent {
     /// Raw bytes from the stream (may not be valid UTF-8).
     #[serde(with = "base64_bytes")]
     #[schemars(with = "String")]
-    #[ts(type = "string")]
     pub chunk: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct TerminalInteractionEvent {
     /// Identifier for the ExecCommandBegin that produced this chunk.
     pub call_id: String,
@@ -128,7 +121,7 @@ pub struct TerminalInteractionEvent {
     pub stdin: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ViewImageToolCallEvent {
     /// Identifier for the originating tool call.
     pub call_id: String,

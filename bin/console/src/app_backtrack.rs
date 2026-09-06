@@ -244,7 +244,16 @@ impl App {
         tui: &mut tui::Tui,
         initial_event: Option<crate::tui::TuiEvent>,
     ) {
-        let overlay = Overlay::new_transcript(self.transcript_cells.clone());
+        let mut overlay = Overlay::new_transcript(self.transcript_cells.clone());
+        // Resolve the first scroll against both committed and in-flight output,
+        // rather than adding the live tail after the scroll position was chosen.
+        if let Overlay::Transcript(transcript) = &mut overlay {
+            transcript.sync_live_tail(
+                tui.terminal.last_known_screen_size.width.max(1),
+                self.chat_widget.active_cell_transcript_key(),
+                |width| self.chat_widget.active_cell_transcript_lines(width),
+            );
+        }
         self.open_overlay(tui, overlay);
         if let Some(event) = initial_event
             && let Some(overlay) = &mut self.overlay

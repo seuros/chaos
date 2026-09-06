@@ -7,6 +7,7 @@ use super::{
     tui,
 };
 use crate::onboarding::auth::AccountsWidget;
+use crossterm::event::MouseEventKind;
 use std::sync::Arc;
 
 impl App {
@@ -27,7 +28,18 @@ impl App {
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, key_event).await;
                 }
-                TuiEvent::Mouse(_) => {}
+                TuiEvent::Mouse(mouse_event) => {
+                    if mouse_event.kind == MouseEventKind::ScrollUp
+                        && self
+                            .tile_manager
+                            .focused()
+                            .is_none_or(|id| id == PaneId::ROOT)
+                        && (!self.transcript_cells.is_empty()
+                            || self.chat_widget.active_cell_transcript_key().is_some())
+                    {
+                        self.open_transcript_overlay(tui, Some(TuiEvent::Mouse(mouse_event)));
+                    }
+                }
 
                 TuiEvent::Paste(pasted) => {
                     // Only paste into chat when chat is focused — do not leak

@@ -84,6 +84,17 @@ to finish or interrupt its response. Tool attempts already running retain the
 permissions they started with. Enabling Full Access still requires confirmation
 unless its warning was previously acknowledged.
 
+### Scrolling the thread
+
+Scroll up with the mouse wheel or trackpad to open the in-app thread history,
+including the live response. Scrolling stays within the thread, not the shell's
+build output or earlier commands.
+
+`Ctrl+T` also opens the transcript. Use the wheel, arrow keys, or Page Up/Page
+Down to navigate; `Ctrl+T` or `q` returns to the composer. For terminal-native
+text selection or shell scrollback, use your terminal's mouse-capture bypass
+(usually holding Shift).
+
 ---
 
 ## Clamping / Docking

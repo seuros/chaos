@@ -4,30 +4,22 @@ use crate::num_format::format_with_separators;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq, JsonSchema)]
 pub struct TokenUsage {
-    #[ts(type = "number")]
     pub input_tokens: i64,
     /// Input tokens written into the provider prompt cache.
     ///
     /// This is separate from [`Self::cached_input_tokens`], which is the
     /// compatibility name for cache-read input tokens.
     #[serde(default)]
-    #[ts(type = "number")]
     pub cache_creation_input_tokens: i64,
-    #[ts(type = "number")]
     pub cached_input_tokens: i64,
-    #[ts(type = "number")]
     pub output_tokens: i64,
-    #[ts(type = "number")]
     pub reasoning_output_tokens: i64,
-    #[ts(type = "number")]
     pub total_tokens: i64,
     /// Number of model-provider requests dispatched for this usage scope.
     #[serde(default)]
-    #[ts(type = "number")]
     pub provider_request_count: i64,
 }
 
@@ -148,12 +140,11 @@ impl TokenUsage {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct TokenUsageInfo {
     pub total_token_usage: TokenUsage,
     pub last_token_usage: TokenUsage,
     // TODO(aibrahim): make this not optional
-    #[ts(type = "number | null")]
     pub model_context_window: Option<i64>,
 }
 
@@ -225,7 +216,7 @@ impl TokenUsageInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct RateLimitSnapshot {
     pub limit_id: Option<String>,
     pub limit_name: Option<String>,
@@ -235,26 +226,24 @@ pub struct RateLimitSnapshot {
     pub plan_type: Option<crate::account::PlanType>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct RateLimitWindow {
     /// Percentage (0-100) of the window that has been consumed.
     pub used_percent: f64,
     /// Rolling window duration, in minutes.
-    #[ts(type = "number | null")]
     pub window_minutes: Option<i64>,
     /// Unix timestamp (seconds since epoch) when the window resets.
-    #[ts(type = "number | null")]
     pub resets_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct CreditsSnapshot {
     pub has_credits: bool,
     pub unlimited: bool,
     pub balance: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct TokenCountEvent {
     pub info: Option<TokenUsageInfo>,
     pub rate_limits: Option<RateLimitSnapshot>,

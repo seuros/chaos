@@ -3,10 +3,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use ts_rs::TS;
 
 /// Top-level JSONL events emitted by Chaos exec.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum ProcessEvent {
     /// Emitted when a new process is started as the first event.
@@ -36,17 +35,17 @@ pub enum ProcessEvent {
     Error(ProcessErrorEvent),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProcessStartedEvent {
     /// The identifier of the new process. Can be used to resume the process later.
     pub process_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 
 pub struct TurnStartedEvent {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TurnCompletedEvent {
     #[serde(default)]
     pub telemetry_schema_version: u32,
@@ -55,12 +54,12 @@ pub struct TurnCompletedEvent {
     pub session_usage: Option<Usage>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TurnFailedEvent {
     pub error: ProcessErrorEvent,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Usage {
     #[serde(default)]
     pub scope: UsageScope,
@@ -82,7 +81,7 @@ pub struct Usage {
     pub complete: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageScope {
     #[default]
@@ -90,29 +89,29 @@ pub enum UsageScope {
     ProcessCumulative,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ItemStartedEvent {
     pub item: ProcessItem,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ItemCompletedEvent {
     pub item: ProcessItem,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ItemUpdatedEvent {
     pub item: ProcessItem,
 }
 
 /// Fatal error emitted by the stream.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProcessErrorEvent {
     pub message: String,
 }
 
 /// Canonical representation of a process item and its domain-specific payload.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProcessItem {
     pub id: String,
     #[serde(flatten)]
@@ -120,7 +119,7 @@ pub struct ProcessItem {
 }
 
 /// Typed payloads for each supported process item type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProcessItemDetails {
     /// Response from the agent.
@@ -152,7 +151,7 @@ pub enum ProcessItemDetails {
 
 /// Response from the agent.
 /// Either a natural-language response or a JSON string when structured output is requested.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AgentMessageItem {
     pub text: String,
     /// Provider-supplied classification; absent means unknown, not commentary.
@@ -164,13 +163,13 @@ pub struct AgentMessageItem {
 }
 
 /// Agent's reasoning summary.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReasoningItem {
     pub text: String,
 }
 
 /// The status of a command execution.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandExecutionStatus {
     #[default]
@@ -181,7 +180,7 @@ pub enum CommandExecutionStatus {
 }
 
 /// A command executed by the agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CommandExecutionItem {
     pub command: String,
     pub aggregated_output: String,
@@ -190,14 +189,14 @@ pub struct CommandExecutionItem {
 }
 
 /// A set of file changes by the agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FileUpdateChange {
     pub path: String,
     pub kind: PatchChangeKind,
 }
 
 /// The status of a file change.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PatchApplyStatus {
     InProgress,
@@ -206,14 +205,14 @@ pub enum PatchApplyStatus {
 }
 
 /// A set of file changes by the agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FileChangeItem {
     pub changes: Vec<FileUpdateChange>,
     pub status: PatchApplyStatus,
 }
 
 /// Indicates the type of the file change.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PatchChangeKind {
     Add,
@@ -222,7 +221,7 @@ pub enum PatchChangeKind {
 }
 
 /// The status of an MCP tool call.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum McpToolCallStatus {
     #[default]
@@ -232,7 +231,7 @@ pub enum McpToolCallStatus {
 }
 
 /// The status of a collab tool call.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CollabToolCallStatus {
     #[default]
@@ -242,7 +241,7 @@ pub enum CollabToolCallStatus {
 }
 
 /// Supported collab tools.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CollabTool {
     SpawnAgent,
@@ -252,7 +251,7 @@ pub enum CollabTool {
 }
 
 /// The status of a collab agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CollabAgentStatus {
     PendingInit,
@@ -265,14 +264,14 @@ pub enum CollabAgentStatus {
 }
 
 /// Last known state of a collab agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CollabAgentState {
     pub status: CollabAgentStatus,
     pub message: Option<String>,
 }
 
 /// A call to a collab tool.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CollabToolCallItem {
     pub tool: CollabTool,
     pub sender_process_id: String,
@@ -283,28 +282,27 @@ pub struct CollabToolCallItem {
 }
 
 /// Result payload produced by an MCP tool invocation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct McpToolCallItemResult {
     // NOTE: `mcp_guest::ContentBlock` would be a more precise Rust
-    // representation of MCP content blocks. We intentionally use
-    // `serde_json::Value` here because this crate exports JSON schema + TS
-    // types (`schemars`/`ts-rs`), and the mcp-guest types aren't set up to
-    // be schema/TS friendly. Using `JsonValue` keeps the payload wire-shaped
-    // and easy to export.
+    // representation of MCP content blocks. Using `serde_json::Value` here
+    // keeps the payload wire-shaped without coupling the public event types
+    // to the mcp-guest representation.
     pub content: Vec<JsonValue>,
     pub structured_content: Option<JsonValue>,
 }
 
 /// Error details reported by a failed MCP tool invocation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct McpToolCallItemError {
     pub message: String,
 }
 
 /// A call to an MCP tool.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct McpToolCallItem {
-    pub server: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
     pub tool: String,
     #[serde(default)]
     pub arguments: JsonValue,
@@ -313,8 +311,36 @@ pub struct McpToolCallItem {
     pub status: McpToolCallStatus,
 }
 
+#[cfg(test)]
+mod serverless_tests {
+    use super::*;
+
+    #[test]
+    fn tool_items_preserve_optional_server_metadata() {
+        for server in [None, Some("external".to_string())] {
+            let item = McpToolCallItem {
+                server: server.clone(),
+                tool: "read_mcp_resource".into(),
+                arguments: serde_json::json!({"uri": "chaos://sessions"}),
+                result: None,
+                error: None,
+                status: McpToolCallStatus::InProgress,
+            };
+            let value = serde_json::to_value(&item).unwrap();
+            assert_eq!(
+                value.get("server").and_then(JsonValue::as_str),
+                server.as_deref()
+            );
+            assert_eq!(
+                serde_json::from_value::<McpToolCallItem>(value).unwrap(),
+                item
+            );
+        }
+    }
+}
+
 /// A web search request.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WebSearchItem {
     pub id: String,
     pub query: String,
@@ -322,19 +348,19 @@ pub struct WebSearchItem {
 }
 
 /// An error notification.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ErrorItem {
     pub message: String,
 }
 
 /// An item in agent's to-do list.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TodoItem {
     pub text: String,
     pub completed: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TodoListItem {
     pub items: Vec<TodoItem>,
 }

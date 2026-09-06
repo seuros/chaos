@@ -10,31 +10,83 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json;
-use ts_rs::TS;
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct McpInvocation {
-    /// Name of the MCP server as defined in the config.
-    pub server: String,
-    /// Name of the tool as given by the MCP server.
+    /// Configured MCP server, absent for internal tool invocations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    /// Bare internal tool name, or the name given by the MCP server.
     pub tool: String,
     /// Arguments to the tool call.
     pub arguments: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
+impl McpInvocation {
+    pub fn display_name(&self) -> String {
+        match &self.server {
+            Some(server) => format!("{server}.{}", self.tool),
+            None => self.tool.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod invocation_tests {
+    use super::*;
+
+    #[test]
+    fn internal_invocation_omits_server_and_prefix() {
+        let invocation = McpInvocation {
+            server: None,
+            tool: "read_mcp_resource".into(),
+            arguments: None,
+        };
+        let value = serde_json::to_value(&invocation).unwrap();
+        assert!(value.get("server").is_none());
+        assert_eq!(invocation.display_name(), "read_mcp_resource");
+        assert_eq!(
+            serde_json::from_value::<McpInvocation>(value).unwrap(),
+            invocation
+        );
+        let schema = serde_json::to_value(schemars::schema_for!(McpInvocation)).unwrap();
+        assert!(
+            !schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("server"))
+        );
+    }
+
+    #[test]
+    fn external_invocation_retains_server_and_prefix() {
+        let invocation = McpInvocation {
+            server: Some("external".into()),
+            tool: "search".into(),
+            arguments: None,
+        };
+        let value = serde_json::to_value(&invocation).unwrap();
+        assert_eq!(value["server"], "external");
+        assert_eq!(invocation.display_name(), "external.search");
+        assert_eq!(
+            serde_json::from_value::<McpInvocation>(value).unwrap(),
+            invocation
+        );
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct McpToolCallBeginEvent {
     /// Identifier so this can be paired with the McpToolCallEnd event.
     pub call_id: String,
     pub invocation: McpInvocation,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct McpToolCallEndEvent {
     /// Identifier for the corresponding McpToolCallBegin that finished.
     pub call_id: String,
     pub invocation: McpInvocation,
-    #[ts(type = "string")]
     pub duration: Duration,
     /// Result of the tool call. Note this could be an error.
     pub result: Result<CallToolResult, String>,
@@ -49,7 +101,7 @@ impl McpToolCallEndEvent {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct DynamicToolCallResponseEvent {
     /// Identifier for the corresponding DynamicToolCallRequest.
     pub call_id: String,
@@ -66,11 +118,10 @@ pub struct DynamicToolCallResponseEvent {
     /// Optional error text when the tool call failed before producing a response.
     pub error: Option<String>,
     /// The duration of the dynamic tool call.
-    #[ts(type = "string")]
     pub duration: Duration,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct McpStartupUpdateEvent {
     /// Server name being started.
     pub server: String,
@@ -78,9 +129,8 @@ pub struct McpStartupUpdateEvent {
     pub status: McpStartupStatus,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "state")]
-#[ts(rename_all = "snake_case", tag = "state")]
 pub enum McpStartupStatus {
     Starting,
     Ready,
@@ -88,7 +138,7 @@ pub enum McpStartupStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
 pub struct McpStartupCompleteEvent {
     pub ready: Vec<String>,
     pub failed: Vec<McpStartupFailure>,
@@ -96,7 +146,7 @@ pub struct McpStartupCompleteEvent {
 }
 
 /// Result of an explicit live MCP refresh request.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct McpServersRefreshedEvent {
     pub revision: u64,
     pub applied: bool,
@@ -110,15 +160,14 @@ pub struct McpServersRefreshedEvent {
     pub failed: Vec<McpStartupFailure>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct McpStartupFailure {
     pub server: String,
     pub error: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
 pub enum McpAuthStatus {
     Unsupported,
     NotLoggedIn,
@@ -138,7 +187,7 @@ impl fmt::Display for McpAuthStatus {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct McpListToolsResponseEvent {
     /// Fully qualified tool name -> tool definition.
     pub tools: std::collections::HashMap<String, McpTool>,
@@ -151,7 +200,7 @@ pub struct McpListToolsResponseEvent {
 }
 
 /// A single tool entry in the all-tools response.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ToolSummary {
     /// Tool name for display in `/tools`. MCP names omit the model-only
     /// `mcp__<server>__` qualification.
@@ -163,20 +212,19 @@ pub struct ToolSummary {
     pub annotation_labels: Vec<String>,
     /// Optional structured tool annotations for UI rendering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub annotations: Option<serde_json::Value>,
     /// Origin: "builtin", a catalog module, "dynamic", "halluacinate", or "mcp:<server>".
     pub source: String,
 }
 
 /// Response to `Op::ListAllTools`.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AllToolsResponseEvent {
     pub tools: Vec<ToolSummary>,
 }
 
 /// Response payload for `Op::ListCustomPrompts`.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ListCustomPromptsResponseEvent {
     pub custom_prompts: Vec<crate::custom_prompts::CustomPrompt>,
 }

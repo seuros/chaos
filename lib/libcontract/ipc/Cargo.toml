@@ -25,11 +25,6 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 sys-locale = { workspace = true }
 tracing = { workspace = true }
-ts-rs = { workspace = true, features = [
-    "uuid-impl",
-    "serde-json-impl",
-    "no-serde-warnings",
-] }
 uuid = { workspace = true, features = ["serde", "v7", "v4"] }
 
 [dev-dependencies]

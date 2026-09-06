@@ -202,7 +202,7 @@ impl ToolHandler for UnifiedExecHandler {
                 {
                     manager.release_process_id(process_id).await;
                     let mut output = ExecCommandToolOutput {
-                        event_call_id: String::new(),
+                        event_call_id: context.call_id.clone(),
                         chunk_id: String::new(),
                         wall_time: std::time::Duration::ZERO,
                         raw_output: output.into_text().into_bytes(),
@@ -212,7 +212,6 @@ impl ToolHandler for UnifiedExecHandler {
                         original_token_count: None,
                         session_command: None,
                         task_id: None,
-                        task_server: None,
                     };
                     internal_tasks::attach_exec_task(context.session.clone(), &mut output)
                         .await
@@ -220,6 +219,16 @@ impl ToolHandler for UnifiedExecHandler {
                     return Ok(output);
                 }
 
+                if let Err(error) = context
+                    .session
+                    .begin_background_submission(&context.call_id)
+                    .await
+                {
+                    manager.release_process_id(process_id).await;
+                    return Err(FunctionCallError::RespondToModel(format!(
+                        "command not started: task journal unavailable: {error}"
+                    )));
+                }
                 let mut response = manager
                     .exec_command(
                         ExecCommandRequest {
@@ -264,6 +273,21 @@ impl ToolHandler for UnifiedExecHandler {
                     .map_err(|err| {
                         FunctionCallError::RespondToModel(format!("write_stdin failed: {err}"))
                     })?;
+                if response.exit_code.is_some()
+                    && let Some(task) = session
+                        .services
+                        .internal_task_store
+                        .find_source(&chaos_ipc::background_tasks::TaskSource::Exec {
+                            session_id: args.session_id,
+                        })
+                        .await
+                {
+                    session
+                        .services
+                        .internal_task_store
+                        .result_read(task.id, &call_id)
+                        .await;
+                }
 
                 let interaction = TerminalInteractionEvent {
                     call_id: response.event_call_id.clone(),

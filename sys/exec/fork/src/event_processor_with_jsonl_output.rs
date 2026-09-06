@@ -88,7 +88,7 @@ struct RunningTodoList {
 
 #[derive(Debug, Clone)]
 struct RunningMcpToolCall {
-    server: String,
+    server: Option<String>,
     tool: String,
     item_id: String,
     arguments: JsonValue,

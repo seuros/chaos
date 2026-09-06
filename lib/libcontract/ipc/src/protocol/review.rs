@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 /// Location of the code related to a review finding.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ReviewCodeLocation {
     pub absolute_file_path: PathBuf,
@@ -14,35 +13,32 @@ pub struct ReviewCodeLocation {
 }
 
 /// Inclusive line range in a file associated with the finding.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ReviewLineRange {
     pub start: u32,
     pub end: u32,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewDelivery {
     Inline,
     Detached,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
-#[ts(tag = "type")]
 pub enum ReviewTarget {
     /// Review the working tree: staged, unstaged, and untracked files.
     UncommittedChanges,
 
     /// Review changes between the current branch and the given base branch.
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     BaseBranch { branch: String },
 
     /// Review the changes introduced by a specific commit.
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     Commit {
         sha: String,
         /// Optional human-readable label (e.g., commit subject) for UIs.
@@ -51,25 +47,22 @@ pub enum ReviewTarget {
 
     /// Arbitrary instructions provided by the user.
     #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     Custom { instructions: String },
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 /// Review request sent to the review session.
 pub struct ReviewRequest {
     pub target: ReviewTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub user_facing_hint: Option<String>,
     /// Optional minion persona name to use as the reviewer.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub reviewer: Option<String>,
 }
 
 /// Structured review result produced by a child review session.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ReviewOutputEvent {
     pub findings: Vec<ReviewFinding>,
@@ -90,7 +83,7 @@ impl Default for ReviewOutputEvent {
 }
 
 /// A single review finding describing an observed issue or recommendation.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ReviewFinding {
     pub title: String,

@@ -1,0 +1,22 @@
+[package]
+name = "chaos-taskd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+chaos-argv = { workspace = true }
+chaos-coreboot = { workspace = true }
+chaos-getopt = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-kern = { workspace = true }
+chaos-session = { workspace = true }
+tokio = { workspace = true, features = ["signal", "time"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+usage = { workspace = true }

@@ -155,6 +155,23 @@ impl ToolHandler for Handler {
             status: statuses_map.clone(),
             timed_out: statuses.is_empty(),
         };
+        for (process_id, status) in &statuses_map {
+            if is_final(status)
+                && let Some(task) = session
+                    .services
+                    .internal_task_store
+                    .find_source(&chaos_ipc::background_tasks::TaskSource::Agent {
+                        process_id: *process_id,
+                    })
+                    .await
+            {
+                session
+                    .services
+                    .internal_task_store
+                    .result_read(task.id, &call_id)
+                    .await;
+            }
+        }
 
         session
             .send_event(

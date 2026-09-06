@@ -118,6 +118,8 @@ enum InitialOperation {
 }
 
 struct ExecRunArgs {
+    wait_background: bool,
+    background_timeout: std::time::Duration,
     process_table: Arc<ProcessTable>,
     auth_manager: Arc<AuthManager>,
     command: Option<ExecCommand>,
@@ -201,6 +203,8 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
     }
 
     let Cli {
+        wait_background,
+        background_timeout,
         command,
         config_profile,
         model,
@@ -417,6 +421,10 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
     ));
 
     run_exec_session(ExecRunArgs {
+        wait_background,
+        background_timeout: background_timeout
+            .map(|seconds| std::time::Duration::from_secs(seconds.get()))
+            .unwrap_or(chaos_session::background::DEFAULT_BACKGROUND_TIMEOUT),
         process_table,
         auth_manager,
         command,
@@ -438,6 +446,8 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
 
 async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     let ExecRunArgs {
+        wait_background,
+        background_timeout,
         process_table,
         auth_manager,
         command,
@@ -643,7 +653,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     // Track whether a fatal error was reported so we can exit with a non-zero
     // status for automation-friendly signaling.
     let mut error_seen = false;
-    let mut interrupt_channel_open = true;
     run_event_loop(
         &thread,
         &mut *event_processor,
@@ -651,7 +660,11 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         &required_mcp_servers,
         &mut error_seen,
         &mut interrupt_rx,
-        &mut interrupt_channel_open,
+        chaos_session::background::BackgroundWait::new(
+            &thread,
+            wait_background,
+            background_timeout,
+        ),
     )
     .await;
 
@@ -718,13 +731,16 @@ async fn run_event_loop(
     required_mcp_servers: &HashSet<String>,
     error_seen: &mut bool,
     interrupt_rx: &mut mpsc::UnboundedReceiver<()>,
-    interrupt_channel_open: &mut bool,
+    mut wait: chaos_session::background::BackgroundWait,
 ) {
+    use chaos_session::background::WaitEvent;
+    let wait_background = wait.is_enabled();
+    let mut interrupt_channel_open = true;
     loop {
         let event = tokio::select! {
-            maybe_interrupt = interrupt_rx.recv(), if *interrupt_channel_open => {
+            maybe_interrupt = interrupt_rx.recv(), if interrupt_channel_open => {
                 if maybe_interrupt.is_none() {
-                    *interrupt_channel_open = false;
+                    interrupt_channel_open = false;
                     continue;
                 }
                 if let Err(err) = thread.submit(Op::Interrupt).await {
@@ -732,10 +748,12 @@ async fn run_event_loop(
                 }
                 continue;
             }
-            result = thread.next_event() => {
+            result = wait.next(thread) => {
                 match result {
-                    Ok(event) => event,
-                    Err(err) => {
+                    WaitEvent::Event(event) => *event,
+                    WaitEvent::Complete => break,
+                    WaitEvent::Stopped(err) => {
+                        *error_seen = true;
                         warn!("event stream ended: {err}");
                         break;
                     }
@@ -743,7 +761,13 @@ async fn run_event_loop(
             }
         };
 
-        match exec_event_decision(&event.msg, task_id, required_mcp_servers) {
+        let is_completion = matches!(event.msg, EventMsg::TurnComplete(_));
+        let decision_turn = if wait_background {
+            event.id.as_str()
+        } else {
+            task_id
+        };
+        match exec_event_decision(&event.msg, decision_turn, required_mcp_servers) {
             ExecEventDecision::Ignore => continue,
             ExecEventDecision::Dispatch { fatal } => {
                 *error_seen |= fatal;
@@ -767,6 +791,9 @@ async fn run_event_loop(
         match event_processor.process_event(event) {
             ChaosStatus::Running => {}
             ChaosStatus::InitiateShutdown | ChaosStatus::Shutdown => {
+                if wait_background && is_completion {
+                    continue;
+                }
                 break;
             }
         }

@@ -22,6 +22,45 @@ use pretty_assertions::assert_eq;
 
 use super::*;
 
+#[test]
+fn internal_resource_and_task_schemas_allow_omitted_server() {
+    for spec in [
+        tool_builders::create_read_mcp_resource_tool(),
+        tool_builders::create_set_mcp_resource_subscription_tool(),
+        create_cancel_mcp_task_tool(),
+    ] {
+        let ToolSpec::Function(tool) = spec else {
+            panic!("function tool")
+        };
+        let schema = serde_json::to_value(tool.parameters).unwrap();
+        assert!(schema["properties"].get("server").is_some());
+        assert!(
+            !schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("server"))
+        );
+        assert!(!tool.name.contains('.'));
+    }
+    let ToolSpec::Function(tool) = create_call_mcp_tool_async_tool() else {
+        panic!("function tool")
+    };
+    let schema = serde_json::to_value(tool.parameters).unwrap();
+    assert!(
+        schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("server"))
+    );
+    for schema in [
+        schemas::unified_exec_output_schema(),
+        schemas::spawn_agent_output_schema(),
+    ] {
+        assert!(schema["properties"].get("task_server").is_none());
+        assert!(schema["properties"].get("task_id").is_some());
+    }
+}
+
 fn mcp_tool(
     name: &str,
     description: &str,
@@ -506,7 +545,10 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
     let state = catalog.new_state();
 
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
-    assert_contains_tool_names(&tools, &["enable_tools", "request_user_input"]);
+    assert_contains_tool_names(
+        &tools,
+        &["enable_tools", "request_user_input", "refresh_models"],
+    );
     assert_lacks_tool_name(&tools, "disable_tools");
     for name in [
         "git_status",
@@ -822,6 +864,7 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
     for spec in [
         create_exec_command_tool(true, true),
         create_write_stdin_tool(),
+        super::tool_builders::create_refresh_models_tool(),
         PLAN_TOOL.clone(),
         create_read_session_history_tool(),
         create_search_session_history_tool(),
@@ -1393,6 +1436,7 @@ impl ModelToolTail {
 }
 
 const MODEL_TOOL_TAIL_PREFIX: &[&str] = &[
+    "refresh_models",
     "update_plan",
     "read_session_history",
     "search_session_history",

@@ -10,6 +10,7 @@ pub(crate) use control::AgentControl;
 pub(crate) use guards::exceeds_process_spawn_depth_limit;
 pub(crate) use guards::next_process_spawn_depth;
 pub(crate) use status::agent_status_from_event;
+pub(crate) use status::preserve_turn_failure;
 
 const INTERNAL_AGENT_ROLE_PREFIX: &str = "__chaos_internal__:";
 

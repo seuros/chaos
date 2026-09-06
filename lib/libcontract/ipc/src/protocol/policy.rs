@@ -8,7 +8,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
 use tracing::error;
-use ts_rs::TS;
 
 use crate::git_pointer::is_git_pointer_file;
 use crate::git_pointer::resolve_gitdir_from_file;
@@ -16,18 +15,7 @@ use crate::git_pointer::resolve_gitdir_from_file;
 /// Determines the conditions under which the user is consulted to approve
 /// running the command proposed by Chaos.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    Default,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    Display,
-    JsonSchema,
-    TS,
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Display, JsonSchema,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -54,7 +42,7 @@ pub enum ApprovalPolicy {
     Headless,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct GranularApprovalConfig {
     /// Whether to allow shell command approval requests, including inline
     /// `with_additional_permissions` and `require_escalated` requests.
@@ -112,7 +100,7 @@ impl ApprovalPolicy {
 
 /// Represents whether outbound network access is available to the agent.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema, TS,
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -134,10 +122,9 @@ fn default_include_platform_defaults() -> bool {
 
 /// Determines how read-only file access is granted inside a restricted
 /// sandbox.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, Default, JsonSchema)]
 #[strum(serialize_all = "kebab-case")]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(tag = "type")]
 pub enum ReadOnlyAccess {
     /// Restrict reads to an explicit set of roots.
     ///
@@ -200,7 +187,7 @@ impl ReadOnlyAccess {
 }
 
 /// Determines execution restrictions for model shell commands.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, JsonSchema, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, JsonSchema)]
 #[strum(serialize_all = "kebab-case")]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum SandboxPolicy {

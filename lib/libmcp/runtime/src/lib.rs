@@ -11,6 +11,7 @@
 
 pub mod catalog_conv;
 pub mod manager;
+pub mod task_observer;
 pub mod types;
 
 pub use manager::CHAOS_MCP_CLIENT_ID_ENV;

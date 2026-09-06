@@ -2,12 +2,11 @@ use super::*;
 use crate::ChaosAuth;
 use crate::Process;
 use crate::ProcessTable;
-use crate::minions::agent_status_from_event;
 use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigBuilder;
 use crate::config_loader::LoaderOverrides;
-use crate::contextual_user_message::SUBAGENT_NOTIFICATION_OPEN_TAG;
+use crate::minions::agent_status_from_event;
 use assert_matches::assert_matches;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::models::ContentItem;
@@ -86,23 +85,6 @@ impl AgentControlHarness {
     }
 }
 
-fn has_subagent_notification(history_items: &[ResponseItem]) -> bool {
-    history_items.iter().any(|item| {
-        let ResponseItem::Message { role, content, .. } = item else {
-            return false;
-        };
-        if role != "user" {
-            return false;
-        }
-        content.iter().any(|content_item| match content_item {
-            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
-                text.contains(SUBAGENT_NOTIFICATION_OPEN_TAG)
-            }
-            ContentItem::InputImage { .. } | ContentItem::Document { .. } => false,
-        })
-    })
-}
-
 /// Returns true when any message item contains `needle` in a text span.
 fn history_contains_text(history_items: &[ResponseItem], needle: &str) -> bool {
     history_items.iter().any(|item| {
@@ -121,14 +103,16 @@ fn history_contains_text(history_items: &[ResponseItem], needle: &str) -> bool {
 async fn wait_for_subagent_notification(parent_thread: &Arc<Process>) -> bool {
     let wait = async {
         loop {
-            let history_items = parent_thread
+            if parent_thread
                 .chaos
                 .session
-                .clone_history()
+                .services
+                .internal_task_store
+                .list()
                 .await
-                .raw_items()
-                .to_vec();
-            if has_subagent_notification(&history_items) {
+                .iter()
+                .any(|task| task.state.is_terminal() && task.notify)
+            {
                 return true;
             }
             sleep(Duration::from_millis(25)).await;
@@ -714,36 +698,35 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
     let (parent_process_id, parent_thread) = harness.start_process().await;
     let child_process_id = ProcessId::new();
 
-    harness.control.maybe_start_completion_watcher(
-        child_process_id,
-        Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-            parent_process_id,
-            depth: 1,
-            agent_nickname: None,
-            agent_role: Some("scout".to_string()),
-        })),
-    );
+    harness
+        .control
+        .maybe_start_completion_watcher(
+            child_process_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
+                depth: 1,
+                agent_nickname: None,
+                agent_role: Some("scout".to_string()),
+            })),
+            None,
+            None,
+        )
+        .await;
 
     assert_eq!(wait_for_subagent_notification(&parent_thread).await, true);
 
-    let history_items = parent_thread
+    let task = parent_thread
         .chaos
         .session
-        .clone_history()
+        .services
+        .internal_task_store
+        .find_source(&chaos_ipc::background_tasks::TaskSource::Agent {
+            process_id: child_process_id,
+        })
         .await
-        .raw_items()
-        .to_vec();
-    assert_eq!(
-        history_contains_text(
-            &history_items,
-            &format!("\"agent_id\":\"{child_process_id}\"")
-        ),
-        true
-    );
-    assert_eq!(
-        history_contains_text(&history_items, "\"status\":\"not_found\""),
-        true
-    );
+        .expect("owned completion");
+    assert!(task.state.is_terminal());
+    assert_eq!(task.result.unwrap()["status"], "not_found");
 }
 
 #[tokio::test]

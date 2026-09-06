@@ -310,13 +310,24 @@ async fn read_cache(
     .fetch_one(&pool)
     .await?;
     let models_json = row.get::<String, _>("models_json");
+    let models_json: serde_json::Value = serde_json::from_str(&models_json)?;
+    let format = models_json
+        .get("format")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("marked cache envelope missing format"))?;
+    assert_eq!(format, "raw_catalog_v1");
     Ok(ModelsCache {
         fetched_at: Timestamp::from_second(row.get::<i64, _>("fetched_at"))
             .map_err(|_| anyhow::anyhow!("valid timestamp expected"))?,
         etag: row.get::<Option<String>, _>("etag"),
         client_version: row.get::<Option<String>, _>("client_version"),
         scope: Some(scope.clone()),
-        models: serde_json::from_str(&models_json)?,
+        models: serde_json::from_value(
+            models_json
+                .get("models")
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("marked cache envelope missing models"))?,
+        )?,
     })
 }
 
@@ -326,7 +337,10 @@ async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Resu
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cache scope expected"))?;
     let pool = open_runtime_db(sqlite_home).await?;
-    let models_json = serde_json::to_string(&cache.models)?;
+    let models_json = serde_json::to_string(&serde_json::json!({
+        "format": "raw_catalog_v1",
+        "models": &cache.models,
+    }))?;
     sqlx::query(
         "INSERT INTO model_catalog_cache \
             (provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json) \

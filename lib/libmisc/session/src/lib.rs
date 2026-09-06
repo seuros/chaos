@@ -91,6 +91,7 @@
 //! ```
 
 use std::future::Future;
+pub mod background;
 use std::sync::Arc;
 
 use chaos_ipc::product::OS_NAME;

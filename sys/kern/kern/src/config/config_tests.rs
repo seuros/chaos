@@ -1021,6 +1021,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         minion_job_max_runtime_seconds: DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
         chaos_home: fixture.chaos_home(),
         mode_policy_override: None,
+        unattended_recovery: false,
         sqlite_home: fixture.chaos_home(),
         storage_url: None,
         log_dir: fixture.chaos_home().join("log"),
@@ -1152,6 +1153,7 @@ model_verbosity = "high"
     let openai_custom_provider = ModelProviderInfo {
         name: "OpenAI custom".to_string(),
         model_family: Default::default(),
+        model_family_overrides: Default::default(),
         base_url: Some("https://api.openai.com/v1".to_string()),
         env_key: Some("OPENAI_API_KEY".to_string()),
         wire_api: crate::WireApi::Responses,

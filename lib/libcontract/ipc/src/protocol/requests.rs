@@ -17,7 +17,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
-use ts_rs::TS;
 
 use super::ApprovalPolicy;
 use super::ReviewDecision;
@@ -36,13 +35,11 @@ pub struct Submission {
     pub trace: Option<W3cTraceContext>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct W3cTraceContext {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub traceparent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub tracestate: Option<String>,
 }
 
@@ -54,9 +51,8 @@ pub struct McpServerRefreshConfig {
 }
 
 /// Selects the live permission layer updated by [`Op::UpdatePermissions`].
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(tag = "type")]
 pub enum PermissionUpdateScope {
     /// Update the session-wide permission layer. Existing turns observe the
     /// new value before their next tool call or retry.
@@ -66,9 +62,8 @@ pub enum PermissionUpdateScope {
 }
 
 /// Describes how an update changes sticky permission grants.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "action", content = "permissions", rename_all = "snake_case")]
-#[ts(tag = "action", content = "permissions")]
 pub enum PermissionGrantUpdate {
     /// Preserve the existing grants.
     #[default]

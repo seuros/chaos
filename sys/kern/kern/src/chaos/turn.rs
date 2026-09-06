@@ -259,10 +259,12 @@ pub(crate) async fn run_turn(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
+    origin: crate::tasks::RegularTask,
     prewarmed_client_session: Option<ModelClientSession>,
     cancellation_token: CancellationToken,
 ) -> Option<String> {
-    if input.is_empty() {
+    let completion_turn = origin == crate::tasks::RegularTask::Completion;
+    if input.is_empty() && !completion_turn {
         return None;
     }
 
@@ -312,18 +314,22 @@ pub(crate) async fn run_turn(
         })
         .unwrap_or_default();
     let agent_context = hook_agent_context(sess.conversation_id, &sess.session_source().await);
-    sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
-        .await;
-    maybe_inject_session_title_reminder(&sess, &turn_context).await;
+    if !completion_turn {
+        sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
+            .await;
+        maybe_inject_session_title_reminder(&sess, &turn_context).await;
+    }
     // Track the previous-turn baseline from the regular user-turn path only so
     // standalone tasks (compact/shell/review) cannot suppress future
     // model injections.
-    sess.set_previous_turn_settings(Some(PreviousTurnSettings {
-        model: turn_context.model_info.slug.clone(),
-    }))
-    .await;
+    if !completion_turn {
+        sess.set_previous_turn_settings(Some(PreviousTurnSettings {
+            model: turn_context.model_info.slug.clone(),
+        }))
+        .await;
+    }
 
-    let mut before_turn_request = Some(chaos_dtrace::BeforeTurnRequest {
+    let mut before_turn_request = (!completion_turn).then_some(chaos_dtrace::BeforeTurnRequest {
         session_id: sess.conversation_id,
         turn_id: turn_context.sub_id.clone(),
         cwd: turn_context.cwd.clone(),
@@ -411,6 +417,11 @@ pub(crate) async fn run_turn(
                     .await;
                 }
             }
+        }
+
+        if let Err(error) = sess.deliver_task_completions(&turn_context).await {
+            error!(%error, "completion delivery could not be committed");
+            break;
         }
 
         // A tool call can switch the session mode during this user turn. Re-read

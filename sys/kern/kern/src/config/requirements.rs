@@ -627,6 +627,7 @@ impl Config {
             minion_job_max_runtime_seconds,
             chaos_home,
             mode_policy_override: None,
+            unattended_recovery: false,
             sqlite_home,
             storage_url,
             log_dir,

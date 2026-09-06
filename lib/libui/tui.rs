@@ -29,7 +29,6 @@ use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
 use crossterm::terminal::SetTitle;
 use crossterm::terminal::supports_keyboard_enhancement;
-use ratatui::backend::Backend;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::disable_raw_mode;
@@ -274,7 +273,7 @@ pub struct Tui {
     suspend_context: SuspendContext,
     // True when overlay alt-screen UI is active
     alt_screen_active: Arc<AtomicBool>,
-    // True while overlay mouse capture is active, even when the overlay is rendered inline.
+    // True while the current screen owns mouse input, including the main thread.
     mouse_capture_active: Arc<AtomicBool>,
     // True when terminal/tab is focused; updated internally from crossterm events
     terminal_focused: Arc<AtomicBool>,
@@ -470,6 +469,9 @@ impl Tui {
     /// Set mouse capture state. Prefer this over calling `enable_mouse_capture` or
     /// `disable_mouse_capture` directly from callers outside this module.
     pub fn set_mouse_capture_enabled(&mut self, enabled: bool) {
+        if self.mouse_capture_active.load(Ordering::Relaxed) == enabled {
+            return;
+        }
         if enabled {
             self.enable_mouse_capture();
         } else {
@@ -502,9 +504,11 @@ impl Tui {
     /// Enter alternate screen and expand the viewport to full terminal size, saving the current
     /// inline viewport for restoration when leaving.
     pub fn enter_alt_screen(&mut self) -> Result<()> {
+        // Pickers use terminal wheel-to-arrow translation. Screens that handle
+        // mouse events themselves (pagers) opt back in after entering.
+        self.set_mouse_capture_enabled(false);
         if !self.alt_screen_enabled {
             // Zellij auto-mode keeps us in the normal buffer so scrollback remains available.
-            // Mouse capture is opt-in per overlay via enable_mouse_capture().
             return Ok(());
         }
         if self.alt_screen_active.load(Ordering::Relaxed) {
@@ -603,24 +607,13 @@ impl Tui {
             // If the viewport has expanded, scroll everything else up to make room.
             if area.bottom() > size.height {
                 let scroll_by = area.bottom() - size.height;
-                // Only scroll the region below the reserved rows.
-                terminal
-                    .backend_mut()
-                    .scroll_region_up(reserved..area.top(), scroll_by)?;
+                crate::insert_history::scroll_history_up(terminal, scroll_by, reserved)?;
                 area.y = size.height - area.height;
             }
             if area != terminal.viewport_area {
                 // TODO(nornagon): probably this could be collapsed with the clear + set_viewport_area above.
                 terminal.clear()?;
                 terminal.set_viewport_area(area);
-            }
-
-            // Render bounded widget cells at row 0, independent of the
-            // scrolling viewport. State updates are owned by the runtime.
-            if reserved > 0
-                && let Some(top_bar) = &self.top_bar
-            {
-                terminal.draw_pinned_row(&top_bar.buffer(size.width))?;
             }
 
             if !self.pending_history_lines.is_empty() {
@@ -630,6 +623,14 @@ impl Tui {
                     reserved,
                 )?;
                 self.pending_history_lines.clear();
+            }
+
+            // History insertion temporarily removes the header so it cannot
+            // enter native scrollback. Repaint it after all scrolling.
+            if reserved > 0
+                && let Some(top_bar) = &self.top_bar
+            {
+                terminal.draw_pinned_row(&top_bar.buffer(size.width))?;
             }
 
             // Update the y position for suspending so Ctrl-Z can place the cursor correctly.

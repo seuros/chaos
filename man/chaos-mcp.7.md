@@ -148,6 +148,19 @@ bunx @mcpjam/inspector@latest chaos mcp serve
 
 The server runs over standard MCP stdio transport using JSON-RPC 2.0.
 
+### Refreshing provider models
+
+Call `refresh_models` with the required `provider` argument set to a configured
+provider ID. It forces discovery using that provider's configured credentials,
+updates the catalog cache, and returns an object containing `provider` and `models`.
+It does not start a session or switch the current session's provider.
+Unknown providers, authoritative custom catalogs, and fetch failures return
+errors rather than silently serving stale models.
+
+The tool is also available inside ChaOS sessions and through the session MCP
+bridge. Reading `chaos://models` remains cache-only; use `refresh_models` when
+a provider's catalog is empty or out of date.
+
 ## INTEGRATION
 
 Add FreeChaOS to another MCP client's config:
@@ -197,22 +210,27 @@ single session to inspect.
 
 ### Resource tool rules
 
-- Read internal resources with `read_mcp_resource({"server":"chaos_local","uri":"chaos://sessions"})`
-  (replace the URI as needed). Do not subscribe to `chaos_local`.
-- Server resolution checks configured servers first. If the named server does
-  not exist and the URI is a recognized global resource, the call resolves to
-  `chaos_local` automatically. Consume the returned contents directly; use the
-  returned server name for subsequent calls. This is not limited to known aliases.
+- Read internal resources with `read_mcp_resource({"uri":"chaos://sessions"})`
+  (replace the URI as needed). Omit `server` for internal reads, subscriptions,
+  and task cancellation. External MCP resources and tasks require their configured
+  `server`; supplied names never fall back to internal routing.
+- Listing resources or templates without `server` aggregates internal and external
+  entries. Internal entries omit `server`; external entries retain it.
+- Internal tasks use `tasks://`, `tasks://get/<id>`, and `tasks://result/<id>`
+  without `server`. Execution and agent outputs provide `task_id`, not `task_server`.
+  `call_mcp_tool_async` remains external-only and requires `server`.
+- **Breaking change:** `server: "chaos_local"` is rejected; omit the field instead.
+  Internal tool labels have no server prefix, and invocation events omit `server`.
+  Actual external MCP tool invocations retain their server metadata and prefix.
 - If a subscription call returns `fallback: "read_once"`, consume `snapshot`
   as a successful read. Do not retry the subscription or report it as a failure.
 - `subscribed: false` means no updates will arrive. Do not claim to be watching
   the resource. Call `read_mcp_resource` again only when fresh data is needed.
 - `fallback: "no_op"` acknowledges unsubscribe; no further action is needed.
 - For configured MCP servers, subscribe only when subscription support is
-  advertised. Existing servers' errors are not redirected to `chaos_local`.
-  Unknown URIs and server-scoped `tasks://` URIs do not receive global fallback.
+  advertised. Server errors are never redirected to internal resources.
 - If a read fails, use the error to correct the server, URI, or access issue;
-  do not assume the fallback bypasses resource access checks.
+  resource access checks remain enforced for internal reads and snapshots.
 
 ### Events and approvals
 

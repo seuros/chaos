@@ -16,7 +16,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
-use ts_rs::TS;
 
 use super::ApprovalPolicy;
 use super::EventMsg;
@@ -27,7 +26,7 @@ use super::SocketPolicy;
 use super::VfsPolicy;
 
 /// Acknowledges a live permission update.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub struct PermissionsUpdatedEvent {
     pub scope: PermissionUpdateScope,
     pub revision: u64,
@@ -35,26 +34,25 @@ pub struct PermissionsUpdatedEvent {
     pub vfs_policy: VfsPolicy,
     pub socket_policy: SocketPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub granted_permissions: Option<PermissionProfile>,
 }
 
 // Conversation kept for backward compatibility.
 /// Response payload for `Op::GetHistory` containing the current session's
 /// in-memory transcript.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ConversationPathResponseEvent {
     pub conversation_id: ProcessId,
     pub path: PathBuf,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ResumedHistory {
     pub conversation_id: ProcessId,
     pub history: Vec<RolloutItem>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub enum InitialHistory {
     New,
     Resumed(ResumedHistory),
@@ -120,9 +118,8 @@ impl InitialHistory {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, Default)]
 #[serde(rename_all = "lowercase")]
-#[ts(rename_all = "lowercase")]
 pub enum SessionSource {
     Cli,
     #[default]
@@ -135,9 +132,8 @@ pub enum SessionSource {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
 pub enum SubAgentSource {
     Review,
     Compact,
@@ -216,7 +212,7 @@ impl fmt::Display for SubAgentSource {
 /// NOTE: There used to be an `instructions` field here, which stored user_instructions, but we
 /// now save that on TurnContext. base_instructions stores the base instructions for the session,
 /// and should be used when there is no config override.
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct SessionMeta {
     pub id: ProcessId,
     #[serde(
@@ -267,7 +263,7 @@ impl Default for SessionMeta {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct SessionMetaLine {
     #[serde(flatten)]
     pub meta: SessionMeta,
@@ -275,7 +271,7 @@ pub struct SessionMetaLine {
     pub git: Option<GitInfo>,
 }
 
-#[derive(Serialize, Debug, Clone, JsonSchema, TS)]
+#[derive(Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum RolloutItem {
     SessionMeta(SessionMetaLine),
@@ -284,6 +280,7 @@ pub enum RolloutItem {
     CompactionControl(CompactionControlItem),
     TurnContext(TurnContextItem),
     EventMsg(EventMsg),
+    BackgroundTask(crate::background_tasks::TaskJournalEvent),
 }
 
 impl<'de> Deserialize<'de> for RolloutItem {
@@ -300,6 +297,7 @@ impl<'de> Deserialize<'de> for RolloutItem {
             CompactionControl(CompactionControlItem),
             TurnContext(TurnContextItem),
             EventMsg(Value),
+            BackgroundTask(crate::background_tasks::TaskJournalEvent),
         }
 
         let item = RolloutItemWire::deserialize(deserializer)?;
@@ -309,6 +307,7 @@ impl<'de> Deserialize<'de> for RolloutItem {
             RolloutItemWire::Compacted(item) => Ok(Self::Compacted(item)),
             RolloutItemWire::CompactionControl(item) => Ok(Self::CompactionControl(item)),
             RolloutItemWire::TurnContext(item) => Ok(Self::TurnContext(item)),
+            RolloutItemWire::BackgroundTask(item) => Ok(Self::BackgroundTask(item)),
             RolloutItemWire::EventMsg(value) => {
                 let is_retired_undo_event = value
                     .get("type")
@@ -324,9 +323,8 @@ impl<'de> Deserialize<'de> for RolloutItem {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
 pub enum CompactionControlAction {
     CompactNow,
     DeferOnce,
@@ -335,7 +333,7 @@ pub enum CompactionControlAction {
 /// Durable record of an accepted agent decision for one compaction-pressure
 /// window. The monotonically increasing window number is the resume-stable
 /// identity; the UUID is retained only for tracing and stale live-call checks.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct CompactionControlItem {
     pub window_number: u64,
     pub window_id: String,
@@ -347,7 +345,7 @@ pub struct CompactionControlItem {
     pub active_tokens: i64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct CompactedItem {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -368,7 +366,7 @@ impl From<CompactedItem> for ResponseItem {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct TurnContextNetworkItem {
     pub allowed_domains: Vec<String>,
     pub denied_domains: Vec<String>,
@@ -378,7 +376,7 @@ pub struct TurnContextNetworkItem {
 /// context updates, and again after mid-turn compaction when replacement
 /// history re-establishes full context, so resume/fork replay can recover the
 /// latest durable baseline.
-#[derive(Serialize, Clone, Debug, JsonSchema, TS)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
@@ -503,7 +501,7 @@ fn resolve_sandbox_compat(
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "mode", content = "limit", rename_all = "snake_case")]
 pub enum TruncationPolicy {
     Bytes(usize),
@@ -517,7 +515,7 @@ pub struct RolloutLine {
     pub item: RolloutItem,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct GitInfo {
     /// Current commit hash (SHA)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -530,13 +528,13 @@ pub struct GitInfo {
     pub repository_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct SessionNetworkProxyRuntime {
     pub http_addr: String,
     pub socks_addr: String,
 }
 
-#[derive(Debug, Clone, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SessionConfiguredEvent {
     pub session_id: ProcessId,
     #[serde(
@@ -551,7 +549,6 @@ pub struct SessionConfiguredEvent {
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    #[ts(optional)]
     pub process_name: Option<String>,
 
     /// Tell the client what model is being queried.
@@ -598,7 +595,6 @@ pub struct SessionConfiguredEvent {
 
     /// Runtime proxy bind addresses, when the managed proxy was started for this session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub network_proxy: Option<SessionNetworkProxyRuntime>,
 }
 
@@ -664,7 +660,7 @@ impl<'de> Deserialize<'de> for SessionConfiguredEvent {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ProcessNameUpdatedEvent {
     #[serde(rename = "process_id")]
     pub process_id: ProcessId,
@@ -673,6 +669,5 @@ pub struct ProcessNameUpdatedEvent {
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    #[ts(optional)]
     pub process_name: Option<String>,
 }

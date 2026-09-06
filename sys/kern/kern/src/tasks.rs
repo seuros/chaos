@@ -171,6 +171,7 @@ impl Session {
             .ok();
 
         let done_clone = Arc::clone(&done);
+        let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();
         let handle = {
             let session_ctx = Arc::new(SessionTaskContext::new(Arc::clone(self)));
             let ctx = Arc::clone(&turn_context);
@@ -192,6 +193,9 @@ impl Session {
             );
             tokio::spawn(
                 async move {
+                    if start_rx.await.is_err() {
+                        return;
+                    }
                     let ctx_for_finish = Arc::clone(&ctx);
                     let last_agent_message = task_for_run
                         .run(
@@ -203,9 +207,14 @@ impl Session {
                         .await;
                     let sess = session_ctx.clone_session();
                     if !task_cancellation_token.is_cancelled() {
-                        // Emit completion uniformly from spawn site so all tasks share the same lifecycle.
-                        sess.on_task_finished(Arc::clone(&ctx_for_finish), last_agent_message)
-                            .await;
+                        // The session runner serializes finalization with new
+                        // submissions and completion-turn admission.
+                        sess.completions
+                            .finished
+                            .lock()
+                            .await
+                            .push((ctx_for_finish, last_agent_message));
+                        sess.completions.changed.notify_one();
                     }
                     done_clone.notify_waiters();
                 }
@@ -224,6 +233,8 @@ impl Session {
         };
         self.register_new_active_task(running_task, token_usage_at_turn_start)
             .await;
+        self.services.internal_task_store.set_active(true).await;
+        let _ = start_tx.send(());
     }
 
     pub async fn abort_all_tasks(self: &Arc<Self>, reason: TurnAbortReason) {
@@ -244,6 +255,7 @@ impl Session {
             // Let interrupted tasks observe cancellation before dropping pending approvals, or an
             // in-flight approval wait can surface as a model-visible rejection before TurnAborted.
             active_turn.clear_pending().await;
+            self.services.internal_task_store.set_active(false).await;
         }
     }
 
@@ -257,6 +269,12 @@ impl Session {
             .cancel_git_enrichment_task();
 
         let mut active = self.active_turn.lock().await;
+        if !active
+            .as_ref()
+            .is_some_and(|turn| turn.tasks.contains_key(&turn_context.sub_id))
+        {
+            return;
+        }
         let mut pending_input = Vec::<ResponseInputItem>::new();
         let mut should_clear_active_turn = false;
         let mut token_usage_at_turn_start = None;
@@ -386,7 +404,15 @@ impl Session {
             turn_id: turn_context.sub_id.clone(),
             last_agent_message,
         });
+        self.services
+            .internal_task_store
+            .continuation_finished(&turn_context.sub_id)
+            .await;
+        if let Err(error) = self.checkpoint_background_tasks().await {
+            tracing::warn!(%error, "turn completion checkpoint failed");
+        }
         self.send_event(turn_context.as_ref(), event).await;
+        self.services.internal_task_store.set_active(false).await;
     }
 
     async fn register_new_active_task(

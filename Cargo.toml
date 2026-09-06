@@ -50,6 +50,7 @@ members = [
     "srv/pf",
     "srv/cron",
     "srv/httpd",
+    "srv/taskd",
 
     # bin/ — userland programs
     "bin/chaos",
@@ -174,6 +175,7 @@ chaos_journald = { path = "srv/journald" }
 chaos-pf = { path = "srv/pf" }
 chaos-cron = { path = "srv/cron" }
 chaos-httpd = { path = "srv/httpd" }
+chaos-taskd = { path = "srv/taskd" }
 
 # Internal — bin/
 chaos-cli = { path = "bin/chaos" }
@@ -379,7 +381,6 @@ tracing-subscriber = "0.3.23"
 tracing-test = "0.2.6"
 tree-sitter = "0.26.11"
 tree-sitter-bash = "0.25"
-ts-rs = "12"
 # uds_windows removed — Chaos targets Linux/macOS/FreeBSD only
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2"

@@ -1,19 +1,18 @@
 use crate::chaos::Chaos;
 use crate::chaos::SteerInputError;
-use crate::minions::AgentStatus;
 use crate::config::ConstraintResult;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::file_watcher::WatchRegistration;
+use crate::minions::AgentStatus;
 use crate::protocol::Event;
 use crate::protocol::Op;
 use crate::protocol::Submission;
 use chaos_ipc::config_types::ApprovalsReviewer;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::models::ContentItem;
-use chaos_ipc::models::ResponseInputItem;
-use chaos_ipc::models::ResponseItem;
+#[cfg(test)]
+use chaos_ipc::models::{ContentItem, ResponseInputItem, ResponseItem};
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsPolicy;
@@ -110,7 +109,26 @@ impl Process {
         self.chaos.agent_status.clone()
     }
 
+    pub fn subscribe_activity(
+        &self,
+    ) -> watch::Receiver<chaos_ipc::background_tasks::ProcessActivity> {
+        self.chaos.session.services.internal_task_store.subscribe()
+    }
+
+    /// Stop a recovery worker without declaring its durable tasks closed.
+    /// Does not detach local execution: only recorded outcomes/remote handles
+    /// can be reconciled by a later owner.
+    pub async fn release_background_ownership(&self) -> ChaosResult<()> {
+        self.chaos
+            .session
+            .completions
+            .releasing
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown_and_wait().await
+    }
+
     /// Records a user-role session-prefix message without creating a new user turn boundary.
+    #[cfg(test)]
     pub(crate) async fn inject_user_message_without_turn(&self, message: String) {
         let pending_item = ResponseInputItem::Message {
             role: "user".to_string(),

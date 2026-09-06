@@ -110,7 +110,9 @@ impl InternalTaskStore {
             TaskSource::Agent { process_id } => Some(InternalTaskHandle::Agent {
                 agent_id: process_id,
             }),
-            TaskSource::Mcp { .. } | TaskSource::AgentMessage { .. } => None,
+            TaskSource::Mcp { .. }
+            | TaskSource::AgentMessage { .. }
+            | TaskSource::FleetInbox { .. } => None,
         }
     }
 

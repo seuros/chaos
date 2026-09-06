@@ -11,6 +11,12 @@ use serde_json::Value;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskSource {
+    /// Durable wake admission only; delivery is not a remote inbox ack.
+    FleetInbox {
+        server: String,
+        uri: String,
+        message_id: String,
+    },
     Exec {
         session_id: i32,
     },

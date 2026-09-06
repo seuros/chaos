@@ -510,9 +510,7 @@ impl Session {
 
         self.services
             .mcp_registry
-            .execute(&server_name.clone(), move |manager, server| async move {
-                manager.resolve_elicitation(server, id, response).await
-            })
+            .resolve_elicitation(server_name, id, response)
             .await
     }
 

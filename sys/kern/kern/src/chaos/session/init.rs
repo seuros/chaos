@@ -561,7 +561,6 @@ impl Session {
             next_internal_sub_id: AtomicU64::new(0),
         });
         sess.services.model_client.bind_session(&sess);
-        sess.start_mcp_notification_listener(mcp_notification_rx);
         if let Some(network_policy_decider_session) = network_policy_decider_session {
             let mut guard = network_policy_decider_session.write().await;
             *guard = Arc::downgrade(&sess);
@@ -723,6 +722,8 @@ impl Session {
                 .await;
         }
         sess.record_initial_history(initial_history).await;
+        // Restore wake dedup/delivery markers before accepting reconnect hints.
+        sess.start_mcp_notification_listener(mcp_notification_rx);
         {
             let mut state = sess.state.lock().await;
             state.set_pending_session_start_source(Some(session_start_source));

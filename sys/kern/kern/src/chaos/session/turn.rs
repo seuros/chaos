@@ -321,7 +321,20 @@ impl Session {
                 let ts = at.turn_state.lock().await;
                 ts.has_deliverable_input()
                     || (ts.accepts_mailbox_delivery()
-                        && !self.services.internal_task_store.pending().await.is_empty())
+                        && self
+                            .services
+                            .internal_task_store
+                            .pending()
+                            .await
+                            .iter()
+                            .any(|task| {
+                                !matches!(
+                                    task.source,
+                                    Some(
+                                        chaos_ipc::background_tasks::TaskSource::FleetInbox { .. }
+                                    )
+                                )
+                            }))
             }
             None => false,
         }

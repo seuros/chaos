@@ -548,6 +548,18 @@ impl McpRegistryActor {
         self.current.load_full()
     }
 
+    pub(crate) async fn resolve_elicitation(
+        &self,
+        server: String,
+        id: chaos_mcp_runtime::McpRequestId,
+        response: chaos_mcp_runtime::ElicitationResponse,
+    ) -> anyhow::Result<()> {
+        self.ensure_running()?;
+        self.current_manager()
+            .resolve_elicitation(server, id, response)
+            .await
+    }
+
     pub(crate) fn revision(&self) -> u64 {
         self.revision.load(Ordering::SeqCst)
     }

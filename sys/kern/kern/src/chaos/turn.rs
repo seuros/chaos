@@ -357,6 +357,11 @@ pub(crate) async fn run_turn(
     let mut client_session =
         prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
 
+    if completion_turn && let Err(error) = sess.deliver_fleet_inbox_wakes(&turn_context).await {
+        error!(%error, "fleet inbox wake delivery could not be committed");
+        return None;
+    }
+
     loop {
         if let Some(session_start_source) = sess.take_pending_session_start_source().await {
             let session_start_request = chaos_dtrace::SessionStartRequest {

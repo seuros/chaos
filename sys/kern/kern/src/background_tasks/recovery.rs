@@ -82,7 +82,7 @@ impl Session {
                         )
                         .await;
                 }
-                Some(TaskSource::AgentMessage { .. }) => {}
+                Some(TaskSource::AgentMessage { .. } | TaskSource::FleetInbox { .. }) => {}
                 None => {
                     registry.complete(&task.id, TaskState::SubmissionUnknown,
                         Some("submission has no durable execution handle; do not resubmit automatically".into()), None).await;

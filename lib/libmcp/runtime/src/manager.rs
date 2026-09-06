@@ -321,6 +321,12 @@ pub struct McpServerInstructions {
 /// Structured server notifications consumed by the kernel.
 #[derive(Debug, Clone)]
 pub enum McpServerNotification {
+    /// Explicit wake hint, never resource content or permission authority.
+    FleetInbox {
+        server: String,
+        uri: String,
+        message_ids: Vec<String>,
+    },
     ResourceUpdated {
         server: String,
         uri: String,
@@ -335,6 +341,18 @@ pub enum McpServerNotification {
 impl PartialEq for McpServerNotification {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (
+                Self::FleetInbox {
+                    server: a,
+                    uri: u,
+                    message_ids: x,
+                },
+                Self::FleetInbox {
+                    server: b,
+                    uri: v,
+                    message_ids: y,
+                },
+            ) => a == b && u == v && x == y,
             (
                 Self::ResourceUpdated { server: a, uri: u },
                 Self::ResourceUpdated { server: b, uri: v },

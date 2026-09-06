@@ -29,6 +29,14 @@ impl Session {
 
     async fn handle_mcp_server_notification(&self, notification: McpServerNotification) {
         let text = match notification {
+            McpServerNotification::FleetInbox {
+                server,
+                uri,
+                message_ids,
+            } => {
+                self.queue_fleet_inbox_wake(server, uri, message_ids).await;
+                return;
+            }
             McpServerNotification::TaskStatus {
                 server,
                 endpoint,
@@ -68,6 +76,47 @@ impl Session {
         self.record_into_history(&items, turn_context.as_ref())
             .await;
         self.persist_rollout_response_items(&items).await;
+    }
+
+    async fn queue_fleet_inbox_wake(&self, server: String, uri: String, message_ids: Vec<String>) {
+        use chaos_ipc::background_tasks::{BackgroundTask, TaskSource, TaskState};
+
+        let now = jiff::Timestamp::now().to_string();
+        let tasks = message_ids
+            .into_iter()
+            .map(|message_id| {
+                // Tuple encoding prevents server-name/ID delimiter collisions.
+                let key = serde_json::json!([server, uri, message_id]).to_string();
+                BackgroundTask {
+                    id: format!(
+                        "fleet-inbox:{}",
+                        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, key.as_bytes()),
+                    ),
+                    source: Some(TaskSource::FleetInbox {
+                        server: server.clone(),
+                        uri: uri.clone(),
+                        message_id,
+                    }),
+                    state: TaskState::Succeeded,
+                    status_message: None,
+                    created_at: now.clone(),
+                    updated_at: now.clone(),
+                    result: None,
+                    origin_call_id: None,
+                    origin_turn_id: None,
+                    execution_id: None,
+                    ready: true,
+                    notify: true,
+                    delivered: false,
+                }
+            })
+            .collect();
+        self.services
+            .internal_task_store
+            .register_wakes_if_absent(tasks)
+            .await;
+        // The runner checkpoints before admission and delivery; this producer
+        // neither injects into an active turn nor starts a model task.
     }
 }
 

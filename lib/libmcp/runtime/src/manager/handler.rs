@@ -141,7 +141,85 @@ pub(super) struct ChaosClientHandler {
     pub(super) cwd: Arc<StdRwLock<PathBuf>>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FleetInboxHint {
+    uri: String,
+    message_ids: Vec<String>,
+}
+
 impl ClientHandler for ChaosClientHandler {
+    fn on_custom_notification(
+        &self,
+        method: String,
+        params: Option<serde_json::Value>,
+    ) -> ClientHandlerFuture<'_> {
+        Box::pin(async move {
+            if method != "notifications/skynet/fleet/inbox" {
+                return;
+            }
+            let Some(params) = params else {
+                return;
+            };
+            let Ok(mut hint) = serde_json::from_value::<FleetInboxHint>(params) else {
+                return;
+            };
+            if hint.uri != "skynet://fleet/inbox"
+                || hint.message_ids.is_empty()
+                || hint.message_ids.len() > 50
+                || hint.message_ids.iter().any(|id| {
+                    id.len() > 19
+                        || id.starts_with('0')
+                        || !id.bytes().all(|byte| byte.is_ascii_digit())
+                        || !id.parse::<i64>().is_ok_and(|id| id > 0)
+                })
+            {
+                return;
+            }
+            hint.message_ids.sort();
+            hint.message_ids.dedup();
+            // Never block the MCP reader (including initialize) on kernel
+            // admission. A dropped hint is not an inbox acknowledgement.
+            if let Some(tx) = &self.notification_tx
+                && tx
+                    .try_send(McpServerNotification::FleetInbox {
+                        server: self.server_name.clone(),
+                        uri: hint.uri,
+                        message_ids: hint.message_ids,
+                    })
+                    .is_err()
+            {
+                warn!("fleet inbox wake queue unavailable; server inbox remains unread");
+            }
+        })
+    }
+
+    fn on_custom_request(
+        &self,
+        method: String,
+        _params: Option<serde_json::Value>,
+    ) -> ClientHandlerResultFuture<'_, serde_json::Value> {
+        Box::pin(async move {
+            if method != "skynet/fleet/hostInfo" {
+                return Err(mcp_guest::GuestError::MethodNotSupported(method));
+            }
+            // Only harness-owned state, never request parameters or model
+            // output. Do not serialize paths, environment, or identities.
+            let restrictions = self
+                .elicitation_requests
+                .approval_policy
+                .lock()
+                .map(|policy| vec![format!("approval-policy: {}", *policy)])
+                .unwrap_or_default();
+            Ok(serde_json::json!({
+                "os": std::env::consts::OS,
+                "arch": std::env::consts::ARCH,
+                "capabilities": [],
+                "restrictions": restrictions,
+            }))
+        })
+    }
+
     fn on_task_status(&self, task: mcp_guest::protocol::Task) -> ClientHandlerFuture<'_> {
         let tx = self.notification_tx.clone();
         let server = self.server_name.clone();

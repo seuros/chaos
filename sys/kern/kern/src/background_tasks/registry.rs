@@ -108,6 +108,25 @@ impl TaskRegistry {
         self.state.lock().await.tasks.get(id).cloned()
     }
 
+    /// Atomically coalesce wake retries without reopening delivered records.
+    pub(crate) async fn register_wakes_if_absent(&self, tasks: Vec<BackgroundTask>) {
+        let mut state = self.state.lock().await;
+        let mut changed = false;
+        for task in tasks {
+            if state.tasks.contains_key(&task.id) {
+                continue;
+            }
+            state.journal.push(TaskJournalEvent::Upsert {
+                task: Box::new(task.clone()),
+            });
+            state.tasks.insert(task.id.clone(), task);
+            changed = true;
+        }
+        if changed {
+            self.publish(&state);
+        }
+    }
+
     pub(crate) async fn list(&self) -> Vec<BackgroundTask> {
         self.state.lock().await.tasks.values().cloned().collect()
     }

@@ -99,6 +99,11 @@ The reviewer must return ChaOS's strict `ReviewOutputEvent` JSON. ChaOS maps:
 Any other correctness value or an empty explanation fails closed without
 submitting a verdict.
 
+Chat Completions requests carry the review schema in strict
+`response_format.json_schema`. Providers that reject this wire feature fail
+the request; the host does not silently discard the schema or accept prose as
+a verdict. Provider acceptance and valid output still require live verification.
+
 ## MULTI-MODEL REVIEW
 
 Review services may make leases session-local or restrict one role per caller.

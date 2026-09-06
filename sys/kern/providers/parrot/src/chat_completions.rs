@@ -155,6 +155,8 @@ struct ChatRequest {
     tools: Vec<ChatTool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parallel_tool_calls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<Value>,
     stream_options: StreamOptions,
 }
 
@@ -220,6 +222,16 @@ pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<V
         messages,
         tools,
         parallel_tool_calls,
+        response_format: request.output_schema.as_ref().map(|schema| {
+            serde_json::json!({
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "codex_output_schema",
+                    "strict": true,
+                    "schema": schema
+                }
+            })
+        }),
         stream_options: StreamOptions {
             include_usage: true,
         },
@@ -681,6 +693,44 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_request_body_preserves_output_schema() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"verdict": {"type": "string"}},
+            "required": ["verdict"],
+            "additionalProperties": false
+        });
+        let mut request = TurnRequest {
+            model: "test-model".to_string(),
+            instructions: String::new(),
+            input: vec![],
+            tools: vec![],
+            parallel_tool_calls: false,
+            reasoning: None,
+            output_schema: Some(schema.clone()),
+            verbosity: None,
+            turn_state: None,
+            extensions: serde_json::Map::new(),
+        };
+
+        let body = build_request_body(&request, "test-model").expect("body should build");
+        assert_eq!(
+            body["response_format"],
+            serde_json::json!({
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "codex_output_schema",
+                    "strict": true,
+                    "schema": schema
+                }
+            })
+        );
+        request.output_schema = None;
+        let body = build_request_body(&request, "test-model").expect("body should build");
+        assert!(body.get("response_format").is_none());
+    }
 
     #[test]
     fn build_request_body_includes_system_message() {

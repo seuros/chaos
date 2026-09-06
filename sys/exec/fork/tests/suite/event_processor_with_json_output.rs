@@ -853,6 +853,8 @@ fn agent_message_produces_item_completed_agent_message() {
                 id: "item_0".to_string(),
                 details: ProcessItemDetails::AgentMessage(AgentMessageItem {
                     text: "hello".to_string(),
+                    phase: None,
+                    canonical: Some(false),
                 }),
             },
         })]
@@ -887,6 +889,8 @@ fn completed_agent_message_item_produces_json_item() {
         "message-1",
         ProcessItemDetails::AgentMessage(AgentMessageItem {
             text: "hello world".to_string(),
+            phase: None,
+            canonical: Some(true),
         }),
     );
 }
@@ -907,6 +911,54 @@ fn error_event_produces_error() {
             message: "boom".to_string(),
         })]
     );
+}
+
+#[test]
+fn jsonl_preserves_explicit_message_phase_without_inventing_it() {
+    use chaos_ipc::models::MessagePhase;
+    for phase in [
+        None,
+        Some(MessagePhase::Commentary),
+        Some(MessagePhase::FinalAnswer),
+    ] {
+        let mut ep = EventProcessorWithJsonOutput::new(None);
+        let out = ep.collect_process_events(&event(
+            "phase",
+            EventMsg::AgentMessage(AgentMessageEvent {
+                message: "Visible text".into(),
+                phase: phase.clone(),
+            }),
+        ));
+        let value = serde_json::to_value(&out[0]).unwrap();
+        assert_eq!(
+            value["item"]["phase"],
+            serde_json::to_value(&phase).unwrap()
+        );
+        let legacy: AgentMessageItem = serde_json::from_str(r#"{"text":"old"}"#).unwrap();
+        assert_eq!(legacy.phase, None);
+        assert_eq!(legacy.canonical, None);
+        assert_eq!(value["item"]["canonical"], false);
+
+        let out = ep.collect_process_events(&event(
+            "phase",
+            EventMsg::ItemCompleted(chaos_ipc::protocol::ItemCompletedEvent {
+                process_id: ProcessId::new(),
+                turn_id: "turn".into(),
+                item: TurnItem::AgentMessage(CoreAgentMessageItem {
+                    id: "message".into(),
+                    content: vec![AgentMessageContent::Text {
+                        text: "Visible text".into(),
+                    }],
+                    phase: phase.clone(),
+                }),
+            }),
+        ));
+        let value = serde_json::to_value(&out[0]).unwrap();
+        assert_eq!(
+            value["item"]["phase"],
+            serde_json::to_value(&phase).unwrap()
+        );
+    }
 }
 
 #[test]

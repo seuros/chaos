@@ -155,6 +155,12 @@ pub enum ProcessItemDetails {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct AgentMessageItem {
     pub text: String,
+    /// Provider-supplied classification; absent means unknown, not commentary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<chaos_ipc::models::MessagePhase>,
+    /// True for the canonical typed item, false for a legacy message event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical: Option<bool>,
 }
 
 /// Agent's reasoning summary.

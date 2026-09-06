@@ -275,6 +275,8 @@ impl EventProcessorWithJsonOutput {
 
             details: ProcessItemDetails::AgentMessage(AgentMessageItem {
                 text: payload.message.clone(),
+                phase: payload.phase.clone(),
+                canonical: Some(false),
             }),
         };
 
@@ -654,7 +656,11 @@ impl EventProcessorWithJsonOutput {
             .collect::<String>();
         let item = ProcessItem {
             id: payload.id.clone(),
-            details: ProcessItemDetails::AgentMessage(AgentMessageItem { text }),
+            details: ProcessItemDetails::AgentMessage(AgentMessageItem {
+                text,
+                phase: payload.phase.clone(),
+                canonical: Some(true),
+            }),
         };
         vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }

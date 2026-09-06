@@ -615,13 +615,29 @@ struct StrictReviewLineRange {
 }
 
 fn parse_strict_review_output(raw_output: &str) -> anyhow::Result<Value> {
-    let strict: StrictReviewOutput =
-        serde_json::from_str(raw_output).context("expected strict ReviewOutputEvent JSON")?;
+    let strict: StrictReviewOutput = serde_json::from_str(raw_output).map_err(|error| {
+        // Serde's Display may quote private field names or values. Expose only
+        // content-free format/error categories to the orchestration supervisor.
+        let text = raw_output.trim_start();
+        let format = if text.is_empty() {
+            "empty"
+        } else if text.starts_with("```") || text.starts_with("~~~") {
+            "fenced"
+        } else if text.starts_with('{') || text.starts_with('[') {
+            "json_shaped"
+        } else {
+            "non_json"
+        };
+        anyhow::anyhow!(
+            "expected strict ReviewOutputEvent JSON (format={format}; category={:?})",
+            error.classify()
+        )
+    })?;
     // Convert through the protocol type as a compatibility assertion: the
     // persisted payload is exactly what current ChaOS review consumers accept.
     let value = serde_json::to_value(strict)?;
     serde_json::from_value::<ReviewOutputEvent>(value.clone())
-        .context("review output does not match the protocol schema")?;
+        .map_err(|_| anyhow::anyhow!("review output does not match the protocol schema"))?;
     Ok(value)
 }
 
@@ -639,9 +655,7 @@ fn prepare_submission(
     let verdict = match strict.overall_correctness.trim() {
         "patch is correct" => "approve",
         "patch is incorrect" => "changes_requested",
-        other => bail!(
-            "overall_correctness must be `patch is correct` or `patch is incorrect`, got `{other}`"
-        ),
+        _ => bail!("overall_correctness must be `patch is correct` or `patch is incorrect`"),
     };
     let summary = strict.overall_explanation.trim();
     if summary.is_empty() {
@@ -1152,6 +1166,29 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
+
+    #[test]
+    fn invalid_output_diagnostics_are_content_free() {
+        for (raw, format) in [
+            (" \n", "empty"),
+            ("```json\nprivate-marker\n```", "fenced"),
+            ("private-marker", "non_json"),
+            (r#"{"private-marker":"private-marker"}"#, "json_shaped"),
+        ] {
+            let error = parse_strict_review_output(raw).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains(&format!("format={format};")));
+            assert!(!message.contains("private-marker"));
+        }
+        let raw = valid_output();
+        assert!(parse_strict_review_output(&raw).is_ok());
+        assert!(parse_strict_review_output(&format!("```json\n{raw}\n```")).is_err());
+        let mut output: Value = serde_json::from_str(&raw).unwrap();
+        output["overall_correctness"] = json!("private-marker");
+        let error =
+            prepare_submission(REVIEW_VERDICT_TOOL, "test-key", &output.to_string()).unwrap_err();
+        assert!(!format!("{error:#}").contains("private-marker"));
+    }
 
     #[derive(Default)]
     struct FakeState {

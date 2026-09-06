@@ -104,6 +104,11 @@ Chat Completions requests carry the review schema in strict
 the request; the host does not silently discard the schema or accept prose as
 a verdict. Provider acceptance and valid output still require live verification.
 
+Parse failures report only a format category (`empty`, `fenced`, `non_json`,
+or `json_shaped`) and Serde error category. They do not quote output, unknown
+field names, or rejected correctness values. These diagnostics do not normalize
+or accept malformed output.
+
 ## MULTI-MODEL REVIEW
 
 Review services may make leases session-local or restrict one role per caller.

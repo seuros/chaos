@@ -1693,6 +1693,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "state-machines",
+ "tokio",
  "tracing",
 ]
 

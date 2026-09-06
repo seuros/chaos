@@ -1152,6 +1152,7 @@ model_verbosity = "high"
     let openai_custom_provider = ModelProviderInfo {
         name: "OpenAI custom".to_string(),
         model_family: Default::default(),
+        model_family_overrides: Default::default(),
         base_url: Some("https://api.openai.com/v1".to_string()),
         env_key: Some("OPENAI_API_KEY".to_string()),
         wire_api: crate::WireApi::Responses,

@@ -86,6 +86,7 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "OpenAI".into(),
         model_family: Default::default(),
+        model_family_overrides: HashMap::new(),
         base_url: Some(base_url),
         env_key: None,
         env_key_instructions: None,
@@ -1125,21 +1126,36 @@ async fn provider_bound_cached_lookup_fails_when_custom_manager_cannot_rebind() 
 }
 
 #[tokio::test]
-async fn explicit_catalog_family_wins_and_provider_family_only_fills_unknown() {
+async fn families_use_catalog_then_exact_model_then_provider_fallback() {
     let chaos_home = tempdir().expect("temp dir");
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
-    let inherited = remote_model("inherited", "Inherited", 1);
     let mut explicit = remote_model("explicit", "Explicit", 2);
     explicit.model_family = ModelFamily::new("catalog-family");
+    let catalog = vec![
+        remote_model("mapped", "Mapped", 1),
+        explicit,
+        remote_model("other", "Other", 3),
+        remote_model("namespace/mapped", "Namespaced", 4),
+    ];
     let provider = ModelProviderInfo {
         model_family: ModelFamily::new("provider-family"),
+        model_family_overrides: HashMap::from([
+            ("mapped".into(), ModelFamily::new("mapped-family")),
+            ("explicit".into(), ModelFamily::new("must-not-override")),
+        ]),
         ..provider_for("https://family.example.test/v1".to_string())
     };
+    let mut config = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .build()
+        .await
+        .expect("test config");
+    config.model_provider = provider.clone();
     let manager = ModelsManager::new_with_provider_binding(
         chaos_home.path().to_path_buf(),
         auth_manager,
         Some(ModelsResponse {
-            models: vec![inherited.clone(), explicit],
+            models: catalog.clone(),
         }),
         CollaborationModesConfig::default(),
         "family-provider".to_string(),
@@ -1147,14 +1163,101 @@ async fn explicit_catalog_family_wins_and_provider_family_only_fills_unknown() {
     );
 
     let models = manager.list_models(RefreshStrategy::Offline).await;
-    let inherited = models
-        .iter()
-        .find(|model| model.model == inherited.slug)
-        .expect("inherited model");
-    let explicit = models
-        .iter()
-        .find(|model| model.model == "explicit")
-        .expect("explicit model");
-    assert_eq!(inherited.model_family.as_str(), "provider-family");
-    assert_eq!(explicit.model_family.as_str(), "catalog-family");
+    for (raw, expected) in catalog.into_iter().zip([
+        "mapped-family",
+        "catalog-family",
+        "provider-family",
+        "provider-family",
+    ]) {
+        let preset = models.iter().find(|m| m.model == raw.slug).unwrap();
+        let effective = model_info::with_config_overrides(raw, &config);
+        assert_eq!(preset.model_family.as_str(), expected);
+        assert_eq!(effective.model_family.as_str(), expected);
+    }
+}
+
+#[tokio::test]
+async fn family_identity_does_not_follow_prefix_or_namespace_fallback() {
+    let home = tempdir().unwrap();
+    let mut config = ConfigBuilder::default()
+        .chaos_home(home.path().to_path_buf())
+        .build()
+        .await
+        .unwrap();
+    config.model_provider = ModelProviderInfo {
+        model_family_overrides: HashMap::from([
+            ("mapped".into(), ModelFamily::new("base-family")),
+            ("ns/mapped".into(), ModelFamily::new("namespace-family")),
+            ("mapped-v2".into(), ModelFamily::new("version-family")),
+        ]),
+        ..provider_for("https://gateway.example.test/v1".into())
+    };
+    for catalog_family in ["unknown", "catalog-family"] {
+        let mut raw = remote_model("mapped", "Mapped", 1);
+        raw.model_family = ModelFamily::new(catalog_family);
+        let manager = ModelsManager::new_with_provider(
+            home.path().to_path_buf(),
+            AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("test-key")),
+            Some(ModelsResponse { models: vec![raw] }),
+            CollaborationModesConfig::default(),
+            config.model_provider.clone(),
+        );
+        for (requested, expected) in [
+            ("ns/mapped", "namespace-family"),
+            ("mapped-v2", "version-family"),
+            ("other/mapped", "unknown"),
+            ("mapped-other", "unknown"),
+        ] {
+            let info = manager.get_model_info(requested, &config).await;
+            assert!(!info.used_fallback_model_metadata);
+            assert_eq!(info.model_family.as_str(), expected);
+        }
+    }
+}
+
+#[tokio::test]
+async fn configured_families_do_not_leak_through_shared_catalog_cache() {
+    let home = tempdir().unwrap();
+    let provider = ModelProviderInfo {
+        model_family: ModelFamily::new("original-default"),
+        model_family_overrides: HashMap::from([("mapped".into(), ModelFamily::new("original"))]),
+        ..provider_for("https://gateway.example.test/v1".into())
+    };
+    let manager = manager_over_own_cache(
+        home.path().to_path_buf(),
+        AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("test-key")),
+        provider.clone(),
+    )
+    .await;
+    let raw = vec![
+        remote_model("mapped", "Mapped", 1),
+        remote_model("unmapped", "Unmapped", 2),
+    ];
+    manager.apply_live_catalog(raw.clone(), None).await;
+    let cache = manager.cache_manager.load_all().await.unwrap();
+    assert_eq!(cache[0].models, raw);
+
+    for family in [Some("replacement"), None] {
+        let target = ModelProviderInfo {
+            model_family: ModelFamily::default(),
+            model_family_overrides: family
+                .map(|value| ("mapped".into(), ModelFamily::new(value)))
+                .into_iter()
+                .collect(),
+            ..provider.clone()
+        };
+        let models = manager
+            .usable_cached_models_for_provider("other-binding", &target)
+            .await
+            .unwrap();
+        assert_eq!(models[0].model_family.as_str(), family.unwrap_or("unknown"));
+        assert!(models[1].model_family.is_unknown());
+        let groups = manager
+            .list_models_by_provider(
+                &HashMap::from([("other-binding".into(), target)]),
+                manager.provider_id(),
+            )
+            .await;
+        assert_eq!(groups[0].models, models);
+    }
 }

@@ -131,6 +131,11 @@ fresh PostgreSQL database gives you an empty history; the old
 `~/.chaos/chaos.sqlite` stays where it is and is picked up again the moment
 `storage_url` is removed.
 
+The model catalog cache is format-versioned too. Rows written before the
+`raw_catalog_v1` envelope are treated as misses, so after upgrading let each
+provider refresh once online before relying on offline catalog lookups or TTL
+renewal.
+
 ## NOTES
 
 The credential sits in plain text in `config.toml`. Keep the file at mode

@@ -9,7 +9,6 @@ use serde::Deserialize;
 use crate::client_common::tools::ToolSpec;
 use crate::function_tool::FunctionCallError;
 use crate::reviewer_orchestration::SessionReviewerBoundary;
-use crate::reviewer_orchestration::progress_json;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::handlers::extract_function_arguments;
@@ -66,14 +65,14 @@ impl ToolHandler for ResumeAttestedReviewHandler {
         .map_err(anyhow_model_error)?;
         let started = Instant::now();
         loop {
-            let attempts = orchestrator
-                .resume_run(&owner_process_id, run_id)
+            let output = orchestrator
+                .resume_progress(&owner_process_id, run_id)
                 .await
                 .map_err(anyhow_model_error)?;
-            if attempts.iter().all(|attempt| attempt.state.is_terminal())
+            if output["terminal"].as_bool() == Some(true)
+                || output.get("driver_error").is_some()
                 || started.elapsed() >= Duration::from_millis(args.wait_ms)
             {
-                let output = progress_json(run_id, &attempts);
                 return Ok(FunctionToolOutput::from_text(
                     output.to_string(),
                     Some(true),

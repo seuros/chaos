@@ -266,6 +266,38 @@ where
         store.list_attempts(run_id).await
     }
 
+    /// Return owner-checked progress even when execution fails.
+    pub(crate) async fn resume_progress(
+        &self,
+        owner_process_id: &str,
+        run_id: &str,
+    ) -> anyhow::Result<Value> {
+        let store = self.db.reviewer_orchestrations();
+        let run = store
+            .get_run(run_id)
+            .await?
+            .context("review run not found")?;
+        require_owner(&run, owner_process_id)?;
+        match self.resume_run(owner_process_id, run_id).await {
+            Ok(attempts) => Ok(progress_json(run_id, &attempts)),
+            Err(_) => {
+                // Expose durable failures, not raw boundary errors.
+                let mut output = match store.list_attempts(run_id).await {
+                    Ok(attempts) => progress_json(run_id, &attempts),
+                    Err(_) => json!({
+                        "run_id": run_id,
+                        "terminal": false,
+                        "acknowledged": false,
+                        "state_unknown": true,
+                        "attempts": []
+                    }),
+                };
+                output["driver_error"] = json!("review_execution_failed");
+                Ok(output)
+            }
+        }
+    }
+
     pub async fn cancel_attempt(
         &self,
         owner_process_id: &str,
@@ -1306,6 +1338,44 @@ mod tests {
             state.spawn_calls[1].model_family_subject
         );
         assert_eq!(state.accepted_count, 2);
+    }
+
+    #[tokio::test]
+    async fn failed_execution_keeps_public_progress_and_exact_replay() {
+        let db = database().await;
+        let boundary = FakeBoundary::default();
+        boundary.state.lock().await.outputs.insert(
+            "next".into(),
+            ReviewerOutput::Failed("reviewer completed without output".into()),
+        );
+        let orchestrator = ReviewerOrchestrator::new(db, boundary.clone());
+        let selected = selection(0, 'a', 'b');
+        let run = orchestrator
+            .start_run(OWNER, None, vec![selected.clone()])
+            .await
+            .unwrap();
+        let progress = orchestrator.resume_progress(OWNER, &run.id).await.unwrap();
+        assert_eq!(progress["run_id"], run.id);
+        assert_eq!(progress["terminal"], true);
+        assert_eq!(progress["acknowledged"], false);
+        assert_eq!(progress["driver_error"], "review_execution_failed");
+        assert_eq!(progress["attempts"][0]["state"], "terminal_failure");
+        assert!(
+            orchestrator
+                .resume_progress("another-owner", &run.id)
+                .await
+                .is_err()
+        );
+        let replay = orchestrator
+            .start_run(OWNER, None, vec![selected])
+            .await
+            .unwrap();
+        assert_eq!(replay.id, run.id);
+        let recovered = orchestrator.resume_progress(OWNER, &run.id).await.unwrap();
+        assert_eq!(recovered["attempts"], progress["attempts"]);
+        let state = boundary.state.lock().await;
+        assert_eq!(state.spawn_calls.len(), 1);
+        assert!(state.submit_keys.is_empty());
     }
 
     #[tokio::test]

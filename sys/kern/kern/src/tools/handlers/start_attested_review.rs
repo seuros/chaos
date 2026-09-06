@@ -10,7 +10,6 @@ use crate::reviewer_orchestration::REVIEW_VERDICT_TOOL;
 use crate::reviewer_orchestration::ReviewerSelection;
 use crate::reviewer_orchestration::SessionReviewerBoundary;
 use crate::reviewer_orchestration::build_reviewer_prompt;
-use crate::reviewer_orchestration::progress_json;
 use crate::reviewer_orchestration::resolve_reviewer_binding;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -100,11 +99,12 @@ impl ToolHandler for StartAttestedReviewHandler {
             )
             .await
             .map_err(anyhow_model_error)?;
-        let attempts = orchestrator
-            .resume_run(&owner_process_id, &run.id)
+        let output = orchestrator
+            .resume_progress(&owner_process_id, &run.id)
             .await
-            .map_err(anyhow_model_error)?;
-        let output = progress_json(&run.id, &attempts);
+            .map_err(|error| {
+                anyhow_model_error(error.context(format!("review run `{}` persisted", run.id)))
+            })?;
         Ok(FunctionToolOutput::from_text(
             output.to_string(),
             Some(true),

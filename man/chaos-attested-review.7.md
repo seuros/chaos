@@ -23,16 +23,56 @@ run and pass that server's name and idempotency key.
 
 `start_attested_review` resolves an exact configured provider and cached model,
 derives their opaque subjects inside the host, persists the run and attempt,
-and starts a read-only reviewer process.
+and starts a read-only reviewer process. A built-in identity registry, versioned
+with the harness, fills missing catalog families for explicitly registered exact
+provider/model IDs. Revision 1 registers `charm / deepseek-v4-pro` as `deepseek`
+at the packaged Charm endpoint. No user configuration is needed for that entry.
+Other endpoints, aliases, namespaces, and model suffixes do not inherit it.
+Unknown models remain available for ordinary use but cannot pass attested
+review's family check.
+
+Provider-scoped `model_family_overrides`
+mappings are operator-supplied TOML, exact-match only, are not a gateway-wide
+label, and do not infer or rename models automatically.
+
+For example:
+
+```toml
+[model_providers.example]
+name = "Example Provider"
+base_url = "https://provider.example/v1"
+model_family = "family-default"
+
+[model_providers.example.model_family_overrides]
+"model-alpha" = "family-alpha"
+"model-beta" = "family-beta"
+```
 
 Stored API keys count as configured credentials when the provider supports
 API-key authentication; subscription login is not required. Stored credentials
 must match a supported authentication method. The host still requires an exact
 cached model and independently verifies account and model-family provenance.
+Family resolution is: known catalog metadata, built-in registry, exact provider
+`model_family_overrides`, then provider-wide `model_family` (unknown by default).
+Registry and configuration values are applied when reading the raw catalog,
+never persisted into it, so a harness registry update cannot leave stale derived
+identities in the cache.
+
+Changing provider metadata requires a refreshed catalog and a new session so
+the host can re-read the exact configured model and family data.
 
 `resume_attested_review` advances the persisted state machine. It can be called
 again after a timeout or lost acknowledgement. A submission retry uses the
 same stored JSON, idempotency key, and protected provenance.
+
+After run creation, execution failures return public progress with the `run_id`,
+attempt states, and `driver_error`, rather than discarding the recovery handle.
+Tool-call success does not mean verdict acceptance: inspect `acknowledged` and
+the attempt states. If progress storage cannot be read, `state_unknown: true`
+means the outcome is unresolved, not that no submission occurred.
+An exact replay of the original start request recovers the same persisted run;
+do not change its key or payload to recover a lost response. Terminal failures
+are not respawned by replay. Ownership checks still apply.
 
 If ChaOS restarts during spawn or model execution, it recovers the uniquely
 identified internal reviewer process or resumes its persisted rollout instead

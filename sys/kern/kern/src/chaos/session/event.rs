@@ -48,7 +48,9 @@ impl Session {
 
     pub(crate) async fn deliver_event_raw(&self, event: Event) {
         if let Some(status) = agent_status_from_event(&event.msg) {
-            self.agent_status.send_replace(status);
+            self.agent_status.send_modify(|current| {
+                *current = crate::minions::preserve_turn_failure(current, status);
+            });
         }
         if let Err(e) = self.tx_event.send(event).await {
             debug!("dropping event because channel is closed: {e}");

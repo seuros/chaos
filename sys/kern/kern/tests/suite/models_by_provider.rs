@@ -204,7 +204,10 @@ async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Resu
     .bind(cache.fetched_at.as_second())
     .bind(cache.etag.as_deref())
     .bind(cache.client_version.as_deref())
-    .bind(serde_json::to_string(&cache.models)?)
+    .bind(serde_json::to_string(&serde_json::json!({
+        "format": "raw_catalog_v1",
+        "models": &cache.models,
+    }))?)
     .execute(&pool)
     .await?;
     Ok(())

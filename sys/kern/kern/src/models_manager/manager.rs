@@ -249,7 +249,6 @@ impl ModelsManager {
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
             .unwrap_or_default();
-        let remote_models = Self::with_provider_model_family(remote_models, &provider.model_family);
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -420,7 +419,8 @@ impl ModelsManager {
                     .map(|cache| {
                         build_presets(Self::with_provider_model_family(
                             cache.models.clone(),
-                            &provider.model_family,
+                            provider_id,
+                            provider,
                         ))
                     })
                     .unwrap_or_default();
@@ -616,8 +616,15 @@ impl ModelsManager {
         let remote = Self::find_model_by_longest_prefix(model, candidates)
             .or_else(|| Self::find_model_by_namespaced_suffix(model, candidates));
         let model_info = if let Some(remote) = remote {
+            // Capability aliases do not establish family identity.
+            let model_family = if remote.slug == model {
+                remote.model_family.clone()
+            } else {
+                ModelFamily::default()
+            };
             ModelInfo {
                 slug: model.to_string(),
+                model_family,
                 used_fallback_model_metadata: false,
                 ..remote
             }
@@ -912,10 +919,10 @@ impl ModelsManager {
     }
 
     async fn apply_live_catalog(&self, models: Vec<ModelInfo>, etag: Option<String>) {
-        let models = Self::with_provider_model_family(models, &self.provider.model_family);
         let client_version = crate::models_manager::client_version_to_whole();
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
+        // Never cache configured families.
         self.cache_manager
             .persist_cache(&models, etag, client_version, self.cache_scope())
             .await;
@@ -941,7 +948,6 @@ impl ModelsManager {
 
     async fn apply_cache_entry(&self, cache: ModelsCache) {
         let ModelsCache { models, etag, .. } = cache;
-        let models = Self::with_provider_model_family(models, &self.provider.model_family);
         *self.etag.write().await = etag.clone();
         self.apply_remote_models(models.clone()).await;
         info!(
@@ -983,15 +989,12 @@ impl ModelsManager {
 
     fn with_provider_model_family(
         mut models: Vec<ModelInfo>,
-        provider_family: &ModelFamily,
+        provider_id: &str,
+        provider: &ModelProviderInfo,
     ) -> Vec<ModelInfo> {
-        if provider_family.is_unknown() {
-            return models;
-        }
         for model in &mut models {
-            if model.model_family.is_unknown() {
-                model.model_family = provider_family.clone();
-            }
+            model.model_family =
+                provider.family_for_model(provider_id, &model.slug, &model.model_family);
         }
         models
     }
@@ -999,6 +1002,8 @@ impl ModelsManager {
     /// Build picker-ready presets from the active catalog snapshot.
     fn build_available_models(&self, mut remote_models: Vec<ModelInfo>) -> Vec<ModelPreset> {
         remote_models.sort_by_key(|a| a.priority);
+        let remote_models =
+            Self::with_provider_model_family(remote_models, &self.provider_id, &self.provider);
 
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
         let chatgpt_mode = matches!(self.auth_manager.auth_mode(), Some(AuthMode::Chatgpt));

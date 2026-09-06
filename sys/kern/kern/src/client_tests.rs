@@ -226,6 +226,60 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
     ));
 }
 
+#[tokio::test]
+async fn chat_completions_uses_resolved_provider_credentials() {
+    for stored_key in [true, false] {
+        let home = tempfile::tempdir().expect("isolated credential store");
+        if stored_key {
+            crate::auth::login_with_provider_api_key(
+                home.path(),
+                "test-target",
+                "test-target-key",
+                crate::auth::AuthCredentialsStoreMode::File,
+            )
+            .expect("store synthetic target key");
+        }
+        let manager = crate::AuthManager::from_auth_for_testing_with_home(
+            crate::auth::ChaosAuth::from_api_key("test-parent-key"),
+            home.path().to_path_buf(),
+        );
+        let mut provider = crate::model_provider_info::create_oss_provider_with_base_url(
+            "https://example.invalid/v1",
+            crate::model_provider_info::WireApi::ChatCompletions,
+        );
+        provider.env_key = Some(format!("CHAOS_TEST_MISSING_KEY_{}", ProcessId::new()));
+        let client = ModelClient::new(
+            Some(manager),
+            ProcessId::new(),
+            "test-target".to_string(),
+            provider,
+            SessionSource::Cli,
+            ApprovalPolicy::Headless,
+            None,
+            false,
+            None,
+            false,
+            crate::config::ClampSettings::default(),
+        );
+        let setup = client.current_client_setup().await;
+        if stored_key {
+            let setup = setup.expect("stored target key passes preflight");
+            assert_eq!(
+                client
+                    .new_session()
+                    .resolve_chat_completions_api_key(&setup.api_auth)
+                    .expect("adapter uses the same resolved key"),
+                "test-target-key"
+            );
+        } else {
+            assert!(matches!(
+                setup,
+                Err(crate::error::ChaosErr::ProviderAuthMissing(_))
+            ));
+        }
+    }
+}
+
 #[test]
 fn clamp_permission_mode_emits_canonical_wire_strings() {
     assert_eq!(

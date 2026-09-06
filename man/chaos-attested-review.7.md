@@ -52,6 +52,8 @@ Stored API keys count as configured credentials when the provider supports
 API-key authentication; subscription login is not required. Stored credentials
 must match a supported authentication method. The host still requires an exact
 cached model and independently verifies account and model-family provenance.
+Chat Completions requests reuse the provider-scoped credential resolved during
+request setup; a stored key does not also need an environment-variable copy.
 Family resolution is: known catalog metadata, built-in registry, exact provider
 `model_family_overrides`, then provider-wide `model_family` (unknown by default).
 Registry and configuration values are applied when reading the raw catalog,

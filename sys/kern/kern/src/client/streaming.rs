@@ -20,6 +20,7 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::TokenUsage;
+use chaos_parrot::AuthProvider;
 use chaos_parrot::RamaTransport;
 use chaos_parrot::RequestTelemetry;
 use chaos_parrot::ResponsesOptions as ApiResponsesOptions;
@@ -1486,25 +1487,12 @@ impl ModelClientSession {
         ))
     }
 
-    fn resolve_chat_completions_api_key(&self) -> Result<String> {
-        match self.client.state.provider.api_key() {
-            Ok(Some(api_key)) => return Ok(api_key),
-            Ok(None) => {}
-            Err(ChaosErr::EnvVar(_)) => {
-                return Err(crate::api_bridge::provider_auth_missing(
-                    &self.client.state.provider,
-                ));
-            }
-            Err(other) => return Err(other),
-        }
-
-        if let Some(token) = self.client.state.provider.experimental_bearer_token.clone() {
-            return Ok(token);
-        }
-
-        Err(crate::api_bridge::provider_auth_missing(
-            &self.client.state.provider,
-        ))
+    pub(super) fn resolve_chat_completions_api_key(
+        &self,
+        auth: &crate::api_bridge::CoreAuthProvider,
+    ) -> Result<String> {
+        auth.bearer_token()
+            .ok_or_else(|| crate::api_bridge::provider_auth_missing(&self.client.state.provider))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1538,7 +1526,7 @@ impl ModelClientSession {
             },
         )?;
 
-        let api_key = self.resolve_chat_completions_api_key().unwrap_or_default();
+        let api_key = client_setup.api_auth.bearer_token().unwrap_or_default();
         let sniffer = chaos_libration::registry::sniffer_for(
             "tensorzero",
             &client_setup.api_provider.base_url,
@@ -1594,7 +1582,7 @@ impl ModelClientSession {
             },
         )?;
 
-        let api_key = self.resolve_chat_completions_api_key()?;
+        let api_key = self.resolve_chat_completions_api_key(&client_setup.api_auth)?;
         let sniffer = chaos_libration::registry::sniffer_for(
             "chat_completions",
             &client_setup.api_provider.base_url,

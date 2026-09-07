@@ -9,5 +9,7 @@ Internal contracts shared only across chaos's own crates live under
 
 ## Crates
 
-- `ration`  `UsageProvider` trait — providers report quota, rate-limit
-            windows, and remaining credits back to chaos
+- `ration`         `UsageProvider` trait — providers report quota, rate-limit
+                   windows, and remaining credits back to chaos
+- `mcp-protocol`   Chaos-owned MCP wire contract (fleet wake, hostInfo, review
+                   provenance) — MCP servers compile against this crate

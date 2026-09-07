@@ -1,0 +1,18 @@
+[package]
+name = "chaos-mcp-protocol"
+description = "Chaos-owned MCP wire contract — fleet wake, hostInfo, and review provenance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "chaos_mcp_protocol"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }

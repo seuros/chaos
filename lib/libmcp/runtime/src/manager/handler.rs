@@ -11,6 +11,10 @@ use chaos_ipc::mcp::RequestId as ProtocolRequestId;
 use chaos_ipc::protocol::BackgroundEventEvent;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
+use chaos_mcp_protocol::FLEET_HOST_INFO_REQUEST;
+use chaos_mcp_protocol::FLEET_INBOX_NOTIFICATION;
+use chaos_mcp_protocol::FleetHostInfo;
+use chaos_mcp_protocol::FleetInboxHint;
 use chaos_traits::McpCatalogSink;
 use mcp_guest::ClientHandler;
 use mcp_guest::ClientHandlerFuture;
@@ -141,13 +145,6 @@ pub(super) struct ChaosClientHandler {
     pub(super) cwd: Arc<StdRwLock<PathBuf>>,
 }
 
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FleetInboxHint {
-    uri: String,
-    message_ids: Vec<String>,
-}
-
 impl ClientHandler for ChaosClientHandler {
     fn on_custom_notification(
         &self,
@@ -155,29 +152,15 @@ impl ClientHandler for ChaosClientHandler {
         params: Option<serde_json::Value>,
     ) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
-            if method != "notifications/skynet/fleet/inbox" {
+            if method != FLEET_INBOX_NOTIFICATION {
                 return;
             }
             let Some(params) = params else {
                 return;
             };
-            let Ok(mut hint) = serde_json::from_value::<FleetInboxHint>(params) else {
+            let Some(hint) = FleetInboxHint::parse(params) else {
                 return;
             };
-            if hint.uri != "skynet://fleet/inbox"
-                || hint.message_ids.is_empty()
-                || hint.message_ids.len() > 50
-                || hint.message_ids.iter().any(|id| {
-                    id.len() > 19
-                        || id.starts_with('0')
-                        || !id.bytes().all(|byte| byte.is_ascii_digit())
-                        || !id.parse::<i64>().is_ok_and(|id| id > 0)
-                })
-            {
-                return;
-            }
-            hint.message_ids.sort();
-            hint.message_ids.dedup();
             // Never block the MCP reader (including initialize) on kernel
             // admission. A dropped hint is not an inbox acknowledgement.
             if let Some(tx) = &self.notification_tx
@@ -200,7 +183,7 @@ impl ClientHandler for ChaosClientHandler {
         _params: Option<serde_json::Value>,
     ) -> ClientHandlerResultFuture<'_, serde_json::Value> {
         Box::pin(async move {
-            if method != "skynet/fleet/hostInfo" {
+            if method != FLEET_HOST_INFO_REQUEST {
                 return Err(mcp_guest::GuestError::MethodNotSupported(method));
             }
             // Only harness-owned state, never request parameters or model
@@ -211,12 +194,13 @@ impl ClientHandler for ChaosClientHandler {
                 .lock()
                 .map(|policy| vec![format!("approval-policy: {}", *policy)])
                 .unwrap_or_default();
-            Ok(serde_json::json!({
-                "os": std::env::consts::OS,
-                "arch": std::env::consts::ARCH,
-                "capabilities": [],
-                "restrictions": restrictions,
-            }))
+            Ok(FleetHostInfo::new(
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+                Vec::new(),
+                restrictions,
+            )
+            .to_value())
         })
     }
 
@@ -548,5 +532,114 @@ mod tests {
                 uri: "agent://inbox".to_string(),
             }
         );
+    }
+
+    struct NoopCatalog;
+
+    impl McpCatalogSink for NoopCatalog {
+        fn register_mcp_tools(&self, _: &str, _: Vec<chaos_traits::catalog::CatalogTool>) {}
+        fn register_mcp_resources(
+            &self,
+            _: &str,
+            _: Vec<chaos_traits::catalog::CatalogResource>,
+            _: Vec<chaos_traits::catalog::CatalogResourceTemplate>,
+        ) {
+        }
+        fn register_mcp_prompts(&self, _: &str, _: Vec<chaos_traits::catalog::CatalogPrompt>) {}
+        fn unregister_mcp(&self, _: &str) {}
+        fn unregister_mcp_tools(&self, _: &str) {}
+        fn unregister_mcp_resources(&self, _: &str) {}
+        fn unregister_mcp_prompts(&self, _: &str) {}
+        fn clear_all_mcp(&self) {}
+    }
+
+    fn test_handler(notification_tx: Option<Sender<McpServerNotification>>) -> ChaosClientHandler {
+        let (tx_event, _) = async_channel::bounded(1);
+        ChaosClientHandler {
+            server_name: "peer".into(),
+            endpoint: "stdio".into(),
+            tx_event,
+            notification_tx,
+            elicitation_requests: ElicitationRequestManager::new(
+                chaos_ipc::protocol::ApprovalPolicy::Interactive,
+            ),
+            tools_arc: Arc::new(StdRwLock::new(Vec::new())),
+            tool_filter: ToolFilter::default(),
+            tool_timeout: Duration::from_secs(1),
+            session: Arc::new(tokio::sync::RwLock::new(None)),
+            catalog: Arc::new(NoopCatalog),
+            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+        }
+    }
+
+    #[tokio::test]
+    async fn chaos_fleet_inbox_notification_admits_a_wake() {
+        use mcp_guest::ClientHandler;
+        let (tx, rx) = async_channel::bounded(1);
+        let handler = test_handler(Some(tx));
+        handler
+            .on_custom_notification(
+                FLEET_INBOX_NOTIFICATION.into(),
+                Some(serde_json::json!({
+                    "uri": chaos_mcp_protocol::FLEET_INBOX_URI,
+                    "message_ids": ["2", "1"]
+                })),
+            )
+            .await;
+        assert_eq!(
+            rx.try_recv().expect("wake admitted"),
+            McpServerNotification::FleetInbox {
+                server: "peer".into(),
+                uri: chaos_mcp_protocol::FLEET_INBOX_URI.into(),
+                message_ids: vec!["1".into(), "2".into()],
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn skynet_fleet_inbox_notification_is_ignored() {
+        use mcp_guest::ClientHandler;
+        let (tx, rx) = async_channel::bounded(1);
+        let handler = test_handler(Some(tx));
+        handler
+            .on_custom_notification(
+                "notifications/skynet/fleet/inbox".into(),
+                Some(serde_json::json!({
+                    "uri": "skynet://fleet/inbox",
+                    "message_ids": ["1"]
+                })),
+            )
+            .await;
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn chaos_host_info_returns_harness_owned_state() {
+        use mcp_guest::ClientHandler;
+        let handler = test_handler(None);
+        let value = handler
+            .on_custom_request(FLEET_HOST_INFO_REQUEST.into(), Some(serde_json::json!({})))
+            .await
+            .expect("hostInfo");
+        let info: FleetHostInfo = serde_json::from_value(value).expect("shape");
+        assert_eq!(info.os, std::env::consts::OS);
+        assert_eq!(info.arch, std::env::consts::ARCH);
+        assert!(info.capabilities.is_empty());
+        assert_eq!(info.restrictions, vec!["approval-policy: interactive"]);
+    }
+
+    #[tokio::test]
+    async fn skynet_host_info_is_method_not_supported() {
+        use mcp_guest::ClientHandler;
+        let handler = test_handler(None);
+        let error = handler
+            .on_custom_request("skynet/fleet/hostInfo".into(), Some(serde_json::json!({})))
+            .await
+            .expect_err("old method");
+        assert!(matches!(
+            error,
+            mcp_guest::GuestError::MethodNotSupported(method)
+                if method == "skynet/fleet/hostInfo"
+        ));
     }
 }

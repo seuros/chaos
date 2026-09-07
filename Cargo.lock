@@ -1625,6 +1625,14 @@ name = "chaos-lsd"
 version = "47.3.0"
 
 [[package]]
+name = "chaos-mcp-protocol"
+version = "47.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "chaos-mcp-runtime"
 version = "47.3.0"
 dependencies = [
@@ -1633,6 +1641,7 @@ dependencies = [
  "chaos-concierge",
  "chaos-epoll",
  "chaos-ipc",
+ "chaos-mcp-protocol",
  "chaos-snitch",
  "chaos-sysctl",
  "chaos-traits",

@@ -203,7 +203,7 @@ fn trusted_review_provenance() -> TrustedReviewProvenance {
 
 #[test]
 fn review_provenance_key_matches_server_contract() {
-    assert_eq!(REVIEW_PROVENANCE_META_KEY, "skynet/reviewProvenance");
+    assert_eq!(REVIEW_PROVENANCE_META_KEY, "chaos/reviewProvenance");
 }
 
 #[test]

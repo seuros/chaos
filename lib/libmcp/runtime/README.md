@@ -3,13 +3,11 @@
 MCP session runtime with kernel-facing types. Bridges the guest protocol to the
 kernel's internal representation of tool calls and responses.
 
-## Private Skynet fleet extension
+## Fleet protocol
 
-Only `notifications/skynet/fleet/inbox` requests an autonomous inbox wake.
-Params must contain exactly `uri: "skynet://fleet/inbox"` and `message_ids`
-(1–50 canonical positive decimal signed-bigint strings); no message content.
-The configured MCP entry name is preserved, not assumed to be `skynet`.
-Ordinary resource-update notifications retain their existing non-waking behavior.
+Wire names, inbox URI, hostInfo shape, and the reserved review provenance
+`_meta` key live in `chaos-mcp-protocol`. Any configured MCP server may speak
+that contract; the entry name is not assumed.
 
 The kernel coalesces IDs by configured server and URI in its existing background
 task journal. Its single session runner admits an idle continuation, or waits
@@ -30,11 +28,11 @@ by repeating an already-delivered ID in the same saved conversation. Dedup state
 is conversation-scoped (not preserved across forks), and grows with admitted
 IDs. No daemon is started for an unloaded session.
 
-The client-only request `skynet/fleet/hostInfo` returns exactly
-`{os, arch, capabilities, restrictions}` from harness-owned state. OS/architecture
-use Rust platform constants. Capabilities are currently an empty array (no
-executable probing); restrictions contain the current MCP-handler approval
-policy, if accessible. Sandbox facets are omitted because this handler does not
-own them. Request params are ignored, and no model tool exposes this request.
-The response is information, never permission authority; it contains no machine
-address, user identity, paths, environment dump, or credentials.
+`chaos/fleet/hostInfo` returns `{os, arch, capabilities, restrictions}` from
+harness-owned state. OS/architecture use Rust platform constants. Capabilities
+are currently an empty array (no executable probing); restrictions contain the
+current MCP-handler approval policy, if accessible. Sandbox facets are omitted
+because this handler does not own them. Request params are ignored, and no model
+tool exposes this request. The response is information, never permission
+authority; it contains no machine address, user identity, paths, environment
+dump, or credentials.

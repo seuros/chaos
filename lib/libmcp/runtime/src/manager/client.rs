@@ -525,6 +525,34 @@ impl AsyncManagedClient {
     }
 }
 
+pub(super) fn client_capabilities() -> mcp_guest::protocol::ClientCapabilities {
+    mcp_guest::protocol::ClientCapabilities {
+        experimental: Some(chaos_mcp_protocol::client_experimental_capabilities()),
+        roots: Some(mcp_guest::protocol::RootsCapability {
+            list_changed: Some(true),
+        }),
+        sampling: Some(mcp_guest::protocol::SamplingCapability {
+            context: None,
+            tools: None,
+        }),
+        elicitation: Some(mcp_guest::protocol::ElicitationCapability {
+            form: Some(mcp_guest::protocol::FormElicitationCapability {}),
+            url: Some(mcp_guest::protocol::UrlElicitationCapability {}),
+        }),
+        tasks: Some(mcp_guest::protocol::TasksCapability {
+            list: Some(mcp_guest::protocol::EmptyObject {}),
+            cancel: Some(mcp_guest::protocol::EmptyObject {}),
+            requests: Some(mcp_guest::protocol::TasksRequestsCapability {
+                tools: Some(mcp_guest::protocol::TasksToolsCapability {
+                    call: Some(mcp_guest::protocol::EmptyObject {}),
+                }),
+                sampling: None,
+                elicitation: None,
+            }),
+        }),
+    }
+}
+
 pub(super) async fn make_managed_client(
     server_name: String,
     config: McpServerConfig,
@@ -568,31 +596,7 @@ pub(super) async fn make_managed_client(
 
     let client_info = managed_client_info(&client_identity);
 
-    let capabilities = mcp_guest::protocol::ClientCapabilities {
-        experimental: None,
-        roots: Some(mcp_guest::protocol::RootsCapability {
-            list_changed: Some(true),
-        }),
-        sampling: Some(mcp_guest::protocol::SamplingCapability {
-            context: None,
-            tools: None,
-        }),
-        elicitation: Some(mcp_guest::protocol::ElicitationCapability {
-            form: Some(mcp_guest::protocol::FormElicitationCapability {}),
-            url: Some(mcp_guest::protocol::UrlElicitationCapability {}),
-        }),
-        tasks: Some(mcp_guest::protocol::TasksCapability {
-            list: Some(mcp_guest::protocol::EmptyObject {}),
-            cancel: Some(mcp_guest::protocol::EmptyObject {}),
-            requests: Some(mcp_guest::protocol::TasksRequestsCapability {
-                tools: Some(mcp_guest::protocol::TasksToolsCapability {
-                    call: Some(mcp_guest::protocol::EmptyObject {}),
-                }),
-                sampling: None,
-                elicitation: None,
-            }),
-        }),
-    };
+    let capabilities = client_capabilities();
 
     // Build and connect session based on transport type
     let connect_fut = async {
@@ -691,6 +695,13 @@ pub(super) async fn make_managed_client(
 mod tests {
     use super::*;
     use futures::future;
+
+    #[test]
+    fn initialize_advertises_chaos_fleet_experimental_capability() {
+        let capabilities = client_capabilities();
+        let experimental = capabilities.experimental.expect("experimental");
+        assert!(experimental.contains_key(chaos_mcp_protocol::FLEET_EXPERIMENTAL_CAPABILITY));
+    }
 
     #[test]
     fn managed_client_info_reuses_the_supplied_identity() {

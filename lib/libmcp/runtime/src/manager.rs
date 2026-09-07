@@ -25,6 +25,11 @@ use chaos_ipc::protocol::McpStartupCompleteEvent;
 use chaos_ipc::protocol::McpStartupFailure;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
+use chaos_mcp_protocol::ACCOUNT_SUBJECT_PREFIX;
+use chaos_mcp_protocol::MODEL_FAMILY_SUBJECT_PREFIX;
+pub use chaos_mcp_protocol::REVIEW_PROVENANCE_META_KEY;
+use chaos_mcp_protocol::REVIEW_RUN_SUBJECT_PREFIX;
+use chaos_mcp_protocol::REVIEWER_ATTEMPT_SUBJECT_PREFIX;
 use chaos_sysctl::Constrained;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
@@ -89,15 +94,6 @@ fn mcp_client_implementation_version() -> &'static str {
 
 const INITIAL_SUBMIT_ID: &str = "";
 
-/// Reserved `_meta` key for host-attested review provenance.
-///
-/// Calls through the ordinary MCP tool path may not set this key.
-pub const REVIEW_PROVENANCE_META_KEY: &str = "skynet/reviewProvenance";
-
-const ACCOUNT_SUBJECT_PREFIX: &str = "credential:v1:";
-const MODEL_FAMILY_SUBJECT_PREFIX: &str = "review-subject:v1:";
-const REVIEW_RUN_SUBJECT_PREFIX: &str = "review-run:v1:";
-const REVIEWER_ATTEMPT_SUBJECT_PREFIX: &str = "reviewer-attempt:v1:";
 const MAX_IDEMPOTENCY_KEY_BYTES: usize = 255;
 
 /// Host-created, wire-safe reviewer provenance.

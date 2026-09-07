@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 mcp-guest = { workspace = true, features = ["stdio", "http"] }
+chaos-mcp-protocol = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-traits = { workspace = true }
 chaos-sysctl = { workspace = true }

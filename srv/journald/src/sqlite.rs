@@ -438,6 +438,7 @@ impl JournalStore for SqliteJournalStore {
         ttl: Duration,
     ) -> Result<Lease, JournalError> {
         ensure_process_exists(&self.pool, process_id).await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let now = jiff::Timestamp::now();
         let expires_at = timestamp_after(now, ttl)?;
         let lease_token = Uuid::now_v7().to_string();
@@ -448,7 +449,7 @@ impl JournalStore for SqliteJournalStore {
              WHERE process_id = ?",
         )
         .bind(process_id.to_string())
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await?;
 
         if let Some(row) = existing.as_ref() {
@@ -477,8 +478,9 @@ impl JournalStore for SqliteJournalStore {
         .bind(&lease_token)
         .bind(expires_at.as_second())
         .bind(now.as_second())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
 
         Ok(Lease {
             process_id: *process_id,

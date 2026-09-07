@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use async_channel::Receiver;
 use chaos_ipc::ProcessId;
+use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::Submission;
+use chaos_ipc::protocol::WarningEvent;
 use tracing::Instrument;
 use tracing::debug;
 use tracing::warn;
@@ -14,6 +16,7 @@ use tracing::warn;
 use crate::config::Config;
 use crate::parse_turn_item;
 use crate::protocol::Op;
+use crate::rollout::recorder::JournalWriterStatus;
 use crate::tools::spec::ToolsConfig;
 use crate::tools::spec::ToolsConfigParams;
 
@@ -63,21 +66,55 @@ pub(super) async fn submission_loop(
     // To break out of this loop, send Op::Shutdown.
     let mut maintenance = tokio::time::interval(std::time::Duration::from_secs(10));
     maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let ownership_lost = sess
+    let mut writer_status = sess
         .services
         .rollout
         .lock()
         .await
         .as_ref()
-        .map(crate::rollout::RolloutRecorder::ownership_lost)
-        .unwrap_or_default();
+        .map(crate::rollout::RolloutRecorder::writer_status)
+        .unwrap_or_else(|| tokio::sync::watch::channel(JournalWriterStatus::Ready).1);
+    writer_status.mark_changed();
+    let mut status_open = true;
+    let mut journal_paused = false;
     loop {
         let sub = tokio::select! {
             biased;
-            _ = ownership_lost.cancelled() => {
-                sess.services.internal_task_store.set_blocked(Some("journal ownership lost".into())).await;
-                handlers::shutdown(&sess, "ownership-lost".into()).await;
-                break;
+            changed = writer_status.changed(), if status_open => {
+                status_open = changed.is_ok();
+                let status = *writer_status.borrow_and_update();
+                let was_paused = journal_paused;
+                journal_paused = status != JournalWriterStatus::Ready;
+                if journal_paused {
+                    sess.services.internal_task_store.set_blocked(Some(
+                        "background journal unavailable: lease unconfirmed".into()
+                    )).await;
+                    if !was_paused {
+                        handlers::interrupt(&sess).await;
+                    }
+                } else if was_paused {
+                    match sess.checkpoint_background_tasks().await {
+                        Ok(()) => sess.services.internal_task_store.clear_journal_block().await,
+                        Err(error) => {
+                            warn!(%error, "journal recovery checkpoint deferred");
+                        }
+                    }
+                } else {
+                    continue;
+                }
+                let message = match status {
+                    JournalWriterStatus::Ready =>
+                        "Journal recovered. Retry the interrupted turn.",
+                    JournalWriterStatus::Recovering =>
+                        "Journal lease unavailable. Paused; retrying.",
+                    JournalWriterStatus::Fenced =>
+                        "Journal conflict. Paused; close other writers and resume.",
+                };
+                sess.send_event_raw(Event {
+                    id: "journal-ownership".into(),
+                    msg: EventMsg::Warning(WarningEvent { message: message.into() }),
+                }).await;
+                continue;
             },
             sub = rx_sub.recv() => match sub {
                 Ok(sub) => sub,
@@ -85,24 +122,51 @@ pub(super) async fn submission_loop(
             },
             _ = sess.completions.changed.notified() => {
                 finalize_finished_tasks(&sess).await;
-                sess.admit_completion_turn().await;
+                if !journal_paused {
+                    sess.admit_completion_turn().await;
+                }
                 continue;
             },
             _ = sess.services.internal_task_store.changed.notified() => {
                 if let Err(error) = sess.checkpoint_background_tasks().await {
                     warn!(%error, "background lifecycle checkpoint deferred");
                 }
-                sess.admit_completion_turn().await;
+                if !journal_paused {
+                    sess.admit_completion_turn().await;
+                }
                 continue;
             },
             _ = maintenance.tick() => {
                 if let Err(error) = sess.checkpoint_background_tasks().await {
                     warn!(%error, "background lifecycle maintenance deferred");
                 }
-                sess.admit_completion_turn().await;
+                if !journal_paused {
+                    sess.admit_completion_turn().await;
+                }
                 continue;
             },
         };
+        if journal_paused
+            && matches!(
+                &sub.op,
+                Op::UserInput { .. }
+                    | Op::UserTurn { .. }
+                    | Op::Compact
+                    | Op::Review { .. }
+                    | Op::ProcessRollback { .. }
+                    | Op::RunUserShellCommand { .. }
+            )
+        {
+            sess.send_event_raw(Event {
+                id: sub.id,
+                msg: EventMsg::Error(ErrorEvent {
+                    message: "Journal unavailable. Retry after recovery.".into(),
+                    chaos_error_info: None,
+                }),
+            })
+            .await;
+            continue;
+        }
         // Owner input wins over background admission, but must see completed
         // foreground work as idle rather than steering into a finished future.
         finalize_finished_tasks(&sess).await;

@@ -27,6 +27,7 @@ use time::macros::format_description;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::{self};
 use tokio::sync::oneshot;
+use tokio::sync::watch;
 use tracing::info;
 use tracing::warn;
 use uuid::Uuid;
@@ -67,7 +68,14 @@ pub struct RolloutRecorder {
     runtime_db: Option<RuntimeDbHandle>,
     event_persistence_mode: EventPersistenceMode,
     live_rollout_items: Arc<Mutex<Vec<RolloutItem>>>,
-    ownership_lost: tokio_util::sync::CancellationToken,
+    writer_status: watch::Receiver<JournalWriterStatus>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum JournalWriterStatus {
+    Ready,
+    Recovering,
+    Fenced,
 }
 
 #[derive(Clone)]
@@ -439,26 +447,32 @@ impl RolloutRecorder {
         // to event delivery; the in-memory rollout snapshot remains the source
         // for live recovery while the writer catches up.
         let (tx, rx) = mpsc::unbounded_channel::<RolloutCmd>();
-        let ownership_lost = tokio_util::sync::CancellationToken::new();
-        let fence = ownership_lost.clone();
+        let (status, writer_status) = watch::channel(JournalWriterStatus::Ready);
+        let writer_done = tokio_util::sync::CancellationToken::new();
         let lease_clock = Arc::new(Mutex::new(match &journal_sink.state {
             JournalSinkState::Active(writer) => Some(writer.last_lease_refresh),
             _ => None,
         }));
         let clock = Arc::clone(&lease_clock);
-        let expiry_fence = fence.clone();
+        let done = writer_done.clone();
+        let expiry_status = status.clone();
         tokio::spawn(async move {
             let mut ticks = tokio::time::interval(Duration::from_secs(1));
             loop {
                 tokio::select! {
-                    _ = expiry_fence.cancelled() => break,
+                    _ = done.cancelled() => break,
                     _ = ticks.tick() => {
                         let refreshed = *clock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                         if refreshed.is_some_and(|time| time.elapsed() >= JOURNAL_LEASE_TTL - Duration::from_secs(5)) {
-                            // Independent of the writer's I/O: a wedged append
-                            // must not keep model work alive beyond its lease.
-                            expiry_fence.cancel();
-                            break;
+                            expiry_status.send_if_modified(|status| {
+                                if *status == JournalWriterStatus::Ready {
+                                    *status = JournalWriterStatus::Recovering;
+                                    true
+                                } else {
+                                    false
+                                }
+                            });
+                            health::set_persistence_health(PersistenceHealth::Failed);
                         }
                     }
                 }
@@ -475,15 +489,14 @@ impl RolloutRecorder {
             config.generate_memories(),
             journal_sink,
             lease_clock,
+            status.clone(),
         );
         tokio::task::spawn(async move {
-            tokio::select! {
-                _ = fence.cancelled() => {}
-                result = writer => if let Err(error) = result {
-                    tracing::error!(%error, "journal writer stopped; fencing session");
-                },
+            if let Err(error) = writer.await {
+                tracing::error!(%error, "journal writer stopped; pausing session");
             }
-            fence.cancel();
+            status.send_replace(JournalWriterStatus::Fenced);
+            writer_done.cancel();
         });
 
         // Fire-and-forget: update the default session pointer in the DB.
@@ -500,7 +513,7 @@ impl RolloutRecorder {
             runtime_db: runtime_db_ctx,
             event_persistence_mode,
             live_rollout_items: Arc::new(Mutex::new(Vec::new())),
-            ownership_lost,
+            writer_status,
         })
     }
 
@@ -582,8 +595,8 @@ impl RolloutRecorder {
         rx.await.map_err(IoError::other)?
     }
 
-    pub(crate) fn ownership_lost(&self) -> tokio_util::sync::CancellationToken {
-        self.ownership_lost.clone()
+    pub(crate) fn writer_status(&self) -> watch::Receiver<JournalWriterStatus> {
+        self.writer_status.clone()
     }
 
     pub async fn get_rollout_history_for_process(
@@ -712,6 +725,7 @@ const JOURNALD_SOCKET_ENV: &str = "CHAOS_JOURNALD_SOCKET";
 const JOURNALD_BIN_ENV: &str = "CHAOS_JOURNALD_BIN";
 const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
 const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
+const JOURNAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const JOURNAL_APPEND_MAX_ATTEMPTS: usize = 8;
 const JOURNAL_APPEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(25);
 const JOURNAL_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -769,6 +783,8 @@ struct ActiveJournalWriter {
     last_lease_refresh: Instant,
     pending_items: Vec<RolloutItem>,
     fenced: bool,
+    lease_confirmed: bool,
+    needs_reacquire: bool,
 }
 
 impl JournalSink {
@@ -999,6 +1015,8 @@ impl ActiveJournalWriter {
                 last_lease_refresh: Instant::now(),
                 pending_items: Vec::new(),
                 fenced: false,
+                lease_confirmed: true,
+                needs_reacquire: false,
             }),
             Err(JournalClientError::Remote(payload))
                 if payload.code == JournalErrorCode::AlreadyExists =>
@@ -1077,25 +1095,24 @@ impl ActiveJournalWriter {
             last_lease_refresh: Instant::now(),
             pending_items: Vec::new(),
             fenced: false,
+            lease_confirmed: true,
+            needs_reacquire: false,
         })
     }
 
     async fn append_items(&mut self, items: &[RolloutItem]) -> Result<(), String> {
-        let mut batch = std::mem::take(&mut self.pending_items);
-        batch.extend(items.iter().cloned());
-        if batch.is_empty() {
+        self.defer_items(items);
+        if self.pending_items.is_empty() {
             return Ok(());
         }
 
         let mut attempt = 0usize;
         loop {
-            if let Err(err) = self.ensure_lease().await {
-                self.pending_items = batch;
-                return Err(err);
-            }
+            self.ensure_lease().await?;
 
             let expected_next_seq = self.next_seq;
-            let journal_items = batch
+            let journal_items = self
+                .pending_items
                 .iter()
                 .cloned()
                 .enumerate()
@@ -1106,19 +1123,25 @@ impl ActiveJournalWriter {
                 })
                 .collect();
 
-            match self
-                .client
-                .append_batch(JournalAppendBatchInput {
+            match tokio::time::timeout(
+                JOURNAL_REQUEST_TIMEOUT,
+                self.client.append_batch(JournalAppendBatchInput {
                     process_id: self.process_id,
                     owner_id: self.owner_id.clone(),
                     lease_token: self.lease_token.clone(),
                     expected_next_seq,
                     items: journal_items,
-                })
-                .await
-            {
+                }),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                Err(JournalClientError::Transport(
+                    "journal append timed out".into(),
+                ))
+            }) {
                 Ok(result) => {
                     self.next_seq = result.next_seq;
+                    self.pending_items.clear();
                     return Ok(());
                 }
                 Err(JournalClientError::Remote(payload))
@@ -1127,18 +1150,26 @@ impl ActiveJournalWriter {
                     // A lost append response may mean the batch committed.
                     // Reconcile the exact sequence range, never move the cursor
                     // forward and append the same history a second time.
-                    let loaded = match self.client.load_journal(self.process_id).await {
+                    let loaded = match tokio::time::timeout(
+                        JOURNAL_REQUEST_TIMEOUT,
+                        self.client.load_journal(self.process_id),
+                    )
+                    .await
+                    .map_err(|_| "journal reconciliation timed out".to_string())?
+                    {
                         Ok(loaded) => loaded,
                         Err(error) => {
-                            self.pending_items = batch;
                             return Err(format!("journal reconciliation failed: {error}"));
                         }
                     };
-                    if batch_matches_journal(&loaded, expected_next_seq, &batch) {
+                    if let Some(committed) = self.committed_pending_prefix(&loaded) {
                         self.next_seq = loaded.next_seq;
-                        return Ok(());
+                        self.pending_items.drain(..committed);
+                        if self.pending_items.is_empty() {
+                            return Ok(());
+                        }
+                        continue;
                     }
-                    self.pending_items = batch;
                     self.fenced = true;
                     return Err(
                         "journal sequence conflict does not match the pending batch; writer fenced"
@@ -1146,12 +1177,15 @@ impl ActiveJournalWriter {
                     );
                 }
                 Err(JournalClientError::Remote(payload))
-                    if matches!(
-                        payload.code,
-                        JournalErrorCode::LeaseExpired | JournalErrorCode::InvalidLease
-                    ) =>
+                    if payload.code == JournalErrorCode::LeaseExpired =>
                 {
-                    self.pending_items = batch;
+                    self.lease_confirmed = false;
+                    self.needs_reacquire = true;
+                    return Err("journal lease expired; retaining batch for recovery".into());
+                }
+                Err(JournalClientError::Remote(payload))
+                    if payload.code == JournalErrorCode::InvalidLease =>
+                {
                     self.fenced = true;
                     return Err("journal ownership lost during append; writer fenced".into());
                 }
@@ -1160,10 +1194,6 @@ impl ActiveJournalWriter {
                 {
                     health::set_persistence_health(PersistenceHealth::Degraded);
                     attempt += 1;
-                    if let Err(err) = self.reconcile_after_retryable_append_error(&payload).await {
-                        self.pending_items = batch;
-                        return Err(err);
-                    }
                     let delay = retry_delay(attempt);
                     warn!(
                         process_id = %self.process_id,
@@ -1182,11 +1212,9 @@ impl ActiveJournalWriter {
                         error = ?payload,
                         "journal append retry budget exhausted; retaining batch for next flush"
                     );
-                    self.pending_items = batch;
                     return Err("journal append retry budget exhausted".to_string());
                 }
                 Err(err) => {
-                    self.pending_items = batch;
                     return Err(format!("append_batch failed: {err}"));
                 }
             }
@@ -1197,29 +1225,37 @@ impl ActiveJournalWriter {
         self.append_items(&[]).await
     }
 
-    async fn reconcile_after_retryable_append_error(
-        &mut self,
-        payload: &chaos_journald::ErrorPayload,
-    ) -> Result<(), String> {
-        match payload.code {
-            JournalErrorCode::SequenceConflict
-            | JournalErrorCode::LeaseExpired
-            | JournalErrorCode::InvalidLease => {
-                self.fenced = true;
-                Err("journal ownership lost; refusing to reacquire from a live writer".into())
-            }
-            _ => Ok(()),
-        }
+    fn committed_pending_prefix(&self, loaded: &LoadedJournal) -> Option<usize> {
+        let committed = usize::try_from(loaded.next_seq.checked_sub(self.next_seq)?).ok()?;
+        let prefix = self.pending_items.get(..committed)?;
+        batch_matches_journal(loaded, self.next_seq, prefix).then_some(committed)
     }
 
     async fn ensure_lease(&mut self) -> Result<(), String> {
         if self.fenced {
             return Err("journal writer is fenced".into());
         }
-        if self.last_lease_refresh.elapsed() < JOURNAL_LEASE_REFRESH_INTERVAL {
+        if self.lease_confirmed
+            && self.last_lease_refresh.elapsed() < JOURNAL_LEASE_REFRESH_INTERVAL
+        {
             return Ok(());
         }
 
+        self.lease_confirmed = false;
+        let result = tokio::time::timeout(JOURNAL_REQUEST_TIMEOUT, self.refresh_lease())
+            .await
+            .unwrap_or_else(|_| Err("journal lease refresh timed out; will retry".into()));
+        if result.is_ok() {
+            self.lease_confirmed = true;
+            self.last_lease_refresh = Instant::now();
+        }
+        result
+    }
+
+    async fn refresh_lease(&mut self) -> Result<(), String> {
+        if self.needs_reacquire {
+            return self.reacquire_lease().await;
+        }
         match self
             .client
             .heartbeat_lease(
@@ -1232,14 +1268,58 @@ impl ActiveJournalWriter {
         {
             Ok(lease) => {
                 self.lease_token = lease.lease_token;
-                self.last_lease_refresh = Instant::now();
                 Ok(())
             }
+            Err(JournalClientError::Remote(payload))
+                if payload.code == JournalErrorCode::LeaseExpired =>
+            {
+                self.needs_reacquire = true;
+                self.reacquire_lease().await
+            }
             Err(err) => {
-                self.fenced = true;
+                if matches!(&err, JournalClientError::Remote(payload)
+                    if matches!(payload.code, JournalErrorCode::InvalidLease | JournalErrorCode::LeaseConflict))
+                {
+                    self.fenced = true;
+                }
                 Err(format!("heartbeat_lease failed: {err}"))
             }
         }
+    }
+
+    async fn reacquire_lease(&mut self) -> Result<(), String> {
+        let lease = match self
+            .client
+            .acquire_lease(
+                self.process_id,
+                self.owner_id.clone(),
+                JOURNAL_LEASE_TTL.as_millis() as u64,
+            )
+            .await
+        {
+            Ok(lease) => lease,
+            Err(error) => {
+                if matches!(&error, JournalClientError::Remote(payload)
+                    if matches!(payload.code, JournalErrorCode::LeaseConflict | JournalErrorCode::InvalidLease))
+                {
+                    self.fenced = true;
+                }
+                return Err(format!("journal lease recovery failed: {error}"));
+            }
+        };
+        self.lease_token = lease.lease_token;
+        let loaded = self
+            .client
+            .load_journal(self.process_id)
+            .await
+            .map_err(|error| format!("journal lease recovery reconciliation failed: {error}"))?;
+        if self.committed_pending_prefix(&loaded).is_none() {
+            self.fenced = true;
+            return Err("journal changed during lease expiry; writer fenced".into());
+        }
+        self.needs_reacquire = false;
+        info!(process_id = %self.process_id, "journal writer lease recovered");
+        Ok(())
     }
 
     async fn release_lease(self) -> Result<(), String> {
@@ -1426,6 +1506,7 @@ async fn rollout_writer(
     generate_memories: bool,
     mut journal_sink: JournalSink,
     lease_clock: Arc<Mutex<Option<Instant>>>,
+    status: watch::Sender<JournalWriterStatus>,
 ) -> std::io::Result<()> {
     let mut buffered_items = Vec::<RolloutItem>::new();
     let mut deferred_memory_mode: Option<&'static str> = None;
@@ -1439,14 +1520,25 @@ async fn rollout_writer(
     let mut heartbeat = tokio::time::interval(JOURNAL_LEASE_REFRESH_INTERVAL);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
-        if matches!(&journal_sink.state, JournalSinkState::Active(writer) if writer.fenced) {
-            return Err(IoError::other("journal writer ownership lost"));
-        }
         if let JournalSinkState::Active(writer) = &journal_sink.state {
             *lease_clock
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) =
                 Some(writer.last_lease_refresh);
+            let current = if writer.fenced {
+                JournalWriterStatus::Fenced
+            } else if !writer.lease_confirmed
+                || writer.last_lease_refresh.elapsed() >= JOURNAL_LEASE_TTL - Duration::from_secs(5)
+            {
+                JournalWriterStatus::Recovering
+            } else {
+                JournalWriterStatus::Ready
+            };
+            status.send_if_modified(|status| {
+                let changed = *status != current;
+                *status = current;
+                changed
+            });
         }
         let event = if let Some(delay) = journal_sink.retry_after() {
             tokio::select! {
@@ -1464,12 +1556,19 @@ async fn rollout_writer(
         let cmd = match event {
             RolloutWriterEvent::Heartbeat => {
                 if let JournalSinkState::Active(writer) = &mut journal_sink.state {
-                    // A live but idle session still owns its journal. On fencing
-                    // failure, close the writer rather than stealing a new lease.
-                    tokio::time::timeout(Duration::from_secs(5), writer.ensure_lease())
-                        .await
-                        .map_err(IoError::other)?
-                        .map_err(IoError::other)?;
+                    if !writer.fenced {
+                        match writer.ensure_lease().await {
+                            Ok(()) if !journal_sink.has_pending_items() => {
+                                health::set_persistence_health(PersistenceHealth::Healthy);
+                            }
+                            Ok(()) => {}
+                            Err(error) => {
+                                warn!(%error, "journal lease unavailable; will retry");
+                                journal_sink.last_error = Some(error);
+                                health::set_persistence_health(PersistenceHealth::Failed);
+                            }
+                        }
+                    }
                 }
                 continue;
             }
@@ -1708,6 +1807,9 @@ fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
 }
 
 #[cfg(test)]
+mod lease_tests;
+
+#[cfg(test)]
 mod tests {
     use super::direct_journal_client_for_vfs;
     use super::processes_page_from_db;
@@ -1790,6 +1892,7 @@ mod tests {
             false,
             sink,
             Arc::new(Mutex::new(None)),
+            watch::channel(JournalWriterStatus::Ready).0,
         ));
         let (ack, done) = oneshot::channel();
         tx.send(RolloutCmd::Flush { ack }).unwrap();
@@ -1816,6 +1919,8 @@ mod tests {
             last_lease_refresh: Instant::now(),
             pending_items: Vec::new(),
             fenced: true,
+            lease_confirmed: false,
+            needs_reacquire: false,
         };
         assert!(writer.ensure_lease().await.unwrap_err().contains("fenced"));
     }

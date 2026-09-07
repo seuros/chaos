@@ -51,6 +51,11 @@ delete lease rows to force a resume, as that can allow competing writers.
 Closing a subagent waits for its session loop to finish before returning, so
 an immediate resume does not race its previous journal writer.
 
+Lease failures pause work without exiting. ChaOS retries every 10 seconds
+with a 5-second timeout; queued entries remain in memory until committed.
+Retry interrupted turns after recovery. Ownership or history conflicts stay
+paused: close the other writer and resume the session.
+
 Journald protocol 5 includes background-task journal records. Older sidecars
 are incompatible even when their package version matches. PostgreSQL journal
 access is direct and does not use a sidecar.

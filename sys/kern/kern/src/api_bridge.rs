@@ -30,6 +30,10 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
         ApiError::Stream(msg) => ChaosErr::Stream(msg, None),
         ApiError::ServerOverloaded => ChaosErr::ServerOverloaded,
         ApiError::ServiceUnavailable => ChaosErr::InternalServerError,
+        ApiError::Api {
+            status: StatusCode::PAYMENT_REQUIRED,
+            ..
+        } => ChaosErr::QuotaExceeded,
         ApiError::Api { status, message } => ChaosErr::UnexpectedStatus(UnexpectedResponseError {
             status,
             body: message,
@@ -47,6 +51,13 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
                 headers,
                 body,
             } => {
+                // Payment/balance exhaustion is not transient. Normalize it across
+                // providers (including Grok Build's string-valued `error`) so the
+                // harness receives a usage-limit error instead of retrying.
+                if status == StatusCode::PAYMENT_REQUIRED {
+                    return ChaosErr::QuotaExceeded;
+                }
+
                 let body_text = body.unwrap_or_default();
 
                 if status == StatusCode::SERVICE_UNAVAILABLE

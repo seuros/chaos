@@ -3,6 +3,60 @@ use base64::Engine;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn payment_required_maps_to_non_retryable_quota_error() {
+    for body in [
+        r#"{"error":"Grok Build usage balance exhausted"}"#,
+        r#"{"error":{"message":"Insufficient credits"}}"#,
+        "Payment required",
+        "",
+    ] {
+        for api_error in [
+            ApiError::Api {
+                status: StatusCode::PAYMENT_REQUIRED,
+                message: body.to_string(),
+            },
+            ApiError::Transport(TransportError::Http {
+                status: StatusCode::PAYMENT_REQUIRED,
+                url: None,
+                headers: None,
+                body: Some(body.to_string()),
+            }),
+            abi_error_to_api_error(AbiError::Transport {
+                status: 402,
+                message: body.to_string(),
+            }),
+        ] {
+            let err = map_api_error(api_error);
+            assert!(matches!(err, ChaosErr::QuotaExceeded), "{err:?}");
+            assert!(!err.is_retryable());
+            assert_eq!(
+                err.to_error_event(None).chaos_error_info,
+                Some(chaos_ipc::protocol::ChaosErrorInfo::UsageLimitExceeded)
+            );
+        }
+    }
+
+    let err = map_api_error(ApiError::Transport(TransportError::Http {
+        status: StatusCode::PAYMENT_REQUIRED,
+        url: None,
+        headers: None,
+        body: None,
+    }));
+    assert!(matches!(err, ChaosErr::QuotaExceeded));
+}
+
+#[test]
+fn other_http_errors_are_not_classified_as_quota_exhaustion() {
+    for status in [401, 403, 429, 500, 503] {
+        let err = map_api_error(abi_error_to_api_error(AbiError::Transport {
+            status,
+            message: r#"{"error":"request rejected"}"#.to_string(),
+        }));
+        assert!(!matches!(err, ChaosErr::QuotaExceeded), "{err:?}");
+    }
+}
+
+#[test]
 fn map_api_error_maps_service_errors() {
     let err = map_api_error(ApiError::ServerOverloaded);
     assert!(matches!(err, ChaosErr::ServerOverloaded));

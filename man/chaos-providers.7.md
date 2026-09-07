@@ -210,6 +210,12 @@ URLs containing `x.ai` automatically expose xAI's native `web_search` and
 bundled config by redeclaring `[model_providers.xai]` in your
 `~/.chaos/config.toml`.
 
+Provider HTTP 402 (Payment Required) responses, including Grok Build balance
+exhaustion, are reported as a non-retryable quota error (`UsageLimitExceeded`
+in protocol events). The harness can handle the limit without repeated
+requests to the exhausted account; replenish the balance or switch providers
+before retrying.
+
 ### Anthropic (Claude)
 
 Already built-in, but you can override its config:

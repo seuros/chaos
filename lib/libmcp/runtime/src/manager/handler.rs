@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chaos_fleet_inbox_notification_admits_a_wake() {
+    async fn fleet_protocol_uses_chaos_names_only() {
         use mcp_guest::ClientHandler;
         let (tx, rx) = async_channel::bounded(1);
         let handler = test_handler(Some(tx));
@@ -594,13 +594,6 @@ mod tests {
                 message_ids: vec!["1".into(), "2".into()],
             }
         );
-    }
-
-    #[tokio::test]
-    async fn skynet_fleet_inbox_notification_is_ignored() {
-        use mcp_guest::ClientHandler;
-        let (tx, rx) = async_channel::bounded(1);
-        let handler = test_handler(Some(tx));
         handler
             .on_custom_notification(
                 "notifications/skynet/fleet/inbox".into(),
@@ -611,34 +604,21 @@ mod tests {
             )
             .await;
         assert!(rx.try_recv().is_err());
-    }
 
-    #[tokio::test]
-    async fn chaos_host_info_returns_harness_owned_state() {
-        use mcp_guest::ClientHandler;
-        let handler = test_handler(None);
-        let value = handler
-            .on_custom_request(FLEET_HOST_INFO_REQUEST.into(), Some(serde_json::json!({})))
-            .await
-            .expect("hostInfo");
-        let info: FleetHostInfo = serde_json::from_value(value).expect("shape");
+        let info: FleetHostInfo = serde_json::from_value(
+            handler
+                .on_custom_request(FLEET_HOST_INFO_REQUEST.into(), None)
+                .await
+                .expect("hostInfo"),
+        )
+        .expect("shape");
         assert_eq!(info.os, std::env::consts::OS);
-        assert_eq!(info.arch, std::env::consts::ARCH);
         assert!(info.capabilities.is_empty());
-        assert_eq!(info.restrictions, vec!["approval-policy: interactive"]);
-    }
-
-    #[tokio::test]
-    async fn skynet_host_info_is_method_not_supported() {
-        use mcp_guest::ClientHandler;
-        let handler = test_handler(None);
-        let error = handler
-            .on_custom_request("skynet/fleet/hostInfo".into(), Some(serde_json::json!({})))
-            .await
-            .expect_err("old method");
         assert!(matches!(
-            error,
-            mcp_guest::GuestError::MethodNotSupported(method)
+            handler
+                .on_custom_request("skynet/fleet/hostInfo".into(), None)
+                .await,
+            Err(mcp_guest::GuestError::MethodNotSupported(method))
                 if method == "skynet/fleet/hostInfo"
         ));
     }

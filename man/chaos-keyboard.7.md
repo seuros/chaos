@@ -44,13 +44,22 @@ line-motion keys. Use `Ctrl+A` and `Ctrl+E` to move within the draft.
 | `!` | Start a shell command. |
 | `@` | Search for a file path to insert. |
 | `Ctrl+V` / `Alt+V` | Attach an image from the clipboard. Use the terminal's normal paste shortcut for text. |
-| `Up` / `Down`, `Ctrl+P` / `Ctrl+N` | Recall input history from an empty composer, or at the start/end of an unchanged recalled entry; otherwise move the cursor vertically. In popups, move the selection. |
+| `Ctrl+P` | Cycle to the next allowed permission preset (`Default` → `Full Access` → `Default`) with the chat pane focused and no popup or modal. Works while idle or running, preserving the draft. |
+| `Up` / `Down`, `Ctrl+N` (down) | Recall input history from an empty composer, or at the start/end of an unchanged recalled entry; otherwise move the cursor vertically. |
+| `Ctrl+P` / `Ctrl+N` in popups | Move the selection up/down instead of cycling permissions. |
 | `Alt+Up` | Restore the latest queued message for editing. Apple Terminal, Warp, and VS Code use `Shift+Left` instead. |
 | `Shift+Tab` | Cycle available collaboration modes while idle, with no popup or modal. |
 | `Esc` | Dismiss/cancel the active view or interrupt a running turn. With an idle, empty composer, prime editing of a previous message. |
 | `Esc`, `Esc` | Preview the previous user message for editing while idle with an empty composer; `Enter` confirms. |
 | `Ctrl+C` | Cancel the active view or clear a draft first; otherwise interrupt active work, or quit when idle. |
 | `Ctrl+D` | Quit with an empty composer and no popup or modal; otherwise delete the character under the cursor. |
+
+Permission cycling skips presets disallowed by approval or sandbox requirements.
+With no other allowed preset it does nothing; from a custom configuration it
+starts at the first allowed preset. Full Access still requires its existing
+warning confirmation unless already acknowledged. Cancelling leaves permissions
+unchanged and returns to the draft. `/permissions` remains available for explicit
+selection. Use `Up`, not `Ctrl+P`, to recall previous input in the composer.
 
 In previous-message preview, `Esc` / `Left` moves to an older message,
 `Right` moves forward, and `Enter` selects the message for editing and requests

@@ -112,6 +112,24 @@ impl ChatWidget {
 
         match key_event {
             KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('\u{0010}'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+                && self.bottom_pane.no_modal_or_popup_active() =>
+            {
+                // Leave Ctrl+P navigation to active popups. In the composer, cycle once
+                // per press rather than repeatedly changing permissions while held.
+                if key_event.kind == KeyEventKind::Press {
+                    self.cycle_permissions();
+                }
+            }
+            KeyEvent {
                 code: KeyCode::BackTab,
                 kind: KeyEventKind::Press,
                 ..

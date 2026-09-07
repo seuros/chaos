@@ -16,7 +16,7 @@ expression: "render_test_backend_debug(width, height, |f|\n{ composer.render(f.a
 "  ctrl + g to edit in external editor        esc again to edit previous message                     "
 "  ctrl + c to exit                                                                                  "
 "  ctrl + t to view transcript                ctrl + o to view logs                                  "
-"  ctrl + l to clear screen (idle)                                                                   "
+"  ctrl + l to clear screen (idle)            ctrl + p to cycle permissions                          "
 "  Agents (empty draft; no popup)                                                                    "
 "  ⌥ + ← previous agent        ⌥ + → next agent                                                      "
 "  Panes (multiple panes open; no popup)                                                             "

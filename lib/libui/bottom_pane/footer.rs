@@ -759,6 +759,7 @@ pub(crate) mod tests {
             for expected in [
                 "ctrl + o to view logs",
                 "ctrl + l to clear screen (idle)",
+                "ctrl + p to cycle permissions",
                 "Agents (empty draft; no popup)",
                 "previous agent",
                 "next agent",

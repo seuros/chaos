@@ -14,80 +14,37 @@ impl ChatWidget {
 
     /// Open a popup to choose the permissions mode (approval policy + sandbox policy).
     pub fn open_permissions_popup(&mut self) {
-        let include_read_only = false;
-        let current_approval = self.config.permissions.approval_policy.value();
-        let current_sandbox = self.config.permissions.sandbox_policy.get();
         let mut items: Vec<SelectionItem> = Vec::new();
-        let presets: Vec<ApprovalPreset> = builtin_approval_presets();
 
-        for preset in presets.into_iter() {
-            if !include_read_only && preset.id == "read-only" {
-                continue;
-            }
-            let base_name = preset.label.to_string();
-            let base_description =
-                Some(preset.description.replace(" (Identical to Agent mode)", ""));
-            let approval_disabled_reason = match self
+        for preset in Self::permission_presets() {
+            let disabled_reason = self
                 .config
                 .permissions
                 .approval_policy
                 .can_set(&preset.approval)
-            {
-                Ok(()) => None,
-                Err(err) => Some(err.to_string()),
-            };
-            let default_disabled_reason = approval_disabled_reason.clone();
-            let requires_confirmation = preset.id == "full-access"
-                && !self
-                    .config
-                    .notices
-                    .hide_full_access_warning
-                    .unwrap_or(false);
-            let default_actions: Vec<SelectionAction> = if requires_confirmation {
-                let preset_clone = preset.clone();
-                vec![Box::new(move |tx| {
-                    tx.send(AppEvent::OpenFullAccessConfirmation {
-                        preset: preset_clone.clone(),
-                        return_to_permissions: !include_read_only,
-                    });
-                })]
-            } else {
-                Self::approval_preset_actions(
-                    preset.approval,
-                    preset.sandbox.clone(),
-                    base_name.clone(),
-                    ApprovalsReviewer::User,
-                )
-            };
-            if preset.id == "auto" {
-                items.push(SelectionItem {
-                    name: base_name.clone(),
-                    description: base_description.clone(),
-                    is_current: Self::preset_matches_current(
-                        current_approval,
-                        current_sandbox,
-                        &preset,
-                    ),
-                    actions: default_actions,
-                    dismiss_on_select: true,
-                    disabled_reason: default_disabled_reason,
-                    ..Default::default()
-                });
-            } else {
-                items.push(SelectionItem {
-                    name: base_name,
-                    description: base_description,
-                    is_current: Self::preset_matches_current(
-                        current_approval,
-                        current_sandbox,
-                        &preset,
-                    ),
-                    actions: default_actions,
-                    dismiss_on_select: true,
-                    disabled_reason: default_disabled_reason,
-                    ..Default::default()
-                });
-            }
+                .err()
+                .map(|err| err.to_string());
+            let actions: Vec<SelectionAction> =
+                if self.permission_preset_requires_confirmation(&preset) {
+                    let preset_clone = preset.clone();
+                    vec![Box::new(move |tx| {
+                        tx.send(AppEvent::OpenFullAccessConfirmation {
+                            preset: preset_clone.clone(),
+                            return_to_permissions: true,
+                        });
+                    })]
+                } else {
+                    Self::permission_preset_actions(&preset)
+                };
+            items.push(SelectionItem {
+                name: preset.label.to_string(),
+                description: Some(preset.description.replace(" (Identical to Agent mode)", "")),
+                is_current: self.permission_preset_is_current(&preset),
+                actions,
+                dismiss_on_select: true,
+                disabled_reason,
+                ..Default::default()
+            });
         }
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
@@ -98,6 +55,96 @@ impl ChatWidget {
             header: Box::new(()),
             ..Default::default()
         });
+    }
+
+    /// Cycle through the same visible presets as /permissions, skipping disallowed choices.
+    pub(crate) fn cycle_permissions(&mut self) {
+        let presets = Self::permission_presets();
+        let next_index = presets
+            .iter()
+            .position(|preset| self.permission_preset_is_current(preset))
+            .map_or(0, |index| index + 1);
+        let next = presets
+            .iter()
+            .cycle()
+            .skip(next_index)
+            .take(presets.len())
+            .find(|preset| {
+                !self.permission_preset_is_current(preset)
+                    && self
+                        .config
+                        .permissions
+                        .approval_policy
+                        .can_set(&preset.approval)
+                        .is_ok()
+                    && self
+                        .config
+                        .permissions
+                        .sandbox_policy
+                        .can_set(&preset.sandbox)
+                        .is_ok()
+            })
+            .cloned();
+        let Some(preset) = next else {
+            return;
+        };
+
+        if self.permission_preset_requires_confirmation(&preset) {
+            // Cancelling a keyboard cycle returns to the draft, not a permissions picker.
+            self.show_full_access_confirmation(preset, None);
+        } else {
+            for action in Self::permission_preset_actions(&preset) {
+                action(&self.app_event_tx);
+            }
+        }
+    }
+
+    /// Keep the picker and keyboard cycle in the same order, excluding hidden presets.
+    fn permission_presets() -> Vec<ApprovalPreset> {
+        builtin_approval_presets()
+            .into_iter()
+            .filter(|preset| preset.id != "read-only")
+            .collect()
+    }
+
+    fn permission_preset_is_current(&self, preset: &ApprovalPreset) -> bool {
+        Self::preset_matches_current(
+            self.config.permissions.approval_policy.value(),
+            self.config.permissions.sandbox_policy.get(),
+            preset,
+        )
+    }
+
+    fn permission_preset_actions(preset: &ApprovalPreset) -> Vec<SelectionAction> {
+        Self::approval_preset_actions(
+            preset.approval,
+            preset.sandbox.clone(),
+            preset.label.to_string(),
+            ApprovalsReviewer::User,
+        )
+    }
+
+    fn full_access_approval_actions(
+        preset: &ApprovalPreset,
+        remember: bool,
+    ) -> Vec<SelectionAction> {
+        let mut actions = Self::permission_preset_actions(preset);
+        actions.push(Box::new(move |tx| {
+            tx.send(AppEvent::UpdateFullAccessWarningAcknowledged(true));
+            if remember {
+                tx.send(AppEvent::PersistFullAccessWarningAcknowledged);
+            }
+        }));
+        actions
+    }
+
+    fn permission_preset_requires_confirmation(&self, preset: &ApprovalPreset) -> bool {
+        preset.id == "full-access"
+            && !self
+                .config
+                .notices
+                .hide_full_access_warning
+                .unwrap_or(false)
     }
 
     pub(crate) fn approval_preset_actions(
@@ -150,8 +197,8 @@ impl ChatWidget {
                     network_access: preset_network_access,
                     ..
                 },
-            ) => current_network_access == preset_network_access,
-            (
+            )
+            | (
                 SandboxPolicy::WorkspaceWrite {
                     network_access: current_network_access,
                     ..
@@ -170,9 +217,14 @@ impl ChatWidget {
         preset: ApprovalPreset,
         return_to_permissions: bool,
     ) {
-        let selected_name = preset.label.to_string();
-        let approval = preset.approval;
-        let sandbox = preset.sandbox;
+        self.show_full_access_confirmation(preset, Some(return_to_permissions));
+    }
+
+    fn show_full_access_confirmation(
+        &mut self,
+        preset: ApprovalPreset,
+        return_to_permissions: Option<bool>,
+    ) {
         let mut header_children: Vec<Box<dyn Renderable>> = Vec::new();
         let title_line = Line::from("Enable full access?").bold();
         let info_line = Line::from(vec![
@@ -187,47 +239,25 @@ impl ChatWidget {
         ));
         let header = ColumnRenderable::with(header_children);
 
-        let mut accept_actions = Self::approval_preset_actions(
-            approval,
-            sandbox.clone(),
-            selected_name.clone(),
-            ApprovalsReviewer::User,
-        );
-        accept_actions.push(Box::new(|tx| {
-            tx.send(AppEvent::UpdateFullAccessWarningAcknowledged(true));
-        }));
-
-        let mut accept_and_remember_actions = Self::approval_preset_actions(
-            approval,
-            sandbox,
-            selected_name,
-            ApprovalsReviewer::User,
-        );
-        accept_and_remember_actions.push(Box::new(|tx| {
-            tx.send(AppEvent::UpdateFullAccessWarningAcknowledged(true));
-            tx.send(AppEvent::PersistFullAccessWarningAcknowledged);
-        }));
-
-        let deny_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-            if return_to_permissions {
-                tx.send(AppEvent::OpenPermissionsPopup);
-            } else {
-                tx.send(AppEvent::OpenApprovalsPopup);
-            }
-        })];
+        let deny_actions: Vec<SelectionAction> =
+            vec![Box::new(move |tx| match return_to_permissions {
+                Some(true) => tx.send(AppEvent::OpenPermissionsPopup),
+                Some(false) => tx.send(AppEvent::OpenApprovalsPopup),
+                None => {}
+            })];
 
         let items = vec![
             SelectionItem {
                 name: "Yes, continue anyway".to_string(),
                 description: Some("Apply full access for this session".to_string()),
-                actions: accept_actions,
+                actions: Self::full_access_approval_actions(&preset, false),
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "Yes, and don't ask again".to_string(),
                 description: Some("Enable full access and remember this choice".to_string()),
-                actions: accept_and_remember_actions,
+                actions: Self::full_access_approval_actions(&preset, true),
                 dismiss_on_select: true,
                 ..Default::default()
             },

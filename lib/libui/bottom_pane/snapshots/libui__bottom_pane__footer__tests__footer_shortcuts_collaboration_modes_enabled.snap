@@ -8,7 +8,7 @@ expression: "render_test_backend_debug(width, height, |f|\n{\n    draw_footer(Re
 "  ctrl + g to edit in external editor        esc esc to edit previous message   "
 "  ctrl + c to exit                           shift + tab to change mode         "
 "  ctrl + t to view transcript                ctrl + o to view logs              "
-"  ctrl + l to clear screen (idle)                                               "
+"  ctrl + l to clear screen (idle)            ctrl + p to cycle permissions      "
 "  Agents (empty draft; no popup)                                                "
 "  ⌥ + ← previous agent        ⌥ + → next agent                                  "
 "  Panes (multiple panes open; no popup)                                         "

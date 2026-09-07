@@ -23,6 +23,7 @@ pub(super) enum ShortcutId {
     ShowTranscript,
     ShowLogs,
     ClearScreen,
+    CyclePermissions,
     ChangeMode,
 }
 
@@ -90,6 +91,7 @@ impl ShortcutDescriptor {
     }
 }
 
+// Display order: conditional entries keep their column even when hidden.
 pub(super) const SHORTCUTS: &[ShortcutDescriptor] = &[
     ShortcutDescriptor {
         id: ShortcutId::Commands,
@@ -179,15 +181,6 @@ pub(super) const SHORTCUTS: &[ShortcutDescriptor] = &[
         label: " to exit",
     },
     ShortcutDescriptor {
-        id: ShortcutId::ShowTranscript,
-        bindings: &[ShortcutBinding {
-            key: key_hint::ctrl(KeyCode::Char('t')),
-            condition: DisplayCondition::Always,
-        }],
-        prefix: "",
-        label: " to view transcript",
-    },
-    ShortcutDescriptor {
         id: ShortcutId::ChangeMode,
         bindings: &[ShortcutBinding {
             key: key_hint::shift(KeyCode::Tab),
@@ -195,6 +188,15 @@ pub(super) const SHORTCUTS: &[ShortcutDescriptor] = &[
         }],
         prefix: "",
         label: " to change mode",
+    },
+    ShortcutDescriptor {
+        id: ShortcutId::ShowTranscript,
+        bindings: &[ShortcutBinding {
+            key: key_hint::ctrl(KeyCode::Char('t')),
+            condition: DisplayCondition::Always,
+        }],
+        prefix: "",
+        label: " to view transcript",
     },
     ShortcutDescriptor {
         id: ShortcutId::ShowLogs,
@@ -214,65 +216,22 @@ pub(super) const SHORTCUTS: &[ShortcutDescriptor] = &[
         prefix: "",
         label: " to clear screen (idle)",
     },
+    ShortcutDescriptor {
+        id: ShortcutId::CyclePermissions,
+        bindings: &[ShortcutBinding {
+            key: key_hint::ctrl(KeyCode::Char('p')),
+            condition: DisplayCondition::Always,
+        }],
+        prefix: "",
+        label: " to cycle permissions",
+    },
 ];
 
 pub(super) fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
-    let mut commands = Line::from("");
-    let mut shell_commands = Line::from("");
-    let mut newline = Line::from("");
-    let mut queue_message_tab = Line::from("");
-    let mut file_paths = Line::from("");
-    let mut paste_image = Line::from("");
-    let mut external_editor = Line::from("");
-    let mut edit_previous = Line::from("");
-    let mut quit = Line::from("");
-    let mut show_transcript = Line::from("");
-    let mut change_mode = Line::from("");
-    let mut show_logs = Line::from("");
-    let mut clear_screen = Line::from("");
-
-    for descriptor in SHORTCUTS {
-        if let Some(text) = descriptor.overlay_entry(state) {
-            match descriptor.id {
-                ShortcutId::Commands => commands = text,
-                ShortcutId::ShellCommands => shell_commands = text,
-                ShortcutId::InsertNewline => newline = text,
-                ShortcutId::QueueMessageTab => queue_message_tab = text,
-                ShortcutId::FilePaths => file_paths = text,
-                ShortcutId::PasteImage => paste_image = text,
-                ShortcutId::ExternalEditor => external_editor = text,
-                ShortcutId::EditPrevious => edit_previous = text,
-                ShortcutId::Quit => quit = text,
-                ShortcutId::ShowTranscript => show_transcript = text,
-                ShortcutId::ChangeMode => change_mode = text,
-                ShortcutId::ShowLogs => show_logs = text,
-                ShortcutId::ClearScreen => clear_screen = text,
-            }
-        }
-    }
-
-    let mut ordered = vec![
-        commands,
-        shell_commands,
-        newline,
-        queue_message_tab,
-        file_paths,
-        paste_image,
-        external_editor,
-        edit_previous,
-        quit,
-    ];
-    if change_mode.width() > 0 {
-        ordered.push(change_mode);
-    }
-    // Keep navigation on its own row whether the mode-cycle hint is present or not.
-    if !ordered.len().is_multiple_of(2) {
-        ordered.push(Line::from(""));
-    }
-    ordered.push(show_transcript);
-    ordered.push(show_logs);
-    ordered.push(clear_screen);
-
+    let ordered = SHORTCUTS
+        .iter()
+        .map(|descriptor| descriptor.overlay_entry(state).unwrap_or_default())
+        .collect();
     let mut lines = build_columns(ordered);
     lines.push(Line::from("Agents (empty draft; no popup)").dim());
     lines.extend(build_columns(vec![

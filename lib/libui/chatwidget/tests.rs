@@ -144,6 +144,9 @@ use std::sync::OnceLock;
 use tempfile::tempdir;
 use tokio::sync::mpsc::error::TryRecvError;
 
+#[cfg(test)]
+mod permission_shortcuts;
+
 async fn test_config() -> Config {
     // Reuse one home for the whole mega-suite. Runtime VFS mounts are
     // process-global and intentionally retained, so using a fresh directory for

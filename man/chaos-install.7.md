@@ -158,7 +158,9 @@ The TUI defaults to `RUST_LOG=chaos_kern=info,chaos_console=info,mcp_guest=info`
 tail -F ~/.chaos/log/chaos-console.log
 ```
 
-Press `ctrl+o` inside the TUI to open the log viewer as a full-screen overlay. Navigate with arrow keys / PageUp / PageDown, dismiss with `q` or `Esc`.
+Press `ctrl+o` inside the TUI to open the log viewer as a full-screen overlay. Navigate with arrow keys / PageUp / PageDown, dismiss with `q` or `Ctrl+C`.
+See [chaos-keyboard.7](./chaos-keyboard.7.md) for the full shortcut reference, or
+press `?` with an empty input for in-app help.
 
 The non-interactive mode (`chaos exec`) defaults to `RUST_LOG=error`, printed inline.
 
@@ -175,6 +177,7 @@ See the Rust docs on [`RUST_LOG`](https://docs.rs/env_logger/latest/env_logger/#
 
 ## SEE ALSO
 
+- [chaos-keyboard.7](./chaos-keyboard.7.md)
 - [chaos-providers.7](./chaos-providers.7.md)
 - [chaos-mcp.7](./chaos-mcp.7.md)
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md)

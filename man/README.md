@@ -14,6 +14,7 @@ installed manpage paths such as:
 ## Main pages
 
 - [chaos-install.7](./chaos-install.7.md) — build, install, and logging
+- [chaos-keyboard.7](./chaos-keyboard.7.md) — terminal UI keyboard shortcuts
 - [chaos-providers.7](./chaos-providers.7.md) — provider configuration
 - [chaos-support.7](./chaos-support.7.md) — support matrix (providers, OS, CI)
 - [chaos-mcp.7](./chaos-mcp.7.md) — MCP client and server usage

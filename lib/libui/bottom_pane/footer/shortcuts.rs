@@ -1,4 +1,5 @@
 use crossterm::event::KeyCode;
+use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -20,6 +21,8 @@ pub(super) enum ShortcutId {
     EditPrevious,
     Quit,
     ShowTranscript,
+    ShowLogs,
+    ClearScreen,
     ChangeMode,
 }
 
@@ -193,6 +196,24 @@ pub(super) const SHORTCUTS: &[ShortcutDescriptor] = &[
         prefix: "",
         label: " to change mode",
     },
+    ShortcutDescriptor {
+        id: ShortcutId::ShowLogs,
+        bindings: &[ShortcutBinding {
+            key: key_hint::ctrl(KeyCode::Char('o')),
+            condition: DisplayCondition::Always,
+        }],
+        prefix: "",
+        label: " to view logs",
+    },
+    ShortcutDescriptor {
+        id: ShortcutId::ClearScreen,
+        bindings: &[ShortcutBinding {
+            key: key_hint::ctrl(KeyCode::Char('l')),
+            condition: DisplayCondition::Always,
+        }],
+        prefix: "",
+        label: " to clear screen (idle)",
+    },
 ];
 
 pub(super) fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
@@ -207,6 +228,8 @@ pub(super) fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>
     let mut quit = Line::from("");
     let mut show_transcript = Line::from("");
     let mut change_mode = Line::from("");
+    let mut show_logs = Line::from("");
+    let mut clear_screen = Line::from("");
 
     for descriptor in SHORTCUTS {
         if let Some(text) = descriptor.overlay_entry(state) {
@@ -222,6 +245,8 @@ pub(super) fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>
                 ShortcutId::Quit => quit = text,
                 ShortcutId::ShowTranscript => show_transcript = text,
                 ShortcutId::ChangeMode => change_mode = text,
+                ShortcutId::ShowLogs => show_logs = text,
+                ShortcutId::ClearScreen => clear_screen = text,
             }
         }
     }
@@ -240,10 +265,53 @@ pub(super) fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>
     if change_mode.width() > 0 {
         ordered.push(change_mode);
     }
-    ordered.push(Line::from(""));
+    // Keep navigation on its own row whether the mode-cycle hint is present or not.
+    if !ordered.len().is_multiple_of(2) {
+        ordered.push(Line::from(""));
+    }
     ordered.push(show_transcript);
+    ordered.push(show_logs);
+    ordered.push(clear_screen);
 
-    build_columns(ordered)
+    let mut lines = build_columns(ordered);
+    lines.push(Line::from("Agents (empty draft; no popup)").dim());
+    lines.extend(build_columns(vec![
+        Line::from(vec![
+            crate::multi_agents::previous_agent_shortcut().into(),
+            " previous agent".into(),
+        ]),
+        Line::from(vec![
+            crate::multi_agents::next_agent_shortcut().into(),
+            " next agent".into(),
+        ]),
+    ]));
+    lines.push(Line::from("Panes (multiple panes open; no popup)").dim());
+    lines.extend(build_columns(vec![
+        Line::from(vec![
+            key_hint::alt(KeyCode::Char('h')).into(),
+            "/j/k/l".into(),
+            " focus \u{2190}/\u{2193}/\u{2191}/\u{2192}".into(),
+        ]),
+        Line::from(vec![
+            KeyBinding::new(KeyCode::Char('H'), KeyModifiers::ALT | KeyModifiers::SHIFT).into(),
+            "/j/k/l".into(),
+            " resize panes".into(),
+        ]),
+        Line::from(vec![
+            key_hint::alt(KeyCode::Enter).into(),
+            " cycle focus".into(),
+        ]),
+        Line::from(vec![
+            key_hint::alt(KeyCode::Char('q')).into(),
+            " close one pane".into(),
+        ]),
+        Line::from(vec![
+            key_hint::alt(KeyCode::Char('w')).into(),
+            " close all panes".into(),
+        ]),
+    ]));
+    lines.push(Line::from("Full reference: man/chaos-keyboard.7.md").dim());
+    lines
 }
 
 fn build_columns(entries: Vec<Line<'static>>) -> Vec<Line<'static>> {

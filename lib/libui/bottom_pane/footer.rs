@@ -296,6 +296,7 @@ pub(crate) mod tests {
         #[cfg(feature = "vt100-tests")]
         footer_status_line_truncates_to_keep_mode_indicator();
         paste_image_shortcut_is_ctrl_v();
+        shortcut_help_includes_navigation_and_panes();
     }
 
     fn footer_snapshots() {
@@ -741,5 +742,46 @@ pub(crate) mod tests {
             .key;
 
         assert_eq!(actual_key, key_hint::ctrl(KeyCode::Char('v')));
+    }
+
+    fn shortcut_help_includes_navigation_and_panes() {
+        for collaboration_modes_enabled in [false, true] {
+            let lines = shortcuts::shortcut_overlay_lines(ShortcutsState {
+                use_shift_enter_hint: false,
+                esc_backtrack_hint: false,
+                collaboration_modes_enabled,
+            });
+            let text = lines
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            for expected in [
+                "ctrl + o to view logs",
+                "ctrl + l to clear screen (idle)",
+                "Agents (empty draft; no popup)",
+                "previous agent",
+                "next agent",
+                "Panes (multiple panes open; no popup)",
+                "/j/k/l focus",
+                "/j/k/l resize panes",
+                "cycle focus",
+                "close one pane",
+                "close all panes",
+                "man/chaos-keyboard.7.md",
+            ] {
+                assert!(text.contains(expected), "missing shortcut help: {expected}");
+            }
+            assert_eq!(
+                text.contains("shift + tab to change mode"),
+                collaboration_modes_enabled
+            );
+            // The normal 80-column footer reserves two cells on each side.
+            assert!(lines.iter().all(|line| line.width() <= 76));
+            // KeyBinding uses the macOS glyph in tests; also check the wider Unix label.
+            assert!(lines.iter().all(|line| {
+                ratatui::text::Line::from(line.to_string().replace('⌥', "alt")).width() <= 76
+            }));
+        }
     }
 }

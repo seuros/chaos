@@ -238,6 +238,7 @@ current setting.
 ## Docs
 
 - [Installing & building from source](./man/chaos-install.7.md)
+- [Keyboard shortcuts](./man/chaos-keyboard.7.md) — press `?` with an empty input for in-app help
 - [Adding LLM providers](./man/chaos-providers.7.md)
 - [Support matrix](./man/chaos-support.7.md)
 - [MCP — connecting tools and services](./man/chaos-mcp.7.md)

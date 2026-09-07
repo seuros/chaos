@@ -1,10 +1,18 @@
 ---
 source: lib/libui/bottom_pane/footer.rs
-expression: terminal.backend()
+expression: "render_test_backend_debug(width, height, |f|\n{\n    draw_footer(Rect::new(0, 0, f.area().width, height), f.buffer_mut(),\n    props, collaboration_mode_indicator,);\n})"
 ---
 "  / for commands                             ! for shell commands               "
 "  shift + enter for newline                  tab to queue message               "
 "  @ for file paths                           ctrl + v to paste images           "
 "  ctrl + g to edit in external editor        esc again to edit previous message "
 "  ctrl + c to exit                                                              "
-"  ctrl + t to view transcript                                                   "
+"  ctrl + t to view transcript                ctrl + o to view logs              "
+"  ctrl + l to clear screen (idle)                                               "
+"  Agents (empty draft; no popup)                                                "
+"  ⌥ + ← previous agent        ⌥ + → next agent                                  "
+"  Panes (multiple panes open; no popup)                                         "
+"  ⌥ + h/j/k/l focus ←/↓/↑/→        shift + ⌥ + h/j/k/l resize panes             "
+"  ⌥ + enter cycle focus            ⌥ + q close one pane                         "
+"  ⌥ + w close all panes                                                         "
+"  Full reference: man/chaos-keyboard.7.md                                       "

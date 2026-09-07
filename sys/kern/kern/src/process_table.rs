@@ -496,6 +496,35 @@ impl ProcessTable {
         AgentControl::new(Arc::downgrade(&self.state), self.router.adapter())
     }
 
+    /// Register a status-only fixture without spawning an agent submission loop.
+    /// Tests drive the watch channel directly; submissions fail because no receiver is kept.
+    #[cfg(test)]
+    pub(crate) async fn insert_status_only_process_for_tests(
+        &self,
+        status: crate::minions::AgentStatus,
+    ) -> (
+        ProcessId,
+        tokio::sync::watch::Sender<crate::minions::AgentStatus>,
+    ) {
+        let (session, turn) = crate::chaos::make_session_and_context().await;
+        let process_id = session.conversation_id;
+        let (status_tx, agent_status) = tokio::sync::watch::channel(status);
+        let chaos = Chaos {
+            tx_sub: async_channel::bounded(1).0,
+            rx_event: async_channel::bounded(1).1,
+            agent_status,
+            session: Arc::new(session),
+            session_loop_termination: crate::chaos::completed_session_loop_termination(),
+        };
+        let process = Process::new(chaos, self.state.file_watcher.register_config(&turn.config));
+        self.state
+            .processes
+            .write()
+            .await
+            .insert(process_id, Arc::new(process));
+        (process_id, status_tx)
+    }
+
     #[cfg(test)]
     pub(crate) fn captured_ops(&self) -> Vec<(ProcessId, Op)> {
         self.state

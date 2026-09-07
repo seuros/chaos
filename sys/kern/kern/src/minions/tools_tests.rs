@@ -37,7 +37,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time::timeout;
+use tokio::time::Instant;
 
 const EMPTY_MESSAGE_ERROR: &str = "Empty message can't be sent to an agent";
 const MESSAGE_AND_ITEMS_CONFLICT_ERROR: &str = "Provide either message or items, but not both";
@@ -1018,9 +1018,9 @@ async fn wait_agent_times_out_when_status_is_not_final() {
     let (mut session, turn) = make_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
-    let config = turn.config.as_ref().clone();
-    let thread = manager.start_process(config).await.expect("start thread");
-    let agent_id = thread.process_id;
+    let (agent_id, _status_tx) = manager
+        .insert_status_only_process_for_tests(AgentStatus::Running)
+        .await;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -1031,14 +1031,13 @@ async fn wait_agent_times_out_when_status_is_not_final() {
         })),
     );
     tokio::time::pause();
-    let wait_task = tokio::spawn(WaitAgentHandler.handle(invocation));
-    tokio::task::yield_now().await;
+    let wait = WaitAgentHandler.handle(invocation);
+    tokio::pin!(wait);
+    // Poll the handler into its status wait before advancing the clock.
+    assert!(futures::poll!(&mut wait).is_pending());
     tokio::time::advance(Duration::from_millis(MIN_WAIT_TIMEOUT_MS as u64)).await;
 
-    let output = wait_task
-        .await
-        .expect("wait task should not panic")
-        .expect("wait_agent should succeed");
+    let output = wait.await.expect("wait_agent should succeed");
     let (content, success) = expect_text_output(output);
     let result: wait::WaitAgentResult =
         serde_json::from_str(&content).expect("wait_agent result should be json");
@@ -1050,12 +1049,6 @@ async fn wait_agent_times_out_when_status_is_not_final() {
         }
     );
     assert_eq!(success, None);
-
-    let _ = thread
-        .process
-        .submit(Op::Shutdown {})
-        .await
-        .expect("shutdown should submit");
 }
 
 #[tokio::test]
@@ -1063,9 +1056,9 @@ async fn wait_agent_clamps_short_timeouts_to_minimum() {
     let (mut session, turn) = make_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
-    let config = turn.config.as_ref().clone();
-    let thread = manager.start_process(config).await.expect("start thread");
-    let agent_id = thread.process_id;
+    let (agent_id, _status_tx) = manager
+        .insert_status_only_process_for_tests(AgentStatus::Running)
+        .await;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -1077,21 +1070,30 @@ async fn wait_agent_clamps_short_timeouts_to_minimum() {
     );
 
     tokio::time::pause();
-    let wait_task = tokio::spawn(WaitAgentHandler.handle(invocation));
-    tokio::task::yield_now().await;
-    tokio::time::advance(Duration::from_millis(50)).await;
+    let started = Instant::now();
+    let wait = WaitAgentHandler.handle(invocation);
+    tokio::pin!(wait);
+    assert!(futures::poll!(&mut wait).is_pending());
+    tokio::time::advance(Duration::from_millis(MIN_WAIT_TIMEOUT_MS as u64 - 1)).await;
     assert!(
-        !wait_task.is_finished(),
+        futures::poll!(&mut wait).is_pending(),
         "wait_agent should not return before the minimum timeout clamp"
     );
-    wait_task.abort();
-    let _ = wait_task.await;
+    tokio::time::advance(Duration::from_millis(1)).await;
 
-    let _ = thread
-        .process
-        .submit(Op::Shutdown {})
-        .await
-        .expect("shutdown should submit");
+    let output = wait.await.expect("wait_agent should succeed");
+    // Tokio rounds timer deadlines up to millisecond boundaries.
+    assert!(
+        started.elapsed() <= Duration::from_millis(MIN_WAIT_TIMEOUT_MS as u64 + 1),
+        "wait_agent should time out at the minimum timeout clamp"
+    );
+    assert_eq!(
+        output,
+        wait::WaitAgentResult {
+            status: HashMap::new(),
+            timed_out: true,
+        }
+    );
 }
 
 #[tokio::test]
@@ -1099,23 +1101,9 @@ async fn wait_agent_returns_final_status_without_timeout() {
     let (mut session, turn) = make_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
-    let config = turn.config.as_ref().clone();
-    let thread = manager.start_process(config).await.expect("start thread");
-    let agent_id = thread.process_id;
-    let mut status_rx = manager
-        .agent_control()
-        .subscribe_status(agent_id)
-        .await
-        .expect("subscribe should succeed");
-
-    let _ = thread
-        .process
-        .submit(Op::Shutdown {})
-        .await
-        .expect("shutdown should submit");
-    let _ = timeout(Duration::from_secs(1), status_rx.changed())
-        .await
-        .expect("shutdown status should arrive");
+    let (agent_id, _status_tx) = manager
+        .insert_status_only_process_for_tests(AgentStatus::Shutdown)
+        .await;
 
     let invocation = invocation(
         Arc::new(session),
@@ -1126,10 +1114,13 @@ async fn wait_agent_returns_final_status_without_timeout() {
             "timeout_ms": 1000
         })),
     );
+    tokio::time::pause();
+    let started = Instant::now();
     let output = WaitAgentHandler
         .handle(invocation)
         .await
         .expect("wait_agent should succeed");
+    assert_eq!(started.elapsed(), Duration::ZERO);
     let (content, success) = expect_text_output(output);
     let result: wait::WaitAgentResult =
         serde_json::from_str(&content).expect("wait_agent result should be json");
@@ -1141,6 +1132,46 @@ async fn wait_agent_returns_final_status_without_timeout() {
         }
     );
     assert_eq!(success, None);
+}
+
+#[tokio::test]
+async fn wait_agent_returns_when_status_becomes_final() {
+    let (mut session, turn) = make_session_and_context().await;
+    let manager = process_table();
+    session.services.agent_control = manager.agent_control();
+    let (agent_id, status_tx) = manager
+        .insert_status_only_process_for_tests(AgentStatus::PendingInit)
+        .await;
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "wait_agent",
+        function_payload(json!({
+            "ids": [agent_id.to_string()],
+            "timeout_ms": MIN_WAIT_TIMEOUT_MS
+        })),
+    );
+
+    tokio::time::pause();
+    let started = Instant::now();
+    let wait = WaitAgentHandler.handle(invocation);
+    tokio::pin!(wait);
+    assert!(futures::poll!(&mut wait).is_pending());
+
+    status_tx.send_replace(AgentStatus::Running);
+    assert!(futures::poll!(&mut wait).is_pending());
+
+    let final_status = AgentStatus::Completed(Some("done".to_string()));
+    status_tx.send_replace(final_status.clone());
+    let output = wait.await.expect("wait_agent should succeed");
+    assert_eq!(
+        output,
+        wait::WaitAgentResult {
+            status: HashMap::from([(agent_id, final_status)]),
+            timed_out: false,
+        }
+    );
+    assert_eq!(started.elapsed(), Duration::ZERO);
 }
 
 #[tokio::test]

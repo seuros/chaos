@@ -21,6 +21,7 @@ async-channel = { workspace = true }
 base64 = { workspace = true }
 chaos-minions = { workspace = true }
 chaos-synopsis = { workspace = true }
+chaos-sysinfo = { workspace = true }
 chardetng = { workspace = true }
 jiff = { workspace = true }
 chaos-parrot = { workspace = true }

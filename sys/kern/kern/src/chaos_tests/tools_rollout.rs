@@ -213,6 +213,7 @@ async fn build_settings_update_items_emits_environment_item_for_time_changes() {
         .expect("environment update item should be emitted");
     assert!(environment_update.contains("<current_date>2026-02-27</current_date>"));
     assert!(environment_update.contains("<timezone>Europe/Berlin</timezone>"));
+    assert!(!environment_update.contains("<platform>"));
 }
 
 #[tokio::test]

@@ -48,8 +48,12 @@ fn assert_default_env_context(text: &str, cwd: &str, shell: &Shell) {
         "expected cwd in environment context: {text}"
     );
     assert!(
-        text.contains(&format!("<shell>{shell_name}</shell>")),
+        text.contains(&format!("<shell name=\"{shell_name}\" path=\"")),
         "expected shell in environment context: {text}"
+    );
+    assert!(
+        text.contains("<platform>") && text.contains("<arch>"),
+        "expected platform in environment context: {text}"
     );
     assert!(
         text.contains("<current_date>") && text.contains("</current_date>"),

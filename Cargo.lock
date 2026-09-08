@@ -1502,6 +1502,7 @@ dependencies = [
  "chaos-snitch",
  "chaos-synopsis",
  "chaos-sysctl",
+ "chaos-sysinfo",
  "chaos-tmpfs",
  "chaos-traits",
  "chaos-vault",

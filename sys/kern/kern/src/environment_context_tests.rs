@@ -26,8 +26,8 @@ fn serialize_workspace_write_environment_context() {
 
     let expected = format!(
         r#"<environment_context>
+  <shell name="bash" path="/bin/bash"/>
   <cwd>{cwd}</cwd>
-  <shell>bash</shell>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#,
@@ -54,8 +54,8 @@ fn serialize_environment_context_with_network() {
 
     let expected = format!(
         r#"<environment_context>
+  <shell name="bash" path="/bin/bash"/>
   <cwd>{}</cwd>
-  <shell>bash</shell>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
   <network enabled="true">
@@ -82,7 +82,7 @@ fn serialize_read_only_environment_context() {
     );
 
     let expected = r#"<environment_context>
-  <shell>bash</shell>
+  <shell name="bash" path="/bin/bash"/>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -102,7 +102,7 @@ fn serialize_external_sandbox_environment_context() {
     );
 
     let expected = r#"<environment_context>
-  <shell>bash</shell>
+  <shell name="bash" path="/bin/bash"/>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -122,7 +122,7 @@ fn serialize_external_sandbox_with_restricted_network_environment_context() {
     );
 
     let expected = r#"<environment_context>
-  <shell>bash</shell>
+  <shell name="bash" path="/bin/bash"/>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -142,7 +142,7 @@ fn serialize_full_access_environment_context() {
     );
 
     let expected = r#"<environment_context>
-  <shell>bash</shell>
+  <shell name="bash" path="/bin/bash"/>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -236,17 +236,66 @@ fn serialize_environment_context_with_subagents() {
 
     let expected = format!(
         r#"<environment_context>
+  <shell name="bash" path="/bin/bash"/>
   <cwd>{}</cwd>
-  <shell>bash</shell>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
-  <subagents>
-    - agent-1: atlas
-    - agent-2
-  </subagents>
+  <subagents><![CDATA[- agent-1: atlas
+- agent-2]]></subagents>
 </environment_context>"#,
         test_path_buf("/repo").display()
     );
 
     assert_eq!(context.serialize_to_xml(), expected);
+}
+
+#[test]
+fn serialize_freebsd_current_platform_and_escape_environment_values() {
+    let mut context = EnvironmentContext::new(
+        Some(PathBuf::from("/repo & <work>")),
+        fake_shell(),
+        None,
+        None,
+        None,
+        None,
+    );
+    context.platform = Some(PlatformContext {
+        os: "freebsd".to_string(),
+        os_version: Some("16-CURRENT".to_string()),
+        kernel: "freebsd".to_string(),
+        kernel_release: Some("16-CURRENT".to_string()),
+        arch: "aarch64".to_string(),
+        distribution: None,
+    });
+    context.shell.shell_path = PathBuf::from("/shells/bash & \"custom\"");
+    assert_eq!(
+        context.serialize_to_xml(),
+        r#"<environment_context>
+  <platform>
+    <os>freebsd</os>
+    <os_version>16-CURRENT</os_version>
+    <kernel>freebsd</kernel>
+    <kernel_release>16-CURRENT</kernel_release>
+    <arch>aarch64</arch>
+  </platform>
+  <shell name="bash" path="/shells/bash &amp; &quot;custom&quot;"/>
+  <cwd>/repo &amp; &lt;work&gt;</cwd>
+</environment_context>"#
+    );
+
+    context.platform = Some(PlatformContext {
+        os: "linux".to_string(),
+        os_version: None,
+        kernel: "linux".to_string(),
+        kernel_release: None,
+        arch: "x86_64".to_string(),
+        distribution: Some(platform::DistributionContext {
+            name: "ubuntu".to_string(),
+            version: Some("24.04".to_string()),
+        }),
+    });
+    let xml = context.serialize_to_xml();
+    assert!(xml.contains(r#"<distribution name="ubuntu" version="24.04"/>"#));
+    assert!(!xml.contains("<os_version>"));
+    assert!(!xml.contains("<kernel_release>"));
 }

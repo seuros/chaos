@@ -268,6 +268,8 @@ fn canonicalize_snapshot_text(text: &str) -> String {
             .and_then(|(_, rest)| rest.split_once("</subagents>"))
             .map(|(subagents, _)| {
                 subagents
+                    .replace("<![CDATA[", "")
+                    .replace("]]>", "")
                     .lines()
                     .filter(|line| line.trim_start().starts_with("- "))
                     .count()

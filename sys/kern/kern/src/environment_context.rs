@@ -8,9 +8,16 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::path::PathBuf;
 
+mod platform;
+mod xml;
+
+use platform::PlatformContext;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename = "environment_context", rename_all = "snake_case")]
 pub(crate) struct EnvironmentContext {
+    #[serde(default)]
+    pub platform: Option<PlatformContext>,
     pub cwd: Option<PathBuf>,
     pub shell: Shell,
     pub current_date: Option<String>,
@@ -35,6 +42,7 @@ impl EnvironmentContext {
         subagents: Option<String>,
     ) -> Self {
         Self {
+            platform: None,
             cwd,
             shell,
             current_date,
@@ -49,6 +57,7 @@ impl EnvironmentContext {
     /// include the shell, and then it is not configurable from turn to turn.
     pub fn equals_except_shell(&self, other: &EnvironmentContext) -> bool {
         let EnvironmentContext {
+            platform,
             cwd,
             current_date,
             timezone,
@@ -56,7 +65,8 @@ impl EnvironmentContext {
             subagents,
             shell: _,
         } = other;
-        self.cwd == *cwd
+        self.platform == *platform
+            && self.cwd == *cwd
             && self.current_date == *current_date
             && self.timezone == *timezone
             && self.network == *network
@@ -93,25 +103,29 @@ impl EnvironmentContext {
     }
 
     pub fn from_turn_context(turn_context: &TurnContext, shell: &Shell) -> Self {
-        Self::new(
+        let mut context = Self::new(
             Some(turn_context.cwd.clone()),
             shell.clone(),
             turn_context.current_date.clone(),
             turn_context.timezone.clone(),
             Self::network_from_turn_context(turn_context),
             /*subagents*/ None,
-        )
+        );
+        context.platform = Some(PlatformContext::local());
+        context
     }
 
     pub fn from_turn_context_item(turn_context_item: &TurnContextItem, shell: &Shell) -> Self {
-        Self::new(
+        let mut context = Self::new(
             Some(turn_context_item.cwd.clone()),
             shell.clone(),
             turn_context_item.current_date.clone(),
             turn_context_item.timezone.clone(),
             Self::network_from_turn_context_item(turn_context_item),
             /*subagents*/ None,
-        )
+        );
+        context.platform = Some(PlatformContext::local());
+        context
     }
 
     pub fn with_subagents(mut self, subagents: String) -> Self {
@@ -146,56 +160,6 @@ impl EnvironmentContext {
             allowed_domains: allowed_domains.clone(),
             denied_domains: denied_domains.clone(),
         })
-    }
-}
-
-impl EnvironmentContext {
-    /// Serializes the environment context to XML. Libraries like `quick-xml`
-    /// require custom macros to handle Enums with newtypes, so we just do it
-    /// manually, to keep things simple. Output looks like:
-    ///
-    /// ```xml
-    /// <environment_context>
-    ///   <cwd>...</cwd>
-    ///   <shell>...</shell>
-    /// </environment_context>
-    /// ```
-    pub fn serialize_to_xml(self) -> String {
-        let mut lines = Vec::new();
-        if let Some(cwd) = self.cwd {
-            lines.push(format!("  <cwd>{}</cwd>", cwd.to_string_lossy()));
-        }
-
-        let shell_name = self.shell.name();
-        lines.push(format!("  <shell>{shell_name}</shell>"));
-        if let Some(current_date) = self.current_date {
-            lines.push(format!("  <current_date>{current_date}</current_date>"));
-        }
-        if let Some(timezone) = self.timezone {
-            lines.push(format!("  <timezone>{timezone}</timezone>"));
-        }
-        match self.network {
-            Some(ref network) => {
-                lines.push("  <network enabled=\"true\">".to_string());
-                for allowed in &network.allowed_domains {
-                    lines.push(format!("    <allowed>{allowed}</allowed>"));
-                }
-                for denied in &network.denied_domains {
-                    lines.push(format!("    <denied>{denied}</denied>"));
-                }
-                lines.push("  </network>".to_string());
-            }
-            None => {
-                // TODO(mbolin): Include this line if it helps the model.
-                // lines.push("  <network enabled=\"false\" />".to_string());
-            }
-        }
-        if let Some(subagents) = self.subagents {
-            lines.push("  <subagents>".to_string());
-            lines.extend(subagents.lines().map(|line| format!("    {line}")));
-            lines.push("  </subagents>".to_string());
-        }
-        ENVIRONMENT_CONTEXT_FRAGMENT.wrap(lines.join("\n"))
     }
 }
 

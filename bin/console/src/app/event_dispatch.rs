@@ -18,6 +18,7 @@ impl App {
     ) -> Result<AppRunControl> {
         if matches!(event, TuiEvent::Draw) {
             let size = tui.terminal.size()?;
+            self.refresh_inspector(tui, size.width).await;
             self.handle_draw_pre_render(tui, size)?;
         }
 
@@ -29,6 +30,43 @@ impl App {
                     self.handle_key_event(tui, key_event).await;
                 }
                 TuiEvent::Mouse(mouse_event) => {
+                    let position =
+                        ratatui::layout::Position::new(mouse_event.column, mouse_event.row);
+                    if mouse_event.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left)
+                        && self
+                            .tile_manager
+                            .pane_rect(PaneId::ROOT)
+                            .is_some_and(|rect| rect.contains(position))
+                    {
+                        let _ = self.tile_manager.runtime.focus_pane(PaneId::ROOT);
+                        tui.frame_requester().schedule_frame();
+                    }
+                    if let Some(id) = self.tile_manager.find_pane(super::PaneKind::Inspector)
+                        && self
+                            .tile_manager
+                            .pane_rect(id)
+                            .is_some_and(|rect| rect.contains(position))
+                    {
+                        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton};
+                        match mouse_event.kind {
+                            MouseEventKind::Down(MouseButton::Left) => {
+                                let _ = self.tile_manager.runtime.focus_pane(id);
+                            }
+                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                                let code = if mouse_event.kind == MouseEventKind::ScrollUp {
+                                    KeyCode::Up
+                                } else {
+                                    KeyCode::Down
+                                };
+                                self.tile_manager
+                                    .inspector
+                                    .handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+                            }
+                            _ => {}
+                        }
+                        tui.frame_requester().schedule_frame();
+                        return Ok(AppRunControl::Continue);
+                    }
                     if mouse_event.kind == MouseEventKind::ScrollUp
                         && self
                             .tile_manager
@@ -95,15 +133,60 @@ impl App {
                             self.tile_manager.render(main_area, frame.buffer);
 
                             if let Some(chat_rect) = self.tile_manager.pane_rect(PaneId::ROOT) {
-                                self.chat_widget.render(chat_rect, frame.buffer);
-                            }
-
-                            // Place cursor in chat pane.
-                            if self.tile_manager.focused() == Some(PaneId::ROOT)
-                                && let Some(chat_rect) = self.tile_manager.pane_rect(PaneId::ROOT)
-                                && let Some((x, y)) = self.chat_widget.cursor_pos(chat_rect)
-                            {
-                                frame.set_cursor_position((x, y));
+                                // Inline history normally lives in terminal scrollback. In a
+                                // full-height split, retain its visible tail above the live cell.
+                                let live_height = self
+                                    .chat_widget
+                                    .desired_height(chat_rect.width)
+                                    .min(chat_rect.height);
+                                let history_height = chat_rect.height.saturating_sub(live_height);
+                                let last_cell = self
+                                    .transcript_cells
+                                    .last()
+                                    .map_or(0, |cell| Arc::as_ptr(cell) as *const () as usize);
+                                // Keep a screenful cached as the live cell grows.
+                                let key = (
+                                    chat_rect.width,
+                                    chat_rect.height,
+                                    self.transcript_cells.len(),
+                                    last_cell,
+                                );
+                                if self.tile_manager.chat_history_key != Some(key) {
+                                    self.tile_manager.chat_history =
+                                        libui::transcript_reflow::reflow_transcript_lines(
+                                            &self.transcript_cells,
+                                            chat_rect.width,
+                                            Some(usize::from(chat_rect.height)),
+                                        );
+                                    self.tile_manager.chat_history_key = Some(key);
+                                }
+                                let history_rect = ratatui::layout::Rect {
+                                    height: history_height,
+                                    ..chat_rect
+                                };
+                                ratatui::widgets::Widget::render(
+                                    Paragraph::new(
+                                        self.tile_manager.chat_history[self
+                                            .tile_manager
+                                            .chat_history
+                                            .len()
+                                            .saturating_sub(usize::from(history_height))..]
+                                            .to_vec(),
+                                    ),
+                                    history_rect,
+                                    frame.buffer,
+                                );
+                                let live_rect = ratatui::layout::Rect {
+                                    y: chat_rect.y + history_height,
+                                    height: live_height,
+                                    ..chat_rect
+                                };
+                                self.chat_widget.render(live_rect, frame.buffer);
+                                if self.tile_manager.focused() == Some(PaneId::ROOT)
+                                    && let Some((x, y)) = self.chat_widget.cursor_pos(live_rect)
+                                {
+                                    frame.set_cursor_position((x, y));
+                                }
                             }
                         }
                     })?;

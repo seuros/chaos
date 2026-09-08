@@ -26,8 +26,17 @@ use super::super::ChatWidget;
 use super::super::UserMessage;
 
 impl ChatWidget {
+    /// Share the pane's held-key guard with outer UI surfaces.
+    pub fn suppress_repeats_of(&mut self, code: KeyCode) {
+        self.bottom_pane.suppress_repeats_of(code);
+    }
+
+    pub fn suppress_key_repeat(&mut self, key: KeyEvent) -> bool {
+        self.bottom_pane.suppress_key_repeat(key)
+    }
+
     pub fn handle_key_event(&mut self, key_event: KeyEvent) {
-        if self.bottom_pane.suppress_key_repeat(key_event) {
+        if self.suppress_key_repeat(key_event) {
             return;
         }
         match key_event {

@@ -25,6 +25,7 @@ impl App {
     /// Forget any queued rebuild along with the transcript it would have replayed.
     pub(crate) fn reset_transcript_reflow(&mut self) {
         self.transcript_reflow.clear();
+        self.tile_manager.chat_history_key = None;
     }
 
     /// Note the terminal size for this draw and queue a rebuild if the width moved.
@@ -46,6 +47,14 @@ impl App {
             self.transcript_reflow.schedule_debounced(Some(size.width));
             tui.frame_requester()
                 .schedule_frame_in(TRANSCRIPT_REFLOW_DEBOUNCE);
+        }
+
+        if self.tile_manager.needs_inline_history_restore()
+            && self.overlay.is_none()
+            && !tui.is_alt_screen_active()
+        {
+            self.reflow_transcript_now(tui, size)?;
+            self.tile_manager.mark_inline_history_restored();
         }
 
         self.maybe_run_resize_reflow(tui, size)
@@ -70,10 +79,7 @@ impl App {
             return Ok(());
         }
 
-        self.transcript_reflow.clear_pending_reflow();
-        self.reflow_transcript_now(tui, size)?;
-        self.transcript_reflow.mark_reflowed_width(size.width);
-        Ok(())
+        self.reflow_transcript_now(tui, size)
     }
 
     /// Clear the rows we own and write the transcript back at the current width.
@@ -104,6 +110,8 @@ impl App {
         if !lines.is_empty() {
             tui.insert_history_lines(lines);
         }
+        self.transcript_reflow.clear_pending_reflow();
+        self.transcript_reflow.mark_reflowed_width(size.width);
         Ok(())
     }
 }

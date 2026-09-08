@@ -120,6 +120,10 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub(crate) fn suppress_repeats_of(&mut self, code: KeyCode) {
+        self.suppressed_repeat_key = Some(code);
+    }
+
     /// Also checked by the parent before shortcuts that bypass pane routing.
     /// A fresh press resets the guard even on terminals that omit releases.
     pub(crate) fn suppress_key_repeat(&mut self, key_event: KeyEvent) -> bool {
@@ -165,7 +169,7 @@ impl BottomPane {
             };
 
             if view_complete {
-                self.suppressed_repeat_key = Some(key_event.code);
+                self.suppress_repeats_of(key_event.code);
             }
             if ctrl_c_completed {
                 self.view_stack.pop();
@@ -209,7 +213,7 @@ impl BottomPane {
             let had_popup = self.composer.popup_active();
             let (input_result, needs_redraw) = self.composer.handle_key_event(key_event);
             if had_popup && !self.composer.popup_active() {
-                self.suppressed_repeat_key = Some(key_event.code);
+                self.suppress_repeats_of(key_event.code);
             }
             if needs_redraw {
                 self.request_redraw();

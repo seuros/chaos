@@ -6,6 +6,25 @@ use super::{
 
 impl App {
     pub(super) async fn handle_key_event(&mut self, tui: &mut tui::Tui, key_event: KeyEvent) {
+        if self.chat_widget.suppress_key_repeat(key_event) {
+            return;
+        }
+        if self.tile_manager.leave_inspector(key_event) {
+            self.chat_widget.suppress_repeats_of(key_event.code);
+            tui.frame_requester().schedule_frame();
+            return;
+        }
+        if key_event.code == KeyCode::F(4)
+            && key_event.kind == KeyEventKind::Press
+            && (self.chat_widget.no_modal_or_popup_active()
+                || self.tile_manager.focused_kind() == Some(super::PaneKind::Inspector))
+        {
+            if let Ok(size) = tui.terminal.size() {
+                self.tile_manager.toggle_inspector(size.width);
+                tui.frame_requester().schedule_frame();
+            }
+            return;
+        }
         // Some terminals, especially on macOS, encode Option+Left/Right as Option+b/f unless
         // enhanced keyboard reporting is available. We only treat those word-motion fallbacks as
         // agent-switch shortcuts when the composer is empty so we never steal the expected
@@ -118,6 +137,28 @@ impl App {
             }
         }
 
+        // Read-only inspector navigation must not open the transcript or edit chat.
+        if self.tile_manager.focused_kind() == Some(super::PaneKind::Inspector)
+            && key_event.modifiers.is_empty()
+            && matches!(
+                key_event.code,
+                KeyCode::Tab
+                    | KeyCode::Left
+                    | KeyCode::Right
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+                    | KeyCode::Home
+                    | KeyCode::End
+                    | KeyCode::Char('r')
+            )
+        {
+            self.tile_manager.inspector.handle_key(key_event);
+            tui.frame_requester().schedule_frame();
+            return;
+        }
+
         // ── Global shortcuts ─────────────────────────────────────────
         // These work regardless of which pane is focused.
         match key_event {
@@ -131,31 +172,7 @@ impl App {
                 return;
             }
             KeyEvent {
-                code: KeyCode::PageUp,
-                kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                ..
-            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
-                self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
-                return;
-            }
-            KeyEvent {
-                code: KeyCode::PageDown,
-                kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                ..
-            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
-                self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
-                return;
-            }
-            KeyEvent {
-                code: KeyCode::Home,
-                kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                ..
-            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
-                self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
-                return;
-            }
-            KeyEvent {
-                code: KeyCode::End,
+                code: KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
@@ -215,6 +232,9 @@ impl App {
         if let Some(focused) = self.tile_manager.focused()
             && focused != PaneId::ROOT
         {
+            if self.tile_manager.kind(focused) == Some(super::PaneKind::Inspector) {
+                self.tile_manager.inspector.handle_key(key_event);
+            }
             if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
                 && let Some(chord) = keychord_from_crossterm(key_event)
             {

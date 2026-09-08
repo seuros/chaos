@@ -25,6 +25,7 @@ const PANE_CHAT: &str = "chat";
 const PANE_TOOL_LIST: &str = "tool_list";
 const PANE_MCP_ACTIVITY: &str = "mcp_activity";
 const PANE_MCP_MANAGEMENT: &str = "mcp_management";
+const PANE_INSPECTOR: &str = "inspector";
 
 /// What lives in a given tile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +38,8 @@ pub(crate) enum PaneKind {
     McpActivity,
     /// `/mcp` management screen.
     McpManagement,
+    /// Read-only MCP resources.
+    Inspector,
 }
 
 impl PaneKind {
@@ -46,6 +49,7 @@ impl PaneKind {
             Self::ToolList => PANE_TOOL_LIST,
             Self::McpActivity => PANE_MCP_ACTIVITY,
             Self::McpManagement => PANE_MCP_MANAGEMENT,
+            Self::Inspector => PANE_INSPECTOR,
         }
     }
 
@@ -55,6 +59,7 @@ impl PaneKind {
             PANE_TOOL_LIST => Some(Self::ToolList),
             PANE_MCP_ACTIVITY => Some(Self::McpActivity),
             PANE_MCP_MANAGEMENT => Some(Self::McpManagement),
+            PANE_INSPECTOR => Some(Self::Inspector),
             _ => None,
         }
     }
@@ -74,6 +79,11 @@ pub(crate) struct TileManager {
     pub(crate) runtime: HypertileRuntime,
     /// Registry-accurate set of live pane ids.
     pane_ids: HashSet<PaneId>,
+    pub(crate) inspector: crate::panes::inspector::InspectorPane,
+    inspector_enabled: bool,
+    rendered_tiled_history: bool,
+    pub(crate) chat_history: Vec<ratatui::text::Line<'static>>,
+    pub(crate) chat_history_key: Option<(u16, u16, usize, usize)>,
 }
 
 impl TileManager {
@@ -89,6 +99,7 @@ impl TileManager {
         });
         runtime.register_plugin_type(PANE_MCP_ACTIVITY, || EmptyPlugin);
         runtime.register_plugin_type(PANE_MCP_MANAGEMENT, || EmptyPlugin);
+        runtime.register_plugin_type(PANE_INSPECTOR, || EmptyPlugin);
 
         // ROOT is created with the default "block" placeholder — replace with Chat.
         let _ = runtime.replace_pane_plugin(PaneId::ROOT, PANE_CHAT);
@@ -96,7 +107,53 @@ impl TileManager {
         let mut pane_ids = HashSet::new();
         pane_ids.insert(PaneId::ROOT);
 
-        Self { runtime, pane_ids }
+        Self {
+            runtime,
+            pane_ids,
+            inspector: Default::default(),
+            inspector_enabled: false,
+            rendered_tiled_history: false,
+            chat_history: Vec::new(),
+            chat_history_key: None,
+        }
+    }
+
+    /// Hide on narrow terminals without forgetting the user's toggle.
+    pub fn sync_inspector(&mut self, width: u16) {
+        let existing = self.find_pane(PaneKind::Inspector);
+        if self.inspector_enabled && width >= 110 {
+            if existing.is_none() {
+                let focused = self.focused().unwrap_or(PaneId::ROOT);
+                let id = self.open_or_focus(PaneKind::Inspector, Direction::Horizontal);
+                let _ = self.runtime.focus_pane(id);
+                self.apply_action(HypertileAction::ResizeFocused { delta: -0.18 });
+                let _ = self.runtime.focus_pane(focused);
+            }
+        } else if let Some(id) = existing {
+            let enabled = self.inspector_enabled;
+            let focused = self.focused().unwrap_or(PaneId::ROOT);
+            self.close_pane(id);
+            self.inspector_enabled = enabled;
+            let _ = self.runtime.focus_pane(focused);
+        }
+    }
+
+    pub fn toggle_inspector(&mut self, width: u16) {
+        self.inspector_enabled = !self.inspector_enabled;
+        self.sync_inspector(width);
+    }
+
+    /// The inspector must be escapable even when the retained composer has a popup.
+    pub fn leave_inspector(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyEventKind};
+        if self.focused_kind() == Some(PaneKind::Inspector)
+            && key.kind == KeyEventKind::Press
+            && matches!(key.code, KeyCode::Esc | KeyCode::Tab | KeyCode::BackTab)
+        {
+            let _ = self.runtime.focus_pane(PaneId::ROOT);
+            return true;
+        }
+        false
     }
 
     /// Returns the kind for a pane, queried from the registry (always accurate).
@@ -112,9 +169,21 @@ impl TileManager {
         self.runtime.focused_pane()
     }
 
+    pub fn focused_kind(&self) -> Option<PaneKind> {
+        self.focused().and_then(|id| self.kind(id))
+    }
+
     /// Returns true when only the chat pane exists (no splits).
     pub fn is_single_pane(&self) -> bool {
         self.pane_ids.len() == 1
+    }
+
+    pub fn needs_inline_history_restore(&self) -> bool {
+        self.rendered_tiled_history && self.is_single_pane()
+    }
+
+    pub fn mark_inline_history_restored(&mut self) {
+        self.rendered_tiled_history = false;
     }
 
     /// Split the focused pane and assign the new pane a kind.
@@ -127,14 +196,7 @@ impl TileManager {
     /// Open (or focus) a pane of the given kind. If one already exists,
     /// focus it instead of creating a duplicate.
     pub fn open_or_focus(&mut self, kind: PaneKind, direction: Direction) -> PaneId {
-        // Query registry — always accurate, no layout dependency.
-        let existing = self
-            .pane_ids
-            .iter()
-            .copied()
-            .find(|&id| self.kind(id) == Some(kind));
-
-        if let Some(id) = existing {
+        if let Some(id) = self.find_pane(kind) {
             let _ = self.runtime.focus_pane(id);
             return id;
         }
@@ -145,14 +207,7 @@ impl TileManager {
 
     /// Close the focused pane. Chat (ROOT) is never closed.
     pub fn close_focused(&mut self) -> Option<PaneKind> {
-        let focused = self.runtime.focused_pane()?;
-        if focused == PaneId::ROOT {
-            return None;
-        }
-        let kind = self.kind(focused);
-        self.runtime.close_focused().ok()?;
-        self.pane_ids.remove(&focused);
-        kind
+        self.close_pane(self.focused()?)
     }
 
     /// Close a specific pane by id. Chat is never closed.
@@ -164,6 +219,10 @@ impl TileManager {
         let _ = self.runtime.focus_pane(id);
         self.runtime.close_focused().ok()?;
         self.pane_ids.remove(&id);
+        if kind == Some(PaneKind::Inspector) {
+            self.inspector_enabled = false;
+            self.inspector.pause();
+        }
         kind
     }
 
@@ -209,7 +268,13 @@ impl TileManager {
 
     /// Render all panes through the runtime's plugin registry.
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
+        self.rendered_tiled_history = !self.is_single_pane();
         self.runtime.render(area, buf);
+        if let Some(id) = self.find_pane(PaneKind::Inspector)
+            && let Some(rect) = self.pane_rect(id)
+        {
+            self.inspector.render(rect, buf, self.focused() == Some(id));
+        }
     }
 
     /// Pane rect after layout (valid after a render_with call).
@@ -231,5 +296,61 @@ impl TileManager {
         let outcome = self.runtime.handle_event(HypertileEvent::Key(chord));
         self.runtime.set_mode(previous_mode);
         outcome
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inspector_split_preserves_chat_focus_and_respects_visibility() {
+        let mut tiles = TileManager::new(
+            Rc::new(RefCell::new(ToolListPane::new())),
+            Rc::new(Cell::new(false)),
+        );
+        let area = Rect::new(0, 0, 140, 40);
+        tiles.sync_inspector(area.width);
+        assert!(tiles.is_single_pane(), "the inspector starts closed");
+        tiles.toggle_inspector(area.width);
+        tiles.render(area, &mut Buffer::empty(area));
+        let inspector = tiles.find_pane(PaneKind::Inspector).expect("inspector");
+        let chat_rect = tiles.pane_rect(PaneId::ROOT).expect("chat rect");
+        let inspector_rect = tiles.pane_rect(inspector).expect("inspector rect");
+        assert_eq!(tiles.focused(), Some(PaneId::ROOT));
+        assert!(chat_rect.right() <= inspector_rect.x);
+        assert!(chat_rect.width > inspector_rect.width);
+
+        for code in [
+            crossterm::event::KeyCode::Esc,
+            crossterm::event::KeyCode::Tab,
+        ] {
+            tiles
+                .runtime
+                .focus_pane(inspector)
+                .expect("focus inspector");
+            assert!(tiles.leave_inspector(crossterm::event::KeyEvent::new(
+                code,
+                crossterm::event::KeyModifiers::NONE
+            )));
+            assert_eq!(tiles.focused(), Some(PaneId::ROOT));
+            assert_eq!(tiles.find_pane(PaneKind::Inspector), Some(inspector));
+        }
+
+        tiles.sync_inspector(80);
+        assert!(tiles.is_single_pane());
+        assert!(tiles.needs_inline_history_restore());
+        tiles.mark_inline_history_restored();
+        assert!(!tiles.needs_inline_history_restore());
+        tiles.sync_inspector(area.width);
+        assert!(tiles.find_pane(PaneKind::Inspector).is_some());
+        tiles.render(area, &mut Buffer::empty(area));
+        tiles.toggle_inspector(area.width);
+        tiles.sync_inspector(area.width);
+        assert!(
+            tiles.is_single_pane(),
+            "a manually hidden panel must stay hidden"
+        );
+        assert!(tiles.needs_inline_history_restore());
     }
 }

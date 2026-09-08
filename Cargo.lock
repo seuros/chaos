@@ -1124,6 +1124,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-kern",
  "chaos-locate",
+ "chaos-mcp-runtime",
  "chaos-pam",
  "chaos-proc",
  "chaos-pty",

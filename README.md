@@ -97,6 +97,25 @@ text selection or shell scrollback, use your terminal's mouse-capture bypass
 
 ---
 
+## Right-side inspector
+
+The read-only inspector starts closed. **F4** toggles it on the right when the
+terminal is at least 110 columns wide; narrowing the terminal temporarily hides it.
+Click the panel or use **Alt+Enter** to focus it. **Esc**, **Tab**, or clicking
+back into chat returns keyboard focus to the composer without closing the panel.
+Existing **Alt+Shift+H/L** tiling shortcuts resize the focused pane.
+
+The panel shows only MCP resources, not system information already in the bars.
+**Left/Right** selects a resource, **Up/Down** or the mouse wheel scrolls, and
+**r** reloads the resource list. Text refreshes every five seconds while the
+panel is visible. Reads run in the background, with timeouts; closing the panel
+or changing sessions cancels pending work.
+
+This first version polls read-only resource snapshots rather than subscribing.
+It does not call tools, execute server-provided UI, or add resource contents to
+model history. Binary resources are omitted, text is bounded, and resource templates
+requiring parameters are not listed.
+
 ## Clamping / Docking
 
 Anthropic requires MAX subscribers to use the official Claude Code harness.

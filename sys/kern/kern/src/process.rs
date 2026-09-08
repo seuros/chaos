@@ -26,6 +26,8 @@ use tokio::sync::watch;
 
 use crate::runtime_db::RuntimeDbHandle;
 
+mod resources;
+
 #[derive(Clone, Debug)]
 pub struct ProcessConfigSnapshot {
     pub model: String,

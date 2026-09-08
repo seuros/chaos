@@ -103,6 +103,7 @@ mod agent_navigation;
 mod config_management;
 mod editor_integration;
 mod event_dispatch;
+mod inspector;
 mod interactive_requests;
 mod key_handling;
 mod log_panel;

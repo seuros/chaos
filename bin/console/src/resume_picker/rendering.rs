@@ -170,7 +170,7 @@ pub(super) fn selected_details(state: &PickerState) -> [Line<'static>; 2] {
         .and_then(Option::as_ref);
     let provider = selection
         .map(|selection| selection.provider.as_str())
-        .or_else(|| row.model_provider.as_deref())
+        .or(row.model_provider.as_deref())
         .unwrap_or("unknown");
     let model = selection
         .map(|selection| selection.model.as_str())

@@ -584,13 +584,12 @@ async fn run_ratatui_app(
         config.model_reasoning_effort = effort;
     }
 
-    if let Some((_, target)) = action_and_target_session_if_resume_or_fork {
-        if let Some(warning) = target
+    if let Some((_, target)) = action_and_target_session_if_resume_or_fork
+        && let Some(warning) = target
             .apply_saved_selection(&mut config, &cli_kv_overrides)
             .await?
-        {
-            config.startup_warnings.push(warning);
-        }
+    {
+        config.startup_warnings.push(warning);
     }
 
     // Configure syntax highlighting theme from the final config — onboarding

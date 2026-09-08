@@ -1,8 +1,9 @@
 //! Read-only inspector state. Network work happens in cancellable background tasks,
 //! never in render; resource contents are not submitted to the model.
+//! Reads are on demand, not periodic: selection changes and `r` request fresh data.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use chaos_ipc::ProcessId;
 use chaos_kern::Process;
@@ -14,7 +15,6 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
 use tokio::task::JoinHandle;
 
-const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RESOURCES: usize = 128;
 const MAX_CONTENT_CHARS: usize = 32_768;
@@ -39,7 +39,7 @@ pub(crate) struct InspectorPane {
     content: String,
     catalog_status: String,
     catalog_loaded: bool,
-    next_refresh: Instant,
+    content_loaded: bool,
     pending: Option<JoinHandle<Update>>,
 }
 
@@ -53,7 +53,7 @@ impl Default for InspectorPane {
             content: String::new(),
             catalog_status: String::new(),
             catalog_loaded: false,
-            next_refresh: Instant::now(),
+            content_loaded: false,
             pending: None,
         }
     }
@@ -67,7 +67,9 @@ impl Drop for InspectorPane {
 
 impl InspectorPane {
     pub fn needs_poll(&self) -> bool {
-        self.pending.is_some() || !self.catalog_loaded || !self.resources.is_empty()
+        self.pending.is_some()
+            || !self.catalog_loaded
+            || (!self.content_loaded && !self.resources.is_empty())
     }
 
     pub fn pause(&mut self) {
@@ -86,7 +88,7 @@ impl InspectorPane {
             self.content.clear();
             self.selected = 0;
             self.scroll = 0;
-            self.next_refresh = Instant::now();
+            self.content_loaded = false;
         }
     }
 
@@ -105,12 +107,12 @@ impl InspectorPane {
                 self.pause();
                 self.content.clear();
                 self.scroll = 0;
-                self.next_refresh = Instant::now();
+                self.content_loaded = false;
             }
             KeyCode::Char('r') if key.kind == KeyEventKind::Press => {
                 self.pause();
                 self.catalog_loaded = false;
-                self.next_refresh = Instant::now();
+                self.content_loaded = false;
             }
             KeyCode::Up => self.scroll = self.scroll.saturating_sub(1),
             KeyCode::Down => self.scroll = self.scroll.saturating_add(1),
@@ -122,37 +124,43 @@ impl InspectorPane {
         }
     }
 
+    fn finish_request(&mut self, result: Result<Update, tokio::task::JoinError>) {
+        match result {
+            Ok(Update::Catalog(resources, status)) => {
+                let previous = self.resources.get(self.selected);
+                let selected = previous.and_then(|old| {
+                    resources
+                        .iter()
+                        .position(|new| old.server == new.server && old.uri == new.uri)
+                });
+                self.resources = resources;
+                self.selected = selected.unwrap_or(0);
+                self.catalog_status = status;
+                self.catalog_loaded = true;
+                self.content.clear();
+                self.content_loaded = false;
+            }
+            Ok(Update::Content(text)) => {
+                self.content = text;
+                self.content_loaded = true;
+            }
+            Err(err) => {
+                self.content = format!("Resource worker failed: {err}");
+                // A failed worker must not turn redraws into automatic retries.
+                self.catalog_loaded = true;
+                self.content_loaded = true;
+            }
+        }
+    }
+
     /// Called from the event loop, before rendering. No request blocks the UI.
     pub async fn tick(&mut self, process: Arc<Process>, servers: Vec<String>) {
         if self.pending.as_ref().is_some_and(|task| task.is_finished())
             && let Some(task) = self.pending.take()
         {
-            match task.await {
-                Ok(Update::Catalog(resources, status)) => {
-                    let previous = self.resources.get(self.selected);
-                    let selected = previous.and_then(|old| {
-                        resources
-                            .iter()
-                            .position(|new| old.server == new.server && old.uri == new.uri)
-                    });
-                    self.resources = resources;
-                    self.selected = selected.unwrap_or(0);
-                    self.catalog_status = status;
-                    self.catalog_loaded = true;
-                    self.content.clear();
-                    self.next_refresh = Instant::now();
-                }
-                Ok(Update::Content(text)) => {
-                    self.content = text;
-                    self.next_refresh = Instant::now() + REFRESH_INTERVAL;
-                }
-                Err(err) => {
-                    self.content = format!("Resource worker failed: {err}");
-                    self.next_refresh = Instant::now() + REFRESH_INTERVAL;
-                }
-            }
+            self.finish_request(task.await);
         }
-        if self.pending.is_some() || Instant::now() < self.next_refresh {
+        if self.pending.is_some() || !self.needs_poll() {
             return;
         }
         if !self.catalog_loaded {
@@ -225,7 +233,7 @@ impl InspectorPane {
                         text
                     }
                     Ok(Err(err)) => plain_text(&format!("Read failed: {err}"), 2048),
-                    Err(_) => "Resource read timed out; retrying in 5s.".into(),
+                    Err(_) => "Resource read timed out. Press r to retry.".into(),
                 };
                 Update::Content(text)
             }));
@@ -244,10 +252,7 @@ impl InspectorPane {
             });
         let inner = block.inner(area);
         block.render(area, buf);
-        let mut lines = vec![
-            Line::from("←/→ resource · r reload · refresh 5s"),
-            Line::from(""),
-        ];
+        let mut lines = vec![Line::from("←/→ resource · r reload"), Line::from("")];
         if let Some(resource) = self.resources.get(self.selected) {
             lines.push(Line::from(format!(
                 "{} / {}",

@@ -107,11 +107,12 @@ Existing **Alt+Shift+H/L** tiling shortcuts resize the focused pane.
 
 The panel shows only MCP resources, not system information already in the bars.
 **Left/Right** selects a resource, **Up/Down** or the mouse wheel scrolls, and
-**r** reloads the resource list. Text refreshes every five seconds while the
-panel is visible. Reads run in the background, with timeouts; closing the panel
+**r** reloads the resource list and selected content. Content loads on first use
+and selection changes; idle panels do not poll or automatically retry failed reads.
+Reads run in the background, with timeouts; closing the panel
 or changing sessions cancels pending work.
 
-This first version polls read-only resource snapshots rather than subscribing.
+The panel fetches read-only resource snapshots on demand rather than subscribing.
 It does not call tools, execute server-provided UI, or add resource contents to
 model history. Binary resources are omitted, text is bounded, and resource templates
 requiring parameters are not listed.

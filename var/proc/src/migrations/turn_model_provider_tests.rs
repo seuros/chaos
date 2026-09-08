@@ -376,7 +376,7 @@ where
             assert!(
                 error
                     .as_database_error()
-                    .is_some_and(|e| e.is_unique_violation()),
+                    .is_some_and(sqlx::error::DatabaseError::is_unique_violation),
                 "expected duplicate sequence error: {error}"
             );
         } else {

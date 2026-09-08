@@ -248,7 +248,6 @@ current setting.
 - [Storage — SQLite and PostgreSQL backends](./man/chaos-storage.7.md)
 - [Halluacinate — scripting engine](./man/chaos-halluacinate.7.md)
 - [Contributing](./docs/contributing.md)
-- [Resume and fork model selection](./docs/resume-model-selection.md)
 - [Comparison](./docs/comparison.md)
 - [Open source fund](./docs/open-source-fund.md)
 - [Manual page index](./man/README.md)

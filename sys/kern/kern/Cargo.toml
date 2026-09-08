@@ -80,6 +80,7 @@ notify = { workspace = true }
 os_info = { workspace = true }
 include_dir = { workspace = true }
 rand = { workspace = true }
+quick-xml = { workspace = true }
 regex-lite = { workspace = true }
 mime_guess = { workspace = true }
 schemars = { workspace = true }

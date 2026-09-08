@@ -1555,18 +1555,18 @@ async fn rollout_writer(
 
         let cmd = match event {
             RolloutWriterEvent::Heartbeat => {
-                if let JournalSinkState::Active(writer) = &mut journal_sink.state {
-                    if !writer.fenced {
-                        match writer.ensure_lease().await {
-                            Ok(()) if !journal_sink.has_pending_items() => {
-                                health::set_persistence_health(PersistenceHealth::Healthy);
-                            }
-                            Ok(()) => {}
-                            Err(error) => {
-                                warn!(%error, "journal lease unavailable; will retry");
-                                journal_sink.last_error = Some(error);
-                                health::set_persistence_health(PersistenceHealth::Failed);
-                            }
+                if let JournalSinkState::Active(writer) = &mut journal_sink.state
+                    && !writer.fenced
+                {
+                    match writer.ensure_lease().await {
+                        Ok(()) if !journal_sink.has_pending_items() => {
+                            health::set_persistence_health(PersistenceHealth::Healthy);
+                        }
+                        Ok(()) => {}
+                        Err(error) => {
+                            warn!(%error, "journal lease unavailable; will retry");
+                            journal_sink.last_error = Some(error);
+                            health::set_persistence_health(PersistenceHealth::Failed);
                         }
                     }
                 }

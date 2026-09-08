@@ -73,9 +73,7 @@ fn sanitize_user_agent(candidate: String) -> (String, HeaderValue) {
         .collect();
     let header =
         HeaderValue::from_str(&sanitized).expect("printable ASCII is a valid HTTP header value");
-    tracing::warn!(
-        "Sanitized Chaos user agent because it contained invalid header characters"
-    );
+    tracing::warn!("Sanitized Chaos user agent because it contained invalid header characters");
     (sanitized, header)
 }
 

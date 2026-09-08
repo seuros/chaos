@@ -21,25 +21,25 @@ use super::SamplingRequestResult;
 use super::execution::try_run_sampling_request;
 use super::progress::TurnProgressTracker;
 
+mod mcp_instructions;
+
+use mcp_instructions::McpInstructionsDocument;
+
 fn append_mcp_server_instructions(
     base_instructions: &mut chaos_ipc::models::BaseInstructions,
     server_instructions: &[McpServerInstructions],
-) {
+) -> ChaosResult<()> {
     if server_instructions.is_empty() {
-        return;
+        return Ok(());
     }
 
+    let xml = McpInstructionsDocument::new(server_instructions).to_xml()?;
     base_instructions.text.push_str(
-        "\n\n# MCP server instructions\n\n\
-         The following instructions were provided by configured MCP servers. \
-         Apply each section when using that server's tools or resources.",
+        "\n\nThe following instructions were provided by configured MCP servers. \
+         Apply each section when using that server's tools or resources.\n\n",
     );
-    for entry in server_instructions {
-        base_instructions.text.push_str(&format!(
-            "\n\n## {}\n\n{}",
-            entry.server_name, entry.instructions
-        ));
-    }
+    base_instructions.text.push_str(&xml);
+    Ok(())
 }
 
 pub(super) fn build_prompt(
@@ -109,7 +109,7 @@ pub(super) async fn run_sampling_request(
         .current_manager()
         .server_instructions()
         .await;
-    append_mcp_server_instructions(&mut base_instructions, &server_instructions);
+    append_mcp_server_instructions(&mut base_instructions, &server_instructions)?;
 
     let prompt = build_prompt(
         input,
@@ -206,20 +206,31 @@ mod tests {
             &mut base,
             &[
                 McpServerInstructions {
-                    server_name: "alpha".to_string(),
-                    instructions: "Use alpha carefully.".to_string(),
+                    server_name: "alpha & \"tools\"".to_string(),
+                    instructions: "Use Vec<T> & preserve\n  ]]> literally.".to_string(),
                 },
                 McpServerInstructions {
                     server_name: "beta".to_string(),
                     instructions: "Prefer beta resources.".to_string(),
                 },
             ],
-        );
+        )
+        .unwrap();
 
         assert!(base.text.starts_with("Base instructions."));
-        assert!(base.text.contains("# MCP server instructions"));
-        assert!(base.text.contains("## alpha\n\nUse alpha carefully."));
-        assert!(base.text.contains("## beta\n\nPrefer beta resources."));
+        let xml = base.text.split_once("<mcp_server_instructions>").unwrap().1;
+        assert_eq!(
+            xml,
+            r#"
+  <server name="alpha &amp; &quot;tools&quot;">
+    <instructions><![CDATA[Use Vec<T> & preserve
+  ]]]]><![CDATA[> literally.]]></instructions>
+  </server>
+  <server name="beta">
+    <instructions><![CDATA[Prefer beta resources.]]></instructions>
+  </server>
+</mcp_server_instructions>"#
+        );
     }
 
     #[test]
@@ -228,7 +239,7 @@ mod tests {
             text: "Base instructions.".to_string(),
         };
 
-        append_mcp_server_instructions(&mut base, &[]);
+        append_mcp_server_instructions(&mut base, &[]).unwrap();
 
         assert_eq!(base.text, "Base instructions.");
     }

@@ -106,8 +106,7 @@ impl ModelAdapter for ChatCompletionsAdapter {
             let model = self.model_for_request(&request.model)?;
             let body = build_request_body(&request, &model)?;
             let headers = self.build_headers()?;
-            let retry = self.provider.retry.clone();
-            let idle_timeout = self.provider.stream_idle_timeout;
+            let provider = self.provider.clone();
             let sniffer = self.sniffer.clone();
 
             let (tx, rx) = mpsc::channel(64);
@@ -117,8 +116,7 @@ impl ModelAdapter for ChatCompletionsAdapter {
                     &url,
                     &headers,
                     &body,
-                    &retry,
-                    idle_timeout,
+                    &provider,
                     sniffer.as_ref(),
                     tx.clone(),
                 )
@@ -593,8 +591,7 @@ async fn run_sse_stream(
     url: &str,
     headers: &HeaderMap,
     body: &Value,
-    retry: &crate::provider::RetryConfig,
-    idle_timeout: Duration,
+    provider: &Provider,
     sniffer: Option<&Arc<UsageSniffer>>,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
@@ -602,12 +599,17 @@ async fn run_sse_stream(
         url,
         headers,
         body,
-        retry,
+        provider,
         "chat_completions",
         sniffer,
     )
     .await?;
-    process_sse_data_stream(response.into_body().into_data_stream(), idle_timeout, tx).await
+    process_sse_data_stream(
+        response.into_body().into_data_stream(),
+        provider.stream_idle_timeout,
+        tx,
+    )
+    .await
 }
 
 async fn process_sse_data_stream<S, E>(

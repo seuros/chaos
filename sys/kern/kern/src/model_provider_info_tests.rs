@@ -21,6 +21,7 @@ fn provider_fixture(name: &str, base_url: &str) -> ModelProviderInfo {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     }
 }
 

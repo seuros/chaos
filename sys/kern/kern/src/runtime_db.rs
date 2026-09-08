@@ -76,7 +76,7 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
 
 async fn scheduler_executor(provider: &ChaosVfs, config: &Config) -> chaos_cron::JobExecutor {
     let shell = crate::scheduled_exec::executor(config);
-    let registry = spool_registry_from_env(&config.sqlite_home).await;
+    let registry = spool_registry_from_env(config).await;
     if registry.is_empty() {
         return shell;
     }
@@ -93,9 +93,12 @@ async fn scheduler_executor(provider: &ChaosVfs, config: &Config) -> chaos_cron:
     chaos_cron::dispatch_executor(shell, spool)
 }
 
-async fn spool_registry_from_env(sqlite_home: &Path) -> chaos_abi::SpoolRegistry {
+async fn spool_registry_from_env(config: &Config) -> chaos_abi::SpoolRegistry {
     let mut registry = chaos_abi::SpoolRegistry::new();
-    let cache = ModelsCacheManager::new(sqlite_home.to_path_buf(), Duration::from_secs(3600));
+    let cache = ModelsCacheManager::new(config.sqlite_home.clone(), Duration::from_secs(3600));
+    let client = chaos_client::ChaosHttpClient::default_client_with_egress(
+        config.model_provider.egress.clone(),
+    );
 
     if let Some(api_key) = non_empty_env("ANTHROPIC_API_KEY") {
         let model = if let Some(m) = non_empty_env("ANTHROPIC_SPOOL_MODEL") {
@@ -104,7 +107,9 @@ async fn spool_registry_from_env(sqlite_home: &Path) -> chaos_abi::SpoolRegistry
             cache.first_model_id("anthropic").await
         };
         match model {
-            Some(m) => registry.register(Arc::new(AnthropicSpoolBackend::new(api_key, m))),
+            Some(m) => registry.register(Arc::new(
+                AnthropicSpoolBackend::new(api_key, m).with_http_client(client.clone()),
+            )),
             None => warn!(
                 "ANTHROPIC_API_KEY set but no spool model resolved; fetch models or set ANTHROPIC_SPOOL_MODEL"
             ),
@@ -118,7 +123,9 @@ async fn spool_registry_from_env(sqlite_home: &Path) -> chaos_abi::SpoolRegistry
             cache.first_model_id("xai").await
         };
         match model {
-            Some(m) => registry.register(Arc::new(XaiSpoolBackend::new(api_key, m))),
+            Some(m) => registry.register(Arc::new(
+                XaiSpoolBackend::new(api_key, m).with_http_client(client),
+            )),
             None => warn!(
                 "XAI_API_KEY set but no spool model resolved; fetch models or set XAI_SPOOL_MODEL"
             ),

@@ -513,6 +513,8 @@ impl ModelClientSession {
 
     fn responses_request_compression(&self, auth: Option<&crate::auth::ChaosAuth>) -> Compression {
         if self.client.state.enable_request_compression
+            // LSD's DLP gate needs the JSON body, not a compressed envelope.
+            && self.client.state.provider.egress.is_none()
             && auth.is_some_and(ChaosAuth::is_chatgpt_auth)
             && self.client.state.provider.is_openai()
         {
@@ -583,7 +585,8 @@ impl ModelClientSession {
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let provider_for_errors = client_setup.api_provider.clone();
-            let transport = RamaTransport::default_client();
+            let transport =
+                RamaTransport::default_client_with_egress(client_setup.api_provider.egress.clone());
             let request_auth_context = AuthRequestTelemetryContext::new(
                 client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
                 &client_setup.api_auth,
@@ -746,6 +749,7 @@ impl ModelClientSession {
                 let egress = match crate::clamp_egress::start_antigravity_egress(
                     clamp_wiretap_sink(clamp_wiretap_mode(), &session),
                     ca_bundle_path,
+                    clamp_state.provider.egress.clone(),
                 )
                 .await
                 {
@@ -1017,23 +1021,41 @@ impl ModelClientSession {
                         }
                     };
 
-                // Opt-in wiretap: when CHAOS_CLAMP_WIRETAP is set, route the
-                // subprocess through a loopback recording proxy. Off by default,
-                // leaving the subprocess to talk to Anthropic directly.
-                let anthropic_base_url = match clamp_wiretap_mode() {
-                    WiretapMode::Off => None,
-                    mode => {
-                        let sink = clamp_wiretap_sink(mode, &session);
-                        match chaos_clamp::WiretapProxy::start(sink).await {
-                            Ok(proxy) => {
-                                let base_url = proxy.base_url();
-                                *clamp_state.clamp_wiretap.lock().await = Some(proxy);
-                                Some(base_url)
-                            }
-                            Err(err) => {
-                                tracing::warn!("clamp wiretap failed to start: {err}");
-                                None
-                            }
+                // Global egress also needs the loopback proxy, even without
+                // recording. Failure must not fall back to direct vendor access.
+                let egress = &clamp_state.provider.egress;
+                let wiretap_mode = clamp_wiretap_mode();
+                let anthropic_base_url = if egress.is_none()
+                    && matches!(wiretap_mode, WiretapMode::Off)
+                {
+                    None
+                } else {
+                    let sink = clamp_wiretap_sink(wiretap_mode, &session);
+                    let proxy = match egress {
+                        Some(egress) => {
+                            chaos_clamp::WiretapProxy::start_with_egress(sink, egress.clone()).await
+                        }
+                        None => chaos_clamp::WiretapProxy::start(sink).await,
+                    };
+                    match proxy {
+                        Ok(proxy) => {
+                            let base_url = proxy.base_url();
+                            *clamp_state.clamp_wiretap.lock().await = Some(proxy);
+                            Some(base_url)
+                        }
+                        Err(err) if egress.is_some() => {
+                            let _ = tx_event
+                                .send(Err(chaos_parrot::error::ApiError::InvalidRequest {
+                                    message: format!(
+                                        "failed to start required egress proxy: {err}"
+                                    ),
+                                }))
+                                .await;
+                            return;
+                        }
+                        Err(err) => {
+                            tracing::warn!("clamp wiretap failed to start: {err}");
+                            None
                         }
                     }
                 };
@@ -1732,6 +1754,35 @@ mod tests {
     use chaos_clamp::AntigravityUsage;
     use chaos_clamp::Usage;
     use chaos_ipc::openai_models::ReasoningEffort;
+
+    #[test]
+    fn global_egress_disables_chatgpt_request_compression_for_dlp() {
+        let auth = crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing();
+        for use_egress in [false, true] {
+            let mut provider = crate::ModelProviderInfo::create_openai_provider(None);
+            if use_egress {
+                provider.egress =
+                    Some(chaos_client::Egress::parse("http://gateway/egress/chaos").unwrap());
+            }
+            let client = crate::client::ModelClient::new(
+                None,
+                chaos_ipc::ProcessId::new(),
+                "openai".into(),
+                provider,
+                chaos_ipc::protocol::SessionSource::Exec,
+                chaos_ipc::protocol::ApprovalPolicy::Headless,
+                None,
+                true,
+                None,
+                false,
+                crate::config::ClampSettings::default(),
+            );
+            let compression = client
+                .new_session()
+                .responses_request_compression(Some(&auth));
+            assert_eq!(matches!(compression, super::Compression::None), use_egress,);
+        }
+    }
 
     #[test]
     fn antigravity_model_mapping_uses_observed_cli_slugs() {

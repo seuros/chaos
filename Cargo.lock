@@ -1012,6 +1012,7 @@ version = "47.3.0"
 dependencies = [
  "base64 0.22.1",
  "chaos-abi",
+ "chaos-client",
  "chaos-ipc",
  "futures",
  "rama",

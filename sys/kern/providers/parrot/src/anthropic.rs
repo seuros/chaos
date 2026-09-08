@@ -141,8 +141,7 @@ impl ModelAdapter for AnthropicAdapter {
                 default_cache_ttl_for_base_url(&self.provider.base_url),
             )?;
             let headers = self.build_headers()?;
-            let retry = self.provider.retry.clone();
-            let idle_timeout = self.provider.stream_idle_timeout;
+            let provider = self.provider.clone();
             let sniffer = self.sniffer.clone();
 
             let (tx, rx) = mpsc::channel(64);
@@ -152,8 +151,7 @@ impl ModelAdapter for AnthropicAdapter {
                     &url,
                     &headers,
                     &body,
-                    &retry,
-                    idle_timeout,
+                    &provider,
                     sniffer.as_ref(),
                     tx.clone(),
                 )
@@ -186,7 +184,7 @@ impl ModelAdapter for AnthropicAdapter {
                     message: e.to_string(),
                 })?;
 
-            fetch_anthropic_models(&url, &headers).await
+            fetch_anthropic_models(&url, &headers, self.provider.egress.clone()).await
         })
     }
 }
@@ -733,8 +731,7 @@ async fn run_sse_stream(
     url: &str,
     headers: &HeaderMap,
     body: &Value,
-    retry: &crate::provider::RetryConfig,
-    idle_timeout: Duration,
+    provider: &Provider,
     sniffer: Option<&Arc<UsageSniffer>>,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
@@ -742,12 +739,17 @@ async fn run_sse_stream(
         url,
         headers,
         body,
-        retry,
+        provider,
         "anthropic_messages",
         sniffer,
     )
     .await?;
-    process_sse_data_stream(response.into_body().into_data_stream(), idle_timeout, tx).await
+    process_sse_data_stream(
+        response.into_body().into_data_stream(),
+        provider.stream_idle_timeout,
+        tx,
+    )
+    .await
 }
 
 async fn process_sse_data_stream<S, E>(
@@ -814,6 +816,7 @@ where
 async fn fetch_anthropic_models(
     url: &str,
     headers: &HeaderMap,
+    egress: Option<chaos_client::Egress>,
 ) -> Result<Vec<chaos_abi::AbiModelInfo>, chaos_abi::ListModelsError> {
     use rama::Service;
     use rama::http::Body;
@@ -872,7 +875,7 @@ async fn fetch_anthropic_models(
         supported: bool,
     }
 
-    let client = chaos_client::default_rama_http_client();
+    let client = chaos_client::default_rama_http_client_with_egress(egress);
     let mut builder = Request::builder().method("GET").uri(url);
     // Copy auth and version headers, skip content-type/accept (not needed for GET)
     for (name, value) in headers.iter() {
@@ -1004,6 +1007,7 @@ mod tests {
         use crate::provider::RetryConfig;
 
         Provider {
+            egress: None,
             name: "Anthropic".to_string(),
             base_url: chaos_services::anthropic::API_BASE.to_string(),
             query_params: None,

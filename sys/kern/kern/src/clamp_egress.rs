@@ -34,10 +34,15 @@ const LINUX_SANDBOX_ARG0: &str = "alcatraz";
 pub async fn start_antigravity_egress(
     sink: Arc<dyn WiretapSink>,
     ca_bundle_path: PathBuf,
+    gateway: Option<chaos_client::Egress>,
 ) -> Result<(EgressProxy, AntigravityEgress), String> {
-    let proxy = EgressProxy::start(EgressPolicy::antigravity(), sink, Some(ca_bundle_path))
-        .await
-        .map_err(|error| format!("failed to start Antigravity egress proxy: {error}"))?;
+    let proxy = EgressProxy::start(
+        EgressPolicy::antigravity().with_gateway(gateway),
+        sink,
+        Some(ca_bundle_path),
+    )
+    .await
+    .map_err(|error| format!("failed to start Antigravity egress proxy: {error}"))?;
     let egress = AntigravityEgress {
         proxy_url: proxy.proxy_url(),
         ca_bundle_path: proxy.ca_bundle_path().map(Path::to_path_buf),

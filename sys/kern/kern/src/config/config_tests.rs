@@ -28,6 +28,9 @@ use std::io::ErrorKind;
 use std::time::Duration;
 use tempfile::TempDir;
 
+#[path = "config_tests/egress.rs"]
+mod egress;
+
 #[path = "config_tests/agent_roles.rs"]
 mod agent_roles;
 #[path = "config_tests/compact_and_catalog.rs"]
@@ -998,6 +1001,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         terminal_title: Default::default(),
         service_tier: None,
         model_provider_id: "openai".to_string(),
+        egress_url: None,
         model_provider: fixture.openai_provider.clone(),
         permissions: expected_precedence_fixture_permissions(ApprovalPolicy::Supervised),
         approvals_reviewer: ApprovalsReviewer::User,
@@ -1169,6 +1173,7 @@ model_verbosity = "high"
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
     let model_provider_map = {
         let mut model_provider_map = built_in_model_providers();

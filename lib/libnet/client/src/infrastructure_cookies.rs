@@ -108,14 +108,6 @@ pub(crate) fn with_infrastructure_cookies(
     InfrastructureCookieLayer::new().into_layer(client).boxed()
 }
 
-pub fn default_rama_http_client()
--> BoxService<rama::http::Request, rama::http::Response, OpaqueError> {
-    crate::ensure_rustls_crypto_provider();
-    InfrastructureCookieLayer::new()
-        .into_layer(rama::http::client::EasyHttpWebClient::default())
-        .boxed()
-}
-
 fn secure_absolute_url(uri: &impl std::fmt::Display) -> Option<Url> {
     let url = Url::parse(&uri.to_string()).ok()?;
     (url.scheme() == "https" && url.host_str().is_some()).then_some(url)
@@ -348,5 +340,57 @@ mod tests {
         requests
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[tokio::test]
+    async fn egress_keeps_infrastructure_cookies_scoped_to_vendor_origins() {
+        let store = Arc::new(Mutex::new(CookieStore::new()));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&requests);
+        let inner = service_fn(move |request: Request<Body>| {
+            let captured = Arc::clone(&captured);
+            async move {
+                assert!(
+                    request
+                        .uri()
+                        .to_string()
+                        .starts_with("https://gateway/egress/chaos/")
+                );
+                lock_requests(&captured).push(
+                    request
+                        .headers()
+                        .get(COOKIE)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_owned),
+                );
+                Ok::<_, OpaqueError>(
+                    Response::builder()
+                        .header(SET_COOKIE, "__cf_bm=edge; Path=/; Secure")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+            }
+        })
+        .boxed();
+        let service =
+            InfrastructureCookieLayer::with_store(store).into_layer(crate::egress::with_egress(
+                inner,
+                Some(crate::Egress::parse("https://gateway/egress/chaos").unwrap()),
+            ));
+        for origin in ["first.example", "second.example", "first.example"] {
+            service
+                .serve(
+                    Request::builder()
+                        .uri(format!("https://{origin}/v1/models"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            *lock_requests(&requests),
+            vec![None, None, Some("__cf_bm=edge".into())]
+        );
     }
 }

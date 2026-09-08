@@ -82,6 +82,7 @@ async fn continue_after_stream_error() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
 
     let TestChaos { process: chaos, .. } = test_chaos()

@@ -28,14 +28,8 @@ use rama::{
     error::BoxError,
     extensions::{Extension, ExtensionsRef},
     http::{
-        Body, Request, Response, StatusCode, Version,
-        body::util::BodyExt,
-        client::EasyHttpWebClient,
-        layer::{
-            map_response_body::MapResponseBodyLayer,
-            remove_header::{RemoveRequestHeaderLayer, RemoveResponseHeaderLayer},
-            upgrade::{LazyHttpProxyConnectReplyService, UpgradeLayer, Upgraded},
-        },
+        Request, Response, StatusCode,
+        layer::upgrade::{LazyHttpProxyConnectReplyService, UpgradeLayer, Upgraded},
         matcher::MethodMatcher,
         server::HttpServer,
     },
@@ -44,7 +38,6 @@ use rama::{
     rt::Executor,
     service::service_fn,
     tcp::server::TcpListener,
-    tls::client::TlsClientConfig,
     tls::rustls::server::TlsAcceptorLayer,
     tls::server::{
         CertificateIdentity, CertificateSubject, LeafCertConfig, LeafCertRequest,
@@ -54,7 +47,9 @@ use rama::{
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::proxy::{RecordParts, TeeBody, WiretapExchange, WiretapSink, redact_headers};
+use crate::proxy::{
+    RecordParts, WiretapExchange, WiretapSink, error_response, forward_recorded_request,
+};
 
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
 /// endpoint, and the generative-language surface. Everything else the binary
@@ -65,15 +60,13 @@ pub const ANTIGRAVITY_ALLOWED_HOSTS: [&str; 3] = [
     "generativelanguage.googleapis.com",
 ];
 
-/// Cap on buffered response bytes per exchange before the record is truncated.
-const MAX_RESPONSE_CAPTURE: usize = 8 * 1024 * 1024;
-
 /// Which destinations a clamped subprocess may reach, and whether the proxy
 /// opens the TLS session to read what crosses it.
 #[derive(Debug, Clone)]
 pub struct EgressPolicy {
     allowed_hosts: Vec<String>,
     inspect_bodies: bool,
+    gateway: Option<chaos_client::Egress>,
 }
 
 impl EgressPolicy {
@@ -93,12 +86,20 @@ impl EgressPolicy {
                 .filter(|host| !host.is_empty())
                 .collect(),
             inspect_bodies: true,
+            gateway: None,
         }
     }
 
     /// The default policy for Google's Antigravity CLI.
     pub fn antigravity() -> Self {
         Self::new(ANTIGRAVITY_ALLOWED_HOSTS)
+    }
+
+    /// Route permitted requests through the global LSD gateway after TLS
+    /// termination. The destination allowlist still applies before forwarding.
+    pub fn with_gateway(mut self, gateway: Option<chaos_client::Egress>) -> Self {
+        self.gateway = gateway;
+        self
     }
 
     /// Relay tunnels verbatim instead of terminating TLS. Use when the
@@ -170,6 +171,11 @@ impl EgressProxy {
         sink: Arc<dyn WiretapSink>,
         ca_bundle_path: Option<PathBuf>,
     ) -> Result<Self, BoxError> {
+        if policy.gateway.is_some() && !policy.inspect_bodies {
+            return Err(
+                "global egress requires TLS inspection; direct tunnel relay is disabled".into(),
+            );
+        }
         let (tls, ca_bundle_path) = if policy.inspect_bodies {
             let path = ca_bundle_path
                 .ok_or_else(|| BoxError::from("body inspection requires a CA bundle path"))?;
@@ -374,63 +380,36 @@ async fn inspect_and_forward(
         return Ok(error_response(StatusCode::FORBIDDEN));
     }
 
-    let (mut parts, body) = req.into_parts();
-    let method = parts.method.to_string();
-    let path = parts.uri.request_target().into_owned();
-    let headers = redact_headers(&parts.headers);
-
-    let bytes = match body.collect().await {
-        Ok(collected) => collected.to_bytes(),
+    let (mut upstream_req, record) = match RecordParts::capture(req).await {
+        Ok(captured) => captured,
         Err(err) => {
             warn!("egress: failed to read request body: {err}");
             return Ok(error_response(StatusCode::BAD_GATEWAY));
         }
     };
-    let request = std::str::from_utf8(&bytes)
-        .ok()
-        .and_then(|body| serde_json::from_str::<serde_json::Value>(body).ok());
-    let record = RecordParts::new(method, path, headers, request);
-
-    // Ask for identity encoding so the tee captures readable bytes.
-    parts.headers.remove("accept-encoding");
-    let upstream_req = Request::from_parts(parts, Body::from(bytes));
-
-    let tls = TlsClientConfig::new().with_alpn_http_auto();
-    let client = EasyHttpWebClient::connector_builder()
-        .with_default_transport_connector()
-        .with_default_dns_connector()
-        .with_tls_proxy_support_using_rustls()
-        .with_proxy_support()
-        .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
-        .with_default_http_connector(state.exec.clone())
-        .without_connection_pool()
-        .build_client();
-    let client = (
-        RemoveRequestHeaderLayer::hop_by_hop(),
-        RemoveResponseHeaderLayer::hop_by_hop(),
-        MapResponseBodyLayer::new_boxed_streaming_body(),
-    )
-        .into_layer(client);
-
-    match client.serve(upstream_req).await {
-        Ok(resp) => {
-            let status = resp.status().as_u16();
-            let (resp_parts, resp_body) = resp.into_parts();
-            let tee = TeeBody::new(
-                resp_body.into_data_stream(),
-                record,
-                status,
-                state.sink,
-                MAX_RESPONSE_CAPTURE,
-            );
-            Ok(Response::from_parts(resp_parts, Body::from_stream(tee)))
+    if state.policy.gateway.is_some() {
+        // HTTP/1 requests inside CONNECT can use origin-form targets.
+        if upstream_req.uri().scheme().is_none() {
+            upstream_req
+                .uri_mut()
+                .set_scheme(rama::net::Protocol::HTTPS);
         }
-        Err(err) => {
-            warn!("egress: upstream error: {err:?}");
-            state.sink.record(record.into_exchange(None, None, false));
-            Ok(error_response(StatusCode::BAD_GATEWAY))
+        if upstream_req.uri().authority().is_none() {
+            let Ok(authority) = host.parse() else {
+                return Ok(error_response(StatusCode::BAD_GATEWAY));
+            };
+            upstream_req.uri_mut().set_authority(authority);
         }
     }
+
+    forward_recorded_request(
+        upstream_req,
+        record,
+        state.sink,
+        state.exec,
+        state.policy.gateway.as_ref(),
+    )
+    .await
 }
 
 /// Generates the session CA and a leaf covering every allowlisted host.
@@ -527,16 +506,12 @@ fn blocked_exchange(host: &str) -> WiretapExchange {
     }
 }
 
-fn error_response(status: StatusCode) -> Response {
-    let mut resp = Response::new(Body::empty());
-    *resp.status_mut() = status;
-    resp
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+    use rama::http::Body;
+    use rama::http::body::util::BodyExt;
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -574,6 +549,84 @@ mod tests {
         );
         assert_eq!(connect_host("[::1]:8443").as_deref(), Some("::1"));
         assert_eq!(connect_host(""), None);
+    }
+
+    #[tokio::test]
+    async fn global_egress_cannot_use_direct_tunnel_relay() {
+        let policy = EgressPolicy::antigravity()
+            .with_gateway(Some(
+                chaos_client::Egress::parse("http://gateway/egress/chaos").unwrap(),
+            ))
+            .without_body_inspection();
+        let err = EgressProxy::start(policy, Arc::new(TestSink::default()), None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("global egress requires TLS inspection")
+        );
+    }
+
+    #[tokio::test]
+    async fn global_egress_routes_inspected_antigravity_requests() {
+        let exec = Executor::default();
+        let listener = TcpListener::build(exec.clone())
+            .bind_address("127.0.0.1:0")
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let http = HttpServer::auto(exec.clone()).service(Arc::new(service_fn(
+            |req: Request| async move {
+                assert_eq!(
+                    req.uri().request_target(),
+                    "/egress/chaos/v1internal:streamGenerateContent?alt=sse"
+                );
+                assert_eq!(
+                    req.headers()["x-lsd-upstream"],
+                    "https://cloudcode-pa.googleapis.com"
+                );
+                assert_eq!(req.headers()["authorization"], "Bearer vendor-token");
+                Ok::<_, std::convert::Infallible>(
+                    Response::builder()
+                        .status(200)
+                        .body(Body::from("data: done\n\n"))
+                        .unwrap(),
+                )
+            },
+        )));
+        let gateway = tokio::spawn(async move { listener.serve(http).await });
+        let state = EgressState {
+            policy: EgressPolicy::antigravity().with_gateway(Some(
+                chaos_client::Egress::parse(&format!("http://127.0.0.1:{port}/egress/chaos"))
+                    .unwrap(),
+            )),
+            sink: Arc::new(TestSink::default()),
+            tls: None,
+            exec,
+        };
+        // Origin-form HTTP/1 request inside the already-terminated tunnel.
+        let request = Request::builder()
+            .uri("/v1internal:streamGenerateContent?alt=sse")
+            .header("host", "cloudcode-pa.googleapis.com")
+            .header("authorization", "Bearer vendor-token")
+            .body(Body::from("{}"))
+            .unwrap();
+        let response = inspect_and_forward(request, state.clone()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            "data: done\n\n"
+        );
+
+        let blocked = Request::builder()
+            .uri("https://aiplatform.googleapis.com/v1/predict")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            inspect_and_forward(blocked, state).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+        gateway.abort();
     }
 
     #[tokio::test]

@@ -329,6 +329,9 @@ pub struct Config {
     /// Info needed to make an API request to the model.
     pub model_provider: ModelProviderInfo,
 
+    /// One egress endpoint shared by every provider; no per-provider opt-in.
+    pub egress_url: Option<String>,
+
     /// Optionally specify the personality of the model
     pub personality: Option<Personality>,
 
@@ -626,6 +629,10 @@ pub struct ConfigToml {
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
+
+    /// Route all provider API requests through LSD's dynamic egress endpoint
+    /// (for example `http://gateway:3000/egress/chaos`), preserving vendor auth.
+    pub egress_url: Option<String>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,

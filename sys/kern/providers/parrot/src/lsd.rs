@@ -108,8 +108,7 @@ impl ModelAdapter for LsdAdapter {
 
             let body = build_request_body(&request, &function_name, episode_id.as_deref())?;
             let headers = self.build_headers()?;
-            let retry = self.provider.retry.clone();
-            let idle_timeout = self.provider.stream_idle_timeout;
+            let provider = self.provider.clone();
             let sniffer = self.sniffer.clone();
 
             let (tx, rx) = mpsc::channel(64);
@@ -123,8 +122,7 @@ impl ModelAdapter for LsdAdapter {
                     &url,
                     &headers,
                     &body,
-                    &retry,
-                    idle_timeout,
+                    &provider,
                     turn_state,
                     sniffer.as_ref(),
                     tx.clone(),
@@ -639,8 +637,7 @@ async fn run_sse_stream(
     url: &str,
     headers: &HeaderMap,
     body: &Value,
-    retry: &crate::provider::RetryConfig,
-    idle_timeout: Duration,
+    provider: &Provider,
     turn_state: Option<Arc<OnceLock<String>>>,
     sniffer: Option<&Arc<UsageSniffer>>,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
@@ -649,14 +646,14 @@ async fn run_sse_stream(
         url,
         headers,
         body,
-        retry,
+        provider,
         "tensorzero",
         sniffer,
     )
     .await?;
     process_sse_data_stream(
         response.into_body().into_data_stream(),
-        idle_timeout,
+        provider.stream_idle_timeout,
         turn_state,
         tx,
     )

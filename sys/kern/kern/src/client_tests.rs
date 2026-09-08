@@ -136,6 +136,7 @@ fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     }
 }
 

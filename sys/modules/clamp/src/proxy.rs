@@ -94,6 +94,7 @@ pub trait WiretapSink: Send + Sync + 'static {
 struct Upstream {
     scheme: Protocol,
     authority: Authority,
+    egress: Option<chaos_client::Egress>,
 }
 
 impl Upstream {
@@ -101,6 +102,7 @@ impl Upstream {
         Self {
             scheme: Protocol::HTTPS,
             authority: Authority::from_static(UPSTREAM_HOST),
+            egress: None,
         }
     }
 
@@ -111,7 +113,11 @@ impl Upstream {
             .authority()
             .map(rama::net::address::AuthorityRef::into_owned)
             .ok_or_else(|| BoxError::from("upstream base url has no authority"))?;
-        Ok(Self { scheme, authority })
+        Ok(Self {
+            scheme,
+            authority,
+            egress: None,
+        })
     }
 
     fn host_header(&self) -> HeaderValue {
@@ -140,6 +146,16 @@ impl WiretapProxy {
     /// exchange to `sink` and forwarding to Anthropic.
     pub async fn start(sink: Arc<dyn WiretapSink>) -> Result<Self, BoxError> {
         Self::start_with_upstream_inner(sink, Upstream::anthropic()).await
+    }
+
+    /// Forward Claude Code's vendor requests through the global LSD lane.
+    pub async fn start_with_egress(
+        sink: Arc<dyn WiretapSink>,
+        egress: chaos_client::Egress,
+    ) -> Result<Self, BoxError> {
+        let mut upstream = Upstream::anthropic();
+        upstream.egress = Some(egress);
+        Self::start_with_upstream_inner(sink, upstream).await
     }
 
     /// Like [`WiretapProxy::start`] but forwarding to a custom upstream base URL
@@ -265,18 +281,18 @@ pub(crate) struct RecordParts {
 }
 
 impl RecordParts {
-    pub(crate) fn new(
-        method: String,
-        path: String,
-        headers: serde_json::Value,
-        request: Option<serde_json::Value>,
-    ) -> Self {
-        Self {
-            method,
-            path,
-            headers,
+    pub(crate) async fn capture(req: Request) -> Result<(Request, Self), BoxError> {
+        let (parts, body) = req.into_parts();
+        // Buffer the request (prompt + tool schemas), never the SSE response.
+        let bytes = body.collect().await?.to_bytes();
+        let request = serde_json::from_slice(&bytes).ok();
+        let record = Self {
+            method: parts.method.to_string(),
+            path: parts.uri.request_target().into_owned(),
+            headers: redact_headers(&parts.headers),
             request,
-        }
+        };
+        Ok((Request::from_parts(parts, Body::from(bytes)), record))
     }
 
     pub(crate) fn into_exchange(
@@ -305,41 +321,47 @@ async fn forward(
     sink: Arc<dyn WiretapSink>,
     upstream: Upstream,
 ) -> Result<Response, std::convert::Infallible> {
-    let (mut parts, body) = req.into_parts();
-
-    let method = parts.method.to_string();
-    let path = parts.uri.request_target().into_owned();
-
-    let headers = redact_headers(&parts.headers);
-
-    // Buffer the request body — it's small (prompt + tool schemas). The
-    // response is the SSE stream and is never buffered here.
-    let bytes = match body.collect().await {
-        Ok(collected) => collected.to_bytes(),
+    let (mut req, record) = match RecordParts::capture(req).await {
+        Ok(captured) => captured,
         Err(err) => {
             warn!("wiretap: failed to read request body: {err}");
             return Ok(error_response(StatusCode::BAD_GATEWAY));
         }
     };
-    let request = std::str::from_utf8(&bytes)
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
-    let record = RecordParts {
-        method,
-        path,
-        headers,
-        request,
-    };
 
     // Rewrite URI to the upstream scheme+authority, keeping path+query.
-    parts.uri.set_scheme(upstream.scheme.clone());
-    parts.uri.set_authority(upstream.authority.clone());
-    parts.headers.insert(HOST, upstream.host_header());
+    req.uri_mut().set_scheme(upstream.scheme.clone());
+    req.uri_mut().set_authority(upstream.authority.clone());
+    req.headers_mut().insert(HOST, upstream.host_header());
+    forward_recorded_request(
+        req,
+        record,
+        sink,
+        Executor::default(),
+        upstream.egress.as_ref(),
+    )
+    .await
+}
+
+/// Shared streaming path for reverse-proxy and TLS-inspected requests.
+/// Destination policy and vendor URI normalization happen before this boundary.
+pub(crate) async fn forward_recorded_request(
+    mut req: Request,
+    record: RecordParts,
+    sink: Arc<dyn WiretapSink>,
+    exec: Executor,
+    egress: Option<&chaos_client::Egress>,
+) -> Result<Response, std::convert::Infallible> {
     // Ask the upstream for identity encoding so the tee captures readable bytes;
     // the subprocess still receives a valid (uncompressed) response.
-    parts.headers.remove("accept-encoding");
+    req.headers_mut().remove("accept-encoding");
 
-    let upstream_req = Request::from_parts(parts, Body::from(bytes));
+    if let Some(egress) = egress
+        && let Err(error) = egress.route(&mut req)
+    {
+        warn!("wiretap: egress routing failed: {error}");
+        return Ok(error_response(StatusCode::BAD_GATEWAY));
+    }
 
     let tls = TlsClientConfig::new().with_alpn_http_auto();
     let client = EasyHttpWebClient::connector_builder()
@@ -348,7 +370,7 @@ async fn forward(
         .with_tls_proxy_support_using_rustls()
         .with_proxy_support()
         .with_tls_support_using_rustls_and_default_http_version(tls, Version::HTTP_11)
-        .with_default_http_connector(Executor::default())
+        .with_default_http_connector(exec)
         .without_connection_pool()
         .build_client();
     let client = (
@@ -358,7 +380,7 @@ async fn forward(
     )
         .into_layer(client);
 
-    match client.serve(upstream_req).await {
+    match client.serve(req).await {
         Ok(resp) => {
             let status = resp.status().as_u16();
             let (resp_parts, resp_body) = resp.into_parts();
@@ -465,7 +487,7 @@ pub(crate) fn redact_headers(headers: &rama::http::HeaderMap) -> serde_json::Val
     serde_json::Value::Object(map)
 }
 
-fn error_response(status: StatusCode) -> Response {
+pub(crate) fn error_response(status: StatusCode) -> Response {
     let mut resp = Response::new(Body::empty());
     *resp.status_mut() = status;
     resp
@@ -654,6 +676,46 @@ mod tests {
         let status = resp.status().as_u16();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    #[tokio::test]
+    async fn global_egress_routes_claude_code_through_gateway() {
+        let exec = Executor::default();
+        let listener = TcpListener::build(exec.clone())
+            .bind_address("127.0.0.1:0")
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let http =
+            HttpServer::auto(exec).service(Arc::new(service_fn(|req: Request| async move {
+                assert_eq!(
+                    req.uri().request_target(),
+                    "/egress/chaos/v1/messages?beta=true"
+                );
+                assert_eq!(req.headers()["x-lsd-upstream"], "https://api.anthropic.com");
+                assert_eq!(req.headers()["authorization"], "Bearer sekret");
+                assert_eq!(req.into_body().collect().await.unwrap().to_bytes(), "{}");
+                Ok::<_, std::convert::Infallible>(
+                    Response::builder()
+                        .status(402)
+                        .body(Body::from("balance exhausted"))
+                        .unwrap(),
+                )
+            })));
+        let gateway = tokio::spawn(async move { listener.serve(http).await });
+        let sink = Arc::new(TestSink::default());
+        let proxy = WiretapProxy::start_with_egress(
+            sink.clone(),
+            chaos_client::Egress::parse(&format!("http://127.0.0.1:{port}/egress/chaos")).unwrap(),
+        )
+        .await
+        .unwrap();
+        let (status, body) = post(proxy.port(), "/v1/messages?beta=true", "{}").await;
+        assert_eq!(status, 402);
+        assert_eq!(body, "balance exhausted");
+        assert_eq!(sink.one().status, Some(402));
+        proxy.shutdown();
+        gateway.abort();
     }
 
     #[tokio::test]

@@ -779,7 +779,7 @@ impl ModelsManager {
         let auth_mode = auth.as_ref().map(ChaosAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
         let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
-        let transport = RamaTransport::default_client();
+        let transport = RamaTransport::default_client_with_egress(api_provider.egress.clone());
         let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
             auth_mode: auth_mode.map(|mode| TelemetryAuthMode::from(mode).to_string()),
             auth_header_attached: api_auth.auth_header_attached(),
@@ -878,7 +878,7 @@ impl ModelsManager {
             chaos_parrot::SessionRepresenter::wannabe()
         };
         let adapter = OpenAiAdapter::new(
-            chaos_parrot::RamaTransport::default_client(),
+            chaos_parrot::RamaTransport::default_client_with_egress(api_provider.egress.clone()),
             api_provider,
             auth_provider,
             None,

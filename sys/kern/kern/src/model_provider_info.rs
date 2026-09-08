@@ -138,6 +138,10 @@ pub fn native_server_side_tools_for_url(base_url: Option<&str>) -> Vec<String> {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ModelProviderInfo {
+    /// Runtime routing inherited from the root config, never a provider option.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub egress: Option<chaos_client::Egress>,
     /// Friendly display name.
     pub name: String,
     /// Last-resort family fallback; unknown by default.
@@ -331,6 +335,7 @@ impl ModelProviderInfo {
         };
 
         Ok(ApiProvider {
+            egress: self.egress.clone(),
             name: self.name.clone(),
             base_url: self.effective_base_url(auth_mode),
             query_params: self.query_params.clone(),
@@ -424,6 +429,7 @@ impl ModelProviderInfo {
 
     pub fn create_anthropic_provider() -> ModelProviderInfo {
         ModelProviderInfo {
+            egress: None,
             name: ANTHROPIC_PROVIDER_NAME.into(),
             model_family: ModelFamily::new("anthropic"),
             model_family_overrides: HashMap::new(),
@@ -457,6 +463,7 @@ impl ModelProviderInfo {
 
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
+            egress: None,
             name: OPENAI_PROVIDER_NAME.into(),
             model_family: ModelFamily::new("openai"),
             model_family_overrides: HashMap::new(),
@@ -534,6 +541,7 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
 
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
     ModelProviderInfo {
+        egress: None,
         name: "gpt-oss".into(),
         model_family: ModelFamily::new("openai"),
         model_family_overrides: HashMap::new(),

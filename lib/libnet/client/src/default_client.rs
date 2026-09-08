@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use rama::Service;
-use rama::error::extra::OpaqueError;
 use rama::http::Body;
 use rama::http::HeaderMap;
 use rama::http::HeaderName;
@@ -8,17 +7,13 @@ use rama::http::HeaderValue;
 use rama::http::HttpError;
 use rama::http::Method;
 use rama::http::body::util::BodyExt;
-use rama::service::BoxService;
 use serde::Serialize;
 use std::fmt::Display;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::ensure_rustls_crypto_provider;
-use crate::infrastructure_cookies::with_infrastructure_cookies;
+use crate::http_client::{RamaClient, raw_http_client, with_http_policies};
 use crate::telemetry::inject_trace_headers;
-
-type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueError>;
 
 /// HTTP client wrapper backed by rama. Provides convenience methods
 /// (.get, .post, .send) with OpenTelemetry trace header injection.
@@ -36,16 +31,22 @@ impl std::fmt::Debug for ChaosHttpClient {
 
 impl ChaosHttpClient {
     pub fn new(client: RamaClient) -> Self {
+        Self::new_with_egress(client, None)
+    }
+
+    pub fn new_with_egress(client: RamaClient, egress: Option<crate::Egress>) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(with_infrastructure_cookies(client))),
+            inner: Arc::new(Mutex::new(with_http_policies(client, egress))),
             default_headers: HeaderMap::new(),
         }
     }
 
     pub fn default_client() -> Self {
-        use rama::Service;
-        ensure_rustls_crypto_provider();
-        Self::new(rama::http::client::EasyHttpWebClient::default().boxed())
+        Self::default_client_with_egress(None)
+    }
+
+    pub fn default_client_with_egress(egress: Option<crate::Egress>) -> Self {
+        Self::new_with_egress(raw_http_client(), egress)
     }
 
     pub fn get(&self, url: &str) -> ChaosRequestBuilder {

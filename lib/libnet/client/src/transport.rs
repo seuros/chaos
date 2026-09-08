@@ -5,20 +5,17 @@ use crate::request::Response;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use rama::Service;
-use rama::error::extra::OpaqueError;
 use rama::http::Body;
 use rama::http::HeaderMap;
 use rama::http::StatusCode;
 use rama::http::body::util::BodyExt;
-use rama::service::BoxService;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::Level;
 use tracing::enabled;
 use tracing::trace;
 
-use crate::ensure_rustls_crypto_provider;
-use crate::infrastructure_cookies::with_infrastructure_cookies;
+use crate::http_client::{RamaClient, raw_http_client, with_http_policies};
 use crate::telemetry::inject_trace_headers;
 
 pub type ByteStream = BoxStream<'static, Result<Bytes, TransportError>>;
@@ -35,8 +32,6 @@ pub trait HttpTransport: Send + Sync {
     async fn stream(&self, req: Request) -> Result<StreamResponse, TransportError>;
 }
 
-type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueError>;
-
 #[derive(Clone)]
 pub struct RamaTransport {
     client: Arc<Mutex<RamaClient>>,
@@ -44,15 +39,21 @@ pub struct RamaTransport {
 
 impl RamaTransport {
     pub fn new(client: RamaClient) -> Self {
+        Self::new_with_egress(client, None)
+    }
+
+    pub fn new_with_egress(client: RamaClient, egress: Option<crate::Egress>) -> Self {
         Self {
-            client: Arc::new(Mutex::new(with_infrastructure_cookies(client))),
+            client: Arc::new(Mutex::new(with_http_policies(client, egress))),
         }
     }
 
     pub fn default_client() -> Self {
-        use rama::Service;
-        ensure_rustls_crypto_provider();
-        Self::new(rama::http::client::EasyHttpWebClient::default().boxed())
+        Self::default_client_with_egress(None)
+    }
+
+    pub fn default_client_with_egress(egress: Option<crate::Egress>) -> Self {
+        Self::new_with_egress(raw_http_client(), egress)
     }
 
     fn build_request(req: Request) -> Result<rama::http::Request, TransportError> {

@@ -60,6 +60,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
 
     let chaos_home = TempDir::new().expect("failed to create TempDir");
@@ -176,6 +177,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
 
     let chaos_home = TempDir::new().expect("failed to create TempDir");
@@ -287,6 +289,7 @@ async fn responses_respects_model_info_overrides_from_config() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
 
     let chaos_home = TempDir::new().expect("failed to create TempDir");

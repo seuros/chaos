@@ -1,6 +1,6 @@
-use crate::provider::RetryConfig;
+use crate::provider::Provider;
 use chaos_abi::AbiError;
-use chaos_client::default_rama_http_client;
+use chaos_client::default_rama_http_client_with_egress;
 use chaos_libration::UsageSniffer;
 use rama::Service;
 use rama::http::Body;
@@ -23,7 +23,7 @@ pub(crate) async fn start_rama_post_sse_request(
     url: &str,
     headers: &HeaderMap,
     body: &Value,
-    retry: &RetryConfig,
+    provider: &Provider,
     transport_name: &str,
     sniffer: Option<&Arc<UsageSniffer>>,
 ) -> Result<Response<Body>, AbiError> {
@@ -31,6 +31,7 @@ pub(crate) async fn start_rama_post_sse_request(
         message: e.to_string(),
     })?;
 
+    let retry = &provider.retry;
     let max_attempts = retry.max_attempts.max(1);
     let base_delay = retry.base_delay;
 
@@ -40,7 +41,7 @@ pub(crate) async fn start_rama_post_sse_request(
             tokio::time::sleep(delay).await;
         }
 
-        let client = default_rama_http_client();
+        let client = default_rama_http_client_with_egress(provider.egress.clone());
         let mut builder = Request::builder().method("POST").uri(url);
         for (name, value) in headers.iter() {
             builder = builder.header(name, value);

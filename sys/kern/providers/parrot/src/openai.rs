@@ -67,6 +67,7 @@ pub struct OpenAiAdapter<A: AuthProvider> {
     discovery_base_url: String,
     /// Bearer token captured from the auth provider at construction time.
     discovery_token: Option<String>,
+    discovery_egress: Option<chaos_client::Egress>,
     /// Session-scoped representer — projects Chaos-ABI items to this provider's wire format.
     representer: crate::representer::SessionRepresenter,
 }
@@ -111,12 +112,14 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
     ) -> Self {
         let discovery_base_url = provider.base_url.clone();
         let discovery_token = auth.bearer_token();
+        let discovery_egress = provider.egress.clone();
         Self {
             client: ResponsesClient::new(transport, provider, auth),
             options: ResponsesOptions::default(),
             default_model,
             discovery_base_url,
             discovery_token,
+            discovery_egress,
             representer,
         }
     }
@@ -137,6 +140,7 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
             default_model: self.default_model,
             discovery_base_url: self.discovery_base_url,
             discovery_token: self.discovery_token,
+            discovery_egress: self.discovery_egress,
             representer: self.representer,
         }
     }
@@ -199,7 +203,8 @@ where
     fn list_models(&self) -> chaos_abi::ListModelsFuture<'_> {
         let base_url = self.discovery_base_url.clone();
         let token = self.discovery_token.clone();
-        Box::pin(async move { fetch_openai_models(&base_url, token.as_deref()).await })
+        let egress = self.discovery_egress.clone();
+        Box::pin(async move { fetch_openai_models(&base_url, token.as_deref(), egress).await })
     }
 }
 
@@ -322,6 +327,7 @@ fn can_carry_a_turn(id: &str, declares_chat: Option<bool>) -> bool {
 async fn fetch_openai_models(
     base_url: &str,
     token: Option<&str>,
+    egress: Option<chaos_client::Egress>,
 ) -> Result<Vec<chaos_abi::AbiModelInfo>, chaos_abi::ListModelsError> {
     use rama::Service;
     use rama::http::Body;
@@ -405,7 +411,7 @@ async fn fetch_openai_models(
             message: e.to_string(),
         })?;
 
-    let client = chaos_client::default_rama_http_client();
+    let client = chaos_client::default_rama_http_client_with_egress(egress);
     let response = client
         .serve(request)
         .await
@@ -556,7 +562,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let models = fetch_openai_models(&server.uri(), None)
+        let models = fetch_openai_models(&server.uri(), None, None)
             .await
             .expect("listing succeeds");
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();

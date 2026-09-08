@@ -45,6 +45,8 @@ impl RetryConfig {
 /// stream idle timeout, plus helper methods for building requests.
 #[derive(Debug, Clone)]
 pub struct Provider {
+    /// Global routing policy inherited from the kernel.
+    pub egress: Option<chaos_client::Egress>,
     pub name: String,
     pub base_url: String,
     pub query_params: Option<HashMap<String, String>>,
@@ -60,6 +62,7 @@ impl Provider {
         retry_429: bool,
     ) -> Self {
         Self {
+            egress: None,
             name: name.into(),
             base_url,
             query_params: None,

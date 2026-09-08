@@ -363,6 +363,16 @@ impl Config {
             model_providers.insert(key, provider);
         }
 
+        let egress = cfg
+            .egress_url
+            .as_deref()
+            .map(chaos_client::Egress::parse)
+            .transpose()
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+        for provider in model_providers.values_mut() {
+            provider.egress = egress.clone();
+        }
+
         let model_provider_id = model_provider
             .or(config_profile.model_provider)
             .or(cfg.model_provider)
@@ -594,6 +604,7 @@ impl Config {
             terminal_title: cfg.terminal_title.unwrap_or_default(),
             model_provider_id,
             model_provider,
+            egress_url: cfg.egress_url,
             cwd: resolved_cwd,
             startup_warnings,
             permissions: Permissions {

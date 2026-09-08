@@ -67,6 +67,7 @@ async fn retries_on_early_close() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
 
     let TestChaos { process: chaos, .. } = test_chaos()

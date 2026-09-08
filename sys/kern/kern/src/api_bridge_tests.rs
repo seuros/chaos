@@ -274,6 +274,7 @@ fn auth_provider_from_auth_preflight_matrix() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
     let Err(err) = auth_provider_from_auth(None, &xai_missing) else {
         panic!("missing env key must surface preflight error");
@@ -348,6 +349,7 @@ fn auth_provider_from_auth_preflight_matrix() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
     let Err(ChaosErr::ProviderAuthMissing(info)) = auth_provider_from_auth(None, &minimax) else {
         panic!("anthropic-wire provider without env must preflight-fail");
@@ -376,6 +378,7 @@ fn auth_provider_from_auth_preflight_matrix() {
         auth: None,
         supports_websockets: false,
         native_server_side_tools: vec![],
+        egress: None,
     };
     let auth =
         auth_provider_from_auth(None, &ollama).expect("self-hosted provider needs no credentials");

@@ -164,32 +164,40 @@ pub(super) fn selected_details(state: &PickerState) -> [Line<'static>; 2] {
     let Some(row) = state.filtered_rows.get(state.selected) else {
         return [Line::default(), Line::default()];
     };
-    let provider = row.model_provider.as_deref().unwrap_or("unknown");
+    let saved = state.saved_selections.get(&row.process_id);
+    let selection = saved
+        .and_then(|result| result.as_ref().ok())
+        .and_then(Option::as_ref);
+    let provider = selection
+        .map(|selection| selection.provider.as_str())
+        .or_else(|| row.model_provider.as_deref())
+        .unwrap_or("unknown");
+    let model = selection
+        .map(|selection| selection.model.as_str())
+        .unwrap_or("unknown");
     let tokens = row
         .tokens_used
         .map(|tokens| tokens.max(0).to_string())
         .unwrap_or_else(|| "unknown".to_string());
     let details = Line::from(format!(
-        "Saved provider: {provider} | Total tokens: {tokens} (cumulative usage)"
+        "Saved provider: {provider} | Model: {model} | Total tokens: {tokens} (cumulative usage)"
     ));
-    let notice = if row
-        .model_provider
-        .as_deref()
-        .is_some_and(|provider| provider != state.default_provider)
-    {
+    let notice = {
         let message = if state.keep_current_for.contains(&row.process_id) {
             format!(
                 "Keeping {} and the current model. Press Tab to switch back to {provider}.",
                 state.default_provider
             )
+        } else if let Some(Err(err)) = saved {
+            format!("Cannot read saved selection: {err}")
+        } else if matches!(saved, Some(Ok(None))) {
+            "No retained used turn; opening keeps the current model.".to_string()
         } else {
             format!(
-                "Opening this switches back to {provider}. Press Tab to keep the current model."
+                "Opening this switches back to {provider} and its last-used model/effort. Press Tab to keep the current model."
             )
         };
         Line::from(message.cyan())
-    } else {
-        Line::from("Total tokens is historical usage, not current context size.".dim())
     };
     [details, notice]
 }

@@ -184,29 +184,20 @@ impl App {
                         resume_config.model = Some(self.chat_widget.current_model().to_string());
                         resume_config.model_reasoning_effort =
                             self.chat_widget.config_ref().model_reasoning_effort;
-                        if let Err(err) = target_session
-                            .apply_saved_provider(&mut resume_config)
+                        match target_session
+                            .apply_saved_selection(&mut resume_config, &self.cli_kv_overrides)
                             .await
                         {
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to restore saved provider: {err}"
-                            ));
-                            return Ok(AppRunControl::Continue);
+                            Ok(Some(warning)) => resume_config.startup_warnings.push(warning),
+                            Ok(None) => {}
+                            Err(err) => {
+                                self.chat_widget.add_error_message(format!(
+                                    "Failed to restore saved selection: {err}"
+                                ));
+                                return Ok(AppRunControl::Continue);
+                            }
                         }
-                        let provider_changed =
-                            resume_config.model_provider_id != self.config.model_provider_id;
-                        let resume_server = if provider_changed {
-                            Arc::new(chaos_kern::ProcessTable::new(
-                                &resume_config,
-                                self.auth_manager.clone(),
-                                self.server.session_source(),
-                                chaos_kern::models_manager::CollaborationModesConfig {
-                                    default_mode_request_user_input: true,
-                                },
-                            ))
-                        } else {
-                            self.server.clone()
-                        };
+                        let resume_server = self.server_for_session_config(&resume_config);
                         let summary = session_summary(
                             self.chat_widget.token_usage(),
                             self.chat_widget.process_id(),
@@ -241,23 +232,8 @@ impl App {
                                 );
                                 self.reset_process_event_state();
                                 if let Some(summary) = summary {
-                                    let mut lines: Vec<Line<'static>> =
-                                        vec![summary.usage_line.clone().into()];
-                                    let has_name_and_id = summary.resume_commands.len() == 2;
-                                    for (index, command) in
-                                        summary.resume_commands.into_iter().enumerate()
-                                    {
-                                        let prefix = if index == 0 && has_name_and_id {
-                                            "To continue this session by name, run "
-                                        } else if index == 0 {
-                                            "To continue this session, run "
-                                        } else {
-                                            "Or by session ID, run "
-                                        };
-                                        let spans = vec![prefix.into(), command.cyan()];
-                                        lines.push(spans.into());
-                                    }
-                                    self.chat_widget.add_plain_history_lines(lines);
+                                    self.chat_widget
+                                        .add_plain_history_lines(summary.into_lines());
                                 }
                             }
                             Err(err) => {
@@ -292,11 +268,29 @@ impl App {
                 if let Some(process_id) = self.chat_widget.process_id() {
                     self.refresh_in_memory_config_from_disk_best_effort("forking the process")
                         .await;
-                    match self
-                        .server
+                    let mut fork_config = self.config.clone();
+                    let target = crate::resume_picker::SessionTarget {
+                        process_id,
+                        keep_current: false,
+                    };
+                    match target
+                        .apply_saved_selection(&mut fork_config, &self.cli_kv_overrides)
+                        .await
+                    {
+                        Ok(Some(warning)) => fork_config.startup_warnings.push(warning),
+                        Ok(None) => {}
+                        Err(err) => {
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to restore saved selection: {err}"
+                            ));
+                            return Ok(AppRunControl::Continue);
+                        }
+                    }
+                    let fork_server = self.server_for_session_config(&fork_config);
+                    match fork_server
                         .fork_process_by_id(
                             usize::MAX,
-                            self.config.clone(),
+                            fork_config.clone(),
                             process_id,
                             /*persist_extended_history*/ false,
                             /*parent_trace*/ None,
@@ -305,33 +299,21 @@ impl App {
                     {
                         Ok(forked) => {
                             self.shutdown_current_process().await;
+                            self.config = fork_config;
+                            self.server = fork_server;
                             let mut init = self.chatwidget_init_for_forked_or_resumed_process(
                                 tui,
                                 self.config.clone(),
                             );
+                            init.model = self.config.model.clone();
                             let (_, process, session_configured) = forked.into_parts();
                             init.halluacinate = process.halluacinate_handle();
                             self.chat_widget =
                                 ChatWidget::new_from_existing(init, process, session_configured);
                             self.reset_process_event_state();
                             if let Some(summary) = summary {
-                                let mut lines: Vec<Line<'static>> =
-                                    vec![summary.usage_line.clone().into()];
-                                let has_name_and_id = summary.resume_commands.len() == 2;
-                                for (index, command) in
-                                    summary.resume_commands.into_iter().enumerate()
-                                {
-                                    let prefix = if index == 0 && has_name_and_id {
-                                        "To continue this session by name, run "
-                                    } else if index == 0 {
-                                        "To continue this session, run "
-                                    } else {
-                                        "Or by session ID, run "
-                                    };
-                                    let spans = vec![prefix.into(), command.cyan()];
-                                    lines.push(spans.into());
-                                }
-                                self.chat_widget.add_plain_history_lines(lines);
+                                self.chat_widget
+                                    .add_plain_history_lines(summary.into_lines());
                             }
                         }
                         Err(err) => {

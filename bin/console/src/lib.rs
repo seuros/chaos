@@ -457,125 +457,63 @@ async fn run_ratatui_app(
     };
 
     let use_fork = cli.fork_picker || cli.fork_last || cli.fork_session_id.is_some();
-    let session_selection =
-        if use_fork {
-            if let Some(id_str) = cli.fork_session_id.as_deref() {
-                match resolve_saved_process_id(id_str).await? {
-                    Some(process_id) => {
-                        resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
-                            process_id,
-                            saved_provider: None,
-                        })
-                    }
-                    None => return missing_session_exit(id_str, "fork"),
-                }
-            } else if cli.fork_last {
-                match RolloutRecorder::list_processes(
-                    &config,
-                    /*page_size*/ 1,
-                    /*cursor*/ None,
-                    ProcessSortKey::UpdatedAt,
-                    INTERACTIVE_SESSION_SOURCES,
-                    &config.model_provider_id,
-                    /*search_term*/ None,
-                )
-                .await
-                {
-                    Ok(page) => match page.items.first() {
-                        Some(item) => match item.process_id {
-                            Some(process_id) => resume_picker::SessionSelection::Fork(
-                                resume_picker::SessionTarget {
-                                    process_id,
-                                    saved_provider: None,
-                                },
-                            ),
-                            None => resume_picker::SessionSelection::StartFresh,
-                        },
-                        None => resume_picker::SessionSelection::StartFresh,
-                    },
-                    Err(_) => resume_picker::SessionSelection::StartFresh,
-                }
-            } else if cli.fork_picker {
-                match resume_picker::run_fork_picker(&mut tui, &config, cli.fork_show_all).await? {
-                    resume_picker::SessionSelection::Exit => {
-                        restore();
-                        session_log::log_session_end();
-                        return Ok(AppExitInfo {
-                            token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                            process_id: None,
-                            process_name: None,
-                            exit_reason: ExitReason::UserRequested,
-                        });
-                    }
-                    other => other,
-                }
-            } else {
-                resume_picker::SessionSelection::StartFresh
-            }
-        } else if let Some(id_str) = cli.resume_session_id.as_deref() {
-            match resolve_saved_process_id(id_str).await? {
-                Some(process_id) => {
-                    resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
-                        process_id,
-                        saved_provider: None,
-                    })
-                }
-                None => return missing_session_exit(id_str, "resume"),
-            }
-        } else if cli.resume_last {
-            let filter_cwd = if cli.resume_show_all {
-                None
-            } else {
-                Some(config.cwd.as_path())
-            };
-            match RolloutRecorder::list_processes(
-                &config,
-                /*page_size*/ 1,
-                /*cursor*/ None,
-                ProcessSortKey::UpdatedAt,
-                INTERACTIVE_SESSION_SOURCES,
-                &config.model_provider_id,
-                /*search_term*/ None,
-            )
-            .await
-            {
-                Ok(page) => match page.items.into_iter().find(|item| {
-                    match (filter_cwd, item.cwd.as_deref()) {
-                        (Some(filter_cwd), Some(item_cwd)) => !cwds_differ(filter_cwd, item_cwd),
-                        (Some(_), None) => false,
-                        (None, _) => true,
-                    }
-                }) {
-                    Some(item) => match item.process_id {
-                        Some(process_id) => {
-                            resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
-                                process_id,
-                                saved_provider: None,
-                            })
-                        }
-                        None => resume_picker::SessionSelection::StartFresh,
-                    },
-                    None => resume_picker::SessionSelection::StartFresh,
-                },
-                Err(_) => resume_picker::SessionSelection::StartFresh,
-            }
-        } else if cli.resume_picker {
-            match resume_picker::run_resume_picker(&mut tui, &config, cli.resume_show_all).await? {
-                resume_picker::SessionSelection::Exit => {
-                    restore();
-                    session_log::log_session_end();
-                    return Ok(AppExitInfo {
-                        token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                        process_id: None,
-                        process_name: None,
-                        exit_reason: ExitReason::UserRequested,
-                    });
-                }
-                other => other,
-            }
+    let (action, session_id, last, picker, show_all) = if use_fork {
+        (
+            resume_picker::SessionPickerAction::Fork,
+            cli.fork_session_id.as_deref(),
+            cli.fork_last,
+            cli.fork_picker,
+            cli.fork_show_all,
+        )
+    } else {
+        (
+            resume_picker::SessionPickerAction::Resume,
+            cli.resume_session_id.as_deref(),
+            cli.resume_last,
+            cli.resume_picker,
+            cli.resume_show_all,
+        )
+    };
+    let session_selection = if let Some(id_str) = session_id {
+        match resolve_saved_process_id(id_str).await? {
+            Some(process_id) => action.selection(process_id, false),
+            None => return missing_session_exit(id_str, action.action_label()),
+        }
+    } else if last {
+        let filter_cwd = if show_all {
+            None
         } else {
-            resume_picker::SessionSelection::StartFresh
+            Some(config.cwd.as_path())
         };
+        match RolloutRecorder::find_latest_process_id(
+            &config,
+            /*page_size*/ 1,
+            /*cursor*/ None,
+            ProcessSortKey::UpdatedAt,
+            INTERACTIVE_SESSION_SOURCES,
+            filter_cwd,
+        )
+        .await
+        {
+            Ok(Some(process_id)) => action.selection(process_id, false),
+            Ok(None) => resume_picker::SessionSelection::StartFresh,
+            Err(_) => resume_picker::SessionSelection::StartFresh,
+        }
+    } else if picker {
+        resume_picker::run_session_picker(&mut tui, &config, show_all, action).await?
+    } else {
+        resume_picker::SessionSelection::StartFresh
+    };
+    if matches!(session_selection, resume_picker::SessionSelection::Exit) {
+        restore();
+        session_log::log_session_end();
+        return Ok(AppExitInfo {
+            token_usage: chaos_ipc::protocol::TokenUsage::default(),
+            process_id: None,
+            process_name: None,
+            exit_reason: ExitReason::UserRequested,
+        });
+    }
 
     let current_cwd = config.cwd.clone();
     let allow_prompt = cli.cwd.is_none();
@@ -616,6 +554,18 @@ async fn run_ratatui_app(
         None => None,
     };
 
+    // Tab preserves the selection shown before choosing a destination, even if
+    // loading that destination's cwd introduces different project defaults.
+    let kept_selection = action_and_target_session_if_resume_or_fork
+        .filter(|(_, target)| target.keep_current)
+        .map(|_| {
+            (
+                config.model.clone(),
+                config.model_provider_id.clone(),
+                config.model_provider.clone(),
+                config.model_reasoning_effort,
+            )
+        });
     let mut config = match &session_selection {
         resume_picker::SessionSelection::Resume(_) | resume_picker::SessionSelection::Fork(_) => {
             load_config_or_exit_with_fallback_cwd(
@@ -627,9 +577,20 @@ async fn run_ratatui_app(
         }
         _ => config,
     };
+    if let Some((model, provider_id, provider, effort)) = kept_selection {
+        config.model = model;
+        config.model_provider_id = provider_id;
+        config.model_provider = provider;
+        config.model_reasoning_effort = effort;
+    }
 
     if let Some((_, target)) = action_and_target_session_if_resume_or_fork {
-        target.apply_saved_provider(&mut config).await?;
+        if let Some(warning) = target
+            .apply_saved_selection(&mut config, &cli_kv_overrides)
+            .await?
+        {
+            config.startup_warnings.push(warning);
+        }
     }
 
     // Configure syntax highlighting theme from the final config — onboarding

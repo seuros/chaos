@@ -177,7 +177,7 @@ fn startup_waiting_gate_is_only_for_fresh_or_exit_session_selection() {
         App::should_wait_for_initial_session(&SessionSelection::Resume(
             crate::resume_picker::SessionTarget {
                 process_id: ProcessId::new(),
-                saved_provider: None,
+                keep_current: false,
             }
         )),
         false
@@ -186,7 +186,7 @@ fn startup_waiting_gate_is_only_for_fresh_or_exit_session_selection() {
         App::should_wait_for_initial_session(&SessionSelection::Fork(
             crate::resume_picker::SessionTarget {
                 process_id: ProcessId::new(),
-                saved_provider: None,
+                keep_current: false,
             }
         )),
         false
@@ -224,7 +224,7 @@ fn startup_waiting_gate_not_applied_for_resume_or_fork_session_selection() {
     let wait_for_resume = App::should_wait_for_initial_session(&SessionSelection::Resume(
         crate::resume_picker::SessionTarget {
             process_id: ProcessId::new(),
-            saved_provider: None,
+            keep_current: false,
         },
     ));
     assert_eq!(
@@ -234,7 +234,7 @@ fn startup_waiting_gate_not_applied_for_resume_or_fork_session_selection() {
     let wait_for_fork = App::should_wait_for_initial_session(&SessionSelection::Fork(
         crate::resume_picker::SessionTarget {
             process_id: ProcessId::new(),
-            saved_provider: None,
+            keep_current: false,
         },
     ));
     assert_eq!(
@@ -2470,6 +2470,36 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
     assert!(!app.backtrack_render_pending);
     assert_eq!(app.chat_widget.process_id(), Some(process_id));
     assert_eq!(app.chat_widget.composer_text_with_pending(), "draft prompt");
+}
+
+#[test]
+fn session_summary_lines_preserve_resume_hints() {
+    for (commands, expected) in [
+        (vec![], vec!["usage"]),
+        (
+            vec!["chaos resume id"],
+            vec!["usage", "To continue this session, run chaos resume id"],
+        ),
+        (
+            vec!["chaos resume name", "chaos resume id"],
+            vec![
+                "usage",
+                "To continue this session by name, run chaos resume name",
+                "Or by session ID, run chaos resume id",
+            ],
+        ),
+    ] {
+        let summary = SessionSummary {
+            usage_line: "usage".into(),
+            resume_commands: commands.into_iter().map(str::to_owned).collect(),
+        };
+        let actual: Vec<_> = summary
+            .into_lines()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(actual, expected);
+    }
 }
 
 async fn session_summary_skip_zero_usage() {

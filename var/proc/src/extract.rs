@@ -403,6 +403,7 @@ mod tests {
         apply_rollout_item(
             &mut metadata,
             &RolloutItem::TurnContext(TurnContextItem {
+                model_provider: "openai".into(),
                 turn_id: Some("turn-1".to_string()),
                 trace_id: None,
                 cwd: PathBuf::from("/parent/workspace"),
@@ -438,6 +439,7 @@ mod tests {
         apply_rollout_item(
             &mut metadata,
             &RolloutItem::TurnContext(TurnContextItem {
+                model_provider: "openai".into(),
                 turn_id: Some("turn-1".to_string()),
                 trace_id: None,
                 cwd: PathBuf::from("/fallback/workspace"),

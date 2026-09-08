@@ -120,6 +120,7 @@ pub mod default_client;
 mod rollout;
 pub mod runtime_db;
 pub(crate) mod safety;
+pub mod saved_selection;
 pub mod shell;
 pub mod shell_environment;
 pub mod spawn;

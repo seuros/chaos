@@ -1,13 +1,12 @@
 use super::{
     AgentNavigationState, App, AppEvent, AppEventSender, AppExitInfo, AppRunControl, Arc,
     AuthManager, BacktrackState, Cell, ChatWidget, Config, ConfigOverrides, Duration, Event,
-    EventMsg, ExitMode, FileSearchManager, HashMap, Line, LogPanelState,
-    PROCESS_EVENT_CHANNEL_CAPACITY, ProcessEventChannel, ProcessEventSnapshot, ProcessId,
-    ProcessTable, Rc, RefCell, RefreshStrategy, Result, RuntimeDbHandle, SessionConfiguredEvent,
-    SessionSelection, SessionSource, SessionTelemetry, Stylize, TelemetryAuthMode, TileManager,
-    TomlValue, ToolListPane, TranscriptReflowState, VecDeque, WrapErr,
-    emit_project_config_warnings, normalize_harness_overrides_for_cwd, select, session_summary,
-    tui, unbounded_channel,
+    EventMsg, ExitMode, FileSearchManager, HashMap, LogPanelState, PROCESS_EVENT_CHANNEL_CAPACITY,
+    ProcessEventChannel, ProcessEventSnapshot, ProcessId, ProcessTable, Rc, RefCell,
+    RefreshStrategy, Result, RuntimeDbHandle, SessionConfiguredEvent, SessionSelection,
+    SessionSource, SessionTelemetry, TelemetryAuthMode, TileManager, TomlValue, ToolListPane,
+    TranscriptReflowState, VecDeque, WrapErr, emit_project_config_warnings,
+    normalize_harness_overrides_for_cwd, select, session_summary, tui, unbounded_channel,
 };
 use crate::pager_overlay::Overlay;
 use chaos_ipc::protocol::Op;
@@ -18,6 +17,21 @@ use std::sync::atomic::AtomicBool;
 use tokio::sync::broadcast;
 
 impl App {
+    pub(super) fn server_for_session_config(&self, config: &Config) -> Arc<ProcessTable> {
+        if config.model_provider_id == self.config.model_provider_id {
+            Arc::clone(&self.server)
+        } else {
+            Arc::new(ProcessTable::new(
+                config,
+                Arc::clone(&self.auth_manager),
+                self.server.session_source(),
+                CollaborationModesConfig {
+                    default_mode_request_user_input: true,
+                },
+            ))
+        }
+    }
+
     pub(super) fn chatwidget_init_for_forked_or_resumed_process(
         &self,
         tui: &mut tui::Tui,
@@ -124,20 +138,8 @@ impl App {
         self.chat_widget = ChatWidget::new(init, self.server.clone());
         self.reset_process_event_state();
         if let Some(summary) = summary {
-            let mut lines: Vec<Line<'static>> = vec![summary.usage_line.clone().into()];
-            let has_name_and_id = summary.resume_commands.len() == 2;
-            for (index, command) in summary.resume_commands.into_iter().enumerate() {
-                let prefix = if index == 0 && has_name_and_id {
-                    "To continue this session by name, run "
-                } else if index == 0 {
-                    "To continue this session, run "
-                } else {
-                    "Or by session ID, run "
-                };
-                let spans = vec![prefix.into(), command.cyan()];
-                lines.push(spans.into());
-            }
-            self.chat_widget.add_plain_history_lines(lines);
+            self.chat_widget
+                .add_plain_history_lines(summary.into_lines());
         }
         tui.frame_requester().schedule_frame();
     }

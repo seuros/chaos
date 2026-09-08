@@ -393,6 +393,8 @@ pub struct TurnContextItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network: Option<TurnContextNetworkItem>,
     pub model: String,
+    /// Provider/account used for this turn.
+    pub model_provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality: Option<Personality>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -436,6 +438,7 @@ impl<'de> Deserialize<'de> for TurnContextItem {
             #[serde(default)]
             network: Option<TurnContextNetworkItem>,
             model: String,
+            model_provider: String,
             #[serde(default)]
             personality: Option<Personality>,
             #[serde(default)]
@@ -469,6 +472,7 @@ impl<'de> Deserialize<'de> for TurnContextItem {
             socket_policy,
             network: de.network,
             model: de.model,
+            model_provider: de.model_provider,
             personality: de.personality,
             collaboration_mode: de.collaboration_mode,
             effort: de.effort,

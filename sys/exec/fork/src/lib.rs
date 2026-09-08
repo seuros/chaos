@@ -130,7 +130,8 @@ struct ExecRunArgs {
     json_mode: bool,
     last_message_file: Option<PathBuf>,
     output_schema_path: Option<PathBuf>,
-    fork_snapshot: Option<PathBuf>,
+    fork_history: Option<Vec<RolloutItem>>,
+    resume_process_id: Option<ProcessId>,
     prompt: Option<String>,
     skip_git_repo_check: bool,
     stderr_with_ansi: bool,
@@ -332,6 +333,10 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         .find(|(key, _)| key == "model_provider")
         .and_then(|(_, value)| value.as_str().map(ToString::to_string));
 
+    let mut restore_intent =
+        chaos_kern::saved_selection::RestoreSelection::from_cli_overrides(&cli_kv_overrides);
+    restore_intent.keep_current |= model.is_some();
+
     // Load configuration and determine approval policy
     let overrides = exec_config_overrides(ExecConfigOverrideInputs {
         model,
@@ -344,13 +349,47 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         alcatraz_exe: arg0_paths.alcatraz_exe.clone(),
     });
 
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .cli_overrides(cli_kv_overrides)
         .harness_overrides(overrides)
         .build()
         .await?;
 
     chaos_kern::runtime_db::mount_vfs(&config).await?;
+
+    // Resolve the destination and its selection before creating provider-bound managers.
+    let fork_history = fork_snapshot
+        .as_deref()
+        .map(|path| -> anyhow::Result<Vec<RolloutItem>> {
+            let bytes = std::fs::read(path).map_err(|err| {
+                anyhow::anyhow!("failed to read fork snapshot {}: {err}", path.display())
+            })?;
+            serde_json::from_slice(&bytes).map_err(|err| {
+                anyhow::anyhow!(
+                    "fork snapshot {} is not valid rollout JSON: {err}",
+                    path.display()
+                )
+            })
+        })
+        .transpose()?;
+    let resume_process_id = if fork_history.is_none()
+        && let Some(ExecCommand::Resume(args)) = &command
+    {
+        resolve_resume_process_id(&config, args).await?
+    } else {
+        None
+    };
+    let warning = if let Some(items) = &fork_history {
+        chaos_kern::saved_selection::restore_selection(&mut config, items, restore_intent)?
+    } else if let Some(id) = resume_process_id {
+        chaos_kern::saved_selection::restore_process_selection(&mut config, id, restore_intent)
+            .await?
+    } else {
+        None
+    };
+    if let Some(warning) = warning {
+        eprintln!("Warning: {warning}");
+    }
 
     #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack).await {
@@ -435,7 +474,8 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         json_mode,
         last_message_file,
         output_schema_path,
-        fork_snapshot,
+        fork_history,
+        resume_process_id,
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
@@ -458,7 +498,8 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         json_mode,
         last_message_file,
         output_schema_path,
-        fork_snapshot,
+        fork_history,
+        resume_process_id,
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
@@ -494,20 +535,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     }
 
     // Start or resume a process directly via the ProcessTable.
-    let new_process = if let Some(snapshot_path) = fork_snapshot.as_deref() {
-        let snapshot_bytes = std::fs::read(snapshot_path).map_err(|err| {
-            anyhow::anyhow!(
-                "failed to read fork snapshot {}: {err}",
-                snapshot_path.display()
-            )
-        })?;
-        let rollout_items: Vec<RolloutItem> =
-            serde_json::from_slice(&snapshot_bytes).map_err(|err| {
-                anyhow::anyhow!(
-                    "fork snapshot {} is not valid rollout JSON: {err}",
-                    snapshot_path.display()
-                )
-            })?;
+    let new_process = if let Some(rollout_items) = fork_history {
         process_table
             .resume_process_with_history(
                 config.clone(),
@@ -518,9 +546,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
             )
             .await
             .map_err(|err| anyhow::anyhow!("failed to start process from fork snapshot: {err}"))?
-    } else if let Some(ExecCommand::Resume(ref resume_args)) = command {
-        let resume_process_id = resolve_resume_process_id(&config, resume_args).await?;
-
+    } else if let Some(ExecCommand::Resume(_)) = command {
         if let Some(process_id) = resume_process_id {
             process_table
                 .resume_process(

@@ -1045,6 +1045,7 @@ mod tests {
                 "vfs_policy": { "kind": "unrestricted" },
                 "socket_policy": "restricted",
                 "model": "gpt-5",
+                "model_provider": "openai",
                 "summary": "auto"
             }
         }))

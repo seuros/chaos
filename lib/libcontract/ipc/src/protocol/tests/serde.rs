@@ -245,6 +245,7 @@ fn turn_context_item_deserializes_without_network() -> Result<()> {
         "vfs_policy": { "kind": "unrestricted" },
         "socket_policy": "restricted",
         "model": "gpt-5",
+        "model_provider": "openai",
         "summary": "auto",
     }))?;
 
@@ -256,6 +257,7 @@ fn turn_context_item_deserializes_without_network() -> Result<()> {
 #[test]
 fn turn_context_item_serializes_network_when_present() -> Result<()> {
     let item = TurnContextItem {
+        model_provider: "openai".into(),
         turn_id: None,
         trace_id: None,
         cwd: PathBuf::from("/tmp"),
@@ -280,6 +282,15 @@ fn turn_context_item_serializes_network_when_present() -> Result<()> {
     };
 
     let value = serde_json::to_value(item)?;
+    assert_eq!(value["model_provider"], "openai");
+    let roundtrip: TurnContextItem = serde_json::from_value(value.clone())?;
+    assert_eq!(roundtrip.model_provider, "openai");
+    let mut missing_provider = value.clone();
+    missing_provider
+        .as_object_mut()
+        .unwrap()
+        .remove("model_provider");
+    assert!(serde_json::from_value::<TurnContextItem>(missing_provider).is_err());
     assert_eq!(
         value["network"],
         json!({
@@ -608,8 +619,7 @@ fn fill_to_context_window_preserves_process_usage_counters() {
 
 #[test]
 fn rollout_item_accepts_legacy_turn_context() -> Result<()> {
-    // Exact wire shape found in journal_1.sqlite rows persisted before the
-    // sandbox split. RolloutItem must still load them.
+    // Sandbox aliases are independent of the required turn provider.
     let legacy = json!({
         "type": "turn_context",
         "payload": {
@@ -625,6 +635,7 @@ fn rollout_item_accepts_legacy_turn_context() -> Result<()> {
                 "exclude_slash_tmp": false
             },
             "model": "gpt-5.4",
+            "model_provider": "openai",
             "summary": "concise"
         }
     });
@@ -640,15 +651,14 @@ fn rollout_item_accepts_legacy_turn_context() -> Result<()> {
 
 #[test]
 fn turn_context_item_accepts_legacy_sandbox_policy() -> Result<()> {
-    // Rollouts persisted before commit fa67d57526 stored a single
-    // `sandbox_policy` enum; resume must continue to load them after the
-    // split into `vfs_policy` + `socket_policy` (renamed in 71cad4dad6).
+    // Exercise the existing sandbox alias parser with a complete turn record.
     let legacy = json!({
         "turn_id": "3",
         "cwd": "/tmp/work",
         "approval_policy": "supervised",
         "sandbox_policy": { "type": "read-only" },
         "model": "gpt-5.4",
+        "model_provider": "openai",
         "summary": "concise"
     });
 
@@ -663,6 +673,7 @@ fn turn_context_item_accepts_legacy_sandbox_policy() -> Result<()> {
         "file_system_sandbox_policy": { "kind": "unrestricted", "entries": [] },
         "network_sandbox_policy": "enabled",
         "model": "gpt-5.4",
+        "model_provider": "openai",
         "summary": "concise"
     });
     let item: TurnContextItem = serde_json::from_value(intermediate)?;

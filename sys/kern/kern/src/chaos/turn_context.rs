@@ -238,6 +238,7 @@ impl TurnContext {
             socket_policy: self.socket_policy,
             network: self.turn_context_network_item(),
             model: self.model_info.slug.clone(),
+            model_provider: self.config.model_provider_id.clone(),
             personality: self.personality,
             collaboration_mode: Some(self.collaboration_mode.clone()),
             effort: self.reasoning_effort,

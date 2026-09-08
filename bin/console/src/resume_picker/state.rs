@@ -36,6 +36,10 @@ pub(super) struct PageLoadRequest {
 pub(super) type PageLoader = Arc<dyn Fn(PageLoadRequest) + Send + Sync>;
 
 pub(super) enum BackgroundEvent {
+    SelectionLoaded {
+        process_id: ProcessId,
+        selection: Result<Option<chaos_kern::saved_selection::SavedSelection>, String>,
+    },
     PageLoaded {
         request_token: usize,
         search_token: Option<usize>,
@@ -114,6 +118,8 @@ pub(super) struct PickerState {
     pub(super) process_name_cache: HashMap<ProcessId, Option<String>>,
     pub(super) inline_error: Option<String>,
     pub(super) keep_current_for: HashSet<ProcessId>,
+    pub(super) saved_selections:
+        HashMap<ProcessId, Result<Option<chaos_kern::saved_selection::SavedSelection>, String>>,
 }
 
 impl PickerState {
@@ -152,6 +158,7 @@ impl PickerState {
             process_name_cache: HashMap::new(),
             inline_error: None,
             keep_current_for: HashSet::new(),
+            saved_selections: HashMap::new(),
         }
     }
 
@@ -172,11 +179,8 @@ impl PickerState {
             }
             KeyCode::Enter => {
                 if let Some(row) = self.filtered_rows.get(self.selected) {
-                    let saved_provider = row.model_provider.clone().filter(|provider| {
-                        provider != &self.default_provider
-                            && !self.keep_current_for.contains(&row.process_id)
-                    });
-                    return Ok(Some(self.action.selection(row.process_id, saved_provider)));
+                    let keep_current = self.keep_current_for.contains(&row.process_id);
+                    return Ok(Some(self.action.selection(row.process_id, keep_current)));
                 }
             }
             KeyCode::Up => {
@@ -212,10 +216,6 @@ impl PickerState {
             }
             KeyCode::Tab => {
                 if let Some(row) = self.filtered_rows.get(self.selected)
-                    && row
-                        .model_provider
-                        .as_deref()
-                        .is_some_and(|p| p != self.default_provider)
                     && !self.keep_current_for.remove(&row.process_id)
                 {
                     self.keep_current_for.insert(row.process_id);
@@ -280,6 +280,13 @@ impl PickerState {
 
     pub(super) async fn handle_background_event(&mut self, event: BackgroundEvent) -> Result<()> {
         match event {
+            BackgroundEvent::SelectionLoaded {
+                process_id,
+                selection,
+            } => {
+                self.saved_selections.insert(process_id, selection);
+                self.request_frame();
+            }
             BackgroundEvent::PageLoaded {
                 request_token,
                 search_token,

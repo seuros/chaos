@@ -227,6 +227,24 @@ struct SessionSummary {
     resume_commands: Vec<String>,
 }
 
+impl SessionSummary {
+    fn into_lines(self) -> Vec<Line<'static>> {
+        let mut lines = vec![self.usage_line.into()];
+        let has_name_and_id = self.resume_commands.len() == 2;
+        for (index, command) in self.resume_commands.into_iter().enumerate() {
+            let prefix = if index == 0 && has_name_and_id {
+                "To continue this session by name, run "
+            } else if index == 0 {
+                "To continue this session, run "
+            } else {
+                "Or by session ID, run "
+            };
+            lines.push(vec![prefix.into(), command.cyan()].into());
+        }
+        lines
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ProcessEventSnapshot {
     session_configured: Option<Event>,

@@ -36,37 +36,22 @@ use self::state::PickerState;
 #[derive(Debug, Clone)]
 pub struct SessionTarget {
     pub process_id: ProcessId,
-    pub saved_provider: Option<String>,
+    pub keep_current: bool,
 }
 
 impl SessionTarget {
     /// Apply the picker's automatic restoration without changing persisted defaults.
-    pub(crate) async fn apply_saved_provider(&self, config: &mut Config) -> Result<()> {
-        let Some(provider_id) = self.saved_provider.as_ref() else {
-            return Ok(());
-        };
-        let provider = config.model_providers.get(provider_id).cloned().ok_or_else(|| {
-            color_eyre::eyre::eyre!("Saved provider {provider_id} is unavailable. Press Tab in the picker to keep the current model.")
-        })?;
-        let journal = RolloutRecorder::get_journal_for_process(self.process_id).await?;
-        let context = journal
-            .items
-            .iter()
-            .rev()
-            .find_map(|entry| match &entry.item {
-                chaos_ipc::protocol::RolloutItem::TurnContext(context) => Some(context),
-                _ => None,
-            })
-            .ok_or_else(|| {
-                color_eyre::eyre::eyre!(
-                    "Session has no saved model. Press Tab in the picker to keep the current model."
-                )
-            })?;
-        config.model = Some(context.model.clone());
-        config.model_reasoning_effort = context.effort;
-        config.model_provider_id = provider_id.clone();
-        config.model_provider = provider;
-        Ok(())
+    pub(crate) async fn apply_saved_selection(
+        &self,
+        config: &mut Config,
+        overrides: &[(String, toml::Value)],
+    ) -> Result<Option<String>> {
+        let mut intent =
+            chaos_kern::saved_selection::RestoreSelection::from_cli_overrides(overrides);
+        intent.keep_current |= self.keep_current;
+        chaos_kern::saved_selection::restore_process_selection(config, self.process_id, intent)
+            .await
+            .map_err(|err| color_eyre::eyre::eyre!("{err:#}"))
     }
 }
 
@@ -92,17 +77,17 @@ impl SessionPickerAction {
         }
     }
 
-    fn action_label(self) -> &'static str {
+    pub(crate) fn action_label(self) -> &'static str {
         match self {
             SessionPickerAction::Resume => "resume",
             SessionPickerAction::Fork => "fork",
         }
     }
 
-    fn selection(self, process_id: ProcessId, saved_provider: Option<String>) -> SessionSelection {
+    pub(crate) fn selection(self, process_id: ProcessId, keep_current: bool) -> SessionSelection {
         let target_session = SessionTarget {
             process_id,
-            saved_provider,
+            keep_current,
         };
         match self {
             SessionPickerAction::Resume => SessionSelection::Resume(target_session),
@@ -144,7 +129,7 @@ impl Drop for AltScreenGuard<'_> {
 /// git branch, working directory, and conversation preview. Users can toggle
 /// between sorting by creation time and last-updated time using Shift+Tab.
 /// Selected-session details show the saved provider and cumulative token usage,
-/// When providers differ, opening restores the saved provider and model. Tab
+/// Opening restores the last-used provider, model and effort. Tab
 /// toggles keeping the current model instead, without a confirmation dialog.
 ///
 /// Sessions are loaded on-demand via cursor-based pagination. The backend
@@ -163,15 +148,7 @@ pub async fn run_resume_picker(
     run_session_picker(tui, config, show_all, SessionPickerAction::Resume).await
 }
 
-pub async fn run_fork_picker(
-    tui: &mut Tui,
-    config: &Config,
-    show_all: bool,
-) -> Result<SessionSelection> {
-    run_session_picker(tui, config, show_all, SessionPickerAction::Fork).await
-}
-
-async fn run_session_picker(
+pub(crate) async fn run_session_picker(
     tui: &mut Tui,
     config: &Config,
     show_all: bool,
@@ -227,8 +204,25 @@ async fn run_session_picker(
 
     let mut tui_events = alt.tui.event_stream().fuse();
     let mut background_events = UnboundedReceiverStream::new(bg_rx).fuse();
+    let mut requested_selections = std::collections::HashSet::new();
 
     loop {
+        // Load only highlighted histories, never every journal in a page.
+        if let Some(row) = state.filtered_rows.get(state.selected)
+            && requested_selections.insert(row.process_id)
+        {
+            let process_id = row.process_id;
+            let tx = bg_tx.clone();
+            tokio::spawn(async move {
+                let selection = chaos_kern::saved_selection::load_saved_selection(process_id)
+                    .await
+                    .map_err(|err| err.to_string());
+                let _ = tx.send(BackgroundEvent::SelectionLoaded {
+                    process_id,
+                    selection,
+                });
+            });
+        }
         tokio::select! {
             Some(ev) = tui_events.next() => {
                 match ev {
@@ -367,6 +361,17 @@ pub(crate) mod tests {
 
     fn make_item(ts: &str, preview: &str) -> ProcessItem {
         make_item_with_id(ProcessId::new(), ts, preview)
+    }
+
+    fn test_picker_state(loader: super::state::PageLoader) -> PickerState {
+        PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            String::from("openai"),
+            true,
+            None,
+            SessionPickerAction::Resume,
+        )
     }
 
     fn make_item_with_id(process_id: ProcessId, ts: &str, preview: &str) -> ProcessItem {
@@ -536,14 +541,7 @@ pub(crate) mod tests {
         use ratatui::layout::Layout;
 
         let loader = Arc::new(|_: PageLoadRequest| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
 
         let now = Timestamp::now();
         let rows = vec![
@@ -616,14 +614,7 @@ pub(crate) mod tests {
         use crate::test_backend::VT100Backend;
 
         let loader = Arc::new(|_: PageLoadRequest| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
         state.inline_error = Some(String::from(
             "Failed to read session metadata from missing fixture",
         ));
@@ -647,14 +638,7 @@ pub(crate) mod tests {
 
     fn pageless_scrolling_deduplicates_and_keeps_order() {
         let loader = Arc::new(|_: PageLoadRequest| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
 
         state.reset_pagination();
         let duplicate_process_id = ProcessId::new();
@@ -711,14 +695,7 @@ pub(crate) mod tests {
             request_sink.lock().unwrap().push(req);
         });
 
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
         state.reset_pagination();
         state.ingest_page(page(
             vec![
@@ -789,14 +766,7 @@ pub(crate) mod tests {
             request_sink.lock().unwrap().push(req);
         });
 
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
 
         state.start_initial_load();
         {
@@ -817,14 +787,7 @@ pub(crate) mod tests {
 
     async fn page_navigation_uses_view_rows() {
         let loader = Arc::new(|_: PageLoadRequest| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
 
         let mut items = Vec::new();
         for idx in 0..20 {
@@ -859,14 +822,7 @@ pub(crate) mod tests {
 
     async fn enter_on_row_selects_process_id() {
         let loader = Arc::new(|_: PageLoadRequest| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
 
         let process_id = ProcessId::new();
         let row = Row {
@@ -890,7 +846,7 @@ pub(crate) mod tests {
 
         assert!(matches!(
             selection,
-            Some(SessionSelection::Resume(SessionTarget { process_id: selected, saved_provider: None }))
+            Some(SessionSelection::Resume(SessionTarget { process_id: selected, keep_current: false }))
                 if selected == process_id
         ));
         assert_eq!(state.inline_error, None);
@@ -919,7 +875,7 @@ pub(crate) mod tests {
                     ..Default::default()
                 },
             ]);
-            for expected in [Some("xai"), None, Some("xai")] {
+            for expected in [false, true, false] {
                 let selection = state
                     .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
                     .await
@@ -929,7 +885,7 @@ pub(crate) mod tests {
                     SessionSelection::Resume(target) | SessionSelection::Fork(target) => target,
                     _ => panic!("expected session target"),
                 };
-                assert_eq!(target.saved_provider.as_deref(), expected);
+                assert_eq!(target.keep_current, expected);
                 state
                     .handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
                     .await
@@ -959,26 +915,53 @@ pub(crate) mod tests {
             assert!(matches!(
                 selection,
                 SessionSelection::Resume(SessionTarget {
-                    saved_provider: None,
+                    keep_current: false,
                     ..
                 }) | SessionSelection::Fork(SessionTarget {
-                    saved_provider: None,
+                    keep_current: false,
                     ..
                 })
             ));
+            state
+                .handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+                .await
+                .unwrap();
+            let selection = state
+                .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(
+                selection,
+                SessionSelection::Resume(SessionTarget {
+                    keep_current: true,
+                    ..
+                }) | SessionSelection::Fork(SessionTarget {
+                    keep_current: true,
+                    ..
+                })
+            ));
+            let id = state.filtered_rows[1].process_id;
+            state
+                .handle_background_event(BackgroundEvent::SelectionLoaded {
+                    process_id: id,
+                    selection: Ok(Some(chaos_kern::saved_selection::SavedSelection {
+                        provider: "last-used-provider".into(),
+                        model: "last-used-model".into(),
+                        effort: None,
+                    })),
+                })
+                .await
+                .unwrap();
+            let details = super::rendering::selected_details(&state)[0].to_string();
+            assert!(details.contains("Saved provider: last-used-provider"));
+            assert!(details.contains("Model: last-used-model"));
         }
     }
 
     async fn up_at_bottom_does_not_scroll_when_visible() {
         let loader = Arc::new(|_: PageLoadRequest| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
 
         let mut items = Vec::new();
         for idx in 0..10 {
@@ -1013,14 +996,7 @@ pub(crate) mod tests {
             request_sink.lock().unwrap().push(req);
         });
 
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
+        let mut state = test_picker_state(loader);
         state.reset_pagination();
         state.ingest_page(page(
             vec![make_item("2025-01-01T00:00:00Z", "alpha")],

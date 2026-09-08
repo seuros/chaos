@@ -173,8 +173,9 @@ operator-controlled environment using that home. Readiness checks should invoke
 the official CLI with metered API-key variables removed. Each worker must
 receive the same `CHAOS_AGY_HOME`, `CHAOS_AGY_PATH`, and clamp configuration.
 Preserve the Chaos process ID between requests and invoke `chaos exec ... resume
-<process_id>` with the original `-m` selection so Chaos can restore the matching
-provider conversation. Do not copy browser authorization codes into
+<process_id>`; Chaos restores the last-used model/provider unless explicitly
+overridden. Keep passing the required transport configuration described above.
+Do not copy browser authorization codes into
 configuration or logs; only the credential state produced by the official CLI
 belongs on the private volume.
 
@@ -247,6 +248,7 @@ current setting.
 - [Storage — SQLite and PostgreSQL backends](./man/chaos-storage.7.md)
 - [Halluacinate — scripting engine](./man/chaos-halluacinate.7.md)
 - [Contributing](./docs/contributing.md)
+- [Resume and fork model selection](./docs/resume-model-selection.md)
 - [Comparison](./docs/comparison.md)
 - [Open source fund](./docs/open-source-fund.md)
 - [Manual page index](./man/README.md)

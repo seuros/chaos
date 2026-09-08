@@ -44,6 +44,21 @@ use super::{
     DEFAULT_AGENT_MAX_DEPTH, DEFAULT_AGENT_MAX_THREADS, DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
 };
 
+pub(super) fn resolve_egress_url(
+    configured: Option<String>,
+    environment: Option<std::ffi::OsString>,
+) -> std::io::Result<Option<String>> {
+    match environment {
+        Some(value) => value.into_string().map(Some).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "CHAOS_EGRESS_URL must be valid UTF-8",
+            )
+        }),
+        None => Ok(configured),
+    }
+}
+
 fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
     let path = PathBuf::from(chaos_proc::sqlite_home_env_value()?);
     if path.is_absolute() {
@@ -363,8 +378,8 @@ impl Config {
             model_providers.insert(key, provider);
         }
 
-        let egress = cfg
-            .egress_url
+        let egress_url = resolve_egress_url(cfg.egress_url, std::env::var_os("CHAOS_EGRESS_URL"))?;
+        let egress = egress_url
             .as_deref()
             .map(chaos_client::Egress::parse)
             .transpose()
@@ -604,7 +619,7 @@ impl Config {
             terminal_title: cfg.terminal_title.unwrap_or_default(),
             model_provider_id,
             model_provider,
-            egress_url: cfg.egress_url,
+            egress_url,
             cwd: resolved_cwd,
             startup_warnings,
             permissions: Permissions {

@@ -774,7 +774,7 @@ mod tests {
             conversation_id: Some("conversation-1".to_string()),
             app_version: Some("1.2.3".to_string()),
             auth_mode: Some("Chatgpt".to_string()),
-            originator: Some("chaos_cli_rs".to_string()),
+            originator: Some("free_chaos".to_string()),
             terminal_type: Some("iTerm.app/3.6.5".to_string()),
             model: Some("gpt-5.3-codex".to_string()),
             slug: Some("gpt-5.3-codex".to_string()),
@@ -800,7 +800,7 @@ mod tests {
         assert_eq!(event.field("conversation.id"), Some("conversation-1"));
         assert_eq!(event.field("app.version"), Some("1.2.3"));
         assert_eq!(event.field("auth_mode"), Some("Chatgpt"));
-        assert_eq!(event.field("originator"), Some("chaos_cli_rs"));
+        assert_eq!(event.field("originator"), Some("free_chaos"));
         assert_eq!(event.field("terminal.type"), Some("iTerm.app/3.6.5"));
         assert_eq!(event.field("model"), Some("gpt-5.3-codex"));
         assert_eq!(event.field("slug"), Some("gpt-5.3-codex"));

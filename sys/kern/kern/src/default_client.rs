@@ -4,27 +4,10 @@ use chaos_ipc::product::CHAOS_VERSION;
 use rama::http::HeaderMap;
 use rama::http::HeaderValue;
 use rama::http::header::USER_AGENT;
-use std::sync::LazyLock;
-use std::sync::Mutex;
 use std::sync::OnceLock;
 
-/// Set this to add a suffix to the User-Agent string.
-///
-/// It is not ideal that we're using a global singleton for this.
-/// This is primarily designed to differentiate MCP clients from each other.
-/// Because there can only be one MCP server per process, it should be safe for this to be a global static.
-/// However, future users of this should use this with caution as a result.
-/// In addition, we want to be confident that this value is used for ALL clients and doing that requires a
-/// lot of wiring and it's easy to miss code paths by doing so.
-/// See upstream openai/codex#3388 for an example of what that would look like.
-/// Finally, we want to make sure this is set for ALL mcp clients without needing to know a special env var
-/// or having to set data that they already specified in the mcp initialize request somewhere else.
-///
-/// A space is automatically added between the suffix and the rest of the User-Agent string.
-/// The full user agent string is returned from the mcp initialize response.
-/// Parenthesis will be added by Chaos. This should only specify what goes inside of the parenthesis.
-pub static USER_AGENT_SUFFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
-pub const DEFAULT_ORIGINATOR: &str = "chaos_cli_rs";
+/// Default identity for the originator header and User-Agent prefix.
+pub const DEFAULT_ORIGINATOR: &str = "free_chaos";
 
 #[derive(Debug, Clone)]
 pub struct Originator {
@@ -58,33 +41,14 @@ pub fn originator() -> &'static Originator {
     })
 }
 
+/// Returns `<originator>/<version>` without OS, architecture, or terminal details.
 pub fn get_chaos_user_agent() -> String {
     chaos_user_agent().0
 }
 
 fn chaos_user_agent() -> (String, HeaderValue) {
-    let os_info = os_info::get();
     let originator = originator();
-    let prefix = format!(
-        "{}/{} ({} {}; {}) {}",
-        originator.value.as_str(),
-        CHAOS_VERSION,
-        os_info.os_type(),
-        os_info.version(),
-        os_info.architecture().unwrap_or("unknown"),
-        crate::terminal::user_agent()
-    );
-    let suffix = USER_AGENT_SUFFIX
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone());
-    let suffix = suffix
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map_or_else(String::new, |value| format!(" ({value})"));
-
-    let candidate = format!("{prefix}{suffix}");
+    let candidate = format!("{}/{}", originator.value, CHAOS_VERSION);
     sanitize_user_agent(candidate)
 }
 
@@ -110,7 +74,7 @@ fn sanitize_user_agent(candidate: String) -> (String, HeaderValue) {
     let header =
         HeaderValue::from_str(&sanitized).expect("printable ASCII is a valid HTTP header value");
     tracing::warn!(
-        "Sanitized Chaos user agent because provided suffix contained invalid header characters"
+        "Sanitized Chaos user agent because it contained invalid header characters"
     );
     (sanitized, header)
 }

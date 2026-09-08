@@ -15,36 +15,19 @@ For the condensed support matrix (bundled IDs, wire formats, OS/CI coverage, cla
 
 ## GLOBAL EGRESS
 
-Set one root-level option in `~/.chaos/config.toml` to route every provider
-through LSD's dynamic-upstream egress lane:
+Route all model providers through LLM Service Daemon (LSD):
 
-```toml
-egress_url = "http://192.168.3.21:8847/egress/chaos"
+```sh
+export CHAOS_EGRESS_URL="http://localhost:8847/egress/chaos"
 ```
 
-Restart Chaos after changing this setting so existing sessions and batch
-backends use the new route.
+This overrides root-level `egress_url` in `~/.chaos/config.toml`.
+Keep provider URLs and credentials unchanged. Invalid or empty values fail
+configuration loading. There is no direct fallback; LSD rejects local/private
+providers. Leave both settings unset for direct access.
 
-There is no per-provider opt-in. Built-ins, custom providers, provider switches,
-model discovery, batch jobs, and Claude Code / Antigravity clamp transports
-inherit this setting. Keep each provider's original `base_url` and credentials:
-Chaos sends the original path/query to the gateway and sets `x-lsd-upstream`
-to the vendor origin. Auth and wire-format detection still use the vendor URL.
-Browser login, kernel credential refresh, and ordinary tool/MCP HTTP traffic
-are unchanged; this setting controls model-provider request routing.
-
-The endpoint must be an HTTP(S) URL without embedded credentials, a query, or a
-fragment. Only use a trusted gateway: it receives vendor credentials and prompt
-contents. Prefer HTTPS outside a trusted LAN. The gateway's DLP, redaction, and
-body-storage policy applies; ChatGPT request compression is disabled so the
-DLP gate can inspect JSON.
-
-LSD must have `[gateway.egress]` enabled and
-`[gateway.egress.providers.chaos]` configured with `dynamic_upstream = true`.
-Its dynamic lane permits only HTTPS upstreams on port 443 with public DNS
-addresses. Local/private providers such as Ollama are therefore rejected while
-global egress is enabled, not silently bypassed. Gateway failures likewise never
-fall back to direct vendor access. Omit `egress_url` to retain direct networking.
+Use a trusted gateway: it receives credentials and prompts. See LSD's
+documentation for gateway setup and policy.
 
 ## BUILT-IN PROVIDERS
 

@@ -1,9 +1,10 @@
 use super::*;
+use crate::config::requirements::resolve_egress_url;
 
 #[test]
 fn global_egress_is_inherited_by_every_provider() {
     let home = tempdir().unwrap();
-    let parsed: ConfigToml = toml::from_str(
+    let mut parsed: ConfigToml = toml::from_str(
         r#"
 egress_url = "http://192.168.3.21:8847/egress/chaos"
 model_provider = "custom"
@@ -15,13 +16,21 @@ wire_api = "chat_completions"
 "#,
     )
     .unwrap();
+    let endpoint = "http://localhost:8847/egress/chaos";
+    for configured in [None, parsed.egress_url.clone()] {
+        assert_eq!(
+            resolve_egress_url(configured, Some(endpoint.into())).unwrap(),
+            Some(endpoint.to_string())
+        );
+    }
+    parsed.egress_url = resolve_egress_url(parsed.egress_url, Some(endpoint.into())).unwrap();
     let config = Config::load_from_base_config_with_overrides(
         parsed,
         ConfigOverrides::default(),
         home.path().to_path_buf(),
     )
     .unwrap();
-    let endpoint = config.egress_url.as_deref().unwrap();
+    assert_eq!(config.egress_url.as_deref(), Some(endpoint));
     assert_eq!(
         config.model_provider.egress.as_ref().unwrap().endpoint(),
         endpoint
@@ -50,6 +59,12 @@ wire_api = "chat_completions"
 
 #[test]
 fn no_egress_configuration_keeps_all_providers_direct() {
+    assert_eq!(resolve_egress_url(None, None).unwrap(), None);
+    let endpoint = Some("http://localhost:8847/egress/chaos".to_string());
+    assert_eq!(
+        resolve_egress_url(endpoint.clone(), None).unwrap(),
+        endpoint
+    );
     let home = tempdir().unwrap();
     let config = Config::load_from_base_config_with_overrides(
         ConfigToml::default(),
@@ -69,13 +84,19 @@ fn no_egress_configuration_keeps_all_providers_direct() {
 #[test]
 fn invalid_global_egress_fails_config_load() {
     let home = tempdir().unwrap();
-    let result = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            egress_url: Some("not a gateway URL".to_string()),
-            ..Default::default()
-        },
-        ConfigOverrides::default(),
-        home.path().to_path_buf(),
-    );
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidInput);
+    for value in ["not a gateway URL", ""] {
+        let result = Config::load_from_base_config_with_overrides(
+            ConfigToml {
+                egress_url: resolve_egress_url(
+                    Some("http://localhost:8847/egress/chaos".to_string()),
+                    Some(value.into()),
+                )
+                .unwrap(),
+                ..Default::default()
+            },
+            ConfigOverrides::default(),
+            home.path().to_path_buf(),
+        );
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidInput);
+    }
 }

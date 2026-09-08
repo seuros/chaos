@@ -38,6 +38,14 @@ fn text_user_input_parts(texts: Vec<String>) -> serde_json::Value {
 }
 
 fn assert_default_env_context(text: &str, cwd: &str, shell: &Shell) {
+    assert_env_context(text, cwd, shell);
+    assert!(
+        text.contains("<platform>") && text.contains("<arch>"),
+        "expected platform in initial environment context: {text}"
+    );
+}
+
+fn assert_env_context(text: &str, cwd: &str, shell: &Shell) {
     let shell_name = shell.name();
     assert!(
         text.starts_with(ENVIRONMENT_CONTEXT_OPEN_TAG),
@@ -50,10 +58,6 @@ fn assert_default_env_context(text: &str, cwd: &str, shell: &Shell) {
     assert!(
         text.contains(&format!("<shell name=\"{shell_name}\" path=\"")),
         "expected shell in environment context: {text}"
-    );
-    assert!(
-        text.contains("<platform>") && text.contains("<arch>"),
-        "expected platform in environment context: {text}"
     );
     assert!(
         text.contains("<current_date>") && text.contains("</current_date>"),
@@ -374,7 +378,11 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
         .expect("environment context text");
     let shell = default_user_shell();
     let expected_cwd = new_cwd.path().display().to_string();
-    assert_default_env_context(env_text, &expected_cwd, &shell);
+    assert_env_context(env_text, &expected_cwd, &shell);
+    assert!(
+        !env_text.contains("<platform>"),
+        "per-turn updates must not repeat the cached platform: {env_text}"
+    );
     let mut expected_body2 = body1_input.to_vec();
     expected_body2.push(expected_settings_update_msg);
     expected_body2.push(expected_env_msg_2);

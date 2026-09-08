@@ -157,6 +157,10 @@ impl BarWidget {
         }
     }
 
+    pub(super) fn set_tone(&mut self, tone: Tone) {
+        self.content.tone = tone;
+    }
+
     pub(super) fn refresh(&mut self, now: &Zoned) -> Update {
         match &mut self.updater {
             Some(refresh) => refresh(&mut self.content, now),

@@ -94,6 +94,13 @@ impl App {
                     }
                 }
                 TuiEvent::Draw => {
+                    tui.set_sandbox_policy(
+                        self.chat_widget
+                            .config_ref()
+                            .permissions
+                            .sandbox_policy
+                            .get(),
+                    );
                     if self.backtrack_render_pending {
                         self.backtrack_render_pending = false;
                         self.render_transcript_once(tui);

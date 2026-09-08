@@ -286,6 +286,7 @@ pub struct Tui {
     /// These rows are never scrolled and the viewport starts below them.
     top_reserved_rows: u16,
     top_bar: Option<crate::top_bar::Runtime>,
+    sandbox_policy: Option<chaos_ipc::protocol::SandboxPolicy>,
     terminal_title_enabled: bool,
 }
 
@@ -318,7 +319,16 @@ impl Tui {
             alt_screen_enabled: true,
             top_reserved_rows: 1,
             top_bar,
+            sandbox_policy: None,
             terminal_title_enabled: false,
+        }
+    }
+
+    /// Update the top-bar session indicator; individual command escalations do not change it.
+    pub fn set_sandbox_policy(&mut self, policy: &chaos_ipc::protocol::SandboxPolicy) {
+        if self.sandbox_policy.as_ref() != Some(policy) {
+            self.sandbox_policy = Some(policy.clone());
+            self.frame_requester.schedule_frame();
         }
     }
 
@@ -630,7 +640,9 @@ impl Tui {
             if reserved > 0
                 && let Some(top_bar) = &self.top_bar
             {
-                terminal.draw_pinned_row(&top_bar.buffer(size.width))?;
+                terminal.draw_pinned_row(
+                    &top_bar.buffer_with_sandbox_policy(size.width, self.sandbox_policy.as_ref()),
+                )?;
             }
 
             // Update the y position for suspending so Ctrl-Z can place the cursor correctly.

@@ -128,13 +128,28 @@ impl Runtime {
         Self { widgets, task }
     }
 
-    pub(crate) fn buffer(&self, width: u16) -> Buffer {
+    #[cfg(test)]
+    fn buffer(&self, width: u16) -> Buffer {
+        self.buffer_with_sandbox_policy(width, None)
+    }
+
+    pub(crate) fn buffer_with_sandbox_policy(
+        &self,
+        width: u16,
+        policy: Option<&chaos_ipc::protocol::SandboxPolicy>,
+    ) -> Buffer {
         let area = Rect::new(0, 0, width, 1);
         let mut buffer = Buffer::empty(area);
-        let widgets = self
+        let mut widgets = self
             .widgets
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(widget) = widgets
+            .iter_mut()
+            .find(|widget| widget.spec().id == "sandbox")
+        {
+            widget.set_tone(widgets::sandbox::tone(policy));
+        }
         Bar {
             widgets: &widgets,
             palette: crate::theme::palette(),
@@ -193,6 +208,49 @@ mod tests {
                 next: Some(Duration::from_secs(60)),
             }
         })
+    }
+
+    #[tokio::test]
+    async fn sandbox_color_tracks_policy_without_changing_label() {
+        use chaos_ipc::protocol::{NetworkAccess, SandboxPolicy};
+        use chaos_sysinfo::SandboxKind;
+
+        let palette = crate::theme::palette();
+        for kind in [
+            SandboxKind::Seatbelt,
+            SandboxKind::Seccomp,
+            SandboxKind::Capsicum,
+        ] {
+            let (tx, _) = broadcast::channel(16);
+            let runtime =
+                Runtime::with_widgets(FrameRequester::new(tx), vec![widgets::sandbox::new(kind)]);
+            let initial = runtime.buffer(20);
+            for (policy, color) in [
+                (Some(SandboxPolicy::new_read_only_policy()), palette.success),
+                (Some(SandboxPolicy::RootAccess), palette.error),
+                (
+                    Some(SandboxPolicy::new_workspace_write_policy()),
+                    palette.success,
+                ),
+                (
+                    Some(SandboxPolicy::ExternalSandbox {
+                        network_access: NetworkAccess::Restricted,
+                    }),
+                    palette.top_bar_fg,
+                ),
+                (None, palette.top_bar_fg),
+            ] {
+                // Policy changes while too narrow must still appear on expansion.
+                runtime.buffer_with_sandbox_policy(1, policy.as_ref());
+                let buffer = runtime.buffer_with_sandbox_policy(20, policy.as_ref());
+                for (cell, original) in buffer.content.iter().zip(&initial.content) {
+                    assert_eq!(cell.symbol(), original.symbol());
+                    if cell.symbol() != " " {
+                        assert_eq!(cell.fg, color);
+                    }
+                }
+            }
+        }
     }
 
     #[tokio::test(start_paused = true)]

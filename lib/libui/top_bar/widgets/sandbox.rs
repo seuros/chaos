@@ -1,8 +1,19 @@
-//! Available platform sandbox mechanism, not the current permission policy.
+//! Platform mechanism, colored by the session policy (not per-command escalation).
 
+use chaos_ipc::protocol::SandboxPolicy;
 use chaos_sysinfo::SandboxKind;
 
-use super::super::{BarWidget, Content, Side};
+use super::super::{BarWidget, Content, Side, Tone};
+
+pub(in crate::top_bar) fn tone(policy: Option<&SandboxPolicy>) -> Tone {
+    match policy {
+        Some(SandboxPolicy::ReadOnly { .. } | SandboxPolicy::WorkspaceWrite { .. }) => {
+            Tone::Success
+        }
+        Some(SandboxPolicy::RootAccess) => Tone::Error,
+        Some(SandboxPolicy::ExternalSandbox { .. }) | None => Tone::Normal,
+    }
+}
 
 pub(in crate::top_bar) fn new(kind: SandboxKind) -> BarWidget {
     let label = match kind {

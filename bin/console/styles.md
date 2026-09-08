@@ -60,7 +60,11 @@ Left-to-right order within each side is independent of visibility priority:
 - The other static environment widgets load once from `chaos_sysinfo` on a
   background worker. They appear when ready without blocking the clock, power
   monitoring, or drawing. Missing sandbox/container/multiplexer labels are omitted.
-  The sandbox label names the platform mechanism, not the current permission policy.
+  The sandbox label names the platform mechanism. Its color reflects the session
+  policy: success/green for read-only or workspace-write, error/red for unrestricted
+  root access, and normal foreground for an unknown policy or external sandbox
+  (which does not establish that this platform mechanism is in use). Individual
+  command escalations do not change this session-level indicator.
 - Storage (`SQLITE` or `🐘`) and persistence (`⚠ log` only when unhealthy) consume
   retained kernel status notifications, including while hidden or idle. There is
   no persistence polling timer. Degraded health uses the warning color; failing

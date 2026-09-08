@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use chaos_abi::WireFormatError;
 use serde_json::Value;
 
 #[derive(Debug, thiserror::Error)]
@@ -73,8 +72,9 @@ impl GuestError {
     }
 }
 
-impl WireFormatError for GuestError {
-    fn is_retryable(&self) -> bool {
+impl GuestError {
+    /// Whether the operation may succeed if attempted again.
+    pub fn is_retryable(&self) -> bool {
         match self {
             Self::Transport(_) | Self::Timeout(_) | Self::Disconnected | Self::Http(_) => true,
             Self::Json(_)
@@ -90,8 +90,16 @@ impl WireFormatError for GuestError {
         }
     }
 
-    fn is_timeout(&self) -> bool {
+    /// Whether the failure was caused by a request deadline.
+    pub fn is_timeout(&self) -> bool {
         matches!(self, Self::Timeout(_))
+    }
+
+    /// Suggested retry delay, if supplied by the error.
+    ///
+    /// Guest errors currently carry no retry-delay information.
+    pub fn retry_after(&self) -> Option<Duration> {
+        None
     }
 }
 

@@ -1,10 +1,20 @@
 [package]
 name = "mcp-guest"
-version.workspace = true
+version = "0.10.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = ["crates-io"]
 description = "MCP client for connecting to Model Context Protocol servers"
+repository = "https://github.com/seuros/chaos"
+documentation = "https://docs.rs/mcp-guest"
+readme = "README.md"
+keywords = ["mcp", "client", "ai", "json-rpc"]
+categories = ["api-bindings", "asynchronous"]
+include = ["src/**", "Cargo.toml", "README.md"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
 default = ["stdio"]
@@ -12,7 +22,6 @@ stdio = []
 http = ["dep:chrono-machines", "dep:rama", "dep:rand", "dep:tokio-stream", "dep:url"]
 
 [dependencies]
-chaos-abi = { workspace = true }
 chrono-machines = { workspace = true, optional = true }
 mcp-host = { workspace = true }
 rand = { workspace = true, optional = true }

@@ -145,6 +145,9 @@ pub struct BottomPane {
     /// Stack of views displayed instead of the composer (e.g. popups/modals).
     view_stack: Vec<Box<dyn BottomPaneView>>,
 
+    /// A key that closed a view/popup must not repeat into the surface underneath.
+    suppressed_repeat_key: Option<KeyCode>,
+
     app_event_tx: AppEventSender,
     frame_requester: FrameRequester,
 
@@ -296,7 +299,7 @@ pub(crate) mod tests {
         drain_pending_submission_state_clears_remote_image_urls();
         esc_with_slash_command_popup_does_not_interrupt_task();
         esc_with_agent_command_without_popup_does_not_interrupt_task();
-        esc_release_after_dismissing_agent_picker_does_not_interrupt_task();
+        esc_repeat_and_release_after_dismissing_agent_picker_do_not_interrupt_task();
         esc_interrupts_running_task_when_no_popup();
         esc_routes_to_handle_key_event_when_requested();
         release_events_are_ignored_for_active_view();
@@ -580,7 +583,7 @@ pub(crate) mod tests {
         assert_eq!(pane.composer_text(), "/agent ");
     }
 
-    fn esc_release_after_dismissing_agent_picker_does_not_interrupt_task() {
+    fn esc_repeat_and_release_after_dismissing_agent_picker_do_not_interrupt_task() {
         let (mut pane, mut rx) = make_test_pane_with_rx();
 
         pane.set_task_running(true);
@@ -598,21 +601,28 @@ pub(crate) mod tests {
             KeyModifiers::NONE,
             KeyEventKind::Press,
         ));
-        pane.handle_key_event(KeyEvent::new_with_kind(
-            KeyCode::Esc,
-            KeyModifiers::NONE,
-            KeyEventKind::Release,
-        ));
+        for kind in [KeyEventKind::Repeat, KeyEventKind::Release] {
+            pane.handle_key_event(KeyEvent::new_with_kind(
+                KeyCode::Esc,
+                KeyModifiers::NONE,
+                kind,
+            ));
+        }
 
         while let Ok(ev) = rx.try_recv() {
             assert!(
                 !matches!(ev, AppEvent::ChaosOp(Op::Interrupt)),
-                "expected Esc release after dismissing agent picker to not interrupt"
+                "expected held Esc after dismissing agent picker to not interrupt"
             );
         }
         assert!(
             pane.no_modal_or_popup_active(),
             "expected Esc press to dismiss the agent picker"
+        );
+        pane.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(rx.try_recv(), Ok(AppEvent::ChaosOp(Op::Interrupt))),
+            "a fresh Esc press should still interrupt"
         );
     }
 

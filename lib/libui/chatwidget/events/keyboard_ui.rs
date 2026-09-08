@@ -27,6 +27,9 @@ use super::super::UserMessage;
 
 impl ChatWidget {
     pub fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.bottom_pane.suppress_key_repeat(key_event) {
+            return;
+        }
         match key_event {
             KeyEvent {
                 code: KeyCode::Char(c),

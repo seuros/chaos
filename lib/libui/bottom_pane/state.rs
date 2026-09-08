@@ -28,6 +28,7 @@ impl BottomPane {
         Self {
             composer,
             view_stack: Vec::new(),
+            suppressed_repeat_key: None,
             app_event_tx,
             frame_requester,
             has_input_focus,
@@ -119,9 +120,24 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    /// Also checked by the parent before shortcuts that bypass pane routing.
+    /// A fresh press resets the guard even on terminals that omit releases.
+    pub(crate) fn suppress_key_repeat(&mut self, key_event: KeyEvent) -> bool {
+        if self.suppressed_repeat_key == Some(key_event.code) {
+            if key_event.kind == KeyEventKind::Repeat {
+                return true;
+            }
+            self.suppressed_repeat_key = None;
+        }
+        false
+    }
+
     /// Forward a key event to the active view or the composer.
     pub fn handle_key_event(&mut self, key_event: KeyEvent) -> InputResult {
-        // Release events are always ignored; only Press events are actionable.
+        if self.suppress_key_repeat(key_event) {
+            return InputResult::None;
+        }
+        // Releases only clear repeat suppression; they never trigger actions.
         if key_event.kind == KeyEventKind::Release {
             return InputResult::None;
         }
@@ -148,6 +164,9 @@ impl BottomPane {
                 }
             };
 
+            if view_complete {
+                self.suppressed_repeat_key = Some(key_event.code);
+            }
             if ctrl_c_completed {
                 self.view_stack.pop();
                 self.on_active_view_complete();
@@ -187,7 +206,11 @@ impl BottomPane {
                 self.request_redraw();
                 return InputResult::None;
             }
+            let had_popup = self.composer.popup_active();
             let (input_result, needs_redraw) = self.composer.handle_key_event(key_event);
+            if had_popup && !self.composer.popup_active() {
+                self.suppressed_repeat_key = Some(key_event.code);
+            }
             if needs_redraw {
                 self.request_redraw();
             }

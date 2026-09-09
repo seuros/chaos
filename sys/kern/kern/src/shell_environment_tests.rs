@@ -1,6 +1,7 @@
 use super::*;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
+use tokio::fs;
 
 fn test_shell(shell_type: ShellType, shell_path: &str) -> Shell {
     Shell {
@@ -55,7 +56,7 @@ async fn capture_does_not_create_snapshot_storage() -> Result<()> {
 
     assert_eq!(environment.cwd, dir.path());
     assert!(environment.vars.contains_key("PATH"));
-    assert!(!dir.path().join(LEGACY_SNAPSHOT_DIR).exists());
+    assert!(!dir.path().join("shell_snapshots").exists());
     Ok(())
 }
 
@@ -68,7 +69,6 @@ async fn actor_replaces_environment_when_cwd_changes() -> Result<()> {
     fs::create_dir_all(&second_cwd).await?;
     let mut shell = test_shell(ShellType::Bash, "/bin/bash");
     let actor = ShellEnvironmentActor::spawn_inner(
-        dir.path().to_path_buf(),
         ProcessId::new(),
         ShellEnvironmentStartup::Idle,
         &mut shell,
@@ -96,17 +96,21 @@ async fn actor_replaces_environment_when_cwd_changes() -> Result<()> {
 }
 
 #[tokio::test]
-async fn startup_removes_legacy_snapshot_storage_without_following_symlinks() -> Result<()> {
+async fn capture_ignores_retired_snapshot_storage() -> Result<()> {
     let dir = tempdir()?;
-    let target = dir.path().join("must-survive");
-    fs::create_dir_all(&target).await?;
-    fs::write(target.join("secret"), "keep").await?;
-    let legacy = dir.path().join(LEGACY_SNAPSHOT_DIR);
-    std::os::unix::fs::symlink(&target, &legacy)?;
-
-    remove_legacy_snapshot_storage(dir.path()).await?;
-
-    assert!(!legacy.exists());
-    assert_eq!(fs::read_to_string(target.join("secret")).await?, "keep");
+    let storage = dir.path().join("shell_snapshots");
+    fs::create_dir_all(&storage).await?;
+    let snapshot = storage.join("old.sh");
+    fs::write(&snapshot, "exit 99\n").await?;
+    let mut shell = test_shell(ShellType::Bash, "/bin/bash");
+    let actor = ShellEnvironmentActor::spawn_inner(
+        ProcessId::new(),
+        ShellEnvironmentStartup::Idle,
+        &mut shell,
+        None,
+    );
+    actor.refresh_and_wait(dir.path().to_path_buf()).await?;
+    assert!(shell.shell_environment().is_some());
+    assert_eq!(fs::read_to_string(snapshot).await?, "exit 99\n");
     Ok(())
 }

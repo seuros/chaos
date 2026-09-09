@@ -1,400 +1,47 @@
 use super::*;
+use std::path::Path;
 
-#[test]
-fn load_config_rejects_missing_agent_role_config_file() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let missing_path = chaos_home.path().join("agents").join("researcher.toml");
-    let cfg = ConfigToml {
-        agents: Some(AgentsToml {
-            max_threads: None,
-            max_depth: None,
-            job_max_runtime_seconds: None,
-            roles: BTreeMap::from([(
-                "researcher".to_string(),
-                AgentRoleToml {
-                    description: Some("Research role".to_string()),
-                    config_file: Some(AbsolutePathBuf::from_absolute_path(missing_path)?),
-                    nickname_candidates: None,
-                    topics: None,
-                    catchphrases: None,
-                },
-            )]),
-        }),
-        ..Default::default()
-    };
-
-    let result = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    );
-    let err = result.expect_err("missing role config file should be rejected");
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    let message = err.to_string();
-    assert!(message.contains("agents.researcher.config_file"));
-    assert!(message.contains("must point to an existing file"));
-
-    Ok(())
+fn write_agent_file(dir: &Path, name: &str, contents: &str) -> std::io::Result<PathBuf> {
+    let path = dir.join(name);
+    std::fs::create_dir_all(path.parent().expect("agent file parent"))?;
+    std::fs::write(&path, contents)?;
+    Ok(path)
 }
 
 #[tokio::test]
-async fn agent_role_relative_config_file_resolves_against_config_toml() -> std::io::Result<()> {
+async fn split_agent_role_declarations_are_rejected() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    let role_config_path = chaos_home.path().join("agents").join("researcher.toml");
-    tokio::fs::create_dir_all(
-        role_config_path
-            .parent()
-            .expect("role config should have a parent directory"),
-    )
-    .await?;
-    tokio::fs::write(
-        &role_config_path,
-        "developer_instructions = \"Research carefully\"\nmodel = \"serpent\"",
-    )
-    .await?;
-    tokio::fs::write(
+    std::fs::write(
         chaos_home.path().join(CONFIG_TOML_FILE),
         r#"[agents.researcher]
 description = "Research role"
 config_file = "./agents/researcher.toml"
-nickname_candidates = ["Hypatia", "Noether"]
 "#,
-    )
-    .await?;
-
-    let config = ConfigBuilder::default()
+    )?;
+    let err = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .fallback_cwd(Some(chaos_home.path().to_path_buf()))
         .build()
-        .await?;
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.config_file.as_ref()),
-        Some(&role_config_path)
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Hypatia", "Noether"])
-    );
-
+        .await
+        .expect_err("split declarations are no longer supported");
+    assert!(err.to_string().contains("unknown field `researcher`"));
     Ok(())
 }
 
 #[tokio::test]
-async fn agent_role_file_metadata_overrides_config_toml_metadata() -> std::io::Result<()> {
+async fn agent_role_file_name_is_independent_of_filename() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    let role_config_path = chaos_home.path().join("agents").join("researcher.toml");
-    tokio::fs::create_dir_all(
-        role_config_path
-            .parent()
-            .expect("role config should have a parent directory"),
-    )
-    .await?;
-    tokio::fs::write(
-        &role_config_path,
-        r#"
-description = "Role metadata from file"
-nickname_candidates = ["Hypatia"]
-developer_instructions = "Research carefully"
-model = "serpent"
-"#,
-    )
-    .await?;
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[agents.researcher]
-description = "Research role from config"
-config_file = "./agents/researcher.toml"
-nickname_candidates = ["Noether"]
-"#,
-    )
-    .await?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-    let role = config
-        .agent_roles
-        .get("researcher")
-        .expect("researcher role should load");
-    assert_eq!(role.description.as_deref(), Some("Role metadata from file"));
-    assert_eq!(role.config_file.as_ref(), Some(&role_config_path));
-    assert_eq!(
-        role.nickname_candidates
-            .as_ref()
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Hypatia"])
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn agent_role_file_without_developer_instructions_is_dropped_with_warning()
--> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let repo_root = TempDir::new()?;
-    let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
-    std::fs::create_dir_all(&nested_cwd)?;
-
-    crate::config::set_project_trust_level(
-        chaos_home.path(),
-        repo_root.path(),
-        TrustLevel::Trusted,
-    )
-    .map_err(std::io::Error::other)?;
-
-    let standalone_agents_dir = repo_root.path().join(".chaos").join("agents");
-    tokio::fs::create_dir_all(&standalone_agents_dir).await?;
-    tokio::fs::write(
-        standalone_agents_dir.join("researcher.toml"),
-        r#"
-name = "researcher"
-description = "Role metadata from file"
-model = "serpent"
-"#,
-    )
-    .await?;
-    tokio::fs::write(
-        standalone_agents_dir.join("reviewer.toml"),
-        r#"
-name = "reviewer"
-description = "Review role"
-developer_instructions = "Review carefully"
-model = "serpent"
-"#,
-    )
-    .await?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .harness_overrides(ConfigOverrides {
-            cwd: Some(nested_cwd),
-            ..Default::default()
-        })
-        .build()
-        .await?;
-    assert!(!config.agent_roles.contains_key("researcher"));
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.description.as_deref()),
-        Some("Review role")
-    );
-    assert!(
-        config
-            .startup_warnings
-            .iter()
-            .any(|warning| warning.contains("must define `developer_instructions`"))
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn legacy_agent_role_config_file_allows_missing_developer_instructions() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    let role_config_path = chaos_home.path().join("agents").join("researcher.toml");
-    tokio::fs::create_dir_all(
-        role_config_path
-            .parent()
-            .expect("role config should have a parent directory"),
-    )
-    .await?;
-    tokio::fs::write(
-        &role_config_path,
-        r#"
-model = "serpent"
-model_reasoning_effort = "high"
-"#,
-    )
-    .await?;
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[agents.researcher]
-description = "Research role from config"
-config_file = "./agents/researcher.toml"
-"#,
-    )
-    .await?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.description.as_deref()),
-        Some("Research role from config")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.config_file.as_ref()),
-        Some(&role_config_path)
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn agent_role_without_description_after_merge_is_dropped_with_warning() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    let role_config_path = chaos_home.path().join("agents").join("researcher.toml");
-    tokio::fs::create_dir_all(
-        role_config_path
-            .parent()
-            .expect("role config should have a parent directory"),
-    )
-    .await?;
-    tokio::fs::write(
-        &role_config_path,
-        r#"
-developer_instructions = "Research carefully"
-model = "serpent"
-"#,
-    )
-    .await?;
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[agents.researcher]
-config_file = "./agents/researcher.toml"
-
-[agents.reviewer]
-description = "Review role"
-"#,
-    )
-    .await?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-    assert!(!config.agent_roles.contains_key("researcher"));
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.description.as_deref()),
-        Some("Review role")
-    );
-    assert!(
-        config
-            .startup_warnings
-            .iter()
-            .any(|warning| warning.contains("agent role `researcher` must define a description"))
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn discovered_agent_role_file_without_name_is_dropped_with_warning() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let repo_root = TempDir::new()?;
-    let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
-    std::fs::create_dir_all(&nested_cwd)?;
-
-    crate::config::set_project_trust_level(
-        chaos_home.path(),
-        repo_root.path(),
-        TrustLevel::Trusted,
-    )
-    .map_err(std::io::Error::other)?;
-
-    let standalone_agents_dir = repo_root.path().join(".chaos").join("agents");
-    tokio::fs::create_dir_all(&standalone_agents_dir).await?;
-    tokio::fs::write(
-        standalone_agents_dir.join("researcher.toml"),
-        r#"
-description = "Role metadata from file"
-developer_instructions = "Research carefully"
-"#,
-    )
-    .await?;
-    tokio::fs::write(
-        standalone_agents_dir.join("reviewer.toml"),
-        r#"
-name = "reviewer"
-description = "Review role"
-developer_instructions = "Review carefully"
-"#,
-    )
-    .await?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .harness_overrides(ConfigOverrides {
-            cwd: Some(nested_cwd),
-            ..Default::default()
-        })
-        .build()
-        .await?;
-    assert!(!config.agent_roles.contains_key("researcher"));
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.description.as_deref()),
-        Some("Review role")
-    );
-    assert!(
-        config
-            .startup_warnings
-            .iter()
-            .any(|warning| warning.contains("must define a non-empty `name`"))
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn agent_role_file_name_takes_precedence_over_config_key() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let role_config_path = chaos_home.path().join("agents").join("researcher.toml");
-    tokio::fs::create_dir_all(
-        role_config_path
-            .parent()
-            .expect("role config should have a parent directory"),
-    )
-    .await?;
-    tokio::fs::write(
-        &role_config_path,
+    let role_path = write_agent_file(
+        &chaos_home.path().join("agents"),
+        "researcher.toml",
         r#"
 name = "archivist"
 description = "Role metadata from file"
+nickname_candidates = ["  Hypatia  ", "Noether"]
 developer_instructions = "Research carefully"
 model = "serpent"
 "#,
-    )
-    .await?;
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[agents.researcher]
-description = "Research role from config"
-config_file = "./agents/researcher.toml"
-"#,
-    )
-    .await?;
-
+    )?;
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .fallback_cwd(Some(chaos_home.path().to_path_buf()))
@@ -404,100 +51,66 @@ config_file = "./agents/researcher.toml"
     let role = config
         .agent_roles
         .get("archivist")
-        .expect("role should use file-provided name");
+        .expect("role should load");
     assert_eq!(role.description.as_deref(), Some("Role metadata from file"));
-    assert_eq!(role.config_file.as_ref(), Some(&role_config_path));
-
+    assert_eq!(role.config_file.as_ref(), Some(&role_path));
+    assert_eq!(
+        role.nickname_candidates.as_deref(),
+        Some(["Hypatia".to_string(), "Noether".to_string()].as_slice())
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn loads_legacy_split_agent_roles_from_config_toml() -> std::io::Result<()> {
+async fn malformed_agent_files_are_dropped_with_warnings() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    let researcher_path = chaos_home.path().join("agents").join("researcher.toml");
-    let reviewer_path = chaos_home.path().join("agents").join("reviewer.toml");
-    tokio::fs::create_dir_all(
-        researcher_path
-            .parent()
-            .expect("role config should have a parent directory"),
-    )
-    .await?;
-    tokio::fs::write(
-        &researcher_path,
-        "developer_instructions = \"Research carefully\"\nmodel = \"serpent\"",
-    )
-    .await?;
-    tokio::fs::write(
-        &reviewer_path,
-        "developer_instructions = \"Review carefully\"\nmodel = \"gordon\"",
-    )
-    .await?;
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[agents.researcher]
-description = "Research role"
-config_file = "./agents/researcher.toml"
-nickname_candidates = ["Hypatia", "Noether"]
-
-[agents.reviewer]
-description = "Review role"
-config_file = "./agents/reviewer.toml"
-nickname_candidates = ["Atlas"]
-"#,
-    )
-    .await?;
-
+    let agents_dir = chaos_home.path().join("agents");
+    for (filename, contents) in [
+        (
+            "missing-instructions.toml",
+            "name = 'missing-instructions'\ndescription = 'Missing instructions'\nmodel = 'serpent'",
+        ),
+        (
+            "missing-name.toml",
+            "description = 'Missing name'\ndeveloper_instructions = 'Research carefully'",
+        ),
+        (
+            "missing-description.toml",
+            "name = 'missing-description'\ndeveloper_instructions = 'Research carefully'",
+        ),
+        (
+            "bad-nicknames.toml",
+            "name = 'bad-nicknames'\ndescription = 'Bad nicknames'\ndeveloper_instructions = 'Research'\nnickname_candidates = ['Agent <One>']",
+        ),
+        (
+            "reviewer.toml",
+            "name = 'reviewer'\ndescription = 'Review role'\ndeveloper_instructions = 'Review carefully'",
+        ),
+    ] {
+        write_agent_file(&agents_dir, filename, contents)?;
+    }
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .fallback_cwd(Some(chaos_home.path().to_path_buf()))
         .build()
         .await?;
-
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.description.as_deref()),
-        Some("Research role")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.config_file.as_ref()),
-        Some(&researcher_path)
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Hypatia", "Noether"])
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.description.as_deref()),
-        Some("Review role")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.config_file.as_ref()),
-        Some(&reviewer_path)
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Atlas"])
-    );
-
+    assert_eq!(config.agent_roles.len(), 1);
+    assert!(config.agent_roles.contains_key("reviewer"));
+    for expected in [
+        "must define `developer_instructions`",
+        "must define a non-empty `name`",
+        "must define a description",
+        "may only contain ASCII letters",
+    ] {
+        assert!(
+            config
+                .startup_warnings
+                .iter()
+                .any(|warning| warning.contains(expected)),
+            "missing warning {expected}: {:?}",
+            config.startup_warnings
+        );
+    }
     Ok(())
 }
 
@@ -508,7 +121,6 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
     let nested_cwd = repo_root.path().join("packages").join("app");
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(&nested_cwd)?;
-
     crate::config::set_project_trust_level(
         chaos_home.path(),
         repo_root.path(),
@@ -516,68 +128,22 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
     )
     .map_err(std::io::Error::other)?;
 
-    let root_agent = repo_root
-        .path()
-        .join(".chaos")
-        .join("agents")
-        .join("root.toml");
-    std::fs::create_dir_all(
-        root_agent
-            .parent()
-            .expect("root agent should have a parent directory"),
+    write_agent_file(
+        &repo_root.path().join(".chaos/agents"),
+        "root.toml",
+        "name = 'researcher'\ndescription = 'from root'\ndeveloper_instructions = 'Research carefully'",
     )?;
-    std::fs::write(
-        &root_agent,
-        r#"
-name = "researcher"
-description = "from root"
-developer_instructions = "Research carefully"
-"#,
+    let nested_agents = repo_root.path().join("packages/.chaos/agents");
+    write_agent_file(
+        &nested_agents,
+        "review/nested.toml",
+        "name = 'reviewer'\ndescription = 'from nested'\nnickname_candidates = ['Atlas']\ndeveloper_instructions = 'Review carefully'",
     )?;
-
-    let nested_agent = repo_root
-        .path()
-        .join("packages")
-        .join(".chaos")
-        .join("agents")
-        .join("review")
-        .join("nested.toml");
-    std::fs::create_dir_all(
-        nested_agent
-            .parent()
-            .expect("nested agent should have a parent directory"),
+    write_agent_file(
+        &nested_agents,
+        "writer.md",
+        "---\nname = 'writer'\ndescription = 'from sibling'\nnickname_candidates = ['Sagan']\n---\nWrite carefully",
     )?;
-    std::fs::write(
-        &nested_agent,
-        r#"
-name = "reviewer"
-description = "from nested"
-nickname_candidates = ["Atlas"]
-developer_instructions = "Review carefully"
-"#,
-    )?;
-
-    let sibling_agent = repo_root
-        .path()
-        .join("packages")
-        .join(".chaos")
-        .join("agents")
-        .join("writer.toml");
-    std::fs::create_dir_all(
-        sibling_agent
-            .parent()
-            .expect("sibling agent should have a parent directory"),
-    )?;
-    std::fs::write(
-        &sibling_agent,
-        r#"
-name = "writer"
-description = "from sibling"
-nickname_candidates = ["Sagan"]
-developer_instructions = "Write carefully"
-"#,
-    )?;
-
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -586,426 +152,123 @@ developer_instructions = "Write carefully"
         })
         .build()
         .await?;
-
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.description.as_deref()),
-        Some("from root")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.description.as_deref()),
-        Some("from nested")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("reviewer")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Atlas"])
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("writer")
-            .and_then(|role| role.description.as_deref()),
-        Some("from sibling")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("writer")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Sagan"])
-    );
-
+    for (name, description, nickname) in [
+        ("researcher", "from root", None),
+        ("reviewer", "from nested", Some("Atlas")),
+        ("writer", "from sibling", Some("Sagan")),
+    ] {
+        let role = config.agent_roles.get(name).expect("discovered role");
+        assert_eq!(role.description.as_deref(), Some(description));
+        assert_eq!(
+            role.nickname_candidates
+                .as_ref()
+                .and_then(|names| names.first())
+                .map(String::as_str),
+            nickname
+        );
+    }
     Ok(())
 }
 
 #[tokio::test]
-async fn mixed_legacy_and_standalone_agent_role_sources_merge_with_precedence()
--> std::io::Result<()> {
+async fn standalone_agent_role_sources_merge_with_precedence() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
-    let nested_cwd = repo_root.path().join("packages").join("app");
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
-    std::fs::create_dir_all(&nested_cwd)?;
+    crate::config::set_project_trust_level(
+        chaos_home.path(),
+        repo_root.path(),
+        TrustLevel::Trusted,
+    )
+    .map_err(std::io::Error::other)?;
 
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[agents.researcher]
-description = "Research role from config"
-config_file = "./agents/researcher.toml"
+    let home_agents = chaos_home.path().join("agents");
+    write_agent_file(
+        &home_agents,
+        "researcher.toml",
+        r#"
+name = "researcher"
+description = "Research role from home"
 nickname_candidates = ["Noether"]
-
-[agents.critic]
-description = "Critic role from config"
-config_file = "./agents/critic.toml"
-nickname_candidates = ["Ada"]
-"#,
-    )
-    .await?;
-    crate::config::set_project_trust_level(
-        chaos_home.path(),
-        repo_root.path(),
-        TrustLevel::Trusted,
-    )
-    .map_err(std::io::Error::other)?;
-
-    let home_agents_dir = chaos_home.path().join("agents");
-    tokio::fs::create_dir_all(&home_agents_dir).await?;
-    tokio::fs::write(
-        home_agents_dir.join("researcher.toml"),
-        r#"
+topics = ["research"]
+catchphrases = ["Look closely."]
 developer_instructions = "Research carefully"
 model = "serpent"
 "#,
-    )
-    .await?;
-    tokio::fs::write(
-        home_agents_dir.join("critic.toml"),
-        r#"
-developer_instructions = "Critique carefully"
-model = "gordon"
-"#,
-    )
-    .await?;
-
-    let standalone_agents_dir = repo_root.path().join(".chaos").join("agents");
-    tokio::fs::create_dir_all(&standalone_agents_dir).await?;
-    tokio::fs::write(
-        standalone_agents_dir.join("researcher.toml"),
+    )?;
+    let critic_path = write_agent_file(
+        &home_agents,
+        "critic.toml",
+        "name = 'critic'\ndescription = 'Critic role'\ndeveloper_instructions = 'Critique carefully'",
+    )?;
+    let project_agents = repo_root.path().join(".chaos/agents");
+    let researcher_path = write_agent_file(
+        &project_agents,
+        "researcher.toml",
         r#"
 name = "researcher"
-description = "Research role from file"
 nickname_candidates = ["Hypatia"]
-developer_instructions = "Research from file"
+developer_instructions = "Research from project"
 model = "fireship"
 "#,
-    )
-    .await?;
-    tokio::fs::write(
-        standalone_agents_dir.join("writer.toml"),
-        r#"
-name = "writer"
-description = "Writer role from file"
-nickname_candidates = ["Sagan"]
-developer_instructions = "Write carefully"
-model = "serpent"
-"#,
-    )
-    .await?;
-
+    )?;
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
-            cwd: Some(nested_cwd),
+            cwd: Some(repo_root.path().to_path_buf()),
             ..Default::default()
         })
         .build()
         .await?;
-
+    let role = config.agent_roles.get("researcher").expect("merged role");
+    assert_eq!(role.description.as_deref(), Some("Research role from home"));
+    assert_eq!(role.config_file.as_ref(), Some(&researcher_path));
     assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.description.as_deref()),
-        Some("Research role from file")
+        role.nickname_candidates.as_deref(),
+        Some(["Hypatia".to_string()].as_slice())
     );
     assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.config_file.as_ref()),
-        Some(&standalone_agents_dir.join("researcher.toml"))
+        role.topics.as_deref(),
+        Some(["research".to_string()].as_slice())
     );
     assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Hypatia"])
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("critic")
-            .and_then(|role| role.description.as_deref()),
-        Some("Critic role from config")
+        role.catchphrases.as_deref(),
+        Some(["Look closely.".to_string()].as_slice())
     );
     assert_eq!(
         config
             .agent_roles
             .get("critic")
             .and_then(|role| role.config_file.as_ref()),
-        Some(&home_agents_dir.join("critic.toml"))
+        Some(&critic_path)
     );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("critic")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Ada"])
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("writer")
-            .and_then(|role| role.description.as_deref()),
-        Some("Writer role from file")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("writer")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Sagan"])
-    );
-
     Ok(())
 }
 
 #[tokio::test]
-async fn higher_precedence_agent_role_can_inherit_description_from_lower_layer()
--> std::io::Result<()> {
+async fn untrusted_project_agent_files_are_not_loaded() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
-    let nested_cwd = repo_root.path().join("packages").join("app");
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
-    std::fs::create_dir_all(&nested_cwd)?;
-
-    tokio::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[agents.researcher]
-description = "Research role from config"
-config_file = "./agents/researcher.toml"
-"#,
-    )
-    .await?;
     crate::config::set_project_trust_level(
         chaos_home.path(),
         repo_root.path(),
-        TrustLevel::Trusted,
+        TrustLevel::Untrusted,
     )
     .map_err(std::io::Error::other)?;
-
-    let home_agents_dir = chaos_home.path().join("agents");
-    tokio::fs::create_dir_all(&home_agents_dir).await?;
-    tokio::fs::write(
-        home_agents_dir.join("researcher.toml"),
-        r#"
-developer_instructions = "Research carefully"
-model = "serpent"
-"#,
-    )
-    .await?;
-
-    let standalone_agents_dir = repo_root.path().join(".chaos").join("agents");
-    tokio::fs::create_dir_all(&standalone_agents_dir).await?;
-    tokio::fs::write(
-        standalone_agents_dir.join("researcher.toml"),
-        r#"
-name = "researcher"
-nickname_candidates = ["Hypatia"]
-developer_instructions = "Research from file"
-model = "fireship"
-"#,
-    )
-    .await?;
-
+    write_agent_file(
+        &repo_root.path().join(".chaos/agents"),
+        "researcher.toml",
+        "name = 'researcher'\ndescription = 'Project role'\ndeveloper_instructions = 'Research'",
+    )?;
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
-            cwd: Some(nested_cwd),
+            cwd: Some(repo_root.path().to_path_buf()),
             ..Default::default()
         })
         .build()
         .await?;
-
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.description.as_deref()),
-        Some("Research role from config")
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.config_file.as_ref()),
-        Some(&standalone_agents_dir.join("researcher.toml"))
-    );
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Hypatia"])
-    );
-
-    Ok(())
-}
-
-#[test]
-fn load_config_normalizes_agent_role_nickname_candidates() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        agents: Some(AgentsToml {
-            max_threads: None,
-            max_depth: None,
-            job_max_runtime_seconds: None,
-            roles: BTreeMap::from([(
-                "researcher".to_string(),
-                AgentRoleToml {
-                    description: Some("Research role".to_string()),
-                    config_file: None,
-                    nickname_candidates: Some(vec![
-                        "  Hypatia  ".to_string(),
-                        "Noether".to_string(),
-                    ]),
-                    topics: None,
-                    catchphrases: None,
-                },
-            )]),
-        }),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config
-            .agent_roles
-            .get("researcher")
-            .and_then(|role| role.nickname_candidates.as_ref())
-            .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
-        Some(vec!["Hypatia", "Noether"])
-    );
-
-    Ok(())
-}
-
-#[test]
-fn load_config_rejects_empty_agent_role_nickname_candidates() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        agents: Some(AgentsToml {
-            max_threads: None,
-            max_depth: None,
-            job_max_runtime_seconds: None,
-            roles: BTreeMap::from([(
-                "researcher".to_string(),
-                AgentRoleToml {
-                    description: Some("Research role".to_string()),
-                    config_file: None,
-                    nickname_candidates: Some(Vec::new()),
-                    topics: None,
-                    catchphrases: None,
-                },
-            )]),
-        }),
-        ..Default::default()
-    };
-
-    let result = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    );
-    let err = result.expect_err("empty nickname candidates should be rejected");
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(
-        err.to_string()
-            .contains("agents.researcher.nickname_candidates")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn load_config_rejects_duplicate_agent_role_nickname_candidates() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        agents: Some(AgentsToml {
-            max_threads: None,
-            max_depth: None,
-            job_max_runtime_seconds: None,
-            roles: BTreeMap::from([(
-                "researcher".to_string(),
-                AgentRoleToml {
-                    description: Some("Research role".to_string()),
-                    config_file: None,
-                    nickname_candidates: Some(vec!["Hypatia".to_string(), " Hypatia ".to_string()]),
-                    topics: None,
-                    catchphrases: None,
-                },
-            )]),
-        }),
-        ..Default::default()
-    };
-
-    let result = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    );
-    let err = result.expect_err("duplicate nickname candidates should be rejected");
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(
-        err.to_string()
-            .contains("agents.researcher.nickname_candidates cannot contain duplicates")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn load_config_rejects_unsafe_agent_role_nickname_candidates() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        agents: Some(AgentsToml {
-            max_threads: None,
-            max_depth: None,
-            job_max_runtime_seconds: None,
-            roles: BTreeMap::from([(
-                "researcher".to_string(),
-                AgentRoleToml {
-                    description: Some("Research role".to_string()),
-                    config_file: None,
-                    nickname_candidates: Some(vec!["Agent <One>".to_string()]),
-                    topics: None,
-                    catchphrases: None,
-                },
-            )]),
-        }),
-        ..Default::default()
-    };
-
-    let result = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    );
-    let err = result.expect_err("unsafe nickname candidates should be rejected");
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(err.to_string().contains(
-            "agents.researcher.nickname_candidates may only contain ASCII letters, digits, spaces, hyphens, and underscores"
-        ));
-
+    assert!(!config.agent_roles.contains_key("researcher"));
     Ok(())
 }

@@ -27,7 +27,7 @@ async fn test_config_with_cli_overrides(
 
 async fn write_role_config(home: &TempDir, name: &str, contents: &str) -> PathBuf {
     let role_path = home.path().join(name);
-    tokio::fs::write(&role_path, contents)
+    tokio::fs::write(&role_path, format!("name = \"custom\"\n{contents}"))
         .await
         .expect("write role config");
     role_path
@@ -52,6 +52,34 @@ async fn apply_role_defaults_to_default_and_leaves_config_unchanged() {
         .expect("default role should apply");
 
     assert_eq!(before, config);
+}
+
+#[tokio::test]
+async fn apply_role_rejects_incomplete_standalone_files() {
+    let (home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
+    let role_path = home.path().join("custom.toml");
+    config.agent_roles.insert(
+        "custom".to_string(),
+        AgentRoleConfig {
+            description: Some("Custom role".to_string()),
+            config_file: Some(role_path.clone()),
+            ..Default::default()
+        },
+    );
+    for contents in [
+        "developer_instructions = 'Stay focused'",
+        "name = 'custom'\nmodel = 'role-model'",
+    ] {
+        tokio::fs::write(&role_path, contents)
+            .await
+            .expect("write role");
+        let before = config.clone();
+        let err = apply_role_to_config(&mut config, Some("custom"))
+            .await
+            .expect_err("incomplete role must not apply");
+        assert_eq!(err, AGENT_TYPE_UNAVAILABLE_ERROR);
+        assert_eq!(config, before);
+    }
 }
 
 #[test]
@@ -226,7 +254,6 @@ async fn apply_role_ignores_agent_metadata_fields_in_user_role_file() {
         &home,
         "metadata-role.toml",
         r#"
-name = "archivist"
 description = "Role metadata"
 nickname_candidates = ["Hypatia"]
 developer_instructions = "Stay focused"
@@ -751,7 +778,7 @@ fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
     let role_path = tempdir.path().join("researcher.toml");
     fs::write(
             &role_path,
-            "developer_instructions = \"Research carefully\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
+            "name = \"researcher\"\ndeveloper_instructions = \"Research carefully\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
         )
         .expect("write role config");
     let user_defined_roles = BTreeMap::from([(
@@ -777,7 +804,7 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
     let role_path = tempdir.path().join("reviewer.toml");
     fs::write(
         &role_path,
-        "developer_instructions = \"Review carefully\"\nmodel_reasoning_effort = \"medium\"\n",
+        "name = \"reviewer\"\ndeveloper_instructions = \"Review carefully\"\nmodel_reasoning_effort = \"medium\"\n",
     )
     .expect("write role config");
     let user_defined_roles = BTreeMap::from([(

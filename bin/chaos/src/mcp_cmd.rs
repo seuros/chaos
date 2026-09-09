@@ -184,11 +184,9 @@ impl McpCli {
     }
 }
 
-/// Preserve compatibility with servers that still expect the legacy empty-scope
-/// OAuth request. If a discovered-scope request is rejected by the provider,
-/// retry the login flow once without scopes.
+/// Report unsupported OAuth login until mcp-guest gains OAuth support.
 #[allow(clippy::too_many_arguments)]
-async fn perform_oauth_login_retry_without_scopes(
+async fn perform_oauth_login(
     _name: &str,
     _url: &str,
     _store_mode: OAuthCredentialsStoreMode,
@@ -310,7 +308,7 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
                 /*configured_scopes*/ None,
                 oauth_config.discovered_scopes.clone(),
             );
-            perform_oauth_login_retry_without_scopes(
+            perform_oauth_login(
                 &name,
                 &oauth_config.url,
                 config.mcp_oauth_credentials_store_mode,
@@ -399,7 +397,7 @@ async fn run_login(config_overrides: &CliConfigOverrides, login_args: LoginArgs)
     let resolved_scopes =
         resolve_oauth_scopes(explicit_scopes, server.scopes.clone(), discovered_scopes);
 
-    perform_oauth_login_retry_without_scopes(
+    perform_oauth_login(
         &name,
         &url,
         config.mcp_oauth_credentials_store_mode,

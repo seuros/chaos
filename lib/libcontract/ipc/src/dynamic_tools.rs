@@ -1,6 +1,5 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde::Deserializer;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -10,8 +9,12 @@ use serde_json::Value as JsonValue;
 /// initialize handshake, no `tools/list`, and no `notifications/tools/list_changed`
 /// lifecycle attached to this type. Callers that need negotiated MCP semantics
 /// should expose a real MCP server instead of sending extra MCP-only fields here.
-#[derive(Debug, Clone, Serialize, PartialEq, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+///
+/// Tool visibility uses `deferLoading` (default false). The retired
+/// `exposeToContext` field is rejected, along with all other unknown fields.
+/// Saved session metadata handles its historical wire format separately.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DynamicToolSpec {
     pub name: String,
     pub description: String,
@@ -43,40 +46,6 @@ pub enum DynamicToolCallOutputContentItem {
     InputText { text: String },
     #[serde(rename_all = "camelCase")]
     InputImage { image_url: String },
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-struct DynamicToolSpecDe {
-    name: String,
-    description: String,
-    input_schema: JsonValue,
-    defer_loading: Option<bool>,
-    expose_to_context: Option<bool>,
-}
-
-impl<'de> Deserialize<'de> for DynamicToolSpec {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let DynamicToolSpecDe {
-            name,
-            description,
-            input_schema,
-            defer_loading,
-            expose_to_context,
-        } = DynamicToolSpecDe::deserialize(deserializer)?;
-
-        Ok(Self {
-            name,
-            description,
-            input_schema,
-            defer_loading: defer_loading
-                .unwrap_or_else(|| expose_to_context.map(|visible| !visible).unwrap_or(false)),
-        })
-    }
 }
 
 #[cfg(test)]
@@ -118,7 +87,7 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_tool_spec_legacy_expose_to_context_inverts_to_defer_loading() {
+    fn dynamic_tool_spec_rejects_expose_to_context() {
         let value = json!({
             "name": "lookup_ticket",
             "description": "Fetch a ticket",
@@ -129,9 +98,33 @@ mod tests {
             "exposeToContext": false,
         });
 
-        let actual: DynamicToolSpec = serde_json::from_value(value).expect("deserialize");
+        let err = serde_json::from_value::<DynamicToolSpec>(value).expect_err("should reject");
+        assert!(err.to_string().contains("exposeToContext"));
+    }
 
-        assert!(actual.defer_loading);
+    #[test]
+    fn dynamic_tool_spec_defaults_to_immediate_loading() {
+        let value = json!({
+            "name": "lookup_ticket",
+            "description": "Fetch a ticket",
+            "inputSchema": {"type": "object"},
+        });
+        let actual: DynamicToolSpec = serde_json::from_value(value).expect("deserialize");
+        assert!(!actual.defer_loading);
+        let serialized = serde_json::to_value(&actual).expect("serialize");
+        assert_eq!(serialized["deferLoading"], false);
+        assert!(serialized.get("exposeToContext").is_none());
+    }
+
+    #[test]
+    fn dynamic_tool_spec_rejects_null_defer_loading() {
+        let value = json!({
+            "name": "lookup_ticket",
+            "description": "Fetch a ticket",
+            "inputSchema": {"type": "object"},
+            "deferLoading": null,
+        });
+        assert!(serde_json::from_value::<DynamicToolSpec>(value).is_err());
     }
 
     #[test]

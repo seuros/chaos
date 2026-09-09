@@ -16,7 +16,6 @@ use chaos_snitch::SessionTelemetry;
 use chaos_traits::router::Adapter;
 use chaos_traits::router::AdapterError;
 use chaos_traits::router::DEFAULT_ADAPTER_CAPACITY;
-use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::watch;
 use tokio::time::timeout;
@@ -33,7 +32,6 @@ pub struct ShellEnvironment {
 }
 
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
-const LEGACY_SNAPSHOT_DIR: &str = "shell_snapshots";
 const EXCLUDED_VARS: &[&str] = &["PWD", "OLDPWD"];
 
 enum ShellEnvironmentOp {
@@ -54,23 +52,15 @@ pub(crate) struct ShellEnvironmentActor {
 
 impl ShellEnvironmentActor {
     pub(crate) fn spawn(
-        chaos_home: PathBuf,
         session_id: ProcessId,
         startup: ShellEnvironmentStartup,
         shell: &mut Shell,
         session_telemetry: SessionTelemetry,
     ) -> Self {
-        Self::spawn_inner(
-            chaos_home,
-            session_id,
-            startup,
-            shell,
-            Some(session_telemetry),
-        )
+        Self::spawn_inner(session_id, startup, shell, Some(session_telemetry))
     }
 
     fn spawn_inner(
-        chaos_home: PathBuf,
         session_id: ProcessId,
         startup: ShellEnvironmentStartup,
         shell: &mut Shell,
@@ -89,10 +79,6 @@ impl ShellEnvironmentActor {
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
 
         tokio::spawn(async move {
-            if let Err(err) = remove_legacy_snapshot_storage(&chaos_home).await {
-                tracing::warn!("Failed to remove legacy shell snapshot storage: {err:?}");
-            }
-
             if let Some(initial_cwd) = initial_cwd {
                 capture_and_publish_environment(
                     session_id,
@@ -327,23 +313,6 @@ async fn run_script_with_timeout(
     }
 
     Ok(output.stdout)
-}
-
-async fn remove_legacy_snapshot_storage(chaos_home: &Path) -> Result<()> {
-    let path = chaos_home.join(LEGACY_SNAPSHOT_DIR);
-    let metadata = match fs::symlink_metadata(&path).await {
-        Ok(metadata) => metadata,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(err.into()),
-    };
-
-    if metadata.file_type().is_symlink() || metadata.is_file() {
-        fs::remove_file(path).await?;
-    } else if metadata.is_dir() {
-        fs::remove_dir_all(path).await?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

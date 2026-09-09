@@ -6,6 +6,51 @@ use serde_json::json;
 use std::path::PathBuf;
 
 #[test]
+fn session_meta_preserves_legacy_tool_visibility_without_reemitting_aliases() -> Result<()> {
+    for (visibility, deferred) in [
+        (json!({"exposeToContext": false}), true),
+        (json!({"exposeToContext": true}), false),
+        (
+            json!({"exposeToContext": false, "deferLoading": false}),
+            false,
+        ),
+        (json!({"deferLoading": true}), true),
+        (json!({"deferLoading": null}), false),
+        (json!({}), false),
+    ] {
+        let mut tool = json!({
+            "name": "lookup",
+            "description": "Look up a ticket",
+            "inputSchema": {"type": "object"},
+        });
+        tool.as_object_mut()
+            .expect("tool object")
+            .extend(visibility.as_object().expect("visibility object").clone());
+        let mut value = serde_json::to_value(SessionMeta::default())?;
+        value["dynamic_tools"] = json!([tool]);
+        let meta: SessionMeta = serde_json::from_value(value)?;
+        let tools = meta.dynamic_tools.as_ref().expect("persisted tools");
+        assert_eq!(tools[0].defer_loading, deferred);
+        let serialized = serde_json::to_value(meta)?;
+        assert_eq!(serialized["dynamic_tools"][0]["deferLoading"], deferred);
+        assert!(
+            serialized["dynamic_tools"][0]
+                .get("exposeToContext")
+                .is_none()
+        );
+    }
+    for tools in [None, Some(serde_json::Value::Null), Some(json!([]))] {
+        let mut value = serde_json::to_value(SessionMeta::default())?;
+        if let Some(tools) = tools {
+            value["dynamic_tools"] = tools;
+        }
+        let meta: SessionMeta = serde_json::from_value(value)?;
+        assert!(meta.dynamic_tools.as_ref().is_none_or(Vec::is_empty));
+    }
+    Ok(())
+}
+
+#[test]
 fn rollout_item_discards_retired_undo_events() -> Result<()> {
     for event_type in ["undo_started", "undo_completed"] {
         let item: RolloutItem = serde_json::from_value(json!({

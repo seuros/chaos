@@ -61,44 +61,6 @@ async fn web_search_mode_cached_sets_external_web_access_false() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn web_search_mode_takes_precedence_over_legacy_flags() {
-    skip_if_no_network!();
-
-    let server = start_mock_server().await;
-    let sse = responses::sse(vec![
-        responses::ev_response_created("resp-1"),
-        responses::ev_completed("resp-1"),
-    ]);
-    let resp_mock = responses::mount_sse_once(&server, sse).await;
-
-    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
-        config
-            .web_search_mode
-            .set(WebSearchMode::Cached)
-            .expect("test web_search_mode should satisfy constraints");
-    });
-    let test = builder
-        .build(&server)
-        .await
-        .expect("create test Chaos conversation");
-
-    test.submit_turn_with_policy(
-        "hello cached+live flags",
-        SandboxPolicy::new_read_only_policy(),
-    )
-    .await
-    .expect("submit turn");
-
-    let body = resp_mock.single_request().body_json();
-    let tool = find_web_search_tool(&body);
-    assert_eq!(
-        tool.get("external_web_access").and_then(Value::as_bool),
-        Some(false),
-        "web_search mode should win over legacy web_search_request"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn web_search_mode_defaults_to_cached() {
     skip_if_no_network!();
 

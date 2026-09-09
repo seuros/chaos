@@ -16,6 +16,11 @@ process. Two backends exist. SQLite is the default and needs no configuration.
 PostgreSQL is opt-in, for operators who want several machines reading the same
 history, or who want the semantic recall store.
 
+Shell environment capture stays in memory. ChaOS no longer reads, creates, or
+automatically removes the retired `$CHAOS_HOME/shell_snapshots` directory.
+If an older installation left it behind, remove it manually when no older ChaOS
+process is using it; snapshots may contain sensitive environment values.
+
 ## AGENT HISTORY ACCESS
 
 Agents can inspect a bounded view of their own canonical persisted transcript

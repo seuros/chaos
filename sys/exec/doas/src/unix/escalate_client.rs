@@ -11,7 +11,6 @@ use crate::unix::escalate_protocol::EXEC_WRAPPER_ENV_VAR;
 use crate::unix::escalate_protocol::EscalateAction;
 use crate::unix::escalate_protocol::EscalateRequest;
 use crate::unix::escalate_protocol::EscalateResponse;
-use crate::unix::escalate_protocol::LEGACY_BASH_EXEC_WRAPPER_ENV_VAR;
 use crate::unix::escalate_protocol::SuperExecMessage;
 use crate::unix::escalate_protocol::SuperExecResult;
 use crate::unix::socket::AsyncDatagramSocket;
@@ -34,6 +33,15 @@ fn duplicate_fd_for_transfer(fd: impl AsFd, name: &str) -> anyhow::Result<OwnedF
         .with_context(|| format!("failed to duplicate {name} for escalation transfer"))
 }
 
+fn is_wrapper_env_var(key: &str) -> bool {
+    // Strip the retired Bash variable too: an inherited value must not leak
+    // into the command's environment or reactivate a wrapper in a child shell.
+    matches!(
+        key,
+        ESCALATE_SOCKET_ENV_VAR | EXEC_WRAPPER_ENV_VAR | "BASH_EXEC_WRAPPER"
+    )
+}
+
 pub async fn run_shell_escalation_execve_wrapper(
     file: String,
     argv: Vec<String>,
@@ -46,12 +54,7 @@ pub async fn run_shell_escalation_execve_wrapper(
         .await
         .context("failed to send handshake datagram")?;
     let env = std::env::vars()
-        .filter(|(k, _)| {
-            !matches!(
-                k.as_str(),
-                ESCALATE_SOCKET_ENV_VAR | EXEC_WRAPPER_ENV_VAR | LEGACY_BASH_EXEC_WRAPPER_ENV_VAR
-            )
-        })
+        .filter(|(key, _)| !is_wrapper_env_var(key))
         .collect();
     client
         .send(EscalateRequest {
@@ -134,6 +137,14 @@ mod tests {
     use super::*;
     use std::os::fd::AsRawFd;
     use std::os::unix::net::UnixStream;
+
+    #[test]
+    fn wrapper_env_filter_includes_retired_bash_variable() {
+        assert!(is_wrapper_env_var(ESCALATE_SOCKET_ENV_VAR));
+        assert!(is_wrapper_env_var(EXEC_WRAPPER_ENV_VAR));
+        assert!(is_wrapper_env_var("BASH_EXEC_WRAPPER"));
+        assert!(!is_wrapper_env_var("PATH"));
+    }
 
     #[test]
     fn duplicate_fd_for_transfer_does_not_close_original() {

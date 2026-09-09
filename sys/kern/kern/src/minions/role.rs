@@ -48,7 +48,7 @@ pub(crate) async fn apply_builtin_persona_to_config(
         .cloned()
         .ok_or_else(|| format!("unknown built-in persona '{persona_name}'"))?;
 
-    apply_role_to_config_inner(config, persona_name, &role, /*is_built_in*/ true)
+    apply_role_to_config_inner(config, &role, /*is_built_in*/ true)
         .await
         .map_err(|err| {
             tracing::warn!("failed to apply built-in persona to config: {err}");
@@ -67,7 +67,7 @@ pub(crate) async fn apply_role_to_config(
         .ok_or_else(|| format!("unknown agent_type '{role_name}'"))?;
 
     let is_built_in = !config.agent_roles.contains_key(role_name);
-    apply_role_to_config_inner(config, role_name, &role, is_built_in)
+    apply_role_to_config_inner(config, &role, is_built_in)
         .await
         .map_err(|err| {
             tracing::warn!("failed to apply role to config: {err}");
@@ -77,14 +77,13 @@ pub(crate) async fn apply_role_to_config(
 
 async fn apply_role_to_config_inner(
     config: &mut Config,
-    role_name: &str,
     role: &AgentRoleConfig,
     is_built_in: bool,
 ) -> anyhow::Result<()> {
     let Some(config_file) = role.config_file.as_ref() else {
         return Ok(());
     };
-    let role_layer_toml = load_role_layer_toml(config, config_file, is_built_in, role_name).await?;
+    let role_layer_toml = load_role_layer_toml(config, config_file, is_built_in).await?;
     let (preserve_current_profile, preserve_current_provider) =
         preservation_policy(config, &role_layer_toml);
 
@@ -101,7 +100,6 @@ async fn load_role_layer_toml(
     config: &Config,
     config_file: &Path,
     is_built_in: bool,
-    role_name: &str,
 ) -> anyhow::Result<TomlValue> {
     let (role_config_toml, role_config_base) = if is_built_in {
         let role_config_contents = built_in::config_file_contents(config_file)
@@ -111,7 +109,7 @@ async fn load_role_layer_toml(
             &role_config_contents,
             config_file,
             config.chaos_home.as_path(),
-            Some(role_name),
+            /*require_developer_instructions*/ false,
         )
         .map_err(|e| anyhow!(e))?
         .config;
@@ -125,7 +123,7 @@ async fn load_role_layer_toml(
             &role_config_contents,
             config_file,
             role_config_base,
-            Some(role_name),
+            /*require_developer_instructions*/ true,
         )?
         .config;
         (role_config_toml, role_config_base)
@@ -334,14 +332,15 @@ pub(crate) mod spawn_tool_spec {
             .config_file
             .as_ref()
             .and_then(|config_file| {
-                let contents = built_in::config_file_contents(config_file)
+                let built_in_contents = built_in::config_file_contents(config_file);
+                let contents = built_in_contents
                     .map(str::to_owned)
                     .or_else(|| std::fs::read_to_string(config_file).ok())?;
                 parse_agent_role_file_contents(
                     &contents,
                     config_file,
                     std::path::Path::new("."),
-                    Some(name),
+                    /*require_developer_instructions*/ built_in_contents.is_none(),
                 )
                 .ok()
             })
@@ -413,13 +412,12 @@ pub(crate) mod built_in {
                 .filter(|f| f.path().extension().is_some_and(|e| e == "md"))
                 .filter_map(|file| {
                     let path = file.path();
-                    let stem = path.file_stem()?.to_str()?;
                     let content = file.contents_utf8()?;
                     let parsed = parse_agent_role_file_contents(
                         content,
                         path,
                         std::path::Path::new("."),
-                        Some(stem),
+                        /*require_developer_instructions*/ false,
                     )
                     .ok()?;
                     let config_file = if parsed.config.as_table().is_some_and(|t| !t.is_empty()) {
@@ -452,13 +450,12 @@ pub(crate) mod built_in {
                 .filter(|f| f.path().extension().is_some_and(|e| e == "md"))
                 .filter_map(|file| {
                     let path = file.path();
-                    let stem = path.file_stem()?.to_str()?;
                     let content = file.contents_utf8()?;
                     let parsed = parse_agent_role_file_contents(
                         content,
                         path,
                         std::path::Path::new("."),
-                        Some(stem),
+                        /*require_developer_instructions*/ false,
                     )
                     .unwrap_or_else(|err| {
                         panic!("built-in role file {} is invalid: {err}", path.display())

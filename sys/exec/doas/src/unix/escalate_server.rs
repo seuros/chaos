@@ -22,7 +22,6 @@ use crate::unix::escalate_protocol::EscalateRequest;
 use crate::unix::escalate_protocol::EscalateResponse;
 use crate::unix::escalate_protocol::EscalationDecision;
 use crate::unix::escalate_protocol::EscalationExecution;
-use crate::unix::escalate_protocol::LEGACY_BASH_EXEC_WRAPPER_ENV_VAR;
 use crate::unix::escalate_protocol::SuperExecMessage;
 use crate::unix::escalate_protocol::SuperExecResult;
 use crate::unix::escalation_policy::EscalationPolicy;
@@ -210,10 +209,6 @@ impl EscalateServer {
         );
         env.insert(
             EXEC_WRAPPER_ENV_VAR.to_string(),
-            self.execve_wrapper.to_string_lossy().to_string(),
-        );
-        env.insert(
-            LEGACY_BASH_EXEC_WRAPPER_ENV_VAR.to_string(),
             self.execve_wrapper.to_string_lossy().to_string(),
         );
         Ok(EscalationSession {
@@ -638,10 +633,8 @@ mod tests {
         )?;
         let env = session.env();
         assert_eq!(env.get(EXEC_WRAPPER_ENV_VAR), Some(&execve_wrapper_str));
-        assert_eq!(
-            env.get(LEGACY_BASH_EXEC_WRAPPER_ENV_VAR),
-            Some(&execve_wrapper_str)
-        );
+        assert!(!env.contains_key("BASH_EXEC_WRAPPER"));
+        assert_eq!(env.len(), 2);
         let socket_fd = env
             .get(ESCALATE_SOCKET_ENV_VAR)
             .expect("session should export shell escalation socket");

@@ -363,11 +363,8 @@ impl Config {
             resolve_web_search_mode_inner(&cfg, &config_profile).unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config_inner(&cfg, &config_profile);
 
-        let agent_roles = agent_roles::load_agent_roles(
-            cfg.agents.as_ref(),
-            &config_layer_stack,
-            &mut startup_warnings,
-        )?;
+        let agent_roles =
+            agent_roles::load_agent_roles(&config_layer_stack, &mut startup_warnings)?;
 
         let mut model_providers = built_in_model_providers();
         // User-configured providers replace built-ins. Partial overrides

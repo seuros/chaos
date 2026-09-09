@@ -237,10 +237,51 @@ pub struct SessionMeta {
     /// but may be missing for older sessions. If not present, fall back to rendering the base_instructions
     /// from ModelsManager.
     pub base_instructions: Option<BaseInstructions>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_persisted_dynamic_tools"
+    )]
     pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_mode: Option<String>,
+}
+
+/// Keep old tool visibility fields readable only at the journal boundary.
+/// New registrations deserialize DynamicToolSpec directly and reject aliases.
+fn deserialize_persisted_dynamic_tools<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<DynamicToolSpec>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct PersistedTool {
+        name: String,
+        description: String,
+        input_schema: serde_json::Value,
+        defer_loading: Option<bool>,
+        expose_to_context: Option<bool>,
+    }
+
+    Ok(
+        Option::<Vec<PersistedTool>>::deserialize(deserializer)?.map(|tools| {
+            tools
+                .into_iter()
+                .map(|tool| DynamicToolSpec {
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.input_schema,
+                    defer_loading: tool.defer_loading.unwrap_or_else(|| {
+                        tool.expose_to_context
+                            .map(|visible| !visible)
+                            .unwrap_or(false)
+                    }),
+                })
+                .collect()
+        }),
+    )
 }
 
 impl Default for SessionMeta {

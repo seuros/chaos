@@ -11,7 +11,6 @@ pub use chaos_ipc::config_types::Personality;
 pub use chaos_ipc::config_types::ServiceTier;
 pub use chaos_ipc::config_types::WebSearchMode;
 use chaos_realpath::AbsolutePathBuf;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -1107,7 +1106,7 @@ pub struct RealtimeAudioToml {
 // ===== Agent config =====
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct AgentsToml {
     /// Maximum number of agent threads that can be open concurrently.
     #[schemars(range(min = 1))]
@@ -1118,10 +1117,6 @@ pub struct AgentsToml {
     /// Default maximum runtime in seconds for minion job tasks.
     #[schemars(range(min = 1))]
     pub job_max_runtime_seconds: Option<u64>,
-
-    /// User-defined role declarations keyed by role name.
-    #[serde(default, flatten)]
-    pub roles: BTreeMap<String, AgentRoleToml>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1135,23 +1130,6 @@ pub struct AgentRoleConfig {
     /// Topic tags used for dynamic routing (e.g. ["ruby", "rails"]).
     pub topics: Option<Vec<String>>,
     /// Catchphrases the kernel may emit when this role is dispatched.
-    pub catchphrases: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct AgentRoleToml {
-    /// Human-facing role documentation used in spawn tool guidance.
-    pub description: Option<String>,
-    /// Path to a role-specific config layer.
-    pub config_file: Option<AbsolutePathBuf>,
-    /// Candidate nicknames for agents spawned with this role.
-    pub nickname_candidates: Option<Vec<String>>,
-    /// Topic tags used for dynamic routing (e.g. ["ruby", "rails"]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub topics: Option<Vec<String>>,
-    /// Catchphrases the kernel may emit when this role is dispatched.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catchphrases: Option<Vec<String>>,
 }
 

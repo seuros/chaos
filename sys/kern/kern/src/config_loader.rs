@@ -559,13 +559,14 @@ fn project_layer_entry(
     dot_chaos_folder: &AbsolutePathBuf,
     layer_dir: &AbsolutePathBuf,
     config: TomlValue,
-    config_toml_exists: bool,
 ) -> ConfigLayerEntry {
     let source = ConfigLayerSource::Project {
         dot_codex_folder: dot_chaos_folder.clone(),
     };
 
-    if config_toml_exists && let Some(reason) = trust_context.disabled_reason_for_dir(layer_dir) {
+    // Standalone role files are executable instructions even when this layer
+    // has no config.toml. They must not bypass project trust.
+    if let Some(reason) = trust_context.disabled_reason_for_dir(layer_dir) {
         ConfigLayerEntry::new_disabled(source, config, reason)
     } else {
         ConfigLayerEntry::new(source, config)
@@ -906,7 +907,6 @@ async fn load_project_layers(
                             &dot_chaos_abs,
                             &layer_dir,
                             TomlValue::Table(toml::map::Map::new()),
-                            /*config_toml_exists*/ true,
                         ));
                         continue;
                     }
@@ -922,19 +922,12 @@ async fn load_project_layers(
                         &dot_chaos_abs,
                         &layer_dir,
                         TomlValue::Table(toml::map::Map::new()),
-                        /*config_toml_exists*/ true,
                     ));
                     continue;
                 }
                 let config =
                     resolve_relative_paths_in_config_toml(config, dot_chaos_abs.as_path())?;
-                let entry = project_layer_entry(
-                    trust_context,
-                    &dot_chaos_abs,
-                    &layer_dir,
-                    config,
-                    /*config_toml_exists*/ true,
-                );
+                let entry = project_layer_entry(trust_context, &dot_chaos_abs, &layer_dir, config);
                 layers.push(entry);
             }
             Err(err) => {
@@ -947,7 +940,6 @@ async fn load_project_layers(
                         &dot_chaos_abs,
                         &layer_dir,
                         TomlValue::Table(toml::map::Map::new()),
-                        /*config_toml_exists*/ false,
                     ));
                 } else {
                     let config_file_display = config_file.as_path().display();

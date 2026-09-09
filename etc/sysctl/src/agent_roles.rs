@@ -1,9 +1,6 @@
 use crate::ConfigLayerStack;
 use crate::ConfigLayerStackOrdering;
 use crate::types::AgentRoleConfig;
-use crate::types::AgentRoleToml;
-use crate::types::AgentsToml;
-use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -14,7 +11,6 @@ use std::path::PathBuf;
 use toml::Value as TomlValue;
 
 pub fn load_agent_roles(
-    agents: Option<&AgentsToml>,
     config_layer_stack: &ConfigLayerStack,
     startup_warnings: &mut Vec<String>,
 ) -> std::io::Result<BTreeMap<String, AgentRoleConfig>> {
@@ -22,70 +18,15 @@ pub fn load_agent_roles(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ false,
     );
-    if layers.is_empty() {
-        return load_agent_roles_without_layers(agents);
-    }
-
     let mut roles: BTreeMap<String, AgentRoleConfig> = BTreeMap::new();
     for layer in layers {
-        let mut layer_roles: BTreeMap<String, AgentRoleConfig> = BTreeMap::new();
-        let mut declared_role_files = BTreeSet::new();
-        let agents_toml = match agents_toml_from_layer(&layer.config) {
-            Ok(agents_toml) => agents_toml,
-            Err(err) => {
-                push_agent_role_warning(startup_warnings, err);
-                None
-            }
+        let Some(config_folder) = layer.config_folder() else {
+            continue;
         };
-        if let Some(agents_toml) = agents_toml {
-            for (declared_role_name, role_toml) in &agents_toml.roles {
-                let (role_name, role) = match read_declared_role(declared_role_name, role_toml) {
-                    Ok(role) => role,
-                    Err(err) => {
-                        push_agent_role_warning(startup_warnings, err);
-                        continue;
-                    }
-                };
-                if let Some(config_file) = role.config_file.clone() {
-                    declared_role_files.insert(config_file);
-                }
-                if layer_roles.contains_key(&role_name) {
-                    push_agent_role_warning(
-                        startup_warnings,
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!(
-                                "duplicate agent role name `{role_name}` declared in the same config layer"
-                            ),
-                        ),
-                    );
-                    continue;
-                }
-                layer_roles.insert(role_name, role);
-            }
-        }
-
-        if let Some(config_folder) = layer.config_folder() {
-            for (role_name, role) in discover_agent_roles_in_dir(
-                config_folder.as_path().join("agents").as_path(),
-                &declared_role_files,
-                startup_warnings,
-            )? {
-                if layer_roles.contains_key(&role_name) {
-                    push_agent_role_warning(
-                        startup_warnings,
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!(
-                                "duplicate agent role name `{role_name}` declared in the same config layer"
-                            ),
-                        ),
-                    );
-                    continue;
-                }
-                layer_roles.insert(role_name, role);
-            }
-        }
+        let layer_roles = discover_agent_roles_in_dir(
+            config_folder.as_path().join("agents").as_path(),
+            startup_warnings,
+        )?;
 
         for (role_name, role) in layer_roles {
             let mut merged_role = role;
@@ -112,90 +53,14 @@ fn push_agent_role_warning(startup_warnings: &mut Vec<String>, err: std::io::Err
     startup_warnings.push(message);
 }
 
-fn load_agent_roles_without_layers(
-    agents: Option<&AgentsToml>,
-) -> std::io::Result<BTreeMap<String, AgentRoleConfig>> {
-    let mut roles = BTreeMap::new();
-    if let Some(agents_toml) = agents {
-        for (declared_role_name, role_toml) in &agents_toml.roles {
-            let (role_name, role) = read_declared_role(declared_role_name, role_toml)?;
-            validate_required_agent_role_description(&role_name, role.description.as_deref())?;
-
-            if roles.insert(role_name.clone(), role).is_some() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("duplicate agent role name `{role_name}` declared in config"),
-                ));
-            }
-        }
-    }
-
-    Ok(roles)
-}
-
-fn read_declared_role(
-    declared_role_name: &str,
-    role_toml: &AgentRoleToml,
-) -> std::io::Result<(String, AgentRoleConfig)> {
-    let mut role = agent_role_config_from_toml(declared_role_name, role_toml)?;
-    let mut role_name = declared_role_name.to_string();
-    if let Some(config_file) = role.config_file.as_deref() {
-        let parsed_file = read_resolved_agent_role_file(config_file, Some(declared_role_name))?;
-        role_name = parsed_file.role_name;
-        role.description = parsed_file.description.or(role.description);
-        role.nickname_candidates = parsed_file.nickname_candidates.or(role.nickname_candidates);
-        role.topics = parsed_file.topics.or(role.topics);
-        role.catchphrases = parsed_file.catchphrases.or(role.catchphrases);
-    }
-
-    Ok((role_name, role))
-}
-
 fn merge_missing_role_fields(role: &mut AgentRoleConfig, fallback: &AgentRoleConfig) {
     role.description = role.description.clone().or(fallback.description.clone());
-    role.config_file = role.config_file.clone().or(fallback.config_file.clone());
     role.nickname_candidates = role
         .nickname_candidates
         .clone()
         .or(fallback.nickname_candidates.clone());
     role.topics = role.topics.clone().or(fallback.topics.clone());
     role.catchphrases = role.catchphrases.clone().or(fallback.catchphrases.clone());
-}
-
-fn agents_toml_from_layer(layer_toml: &TomlValue) -> std::io::Result<Option<AgentsToml>> {
-    let Some(agents_toml) = layer_toml.get("agents") else {
-        return Ok(None);
-    };
-
-    agents_toml
-        .clone()
-        .try_into()
-        .map(Some)
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
-}
-
-fn agent_role_config_from_toml(
-    role_name: &str,
-    role: &AgentRoleToml,
-) -> std::io::Result<AgentRoleConfig> {
-    let config_file = role.config_file.as_ref().map(AbsolutePathBuf::to_path_buf);
-    validate_agent_role_config_file(role_name, config_file.as_deref())?;
-    let description = normalize_agent_role_description(
-        &format!("agents.{role_name}.description"),
-        role.description.as_deref(),
-    )?;
-    let nickname_candidates = normalize_agent_role_nickname_candidates(
-        &format!("agents.{role_name}.nickname_candidates"),
-        role.nickname_candidates.as_deref(),
-    )?;
-
-    Ok(AgentRoleConfig {
-        description,
-        config_file,
-        nickname_candidates,
-        topics: role.topics.clone(),
-        catchphrases: role.catchphrases.clone(),
-    })
 }
 
 /// Lightweight stand-in for ConfigToml used only to validate agent role files.
@@ -239,11 +104,13 @@ fn split_md_frontmatter(content: &str) -> Option<(&str, &str)> {
     }
 }
 
+/// Parse a self-contained role file. Only embedded builtins may omit
+/// instructions (the default role intentionally imposes none).
 pub fn parse_agent_role_file_contents(
     contents: &str,
     role_file_label: &Path,
     config_base_dir: &Path,
-    role_name_hint: Option<&str>,
+    require_developer_instructions: bool,
 ) -> std::io::Result<ResolvedAgentRoleFile> {
     let is_md = role_file_label.extension().is_some_and(|ext| ext == "md");
 
@@ -308,7 +175,7 @@ pub fn parse_agent_role_file_contents(
     validate_agent_role_file_developer_instructions(
         role_file_label,
         effective_developer_instructions,
-        role_name_hint.is_none(),
+        require_developer_instructions,
     )?;
 
     let role_name = parsed
@@ -317,7 +184,6 @@ pub fn parse_agent_role_file_contents(
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(ToOwned::to_owned)
-        .or_else(|| role_name_hint.map(ToOwned::to_owned))
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -369,16 +235,13 @@ pub fn parse_agent_role_file_contents(
     })
 }
 
-fn read_resolved_agent_role_file(
-    path: &Path,
-    role_name_hint: Option<&str>,
-) -> std::io::Result<ResolvedAgentRoleFile> {
+fn read_resolved_agent_role_file(path: &Path) -> std::io::Result<ResolvedAgentRoleFile> {
     let contents = std::fs::read_to_string(path)?;
     parse_agent_role_file_contents(
         &contents,
         path,
         path.parent().unwrap_or(path),
-        role_name_hint,
+        /*require_developer_instructions*/ true,
     )
 }
 
@@ -432,36 +295,6 @@ fn validate_agent_role_file_developer_instructions(
             ),
         )),
         None => Ok(()),
-    }
-}
-
-fn validate_agent_role_config_file(
-    role_name: &str,
-    config_file: Option<&Path>,
-) -> std::io::Result<()> {
-    let Some(config_file) = config_file else {
-        return Ok(());
-    };
-
-    let metadata = std::fs::metadata(config_file).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!(
-                "agents.{role_name}.config_file must point to an existing file at {}: {e}",
-                config_file.display()
-            ),
-        )
-    })?;
-    if metadata.is_file() {
-        Ok(())
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!(
-                "agents.{role_name}.config_file must point to a file: {}",
-                config_file.display()
-            ),
-        ))
     }
 }
 
@@ -519,23 +352,18 @@ fn normalize_agent_role_nickname_candidates(
 
 fn discover_agent_roles_in_dir(
     agents_dir: &Path,
-    declared_role_files: &BTreeSet<PathBuf>,
     startup_warnings: &mut Vec<String>,
 ) -> std::io::Result<BTreeMap<String, AgentRoleConfig>> {
     let mut roles = BTreeMap::new();
 
     for agent_file in collect_agent_role_files(agents_dir)? {
-        if declared_role_files.contains(&agent_file) {
-            continue;
-        }
-        let parsed_file =
-            match read_resolved_agent_role_file(&agent_file, /*role_name_hint*/ None) {
-                Ok(parsed_file) => parsed_file,
-                Err(err) => {
-                    push_agent_role_warning(startup_warnings, err);
-                    continue;
-                }
-            };
+        let parsed_file = match read_resolved_agent_role_file(&agent_file) {
+            Ok(parsed_file) => parsed_file,
+            Err(err) => {
+                push_agent_role_warning(startup_warnings, err);
+                continue;
+            }
+        };
         let role_name = parsed_file.role_name;
         if roles.contains_key(&role_name) {
             push_agent_role_warning(
@@ -623,3 +451,7 @@ fn collect_agent_role_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> s
 
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "agent_roles_tests.rs"]
+mod tests;

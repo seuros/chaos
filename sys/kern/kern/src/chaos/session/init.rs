@@ -374,7 +374,6 @@ impl Session {
                 None => ShellEnvironmentStartup::Capture(session_configuration.cwd.clone()),
             };
         let shell_environment = ShellEnvironmentActor::spawn(
-            config.chaos_home.clone(),
             conversation_id,
             shell_environment_startup,
             &mut default_shell,

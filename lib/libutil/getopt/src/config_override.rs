@@ -69,7 +69,7 @@ impl CliConfigOverrides {
                     }
                 };
 
-                Ok((canonicalize_override_key(key), value))
+                Ok((key.to_string(), value))
             })
             .collect()
     }
@@ -84,11 +84,6 @@ impl CliConfigOverrides {
         }
         Ok(())
     }
-}
-
-/// Return the key unchanged — no legacy aliases exist in this release.
-fn canonicalize_override_key(key: &str) -> String {
-    key.to_string()
 }
 
 /// Apply a single override onto `root`, creating intermediate objects as

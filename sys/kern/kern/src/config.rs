@@ -873,7 +873,7 @@ pub struct ConfigToml {
     /// Nested tool-specific configuration.
     pub tools: Option<ToolsToml>,
 
-    /// Agent-related settings (thread limits, etc.).
+    /// Agent thread/depth/runtime limits. Role definitions live in `agents/` files.
     pub agents: Option<AgentsToml>,
 
     /// Whether minion-job fanout tools are available. Defaults to `true`.
@@ -947,7 +947,6 @@ impl From<ConfigToml> for UserSavedConfig {
 }
 
 pub use chaos_sysctl::types::AgentRoleConfig;
-pub use chaos_sysctl::types::AgentRoleToml;
 pub use chaos_sysctl::types::AgentsToml;
 pub use chaos_sysctl::types::RealtimeAudioConfig;
 pub use chaos_sysctl::types::RealtimeAudioToml;

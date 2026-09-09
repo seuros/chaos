@@ -19,6 +19,7 @@ installed manpage paths such as:
 - [chaos-support.7](./chaos-support.7.md) — support matrix (providers, OS, CI)
 - [chaos-mcp.7](./chaos-mcp.7.md) — MCP client and server usage
 - [chaos-modes.7](./chaos-modes.7.md) — collaboration mode discovery and switching
+- [chaos-agents.7](./chaos-agents.7.md) — standalone agent role definitions
 - [chaos-synopsis.7](./chaos-synopsis.7.md) — FreeChaOS sub-agent orchestration gate
 - [chaos-attested-review.7](./chaos-attested-review.7.md) — protected independent review orchestration
 - [chaos-storage.7](./chaos-storage.7.md) — runtime storage backend selection

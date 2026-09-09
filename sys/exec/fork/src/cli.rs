@@ -209,6 +209,7 @@ pub(crate) fn parse_owned_for_test(args: &[String]) -> Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_test_fixtures::TEST_MODEL;
     use pretty_assertions::assert_eq;
 
     fn try_parse<'v>(args: &[&'v str]) -> Result<Cli, usage::Error<'static, 'v>> {
@@ -228,7 +229,7 @@ mod tests {
             "--last",
             "--json",
             "--model",
-            "gpt-5.4-codex",
+            TEST_MODEL,
             "--headless",
             "--skip-git-repo-check",
             "--ephemeral",

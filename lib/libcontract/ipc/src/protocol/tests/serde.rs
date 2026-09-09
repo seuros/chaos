@@ -1,5 +1,6 @@
 use super::super::*;
 use anyhow::Result;
+use chaos_test_fixtures::TEST_MODEL;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::path::PathBuf;
@@ -217,7 +218,7 @@ fn session_mode_changed_event_serializes_display_safe_mode_state() -> Result<()>
         mode_id: "research".to_string(),
         mode_title: "Research".to_string(),
         mode_kind: crate::config_types::ModeKind::Default,
-        model: "gpt-5.6".to_string(),
+        model: TEST_MODEL.to_string(),
         reasoning_effort: Some(crate::openai_models::ReasoningEffort::High),
     });
 
@@ -229,7 +230,7 @@ fn session_mode_changed_event_serializes_display_safe_mode_state() -> Result<()>
             "mode_id": "research",
             "mode_title": "Research",
             "mode_kind": "default",
-            "model": "gpt-5.6",
+            "model": TEST_MODEL,
             "reasoning_effort": "high",
         })
     );
@@ -244,7 +245,7 @@ fn turn_context_item_deserializes_without_network() -> Result<()> {
         "approval_policy": "headless",
         "vfs_policy": { "kind": "unrestricted" },
         "socket_policy": "restricted",
-        "model": "gpt-5",
+        "model": TEST_MODEL,
         "model_provider": "openai",
         "summary": "auto",
     }))?;
@@ -270,7 +271,7 @@ fn turn_context_item_serializes_network_when_present() -> Result<()> {
             allowed_domains: vec!["api.example.com".to_string()],
             denied_domains: vec!["blocked.example.com".to_string()],
         }),
-        model: "gpt-5".to_string(),
+        model: TEST_MODEL.to_string(),
         personality: None,
         collaboration_mode: None,
         effort: None,
@@ -634,7 +635,7 @@ fn rollout_item_accepts_legacy_turn_context() -> Result<()> {
                 "exclude_tmpdir_env_var": false,
                 "exclude_slash_tmp": false
             },
-            "model": "gpt-5.4",
+            "model": TEST_MODEL,
             "model_provider": "openai",
             "summary": "concise"
         }
@@ -657,7 +658,7 @@ fn turn_context_item_accepts_legacy_sandbox_policy() -> Result<()> {
         "cwd": "/tmp/work",
         "approval_policy": "supervised",
         "sandbox_policy": { "type": "read-only" },
-        "model": "gpt-5.4",
+        "model": TEST_MODEL,
         "model_provider": "openai",
         "summary": "concise"
     });
@@ -672,7 +673,7 @@ fn turn_context_item_accepts_legacy_sandbox_policy() -> Result<()> {
         "approval_policy": "headless",
         "file_system_sandbox_policy": { "kind": "unrestricted", "entries": [] },
         "network_sandbox_policy": "enabled",
-        "model": "gpt-5.4",
+        "model": TEST_MODEL,
         "model_provider": "openai",
         "summary": "concise"
     });

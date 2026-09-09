@@ -553,14 +553,15 @@ pub(crate) mod tests {
     }
     #[cfg(test)]
     fn debug_config_output_lists_session_flag_key_value_pairs() {
-        let session_flags = toml::from_str::<TomlValue>(
+        use chaos_test_fixtures::TEST_MODEL;
+        let session_flags = toml::from_str::<TomlValue>(&format!(
             r#"
-model = "gpt-5"
+model = "{TEST_MODEL}"
 [sandbox_workspace_write]
 network_access = true
 writable_roots = ["/tmp"]
-"#,
-        )
+"#
+        ))
         .expect("session flags");
 
         let stack = ConfigLayerStack::new(
@@ -575,7 +576,7 @@ writable_roots = ["/tmp"]
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(rendered.contains("session-flags (enabled)"));
-        assert!(rendered.contains("     - model = \"gpt-5\""));
+        assert!(rendered.contains(&format!("     - model = \"{TEST_MODEL}\"")));
         assert!(rendered.contains("     - sandbox_workspace_write.network_access = true"));
         assert!(rendered.contains("sandbox_workspace_write.writable_roots"));
         assert!(rendered.contains("/tmp"));

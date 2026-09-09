@@ -9,6 +9,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_test_fixtures::TEST_MODEL;
 
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -161,7 +162,7 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
     let call_id = "shell-empty-script-collab";
     let args = json!({
@@ -211,7 +212,7 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
     let call_id = "unified-exec-empty-script-collab";
     let args = json!({
@@ -261,7 +262,7 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
     let call_id = "shell-whitespace-script-collab";
     let args = json!({
@@ -311,7 +312,7 @@ async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
     let call_id = "unified-exec-whitespace-script-collab";
     let args = json!({

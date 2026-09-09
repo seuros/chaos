@@ -884,6 +884,7 @@ fn timestamp_from_epoch_seconds(seconds: i64) -> Result<jiff::Timestamp, Journal
 
 #[cfg(test)]
 mod tests {
+    use chaos_test_fixtures::TEST_MODEL;
     use std::time::Duration;
 
     use chaos_ipc::ProcessId;
@@ -1044,7 +1045,7 @@ mod tests {
                 "approval_policy": "headless",
                 "vfs_policy": { "kind": "unrestricted" },
                 "socket_policy": "restricted",
-                "model": "gpt-5",
+                "model": TEST_MODEL,
                 "model_provider": "openai",
                 "summary": "auto"
             }

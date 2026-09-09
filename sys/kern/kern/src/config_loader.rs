@@ -973,18 +973,21 @@ mod unit_tests {
     fn ensure_resolve_relative_paths_in_config_toml_preserves_all_fields() -> anyhow::Result<()> {
         let tmp = tempdir()?;
         let base_dir = tmp.path();
-        let contents = r#"
+        let contents = format!(
+            r#"
 # This is a field recognized by config.toml that is an AbsolutePathBuf in
 # the ConfigToml struct.
 model_instructions_file = "./some_file.md"
 
 # This is a field recognized by config.toml.
-model = "gpt-1000"
+model = "{}"
 
 # This is a field not recognized by config.toml.
 foo = "xyzzy"
-"#;
-        let user_config: TomlValue = toml::from_str(contents)?;
+"#,
+            chaos_test_fixtures::TEST_MODEL
+        );
+        let user_config: TomlValue = toml::from_str(&contents)?;
 
         let normalized_toml_value = resolve_relative_paths_in_config_toml(user_config, base_dir)?;
         let mut expected_toml_value = toml::map::Map::new();
@@ -999,7 +1002,7 @@ foo = "xyzzy"
         );
         expected_toml_value.insert(
             "model".to_string(),
-            TomlValue::String("gpt-1000".to_string()),
+            TomlValue::String(chaos_test_fixtures::TEST_MODEL.to_string()),
         );
         expected_toml_value.insert("foo".to_string(), TomlValue::String("xyzzy".to_string()));
         assert_eq!(normalized_toml_value, TomlValue::Table(expected_toml_value));

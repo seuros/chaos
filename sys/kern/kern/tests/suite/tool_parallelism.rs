@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
+use chaos_test_fixtures::TEST_MODEL;
 use std::fs;
 use std::time::Duration;
 use std::time::Instant;
@@ -64,7 +65,7 @@ async fn run_turn_and_measure(test: &TestChaos, prompt: &str) -> anyhow::Result<
 
 #[allow(clippy::expect_used)]
 async fn build_codex_with_test_tool(server: &wiremock::MockServer) -> anyhow::Result<TestChaos> {
-    let mut builder = test_chaos().with_model("test-gpt-5.1-codex");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     builder.build(server).await
 }
 
@@ -143,7 +144,7 @@ async fn shell_tools_run_in_parallel() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5.1");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
 
     let shell_args = json!({
@@ -342,7 +343,7 @@ async fn shell_tools_start_before_response_completed_when_stream_delayed() -> an
     ])
     .await;
 
-    let mut builder = test_chaos().with_model("gpt-5.1");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder
         .build_with_streaming_server(&streaming_server)
         .await?;

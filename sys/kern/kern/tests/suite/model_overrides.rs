@@ -1,6 +1,7 @@
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
@@ -11,14 +12,15 @@ const CONFIG_TOML: &str = "config.toml";
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn override_turn_context_does_not_persist_when_config_exists() {
     let server = start_mock_server().await;
-    let initial_contents = "model = \"gpt-4o\"\n";
+    let initial_contents = format!("model = \"{TEST_MODEL}\"\n");
+    let seed_contents = initial_contents.clone();
     let mut builder = test_chaos()
         .with_pre_build_hook(move |home| {
             let config_path = home.join(CONFIG_TOML);
-            std::fs::write(config_path, initial_contents).expect("seed config.toml");
+            std::fs::write(config_path, &seed_contents).expect("seed config.toml");
         })
         .with_config(|config| {
-            config.model = Some("gpt-4o".to_string());
+            config.model = Some(TEST_MODEL.to_string());
         });
     let test = builder.build(&server).await.expect("create conversation");
     let chaos = test.process.clone();

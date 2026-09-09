@@ -27,7 +27,8 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 const DEFAULT_MAX_TOKENS: u64 = 8192;
-const ANTHROPIC_VERSION: &str = "2023-06-01";
+pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
+pub(crate) const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
 const DEFAULT_CACHE_TTL: &str = "5m";
 const CACHE_TTL_EXTENSION: &str = "anthropic_cache_ttl";
 const CACHE_TTL_ENV: &str = "CHAOS_ANTHROPIC_CACHE_TTL";
@@ -113,7 +114,7 @@ impl AnthropicAdapter {
             }
         }
         headers.insert(
-            "anthropic-version",
+            ANTHROPIC_VERSION_HEADER,
             rama::http::HeaderValue::from_static(ANTHROPIC_VERSION),
         );
         crate::http_helpers::insert_streaming_json_headers(&mut headers);

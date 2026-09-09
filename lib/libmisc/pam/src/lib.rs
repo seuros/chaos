@@ -4,6 +4,8 @@ mod pkce;
 mod server;
 mod xai_device_code_auth;
 
+const MIME_FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
+
 pub use chaos_client::BuildCustomCaTransportError as BuildLoginHttpClientError;
 pub use device_code_auth::DeviceCode;
 pub use device_code_auth::complete_device_code_login;

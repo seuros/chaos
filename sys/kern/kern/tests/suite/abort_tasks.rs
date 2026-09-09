@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use chaos_test_fixtures::TEST_MODEL;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,7 +38,7 @@ async fn interrupt_long_running_tool_emits_turn_aborted() {
     mount_sse_once(&server, body).await;
 
     let chaos = test_chaos()
-        .with_model("gpt-5.1")
+        .with_model(TEST_MODEL)
         .build(&server)
         .await
         .unwrap()
@@ -96,7 +97,7 @@ async fn interrupt_tool_records_history_entries() {
     let response_mock = mount_sse_sequence(&server, vec![first_body, follow_up_body]).await;
 
     let fixture = test_chaos()
-        .with_model("gpt-5.1")
+        .with_model(TEST_MODEL)
         .build(&server)
         .await
         .unwrap();
@@ -194,7 +195,7 @@ async fn interrupt_persists_turn_aborted_marker_in_next_request() {
     let response_mock = mount_sse_sequence(&server, vec![first_body, follow_up_body]).await;
 
     let fixture = test_chaos()
-        .with_model("gpt-5.1")
+        .with_model(TEST_MODEL)
         .build(&server)
         .await
         .unwrap();

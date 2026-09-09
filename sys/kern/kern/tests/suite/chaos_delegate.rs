@@ -7,6 +7,7 @@ use chaos_ipc::protocol::ReviewTarget;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::config::Constrained;
 use chaos_kern::sandboxing::SandboxPermissions;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses::ev_apply_patch_function_call;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -62,7 +63,7 @@ async fn codex_delegate_forwards_exec_approval_and_proceeds_on_approval() {
 
     // Build a conversation configured to require approvals so the delegate
     // routes ExecApprovalRequest via the parent.
-    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
         config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
         config.permissions.sandbox_policy =
             Constrained::allow_any(SandboxPolicy::new_read_only_policy());
@@ -145,7 +146,7 @@ async fn codex_delegate_forwards_patch_approval_and_proceeds_on_decision() {
     let server = start_mock_server().await;
     mount_sse_sequence(&server, vec![sse1, sse2]).await;
 
-    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
         config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
         // Use a restricted sandbox so patch approval is required
         config.permissions.sandbox_policy =

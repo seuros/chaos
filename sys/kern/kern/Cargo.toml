@@ -143,6 +143,7 @@ openssl-sys = { workspace = true, features = ["vendored"] }
 chaos-doas = { workspace = true }
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 assert_cmd = { workspace = true }
 chaos-model-catalog = { workspace = true, features = ["test-support"] }
 assert_matches = { workspace = true }

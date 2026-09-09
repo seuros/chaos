@@ -5,6 +5,7 @@ use crate::harness::histogram_attributes;
 use crate::harness::histogram_data;
 use crate::harness::latest_metrics;
 use chaos_snitch::metrics::Result;
+use chaos_test_fixtures::TEST_MODEL;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
@@ -14,7 +15,7 @@ fn send_builds_payload_with_tags_and_histograms() -> Result<()> {
     let (metrics, exporter) =
         build_metrics_with_defaults(&[("service", "chaos-cli"), ("env", "prod")])?;
 
-    metrics.counter("chaos.turns", 1, &[("model", "gpt-5.1"), ("env", "dev")])?;
+    metrics.counter("chaos.turns", 1, &[("model", TEST_MODEL), ("env", "dev")])?;
     metrics.histogram("chaos.tool_latency", 25, &[("tool", "shell")])?;
     metrics.shutdown()?;
 
@@ -26,7 +27,7 @@ fn send_builds_payload_with_tags_and_histograms() -> Result<()> {
     let expected_counter_attributes = BTreeMap::from([
         ("service".to_string(), "chaos-cli".to_string()),
         ("env".to_string(), "dev".to_string()),
-        ("model".to_string(), "gpt-5.1".to_string()),
+        ("model".to_string(), TEST_MODEL.to_string()),
     ]);
     assert_eq!(counter_attributes, expected_counter_attributes);
 
@@ -100,13 +101,13 @@ fn send_merges_default_tags_per_line() -> Result<()> {
 fn client_sends_enqueued_metric() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
 
-    metrics.counter("chaos.turns", 1, &[("model", "gpt-5.1")])?;
+    metrics.counter("chaos.turns", 1, &[("model", TEST_MODEL)])?;
     metrics.shutdown()?;
 
     let resource_metrics = latest_metrics(&exporter);
     assert_eq!(counter_value(&resource_metrics, "chaos.turns"), 1);
     let attrs = counter_attributes(&resource_metrics, "chaos.turns");
-    assert_eq!(attrs.get("model").map(String::as_str), Some("gpt-5.1"));
+    assert_eq!(attrs.get("model").map(String::as_str), Some(TEST_MODEL));
 
     Ok(())
 }

@@ -551,6 +551,7 @@ mod tests {
     use crate::state::NetworkProxyConstraints;
     use crate::state::build_config_state;
     use crate::state::network_proxy_state_for_policy;
+    use chaos_test_fixtures::TEST_MODEL;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
@@ -776,8 +777,8 @@ mod tests {
             auth_mode: Some("Chatgpt".to_string()),
             originator: Some("free_chaos".to_string()),
             terminal_type: Some("iTerm.app/3.6.5".to_string()),
-            model: Some("gpt-5.3-codex".to_string()),
-            slug: Some("gpt-5.3-codex".to_string()),
+            model: Some(TEST_MODEL.to_string()),
+            slug: Some(TEST_MODEL.to_string()),
         };
         let state = state_with_metadata(metadata);
         let request = NetworkPolicyRequest::new(NetworkPolicyRequestArgs {
@@ -802,8 +803,8 @@ mod tests {
         assert_eq!(event.field("auth_mode"), Some("Chatgpt"));
         assert_eq!(event.field("originator"), Some("free_chaos"));
         assert_eq!(event.field("terminal.type"), Some("iTerm.app/3.6.5"));
-        assert_eq!(event.field("model"), Some("gpt-5.3-codex"));
-        assert_eq!(event.field("slug"), Some("gpt-5.3-codex"));
+        assert_eq!(event.field("model"), Some(TEST_MODEL));
+        assert_eq!(event.field("slug"), Some(TEST_MODEL));
     }
 
     #[tokio::test(flavor = "current_thread")]

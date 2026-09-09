@@ -123,6 +123,7 @@ pub struct HealthResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_test_fixtures::TEST_MODEL;
 
     #[test]
     fn trigger_request_accepts_request_field() {
@@ -147,8 +148,8 @@ mod tests {
 
     #[test]
     fn trigger_request_rejects_model_field_detected() {
-        let json = r#"{"request": "x", "model": "gpt-5"}"#;
-        let req: TriggerRequest = serde_json::from_str(json).unwrap();
+        let json = serde_json::json!({"request": "x", "model": TEST_MODEL});
+        let req: TriggerRequest = serde_json::from_value(json).unwrap();
         assert!(req.model.is_some());
     }
 

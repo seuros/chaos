@@ -23,5 +23,6 @@ uuid = { workspace = true, features = ["v4"] }
 usage = { workspace = true }
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

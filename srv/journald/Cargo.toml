@@ -25,6 +25,7 @@ usage = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 

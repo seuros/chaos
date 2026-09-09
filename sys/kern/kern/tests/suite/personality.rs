@@ -9,7 +9,10 @@ async fn personality_does_not_mutate_base_instructions_without_template() {
     let mut config = load_default_config_for_test(&chaos_home).await;
     config.personality = Some(Personality::Friendly);
 
-    let model_info = chaos_kern::test_support::construct_model_info_offline("gpt-5.1", &config);
+    let model_info = chaos_kern::test_support::construct_model_info_offline(
+        chaos_test_fixtures::TEST_MODEL,
+        &config,
+    );
     assert_eq!(
         model_info.get_model_instructions(config.personality),
         model_info.base_instructions
@@ -23,8 +26,10 @@ async fn base_instructions_override_disables_personality_template() {
     config.personality = Some(Personality::Friendly);
     config.base_instructions = Some("override instructions".to_string());
 
-    let model_info =
-        chaos_kern::test_support::construct_model_info_offline("gpt-5.4-codex", &config);
+    let model_info = chaos_kern::test_support::construct_model_info_offline(
+        chaos_test_fixtures::TEST_MODEL,
+        &config,
+    );
 
     assert_eq!(model_info.base_instructions, "override instructions");
     assert_eq!(

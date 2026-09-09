@@ -272,6 +272,7 @@ mod tests {
     use crate::representer::ResponsesRepresenter;
     use chaos_abi::FunctionToolDef;
     use chaos_abi::ReasoningConfig;
+    use chaos_test_fixtures::TEST_MODEL;
     use serde_json::json;
 
     fn make_req(model: &str) -> TurnRequest {
@@ -292,7 +293,7 @@ mod tests {
     #[test]
     fn turn_request_converts_to_responses_api_request() {
         let req = TurnRequest {
-            model: "gpt-4o".to_string(),
+            model: TEST_MODEL.to_string(),
             instructions: "Be helpful.".to_string(),
             input: vec![],
             tools: vec![ToolDef::Function(FunctionToolDef {
@@ -314,7 +315,7 @@ mod tests {
 
         let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
 
-        assert_eq!(api_req.model, "gpt-4o");
+        assert_eq!(api_req.model, TEST_MODEL);
         assert_eq!(api_req.instructions, "Be helpful.");
         assert_eq!(api_req.tool_choice, "auto");
         assert!(api_req.parallel_tool_calls);
@@ -375,7 +376,7 @@ mod tests {
         extensions.insert("prompt_cache_key".to_string(), json!("conv-123"));
 
         let req = TurnRequest {
-            model: "gpt-4o".to_string(),
+            model: TEST_MODEL.to_string(),
             instructions: String::new(),
             input: vec![],
             tools: vec![],
@@ -405,7 +406,7 @@ mod tests {
         );
 
         let req = TurnRequest {
-            model: "gpt-4o".to_string(),
+            model: TEST_MODEL.to_string(),
             instructions: String::new(),
             input: vec![],
             tools: vec![ToolDef::Function(FunctionToolDef {

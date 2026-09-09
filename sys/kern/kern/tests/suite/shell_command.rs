@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::assert_regex_match;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -100,7 +101,7 @@ fn assert_shell_command_output(output: &str, expected: &str) -> Result<()> {
 async fn shell_command_works() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "shell-command-call";
     mount_shell_responses(&harness, call_id, "echo 'hello, world'", None).await;
@@ -116,7 +117,7 @@ async fn shell_command_works() -> anyhow::Result<()> {
 async fn output_with_login() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "shell-command-call-login-true";
     mount_shell_responses(&harness, call_id, "echo 'hello, world'", Some(true)).await;
@@ -132,7 +133,7 @@ async fn output_with_login() -> anyhow::Result<()> {
 async fn output_without_login() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "shell-command-call-login-false";
     mount_shell_responses(&harness, call_id, "echo 'hello, world'", Some(false)).await;
@@ -148,7 +149,7 @@ async fn output_without_login() -> anyhow::Result<()> {
 async fn multi_line_output_with_login() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "shell-command-call-first-extra-login";
     mount_shell_responses(
@@ -170,7 +171,7 @@ async fn multi_line_output_with_login() -> anyhow::Result<()> {
 async fn pipe_output_with_login() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "shell-command-call-second-extra-no-login";
     mount_shell_responses(&harness, call_id, "echo 'hello, world' | cat", None).await;
@@ -186,7 +187,7 @@ async fn pipe_output_with_login() -> anyhow::Result<()> {
 async fn pipe_output_without_login() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "shell-command-call-third-extra-login-false";
     mount_shell_responses(&harness, call_id, "echo 'hello, world' | cat", Some(false)).await;
@@ -202,7 +203,7 @@ async fn pipe_output_without_login() -> anyhow::Result<()> {
 async fn shell_command_times_out_with_timeout_ms() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
     let call_id = "shell-command-timeout";
     let command = "sleep 5";
     mount_shell_responses_with_timeout(
@@ -236,7 +237,7 @@ async fn unicode_output(login: bool) -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     #[allow(clippy::expect_used)]
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "unicode_output";
     let command = "echo \"naïve_café\"";
@@ -257,7 +258,7 @@ async fn unicode_output_with_newlines(login: bool) -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     #[allow(clippy::expect_used)]
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let call_id = "unicode_output";
     mount_shell_responses_with_timeout(

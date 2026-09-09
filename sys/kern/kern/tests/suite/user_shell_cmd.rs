@@ -134,7 +134,7 @@ async fn user_shell_cmd_can_be_interrupted() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5.1");
+    let mut builder = test_chaos().with_model(chaos_test_fixtures::TEST_MODEL);
     let fixture = builder.build(&server).await?;
 
     let call_id = "active-turn-shell-call";
@@ -341,7 +341,7 @@ async fn user_shell_command_is_truncated_only_once() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let mut builder = test_chaos()
-        .with_model("gpt-5.1-codex")
+        .with_model(chaos_test_fixtures::TEST_MODEL)
         .with_config(|config| {
             config.tool_output_token_limit = Some(100);
         });

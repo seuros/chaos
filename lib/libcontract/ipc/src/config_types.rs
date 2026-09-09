@@ -410,6 +410,7 @@ pub struct CollaborationModeMask {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_test_fixtures::TEST_MODEL;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -417,7 +418,7 @@ mod tests {
         let mode = CollaborationMode {
             mode: ModeKind::Default,
             settings: Settings {
-                model: "gpt-5.4-codex".to_string(),
+                model: TEST_MODEL.to_string(),
                 reasoning_effort: Some(ReasoningEffort::High),
                 developer_instructions: Some("stay focused".to_string()),
             },
@@ -433,7 +434,7 @@ mod tests {
         let expected = CollaborationMode {
             mode: ModeKind::Default,
             settings: Settings {
-                model: "gpt-5.4-codex".to_string(),
+                model: TEST_MODEL.to_string(),
                 reasoning_effort: None,
                 developer_instructions: None,
             },

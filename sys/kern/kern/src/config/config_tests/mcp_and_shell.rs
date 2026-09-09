@@ -1,4 +1,5 @@
 use super::*;
+use chaos_test_fixtures::TEST_MODEL;
 
 #[test]
 fn config_toml_deserializes_mcp_oauth_callback_port() {
@@ -22,12 +23,14 @@ fn config_toml_deserializes_mcp_oauth_callback_url() {
 #[test]
 fn config_loads_mcp_oauth_callback_port_from_toml() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    let toml = r#"
-model = "gpt-5.1"
+    let toml = format!(
+        r#"
+model = "{TEST_MODEL}"
 mcp_oauth_callback_port = 5678
-"#;
+"#
+    );
     let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for callback port");
+        toml::from_str(&toml).expect("TOML deserialization should succeed for callback port");
 
     let config = Config::load_from_base_config_with_overrides(
         cfg,
@@ -42,12 +45,12 @@ mcp_oauth_callback_port = 5678
 #[test]
 fn config_loads_allow_login_shell_from_toml() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    let cfg: ConfigToml = toml::from_str(
+    let cfg: ConfigToml = toml::from_str(&format!(
         r#"
-model = "gpt-5.1"
+model = "{TEST_MODEL}"
 allow_login_shell = false
-"#,
-    )
+"#
+    ))
     .expect("TOML deserialization should succeed for allow_login_shell");
 
     let config = Config::load_from_base_config_with_overrides(
@@ -63,12 +66,14 @@ allow_login_shell = false
 #[test]
 fn config_loads_mcp_oauth_callback_url_from_toml() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    let toml = r#"
-model = "gpt-5.1"
+    let toml = format!(
+        r#"
+model = "{TEST_MODEL}"
 mcp_oauth_callback_url = "https://example.com/callback"
-"#;
+"#
+    );
     let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for callback URL");
+        toml::from_str(&toml).expect("TOML deserialization should succeed for callback URL");
 
     let config = Config::load_from_base_config_with_overrides(
         cfg,

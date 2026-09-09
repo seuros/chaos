@@ -18,6 +18,7 @@ use chaos_parrot::sanitize::JsonSchema;
 use chaos_parrot::sanitize::ResponsesApiTool;
 use chaos_parrot::sanitize::mcp_call_tool_result_output_schema;
 use chaos_parrot::sanitize::parse_tool_input_schema;
+use chaos_test_fixtures::TEST_MODEL;
 use pretty_assertions::assert_eq;
 
 use super::*;
@@ -98,7 +99,7 @@ fn inventory_catalog_tools() -> Vec<(String, chaos_traits::catalog::CatalogTool)
 
 fn capability_group_test_config() -> ToolsConfig {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -429,7 +430,7 @@ fn annotations_are_destructive_applies_mcp_defaults() {
 #[test]
 fn plan_mode_hides_destructive_mcp_tools_using_spec_defaults() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -499,7 +500,7 @@ fn plan_mode_hides_destructive_mcp_tools_using_spec_defaults() {
 #[test]
 fn non_mutating_mode_hides_mutating_tools_but_keeps_mode_switching() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1003,7 +1004,7 @@ fn subagents_cannot_receive_dynamic_parent_effort_tool() {
 #[test]
 fn arsenal_tools_keep_closed_object_schemas() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1040,7 +1041,7 @@ fn arsenal_tools_keep_closed_object_schemas() {
 #[test]
 fn arsenal_read_file_preserves_indentation_object_schema() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1085,7 +1086,7 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
 #[test]
 fn test_build_specs_collab_tools_enabled() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1117,7 +1118,7 @@ fn test_build_specs_collab_tools_enabled() {
 #[test]
 fn attested_review_tools_follow_verdict_capability_and_mode() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1167,7 +1168,7 @@ fn attested_review_tools_follow_verdict_capability_and_mode() {
 #[test]
 fn test_build_specs_minion_jobs_allowed_enables_minion_jobs_and_collab_tools() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -1197,8 +1198,7 @@ fn test_build_specs_minion_jobs_allowed_enables_minion_jobs_and_collab_tools() {
 #[test]
 fn view_image_tool_includes_detail_with_original_detail_feature() {
     let config = test_config();
-    let mut model_info =
-        ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let mut model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     model_info.supports_image_detail_original = true;
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -1233,7 +1233,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
 #[test]
 fn test_build_specs_minion_job_worker_tools_enabled() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -1268,7 +1268,7 @@ fn test_build_specs_minion_job_worker_tools_enabled() {
 #[test]
 fn request_user_input_description_reflects_default_mode_feature_flag() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1293,7 +1293,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
 #[test]
 fn request_permissions_requires_advertised_approval_policy() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1330,7 +1330,7 @@ fn request_permissions_requires_advertised_approval_policy() {
 #[test]
 fn request_permissions_tool_is_independent_from_additional_permissions() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1511,7 +1511,7 @@ fn assert_unified_exec_web_search_model_tool_cases(cases: &[ModelToolCase]) {
 #[test]
 fn web_search_mode_cached_sets_external_web_access_false() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -1542,7 +1542,7 @@ fn web_search_mode_cached_sets_external_web_access_false() {
 #[test]
 fn web_search_mode_live_sets_external_web_access_true() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -1573,7 +1573,7 @@ fn web_search_mode_live_sets_external_web_access_true() {
 #[test]
 fn web_search_config_is_forwarded_to_tool_spec() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let web_search_config = WebSearchConfig {
         filters: Some(chaos_ipc::config_types::WebSearchFilters {
             allowed_domains: Some(vec!["example.com".to_string()]),
@@ -1622,8 +1622,7 @@ fn web_search_config_is_forwarded_to_tool_spec() {
 #[test]
 fn web_search_tool_type_text_and_image_sets_search_content_types() {
     let config = test_config();
-    let mut model_info =
-        ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let mut model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     model_info.web_search_tool_type = WebSearchToolType::TextAndImage;
 
     let available_models = Vec::new();
@@ -1660,7 +1659,7 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
 #[test]
 fn mcp_resource_tools_are_hidden_without_mcp_servers() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1689,7 +1688,7 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
 #[test]
 fn compaction_control_tool_is_opt_in() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let base = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1720,7 +1719,7 @@ fn compaction_control_tool_is_opt_in() {
 #[test]
 fn session_title_tool_is_opt_in() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let base = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1773,7 +1772,7 @@ fn session_title_tool_is_opt_in() {
 #[test]
 fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1803,7 +1802,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
 #[test]
 fn spawn_agent_tool_description_uses_current_role_names() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1841,7 +1840,7 @@ fn spawn_agent_tool_description_uses_current_role_names() {
 #[test]
 fn run_synopsis_tool_exposes_agent_jobs_and_control_flow_modes() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1972,7 +1971,7 @@ fn test_build_specs_default_shell_present() {
 #[test]
 fn test_parallel_support_flags() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
 
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -2181,7 +2180,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
 #[test]
 fn test_mcp_tool_property_missing_type_defaults_to_string() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2287,7 +2286,7 @@ fn test_mcp_tool_integer_preserved() {
     );
 
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2397,7 +2396,7 @@ fn kernel_integer_tool_fields_are_advertised_as_integer() {
 #[test]
 fn test_mcp_tool_array_without_items_gets_default_string_items() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2455,7 +2454,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
 #[test]
 fn test_mcp_tool_anyof_defaults_to_string() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2625,7 +2624,7 @@ fn test_shell_command_tool() {
 #[test]
 fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
     let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,

@@ -164,7 +164,7 @@ pub async fn request_xai_device_code(opts: &XaiDeviceCodeOptions) -> io::Result<
     ]);
     let response = ChaosHttpClient::default_client()
         .post(&endpoint)
-        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Content-Type", crate::MIME_FORM_URLENCODED)
         .header("Accept", "application/json")
         .body(body)
         .send()
@@ -234,7 +234,7 @@ pub async fn complete_xai_device_code_login(
         ]);
         let response = client
             .post(&device_code.token_endpoint)
-            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Content-Type", crate::MIME_FORM_URLENCODED)
             .header("Accept", "application/json")
             .body(body)
             .send()

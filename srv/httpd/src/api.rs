@@ -18,6 +18,10 @@ use crate::monitor;
 use crate::protocol::{ApiErrorResponse, HealthResponse, TriggerRequest, TriggerResponse};
 use crate::runner;
 
+const TRIGGER_PATH: &str = "/api/trigger";
+const MONITOR_EVENTS_PATH: &str = "/monitor/events";
+const INTERNAL_SERVER_ERROR: &str = "internal server error";
+
 /// Build a cloneable HTTP service backed by shared server state.
 pub(crate) fn http_service(
     state: Arc<ServerState>,
@@ -35,7 +39,7 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     // The monitor page is a static login shell; only authenticated callers may
     // subscribe to live state. Authenticate before touching either request body.
-    if matches!(path, "/api/trigger" | "/monitor/events") {
+    if matches!(path, TRIGGER_PATH | MONITOR_EVENTS_PATH) {
         let auth_header = request
             .headers()
             .get("authorization")
@@ -52,15 +56,15 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     match (method.clone(), path) {
         (Method::GET, "/monitor") => monitor::page_response(),
-        (Method::GET, "/monitor/events") => monitor::events_response(state),
+        (Method::GET, MONITOR_EVENTS_PATH) => monitor::events_response(state),
         (Method::GET, "/assets/datastar.js") => monitor::datastar_script_response(),
         (Method::GET, "/api/health") => handle_health(),
-        (Method::POST, "/api/trigger") => handle_trigger(state, request).await,
+        (Method::POST, TRIGGER_PATH) => handle_trigger(state, request).await,
         // Known routes, wrong method.
-        (_, "/monitor") | (_, "/monitor/events") => method_not_allowed("GET"),
+        (_, "/monitor") | (_, MONITOR_EVENTS_PATH) => method_not_allowed("GET"),
         (_, "/assets/datastar.js") => method_not_allowed("GET"),
         (_, "/api/health") => method_not_allowed("GET"),
-        (_, "/api/trigger") => method_not_allowed("POST"),
+        (_, TRIGGER_PATH) => method_not_allowed("POST"),
         // Unknown route.
         _ => json_response(StatusCode::NOT_FOUND, &ApiErrorResponse::error("not found")),
     }
@@ -212,7 +216,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
     let span = info_span!(
         "trigger",
         http.method = "POST",
-        http.route = "/api/trigger",
+        http.route = TRIGGER_PATH,
         conversation_id = %conversation_id,
         caller_session_id = trigger_req.caller_session_id.as_deref().unwrap_or(""),
         requested_by = trigger_req.requested_by.as_deref().unwrap_or(""),
@@ -232,7 +236,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                     error!(error = %e, "failed to start trigger process");
                     return json_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        &ApiErrorResponse::error("internal server error").with_caller_fields(
+                        &ApiErrorResponse::error(INTERNAL_SERVER_ERROR).with_caller_fields(
                             caller_session_id.clone(),
                             Some(conversation_id.clone()),
                         ),
@@ -284,7 +288,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                     );
                     json_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        &ApiErrorResponse::error("internal server error")
+                        &ApiErrorResponse::error(INTERNAL_SERVER_ERROR)
                             .with_process_id(outcome.process_id)
                             .with_caller_fields(
                                 caller_session_id.clone(),
@@ -321,7 +325,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                 error!(error = %e, "trigger runner failed");
                 json_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    &ApiErrorResponse::error("internal server error")
+                    &ApiErrorResponse::error(INTERNAL_SERVER_ERROR)
                         .with_process_id(started.process_id)
                         .with_caller_fields(
                             caller_session_id.clone(),

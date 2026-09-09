@@ -1,6 +1,7 @@
 use chaos_snitch::OtelProvider;
 use chaos_snitch::SessionTelemetry;
 use chaos_snitch::TelemetryAuthMode;
+use chaos_test_fixtures::TEST_MODEL;
 use pretty_assertions::assert_eq;
 use rama::telemetry::opentelemetry::KeyValue;
 use rama::telemetry::opentelemetry::logs::AnyValue;
@@ -107,8 +108,8 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),
-            "gpt-5.1",
-            "gpt-5.1",
+            TEST_MODEL,
+            TEST_MODEL,
             Some(TelemetryAuthMode::ApiKey),
             "chaos_fork".to_string(),
             true,
@@ -208,8 +209,8 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),
-            "gpt-5.1",
-            "gpt-5.1",
+            TEST_MODEL,
+            TEST_MODEL,
             Some(TelemetryAuthMode::ApiKey),
             "chaos_fork".to_string(),
             true,
@@ -319,8 +320,8 @@ fn otel_export_routing_policy_routes_auth_recovery_log_and_trace_events() {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),
-            "gpt-5.1",
-            "gpt-5.1",
+            TEST_MODEL,
+            TEST_MODEL,
             Some(TelemetryAuthMode::Chatgpt),
             "chaos_fork".to_string(),
             true,
@@ -463,8 +464,8 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),
-            "gpt-5.1",
-            "gpt-5.1",
+            TEST_MODEL,
+            TEST_MODEL,
             Some(TelemetryAuthMode::Chatgpt),
             "chaos_fork".to_string(),
             true,

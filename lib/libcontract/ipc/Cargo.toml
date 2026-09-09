@@ -28,6 +28,7 @@ tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7", "v4"] }
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 anyhow = { workspace = true }
 chaos-selinux = { workspace = true }
 pretty_assertions = { workspace = true }

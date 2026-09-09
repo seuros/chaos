@@ -112,6 +112,7 @@ members = [
 
     # tests/
     "tests/check",
+    "tests/fixtures",
     "tests/regress",
 ]
 exclude = [
@@ -237,6 +238,7 @@ chaos-auth-test-fixtures = { path = "lib/libutil/auth-test-fixtures" }
 
 # Internal — tests/
 chaos-check = { path = "tests/check" }
+chaos-test-fixtures = { path = "tests/fixtures" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
 mcp-host = { version = "0.2.5", default-features = false, features = ["stdio", "macros"] }

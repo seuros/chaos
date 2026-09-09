@@ -2,6 +2,7 @@ use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_kern::ChaosAuth;
 use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_kern::models_manager::manager::ModelsManager;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::load_default_config_for_test;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -20,7 +21,7 @@ async fn offline_model_info_without_tool_output_override() {
         CollaborationModesConfig::default(),
     );
 
-    let model_info = manager.get_model_info("gpt-5.1", &config).await;
+    let model_info = manager.get_model_info(TEST_MODEL, &config).await;
 
     assert_eq!(
         model_info.truncation_policy,

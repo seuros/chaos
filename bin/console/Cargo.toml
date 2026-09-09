@@ -77,6 +77,7 @@ usage = { workspace = true }
 
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 chaos-cli = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-which = { workspace = true }

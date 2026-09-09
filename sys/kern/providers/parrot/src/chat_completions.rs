@@ -443,7 +443,7 @@ struct TextAccumulator {
 ///
 /// The schema is:
 /// ```json
-/// {"id":"chatcmpl-...","object":"chat.completion.chunk","model":"gpt-4o",
+/// {"id":"chatcmpl-...","object":"chat.completion.chunk","model":"example-model",
 ///  "choices":[{"delta":{"role":"assistant","content":"...","tool_calls":[...]},"finish_reason":null}],
 ///  "usage":null}
 /// ```
@@ -802,6 +802,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_test_fixtures::TEST_MODEL;
 
     fn completion_fixture() -> Value {
         serde_json::json!({
@@ -1066,7 +1067,7 @@ mod tests {
     #[test]
     fn build_request_body_includes_system_message() {
         let request = TurnRequest {
-            model: "gpt-4o".to_string(),
+            model: TEST_MODEL.to_string(),
             instructions: "You are helpful".to_string(),
             input: vec![],
             tools: vec![],
@@ -1078,7 +1079,7 @@ mod tests {
             extensions: serde_json::Map::new(),
         };
 
-        let body = build_request_body(&request, "gpt-4o", true).expect("body should build");
+        let body = build_request_body(&request, TEST_MODEL, true).expect("body should build");
         let messages = body.get("messages").and_then(Value::as_array).unwrap();
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[0]["content"], "You are helpful");
@@ -1087,7 +1088,7 @@ mod tests {
     #[test]
     fn build_request_body_no_system_when_no_instructions() {
         let request = TurnRequest {
-            model: "gpt-4o".to_string(),
+            model: TEST_MODEL.to_string(),
             instructions: String::new(),
             input: vec![],
             tools: vec![],
@@ -1099,7 +1100,7 @@ mod tests {
             extensions: serde_json::Map::new(),
         };
 
-        let body = build_request_body(&request, "gpt-4o", true).expect("body should build");
+        let body = build_request_body(&request, TEST_MODEL, true).expect("body should build");
         let messages = body.get("messages").and_then(Value::as_array);
         assert!(
             messages.is_none(),
@@ -1117,7 +1118,7 @@ mod tests {
         let start_events = parse_chunk(
             &serde_json::json!({
                 "id": "chatcmpl-1",
-                "model": "gpt-4o",
+                "model": TEST_MODEL,
                 "choices": [{
                     "delta": { "content": "Hello" },
                     "finish_reason": null
@@ -1141,7 +1142,7 @@ mod tests {
         let finish_events = parse_chunk(
             &serde_json::json!({
                 "id": "chatcmpl-1",
-                "model": "gpt-4o",
+                "model": TEST_MODEL,
                 "choices": [{
                     "delta": {},
                     "finish_reason": "stop"
@@ -1173,7 +1174,7 @@ mod tests {
         let initial_events = parse_chunk(
             &serde_json::json!({
                 "id": "chatcmpl-1",
-                "model": "gpt-4o",
+                "model": TEST_MODEL,
                 "choices": [{
                     "delta": {
                         "tool_calls": [
@@ -1208,7 +1209,7 @@ mod tests {
         let finish_events = parse_chunk(
             &serde_json::json!({
                 "id": "chatcmpl-1",
-                "model": "gpt-4o",
+                "model": TEST_MODEL,
                 "choices": [{
                     "delta": {
                         "tool_calls": [
@@ -1362,12 +1363,22 @@ mod tests {
     #[tokio::test]
     async fn process_sse_stream_completes_on_done_without_usage() {
         let stream = futures::stream::iter(vec![
-            Ok::<_, std::io::Error>(Bytes::from(
-                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n",
-            )),
-            Ok::<_, std::io::Error>(Bytes::from(
-                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
-            )),
+            Ok::<_, std::io::Error>(Bytes::from(format!(
+                "data: {}\n\n",
+                serde_json::json!({
+                    "id": "chatcmpl-1",
+                    "model": TEST_MODEL,
+                    "choices": [{"delta": {"content": "Hello"}, "finish_reason": null}]
+                })
+            ))),
+            Ok::<_, std::io::Error>(Bytes::from(format!(
+                "data: {}\n\n",
+                serde_json::json!({
+                    "id": "chatcmpl-1",
+                    "model": TEST_MODEL,
+                    "choices": [{"delta": {}, "finish_reason": "stop"}]
+                })
+            ))),
             Ok::<_, std::io::Error>(Bytes::from("data: [DONE]\n\n")),
         ]);
         let (tx, mut rx) = mpsc::channel(16);

@@ -2303,13 +2303,13 @@ async fn session_mode_changed_updates_only_the_displayed_process() {
             mode_id: "plan".to_string(),
             mode_title: "Plan".to_string(),
             mode_kind: ModeKind::Plan,
-            model: "gpt-5.6".to_string(),
+            model: chaos_test_fixtures::TEST_MODEL.to_string(),
             reasoning_effort: Some(ReasoningEffortConfig::Medium),
         }),
     });
 
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
-    assert_eq!(chat.current_model(), "gpt-5.6");
+    assert_eq!(chat.current_model(), chaos_test_fixtures::TEST_MODEL);
     assert_eq!(
         chat.current_reasoning_effort(),
         Some(ReasoningEffortConfig::Medium)
@@ -2328,7 +2328,7 @@ async fn session_mode_changed_updates_only_the_displayed_process() {
         }),
     });
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
-    assert_eq!(chat.current_model(), "gpt-5.6");
+    assert_eq!(chat.current_model(), chaos_test_fixtures::TEST_MODEL);
 
     chat.handle_codex_event(Event {
         id: "mode-custom".to_string(),
@@ -2337,7 +2337,7 @@ async fn session_mode_changed_updates_only_the_displayed_process() {
             mode_id: "research".to_string(),
             mode_title: "Research".to_string(),
             mode_kind: ModeKind::Default,
-            model: "gpt-5.6".to_string(),
+            model: chaos_test_fixtures::TEST_MODEL.to_string(),
             reasoning_effort: Some(ReasoningEffortConfig::High),
         }),
     });

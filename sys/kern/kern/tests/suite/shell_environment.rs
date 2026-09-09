@@ -1,5 +1,6 @@
 use anyhow::Context;
 use anyhow::Result;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
@@ -47,7 +48,7 @@ async fn run_tool_turn(
 async fn shell_command_uses_configured_environment_without_snapshot_files() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness =
-        TestChaosHarness::with_builder(test_chaos().with_model("gpt-5.1").with_config(|config| {
+        TestChaosHarness::with_builder(test_chaos().with_model(TEST_MODEL).with_config(|config| {
             config.permissions.shell_environment_policy.r#set.insert(
                 "CHAOS_ENVIRONMENT_TEST".to_string(),
                 "configured".to_string(),
@@ -78,7 +79,7 @@ async fn shell_command_uses_configured_environment_without_snapshot_files() -> R
 async fn unified_exec_uses_configured_environment_without_snapshot_files() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness =
-        TestChaosHarness::with_builder(test_chaos().with_model("gpt-5.1").with_config(|config| {
+        TestChaosHarness::with_builder(test_chaos().with_model(TEST_MODEL).with_config(|config| {
             config.permissions.shell_environment_policy.r#set.insert(
                 "CHAOS_ENVIRONMENT_TEST".to_string(),
                 "configured".to_string(),

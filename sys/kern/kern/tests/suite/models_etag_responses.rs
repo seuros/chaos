@@ -8,6 +8,7 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -42,7 +43,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let mut builder = test_chaos()
         .with_auth(auth)
-        .with_model("gpt-5")
+        .with_model(TEST_MODEL)
         .with_config(|config| {
             // Keep this test deterministic: no request retries, and a small stream retry budget.
             config.model_provider.request_max_retries = Some(0);

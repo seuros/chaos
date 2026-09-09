@@ -235,6 +235,7 @@ mod tests {
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionConfiguredEvent;
+    use chaos_test_fixtures::TEST_MODEL;
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
@@ -282,7 +283,7 @@ mod tests {
                 session_id: process_id,
                 forked_from_id: None,
                 process_name: None,
-                model: "gpt-4o".to_string(),
+                model: TEST_MODEL.to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
                 approval_policy: ApprovalPolicy::Headless,
@@ -328,7 +329,7 @@ mod tests {
             session_id: conversation_id,
             forked_from_id: None,
             process_name: None,
-            model: "gpt-4o".to_string(),
+            model: TEST_MODEL.to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
@@ -370,7 +371,7 @@ mod tests {
             "msg": {
                 "type": "session_configured",
                 "session_id": session_configured_event.session_id,
-                "model": "gpt-4o",
+                "model": TEST_MODEL,
                 "model_provider_id": "test-provider",
                 "approval_policy": "headless",
                 "approvals_reviewer": "user",
@@ -395,7 +396,7 @@ mod tests {
             session_id: process_id,
             forked_from_id: None,
             process_name: None,
-            model: "gpt-4o".to_string(),
+            model: TEST_MODEL.to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
@@ -438,7 +439,7 @@ mod tests {
             "msg": {
                 "type": "session_configured",
                 "session_id": session_configured_event.session_id,
-                "model": "gpt-4o",
+                "model": TEST_MODEL,
                 "model_provider_id": "test-provider",
                 "approval_policy": "headless",
                 "approvals_reviewer": "user",

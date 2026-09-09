@@ -8,6 +8,7 @@ use anyhow::Context;
 use anyhow::Result;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_test_fixtures::TEST_MODEL;
 
 use chaos_kern::sandboxing::SandboxPermissions;
 use core_test_support::assert_regex_match;
@@ -95,7 +96,7 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
 
     let command = ["/bin/echo", "shell ok"];
@@ -232,7 +233,7 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
 
     let call_id = "shell-timeout";
@@ -312,7 +313,7 @@ async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
         config
             .permissions
             .sandbox_policy

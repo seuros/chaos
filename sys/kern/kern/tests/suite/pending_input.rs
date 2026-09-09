@@ -1,6 +1,7 @@
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::UserInput;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_message_item_added;
@@ -91,7 +92,7 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
         start_streaming_sse_server(vec![first_chunks, second_chunks]).await;
 
     let chaos = test_chaos()
-        .with_model("gpt-5.1")
+        .with_model(TEST_MODEL)
         .build_with_streaming_server(&server)
         .await
         .unwrap()

@@ -45,7 +45,7 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
 
     let server = start_mock_server().await;
 
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(chaos_test_fixtures::TEST_MODEL);
     let TestChaos {
         process: chaos,
         cwd,

@@ -696,7 +696,7 @@ pub(crate) async fn exchange_code_for_tokens(
     let token_url = format!("{issuer}/oauth/token");
     let resp = client
         .post(&token_url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Content-Type", crate::MIME_FORM_URLENCODED)
         .body(format!(
             "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
             urlencoding::encode(code),
@@ -1064,7 +1064,7 @@ pub(crate) async fn obtain_api_key(
     let token_url = format!("{issuer}/oauth/token");
     let resp = client
         .post(&token_url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Content-Type", crate::MIME_FORM_URLENCODED)
         .body(format!(
             "grant_type={}&client_id={}&requested_token={}&subject_token={}&subject_token_type={}",
             urlencoding::encode("urn:ietf:params:oauth:grant-type:token-exchange"),

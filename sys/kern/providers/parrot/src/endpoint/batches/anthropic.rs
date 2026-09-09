@@ -23,10 +23,12 @@ use serde_json::Value;
 use serde_json::json;
 
 use super::classify_status;
+use crate::anthropic::ANTHROPIC_VERSION;
+use crate::anthropic::ANTHROPIC_VERSION_HEADER;
 use crate::anthropic::build_request_body;
 use crate::anthropic::default_cache_ttl_for_base_url;
+use crate::common::MIME_APPLICATION_JSON;
 
-const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
 
 pub struct AnthropicSpoolBackend {
@@ -74,8 +76,8 @@ impl AnthropicSpoolBackend {
             .client
             .get(url)
             .header("x-api-key", key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("accept", "application/json")
+            .header(ANTHROPIC_VERSION_HEADER, ANTHROPIC_VERSION)
+            .header("accept", MIME_APPLICATION_JSON)
             .send()
             .await
             .map_err(|e| SpoolError::Other(format!("GET {url}: {e}")))?;
@@ -96,7 +98,7 @@ impl AnthropicSpoolBackend {
             .client
             .get(url)
             .header("x-api-key", key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header(ANTHROPIC_VERSION_HEADER, ANTHROPIC_VERSION)
             .send()
             .await
             .map_err(|e| SpoolError::Other(format!("GET {url}: {e}")))?;
@@ -116,8 +118,8 @@ impl AnthropicSpoolBackend {
             .client
             .post(url)
             .header("x-api-key", key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("accept", "application/json")
+            .header(ANTHROPIC_VERSION_HEADER, ANTHROPIC_VERSION)
+            .header("accept", MIME_APPLICATION_JSON)
             .json(&body)
             .send()
             .await

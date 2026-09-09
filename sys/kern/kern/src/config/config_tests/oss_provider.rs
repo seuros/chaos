@@ -1,4 +1,5 @@
 use super::*;
+use chaos_test_fixtures::TEST_MODEL;
 
 #[test]
 fn test_set_default_oss_provider() -> std::io::Result<()> {
@@ -12,11 +13,12 @@ fn test_set_default_oss_provider() -> std::io::Result<()> {
     assert!(content.contains("oss_provider = \"ollama\""));
 
     // Test updating existing config
-    std::fs::write(&config_path, "model = \"gpt-4\"\n")?;
+    let model_setting = format!("model = \"{TEST_MODEL}\"");
+    std::fs::write(&config_path, format!("{model_setting}\n"))?;
     set_default_oss_provider(chaos_home, "lmstudio")?;
     let content = std::fs::read_to_string(&config_path)?;
     assert!(content.contains("oss_provider = \"lmstudio\""));
-    assert!(content.contains("model = \"gpt-4\""));
+    assert!(content.contains(&model_setting));
 
     // Test overwriting existing oss_provider
     set_default_oss_provider(chaos_home, "ollama")?;

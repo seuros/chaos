@@ -489,6 +489,7 @@ async fn fetch_openai_models(
 mod tests {
     use super::*;
     use chaos_ipc::protocol::SessionSource;
+    use chaos_test_fixtures::TEST_MODEL;
     use std::sync::OnceLock;
 
     #[test]
@@ -595,7 +596,7 @@ mod tests {
         );
 
         let request = TurnRequest {
-            model: "gpt-5".to_string(),
+            model: TEST_MODEL.to_string(),
             instructions: String::new(),
             input: vec![],
             tools: vec![],
@@ -630,7 +631,7 @@ mod tests {
         );
         extensions.insert("compression".to_string(), serde_json::json!("zstd"));
         let request = TurnRequest {
-            model: "gpt-5".to_string(),
+            model: TEST_MODEL.to_string(),
             instructions: String::new(),
             input: vec![],
             tools: vec![],

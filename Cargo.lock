@@ -1133,6 +1133,7 @@ dependencies = [
  "chaos-session",
  "chaos-snitch",
  "chaos-termcap",
+ "chaos-test-fixtures",
  "chaos-which",
  "color-eyre",
  "crossterm",
@@ -1317,6 +1318,7 @@ dependencies = [
  "chaos-realpath",
  "chaos-session",
  "chaos-snitch",
+ "chaos-test-fixtures",
  "chaos-uptime",
  "chaos-which",
  "core_test_support",
@@ -1410,6 +1412,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-kern",
  "chaos-session",
+ "chaos-test-fixtures",
  "rama",
  "serde",
  "serde_json",
@@ -1429,6 +1432,7 @@ dependencies = [
  "base64 0.22.1",
  "chaos-realpath",
  "chaos-selinux",
+ "chaos-test-fixtures",
  "icu_decimal",
  "icu_locale_core",
  "icu_provider",
@@ -1504,6 +1508,7 @@ dependencies = [
  "chaos-synopsis",
  "chaos-sysctl",
  "chaos-sysinfo",
+ "chaos-test-fixtures",
  "chaos-tmpfs",
  "chaos-traits",
  "chaos-vault",
@@ -1677,6 +1682,7 @@ dependencies = [
  "chaos-proc",
  "chaos-session",
  "chaos-sh",
+ "chaos-test-fixtures",
  "core_test_support",
  "mcp-host",
  "mcp_test_support",
@@ -1767,6 +1773,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-libration",
  "chaos-services",
+ "chaos-test-fixtures",
  "futures",
  "pretty_assertions",
  "rama",
@@ -1790,6 +1797,7 @@ dependencies = [
  "anyhow",
  "chaos-pwd",
  "chaos-realpath",
+ "chaos-test-fixtures",
  "globset",
  "jiff",
  "pretty_assertions",
@@ -1984,6 +1992,7 @@ dependencies = [
  "chaos-parrot",
  "chaos-proc",
  "chaos-realpath",
+ "chaos-test-fixtures",
  "chaos-wchar",
  "gethostname",
  "http",
@@ -2091,6 +2100,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-test-fixtures"
+version = "47.4.0"
+
+[[package]]
 name = "chaos-tmpfs"
 version = "47.4.0"
 dependencies = [
@@ -2188,6 +2201,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-proc",
  "chaos-pwd",
+ "chaos-test-fixtures",
  "jiff",
  "libc",
  "rama",
@@ -2528,6 +2542,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-kern",
  "chaos-realpath",
+ "chaos-test-fixtures",
  "chaos-which",
  "ctor",
  "notify 8.2.0",
@@ -6100,6 +6115,7 @@ dependencies = [
  "chaos-sudoers",
  "chaos-sysinfo",
  "chaos-termcap",
+ "chaos-test-fixtures",
  "chaos-uptime",
  "chaos-wchar",
  "crossterm",

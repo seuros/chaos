@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use chaos_check::large_stack_test;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses::ev_apply_patch_call;
 use core_test_support::responses::ev_apply_patch_custom_tool_call;
 use core_test_support::responses::ev_shell_command_call;
@@ -89,7 +90,7 @@ async fn apply_patch_cli_multiple_operations_integration(
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = apply_patch_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     // Seed workspace state
     let modify_path = harness.path("modify.txt");
@@ -628,7 +629,7 @@ async fn apply_patch_cli_verification_failure_has_no_side_effects(
 async fn apply_patch_shell_command_heredoc_with_cd_updates_relative_workdir() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = apply_patch_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     // Prepare a file inside a subdir; update it via cd && apply_patch heredoc form.
     let sub = harness.path("sub");
@@ -666,7 +667,7 @@ async fn apply_patch_shell_command_heredoc_with_cd_updates_relative_workdir() ->
 async fn apply_patch_cli_can_use_shell_command_output_as_patch_input() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = apply_patch_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
 
     let source_contents = "line1\nnaïve café\nline3\n";
     let source_path = harness.path("source.txt");
@@ -792,7 +793,7 @@ async fn apply_patch_cli_can_use_shell_command_output_as_patch_input() -> Result
 async fn apply_patch_shell_command_heredoc_with_cd_emits_turn_diff() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = apply_patch_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
     let test = harness.test();
     let chaos = test.process.clone();
     let cwd = test.cwd.clone();
@@ -876,7 +877,7 @@ async fn apply_patch_shell_command_heredoc_with_cd_emits_turn_diff() -> Result<(
 async fn apply_patch_shell_command_failure_propagates_error_and_skips_diff() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+    let harness = apply_patch_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
     let test = harness.test();
     let chaos = test.process.clone();
     let cwd = test.cwd.clone();

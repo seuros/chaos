@@ -6,6 +6,7 @@ use chaos_snitch::RuntimeMetricsSummary;
 use chaos_snitch::SessionTelemetry;
 use chaos_snitch::TelemetryAuthMode;
 use chaos_snitch::metrics::Result;
+use chaos_test_fixtures::TEST_MODEL;
 use rama::http::sse::Event as StreamEvent;
 use std::time::Duration;
 
@@ -14,8 +15,8 @@ fn runtime_metrics_summary_collects_tool_api_and_streaming_metrics() -> Result<(
     let (metrics, _exporter) = build_runtime_metrics_with_defaults(&[])?;
     let manager = SessionTelemetry::new(
         ProcessId::new(),
-        "gpt-5.1",
-        "gpt-5.1",
+        TEST_MODEL,
+        TEST_MODEL,
         Some(TelemetryAuthMode::ApiKey),
         "test_originator".to_string(),
         true,

@@ -78,7 +78,7 @@ impl XaiSpoolBackend {
             .client
             .get(url)
             .header("authorization", auth)
-            .header("accept", "application/json")
+            .header("accept", crate::common::MIME_APPLICATION_JSON)
             .send()
             .await
             .map_err(|e| SpoolError::Other(format!("GET {url}: {e}")))?;
@@ -98,7 +98,7 @@ impl XaiSpoolBackend {
             .client
             .post(url)
             .header("authorization", auth)
-            .header("accept", "application/json")
+            .header("accept", crate::common::MIME_APPLICATION_JSON)
             .json(&body)
             .send()
             .await

@@ -62,6 +62,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uuid = { workspace = true }
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = [
     "experimental_metrics_custom_reader",
     "testing",

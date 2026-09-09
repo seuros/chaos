@@ -1,31 +1,31 @@
 use super::emit_turn_network_proxy_metric;
+use chaos_ipc::ProcessId;
 use chaos_ipc::product::CHAOS_VERSION;
+use chaos_ipc::protocol::SessionSource;
 use chaos_snitch::SessionTelemetry;
 use chaos_snitch::metrics::MetricsClient;
 use chaos_snitch::metrics::MetricsConfig;
 use chaos_snitch::metrics::names::TURN_NETWORK_PROXY_METRIC;
-use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::SessionSource;
+use chaos_test_fixtures::TEST_MODEL;
+use pretty_assertions::assert_eq;
 use rama::telemetry::opentelemetry::KeyValue;
 use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 use rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics;
 use rama::telemetry::opentelemetry::sdk::metrics::data::Metric;
 use rama::telemetry::opentelemetry::sdk::metrics::data::MetricData;
 use rama::telemetry::opentelemetry::sdk::metrics::data::ResourceMetrics;
-use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
 fn test_session_telemetry() -> SessionTelemetry {
     let exporter = InMemoryMetricExporter::default();
     let metrics = MetricsClient::new(
-        MetricsConfig::in_memory("test", "chaos", CHAOS_VERSION, exporter)
-            .with_runtime_reader(),
+        MetricsConfig::in_memory("test", "chaos", CHAOS_VERSION, exporter).with_runtime_reader(),
     )
     .expect("in-memory metrics client");
     SessionTelemetry::new(
         ProcessId::new(),
-        "gpt-5.1",
-        "gpt-5.1",
+        TEST_MODEL,
+        TEST_MODEL,
         None,
         "test_originator".to_string(),
         false,

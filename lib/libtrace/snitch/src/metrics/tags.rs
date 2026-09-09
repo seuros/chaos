@@ -54,6 +54,7 @@ mod tests {
     use super::SERVICE_NAME_TAG;
     use super::SESSION_SOURCE_TAG;
     use super::SessionMetricTagValues;
+    use chaos_test_fixtures::TEST_MODEL;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -63,7 +64,7 @@ mod tests {
             session_source: "cli",
             originator: "codex_cli",
             service_name: Some("desktop_app"),
-            model: "gpt-5.1",
+            model: TEST_MODEL,
             app_version: "1.2.3",
         }
         .into_tags()
@@ -76,7 +77,7 @@ mod tests {
                 (SESSION_SOURCE_TAG, "cli"),
                 (ORIGINATOR_TAG, "codex_cli"),
                 (SERVICE_NAME_TAG, "desktop_app"),
-                (MODEL_TAG, "gpt-5.1"),
+                (MODEL_TAG, TEST_MODEL),
                 (APP_VERSION_TAG, "1.2.3"),
             ]
         );
@@ -89,7 +90,7 @@ mod tests {
             session_source: "exec",
             originator: "chaos_fork",
             service_name: None,
-            model: "gpt-5.1",
+            model: TEST_MODEL,
             app_version: "1.2.3",
         }
         .into_tags()
@@ -100,7 +101,7 @@ mod tests {
             vec![
                 (SESSION_SOURCE_TAG, "exec"),
                 (ORIGINATOR_TAG, "chaos_fork"),
-                (MODEL_TAG, "gpt-5.1"),
+                (MODEL_TAG, TEST_MODEL),
                 (APP_VERSION_TAG, "1.2.3"),
             ]
         );

@@ -82,6 +82,7 @@ mod tests {
     use chaos_client::Response;
     use chaos_client::StreamResponse;
     use chaos_client::TransportError;
+    use chaos_test_fixtures::TEST_MODEL;
     use pretty_assertions::assert_eq;
     use rama::http::HeaderMap;
     use rama::http::Method;
@@ -189,7 +190,7 @@ mod tests {
         );
 
         let input = MemorySummarizeInput {
-            model: "gpt-test".to_string(),
+            model: TEST_MODEL.to_string(),
             raw_memories: vec![RawMemory {
                 id: "trace-1".to_string(),
                 metadata: RawMemoryMetadata {
@@ -220,7 +221,7 @@ mod tests {
             "https://example.com/api/chaos/memories/trace_summarize"
         );
         let body = request.body.expect("request body should be present");
-        assert_eq!(body["model"], "gpt-test");
+        assert_eq!(body["model"], TEST_MODEL);
         assert_eq!(body["traces"][0]["id"], "trace-1");
         assert_eq!(
             body["traces"][0]["metadata"]["source_path"],

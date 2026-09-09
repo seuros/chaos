@@ -71,6 +71,7 @@ use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::WarningEvent;
 use chaos_ipc::protocol::WebSearchBeginEvent;
 use chaos_ipc::protocol::WebSearchEndEvent;
+use chaos_test_fixtures::TEST_MODEL;
 use mcp_guest::ContentBlock;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -658,7 +659,7 @@ fn collab_spawn_begin_and_end_emit_item_events() {
                 call_id: "call-10".to_string(),
                 sender_process_id,
                 prompt: prompt.clone(),
-                model: "gpt-5".to_string(),
+                model: TEST_MODEL.to_string(),
                 reasoning_effort: ReasoningEffortConfig::default(),
                 catchphrase: None,
                 missing_topics: Vec::new(),
@@ -682,7 +683,7 @@ fn collab_spawn_begin_and_end_emit_item_events() {
                 new_agent_nickname: None,
                 new_agent_role: None,
                 prompt: prompt.clone(),
-                model: "gpt-5".to_string(),
+                model: TEST_MODEL.to_string(),
                 reasoning_effort: ReasoningEffortConfig::default(),
                 status: AgentStatus::Running,
             }),

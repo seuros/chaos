@@ -10,6 +10,7 @@ use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_test_fixtures::TEST_MODEL;
 
 use core_test_support::assert_regex_match;
 use core_test_support::process::process_is_alive;
@@ -268,7 +269,7 @@ async fn unified_exec_emits_exec_command_begin_event() -> Result<()> {
 
     let server = start_mock_server().await;
 
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let TestChaos {
         process: chaos,
         cwd,
@@ -340,7 +341,7 @@ async fn unified_exec_resolves_relative_workdir() -> Result<()> {
 
     let server = start_mock_server().await;
 
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let TestChaos {
         process: chaos,
         cwd,
@@ -418,7 +419,7 @@ async fn unified_exec_respects_workdir_override() -> Result<()> {
 
     let server = start_mock_server().await;
 
-    let mut builder = test_chaos().with_model("gpt-5");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
     let TestChaos {
         process: chaos,
         cwd,

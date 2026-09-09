@@ -2,6 +2,7 @@
 
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
@@ -32,14 +33,12 @@ async fn web_search_mode_cached_sets_external_web_access_false() {
     ]);
     let resp_mock = responses::mount_sse_once(&server, sse).await;
 
-    let mut builder = test_chaos()
-        .with_model("gpt-5-codex")
-        .with_config(|config| {
-            config
-                .web_search_mode
-                .set(WebSearchMode::Cached)
-                .expect("test web_search_mode should satisfy constraints");
-        });
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
+        config
+            .web_search_mode
+            .set(WebSearchMode::Cached)
+            .expect("test web_search_mode should satisfy constraints");
+    });
     let test = builder
         .build(&server)
         .await
@@ -72,14 +71,12 @@ async fn web_search_mode_takes_precedence_over_legacy_flags() {
     ]);
     let resp_mock = responses::mount_sse_once(&server, sse).await;
 
-    let mut builder = test_chaos()
-        .with_model("gpt-5-codex")
-        .with_config(|config| {
-            config
-                .web_search_mode
-                .set(WebSearchMode::Cached)
-                .expect("test web_search_mode should satisfy constraints");
-        });
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
+        config
+            .web_search_mode
+            .set(WebSearchMode::Cached)
+            .expect("test web_search_mode should satisfy constraints");
+    });
     let test = builder
         .build(&server)
         .await
@@ -112,14 +109,12 @@ async fn web_search_mode_defaults_to_cached() {
     ]);
     let resp_mock = responses::mount_sse_once(&server, sse).await;
 
-    let mut builder = test_chaos()
-        .with_model("gpt-5-codex")
-        .with_config(|config| {
-            config
-                .web_search_mode
-                .set(WebSearchMode::Cached)
-                .expect("test web_search_mode should satisfy constraints");
-        });
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
+        config
+            .web_search_mode
+            .set(WebSearchMode::Cached)
+            .expect("test web_search_mode should satisfy constraints");
+    });
     let test = builder
         .build(&server)
         .await
@@ -161,14 +156,12 @@ async fn web_search_mode_updates_between_turns_with_sandbox_policy() {
     )
     .await;
 
-    let mut builder = test_chaos()
-        .with_model("gpt-5-codex")
-        .with_config(|config| {
-            config
-                .web_search_mode
-                .set(WebSearchMode::Cached)
-                .expect("test web_search_mode should satisfy constraints");
-        });
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
+        config
+            .web_search_mode
+            .set(WebSearchMode::Cached)
+            .expect("test web_search_mode should satisfy constraints");
+    });
     let test = builder
         .build(&server)
         .await
@@ -229,7 +222,7 @@ location = { country = "US", city = "New York", timezone = "America/New_York" }
     )
     .expect("write config.toml");
 
-    let mut builder = test_chaos().with_model("gpt-5-codex").with_home(home);
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_home(home);
     let test = builder
         .build(&server)
         .await

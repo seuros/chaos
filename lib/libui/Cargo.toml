@@ -112,6 +112,7 @@ rustls = { workspace = true, optional = true }
 libc = { workspace = true }
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 assert_matches = { workspace = true }
 insta = { workspace = true }
 pretty_assertions = { workspace = true }

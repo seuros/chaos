@@ -13,6 +13,7 @@ use chaos_kern::ModelProviderInfo;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_kern::test_support::test_remote_model;
 use chaos_proc::open_runtime_db;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -50,7 +51,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
 
     let mut builder = test_chaos().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     builder = builder.with_config(|config| {
-        config.model = Some("gpt-5".to_string());
+        config.model = Some(TEST_MODEL.to_string());
         config.model_provider.request_max_retries = Some(0);
         config.model_provider.stream_max_retries = Some(1);
     });

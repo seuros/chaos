@@ -41,6 +41,7 @@ tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 
 [dev-dependencies]
+chaos-test-fixtures = { workspace = true }
 core_test_support = { workspace = true }
 mcp-host = { workspace = true }
 mcp_test_support = { workspace = true }

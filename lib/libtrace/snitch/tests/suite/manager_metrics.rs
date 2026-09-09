@@ -7,6 +7,7 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_snitch::SessionTelemetry;
 use chaos_snitch::TelemetryAuthMode;
 use chaos_snitch::metrics::Result;
+use chaos_test_fixtures::TEST_MODEL;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
@@ -16,8 +17,8 @@ fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[("service", "chaos-cli")])?;
     let manager = SessionTelemetry::new(
         ProcessId::new(),
-        "gpt-5.1",
-        "gpt-5.1",
+        TEST_MODEL,
+        TEST_MODEL,
         Some(TelemetryAuthMode::ApiKey),
         "test_originator".to_string(),
         true,
@@ -38,7 +39,7 @@ fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
             "auth_mode".to_string(),
             TelemetryAuthMode::ApiKey.to_string(),
         ),
-        ("model".to_string(), "gpt-5.1".to_string()),
+        ("model".to_string(), TEST_MODEL.to_string()),
         ("originator".to_string(), "test_originator".to_string()),
         ("service".to_string(), "chaos-cli".to_string()),
         ("session_source".to_string(), "cli".to_string()),
@@ -55,8 +56,8 @@ fn manager_allows_disabling_metadata_tags() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
     let manager = SessionTelemetry::new(
         ProcessId::new(),
-        "gpt-4o",
-        "gpt-4o",
+        TEST_MODEL,
+        TEST_MODEL,
         Some(TelemetryAuthMode::ApiKey),
         "test_originator".to_string(),
         true,
@@ -82,8 +83,8 @@ fn manager_attaches_optional_service_name_tag() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
     let manager = SessionTelemetry::new(
         ProcessId::new(),
-        "gpt-5.1",
-        "gpt-5.1",
+        TEST_MODEL,
+        TEST_MODEL,
         None,
         "test_originator".to_string(),
         false,

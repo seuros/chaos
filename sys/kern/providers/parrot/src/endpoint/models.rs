@@ -81,6 +81,7 @@ mod tests {
     use chaos_client::Response;
     use chaos_client::StreamResponse;
     use chaos_client::TransportError;
+    use chaos_test_fixtures::TEST_MODEL;
     use pretty_assertions::assert_eq;
     use rama::http::HeaderMap;
     use rama::http::StatusCode;
@@ -195,8 +196,8 @@ mod tests {
         let response = ModelsResponse {
             models: vec![
                 serde_json::from_value(json!({
-                    "slug": "gpt-test",
-                    "display_name": "gpt-test",
+                    "slug": TEST_MODEL,
+                    "display_name": TEST_MODEL,
                     "description": "desc",
                     "default_reasoning_level": "medium",
                     "supported_reasoning_levels": [{"effort": "low", "description": "low"}, {"effort": "medium", "description": "medium"}, {"effort": "high", "description": "high"}],
@@ -239,7 +240,7 @@ mod tests {
             .expect("request should succeed");
 
         assert_eq!(models.len(), 1);
-        assert_eq!(models[0].slug, "gpt-test");
+        assert_eq!(models[0].slug, TEST_MODEL);
         assert_eq!(models[0].supported_in_api, true);
         assert_eq!(models[0].priority, 1);
     }

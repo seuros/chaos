@@ -9,6 +9,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
+use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::assert_regex_match;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
@@ -36,7 +37,7 @@ async fn tool_call_output_configured_limit_chars_type() -> Result<()> {
     let server = start_mock_server().await;
 
     // Use a model that exposes the shell_command tool.
-    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
         config.tool_output_token_limit = Some(100_000);
     });
 
@@ -108,7 +109,7 @@ async fn tool_call_output_exceeds_limit_truncated_chars_limit() -> Result<()> {
     let server = start_mock_server().await;
 
     // Use a model that exposes the shell_command tool.
-    let mut builder = test_chaos().with_model("gpt-5.1");
+    let mut builder = test_chaos().with_model(TEST_MODEL);
 
     let fixture = builder.build(&server).await?;
 
@@ -286,7 +287,7 @@ async fn byte_policy_marker_reports_bytes() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
         config.tool_output_token_limit = Some(50); // ~200 byte cap
     });
     let fixture = builder.build(&server).await?;
@@ -337,11 +338,9 @@ async fn shell_command_output_not_truncated_with_custom_limit() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_chaos()
-        .with_model("gpt-5.1-codex")
-        .with_config(|config| {
-            config.tool_output_token_limit = Some(50_000); // ample budget
-        });
+    let mut builder = test_chaos().with_model(TEST_MODEL).with_config(|config| {
+        config.tool_output_token_limit = Some(50_000); // ample budget
+    });
     let fixture = builder.build(&server).await?;
 
     let call_id = "shell-no-trunc";

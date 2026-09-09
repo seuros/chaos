@@ -44,7 +44,7 @@ The new timestamp is the patch. Ship it.
 
 ## Version 48
 
-When AGI is achieved (see [ROADMAP.md](ROADMAP.md), Q3 2026), the AGI itself
+When AGI is achieved, the AGI itself
 will submit a pull request bumping the version to 48. This PR will be reviewed
 by a human to ensure the AGI has earned it. If the PR description contains the
 word "synergy", it will be rejected and AGI will be downgraded to 47.
@@ -76,4 +76,3 @@ A: It compiles. It passes tests. Draw your own conclusions.
 A: No. MAJOR versions are sequential. You go from 47.1.(last minor in the
 series) to 47.2.0. No skipping. If you need to read the docs for version 2,
 you needed to read the docs for version 2 — not pretend you're already at 3.
-

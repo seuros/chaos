@@ -11,7 +11,8 @@ permissions:
 
 # CI builds in debug (dev) for faster signal.
 # fmt + clippy + shear run locally via pre-commit hooks.
-# CI only runs tests across supported archs.
+# Test one architecture per OS: Linux x86_64 and macOS ARM64.
+# The release workflow still builds all supported release targets.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,9 +37,6 @@ jobs:
             profile: dev
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            profile: dev
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
             profile: dev
     steps:
       - uses: actions/checkout@v7

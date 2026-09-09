@@ -182,7 +182,7 @@ impl SpoolBackend for XaiSpoolBackend {
             let mut batch_requests = Vec::with_capacity(items.len());
             for (custom_id, req) in items {
                 let model = self.model_for(&req);
-                let mut body = build_request_body(&req, &model)
+                let mut body = build_request_body(&req, &model, false)
                     .map_err(|e| SpoolError::Translation(e.to_string()))?;
                 if let Some(obj) = body.as_object_mut() {
                     obj.remove("stream");

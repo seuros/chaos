@@ -1,7 +1,7 @@
 //! Chat Completions API adapter.
 //!
 //! Translates chaos-abi `TurnRequest` into OpenAI's `/v1/chat/completions`
-//! wire format and streams `TurnEvent`s back from the SSE response.
+//! wire format and streams `TurnEvent`s back from the response.
 //!
 //! HTTP/SSE only — no WebSocket, no sticky routing, no incremental request
 //! reuse.  Each follow-up sends full conversation history.
@@ -23,6 +23,7 @@ use chaos_libration::UsageSniffer;
 use rama::error::BoxError;
 use rama::futures::StreamExt;
 use rama::http::HeaderMap;
+use rama::http::body::util::BodyExt;
 use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
@@ -91,10 +92,14 @@ impl ChatCompletionsAdapter {
             })
     }
 
-    fn build_headers(&self) -> Result<HeaderMap, AbiError> {
+    fn build_headers(&self, stream: bool) -> Result<HeaderMap, AbiError> {
         let mut headers = self.provider.headers.clone();
         crate::http_helpers::insert_bearer_auth(&mut headers, &self.api_key, "Chat Completions")?;
-        crate::http_helpers::insert_streaming_json_headers(&mut headers);
+        if stream {
+            crate::http_helpers::insert_streaming_json_headers(&mut headers);
+        } else {
+            crate::http_helpers::insert_json_headers(&mut headers);
+        }
         Ok(headers)
     }
 }
@@ -104,15 +109,16 @@ impl ModelAdapter for ChatCompletionsAdapter {
         Box::pin(async move {
             let url = self.chat_completions_url();
             let model = self.model_for_request(&request.model)?;
-            let body = build_request_body(&request, &model)?;
-            let headers = self.build_headers()?;
+            let structured = request.output_schema.is_some();
+            let body = build_request_body(&request, &model, !structured)?;
+            let headers = self.build_headers(!structured)?;
             let provider = self.provider.clone();
             let sniffer = self.sniffer.clone();
 
             let (tx, rx) = mpsc::channel(64);
 
             tokio::spawn(async move {
-                if let Err(e) = run_sse_stream(
+                let result = run_response(
                     &url,
                     &headers,
                     &body,
@@ -120,8 +126,8 @@ impl ModelAdapter for ChatCompletionsAdapter {
                     sniffer.as_ref(),
                     tx.clone(),
                 )
-                .await
-                {
+                .await;
+                if let Err(e) = result {
                     let _ = tx.send(Err(e)).await;
                 }
             });
@@ -155,7 +161,8 @@ struct ChatRequest {
     parallel_tool_calls: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<Value>,
-    stream_options: StreamOptions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
 }
 
 #[derive(Serialize)]
@@ -191,7 +198,11 @@ struct ChatToolFunction {
     parameters: Value,
 }
 
-pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
+pub(crate) fn build_request_body(
+    request: &TurnRequest,
+    model: &str,
+    stream: bool,
+) -> Result<Value, AbiError> {
     let mut messages: Vec<ChatMessage> = Vec::new();
 
     // Prepend the system prompt when instructions are non-empty.
@@ -216,7 +227,7 @@ pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<V
 
     let body = serde_json::to_value(ChatRequest {
         model: model.to_string(),
-        stream: true,
+        stream,
         messages,
         tools,
         parallel_tool_calls,
@@ -230,9 +241,9 @@ pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<V
                 }
             })
         }),
-        stream_options: StreamOptions {
+        stream_options: stream.then_some(StreamOptions {
             include_usage: true,
-        },
+        }),
     })
     .map_err(|e| AbiError::InvalidRequest {
         message: e.to_string(),
@@ -454,7 +465,10 @@ fn completed_event_from_usage(response_id: &str, usage: &Value) -> TurnEvent {
         token_usage: Some(TokenUsage {
             input_tokens: input_tokens as i64,
             output_tokens: output_tokens as i64,
-            total_tokens: (input_tokens + output_tokens) as i64,
+            total_tokens: usage
+                .get("total_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or_else(|| (input_tokens as i64).saturating_add(output_tokens as i64)),
             ..Default::default()
         }),
     }
@@ -484,10 +498,10 @@ fn parse_chunk(
     }
 
     let choices = match json.get("choices").and_then(Value::as_array) {
-        Some(c) => c,
-        None => {
+        Some(c) if !c.is_empty() => c,
+        _ => {
             // Usage-only trailing chunk.
-            if let Some(usage) = json.get("usage") {
+            if let Some(usage) = json.get("usage").filter(|usage| usage.is_object()) {
                 events.push(completed_event_from_usage(response_id, usage));
             }
             return Ok(events);
@@ -495,7 +509,7 @@ fn parse_chunk(
     };
 
     for choice in choices {
-        let delta = match choice.get("delta") {
+        let delta = match choice.get("delta").or_else(|| choice.get("message")) {
             Some(d) => d,
             None => continue,
         };
@@ -523,8 +537,11 @@ fn parse_chunk(
 
         // Tool call deltas
         if let Some(tool_calls) = delta.get("tool_calls").and_then(Value::as_array) {
-            for tc in tool_calls {
-                let index = tc.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            for (position, tc) in tool_calls.iter().enumerate() {
+                let index = tc
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .map_or(position, |index| index as usize);
                 let acc = tool_acc.entry(index).or_default();
 
                 if let Some(id) = tc.get("id").and_then(Value::as_str) {
@@ -576,7 +593,7 @@ fn parse_chunk(
             // If `include_usage=true` a separate usage chunk follows; we skip
             // the completion here and let the usage chunk emit it instead.
             // However if `usage` is co-located in this chunk, emit now.
-            if let Some(usage) = json.get("usage") {
+            if let Some(usage) = json.get("usage").filter(|usage| usage.is_object()) {
                 events.push(completed_event_from_usage(response_id, usage));
             }
         }
@@ -587,7 +604,7 @@ fn parse_chunk(
 
 // ── SSE transport (rama) ───────────────────────────────────────────
 
-async fn run_sse_stream(
+async fn run_response(
     url: &str,
     headers: &HeaderMap,
     body: &Value,
@@ -604,12 +621,102 @@ async fn run_sse_stream(
         sniffer,
     )
     .await?;
-    process_sse_data_stream(
-        response.into_body().into_data_stream(),
-        provider.stream_idle_timeout,
-        tx,
-    )
-    .await
+    if body.get("stream").and_then(Value::as_bool) == Some(true) {
+        process_sse_data_stream(
+            response.into_body().into_data_stream(),
+            provider.stream_idle_timeout,
+            tx,
+        )
+        .await
+    } else {
+        process_json_response(response.into_body(), provider.stream_idle_timeout, tx).await
+    }
+}
+
+async fn process_json_response(
+    body: rama::http::Body,
+    response_timeout: Duration,
+    tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
+) -> Result<(), AbiError> {
+    let bytes = timeout(response_timeout, body.collect())
+        .await
+        .map_err(|_| AbiError::Stream("timeout waiting for JSON response".to_string()))?
+        .map_err(|e| AbiError::Transport {
+            status: 0,
+            message: e.to_string(),
+        })?
+        .to_bytes();
+
+    let json = serde_json::from_slice::<Value>(&bytes)
+        .map_err(|e| AbiError::Stream(format!("chat completions returned invalid JSON: {e}")))?;
+
+    for event in parse_completion(&json)? {
+        if tx.send(Ok(event)).await.is_err() {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn parse_completion(json: &Value) -> Result<Vec<TurnEvent>, AbiError> {
+    let choices = json
+        .get("choices")
+        .and_then(Value::as_array)
+        .filter(|choices| choices.len() == 1)
+        .ok_or_else(|| AbiError::Stream("expected one chat completion choice".to_string()))?;
+    let choice = &choices[0];
+    let message = choice
+        .get("message")
+        .filter(|message| message.is_object())
+        .ok_or_else(|| AbiError::Stream("chat completion is missing its message".to_string()))?;
+    if message
+        .get("refusal")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty())
+    {
+        return Err(AbiError::Stream(
+            "chat completion refused structured output".to_string(),
+        ));
+    }
+    match choice.get("finish_reason").and_then(Value::as_str) {
+        Some("stop" | "tool_calls") => {}
+        reason => {
+            return Err(AbiError::Stream(format!(
+                "incomplete chat completion: {reason:?}"
+            )));
+        }
+    }
+    if !message
+        .get("content")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty())
+        && !message
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|calls| !calls.is_empty())
+    {
+        return Err(AbiError::Stream(
+            "chat completion has no text or tool calls".to_string(),
+        ));
+    }
+    let mut response_id = String::new();
+    let mut events = parse_chunk(
+        json,
+        &mut BTreeMap::new(),
+        &mut None,
+        &mut response_id,
+        &mut None,
+    )?;
+    if !events
+        .iter()
+        .any(|event| matches!(event, TurnEvent::Completed { .. }))
+    {
+        events.push(TurnEvent::Completed {
+            response_id,
+            token_usage: None,
+        });
+    }
+    Ok(events)
 }
 
 async fn process_sse_data_stream<S, E>(
@@ -696,6 +803,224 @@ where
 mod tests {
     use super::*;
 
+    fn completion_fixture() -> Value {
+        serde_json::json!({
+            "id": "chatcmpl-test",
+            "model": "server-model",
+            "choices": [{
+                "message": {"role": "assistant", "content": "{\"ok\":true}"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 17}
+        })
+    }
+
+    #[test]
+    fn complete_json_preserves_lifecycle_and_usage() {
+        let events = parse_completion(&completion_fixture()).unwrap();
+        assert!(matches!(events.as_slice(), [
+            TurnEvent::Created,
+            TurnEvent::ServerModel(model),
+            TurnEvent::OutputItemAdded(ResponseItem::Message { .. }),
+            TurnEvent::OutputTextDelta(text),
+            TurnEvent::OutputItemDone(ResponseItem::Message { content, .. }),
+            TurnEvent::Completed { response_id, token_usage: Some(usage) },
+        ] if model == "server-model"
+            && text == "{\"ok\":true}"
+            && matches!(content.as_slice(), [ContentItem::OutputText { text }] if text == "{\"ok\":true}")
+            && response_id == "chatcmpl-test"
+            && usage.input_tokens == 10
+            && usage.output_tokens == 5
+            && usage.total_tokens == 17));
+    }
+
+    #[test]
+    fn complete_json_preserves_multiple_tool_calls_without_indexes() {
+        let mut json = completion_fixture();
+        json["choices"][0] = serde_json::json!({
+            "message": {
+                "content": null,
+                "tool_calls": [
+                    {"id": "a", "type": "function", "function": {"name": "first", "arguments": "{\"x\":1}"},
+                     "extra_content": {"google": {"thought_signature": "signature"}}},
+                    {"id": "b", "type": "function", "function": {"name": "second", "arguments": "{}"}}
+                ]
+            },
+            "finish_reason": "tool_calls"
+        });
+        json["usage"] = Value::Null;
+        let events = parse_completion(&json).unwrap();
+        assert!(matches!(events.as_slice(), [
+            TurnEvent::Created,
+            TurnEvent::ServerModel(_),
+            TurnEvent::OutputItemDone(ResponseItem::FunctionCall { call_id: first_id, name: first_name, arguments, provider_metadata: Some(metadata), .. }),
+            TurnEvent::OutputItemDone(ResponseItem::FunctionCall { call_id: second_id, name: second_name, .. }),
+            TurnEvent::Completed { token_usage: None, .. },
+        ] if first_id == "a" && first_name == "first" && arguments == "{\"x\":1}"
+            && metadata["google"]["thought_signature"] == "signature"
+            && second_id == "b" && second_name == "second"));
+    }
+
+    #[test]
+    fn complete_json_handles_absent_usage_and_missing_total() {
+        let mut json = completion_fixture();
+        json["usage"]
+            .as_object_mut()
+            .unwrap()
+            .remove("total_tokens");
+        assert!(matches!(parse_completion(&json).unwrap().last(),
+            Some(TurnEvent::Completed { token_usage: Some(usage), .. }) if usage.total_tokens == 15));
+        json.as_object_mut().unwrap().remove("usage");
+        assert!(matches!(
+            parse_completion(&json).unwrap().last(),
+            Some(TurnEvent::Completed {
+                token_usage: None,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn complete_json_rejects_invalid_refused_and_incomplete_responses() {
+        for value in [
+            serde_json::json!({}),
+            serde_json::json!({"error": {"message": "failed"}}),
+            serde_json::json!({"choices": []}),
+            serde_json::json!({"choices": [{"finish_reason": "stop"}]}),
+        ] {
+            assert!(parse_completion(&value).is_err(), "{value}");
+        }
+        for reason in [
+            Value::Null,
+            serde_json::json!("length"),
+            serde_json::json!("content_filter"),
+        ] {
+            let mut json = completion_fixture();
+            json["choices"][0]["finish_reason"] = reason;
+            assert!(parse_completion(&json).is_err());
+        }
+        let mut json = completion_fixture();
+        json["choices"][0]["message"]["refusal"] = serde_json::json!("Cannot comply");
+        assert!(parse_completion(&json).is_err());
+        json["choices"][0]["message"] = serde_json::json!({"content": null});
+        assert!(parse_completion(&json).is_err());
+    }
+
+    #[tokio::test]
+    async fn json_body_errors_do_not_emit_success() {
+        let (tx, mut rx) = mpsc::channel(16);
+        let result = process_json_response(
+            rama::http::Body::from("not json"),
+            Duration::from_secs(1),
+            tx,
+        )
+        .await;
+        assert!(matches!(result, Err(AbiError::Stream(_))));
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn adapter_selects_json_for_schema_and_sse_otherwise() {
+        use wiremock::matchers::{body_partial_json, header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        for structured in [true, false] {
+            let server = MockServer::start().await;
+            let response = if structured {
+                ResponseTemplate::new(200).set_body_json(completion_fixture())
+            } else {
+                ResponseTemplate::new(200).set_body_raw(
+                    concat!(
+                        "data: {\"id\":\"chatcmpl-test\",\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n",
+                        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":17}}\n\n",
+                        "data: [DONE]\n\n",
+                    ),
+                    "text/event-stream",
+                )
+            };
+            Mock::given(method("POST"))
+                .and(path("/chat/completions"))
+                .and(header("authorization", "Bearer secret"))
+                .and(header("content-type", "application/json"))
+                .and(header(
+                    "accept",
+                    if structured {
+                        "application/json"
+                    } else {
+                        "text/event-stream"
+                    },
+                ))
+                .and(body_partial_json(
+                    serde_json::json!({"stream": !structured}),
+                ))
+                .respond_with(response)
+                .expect(1)
+                .mount(&server)
+                .await;
+            let adapter = ChatCompletionsAdapter::from_base_url_and_api_key(
+                server.uri(),
+                "secret".into(),
+                None,
+            );
+            let request = TurnRequest {
+                model: "test-model".into(),
+                instructions: String::new(),
+                input: vec![],
+                tools: vec![],
+                parallel_tool_calls: false,
+                reasoning: None,
+                output_schema: structured.then(|| serde_json::json!({"type": "object"})),
+                verbosity: None,
+                turn_state: None,
+                extensions: Default::default(),
+            };
+            let mut stream = adapter.stream(request).await.unwrap();
+            let mut events = Vec::new();
+            while let Some(event) = timeout(Duration::from_secs(5), stream.rx_event.recv())
+                .await
+                .unwrap()
+            {
+                events.push(event.unwrap());
+            }
+            assert!(matches!(events.first(), Some(TurnEvent::Created)));
+            assert!(matches!(events.last(),
+                Some(TurnEvent::Completed { token_usage: Some(usage), .. }) if usage.total_tokens == 17));
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(event, TurnEvent::Completed { .. }))
+                    .count(),
+                1
+            );
+            let requests = server.received_requests().await.unwrap();
+            let body: Value = requests[0].body_json().unwrap();
+            assert_eq!(body.get("stream_options").is_none(), structured);
+            assert_eq!(body.get("response_format").is_some(), structured);
+        }
+    }
+
+    #[test]
+    fn json_headers_preserve_custom_headers_and_replace_accept() {
+        let mut adapter = ChatCompletionsAdapter::from_base_url_and_api_key(
+            "http://localhost".into(),
+            "secret".into(),
+            None,
+        );
+        adapter
+            .provider
+            .headers
+            .insert("x-custom", "value".parse().unwrap());
+        adapter
+            .provider
+            .headers
+            .insert("accept", "text/event-stream".parse().unwrap());
+        let headers = adapter.build_headers(false).unwrap();
+        assert_eq!(headers["authorization"], "Bearer secret");
+        assert_eq!(headers["content-type"], "application/json");
+        assert_eq!(headers["accept"], "application/json");
+        assert_eq!(headers["x-custom"], "value");
+    }
+
     #[test]
     fn build_request_body_preserves_output_schema() {
         let schema = serde_json::json!({
@@ -717,7 +1042,9 @@ mod tests {
             extensions: serde_json::Map::new(),
         };
 
-        let body = build_request_body(&request, "test-model").expect("body should build");
+        let body = build_request_body(&request, "test-model", false).expect("body should build");
+        assert_eq!(body["stream"], false);
+        assert!(body.get("stream_options").is_none());
         assert_eq!(
             body["response_format"],
             serde_json::json!({
@@ -730,8 +1057,10 @@ mod tests {
             })
         );
         request.output_schema = None;
-        let body = build_request_body(&request, "test-model").expect("body should build");
+        let body = build_request_body(&request, "test-model", true).expect("body should build");
         assert!(body.get("response_format").is_none());
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["stream_options"]["include_usage"], true);
     }
 
     #[test]
@@ -749,7 +1078,7 @@ mod tests {
             extensions: serde_json::Map::new(),
         };
 
-        let body = build_request_body(&request, "gpt-4o").expect("body should build");
+        let body = build_request_body(&request, "gpt-4o", true).expect("body should build");
         let messages = body.get("messages").and_then(Value::as_array).unwrap();
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[0]["content"], "You are helpful");
@@ -770,7 +1099,7 @@ mod tests {
             extensions: serde_json::Map::new(),
         };
 
-        let body = build_request_body(&request, "gpt-4o").expect("body should build");
+        let body = build_request_body(&request, "gpt-4o", true).expect("body should build");
         let messages = body.get("messages").and_then(Value::as_array);
         assert!(
             messages.is_none(),
@@ -1016,8 +1345,8 @@ mod tests {
             extensions: serde_json::Map::new(),
         };
 
-        let body =
-            build_request_body(&request, "gemini-2.5-pro").expect("follow-up body should build");
+        let body = build_request_body(&request, "gemini-2.5-pro", true)
+            .expect("follow-up body should build");
 
         assert_eq!(
             body.pointer("/messages/0/tool_calls/0/extra_content/google/thought_signature"),
@@ -1065,7 +1394,8 @@ mod tests {
             String::new(),
             None,
         );
-        assert!(adapter.build_headers().is_err());
+        assert!(adapter.build_headers(true).is_err());
+        assert!(adapter.build_headers(false).is_err());
     }
 
     #[test]
@@ -1075,7 +1405,7 @@ mod tests {
             "sk-test".to_string(),
             None,
         );
-        let headers = adapter.build_headers().expect("headers should build");
+        let headers = adapter.build_headers(true).expect("headers should build");
         assert_eq!(
             headers
                 .get(rama::http::header::AUTHORIZATION)

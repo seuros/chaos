@@ -65,13 +65,21 @@ pub(crate) fn insert_api_key_header(
 /// `Accept: text/event-stream` pair that every streaming adapter in
 /// this crate sends.
 pub(crate) fn insert_streaming_json_headers(headers: &mut HeaderMap) {
+    insert_json_headers(headers);
+    headers.insert(
+        header::ACCEPT,
+        HeaderValue::from_static(MIME_TEXT_EVENT_STREAM),
+    );
+}
+
+pub(crate) fn insert_json_headers(headers: &mut HeaderMap) {
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static(MIME_APPLICATION_JSON),
     );
     headers.insert(
         header::ACCEPT,
-        HeaderValue::from_static(MIME_TEXT_EVENT_STREAM),
+        HeaderValue::from_static(MIME_APPLICATION_JSON),
     );
 }
 

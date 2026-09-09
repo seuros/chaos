@@ -218,11 +218,11 @@ impl StatusHistoryCell {
             && *config.permissions.sandbox_policy.get()
                 == SandboxPolicy::new_workspace_write_policy()
         {
-            "Default".to_string()
+            chaos_sudoers::SANDBOXED_LABEL.to_string()
         } else if config.permissions.approval_policy.value() == ApprovalPolicy::Headless
             && *config.permissions.sandbox_policy.get() == SandboxPolicy::RootAccess
         {
-            "Full Access".to_string()
+            chaos_sudoers::FULL_ACCESS_LABEL.to_string()
         } else {
             format!("Custom ({sandbox}, {approval})")
         };

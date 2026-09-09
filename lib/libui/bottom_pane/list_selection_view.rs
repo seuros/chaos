@@ -77,14 +77,14 @@ pub(crate) mod tests {
         let tx = make_app_event_sender();
         let items = vec![
             SelectionItem {
-                name: "Read Only".to_string(),
+                name: chaos_sudoers::READ_ONLY_LABEL.to_string(),
                 description: Some(format!("{OS_NAME} can read files")),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
-                name: "Full Access".to_string(),
+                name: chaos_sudoers::FULL_ACCESS_LABEL.to_string(),
                 description: Some(format!("{OS_NAME} can edit files")),
                 is_current: false,
                 dismiss_on_select: true,
@@ -272,7 +272,7 @@ pub(crate) mod tests {
     fn snapshot_footer_note_wraps() {
         let tx = make_app_event_sender();
         let items = vec![SelectionItem {
-            name: "Read Only".to_string(),
+            name: chaos_sudoers::READ_ONLY_LABEL.to_string(),
             description: Some(format!("{OS_NAME} can read files")),
             is_current: true,
             dismiss_on_select: true,
@@ -302,7 +302,7 @@ pub(crate) mod tests {
     fn renders_search_query_line_when_enabled() {
         let tx = make_app_event_sender();
         let items = vec![SelectionItem {
-            name: "Read Only".to_string(),
+            name: chaos_sudoers::READ_ONLY_LABEL.to_string(),
             description: Some(format!("{OS_NAME} can read files")),
             is_current: false,
             dismiss_on_select: true,
@@ -333,7 +333,7 @@ pub(crate) mod tests {
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
-                    name: "Read Only".to_string(),
+                    name: chaos_sudoers::READ_ONLY_LABEL.to_string(),
                     dismiss_on_select: true,
                     ..Default::default()
                 }],

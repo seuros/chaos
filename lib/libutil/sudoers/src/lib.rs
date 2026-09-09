@@ -2,6 +2,10 @@ use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 
+pub const READ_ONLY_LABEL: &str = "Read Only";
+pub const SANDBOXED_LABEL: &str = "SandBoxed";
+pub const FULL_ACCESS_LABEL: &str = "Full Access";
+
 /// A simple preset pairing an approval policy with a sandbox policy.
 #[derive(Debug, Clone)]
 pub struct ApprovalPreset {
@@ -24,7 +28,7 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
     vec![
         ApprovalPreset {
             id: "read-only",
-            label: "Read Only",
+            label: READ_ONLY_LABEL,
             description: format!(
                 "{OS_NAME} can read files in the current workspace. Approval is required to edit files or access the internet."
             ),
@@ -33,7 +37,7 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
         },
         ApprovalPreset {
             id: "auto",
-            label: "Default",
+            label: SANDBOXED_LABEL,
             description: format!(
                 "{OS_NAME} can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files. (Identical to Agent mode)"
             ),
@@ -42,7 +46,7 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
         },
         ApprovalPreset {
             id: "full-access",
-            label: "Full Access",
+            label: FULL_ACCESS_LABEL,
             description: format!(
                 "{OS_NAME} can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using."
             ),

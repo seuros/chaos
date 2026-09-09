@@ -6502,7 +6502,7 @@ async fn preset_matching_accepts_workspace_write_with_extra_roots() {
 
     assert!(
         ChatWidget::preset_matches_current(ApprovalPolicy::Interactive, &current_sandbox, &preset),
-        "WorkspaceWrite with extra roots should still match the Default preset"
+        "WorkspaceWrite with extra roots should still match the workspace-write preset"
     );
     assert!(
         !ChatWidget::preset_matches_current(ApprovalPolicy::Headless, &current_sandbox, &preset),
@@ -6518,7 +6518,7 @@ fn approval_preset_actions_emit_ui_refresh_after_permission_updates() {
     let mut actions = ChatWidget::approval_preset_actions(
         ApprovalPolicy::Interactive,
         sandbox,
-        "Default".to_string(),
+        chaos_sudoers::SANDBOXED_LABEL.to_string(),
         ApprovalsReviewer::User,
     );
 

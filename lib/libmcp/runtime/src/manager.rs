@@ -898,7 +898,7 @@ impl McpConnectionManager {
             .session
             .call_tool_with(params)
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("tool call failed for `{server}/{tool}`"))?;
 
         // Extract the result from TaskOrResult (we only handle direct results for now)
@@ -957,7 +957,7 @@ impl McpConnectionManager {
             .session
             .request("resources/list", &guest_params)
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("resources/list failed for `{server}`"))?;
 
         Ok(result)
@@ -977,7 +977,7 @@ impl McpConnectionManager {
             .session
             .request("resources/templates/list", &guest_params)
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("resources/templates/list failed for `{server}`"))?;
 
         Ok(result)
@@ -996,7 +996,7 @@ impl McpConnectionManager {
             .session
             .request("resources/read", &params)
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("resources/read failed for `{server}` ({uri})"))?;
 
         Ok(result)
@@ -1011,7 +1011,7 @@ impl McpConnectionManager {
             .session
             .subscribe_resource(uri.as_str())
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("resources/subscribe failed for `{server}` ({uri})"))
     }
 
@@ -1024,7 +1024,7 @@ impl McpConnectionManager {
             .session
             .unsubscribe_resource(uri.as_str())
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("resources/unsubscribe failed for `{server}` ({uri})"))
     }
 
@@ -1091,7 +1091,7 @@ impl McpConnectionManager {
             .session
             .call_tool_with(params)
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("async tool call failed for `{server}/{tool}`"))?;
 
         match response {
@@ -1128,7 +1128,7 @@ impl McpConnectionManager {
                 Some(serde_json::json!({ "taskId": task_id })),
             )
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("tasks/result failed for `{server}` ({task_id})"))?;
         serde_json::from_value(raw).with_context(|| {
             format!("failed to deserialize tasks/result for `{server}` ({task_id})")
@@ -1142,7 +1142,7 @@ impl McpConnectionManager {
             .session
             .list_tasks()
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("tasks/list failed for `{server}`"))
     }
 
@@ -1157,7 +1157,7 @@ impl McpConnectionManager {
             .session
             .cancel_task(task_id)
             .await
-            .map_err(|e| anyhow!("{e}"))
+            .map_err(anyhow::Error::from)
             .with_context(|| format!("tasks/cancel failed for `{server}` ({task_id})"))
     }
 

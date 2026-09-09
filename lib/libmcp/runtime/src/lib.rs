@@ -37,6 +37,7 @@ pub use mcp_guest::ResourceContentsText;
 pub use mcp_guest::ResourceInfo;
 pub use mcp_guest::ResourceTemplateInfo;
 pub use mcp_guest::ToolAnnotations;
+pub use mcp_guest::GuestError;
 pub use mcp_guest::protocol::CallToolResult as McpToolCallResult;
 pub use mcp_guest::protocol::ElicitationAction;
 pub use mcp_guest::protocol::ElicitationResponse;

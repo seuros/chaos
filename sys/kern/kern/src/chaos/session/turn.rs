@@ -31,7 +31,7 @@ impl Session {
         self.next_internal_sub_id_with_prefix("auto-compact")
     }
 
-    pub(super) fn next_internal_sub_id_with_prefix(&self, prefix: &str) -> String {
+    pub(in crate::chaos) fn next_internal_sub_id_with_prefix(&self, prefix: &str) -> String {
         let id = self
             .next_internal_sub_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);

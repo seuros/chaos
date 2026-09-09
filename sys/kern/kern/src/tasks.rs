@@ -76,11 +76,15 @@ fn emit_turn_network_proxy_metric(
 #[derive(Clone)]
 pub(crate) struct SessionTaskContext {
     session: Arc<Session>,
+    pub(crate) unrecorded_input: Arc<tokio::sync::Mutex<Vec<UserInput>>>,
 }
 
 impl SessionTaskContext {
     pub(crate) fn new(session: Arc<Session>) -> Self {
-        Self { session }
+        Self {
+            session,
+            unrecorded_input: Arc::default(),
+        }
     }
 
     pub(crate) fn clone_session(&self) -> Arc<Session> {
@@ -105,6 +109,10 @@ impl SessionTaskContext {
 /// [`SessionTask::kind`], perform their work in [`SessionTask::run`], and may
 /// release resources in [`SessionTask::abort`].
 pub(crate) trait SessionTask: Send + Sync + 'static {
+    fn resumes_after_journal_recovery(&self) -> bool {
+        false
+    }
+
     /// Describes the type of work the task performs so the session can
     /// surface it in telemetry and UI.
     fn kind(&self) -> TaskKind;
@@ -171,9 +179,13 @@ impl Session {
             .ok();
 
         let done_clone = Arc::clone(&done);
+        let unrecorded_input = Arc::new(tokio::sync::Mutex::new(input.clone()));
         let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();
         let handle = {
-            let session_ctx = Arc::new(SessionTaskContext::new(Arc::clone(self)));
+            let session_ctx = Arc::new(SessionTaskContext {
+                session: Arc::clone(self),
+                unrecorded_input: Arc::clone(&unrecorded_input),
+            });
             let ctx = Arc::clone(&turn_context);
             let task_for_run = Arc::clone(&task);
             let task_cancellation_token = cancellation_token.child_token();
@@ -229,6 +241,7 @@ impl Session {
             task,
             cancellation_token,
             turn_context: Arc::clone(&turn_context),
+            unrecorded_input,
             _timer: timer,
         };
         self.register_new_active_task(running_task, token_usage_at_turn_start)
@@ -238,6 +251,14 @@ impl Session {
     }
 
     pub async fn abort_all_tasks(self: &Arc<Self>, reason: TurnAbortReason) {
+        let _ = self.abort_all_tasks_and_take_pending(reason).await;
+    }
+
+    pub(crate) async fn abort_all_tasks_and_take_pending(
+        self: &Arc<Self>,
+        reason: TurnAbortReason,
+    ) -> Vec<ResponseInputItem> {
+        let mut pending = Vec::new();
         if let Some(mut active_turn) = self.take_active_turn().await {
             // Before emitting `TurnAborted`, drain the process-table
             // router so any in-flight spawn / resume / fork body
@@ -254,9 +275,11 @@ impl Session {
             }
             // Let interrupted tasks observe cancellation before dropping pending approvals, or an
             // in-flight approval wait can surface as a model-visible rejection before TurnAborted.
+            pending = active_turn.turn_state.lock().await.take_pending_input();
             active_turn.clear_pending().await;
             self.services.internal_task_store.set_active(false).await;
         }
+        pending
     }
 
     pub async fn on_task_finished(

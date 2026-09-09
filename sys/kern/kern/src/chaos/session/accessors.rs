@@ -171,6 +171,7 @@ mod tests {
             cancellation_token: CancellationToken::new(),
             handle: AbortOnDropHandle::new(tokio::spawn(async {})),
             turn_context: Arc::new(turn),
+            unrecorded_input: Arc::default(),
             _timer: None,
         });
         *session.active_turn.lock().await = Some(active_turn);

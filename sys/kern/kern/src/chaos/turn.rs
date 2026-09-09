@@ -256,15 +256,17 @@ pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 ///   conversation history and consider the turn complete.
 ///
 pub(crate) async fn run_turn(
-    sess: Arc<Session>,
+    task_context: Arc<crate::tasks::SessionTaskContext>,
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
     origin: crate::tasks::RegularTask,
     prewarmed_client_session: Option<ModelClientSession>,
     cancellation_token: CancellationToken,
 ) -> Option<String> {
+    let sess = task_context.clone_session();
     let completion_turn = origin == crate::tasks::RegularTask::Completion;
-    if input.is_empty() && !completion_turn {
+    let owner_turn = origin == crate::tasks::RegularTask::Owner;
+    if input.is_empty() && owner_turn {
         return None;
     }
 
@@ -314,22 +316,27 @@ pub(crate) async fn run_turn(
         })
         .unwrap_or_default();
     let agent_context = hook_agent_context(sess.conversation_id, &sess.session_source().await);
-    if !completion_turn {
-        sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
-            .await;
+    if owner_turn {
+        sess.record_initial_user_prompt(
+            turn_context.as_ref(),
+            &input,
+            response_item,
+            &task_context.unrecorded_input,
+        )
+        .await;
         maybe_inject_session_title_reminder(&sess, &turn_context).await;
     }
     // Track the previous-turn baseline from the regular user-turn path only so
     // standalone tasks (compact/shell/review) cannot suppress future
     // model injections.
-    if !completion_turn {
+    if owner_turn {
         sess.set_previous_turn_settings(Some(PreviousTurnSettings {
             model: turn_context.model_info.slug.clone(),
         }))
         .await;
     }
 
-    let mut before_turn_request = (!completion_turn).then_some(chaos_dtrace::BeforeTurnRequest {
+    let mut before_turn_request = owner_turn.then_some(chaos_dtrace::BeforeTurnRequest {
         session_id: sess.conversation_id,
         turn_id: turn_context.sub_id.clone(),
         cwd: turn_context.cwd.clone(),

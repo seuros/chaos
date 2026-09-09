@@ -107,6 +107,33 @@ impl Session {
     ) {
         self.record_conversation_items(turn_context, std::slice::from_ref(&response_item))
             .await;
+        self.emit_user_prompt_turn_item(turn_context, input).await;
+    }
+
+    pub(crate) async fn record_initial_user_prompt(
+        &self,
+        turn_context: &TurnContext,
+        input: &[UserInput],
+        response_item: ResponseItem,
+        unrecorded_input: &tokio::sync::Mutex<Vec<UserInput>>,
+    ) {
+        {
+            let mut unrecorded = unrecorded_input.lock().await;
+            let mut state = self.state.lock().await;
+            state.record_items(
+                std::iter::once(&response_item),
+                turn_context.truncation_policy,
+            );
+            unrecorded.clear();
+        }
+        self.persist_rollout_response_items(std::slice::from_ref(&response_item))
+            .await;
+        self.send_raw_response_items(turn_context, std::slice::from_ref(&response_item))
+            .await;
+        self.emit_user_prompt_turn_item(turn_context, input).await;
+    }
+
+    async fn emit_user_prompt_turn_item(&self, turn_context: &TurnContext, input: &[UserInput]) {
         let turn_item = TurnItem::UserMessage(UserMessageItem::new(input));
         self.emit_turn_item_started(turn_context, &turn_item).await;
         self.emit_turn_item_completed(turn_context, turn_item).await;

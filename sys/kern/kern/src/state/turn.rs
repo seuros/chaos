@@ -52,6 +52,7 @@ pub(crate) struct RunningTask {
     pub(crate) cancellation_token: CancellationToken,
     pub(crate) handle: AbortOnDropHandle<()>,
     pub(crate) turn_context: Arc<TurnContext>,
+    pub(crate) unrecorded_input: Arc<Mutex<Vec<chaos_ipc::user_input::UserInput>>>,
     // Timer recorded when the task drops to capture the full turn duration.
     pub(crate) _timer: Option<chaos_snitch::Timer>,
 }

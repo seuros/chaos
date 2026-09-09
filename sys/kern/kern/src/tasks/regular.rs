@@ -17,9 +17,14 @@ pub(crate) enum RegularTask {
     #[default]
     Owner,
     Completion,
+    JournalRecovery,
 }
 
 impl SessionTask for RegularTask {
+    fn resumes_after_journal_recovery(&self) -> bool {
+        true
+    }
+
     fn kind(&self) -> TaskKind {
         TaskKind::Regular
     }
@@ -39,7 +44,7 @@ impl SessionTask for RegularTask {
             let sess = session.clone_session();
             let run_turn_span = trace_span!("run_turn");
             sess.set_server_reasoning_included(/*included*/ false).await;
-            run_turn(sess, ctx, input, *self, None, cancellation_token)
+            run_turn(session, ctx, input, *self, None, cancellation_token)
                 .instrument(run_turn_span)
                 .await
         })

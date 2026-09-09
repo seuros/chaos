@@ -53,7 +53,10 @@ an immediate resume does not race its previous journal writer.
 
 Lease failures pause work without exiting. ChaOS retries every 10 seconds
 with a 5-second timeout; queued entries remain in memory until committed.
-Retry interrupted turns after recovery. Ownership or history conflicts stay
+Interrupted chat turns automatically continue from history after recovery;
+an explicit interrupt while paused cancels that continuation. Standalone
+shell commands, reviews, and compaction must be retried manually.
+Ownership or history conflicts stay
 paused: close the other writer and resume the session.
 
 Journald protocol 5 includes background-task journal records. Older sidecars

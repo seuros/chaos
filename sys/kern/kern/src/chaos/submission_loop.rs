@@ -26,6 +26,9 @@ use super::TurnContext;
 
 pub(crate) mod handlers;
 
+#[cfg(test)]
+mod journal_recovery_tests;
+
 pub(crate) fn initial_replay_event_msgs(
     initial_history: &chaos_ipc::protocol::InitialHistory,
     process_id: ProcessId,
@@ -77,6 +80,7 @@ pub(super) async fn submission_loop(
     writer_status.mark_changed();
     let mut status_open = true;
     let mut journal_paused = false;
+    let mut interrupted_turn = None;
     loop {
         let sub = tokio::select! {
             biased;
@@ -90,21 +94,24 @@ pub(super) async fn submission_loop(
                         "background journal unavailable: lease unconfirmed".into()
                     )).await;
                     if !was_paused {
-                        handlers::interrupt(&sess).await;
+                        interrupted_turn = pause_for_journal_recovery(&sess).await;
                     }
                 } else if was_paused {
                     match sess.checkpoint_background_tasks().await {
                         Ok(()) => sess.services.internal_task_store.clear_journal_block().await,
                         Err(error) => {
                             warn!(%error, "journal recovery checkpoint deferred");
+                            journal_paused = true;
+                            continue;
                         }
                     }
                 } else {
                     continue;
                 }
                 let message = match status {
-                    JournalWriterStatus::Ready =>
-                        "Journal recovered. Retry the interrupted turn.",
+                    JournalWriterStatus::Ready if interrupted_turn.is_some() =>
+                        "Journal recovered. Resuming the interrupted turn.",
+                    JournalWriterStatus::Ready => "Journal recovered.",
                     JournalWriterStatus::Recovering =>
                         "Journal lease unavailable. Paused; retrying.",
                     JournalWriterStatus::Fenced =>
@@ -114,6 +121,11 @@ pub(super) async fn submission_loop(
                     id: "journal-ownership".into(),
                     msg: EventMsg::Warning(WarningEvent { message: message.into() }),
                 }).await;
+                if !journal_paused
+                    && let Some(context) = interrupted_turn.take()
+                {
+                    resume_after_journal_recovery(&sess, context).await;
+                }
                 continue;
             },
             sub = rx_sub.recv() => match sub {
@@ -137,6 +149,9 @@ pub(super) async fn submission_loop(
                 continue;
             },
             _ = maintenance.tick() => {
+                if journal_paused && *writer_status.borrow() == JournalWriterStatus::Ready {
+                    writer_status.mark_changed();
+                }
                 if let Err(error) = sess.checkpoint_background_tasks().await {
                     warn!(%error, "background lifecycle maintenance deferred");
                 }
@@ -175,6 +190,7 @@ pub(super) async fn submission_loop(
         let should_exit = async {
             match sub.op.clone() {
                 Op::Interrupt => {
+                    interrupted_turn = None;
                     handlers::interrupt(&sess).await;
                     false
                 }
@@ -393,6 +409,75 @@ async fn finalize_finished_tasks(sess: &Arc<Session>) {
     for (context, message) in finished {
         sess.on_task_finished(context, message).await;
     }
+}
+
+struct JournalContinuation {
+    context: Arc<TurnContext>,
+    input: Vec<chaos_ipc::user_input::UserInput>,
+    pending: Vec<chaos_ipc::models::ResponseInputItem>,
+}
+
+async fn pause_for_journal_recovery(sess: &Arc<Session>) -> Option<JournalContinuation> {
+    finalize_finished_tasks(sess).await;
+    let context = {
+        let active = sess.active_turn.lock().await;
+        active.as_ref().and_then(|turn| {
+            turn.tasks.values().find_map(|task| {
+                (task.task.resumes_after_journal_recovery()
+                    && !task.handle.is_finished()
+                    && !task.cancellation_token.is_cancelled())
+                .then(|| {
+                    (
+                        Arc::clone(&task.turn_context),
+                        Arc::clone(&task.unrecorded_input),
+                    )
+                })
+            })
+        })
+    };
+    let pending = sess
+        .abort_all_tasks_and_take_pending(chaos_ipc::protocol::TurnAbortReason::Replaced)
+        .await;
+    let (context, input) = context?;
+    sess.services
+        .internal_task_store
+        .continuation_finished(&context.sub_id)
+        .await;
+    let input = std::mem::take(&mut *input.lock().await);
+    Some(JournalContinuation {
+        context,
+        input,
+        pending,
+    })
+}
+
+async fn resume_after_journal_recovery(sess: &Arc<Session>, continuation: JournalContinuation) {
+    let mut context = sess
+        .new_default_turn_with_sub_id(sess.next_internal_sub_id_with_prefix("journal-recovery"))
+        .await;
+    Arc::make_mut(&mut context).final_output_json_schema =
+        continuation.context.final_output_json_schema.clone();
+    if !continuation.input.is_empty() {
+        let item =
+            crate::prompt_images::response_input_item_from_user_input(continuation.input.clone());
+        sess.record_user_prompt_and_emit_turn_item(&context, &continuation.input, item.into())
+            .await;
+    }
+    for input in continuation.pending {
+        let item = chaos_ipc::models::ResponseItem::from(input);
+        if let Some(chaos_ipc::items::TurnItem::UserMessage(message)) = parse_turn_item(&item) {
+            sess.record_user_prompt_and_emit_turn_item(&context, &message.content, item)
+                .await;
+        } else {
+            sess.record_conversation_items(&context, &[item]).await;
+        }
+    }
+    sess.spawn_task(
+        context,
+        Vec::new(),
+        crate::tasks::RegularTask::JournalRecovery,
+    )
+    .await;
 }
 
 pub(crate) fn submission_dispatch_span(sub: &Submission) -> tracing::Span {

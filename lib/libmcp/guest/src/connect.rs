@@ -87,6 +87,100 @@ pub struct HttpBuilder {
     default_timeout: Duration,
 }
 
+macro_rules! impl_session_builder {
+    ($builder:ident) => {
+        impl $builder {
+            pub fn client_info(mut self, client_info: Implementation) -> Self {
+                self.client_info = client_info;
+                self
+            }
+
+            pub fn client_name(mut self, name: &str) -> Self {
+                self.client_info.name = name.to_string();
+                self
+            }
+
+            pub fn client_version(mut self, version: &str) -> Self {
+                self.client_info.version = version.to_string();
+                self
+            }
+
+            pub fn capabilities(mut self, capabilities: ClientCapabilities) -> Self {
+                self.capabilities = capabilities;
+                self
+            }
+
+            pub fn enable_roots(mut self, list_changed: bool) -> Self {
+                self.capabilities.roots = Some(RootsCapability {
+                    list_changed: Some(list_changed),
+                });
+                self
+            }
+
+            pub fn enable_sampling(mut self) -> Self {
+                self.capabilities.sampling = Some(SamplingCapability {
+                    context: Some(EmptyObject::default()),
+                    tools: Some(EmptyObject::default()),
+                });
+                self
+            }
+
+            pub fn enable_form_elicitation(mut self) -> Self {
+                self.capabilities.elicitation = Some(ElicitationCapability {
+                    form: Some(FormElicitationCapability {}),
+                    url: None,
+                });
+                self
+            }
+
+            pub fn enable_url_elicitation(mut self) -> Self {
+                let mut capability = self.capabilities.elicitation.take().unwrap_or_default();
+                capability.url = Some(UrlElicitationCapability {});
+                self.capabilities.elicitation = Some(capability);
+                self
+            }
+
+            pub fn enable_tasks(mut self, tasks: TasksCapability) -> Self {
+                self.capabilities.tasks = Some(tasks);
+                self
+            }
+
+            pub fn handler<H>(mut self, handler: H) -> Self
+            where
+                H: ClientHandler,
+            {
+                self.handler = Arc::new(handler);
+                self
+            }
+
+            pub fn handler_arc(mut self, handler: Arc<dyn ClientHandler>) -> Self {
+                self.handler = handler;
+                self
+            }
+
+            pub fn request_timeout(mut self, timeout: Duration) -> Self {
+                self.default_timeout = timeout;
+                self
+            }
+
+            fn into_options(self) -> ConnectionOptions {
+                ConnectionOptions {
+                    client_info: self.client_info,
+                    capabilities: self.capabilities,
+                    handler: self.handler,
+                    default_timeout: self.default_timeout,
+                }
+            }
+        }
+    };
+}
+
+#[cfg(feature = "stdio")]
+impl_session_builder!(StdioBuilder);
+
+#[cfg(feature = "http")]
+impl_session_builder!(HttpBuilder);
+
 #[cfg(feature = "stdio")]
 impl StdioBuilder {
     pub fn env(mut self, key: &str, value: &str) -> Self {
@@ -103,79 +197,6 @@ impl StdioBuilder {
 
     pub fn cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
         self.process.cwd = Some(cwd.into());
-        self
-    }
-
-    pub fn client_info(mut self, client_info: Implementation) -> Self {
-        self.client_info = client_info;
-        self
-    }
-
-    pub fn client_name(mut self, name: &str) -> Self {
-        self.client_info.name = name.to_string();
-        self
-    }
-
-    pub fn client_version(mut self, version: &str) -> Self {
-        self.client_info.version = version.to_string();
-        self
-    }
-
-    pub fn capabilities(mut self, capabilities: ClientCapabilities) -> Self {
-        self.capabilities = capabilities;
-        self
-    }
-
-    pub fn enable_roots(mut self, list_changed: bool) -> Self {
-        self.capabilities.roots = Some(RootsCapability {
-            list_changed: Some(list_changed),
-        });
-        self
-    }
-
-    pub fn enable_sampling(mut self) -> Self {
-        self.capabilities.sampling = Some(SamplingCapability {
-            context: Some(EmptyObject::default()),
-            tools: Some(EmptyObject::default()),
-        });
-        self
-    }
-
-    pub fn enable_form_elicitation(mut self) -> Self {
-        self.capabilities.elicitation = Some(ElicitationCapability {
-            form: Some(FormElicitationCapability {}),
-            url: None,
-        });
-        self
-    }
-
-    pub fn enable_url_elicitation(mut self) -> Self {
-        let mut capability = self.capabilities.elicitation.take().unwrap_or_default();
-        capability.url = Some(UrlElicitationCapability {});
-        self.capabilities.elicitation = Some(capability);
-        self
-    }
-
-    pub fn enable_tasks(mut self, tasks: TasksCapability) -> Self {
-        self.capabilities.tasks = Some(tasks);
-        self
-    }
-
-    pub fn handler<H>(mut self, handler: H) -> Self
-    where
-        H: ClientHandler,
-    {
-        self.handler = Arc::new(handler);
-        self
-    }
-
-    pub fn handler_arc(mut self, handler: Arc<dyn ClientHandler>) -> Self {
-        self.handler = handler;
-        self
-    }
-
-    pub fn request_timeout(mut self, timeout: Duration) -> Self {
-        self.default_timeout = timeout;
         self
     }
 
@@ -208,16 +229,7 @@ impl StdioBuilder {
             self.process.kill_timeout,
         );
 
-        connect_with_transport(
-            transport,
-            ConnectionOptions {
-                client_info: self.client_info,
-                capabilities: self.capabilities,
-                handler: self.handler,
-                default_timeout: self.default_timeout,
-            },
-        )
-        .await
+        connect_with_transport(transport, self.into_options()).await
     }
 }
 
@@ -247,61 +259,6 @@ impl HttpBuilder {
         self
     }
 
-    pub fn client_info(mut self, client_info: Implementation) -> Self {
-        self.client_info = client_info;
-        self
-    }
-
-    pub fn client_name(mut self, name: &str) -> Self {
-        self.client_info.name = name.to_string();
-        self
-    }
-
-    pub fn client_version(mut self, version: &str) -> Self {
-        self.client_info.version = version.to_string();
-        self
-    }
-
-    pub fn capabilities(mut self, capabilities: ClientCapabilities) -> Self {
-        self.capabilities = capabilities;
-        self
-    }
-
-    pub fn enable_roots(mut self, list_changed: bool) -> Self {
-        self.capabilities.roots = Some(RootsCapability {
-            list_changed: Some(list_changed),
-        });
-        self
-    }
-
-    pub fn enable_sampling(mut self) -> Self {
-        self.capabilities.sampling = Some(SamplingCapability {
-            context: Some(EmptyObject::default()),
-            tools: Some(EmptyObject::default()),
-        });
-        self
-    }
-
-    pub fn enable_form_elicitation(mut self) -> Self {
-        self.capabilities.elicitation = Some(ElicitationCapability {
-            form: Some(FormElicitationCapability {}),
-            url: None,
-        });
-        self
-    }
-
-    pub fn enable_url_elicitation(mut self) -> Self {
-        let mut capability = self.capabilities.elicitation.take().unwrap_or_default();
-        capability.url = Some(UrlElicitationCapability {});
-        self.capabilities.elicitation = Some(capability);
-        self
-    }
-
-    pub fn enable_tasks(mut self, tasks: TasksCapability) -> Self {
-        self.capabilities.tasks = Some(tasks);
-        self
-    }
-
     pub fn enable_sse_stream(mut self, enabled: bool) -> Self {
         self.open_sse_stream = enabled;
         self
@@ -312,25 +269,7 @@ impl HttpBuilder {
         self
     }
 
-    pub fn handler<H>(mut self, handler: H) -> Self
-    where
-        H: ClientHandler,
-    {
-        self.handler = Arc::new(handler);
-        self
-    }
-
-    pub fn handler_arc(mut self, handler: Arc<dyn ClientHandler>) -> Self {
-        self.handler = handler;
-        self
-    }
-
-    pub fn request_timeout(mut self, timeout: Duration) -> Self {
-        self.default_timeout = timeout;
-        self
-    }
-
-    pub async fn connect(self) -> Result<McpSession, GuestError> {
+    pub async fn connect(mut self) -> Result<McpSession, GuestError> {
         let endpoint =
             Url::parse(&self.endpoint).map_err(|error| GuestError::UrlParse(error.to_string()))?;
         match endpoint.scheme() {
@@ -346,18 +285,9 @@ impl HttpBuilder {
             endpoint,
             open_sse_stream: self.open_sse_stream,
             reconnect_delay: self.reconnect_delay,
-            default_headers: self.default_headers,
+            default_headers: std::mem::take(&mut self.default_headers),
         });
 
-        connect_with_transport(
-            transport,
-            ConnectionOptions {
-                client_info: self.client_info,
-                capabilities: self.capabilities,
-                handler: self.handler,
-                default_timeout: self.default_timeout,
-            },
-        )
-        .await
+        connect_with_transport(transport, self.into_options()).await
     }
 }

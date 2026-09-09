@@ -60,22 +60,6 @@ shutdown for a server with a known termination budget.
 inherent methods. It does not depend on Chaos or implement the private
 `chaos_abi::WireFormatError` trait.
 
-## Release preparation
-
-This crate is versioned independently of the Chaos workspace. From the
-repository root, validate a release with:
-
-```sh
-cargo test -p mcp-guest
-cargo test -p mcp-guest --no-default-features
-cargo test -p mcp-guest --no-default-features --features http
-cargo test -p mcp-guest --all-features
-cargo publish -p mcp-guest --dry-run --all-features
-```
-
-Run the publish dry-run from a clean checkout. Publishing to crates.io is a
-separate, explicit release step.
-
 ## License
 
 Apache-2.0.

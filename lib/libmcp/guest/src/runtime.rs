@@ -45,7 +45,13 @@ pub(crate) async fn connect_with_transport(
     transport: Arc<dyn MessageTransport>,
     options: ConnectionOptions,
 ) -> Result<McpSession, GuestError> {
-    let info = match perform_handshake(Arc::clone(&transport), &options).await {
+    let handshake = tokio::time::timeout(
+        options.default_timeout,
+        perform_handshake(Arc::clone(&transport), &options),
+    )
+    .await
+    .unwrap_or(Err(GuestError::Timeout(options.default_timeout)));
+    let info = match handshake {
         Ok(info) => info,
         Err(error) => {
             if let Err(shutdown_error) = transport.shutdown().await {
@@ -83,7 +89,7 @@ async fn perform_handshake(
 
     transport
         .send(JsonRpcMessage::Request(JsonRpcRequest::new(
-            serde_json::json!(1),
+            serde_json::json!(crate::protocol::INITIALIZE_REQUEST_ID),
             "initialize",
             Some(serde_json::to_value(&initialize)?),
         )))
@@ -92,7 +98,7 @@ async fn perform_handshake(
     let init_result: InitializeResult = loop {
         match transport.recv().await? {
             JsonRpcMessage::Response(response) => {
-                if response.id != Some(serde_json::json!(1)) {
+                if response.id != Some(serde_json::json!(crate::protocol::INITIALIZE_REQUEST_ID)) {
                     continue;
                 }
                 if let Some(error) = response.error {
@@ -144,6 +150,8 @@ async fn run_runtime(
 ) {
     let (server_response_tx, mut server_response_rx) =
         mpsc::unbounded_channel::<(RequestId, JsonRpcResponse)>();
+    let (send_failure_tx, mut send_failure_rx) =
+        mpsc::unbounded_channel::<(RequestId, GuestError)>();
     let mut pending_outgoing: HashMap<RequestId, oneshot::Sender<Result<Value, GuestError>>> =
         HashMap::new();
     let mut inbound_requests: HashMap<RequestId, JoinHandle<()>> = HashMap::new();
@@ -158,6 +166,7 @@ async fn run_runtime(
                             command,
                             &mut pending_outgoing,
                             &mut inbound_requests,
+                            &send_failure_tx,
                         ).await {
                             break;
                         }
@@ -179,6 +188,11 @@ async fn run_runtime(
                 inbound_requests.remove(&request_id);
                 if let Err(error) = transport.send(JsonRpcMessage::Response(response)).await {
                     tracing::warn!(error = %error, "failed to send response to server");
+                }
+            }
+            Some((request_id, error)) = send_failure_rx.recv() => {
+                if let Some(response_tx) = pending_outgoing.remove(&request_id) {
+                    let _ = response_tx.send(Err(error));
                 }
             }
             message = transport.recv() => {
@@ -242,6 +256,7 @@ async fn handle_runtime_command(
     command: RuntimeCommand,
     pending_outgoing: &mut HashMap<RequestId, oneshot::Sender<Result<Value, GuestError>>>,
     inbound_requests: &mut HashMap<RequestId, JoinHandle<()>>,
+    send_failure_tx: &mpsc::UnboundedSender<(RequestId, GuestError)>,
 ) -> bool {
     match command {
         RuntimeCommand::Request {
@@ -252,11 +267,12 @@ async fn handle_runtime_command(
         } => {
             pending_outgoing.insert(request_id.clone(), response_tx);
             let request = JsonRpcRequest::new(request_id.to_value(), method, params);
-            if let Err(error) = transport.send(JsonRpcMessage::Request(request)).await
-                && let Some(response_tx) = pending_outgoing.remove(&request_id)
-            {
-                let _ = response_tx.send(Err(error));
-            }
+            let send_failure_tx = send_failure_tx.clone();
+            tokio::spawn(async move {
+                if let Err(error) = transport.send(JsonRpcMessage::Request(request)).await {
+                    let _ = send_failure_tx.send((request_id, error));
+                }
+            });
             false
         }
         RuntimeCommand::Notification {
@@ -375,20 +391,20 @@ async fn dispatch_notification(
             }
         }
         McpMethod::NotificationsToolsListChanged => {
-            *shared.tools.write().await = None;
+            shared.tools.invalidate().await;
             tokio::spawn(async move {
                 handler.on_tools_list_changed().await;
             });
         }
         McpMethod::NotificationsResourcesListChanged => {
-            *shared.resources.write().await = None;
-            *shared.resource_templates.write().await = None;
+            shared.resources.invalidate().await;
+            shared.resource_templates.invalidate().await;
             tokio::spawn(async move {
                 handler.on_resources_list_changed().await;
             });
         }
         McpMethod::NotificationsPromptsListChanged => {
-            *shared.prompts.write().await = None;
+            shared.prompts.invalidate().await;
             tokio::spawn(async move {
                 handler.on_prompts_list_changed().await;
             });
@@ -452,42 +468,24 @@ async fn handle_server_request_message(
             .list_roots()
             .await
             .and_then(|roots| serde_json::to_value(roots).map_err(GuestError::from)),
-        McpMethod::SamplingCreateMessage => {
-            let params = match request.params.clone() {
-                Some(params) => params,
-                None => {
-                    return JsonRpcResponse::error(
-                        Some(id),
-                        JsonRpcError::invalid_params("missing params"),
-                    );
-                }
-            };
-            match serde_json::from_value::<CreateMessageRequest>(params) {
-                Ok(params) => handler
-                    .create_message(params)
-                    .await
-                    .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
-                Err(error) => Err(GuestError::InvalidParams(error.to_string())),
-            }
-        }
-        McpMethod::ElicitationCreate => {
-            let params = match request.params.clone() {
-                Some(params) => params,
-                None => {
-                    return JsonRpcResponse::error(
-                        Some(id),
-                        JsonRpcError::invalid_params("missing params"),
-                    );
-                }
-            };
-            match serde_json::from_value::<CreateElicitationRequest>(params) {
-                Ok(params) => handler
-                    .create_elicitation(params)
-                    .await
-                    .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
-                Err(error) => Err(GuestError::InvalidParams(error.to_string())),
-            }
-        }
+        McpMethod::SamplingCreateMessage => match parse_params::<CreateMessageRequest>(
+            request.params,
+        ) {
+            Ok(params) => handler
+                .create_message(params)
+                .await
+                .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
+            Err(error) => Err(error),
+        },
+        McpMethod::ElicitationCreate => match parse_params::<CreateElicitationRequest>(
+            request.params,
+        ) {
+            Ok(params) => handler
+                .create_elicitation(params)
+                .await
+                .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
+            Err(error) => Err(error),
+        },
         _ => {
             handler
                 .on_custom_request(request.method, request.params)
@@ -499,6 +497,11 @@ async fn handle_server_request_message(
         Ok(value) => JsonRpcResponse::success(id, value),
         Err(error) => JsonRpcResponse::error(Some(id), guest_error_to_jsonrpc(error)),
     }
+}
+
+fn parse_params<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result<T, GuestError> {
+    let params = params.ok_or_else(|| GuestError::InvalidParams("missing params".to_string()))?;
+    serde_json::from_value(params).map_err(|error| GuestError::InvalidParams(error.to_string()))
 }
 
 fn guest_error_to_jsonrpc(error: GuestError) -> JsonRpcError {
@@ -538,37 +541,7 @@ fn fail_pending(
     error: GuestError,
 ) {
     for (_, response_tx) in pending_outgoing.drain() {
-        let _ = response_tx.send(Err(match &error {
-            GuestError::Disconnected => GuestError::Disconnected,
-            GuestError::Cancelled => GuestError::Cancelled,
-            GuestError::SessionExpired => GuestError::SessionExpired,
-            GuestError::Timeout(duration) => GuestError::Timeout(*duration),
-            GuestError::InvalidParams(message) => GuestError::InvalidParams(message.clone()),
-            GuestError::MethodNotSupported(method) => {
-                GuestError::MethodNotSupported(method.clone())
-            }
-            GuestError::Protocol(message) => GuestError::Protocol(message.clone()),
-            GuestError::Http(message) => GuestError::Http(message.clone()),
-            GuestError::UrlParse(message) => GuestError::UrlParse(message.clone()),
-            GuestError::UnsupportedProtocolVersion(version) => {
-                GuestError::UnsupportedProtocolVersion(version.clone())
-            }
-            GuestError::VersionMismatch { sent, server } => GuestError::VersionMismatch {
-                sent: sent.clone(),
-                server: server.clone(),
-            },
-            GuestError::Server {
-                code,
-                message,
-                data,
-            } => GuestError::Server {
-                code: *code,
-                message: message.clone(),
-                data: data.clone(),
-            },
-            GuestError::Transport(io) => GuestError::Http(io.to_string()),
-            GuestError::Json(json) => GuestError::Protocol(json.to_string()),
-        }));
+        let _ = response_tx.send(Err(error.clone_for_fanout()));
     }
 }
 
@@ -672,5 +645,138 @@ mod tests {
         assert!(
             matches!(&sent[2], JsonRpcMessage::Notification(notification) if notification.method == "notifications/initialized")
         );
+    }
+
+    struct PendingTransport;
+
+    impl MessageTransport for PendingTransport {
+        fn send<'a>(&'a self, _message: JsonRpcMessage) -> TransportFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn recv<'a>(&'a self) -> TransportFuture<'a, JsonRpcMessage> {
+            Box::pin(std::future::pending())
+        }
+
+        fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn connect_times_out_when_server_never_answers_initialize() {
+        let result = connect_with_transport(
+            Arc::new(PendingTransport),
+            ConnectionOptions {
+                client_info: Implementation::new("test-client", "1.0.0"),
+                capabilities: ClientCapabilities::default(),
+                handler: Arc::new(NoopClientHandler),
+                default_timeout: Duration::from_millis(50),
+            },
+        )
+        .await;
+
+        assert!(matches!(result, Err(GuestError::Timeout(_))));
+    }
+
+    struct SlowSendTransport {
+        incoming_tx: mpsc::UnboundedSender<JsonRpcMessage>,
+        incoming_rx: Mutex<mpsc::UnboundedReceiver<JsonRpcMessage>>,
+    }
+
+    impl SlowSendTransport {
+        fn new() -> Arc<Self> {
+            let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
+            Arc::new(Self {
+                incoming_tx,
+                incoming_rx: Mutex::new(incoming_rx),
+            })
+        }
+    }
+
+    impl MessageTransport for SlowSendTransport {
+        fn send<'a>(&'a self, message: JsonRpcMessage) -> TransportFuture<'a, ()> {
+            Box::pin(async move {
+                if let JsonRpcMessage::Request(request) = &message {
+                    if request.method == "slow" {
+                        std::future::pending::<()>().await;
+                    }
+                    let _ = self.incoming_tx.send(JsonRpcMessage::Response(
+                        JsonRpcResponse::success(
+                            request.id.clone().unwrap(),
+                            serde_json::json!({"ok": true}),
+                        ),
+                    ));
+                }
+                Ok(())
+            })
+        }
+
+        fn recv<'a>(&'a self) -> TransportFuture<'a, JsonRpcMessage> {
+            Box::pin(async move {
+                match self.incoming_rx.lock().await.recv().await {
+                    Some(message) => Ok(message),
+                    None => std::future::pending().await,
+                }
+            })
+        }
+
+        fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn slow_request_send_does_not_block_other_requests() {
+        let transport = SlowSendTransport::new();
+        let shared = Arc::new(SharedState::new(
+            ServerInfo {
+                server_info: Implementation::new("test-server", "1.0.0"),
+                protocol_version: "2025-11-25".to_string(),
+                capabilities: ServerCapabilities::default(),
+                instructions: None,
+            },
+            Duration::from_secs(5),
+        ));
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let runtime = tokio::spawn(run_runtime(
+            Arc::clone(&transport) as Arc<dyn MessageTransport>,
+            shared,
+            Arc::new(NoopClientHandler),
+            command_rx,
+        ));
+
+        let (slow_tx, mut slow_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::Request {
+                request_id: RequestId::number(10),
+                method: "slow".to_string(),
+                params: None,
+                response_tx: slow_tx,
+            })
+            .await
+            .unwrap();
+
+        let (fast_tx, fast_rx) = oneshot::channel();
+        command_tx
+            .send(RuntimeCommand::Request {
+                request_id: RequestId::number(11),
+                method: "fast".to_string(),
+                params: None,
+                response_tx: fast_tx,
+            })
+            .await
+            .unwrap();
+
+        let fast = tokio::time::timeout(Duration::from_secs(1), fast_rx)
+            .await
+            .expect("fast request must complete while slow send is in flight")
+            .unwrap()
+            .unwrap();
+        assert_eq!(fast, serde_json::json!({"ok": true}));
+        assert!(slow_rx.try_recv().is_err());
+
+        drop(command_tx);
+        let _ = runtime.await;
     }
 }

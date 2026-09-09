@@ -22,6 +22,41 @@ use crate::protocol::JsonRpcMessage;
 use crate::transport::MessageTransport;
 use crate::transport::TransportFuture;
 
+const MAX_LINE_BYTES: usize = 64 * 1024 * 1024;
+
+async fn read_line_bounded<R>(reader: &mut R, max_len: usize) -> Result<Option<String>, GuestError>
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    let mut buf = Vec::new();
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
+        }
+        match available.iter().position(|&byte| byte == b'\n') {
+            Some(position) => {
+                buf.extend_from_slice(&available[..position]);
+                reader.consume(position + 1);
+                return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
+            }
+            None => {
+                buf.extend_from_slice(available);
+                let consumed = available.len();
+                reader.consume(consumed);
+            }
+        }
+        if buf.len() > max_len {
+            return Err(GuestError::Protocol(format!(
+                "stdio line exceeded {max_len} bytes"
+            )));
+        }
+    }
+}
+
 pub struct StdioChild {
     pub child: Child,
     pub stdout: BufReader<ChildStdout>,
@@ -106,15 +141,25 @@ impl StdioTransport {
             return Err(GuestError::Disconnected);
         }
         let json = serde_json::to_string(message)?;
-        timeout(self.write_timeout, async {
+        let result = timeout(self.write_timeout, async {
             let mut writer = self.writer.lock().await;
             writer.write_all(json.as_bytes()).await?;
             writer.write_all(b"\n").await?;
             writer.flush().await?;
-            Ok(())
+            Ok::<(), std::io::Error>(())
         })
-        .await
-        .map_err(|_| GuestError::Timeout(self.write_timeout))?
+        .await;
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => {
+                self.closed.store(true, Ordering::Release);
+                Err(error.into())
+            }
+            Err(_) => {
+                self.closed.store(true, Ordering::Release);
+                Err(GuestError::Timeout(self.write_timeout))
+            }
+        }
     }
 
     async fn reap_child(&self, graceful_timeout: Option<Duration>) -> Result<(), GuestError> {
@@ -220,23 +265,34 @@ impl MessageTransport for StdioTransport {
                     return Err(GuestError::Disconnected);
                 }
 
-                let mut line = String::new();
-                let bytes = {
+                let line = {
                     let mut reader = self.reader.lock().await;
-                    reader.read_line(&mut line).await?
+                    read_line_bounded(&mut *reader, MAX_LINE_BYTES).await
                 };
 
-                if bytes == 0 {
-                    self.closed.store(true, Ordering::Relaxed);
-                    return Err(GuestError::Disconnected);
-                }
+                let line = match line {
+                    Ok(Some(line)) => line,
+                    Ok(None) => {
+                        self.closed.store(true, Ordering::Relaxed);
+                        return Err(GuestError::Disconnected);
+                    }
+                    Err(error) => {
+                        self.closed.store(true, Ordering::Relaxed);
+                        return Err(error);
+                    }
+                };
 
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
                     continue;
                 }
 
-                return serde_json::from_str(trimmed).map_err(GuestError::from);
+                match serde_json::from_str(trimmed) {
+                    Ok(message) => return Ok(message),
+                    Err(error) => {
+                        tracing::warn!(%error, "skipping malformed line on MCP stdio stream");
+                    }
+                }
             }
         })
     }
@@ -290,6 +346,98 @@ mod tests {
                 .is_some(),
             "shutdown must not return before the child has been reaped"
         );
+    }
+
+    #[tokio::test]
+    async fn read_line_bounded_splits_lines_and_signals_eof() {
+        let mut reader: &[u8] = b"one\ntwo\nlast";
+        assert_eq!(
+            read_line_bounded(&mut reader, 100).await.unwrap().as_deref(),
+            Some("one")
+        );
+        assert_eq!(
+            read_line_bounded(&mut reader, 100).await.unwrap().as_deref(),
+            Some("two")
+        );
+        assert_eq!(
+            read_line_bounded(&mut reader, 100).await.unwrap().as_deref(),
+            Some("last")
+        );
+        assert!(read_line_bounded(&mut reader, 100).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn read_line_bounded_rejects_oversized_lines() {
+        let data = vec![b'a'; 4096];
+        let mut reader: &[u8] = &data;
+        let error = read_line_bounded(&mut reader, 100).await.unwrap_err();
+        assert!(matches!(error, GuestError::Protocol(_)), "got {error:?}");
+    }
+
+    #[tokio::test]
+    async fn recv_skips_non_jsonrpc_output_on_stdout() {
+        let args = vec![
+            "-c".to_string(),
+            r#"printf 'accidental debug output\n{"jsonrpc":"2.0","method":"notifications/noise"}\n'"#
+                .to_string(),
+        ];
+        let child =
+            StdioChild::spawn("/bin/sh", &args, &HashMap::new(), None).expect("spawn child");
+        let transport = StdioTransport::new(
+            child,
+            Duration::from_secs(1),
+            Duration::from_millis(20),
+            Duration::from_secs(1),
+        );
+
+        let message = transport.recv().await.expect("valid message after junk");
+        let JsonRpcMessage::Notification(notification) = message else {
+            panic!("expected notification, got {message:?}");
+        };
+        assert_eq!(notification.method, "notifications/noise");
+
+        transport.force_shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn write_failure_closes_the_transport() {
+        let args = vec!["-c".to_string(), "exit 0".to_string()];
+        let child =
+            StdioChild::spawn("/bin/sh", &args, &HashMap::new(), None).expect("spawn child");
+        let transport = StdioTransport::new(
+            child,
+            Duration::from_secs(1),
+            Duration::from_millis(20),
+            Duration::from_secs(1),
+        );
+
+        transport
+            .child
+            .lock()
+            .await
+            .wait()
+            .await
+            .expect("child exits");
+
+        let message = JsonRpcMessage::Notification(crate::protocol::JsonRpcRequest::notification(
+            "ping",
+            None,
+        ));
+        let mut failed = false;
+        for _ in 0..64 {
+            if transport.send(message.clone()).await.is_err() {
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed, "writes to a dead child must eventually fail");
+        assert!(transport.closed.load(Ordering::Acquire));
+        assert!(matches!(
+            transport.send(message).await,
+            Err(GuestError::Disconnected)
+        ));
+
+        transport.force_shutdown().await.expect("shutdown");
     }
 
     #[tokio::test]

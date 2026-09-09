@@ -45,6 +45,8 @@ const GRACEFUL_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const FORCE_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RUNTIME_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
+const MAX_LIST_PAGES: usize = 1024;
+
 pub(crate) enum RuntimeCommand {
     Request {
         request_id: RequestId,
@@ -66,13 +68,48 @@ pub(crate) enum RuntimeCommand {
     },
 }
 
+pub(crate) struct CachedList<T> {
+    generation: AtomicU64,
+    items: RwLock<Option<Vec<T>>>,
+}
+
+impl<T: Clone> CachedList<T> {
+    fn new() -> Self {
+        Self {
+            generation: AtomicU64::new(0),
+            items: RwLock::new(None),
+        }
+    }
+
+    pub async fn invalidate(&self) {
+        let mut items = self.items.write().await;
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        *items = None;
+    }
+
+    async fn cached(&self) -> Option<Vec<T>> {
+        self.items.read().await.clone()
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    async fn store_if_generation(&self, generation: u64, items: &[T]) {
+        let mut guard = self.items.write().await;
+        if self.generation.load(Ordering::Acquire) == generation {
+            *guard = Some(items.to_vec());
+        }
+    }
+}
+
 pub(crate) struct SharedState {
     pub info: ServerInfo,
     pub default_timeout: Duration,
-    pub tools: RwLock<Option<Vec<ToolInfo>>>,
-    pub resources: RwLock<Option<Vec<crate::protocol::ResourceInfo>>>,
-    pub resource_templates: RwLock<Option<Vec<crate::protocol::ResourceTemplateInfo>>>,
-    pub prompts: RwLock<Option<Vec<crate::protocol::PromptInfo>>>,
+    pub tools: CachedList<ToolInfo>,
+    pub resources: CachedList<crate::protocol::ResourceInfo>,
+    pub resource_templates: CachedList<crate::protocol::ResourceTemplateInfo>,
+    pub prompts: CachedList<crate::protocol::PromptInfo>,
 }
 
 impl SharedState {
@@ -80,10 +117,10 @@ impl SharedState {
         Self {
             info,
             default_timeout,
-            tools: RwLock::new(None),
-            resources: RwLock::new(None),
-            resource_templates: RwLock::new(None),
-            prompts: RwLock::new(None),
+            tools: CachedList::new(),
+            resources: CachedList::new(),
+            resource_templates: CachedList::new(),
+            prompts: CachedList::new(),
         }
     }
 }
@@ -166,27 +203,6 @@ impl McpSession {
         self.request_value_with_timeout(method, params, None).await
     }
 
-    async fn execute_with_timeout<T, F>(
-        &self,
-        request_id: RequestId,
-        timeout: Duration,
-        fut: F,
-    ) -> Result<T, GuestError>
-    where
-        F: std::future::Future<Output = Result<T, GuestError>>,
-    {
-        match tokio::time::timeout(timeout, fut).await {
-            Ok(result) => result,
-            Err(_) => {
-                let _ = self.inner.command_tx.try_send(RuntimeCommand::Cancel {
-                    request_id,
-                    reason: Some(format!("request timed out after {timeout:?}")),
-                });
-                Err(GuestError::Timeout(timeout))
-            }
-        }
-    }
-
     pub async fn request_value_with_timeout(
         &self,
         method: impl Into<String>,
@@ -197,12 +213,13 @@ impl McpSession {
             return Err(GuestError::Disconnected);
         }
         let timeout = timeout_override.unwrap_or(self.inner.shared.default_timeout);
+        let deadline = tokio::time::Instant::now() + timeout;
         let request_id =
             RequestId::number(self.inner.next_id.fetch_add(1, Ordering::Relaxed) as i64);
         let (response_tx, response_rx) = oneshot::channel();
 
-        tokio::time::timeout(
-            timeout,
+        tokio::time::timeout_at(
+            deadline,
             self.inner.command_tx.send(RuntimeCommand::Request {
                 request_id: request_id.clone(),
                 method: method.into(),
@@ -214,13 +231,17 @@ impl McpSession {
         .map_err(|_| GuestError::Timeout(timeout))?
         .map_err(|_| GuestError::Disconnected)?;
 
-        self.execute_with_timeout(request_id, timeout, async {
-            match response_rx.await {
-                Ok(result) => result,
-                Err(_) => Err(GuestError::Disconnected),
+        match tokio::time::timeout_at(deadline, response_rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(GuestError::Disconnected),
+            Err(_) => {
+                let _ = self.inner.command_tx.try_send(RuntimeCommand::Cancel {
+                    request_id,
+                    reason: Some(format!("request timed out after {timeout:?}")),
+                });
+                Err(GuestError::Timeout(timeout))
             }
-        })
-        .await
+        }
     }
 
     pub async fn request<TParams, TResult>(
@@ -264,9 +285,10 @@ impl McpSession {
             return Err(GuestError::Disconnected);
         }
         let timeout = self.inner.shared.default_timeout;
+        let deadline = tokio::time::Instant::now() + timeout;
         let (response_tx, response_rx) = oneshot::channel();
-        tokio::time::timeout(
-            timeout,
+        tokio::time::timeout_at(
+            deadline,
             self.inner.command_tx.send(RuntimeCommand::Notification {
                 method: method.into(),
                 params,
@@ -276,7 +298,7 @@ impl McpSession {
         .await
         .map_err(|_| GuestError::Timeout(timeout))?
         .map_err(|_| GuestError::Disconnected)?;
-        tokio::time::timeout(timeout, response_rx)
+        tokio::time::timeout_at(deadline, response_rx)
             .await
             .map_err(|_| GuestError::Timeout(timeout))?
             .map_err(|_| GuestError::Disconnected)?
@@ -318,7 +340,7 @@ impl McpSession {
     {
         let mut cursor: Option<String> = None;
         let mut items = Vec::new();
-        loop {
+        for _ in 0..MAX_LIST_PAGES {
             let resp: Resp = self
                 .request(
                     method,
@@ -329,27 +351,52 @@ impl McpSession {
                 .await?;
             let (page, next) = extract(resp);
             items.extend(page);
-            cursor = next;
-            if cursor.is_none() {
-                break;
+            if next.is_none() {
+                return Ok(items);
             }
+            if next == cursor {
+                return Err(GuestError::Protocol(format!(
+                    "{method} returned the same cursor twice"
+                )));
+            }
+            cursor = next;
         }
+        Err(GuestError::Protocol(format!(
+            "{method} did not complete within {MAX_LIST_PAGES} pages"
+        )))
+    }
+
+    async fn cached_paginated_list<Resp, Item, F>(
+        &self,
+        cache: &CachedList<Item>,
+        method: &'static str,
+        extract: F,
+    ) -> Result<Vec<Item>, GuestError>
+    where
+        Item: Clone,
+        Resp: DeserializeOwned,
+        F: Fn(Resp) -> (Vec<Item>, Option<String>),
+    {
+        if let Some(cached) = cache.cached().await {
+            return Ok(cached);
+        }
+        let generation = cache.generation();
+        let items = self.paginated_list(method, extract).await?;
+        cache.store_if_generation(generation, &items).await;
         Ok(items)
     }
 
     pub async fn list_tools(&self) -> Result<Vec<ToolInfo>, GuestError> {
-        if let Some(cached) = self.inner.shared.tools.read().await.clone() {
-            return Ok(cached);
-        }
-        let tools = self
-            .paginated_list("tools/list", |r: ListToolsResult| (r.tools, r.next_cursor))
-            .await?;
-        *self.inner.shared.tools.write().await = Some(tools.clone());
-        Ok(tools)
+        self.cached_paginated_list(
+            &self.inner.shared.tools,
+            "tools/list",
+            |r: ListToolsResult| (r.tools, r.next_cursor),
+        )
+        .await
     }
 
     pub async fn tools(&self) -> Option<Vec<ToolInfo>> {
-        self.inner.shared.tools.read().await.clone()
+        self.inner.shared.tools.cached().await
     }
 
     pub async fn call_tool(
@@ -374,32 +421,23 @@ impl McpSession {
     }
 
     pub async fn list_resources(&self) -> Result<Vec<crate::protocol::ResourceInfo>, GuestError> {
-        if let Some(cached) = self.inner.shared.resources.read().await.clone() {
-            return Ok(cached);
-        }
-        let resources = self
-            .paginated_list("resources/list", |r: ListResourcesResult| {
-                (r.resources, r.next_cursor)
-            })
-            .await?;
-        *self.inner.shared.resources.write().await = Some(resources.clone());
-        Ok(resources)
+        self.cached_paginated_list(
+            &self.inner.shared.resources,
+            "resources/list",
+            |r: ListResourcesResult| (r.resources, r.next_cursor),
+        )
+        .await
     }
 
     pub async fn list_resource_templates(
         &self,
     ) -> Result<Vec<crate::protocol::ResourceTemplateInfo>, GuestError> {
-        if let Some(cached) = self.inner.shared.resource_templates.read().await.clone() {
-            return Ok(cached);
-        }
-        let templates = self
-            .paginated_list(
-                "resources/templates/list",
-                |r: ListResourceTemplatesResult| (r.resource_templates, r.next_cursor),
-            )
-            .await?;
-        *self.inner.shared.resource_templates.write().await = Some(templates.clone());
-        Ok(templates)
+        self.cached_paginated_list(
+            &self.inner.shared.resource_templates,
+            "resources/templates/list",
+            |r: ListResourceTemplatesResult| (r.resource_templates, r.next_cursor),
+        )
+        .await
     }
 
     pub async fn read_resource(
@@ -442,16 +480,12 @@ impl McpSession {
     }
 
     pub async fn list_prompts(&self) -> Result<Vec<crate::protocol::PromptInfo>, GuestError> {
-        if let Some(cached) = self.inner.shared.prompts.read().await.clone() {
-            return Ok(cached);
-        }
-        let prompts = self
-            .paginated_list("prompts/list", |r: ListPromptsResult| {
-                (r.prompts, r.next_cursor)
-            })
-            .await?;
-        *self.inner.shared.prompts.write().await = Some(prompts.clone());
-        Ok(prompts)
+        self.cached_paginated_list(
+            &self.inner.shared.prompts,
+            "prompts/list",
+            |r: ListPromptsResult| (r.prompts, r.next_cursor),
+        )
+        .await
     }
 
     pub async fn get_prompt(
@@ -642,5 +676,96 @@ fn value_kind(value: &Value) -> &'static str {
         Value::String(_) => "string",
         Value::Array(_) => "array",
         Value::Object(_) => "object",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handler::NoopClientHandler;
+    use crate::protocol::ClientCapabilities;
+    use crate::protocol::Implementation;
+    use crate::protocol::JsonRpcMessage;
+    use crate::protocol::JsonRpcResponse;
+    use crate::runtime::ConnectionOptions;
+    use crate::runtime::connect_with_transport;
+    use crate::transport::TransportFuture;
+    use tokio::sync::Mutex;
+
+    struct CursorLoopTransport {
+        incoming_tx: mpsc::UnboundedSender<JsonRpcMessage>,
+        incoming_rx: Mutex<mpsc::UnboundedReceiver<JsonRpcMessage>>,
+    }
+
+    impl CursorLoopTransport {
+        fn new() -> Arc<Self> {
+            let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
+            Arc::new(Self {
+                incoming_tx,
+                incoming_rx: Mutex::new(incoming_rx),
+            })
+        }
+    }
+
+    impl MessageTransport for CursorLoopTransport {
+        fn send<'a>(&'a self, message: JsonRpcMessage) -> TransportFuture<'a, ()> {
+            Box::pin(async move {
+                if let JsonRpcMessage::Request(request) = &message {
+                    let id = request.id.clone().unwrap();
+                    let result = match request.method.as_str() {
+                        "initialize" => serde_json::json!({
+                            "protocolVersion": "2025-11-25",
+                            "capabilities": {},
+                            "serverInfo": {"name": "loop-server", "version": "0.0.1"}
+                        }),
+                        "tools/list" => serde_json::json!({
+                            "tools": [],
+                            "nextCursor": "same-cursor"
+                        }),
+                        other => serde_json::json!({"unexpected": other}),
+                    };
+                    let _ = self
+                        .incoming_tx
+                        .send(JsonRpcMessage::Response(JsonRpcResponse::success(
+                            id, result,
+                        )));
+                }
+                Ok(())
+            })
+        }
+
+        fn recv<'a>(&'a self) -> TransportFuture<'a, JsonRpcMessage> {
+            Box::pin(async move {
+                match self.incoming_rx.lock().await.recv().await {
+                    Some(message) => Ok(message),
+                    None => std::future::pending().await,
+                }
+            })
+        }
+
+        fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn list_tools_rejects_a_server_that_repeats_cursors() {
+        let session = connect_with_transport(
+            CursorLoopTransport::new(),
+            ConnectionOptions {
+                client_info: Implementation::new("test-client", "1.0.0"),
+                capabilities: ClientCapabilities::default(),
+                handler: Arc::new(NoopClientHandler),
+                default_timeout: Duration::from_secs(5),
+            },
+        )
+        .await
+        .unwrap();
+
+        let error = session.list_tools().await.unwrap_err();
+        assert!(matches!(error, GuestError::Protocol(_)), "got {error:?}");
+        assert!(session.tools().await.is_none());
+
+        session.disconnect().await.unwrap();
     }
 }

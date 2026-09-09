@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU8;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -68,7 +69,6 @@ struct HttpTransportInner {
     client: HttpClient,
     endpoint: Url,
     open_sse_stream: bool,
-    request_lock: Mutex<()>,
     recovery_lock: Mutex<()>,
     reconnect_delay: Mutex<Duration>,
     default_headers: Vec<(String, String)>,
@@ -82,7 +82,8 @@ struct HttpTransportInner {
     initialized_sent: AtomicBool,
     sse_disabled: AtomicBool,
     closed: AtomicBool,
-    reconnect_attempt: AtomicU8,
+    reconnect_attempt: AtomicU32,
+    session_generation: AtomicU64,
     initialize_ready: Notify,
     shutdown_notify: Notify,
 }
@@ -99,7 +100,6 @@ impl HttpTransport {
                 client,
                 endpoint: config.endpoint,
                 open_sse_stream: config.open_sse_stream,
-                request_lock: Mutex::new(()),
                 recovery_lock: Mutex::new(()),
                 reconnect_delay: Mutex::new(config.reconnect_delay),
                 default_headers: config.default_headers,
@@ -113,7 +113,8 @@ impl HttpTransport {
                 initialized_sent: AtomicBool::new(false),
                 sse_disabled: AtomicBool::new(false),
                 closed: AtomicBool::new(false),
-                reconnect_attempt: AtomicU8::new(0),
+                reconnect_attempt: AtomicU32::new(0),
+                session_generation: AtomicU64::new(0),
                 initialize_ready: Notify::new(),
                 shutdown_notify: Notify::new(),
             }),
@@ -127,21 +128,21 @@ impl HttpTransportInner {
             return Err(GuestError::Disconnected);
         }
 
-        let _request_guard = self.request_lock.lock().await;
-        self.send_message_locked(message, true, true).await
+        self.send_message_with_recovery(message, true, true).await
     }
 
-    async fn send_message_locked(
+    async fn send_message_with_recovery(
         self: &Arc<Self>,
         message: JsonRpcMessage,
         allow_recovery: bool,
         deliver_inbound: bool,
     ) -> Result<(), GuestError> {
+        let generation = self.session_generation.load(Ordering::Acquire);
         match self.send_message_once(&message, deliver_inbound).await {
             Err(GuestError::SessionExpired)
                 if allow_recovery && !is_initialize_request(&message) =>
             {
-                self.recover_session_locked().await?;
+                self.recover_session(generation).await?;
                 self.send_message_once(&message, deliver_inbound).await?;
             }
             result => result?,
@@ -170,7 +171,7 @@ impl HttpTransportInner {
             .client
             .serve(request)
             .await
-            .map_err(|error| GuestError::Http(error.to_string()))?;
+            .map_err(http_error)?;
 
         self.handle_post_response(response, initialize_request, deliver_inbound)
             .await
@@ -209,7 +210,7 @@ impl HttpTransportInner {
 
         builder
             .body(Body::from(body))
-            .map_err(|error| GuestError::Http(error.to_string()))
+            .map_err(http_error)
     }
 
     async fn handle_post_response(
@@ -218,7 +219,7 @@ impl HttpTransportInner {
         initialize_request: bool,
         deliver_inbound: bool,
     ) -> Result<(), GuestError> {
-        self.capture_session_id(response.headers()).await?;
+        self.capture_session_id(response.headers()).await;
 
         match response.status() {
             StatusCode::OK => {}
@@ -294,7 +295,7 @@ impl HttpTransportInner {
             return Ok(());
         };
 
-        if *id != Some(serde_json::json!(1)) {
+        if *id != Some(serde_json::json!(crate::protocol::INITIALIZE_REQUEST_ID)) {
             return Ok(());
         }
 
@@ -354,7 +355,7 @@ impl HttpTransportInner {
                 }
             };
 
-            self.capture_session_id(response.headers()).await.ok();
+            self.capture_session_id(response.headers()).await;
 
             match response.status() {
                 StatusCode::OK => {
@@ -428,7 +429,7 @@ impl HttpTransportInner {
 
         builder
             .body(Body::empty())
-            .map_err(|error| GuestError::Http(error.to_string()))
+            .map_err(http_error)
     }
 
     async fn consume_sse_response(
@@ -441,7 +442,7 @@ impl HttpTransportInner {
         let mut stream = response.into_body().into_string_data_event_stream();
 
         while let Some(event) = stream.next().await {
-            let event = event.map_err(|error| GuestError::Http(error.to_string()))?;
+            let event = event.map_err(http_error)?;
             if let Some(retry) = event.retry() {
                 *self.reconnect_delay.lock().await = retry;
             }
@@ -476,7 +477,8 @@ impl HttpTransportInner {
         let attempt = self
             .reconnect_attempt
             .fetch_add(1, Ordering::Relaxed)
-            .saturating_add(1);
+            .saturating_add(1)
+            .min(u32::from(u8::MAX)) as u8;
         let base_delay = *self.reconnect_delay.lock().await;
         let backoff = ExponentialBackoff::new()
             .max_attempts(u8::MAX)
@@ -494,11 +496,10 @@ impl HttpTransportInner {
         }
     }
 
-    async fn capture_session_id(&self, headers: &rama::http::HeaderMap) -> Result<(), GuestError> {
+    async fn capture_session_id(&self, headers: &rama::http::HeaderMap) {
         if let Some(session_id) = header_value(headers, HEADER_SESSION_ID) {
             *self.session_id.lock().await = Some(session_id.to_string());
         }
-        Ok(())
     }
 
     async fn clear_session_state(&self) {
@@ -507,11 +508,18 @@ impl HttpTransportInner {
         *self.last_event_id.lock().await = None;
     }
 
-    async fn recover_session_locked(self: &Arc<Self>) -> Result<(), GuestError> {
+    async fn recover_session(
+        self: &Arc<Self>,
+        observed_generation: u64,
+    ) -> Result<(), GuestError> {
         let _recovery_guard = self.recovery_lock.lock().await;
 
         if self.closed.load(Ordering::Relaxed) {
             return Err(GuestError::Disconnected);
+        }
+
+        if self.session_generation.load(Ordering::Acquire) != observed_generation {
+            return Ok(());
         }
 
         let initialize_message = self
@@ -538,6 +546,7 @@ impl HttpTransportInner {
             self.ensure_sse_task().await;
         }
 
+        self.session_generation.fetch_add(1, Ordering::AcqRel);
         Ok(())
     }
 
@@ -709,6 +718,10 @@ fn is_initialized_notification(message: &JsonRpcMessage) -> bool {
     )
 }
 
+fn http_error(error: impl std::fmt::Display) -> GuestError {
+    GuestError::Http(error.to_string())
+}
+
 fn header_value(headers: &rama::http::HeaderMap, name: impl AsRef<str>) -> Option<&str> {
     headers
         .get(name.as_ref())
@@ -720,7 +733,7 @@ async fn collect_body_bytes(response: Response) -> Result<Vec<u8>, GuestError> {
         .into_body()
         .collect()
         .await
-        .map_err(|error| GuestError::Http(error.to_string()))?;
+        .map_err(http_error)?;
     Ok(collected.to_bytes().to_vec())
 }
 

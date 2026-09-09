@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde::Deserializer;
 use serde::Serialize;
 
 use super::Meta;
@@ -76,36 +75,4 @@ pub struct PromptReference {
     pub reference_type: PromptReferenceType,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PromptReferenceType;
-
-impl PromptReferenceType {
-    pub const VALUE: &'static str = "ref/prompt";
-}
-
-impl Serialize for PromptReferenceType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(Self::VALUE)
-    }
-}
-
-impl<'de> Deserialize<'de> for PromptReferenceType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == Self::VALUE {
-            Ok(Self)
-        } else {
-            Err(serde::de::Error::custom(format!(
-                "expected {}, got {}",
-                Self::VALUE,
-                value
-            )))
-        }
-    }
-}
+const_str_marker!(PromptReferenceType, "ref/prompt");

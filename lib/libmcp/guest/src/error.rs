@@ -52,6 +52,38 @@ pub enum GuestError {
 }
 
 impl GuestError {
+    pub fn clone_for_fanout(&self) -> Self {
+        match self {
+            Self::Disconnected => Self::Disconnected,
+            Self::Cancelled => Self::Cancelled,
+            Self::SessionExpired => Self::SessionExpired,
+            Self::Timeout(duration) => Self::Timeout(*duration),
+            Self::InvalidParams(message) => Self::InvalidParams(message.clone()),
+            Self::MethodNotSupported(method) => Self::MethodNotSupported(method.clone()),
+            Self::Protocol(message) => Self::Protocol(message.clone()),
+            Self::Http(message) => Self::Http(message.clone()),
+            Self::UrlParse(message) => Self::UrlParse(message.clone()),
+            Self::UnsupportedProtocolVersion(version) => {
+                Self::UnsupportedProtocolVersion(version.clone())
+            }
+            Self::VersionMismatch { sent, server } => Self::VersionMismatch {
+                sent: sent.clone(),
+                server: server.clone(),
+            },
+            Self::Server {
+                code,
+                message,
+                data,
+            } => Self::Server {
+                code: *code,
+                message: message.clone(),
+                data: data.clone(),
+            },
+            Self::Transport(io) => Self::Http(io.to_string()),
+            Self::Json(json) => Self::Protocol(json.to_string()),
+        }
+    }
+
     pub fn server_from_error(error: crate::protocol::JsonRpcError) -> Self {
         if error.code == crate::protocol::UNSUPPORTED_PROTOCOL_VERSION {
             let requested = error

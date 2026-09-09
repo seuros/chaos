@@ -35,6 +35,48 @@ pub use mcp_host::protocol::version::is_supported_protocol_version;
 /// the client asked for.
 pub const UNSUPPORTED_PROTOCOL_VERSION: i32 = -32022;
 
+/// Fixed request id for `initialize`; session ids start above it and the
+/// HTTP transport matches on it during session recovery.
+pub const INITIALIZE_REQUEST_ID: i64 = 1;
+
+macro_rules! const_str_marker {
+    ($name:ident, $value:literal) => {
+        #[derive(Debug, Clone, Default, PartialEq, Eq)]
+        pub struct $name;
+
+        impl $name {
+            pub const VALUE: &'static str = $value;
+        }
+
+        impl serde::Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_str(Self::VALUE)
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+                if value == Self::VALUE {
+                    Ok(Self)
+                } else {
+                    Err(serde::de::Error::custom(format!(
+                        "expected {}, got {}",
+                        Self::VALUE,
+                        value
+                    )))
+                }
+            }
+        }
+    };
+}
+
 pub mod capabilities;
 pub mod elicitation;
 pub mod implementation;
@@ -157,39 +199,7 @@ pub struct ResourceTemplateReference {
     pub uri: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ResourceTemplateReferenceType;
-
-impl ResourceTemplateReferenceType {
-    pub const VALUE: &'static str = "ref/resource";
-}
-
-impl Serialize for ResourceTemplateReferenceType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(Self::VALUE)
-    }
-}
-
-impl<'de> Deserialize<'de> for ResourceTemplateReferenceType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == Self::VALUE {
-            Ok(Self)
-        } else {
-            Err(serde::de::Error::custom(format!(
-                "expected {}, got {}",
-                Self::VALUE,
-                value
-            )))
-        }
-    }
-}
+const_str_marker!(ResourceTemplateReferenceType, "ref/resource");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]

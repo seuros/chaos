@@ -1,3 +1,8 @@
++++
+title = "chaos-halluacinate(7)"
+summary = "Lua scripting engine and extension APIs."
++++
+
 # chaos-halluacinate(7)
 
 ## NAME

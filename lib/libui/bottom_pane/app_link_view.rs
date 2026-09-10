@@ -28,7 +28,7 @@ use crate::app_event_sender::AppEventSender;
 use crate::key_hint;
 use crate::render::Insets;
 use crate::render::RectExt as _;
-use crate::style::user_message_style;
+use crate::style::text_panel_style;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
 
@@ -470,9 +470,7 @@ impl crate::render::renderable::Renderable for AppLinkView {
             return;
         }
 
-        Block::default()
-            .style(user_message_style())
-            .render(area, buf);
+        Block::default().style(text_panel_style()).render(area, buf);
 
         let actions_height = self.action_rows_height(area.width.saturating_sub(4));
         let [content_area, actions_area, hint_area] = Layout::vertical([

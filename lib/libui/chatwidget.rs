@@ -431,6 +431,9 @@ struct ChatWidgetBuildParams {
 
 impl ChatWidget {
     fn build_from_params(p: ChatWidgetBuildParams) -> Self {
+        // Every process transition (including in-app resume/fork) must replace
+        // the previous process's appearance before rendering its transcript.
+        crate::theme::set_appearance(p.config.appearance.clone());
         let mut widget = Self {
             app_event_tx: p.app_event_tx.clone(),
             frame_requester: p.frame_requester.clone(),

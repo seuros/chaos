@@ -108,6 +108,7 @@ mod tests {
     }
 
     libui_suites! {
+        appearance_suite => crate::theme::tests::appearance_suite();
         bottom_pane_suite => crate::bottom_pane::tests::bottom_pane_suite();
         chat_composer_input_suite => crate::bottom_pane::tests::chat_composer_input_suite();
         chat_composer_slash_suite => crate::bottom_pane::tests::chat_composer_slash_suite();

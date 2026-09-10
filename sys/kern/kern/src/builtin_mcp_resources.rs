@@ -109,7 +109,7 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 7] = [
         kind: ChaosBuiltinResourceKind::Manual,
         uri: CHAOS_MANUAL_URI,
         name: "manual",
-        description: "List agent-facing ChaOS manual pages and their resource URIs",
+        description: "List embedded ChaOS manual pages and their resource URIs",
         mime_type: JSON_MIME_TYPE,
     },
 ];
@@ -126,7 +126,7 @@ const RESOURCE_TEMPLATE_SPECS: [ChaosBuiltinResourceTemplateSpec; 2] = [
         kind: ChaosBuiltinResourceTemplateKind::ManualPage,
         uri_template: CHAOS_MANUAL_URI_TEMPLATE,
         name: "manual_page",
-        description: "Read an agent-facing ChaOS manual page by canonical page id",
+        description: "Read an embedded ChaOS manual page by canonical page id",
         mime_type: MARKDOWN_MIME_TYPE,
     },
 ];

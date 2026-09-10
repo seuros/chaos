@@ -87,6 +87,7 @@ where
     pub(super) current_initial_indent: Vec<Span<'static>>,
     pub(super) current_subsequent_indent: Vec<Span<'static>>,
     pub(super) current_line_style: Style,
+    pub(super) prose_style: Style,
     pub(super) current_line_in_code_block: bool,
 }
 
@@ -118,6 +119,7 @@ where
             current_initial_indent: Vec::new(),
             current_subsequent_indent: Vec::new(),
             current_line_style: Style::default(),
+            prose_style: Style::default(),
             current_line_in_code_block: false,
         }
     }
@@ -227,6 +229,20 @@ where
     }
 
     pub(super) fn push_span(&mut self, mut span: Span<'static>) {
+        if !self.in_code_block && self.prose_style != Style::default() {
+            if self.current_line_content.is_none() {
+                self.push_line(Line::default());
+            }
+            span.style = self
+                .prose_style
+                .patch(self.current_line_style)
+                .patch(span.style);
+        }
+        self.push_rendered_span(span);
+    }
+
+    /// Append a prepared span without applying the prose base (also used by code).
+    pub(super) fn push_rendered_span(&mut self, mut span: Span<'static>) {
         if let Some(sentinel) = self.active_link_sentinel
             && span.style.underline_color.is_none()
         {

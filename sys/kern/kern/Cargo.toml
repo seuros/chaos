@@ -13,6 +13,10 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[build-dependencies]
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }
+
 [dependencies]
 anyhow = { workspace = true }
 alcatraz = { workspace = true }

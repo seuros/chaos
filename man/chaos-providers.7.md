@@ -1,3 +1,8 @@
++++
+title = "chaos-providers(7)"
+summary = "Provider configuration and model selection."
++++
+
 # chaos-providers(7)
 
 ## NAME

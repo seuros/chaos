@@ -4,6 +4,7 @@
 // definitions that do not contain business logic.
 
 use crate::RequirementSource;
+pub use chaos_chassis::appearance::Appearance;
 pub use chaos_ipc::config_types::AltScreenMode;
 pub use chaos_ipc::config_types::ApprovalsReviewer;
 pub use chaos_ipc::config_types::ModeKind;

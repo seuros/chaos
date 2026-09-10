@@ -39,6 +39,16 @@ pub fn render_markdown_text_with_width_and_cwd(
     width: Option<usize>,
     cwd: Option<&Path>,
 ) -> Text<'static> {
+    render_markdown_with_prose_style(input, width, cwd, ratatui::style::Style::default())
+}
+
+/// Render role-styled prose without applying that base style to code or markers.
+pub(crate) fn render_markdown_with_prose_style(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    prose_style: ratatui::style::Style,
+) -> Text<'static> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
@@ -46,6 +56,7 @@ pub fn render_markdown_text_with_width_and_cwd(
     options.insert(Options::ENABLE_GFM);
     let parser = Parser::new_ext(input, options);
     let mut w = Writer::new(parser, width, cwd);
+    w.prose_style = prose_style;
     w.run();
     w.text
 }

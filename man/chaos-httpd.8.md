@@ -1,3 +1,8 @@
++++
+title = "chaos-httpd(8)"
+summary = "HTTP daemon configuration and operation."
++++
+
 # chaos-httpd(8)
 
 ## NAME

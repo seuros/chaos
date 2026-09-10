@@ -1007,7 +1007,10 @@ version = "47.4.0"
 dependencies = [
  "chaos-ipc",
  "pretty_assertions",
+ "schemars",
+ "serde",
  "serde_json",
+ "toml 1.1.4+spec-1.1.0",
 ]
 
 [[package]]
@@ -2056,6 +2059,7 @@ name = "chaos-sysctl"
 version = "47.4.0"
 dependencies = [
  "anyhow",
+ "chaos-chassis",
  "chaos-ipc",
  "chaos-keyring",
  "chaos-pf",

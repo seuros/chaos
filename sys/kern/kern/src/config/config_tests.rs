@@ -316,6 +316,56 @@ fn tui_theme_defaults_to_none() {
 }
 
 #[test]
+fn appearance_config_defaults_validation_and_schema() {
+    let empty: ConfigToml = toml::from_str("").unwrap();
+    assert_eq!(empty.appearance, Appearance::default());
+    let parsed: ConfigToml =
+        toml::from_str("[appearance.user]\nfg = 'blue'\nbold = true\n[tui]\ntheme = 'dracula'")
+            .unwrap();
+    assert_eq!(parsed.appearance.user.fg.unwrap().as_str(), "blue");
+    assert_eq!(parsed.tui.unwrap().theme.as_deref(), Some("dracula"));
+    for source in [
+        "[appearance.colors]\nfg = '#bad'",
+        "[appearance.user]\nfont = 'Mono'",
+        "[appearance]\nunknown = true",
+    ] {
+        assert!(toml::from_str::<ConfigToml>(source).is_err(), "{source}");
+    }
+    let schema: serde_json::Value =
+        serde_json::from_slice(&super::schema::config_schema_json().unwrap()).unwrap();
+    assert!(schema["properties"].get("appearance").is_some());
+}
+
+#[tokio::test]
+async fn appearance_config_builder_preserves_partial_cli_overrides() {
+    let home = tempdir().unwrap();
+    let snapshot = crate::user_settings::snapshot(home.path()).await.unwrap();
+    let settings = toml::from_str(
+        "[appearance.colors]\nfg = 'blue'\n[appearance.user]\nbold = true\nitalic = true",
+    )
+    .unwrap();
+    chaos_sysctl::persistence::backend()
+        .unwrap()
+        .commit(home.path(), snapshot.revision, settings)
+        .await
+        .unwrap();
+    let config = ConfigBuilder::default()
+        .chaos_home(home.path().to_path_buf())
+        .fallback_cwd(Some(home.path().to_path_buf()))
+        .cli_overrides(vec![(
+            "appearance.user.italic".into(),
+            TomlValue::Boolean(false),
+        )])
+        .build()
+        .await
+        .unwrap();
+    assert_eq!(config.appearance.colors.fg.unwrap().as_str(), "blue");
+    assert_eq!(config.appearance.user.bold, Some(true));
+    assert_eq!(config.appearance.user.italic, Some(false));
+    assert_eq!(config.appearance.assistant, Default::default());
+}
+
+#[test]
 fn tui_config_missing_notifications_field_defaults_to_enabled() {
     let cfg = r#"
 [tui]
@@ -1078,6 +1128,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         feedback_enabled: true,
         tui_alternate_screen: AltScreenMode::Auto,
         tui_theme: None,
+        appearance: Default::default(),
         tui_terminal_title_icon: None,
         tui_terminal_title_working_icon: None,
         otel: OtelConfig::default(),

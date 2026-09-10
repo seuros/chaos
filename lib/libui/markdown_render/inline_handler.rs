@@ -113,7 +113,7 @@ where
             self.pending_marker_line = false;
         }
         let span = Span::from(code.into_string()).style(self.styles.code);
-        self.push_span(span);
+        self.push_rendered_span(span);
     }
 
     pub(super) fn code_lines(&mut self, code: &str) {
@@ -134,7 +134,7 @@ where
                 self.push_line(Line::default());
             }
             let span = Span::from(line.to_string()).style(self.styles.code);
-            self.push_span(span);
+            self.push_rendered_span(span);
         }
     }
 

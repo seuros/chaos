@@ -741,6 +741,7 @@ impl Config {
                 .map(|t| t.alternate_screen)
                 .unwrap_or_default(),
             tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
+            appearance: cfg.appearance.clone(),
             tui_terminal_title_icon: cfg.tui.as_ref().and_then(|t| t.terminal_title_icon.clone()),
             tui_terminal_title_working_icon: cfg
                 .tui

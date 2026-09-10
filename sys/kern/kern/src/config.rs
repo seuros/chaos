@@ -1,5 +1,6 @@
 use crate::async_breaker::BreakerError;
 use crate::auth::AuthCredentialsStoreMode;
+use crate::config::types::Appearance;
 use crate::config::types::AppsConfigToml;
 use crate::config::types::History;
 use crate::config::types::McpServerConfig;
@@ -404,6 +405,9 @@ pub struct Config {
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
 
+    /// Terminal palette and message-style overrides.
+    pub appearance: Appearance,
+
     /// Optional identity marker prefixed to terminal session titles while idle.
     pub tui_terminal_title_icon: Option<String>,
 
@@ -796,6 +800,10 @@ pub struct ConfigToml {
 
     /// Collection of settings that are specific to the TUI.
     pub tui: Option<Tui>,
+
+    /// Terminal palette and message styles; omitted fields preserve existing visuals.
+    #[serde(default)]
+    pub appearance: Appearance,
 
     /// When set to `true`, `AgentReasoning` events will be hidden from the
     /// UI/output. Defaults to `false`.

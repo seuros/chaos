@@ -1,3 +1,8 @@
++++
+title = "chaos-install(7)"
+summary = "Build, installation, and logging."
++++
+
 # chaos-install(7)
 
 ## NAME

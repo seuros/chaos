@@ -1,3 +1,8 @@
++++
+title = "chaos-keyboard(7)"
+summary = "Terminal UI keyboard shortcuts."
++++
+
 # chaos-keyboard(7)
 
 ## NAME

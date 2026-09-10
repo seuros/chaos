@@ -1,3 +1,8 @@
++++
+title = "chaos-agents(7)"
+summary = "Standalone agent role definitions."
++++
+
 # chaos-agents(7)
 
 ## NAME

@@ -6,5 +6,9 @@ pub fn user_message_style() -> Style {
 }
 
 pub fn proposed_plan_style() -> Style {
-    theme::user_message()
+    theme::text_panel()
+}
+
+pub fn text_panel_style() -> Style {
+    theme::text_panel()
 }

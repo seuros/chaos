@@ -4,7 +4,7 @@ use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
-use crate::style::user_message_style;
+use crate::style::text_panel_style;
 use crate::ui_consts::FOOTER_INDENT_COLS;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use ratatui::buffer::Buffer;
@@ -403,7 +403,7 @@ impl ChatComposer {
                 }
             }
         }
-        let style = user_message_style();
+        let style = text_panel_style();
         Block::default().style(style).render(composer_rect, buf);
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.remote_images_lines(remote_images_rect.width))

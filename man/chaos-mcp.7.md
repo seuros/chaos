@@ -1,3 +1,8 @@
++++
+title = "chaos-mcp(7)"
+summary = "MCP client and server usage."
++++
+
 # chaos-mcp(7)
 
 ## NAME
@@ -239,8 +244,8 @@ unchanged.
 | `chaos://models` | List available model presets |
 | `chaos://modes` | List the caller-visible collaboration mode catalog |
 | `chaos://mcp` | List configured MCP servers with auth and startup status |
-| `chaos://man` | List agent-facing manual pages and their resource URIs |
-| `chaos://man/{page}` | Read an agent-facing manual page |
+| `chaos://man` | List embedded manual pages and their resource URIs |
+| `chaos://man/{page}` | Read an embedded manual page without its frontmatter |
 
 `chaos://mcp` reports each server's enabled, required, transport, authentication,
 and startup state. Failed startup states include the error. Commands, endpoints,

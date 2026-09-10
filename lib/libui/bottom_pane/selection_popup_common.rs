@@ -13,7 +13,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::key_hint::KeyBinding;
 use crate::render::Insets;
 use crate::render::RectExt as _;
-use crate::style::user_message_style;
+use crate::style::text_panel_style;
 
 use super::scroll_state::ScrollState;
 
@@ -149,9 +149,7 @@ pub fn render_menu_surface(area: Rect, buf: &mut Buffer) -> Rect {
     if area.is_empty() {
         return area;
     }
-    Block::default()
-        .style(user_message_style())
-        .render(area, buf);
+    Block::default().style(text_panel_style()).render(area, buf);
     menu_surface_inset(area)
 }
 

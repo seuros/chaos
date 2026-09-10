@@ -300,45 +300,65 @@ async fn manual_resources_can_be_read_after_initialize() -> Result<()> {
     let index: serde_json::Value =
         serde_json::from_str(index_content["text"].as_str().expect("manual index text"))?;
     let pages = index["pages"].as_array().expect("manual pages array");
-    assert_eq!(pages.len(), 4);
+    assert!(
+        pages
+            .iter()
+            .any(|page| page["uri"] == json!("chaos://man/chaos-appearance.7"))
+    );
+    assert!(
+        pages
+            .iter()
+            .any(|page| page["uri"] == json!("chaos://man/chaos-httpd.8"))
+    );
+    assert!(!pages.iter().any(|page| page["id"] == json!("README")));
     assert!(
         pages
             .iter()
             .any(|page| page["uri"] == json!("chaos://man/chaos-mcp.7"))
     );
 
-    let page_request_id = mcp
-        .send_custom_request(
-            "resources/read",
-            Some(json!({ "uri": "chaos://man/chaos-mcp.7" })),
+    for (id, heading, expected_body) in [
+        ("chaos-mcp.7", "## NAME", "## SEE ALSO"),
+        (
+            "chaos-appearance.7",
+            "## Configuration",
+            "chaos config set appearance.user.bold true",
+        ),
+        ("chaos-httpd.8", "## NAME", "## SEE ALSO"),
+    ] {
+        let uri = format!("chaos://man/{id}");
+        let page_request_id = mcp
+            .send_custom_request("resources/read", Some(json!({ "uri": uri })))
+            .await?;
+        let page_message = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_response_or_error_message(page_request_id.clone()),
         )
-        .await?;
-    let page_message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(page_request_id.clone()),
-    )
-    .await??;
+        .await??;
 
-    let JsonRpcMessage::Response(page_response) = page_message else {
-        anyhow::bail!("expected JSON-RPC response, got: {page_message:?}");
-    };
-    assert_eq!(page_response.id, Some(page_request_id.to_value()));
-    assert!(
-        page_response.error.is_none(),
-        "unexpected error: {:?}",
-        page_response.error
-    );
+        let JsonRpcMessage::Response(page_response) = page_message else {
+            anyhow::bail!("expected JSON-RPC response, got: {page_message:?}");
+        };
+        assert_eq!(page_response.id, Some(page_request_id.to_value()));
+        assert!(
+            page_response.error.is_none(),
+            "unexpected error: {:?}",
+            page_response.error
+        );
 
-    let page_content = &page_response.result.as_ref().unwrap()["contents"][0];
-    assert_eq!(page_content["uri"], json!("chaos://man/chaos-mcp.7"));
-    assert_eq!(page_content["mimeType"], json!("text/markdown"));
-    let page = page_content["text"].as_str().expect("manual page text");
-    assert!(page.starts_with("# chaos-mcp(7)"));
-    assert!(page.contains("Index: `chaos://man`"));
-    assert!(page.contains("`chaos://man/chaos-modes.7`"));
-    assert!(page.contains("`chaos://man/chaos-storage.7`"));
-    assert!(!page.contains("chaos-install.7"));
-    assert!(!page.contains("](./"));
+        let page_content = &page_response.result.as_ref().unwrap()["contents"][0];
+        assert_eq!(page_content["uri"], json!(uri));
+        assert_eq!(page_content["mimeType"], json!("text/markdown"));
+        let page = page_content["text"].as_str().expect("manual page text");
+        assert!(page.starts_with(heading));
+        assert!(page.contains(expected_body));
+        let (_, footer) = page
+            .rsplit_once("\n\n---\n\n")
+            .expect("manual navigation footer");
+        assert_eq!(footer, "Index: `chaos://man`\n");
+        assert!(!page.contains("+++"));
+        assert!(!page.contains("](./"));
+    }
 
     Ok(())
 }

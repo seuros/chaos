@@ -1,3 +1,8 @@
++++
+title = "chaos-modes(7)"
+summary = "Collaboration mode discovery and switching."
++++
+
 # chaos-modes(7)
 
 ## NAME

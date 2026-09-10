@@ -1,3 +1,8 @@
++++
+title = "chaos-synopsis(7)"
+summary = "Sub-agent orchestration gate."
++++
+
 # chaos-synopsis(7)
 
 ## NAME

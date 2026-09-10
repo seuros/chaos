@@ -7,7 +7,9 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
+use std::sync::{LazyLock, RwLock};
 
+use chaos_chassis::appearance::{Appearance, PaletteOverrides, TextStyle, ThemeColor};
 use chaos_ipc::config_types::ModeKind;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
@@ -17,6 +19,83 @@ use ratatui::style::Style;
 static CLAMPED: AtomicBool = AtomicBool::new(false);
 /// Global collaboration-mode tint used for chrome rendering (top bar + borders).
 static COLLABORATION_MODE: AtomicU8 = AtomicU8::new(collaboration_mode_to_u8(ModeKind::Default));
+static APPEARANCE: LazyLock<RwLock<Appearance>> =
+    LazyLock::new(|| RwLock::new(Appearance::default()));
+
+/// Install the final configuration, replacing any previously active overrides.
+pub fn set_appearance(appearance: Appearance) {
+    *APPEARANCE.write().unwrap_or_else(|err| err.into_inner()) = appearance;
+}
+
+fn terminal_color(color: &ThemeColor) -> Color {
+    match color.as_str() {
+        "default" => Color::Reset,
+        // Ratatui already parses the ANSI names and RGB values ThemeColor accepts.
+        value => value.parse().unwrap_or(Color::Reset),
+    }
+}
+
+fn resolve_palette(mut palette: Palette, overrides: &PaletteOverrides) -> Palette {
+    macro_rules! apply {
+        ($($field:ident),* $(,)?) => {$(
+            if let Some(color) = &overrides.$field {
+                palette.$field = terminal_color(color);
+            }
+        )*};
+    }
+    apply!(
+        bg,
+        fg,
+        dim,
+        highlight,
+        top_bar_bg,
+        top_bar_fg,
+        top_bar_dim,
+        user_msg_bg,
+        border,
+        warning,
+        error,
+        success,
+        accent,
+        secondary_accent,
+        tertiary_accent,
+    );
+    palette
+}
+
+fn resolve_text_style(mut base: Style, overrides: &TextStyle) -> Style {
+    if let Some(color) = &overrides.fg {
+        base = base.fg(terminal_color(color));
+    }
+    if let Some(color) = &overrides.bg {
+        base = base.bg(terminal_color(color));
+    }
+    for (enabled, modifier) in [
+        (overrides.bold, Modifier::BOLD),
+        (overrides.italic, Modifier::ITALIC),
+    ] {
+        match enabled {
+            Some(true) => base = base.add_modifier(modifier),
+            Some(false) => base = base.remove_modifier(modifier),
+            None => {}
+        }
+    }
+    base
+}
+
+/// Sparse prose base: absent settings retain the renderer's inherited style.
+pub fn assistant_message() -> Style {
+    let appearance = APPEARANCE.read().unwrap_or_else(|err| err.into_inner());
+    let base = resolve_text_style(
+        Style::default(),
+        &TextStyle {
+            fg: appearance.colors.fg.clone(),
+            bg: appearance.colors.bg.clone(),
+            ..Default::default()
+        },
+    );
+    resolve_text_style(base, &appearance.assistant)
+}
 
 /// Set clamped mode (switches theme to Anthropic orange).
 pub fn set_clamped(clamped: bool) {
@@ -54,7 +133,7 @@ pub fn collaboration_mode() -> ModeKind {
 
 /// The Chaos terminal palette. Every color used in the TUI should come from
 /// here so the theme can be swapped in one place.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
     pub bg: Color,
     pub fg: Color,
@@ -156,7 +235,11 @@ pub(crate) fn palette_for_mode(mode: ModeKind, clamped: bool) -> Palette {
 
 /// Active palette. Switches to Anthropic orange when clamped.
 pub fn palette() -> Palette {
-    palette_for_mode(collaboration_mode(), is_clamped())
+    let appearance = APPEARANCE.read().unwrap_or_else(|err| err.into_inner());
+    resolve_palette(
+        palette_for_mode(collaboration_mode(), is_clamped()),
+        &appearance.colors,
+    )
 }
 
 /// Default base style — mode-aware foreground on black.
@@ -184,6 +267,13 @@ pub fn border() -> Style {
 
 /// User-authored message background.
 pub fn user_message() -> Style {
+    let base = text_panel();
+    let appearance = APPEARANCE.read().unwrap_or_else(|err| err.into_inner());
+    resolve_text_style(base, &appearance.user)
+}
+
+/// Shared panel decoration, independent of submitted-user text styling.
+pub fn text_panel() -> Style {
     let palette = palette();
     Style::default().fg(palette.fg).bg(palette.user_msg_bg)
 }
@@ -297,3 +387,6 @@ pub fn scanline(row: u16) -> Style {
         Style::default().add_modifier(Modifier::DIM)
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

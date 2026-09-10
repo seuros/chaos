@@ -724,11 +724,11 @@ mod tests {
                         }),
                         other => serde_json::json!({"unexpected": other}),
                     };
-                    let _ = self
-                        .incoming_tx
-                        .send(JsonRpcMessage::Response(JsonRpcResponse::success(
-                            id, result,
-                        )));
+                    let _ =
+                        self.incoming_tx
+                            .send(JsonRpcMessage::Response(JsonRpcResponse::success(
+                                id, result,
+                            )));
                 }
                 Ok(())
             })

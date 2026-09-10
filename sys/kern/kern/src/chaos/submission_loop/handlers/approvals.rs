@@ -45,6 +45,9 @@ pub async fn exec_approval(
                     msg: warning,
                 })
                 .await;
+                sess.notify_exec_approval(&approval_id, ReviewDecision::Denied)
+                    .await;
+                return;
             }
         }
     }

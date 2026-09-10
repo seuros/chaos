@@ -7,6 +7,11 @@ use thiserror::Error;
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConstraintError {
     #[error(
+        "authoritative configuration storage is unavailable; restore storage before starting another turn"
+    )]
+    StorageUnavailable,
+
+    #[error(
         "invalid value for `{field_name}`: `{candidate}` is not in the allowed set {allowed} (set by {requirement_source})"
     )]
     InvalidValue {

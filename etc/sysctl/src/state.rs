@@ -27,7 +27,12 @@ pub struct ConfigLayerEntry {
 
 impl ConfigLayerEntry {
     pub fn new(name: ConfigLayerSource, config: TomlValue) -> Self {
-        let version = version_for_toml(&config);
+        let version = match &name {
+            ConfigLayerSource::UserDatabase { revision } => {
+                format!("db:{revision}:{}", version_for_toml(&config))
+            }
+            _ => version_for_toml(&config),
+        };
         Self {
             name,
             config,
@@ -79,10 +84,18 @@ impl ConfigLayerEntry {
     }
 
     pub fn as_layer(&self) -> ConfigLayer {
+        let mut config = toml_to_json(&self.config);
+        if matches!(self.name, ConfigLayerSource::Bootstrap { .. }) {
+            for key in ["storage_url", "egress_url"] {
+                if let Some(value) = config.get_mut(key) {
+                    *value = serde_json::Value::String("<bootstrap value redacted>".into());
+                }
+            }
+        }
         ConfigLayer {
             name: self.name.clone(),
             version: self.version.clone(),
-            config: toml_to_json(&self.config),
+            config,
             disabled_reason: self.disabled_reason.clone(),
         }
     }
@@ -91,7 +104,9 @@ impl ConfigLayerEntry {
     pub fn config_folder(&self) -> Option<AbsolutePathBuf> {
         match &self.name {
             ConfigLayerSource::System { file } => file.parent(),
+            ConfigLayerSource::Bootstrap { .. } => None,
             ConfigLayerSource::User { file } => file.parent(),
+            ConfigLayerSource::UserDatabase { .. } => None,
             ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder.clone()),
             ConfigLayerSource::ProjectMcp { file } => file.parent(),
             ConfigLayerSource::SessionFlags => None,
@@ -200,6 +215,28 @@ impl ConfigLayerStack {
         }
     }
 
+    pub fn with_database_settings(&self, revision: i64, settings: TomlValue) -> Self {
+        let mut layers = self.layers.clone();
+        let layer = ConfigLayerEntry::new(ConfigLayerSource::UserDatabase { revision }, settings);
+        let user_layer_index = if let Some(index) = self.user_layer_index {
+            layers[index] = layer;
+            index
+        } else {
+            let index = layers
+                .iter()
+                .position(|entry| entry.name.precedence() > layer.name.precedence())
+                .unwrap_or(layers.len());
+            layers.insert(index, layer);
+            index
+        };
+        Self {
+            layers,
+            user_layer_index: Some(user_layer_index),
+            requirements: self.requirements.clone(),
+            requirements_toml: self.requirements_toml.clone(),
+        }
+    }
+
     /// Replace the project-scoped `.mcp.json` layer, or remove it entirely when
     /// `layer` is `None`.
     pub fn with_project_mcp_layer(&self, layer: Option<ConfigLayerEntry>) -> Self {
@@ -222,9 +259,12 @@ impl ConfigLayerStack {
             verify_layer_ordering(&layers).is_ok(),
             "project MCP layer replacement must preserve layer ordering"
         );
-        let user_layer_index = layers
-            .iter()
-            .position(|entry| matches!(entry.name, ConfigLayerSource::User { .. }));
+        let user_layer_index = layers.iter().position(|entry| {
+            matches!(
+                entry.name,
+                ConfigLayerSource::User { .. } | ConfigLayerSource::UserDatabase { .. }
+            )
+        });
         Self {
             layers,
             user_layer_index,
@@ -303,7 +343,10 @@ fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<Option<
     let mut user_layer_index: Option<usize> = None;
     let mut previous_project_dot_codex_folder: Option<&AbsolutePathBuf> = None;
     for (index, layer) in layers.iter().enumerate() {
-        if matches!(layer.name, ConfigLayerSource::User { .. }) {
+        if matches!(
+            layer.name,
+            ConfigLayerSource::User { .. } | ConfigLayerSource::UserDatabase { .. }
+        ) {
             if user_layer_index.is_some() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,

@@ -26,6 +26,7 @@ use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use supports_color::Stream;
 
+mod config_cmd;
 mod debug_logging;
 mod mcp_cmd;
 mod models_cmd;
@@ -80,6 +81,10 @@ impl MultitoolCli {
 
 #[derive(Debug, usage::Subcommands)]
 enum Subcommand {
+    /// Manage database user settings and bootstrap recovery.
+    Config(config_cmd::ConfigCommand),
+    /// Inspect or revoke installation-local remembered approvals.
+    Approvals(config_cmd::ApprovalsCommand),
     /// Run Chaos non-interactively.
     #[usage(alias = "e")]
     Exec(ExecCli),
@@ -374,6 +379,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     }
 
     match subcommand {
+        Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
+        Some(Subcommand::Approvals(command)) => config_cmd::approvals(command).await?,
         None => {
             prepend_root_flags!(interactive, root_config_overrides);
             let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;

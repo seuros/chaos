@@ -103,6 +103,8 @@ async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
     config.chaos_home = temp_dir.path().join("chaos-home");
+    config.sqlite_home = config.chaos_home.clone();
+    config.storage_url = None;
     config.cwd = config.chaos_home.clone();
     std::fs::create_dir_all(&config.chaos_home).expect("create chaos home");
 

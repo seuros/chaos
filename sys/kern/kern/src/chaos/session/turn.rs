@@ -43,6 +43,32 @@ impl Session {
         sub_id: String,
         updates: SessionSettingsUpdate,
     ) -> crate::config::ConstraintResult<Arc<TurnContext>> {
+        let config = self.get_config().await;
+        // Database-backed sessions fail closed when storage is unavailable.
+        if config
+            .config_layer_stack
+            .get_user_layer()
+            .is_some_and(|layer| {
+                matches!(
+                    layer.name,
+                    chaos_ipc::api::ConfigLayerSource::UserDatabase { .. }
+                )
+            })
+            && crate::user_settings::snapshot(&config.chaos_home)
+                .await
+                .is_err()
+        {
+            let err = crate::config::ConstraintError::StorageUnavailable;
+            self.send_event_raw(Event {
+                id: sub_id.clone(),
+                msg: EventMsg::Error(ErrorEvent {
+                    message: err.to_string(),
+                    chaos_error_info: Some(ChaosErrorInfo::BadRequest),
+                }),
+            })
+            .await;
+            return Err(err);
+        }
         let (session_configuration, previous_cwd, session_source) = {
             let mut state = self.state.lock().await;
             match state.session_configuration.clone().apply(&updates) {

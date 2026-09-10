@@ -825,6 +825,9 @@ model = "serpent"
 model = "gordon"
 "#,
     )?;
+    crate::user_settings::migrate(chaos_home.path(), false)
+        .await
+        .map_err(std::io::Error::other)?;
     set_project_trust_level(chaos_home.path(), workspace.path(), TrustLevel::Trusted)
         .map_err(std::io::Error::other)?;
     let project_config_dir = workspace.path().join(".chaos");

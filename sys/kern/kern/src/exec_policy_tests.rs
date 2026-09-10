@@ -245,9 +245,9 @@ host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
         )),
         ..ConfigRequirements::default()
     };
-    let dot_codex_folder = AbsolutePathBuf::from_absolute_path(temp_dir.path())?;
+    let file = AbsolutePathBuf::from_absolute_path(temp_dir.path().join("config.toml"))?;
     let layer = ConfigLayerEntry::new(
-        ConfigLayerSource::Project { dot_codex_folder },
+        ConfigLayerSource::System { file },
         TomlValue::Table(Default::default()),
     );
     let config_stack =
@@ -1062,10 +1062,16 @@ async fn append_execpolicy_amendment_updates_policy_and_file() {
     let manager = ExecPolicyManager::default();
 
     manager
-        .append_amendment_and_update(chaos_home.path(), &ExecPolicyAmendment::from(prefix))
+        .append_amendment_and_update(
+            chaos_home.path(),
+            chaos_home.path(),
+            &ExecPolicyAmendment::from(prefix),
+        )
         .await
         .expect("update policy");
-    let updated_policy = manager.current();
+    let updated_policy = crate::user_settings::shell_policy(chaos_home.path(), chaos_home.path())
+        .await
+        .expect("database policy");
 
     let evaluation = updated_policy.check(
         &["echo".to_string(), "hello".to_string(), "world".to_string()],
@@ -1079,13 +1085,7 @@ async fn append_execpolicy_amendment_updates_policy_and_file() {
         }
     ));
 
-    let contents = fs::read_to_string(default_policy_path(chaos_home.path()))
-        .expect("policy file should have been created");
-    assert_eq!(
-        contents,
-        r#"prefix_rule {pattern={"echo", "hello"}, decision="allow"}
-"#
-    );
+    assert!(!default_policy_path(chaos_home.path()).exists());
 }
 
 #[tokio::test]
@@ -1094,16 +1094,14 @@ async fn append_execpolicy_amendment_rejects_empty_prefix() {
     let manager = ExecPolicyManager::default();
 
     let result = manager
-        .append_amendment_and_update(chaos_home.path(), &ExecPolicyAmendment::from(vec![]))
+        .append_amendment_and_update(
+            chaos_home.path(),
+            chaos_home.path(),
+            &ExecPolicyAmendment::from(vec![]),
+        )
         .await;
 
-    assert!(matches!(
-        result,
-        Err(ExecPolicyUpdateError::AppendRule {
-            source: AmendError::EmptyPrefix,
-            ..
-        })
-    ));
+    assert!(matches!(result, Err(ExecPolicyUpdateError::Storage(_))));
 }
 
 #[tokio::test]

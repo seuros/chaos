@@ -57,6 +57,8 @@ mod message_history;
 mod minion_jobs;
 mod processes;
 mod reviewer_orchestration;
+mod settings;
+pub use settings::{ApprovalState, RememberedApproval, SettingsSnapshot};
 #[cfg(test)]
 mod test_support;
 

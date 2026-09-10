@@ -165,23 +165,9 @@ pub async fn mount_vfs(config: &Config) -> anyhow::Result<&'static ChaosVfs> {
 
 /// Mount runtime storage for an application entry point.
 ///
-/// SQLite preserves the historical degraded-startup behavior. PostgreSQL is an
-/// explicit operator choice, so a failed PostgreSQL mount is fatal and must
-/// never fall through to the SQLite journald sidecar.
+/// Require authoritative storage; recovery commands bypass this path.
 pub async fn mount_vfs_for_startup(config: &Config) -> anyhow::Result<Option<&'static ChaosVfs>> {
-    let mount_config =
-        chaos_vfs::resolve_mount_config(config.storage_url.as_deref(), &config.sqlite_home)?;
-    match mount_vfs(config).await {
-        Ok(vfs) => Ok(Some(vfs)),
-        Err(err) if mount_config.kind() == chaos_vfs::VfsKind::Postgres => Err(err),
-        Err(err) => {
-            warn!(
-                error = %err,
-                "runtime storage is unavailable; continuing without database-backed services"
-            );
-            Ok(None)
-        }
-    }
+    Ok(Some(mount_vfs(config).await?))
 }
 
 /// Trait-friendly variant: accepts only the fields needed to mount.

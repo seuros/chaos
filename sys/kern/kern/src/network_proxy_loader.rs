@@ -236,6 +236,7 @@ fn is_user_controlled_layer(layer: &ConfigLayerSource) -> bool {
     matches!(
         layer,
         ConfigLayerSource::User { .. }
+            | ConfigLayerSource::UserDatabase { .. }
             | ConfigLayerSource::Project { .. }
             | ConfigLayerSource::SessionFlags
     )

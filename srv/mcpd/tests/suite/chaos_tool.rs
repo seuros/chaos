@@ -455,7 +455,7 @@ fn create_two_provider_config_toml(chaos_home: &Path, server_uri: &str) -> std::
             r#"
 model = "dead-model"
 approval_policy = "headless"
-sandbox_policy = "read-only"
+sandbox_mode = "read-only"
 
 model_provider = "dead_provider"
 
@@ -513,7 +513,7 @@ fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()
             r#"
 model = "mock-model"
 approval_policy = "supervised"
-sandbox_policy = "workspace-write"
+sandbox_mode = "workspace-write"
 
 model_provider = "mock_provider"
 

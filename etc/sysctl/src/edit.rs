@@ -9,7 +9,6 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use tokio::task;
 use toml_edit::DocumentMut;
 use toml_edit::Item as TomlItem;
 use toml_edit::Table as TomlTable;
@@ -320,7 +319,7 @@ impl ConfigDocument {
 }
 
 /// Persist edits using a blocking strategy.
-pub fn apply_blocking(
+pub fn apply_file_edits_blocking(
     chaos_home: &Path,
     profile: Option<&str>,
     edits: &[ConfigEdit],
@@ -373,17 +372,50 @@ pub fn apply_blocking(
     Ok(())
 }
 
-/// Persist edits asynchronously by offloading the blocking writer.
+/// Persist edits using a revision-checked database transaction. No TOML fallback.
 pub async fn apply(
     chaos_home: &Path,
     profile: Option<&str>,
     edits: Vec<ConfigEdit>,
 ) -> anyhow::Result<()> {
-    let chaos_home = chaos_home.to_path_buf();
-    let profile = profile.map(ToOwned::to_owned);
-    task::spawn_blocking(move || apply_blocking(&chaos_home, profile.as_deref(), &edits))
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let backend = crate::persistence::backend()?;
+    let snapshot = backend.snapshot(chaos_home).await?;
+    let doc = toml::to_string(&snapshot.settings)?.parse::<DocumentMut>()?;
+    let profile = profile.map(ToOwned::to_owned).or_else(|| {
+        doc.get("profile")
+            .and_then(TomlItem::as_str)
+            .map(ToOwned::to_owned)
+    });
+    let mut document = ConfigDocument::new(doc, profile);
+    for edit in &edits {
+        document.apply(edit)?;
+    }
+    let settings = toml::from_str(&document.doc.to_string())?;
+    backend
+        .commit(chaos_home, snapshot.revision, settings)
         .await
-        .context("config persistence task panicked")?
+}
+
+/// Synchronous callers use a separate thread so they never nest a Tokio runtime.
+pub fn apply_blocking(
+    chaos_home: &Path,
+    profile: Option<&str>,
+    edits: &[ConfigEdit],
+) -> anyhow::Result<()> {
+    let home = chaos_home.to_path_buf();
+    let profile = profile.map(ToOwned::to_owned);
+    let edits = edits.to_vec();
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(apply(&home, profile.as_deref(), edits))
+    })
+    .join()
+    .map_err(|_| anyhow::anyhow!("settings persistence thread panicked"))?
 }
 
 /// Fluent builder to batch config edits and apply them atomically.
@@ -490,11 +522,7 @@ impl ConfigEditsBuilder {
 
     /// Apply edits asynchronously via a blocking offload.
     pub async fn apply(self) -> anyhow::Result<()> {
-        task::spawn_blocking(move || {
-            apply_blocking(&self.chaos_home, self.profile.as_deref(), &self.edits)
-        })
-        .await
-        .context("config persistence task panicked")?
+        apply(&self.chaos_home, self.profile.as_deref(), self.edits).await
     }
 }
 

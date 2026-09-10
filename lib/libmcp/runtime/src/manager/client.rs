@@ -600,7 +600,9 @@ pub(super) async fn make_managed_client(
 
     // Build and connect session based on transport type
     let connect_fut = async {
-        match config.transport {
+        let mut transport = serde_json::to_value(&config.transport)?;
+        chaos_sysctl::secrets::transform(&mut transport, false)?;
+        match serde_json::from_value::<McpServerTransportConfig>(transport)? {
             McpServerTransportConfig::Stdio {
                 command,
                 args,

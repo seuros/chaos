@@ -5,7 +5,6 @@ use std::sync::Arc;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_realpath::AbsolutePathBuf;
-use chaos_sysctl::CONFIG_TOML_FILE;
 use tracing::warn;
 
 use super::Session;
@@ -17,7 +16,7 @@ use crate::config::ConstraintResult;
 pub(super) use super::SessionSettingsUpdate;
 
 impl Session {
-    #[cfg_attr(not(test), expect(dead_code))]
+    #[expect(dead_code)]
     pub(crate) async fn chaos_home(&self) -> PathBuf {
         let state = self.state.lock().await;
         state.session_configuration.chaos_home().clone()
@@ -114,35 +113,15 @@ impl Session {
     }
 
     pub(crate) async fn reload_user_config_layer(&self) {
-        let config_toml_path = {
+        let chaos_home = {
             let state = self.state.lock().await;
-            state
-                .session_configuration
-                .chaos_home
-                .join(CONFIG_TOML_FILE)
+            state.session_configuration.chaos_home.clone()
         };
 
-        let user_config = match std::fs::read_to_string(&config_toml_path) {
-            Ok(contents) => match toml::from_str::<toml::Value>(&contents) {
-                Ok(config) => config,
-                Err(err) => {
-                    warn!("failed to parse user config while reloading layer: {err}");
-                    return;
-                }
-            },
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                toml::Value::Table(Default::default())
-            }
+        let snapshot = match crate::user_settings::snapshot(&chaos_home).await {
+            Ok(snapshot) => snapshot,
             Err(err) => {
-                warn!("failed to read user config while reloading layer: {err}");
-                return;
-            }
-        };
-
-        let config_toml_path = match AbsolutePathBuf::try_from(config_toml_path) {
-            Ok(path) => path,
-            Err(err) => {
-                warn!("failed to resolve user config path while reloading layer: {err}");
+                warn!("failed to reload database user settings: {err}");
                 return;
             }
         };
@@ -151,7 +130,7 @@ impl Session {
         let mut config = (*state.session_configuration.original_config_do_not_use).clone();
         config.config_layer_stack = config
             .config_layer_stack
-            .with_user_config(&config_toml_path, user_config);
+            .with_database_settings(snapshot.revision, snapshot.settings);
         state.session_configuration.original_config_do_not_use = Arc::new(config);
     }
 

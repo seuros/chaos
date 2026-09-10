@@ -635,17 +635,20 @@ impl UnifiedExecProcessManager {
             .session
             .services
             .exec_policy
-            .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-                command: &request.command,
-                approval_policy: permission_snapshot.approval_policy,
-                vfs_policy: &permission_snapshot.vfs_policy,
-                sandbox_permissions: if request.additional_permissions_preapproved {
-                    crate::sandboxing::SandboxPermissions::UseDefault
-                } else {
-                    request.sandbox_permissions
+            .create_exec_approval_requirement_for_command_in(
+                ExecApprovalRequest {
+                    command: &request.command,
+                    approval_policy: permission_snapshot.approval_policy,
+                    vfs_policy: &permission_snapshot.vfs_policy,
+                    sandbox_permissions: if request.additional_permissions_preapproved {
+                        crate::sandboxing::SandboxPermissions::UseDefault
+                    } else {
+                        request.sandbox_permissions
+                    },
+                    prefix_rule: request.prefix_rule.clone(),
                 },
-                prefix_rule: request.prefix_rule.clone(),
-            })
+                &cwd,
+            )
             .await;
         let req = UnifiedExecToolRequest {
             command: request.command.clone(),

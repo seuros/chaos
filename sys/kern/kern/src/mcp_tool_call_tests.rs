@@ -5,11 +5,9 @@ use crate::chaos::make_session_and_context;
 /// are now treated equally. Tests that were written against the old apps server
 /// keep this name so the approval/metadata plumbing is still exercised.
 const CHAOS_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
-use crate::config::ConfigToml;
 use crate::config::types::AppConfig;
 use crate::config::types::AppToolConfig;
 use crate::config::types::AppToolsConfig;
-use crate::config::types::AppsConfigToml;
 use crate::config::types::McpToolApprovalServerConfig;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_realpath::AbsolutePathBuf;
@@ -19,7 +17,6 @@ use chaos_sysctl::ConfigLayerStack;
 use chaos_sysctl::ConfigRequirements;
 use chaos_sysctl::ConfigRequirementsToml;
 use pretty_assertions::assert_eq;
-use serde::Deserialize;
 use serial_test::serial;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -835,106 +832,74 @@ fn accepted_elicitation_without_content_defaults_to_accept() {
 }
 
 #[tokio::test]
-async fn persist_codex_app_tool_approval_writes_tool_override() {
-    let tmp = tempdir().expect("tempdir");
-
-    persist_codex_app_tool_approval(tmp.path(), "calendar", "calendar/list_events")
+async fn persist_codex_app_tool_approval_uses_database() {
+    let (_session, context) = make_session_and_context().await;
+    let bound = test_bound_approval(&context, Some("calendar"));
+    persist_bound_mcp_approval(&context, &bound)
         .await
-        .expect("persist approval");
-
-    let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-    let parsed: ConfigToml = toml::from_str(&contents).expect("parse config");
-
+        .expect("persist");
+    let runtime = crate::user_settings::open(&context.config.chaos_home)
+        .await
+        .expect("open");
+    let grants = runtime
+        .list_approvals(&bound.installation_id)
+        .await
+        .expect("list");
+    assert_eq!(grants.len(), 1);
     assert_eq!(
-        parsed.apps,
-        Some(AppsConfigToml {
-            default: None,
-            apps: HashMap::from([(
-                "calendar".to_string(),
-                AppConfig {
-                    enabled: true,
-                    destructive_enabled: None,
-                    open_world_enabled: None,
-                    default_tools_approval_mode: None,
-                    default_tools_enabled: None,
-                    tools: Some(AppToolsConfig {
-                        tools: HashMap::from([(
-                            "calendar/list_events".to_string(),
-                            AppToolConfig {
-                                enabled: None,
-                                approval_mode: Some(AppToolApproval::Approve),
-                            },
-                        )]),
-                    }),
-                },
-            )]),
-        })
+        grants[0].subject,
+        serde_json::to_string(&bound.key).expect("key")
     );
-    assert!(contents.contains("[apps.calendar.tools.\"calendar/list_events\"]"));
+    assert_eq!(grants[0].identity, bound.identity);
 }
 
 #[tokio::test]
-async fn persist_mcp_server_tool_approval_writes_personal_tool_override() {
-    let tmp = tempdir().expect("tempdir");
-
-    persist_mcp_server_tool_approval(tmp.path(), "chrome", "navigate")
+async fn persist_mcp_server_tool_approval_does_not_write_toml() {
+    let (_session, context) = make_session_and_context().await;
+    let path = context.config.chaos_home.join(CONFIG_TOML_FILE);
+    let before = std::fs::read(&path).ok();
+    persist_bound_mcp_approval(&context, &test_bound_approval(&context, None))
         .await
-        .expect("persist approval");
-
-    let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-    let parsed: ConfigToml = toml::from_str(&contents).expect("parse config");
-    let chrome = parsed
-        .mcp_tool_approvals
-        .expect("MCP approvals")
-        .servers
-        .remove("chrome")
-        .expect("chrome approval");
-
-    assert_eq!(chrome.approval_mode, None);
-    assert_eq!(
-        chrome.tools,
-        HashMap::from([("navigate".to_string(), AppToolApproval::Approve)])
-    );
-    assert!(contents.contains("[mcp_tool_approvals.chrome.tools]"));
+        .expect("persist");
+    assert_eq!(before, std::fs::read(&path).ok());
 }
 
-#[tokio::test]
-async fn maybe_persist_mcp_tool_approval_reloads_session_config() {
-    let (session, turn_context) = make_session_and_context().await;
-    let chaos_home = session.chaos_home().await;
-    std::fs::create_dir_all(&chaos_home).expect("create chaos home");
-    let key = McpToolApprovalKey {
-        server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
-        connector_id: Some("calendar".to_string()),
-        tool_name: "calendar/list_events".to_string(),
+fn test_bound_approval(context: &TurnContext, connector: Option<&str>) -> BoundMcpApproval {
+    BoundMcpApproval {
+        key: McpToolApprovalKey {
+            server: "test".into(),
+            connector_id: connector.map(str::to_owned),
+            tool_name: "test-tool".into(),
+        },
+        identity: "v1:test".into(),
+        scope: "installation".into(),
+        revision: 0,
+        installation_id: crate::user_settings::installation_id(&context.config.chaos_home)
+            .expect("installation"),
+    }
+}
+
+#[test]
+fn session_approval_identity_includes_revision_and_scope() {
+    let mut store = crate::tools::sandboxing::ApprovalStore::default();
+    let mut bound = BoundMcpApproval {
+        key: McpToolApprovalKey {
+            server: "test".into(),
+            connector_id: None,
+            tool_name: "tool".into(),
+        },
+        identity: "v1:a".into(),
+        scope: "/a".into(),
+        revision: 1,
+        installation_id: "local".into(),
     };
-
-    maybe_persist_mcp_tool_approval(&session, &turn_context, key.clone()).await;
-
-    let config = session.get_config().await;
-    let apps_toml = config
-        .config_layer_stack
-        .effective_config()
-        .as_table()
-        .and_then(|table| table.get("apps"))
-        .cloned()
-        .expect("apps table");
-    let apps = AppsConfigToml::deserialize(apps_toml).expect("deserialize apps config");
-    let tool = apps
-        .apps
-        .get("calendar")
-        .and_then(|app| app.tools.as_ref())
-        .and_then(|tools| tools.tools.get("calendar/list_events"))
-        .expect("calendar/list_events tool config exists");
-
-    assert_eq!(
-        tool,
-        &AppToolConfig {
-            enabled: None,
-            approval_mode: Some(AppToolApproval::Approve),
-        }
-    );
-    assert_eq!(mcp_tool_approval_is_remembered(&session, &key).await, true);
+    store.put(bound.clone(), ReviewDecision::ApprovedForSession);
+    assert!(store.get(&bound).is_some());
+    bound.revision += 1;
+    assert!(store.get(&bound).is_none());
+    bound.revision -= 1;
+    bound.scope = "/b".into();
+    assert!(store.get(&bound).is_none());
 }
 
 #[tokio::test]

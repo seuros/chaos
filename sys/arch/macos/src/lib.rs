@@ -17,6 +17,15 @@ pub mod protocol {
 #[cfg(target_os = "macos")]
 mod macos_run_main;
 
+/// Register the login Keychain for the regular CLI process, not sandbox helpers.
+#[cfg(target_os = "macos")]
+pub fn register_keyring_store() {
+    match apple_native_keyring_store::keychain::Store::new() {
+        Ok(store) => keyring_core::set_default_store(store),
+        Err(err) => tracing::error!("failed to initialize macOS credential store: {err}"),
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub fn prepare_command(
     request: alcatraz_base::prepared_command::SandboxRequest<'_>,

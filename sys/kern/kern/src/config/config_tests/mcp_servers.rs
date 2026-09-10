@@ -275,6 +275,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn replace_mcp_servers_round_trips_stdio_env_and_cwd() -> anyhow::Result<()> {
+    initialize_mcp_credential_store();
     let chaos_home = TempDir::new()?;
     let servers = BTreeMap::from([(
         "docs".to_string(),
@@ -306,13 +307,17 @@ async fn replace_mcp_servers_round_trips_stdio_env_and_cwd() -> anyhow::Result<(
     replace_global_mcp_servers(chaos_home.path(), &servers)?;
 
     let loaded = load_global_mcp_servers(chaos_home.path()).await?;
-    assert_eq!(loaded, servers);
+    let mut value = serde_json::to_value(&loaded)?;
+    assert!(!chaos_sysctl::secrets::has_literals(&value));
+    chaos_sysctl::secrets::transform(&mut value, false)?;
+    assert_eq!(value, serde_json::to_value(&servers)?);
 
     Ok(())
 }
 
 #[tokio::test]
 async fn replace_mcp_servers_round_trips_streamable_http_options() -> anyhow::Result<()> {
+    initialize_mcp_credential_store();
     let chaos_home = TempDir::new()?;
     let servers = BTreeMap::from([(
         "docs".to_string(),
@@ -343,7 +348,18 @@ async fn replace_mcp_servers_round_trips_streamable_http_options() -> anyhow::Re
     replace_global_mcp_servers(chaos_home.path(), &servers)?;
 
     let loaded = load_global_mcp_servers(chaos_home.path()).await?;
-    assert_eq!(loaded, servers);
+    let mut value = serde_json::to_value(&loaded)?;
+    assert!(!chaos_sysctl::secrets::has_literals(&value));
+    chaos_sysctl::secrets::transform(&mut value, false)?;
+    assert_eq!(value, serde_json::to_value(&servers)?);
 
     Ok(())
+}
+
+fn initialize_mcp_credential_store() {
+    static INITIALIZED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    INITIALIZED.get_or_init(|| {
+        // Both transport tests share the process-wide keyring backend.
+        let _store = chaos_keyring::tests::MockKeyringStore::default();
+    });
 }

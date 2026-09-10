@@ -1,30 +1,35 @@
 use super::*;
 use chaos_test_fixtures::TEST_MODEL;
 
-#[test]
-fn test_set_default_oss_provider() -> std::io::Result<()> {
+#[tokio::test]
+async fn test_set_default_oss_provider() -> anyhow::Result<()> {
     let temp_dir = TempDir::new()?;
     let chaos_home = temp_dir.path();
-    let config_path = chaos_home.join(CONFIG_TOML_FILE);
+    crate::user_settings::install_persistence();
 
     // Test setting a provider on empty config
     set_default_oss_provider(chaos_home, "ollama")?;
-    let content = std::fs::read_to_string(&config_path)?;
-    assert!(content.contains("oss_provider = \"ollama\""));
+    assert_eq!(
+        crate::user_settings::snapshot(chaos_home).await?.settings["oss_provider"].as_str(),
+        Some("ollama")
+    );
 
     // Test updating existing config
-    let model_setting = format!("model = \"{TEST_MODEL}\"");
-    std::fs::write(&config_path, format!("{model_setting}\n"))?;
+    ConfigEditsBuilder::new(chaos_home)
+        .set_model(Some(TEST_MODEL), None)
+        .apply()
+        .await?;
     set_default_oss_provider(chaos_home, "lmstudio")?;
-    let content = std::fs::read_to_string(&config_path)?;
-    assert!(content.contains("oss_provider = \"lmstudio\""));
-    assert!(content.contains(&model_setting));
+    let settings = crate::user_settings::snapshot(chaos_home).await?.settings;
+    assert_eq!(settings["oss_provider"].as_str(), Some("lmstudio"));
+    assert_eq!(settings["model"].as_str(), Some(TEST_MODEL));
 
     // Test overwriting existing oss_provider
     set_default_oss_provider(chaos_home, "ollama")?;
-    let content = std::fs::read_to_string(&config_path)?;
-    assert!(content.contains("oss_provider = \"ollama\""));
-    assert!(!content.contains("oss_provider = \"lmstudio\""));
+    assert_eq!(
+        crate::user_settings::snapshot(chaos_home).await?.settings["oss_provider"].as_str(),
+        Some("ollama")
+    );
 
     // Test that an empty provider is rejected
     let result = set_default_oss_provider(chaos_home, "");

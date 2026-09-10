@@ -13,6 +13,11 @@ use chaos_kern::config::upsert_global_mcp_server;
 use predicates::str::contains;
 use tempfile::TempDir;
 
+// Use references to keep CLI tests out of the operator's keyring.
+pub const TOKEN_REFERENCE: &str = "keyring:chaos-settings/00000000-0000-4000-8000-000000000001";
+pub const SECOND_TOKEN_REFERENCE: &str =
+    "keyring:chaos-settings/00000000-0000-4000-8000-000000000002";
+
 pub fn chaos_command(chaos_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
     cmd.env("CHAOS_HOME", chaos_home);

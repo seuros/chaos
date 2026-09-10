@@ -1,7 +1,6 @@
 use super::ConfigToml;
 use super::deserialize_config_toml_with_base;
 use crate::config::edit::ConfigEdit;
-use crate::config::edit::ConfigEditsBuilder;
 use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
@@ -165,8 +164,13 @@ impl ConfigService {
             .try_into()
             .map_err(|err| ConfigServiceError::toml("invalid configuration", err))?;
 
-        let json_value = serde_json::to_value(&effective_config_toml)
+        let mut json_value = serde_json::to_value(&effective_config_toml)
             .map_err(|err| ConfigServiceError::json("failed to serialize configuration", err))?;
+        // Keep resolved bootstrap credentials out of API extras.
+        if let Some(object) = json_value.as_object_mut() {
+            object.remove("storage_url");
+            object.remove("egress_url");
+        }
         let config: ApiConfig = serde_json::from_value(json_value)
             .map_err(|err| ConfigServiceError::json("failed to deserialize configuration", err))?;
 
@@ -339,7 +343,17 @@ impl ConfigService {
             },
         )?;
 
-        let updated_layers = layers.with_user_config(&provided_path, user_config.clone());
+        let revision = match user_layer.name {
+            ConfigLayerSource::UserDatabase { revision } => revision,
+            _ => {
+                return Err(ConfigServiceError::write(
+                    ConfigWriteErrorCode::ConfigLayerReadonly,
+                    "User settings require database migration",
+                ));
+            }
+        };
+        let next_revision = revision + i64::from(!config_edits.is_empty());
+        let updated_layers = layers.with_database_settings(next_revision, user_config.clone());
         let effective = updated_layers.effective_config();
         validate_config(&effective).map_err(|err| {
             ConfigServiceError::write(
@@ -349,11 +363,13 @@ impl ConfigService {
         })?;
 
         if !config_edits.is_empty() {
-            ConfigEditsBuilder::new(&self.chaos_home)
-                .with_edits(config_edits)
-                .apply()
+            chaos_sysctl::persistence::backend()
+                .map_err(|err| ConfigServiceError::anyhow("settings backend unavailable", err))?
+                .commit(&self.chaos_home, revision, user_config)
                 .await
-                .map_err(|err| ConfigServiceError::anyhow("failed to persist config.toml", err))?;
+                .map_err(|err| {
+                    ConfigServiceError::anyhow("failed to persist database settings", err)
+                })?;
         }
 
         let overridden = first_overridden_edit(&updated_layers, &effective, &parsed_segments);
@@ -374,7 +390,10 @@ impl ConfigService {
                 })?
                 .version
                 .clone(),
-            file_path: provided_path,
+            file_path: None,
+            source: ConfigLayerSource::UserDatabase {
+                revision: next_revision,
+            },
             overridden_metadata: overridden,
         })
     }
@@ -632,6 +651,12 @@ fn override_message(layer: &ConfigLayerSource) -> String {
         ConfigLayerSource::SessionFlags => "Overridden by session flags".to_string(),
         ConfigLayerSource::User { file } => {
             format!("Overridden by user config: {}", file.display())
+        }
+        ConfigLayerSource::UserDatabase { revision } => {
+            format!("Overridden by user database (revision {revision})")
+        }
+        ConfigLayerSource::Bootstrap { file } => {
+            format!("Overridden by bootstrap: {}", file.display())
         }
     }
 }

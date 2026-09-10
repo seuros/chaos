@@ -20,7 +20,12 @@ pub fn load_agent_roles(
     );
     let mut roles: BTreeMap<String, AgentRoleConfig> = BTreeMap::new();
     for layer in layers {
-        let Some(config_folder) = layer.config_folder() else {
+        // Resolve role assets relative to bootstrap.
+        let folder = match &layer.name {
+            chaos_ipc::api::ConfigLayerSource::Bootstrap { file } => file.parent(),
+            _ => layer.config_folder(),
+        };
+        let Some(config_folder) = folder else {
             continue;
         };
         let layer_roles = discover_agent_roles_in_dir(

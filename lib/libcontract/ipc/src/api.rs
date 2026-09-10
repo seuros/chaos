@@ -179,6 +179,13 @@ pub enum ConfigLayerSource {
         file: AbsolutePathBuf,
     },
 
+    /// Owner-controlled runtime database settings; contains no connection URL.
+    #[serde(rename_all = "camelCase")]
+    UserDatabase { revision: i64 },
+
+    #[serde(rename_all = "camelCase")]
+    Bootstrap { file: AbsolutePathBuf },
+
     /// Path to a .chaos/ folder within a project. There could be multiple of
     /// these between `cwd` and the project/repo root.
     #[serde(rename_all = "camelCase")]
@@ -198,7 +205,9 @@ impl ConfigLayerSource {
     pub fn precedence(&self) -> i16 {
         match self {
             ConfigLayerSource::System { .. } => 10,
+            ConfigLayerSource::Bootstrap { .. } => 15,
             ConfigLayerSource::User { .. } => 20,
+            ConfigLayerSource::UserDatabase { .. } => 20,
             ConfigLayerSource::ProjectMcp { .. } => 24,
             ConfigLayerSource::Project { .. } => 25,
             ConfigLayerSource::SessionFlags => 30,
@@ -420,8 +429,9 @@ pub struct OverriddenMetadata {
 pub struct ConfigWriteResponse {
     pub status: WriteStatus,
     pub version: String,
-    /// Canonical path to the config file that was written.
-    pub file_path: AbsolutePathBuf,
+    /// Present only for file-backed writes; database settings have no file path.
+    pub file_path: Option<AbsolutePathBuf>,
+    pub source: ConfigLayerSource,
     pub overridden_metadata: Option<OverriddenMetadata>,
 }
 

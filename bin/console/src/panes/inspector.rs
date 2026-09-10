@@ -31,6 +31,7 @@ enum Update {
     Content(String),
 }
 
+#[derive(Default)]
 pub(crate) struct InspectorPane {
     process_id: Option<ProcessId>,
     resources: Vec<Resource>,
@@ -41,22 +42,6 @@ pub(crate) struct InspectorPane {
     catalog_loaded: bool,
     content_loaded: bool,
     pending: Option<JoinHandle<Update>>,
-}
-
-impl Default for InspectorPane {
-    fn default() -> Self {
-        Self {
-            process_id: None,
-            resources: Vec::new(),
-            selected: 0,
-            scroll: 0,
-            content: String::new(),
-            catalog_status: String::new(),
-            catalog_loaded: false,
-            content_loaded: false,
-            pending: None,
-        }
-    }
 }
 
 impl Drop for InspectorPane {
@@ -155,7 +140,7 @@ impl InspectorPane {
 
     /// Called from the event loop, before rendering. No request blocks the UI.
     pub async fn tick(&mut self, process: Arc<Process>, servers: Vec<String>) {
-        if self.pending.as_ref().is_some_and(|task| task.is_finished())
+        if self.pending.as_ref().is_some_and(JoinHandle::is_finished)
             && let Some(task) = self.pending.take()
         {
             self.finish_request(task.await);

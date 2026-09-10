@@ -3,9 +3,27 @@ use anyhow::Result;
 use chaos_ipc::api::AppConfig;
 use chaos_ipc::api::AppToolApproval;
 use chaos_ipc::api::AppsConfig;
-use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
+
+#[tokio::test]
+async fn inspection_does_not_expose_resolved_bootstrap_values() -> Result<()> {
+    let tmp = tempdir()?;
+    std::fs::write(
+        tmp.path().join(CONFIG_TOML_FILE),
+        "egress_url = 'https://user:private-connection-secret@example.com/egress'\n",
+    )?;
+    let response = ConfigService::new_with_defaults(tmp.path().to_path_buf())
+        .read(ConfigReadParams {
+            include_layers: true,
+            cwd: None,
+        })
+        .await?;
+    let encoded = serde_json::to_string(&response)?;
+    assert!(!encoded.contains("private-connection-secret"));
+    assert!(!response.config.additional.contains_key("egress_url"));
+    Ok(())
+}
 
 #[test]
 fn toml_value_to_item_handles_nested_config_tables() {
@@ -57,7 +75,7 @@ X-Doc = "42"
 }
 
 #[tokio::test]
-async fn write_value_preserves_comments_and_order() -> Result<()> {
+async fn write_value_leaves_bootstrap_unchanged() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let original = r#"# Chaos user configuration
 model = "serpent"
@@ -68,6 +86,8 @@ approval_policy = "interactive"
 hide_full_access_warning = true
 "#;
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), original)?;
+    crate::user_settings::migrate(tmp.path(), false).await?;
+    let bootstrap = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE))?;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     service
@@ -82,16 +102,16 @@ hide_full_access_warning = true
         .expect("write succeeds");
 
     let updated = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"# Chaos user configuration
-model = "serpent"
-approval_policy = "interactive"
-
-[notice]
-# Preserve this comment
-hide_full_access_warning = true
-hide_rate_limit_model_nudge = true
-"#;
-    assert_eq!(updated, expected);
+    assert_eq!(updated, bootstrap);
+    let settings = crate::user_settings::snapshot(tmp.path()).await?.settings;
+    assert_eq!(
+        settings["notice"]["hide_full_access_warning"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(
+        settings["notice"]["hide_rate_limit_model_nudge"].as_bool(),
+        Some(true)
+    );
     Ok(())
 }
 
@@ -161,7 +181,9 @@ async fn read_includes_origins_and_layers() {
     let tmp = tempdir().expect("tempdir");
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&user_path, "model = \"user\"").unwrap();
-    let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
+    crate::user_settings::migrate(tmp.path(), false)
+        .await
+        .unwrap();
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
 
@@ -177,20 +199,16 @@ async fn read_includes_origins_and_layers() {
 
     assert_eq!(
         response.origins.get("model").expect("origin").name,
-        ConfigLayerSource::User {
-            file: user_file.clone()
-        },
+        ConfigLayerSource::UserDatabase { revision: 1 },
     );
     let layers = response.layers.expect("layers present");
-    assert_eq!(layers.len(), 2, "expected two layers");
+    assert_eq!(layers.len(), 3, "database, bootstrap, system");
     assert_eq!(
         layers.first().unwrap().name,
-        ConfigLayerSource::User {
-            file: user_file.clone()
-        }
+        ConfigLayerSource::UserDatabase { revision: 1 }
     );
     assert!(matches!(
-        layers.get(1).unwrap().name,
+        layers.get(2).unwrap().name,
         ConfigLayerSource::System { .. }
     ));
 }
@@ -200,6 +218,9 @@ async fn version_conflict_rejected() {
     let tmp = tempdir().expect("tempdir");
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&user_path, "model = \"user\"").unwrap();
+    crate::user_settings::migrate(tmp.path(), false)
+        .await
+        .unwrap();
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     let error = service
@@ -220,7 +241,7 @@ async fn version_conflict_rejected() {
 }
 
 #[tokio::test]
-async fn write_value_defaults_to_user_config_path() {
+async fn write_value_defaults_to_database() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
 
@@ -237,9 +258,14 @@ async fn write_value_defaults_to_user_config_path() {
         .expect("write succeeds");
 
     let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-    assert!(
-        contents.contains("model = \"gordon\""),
-        "config.toml should be updated even when file_path is omitted"
+    assert!(contents.is_empty(), "bootstrap must not be rewritten");
+    assert_eq!(
+        crate::user_settings::snapshot(tmp.path())
+            .await
+            .unwrap()
+            .settings["model"]
+            .as_str(),
+        Some("gordon")
     );
 }
 
@@ -247,6 +273,9 @@ async fn write_value_defaults_to_user_config_path() {
 async fn invalid_user_value_rejected() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"").unwrap();
+    crate::user_settings::migrate(tmp.path(), false)
+        .await
+        .unwrap();
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
 
@@ -266,8 +295,14 @@ async fn invalid_user_value_rejected() {
         Some(ConfigWriteErrorCode::ConfigValidationError)
     );
 
-    let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-    assert_eq!(contents.trim(), "model = \"user\"");
+    assert_eq!(
+        crate::user_settings::snapshot(tmp.path())
+            .await
+            .unwrap()
+            .settings["model"]
+            .as_str(),
+        Some("user")
+    );
 }
 
 #[tokio::test]
@@ -275,7 +310,9 @@ async fn read_reports_session_flags_override_user() {
     let tmp = tempdir().expect("tempdir");
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&user_path, "model = \"user\"").unwrap();
-    let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
+    crate::user_settings::migrate(tmp.path(), false)
+        .await
+        .unwrap();
 
     let cli_overrides = vec![(
         "model".to_string(),
@@ -308,7 +345,7 @@ async fn read_reports_session_flags_override_user() {
     );
     assert_eq!(
         layers.get(1).unwrap().name,
-        ConfigLayerSource::User { file: user_file }
+        ConfigLayerSource::UserDatabase { revision: 1 }
     );
 }
 
@@ -324,13 +361,13 @@ env_key = "TOKEN"
 [model_providers.linear.env_http_headers]
 existing = "keep"
 
-[model_providers.linear.http_headers]
+[model_providers.linear.query_params]
 alpha = "a"
 "#;
 
     let overlay = serde_json::json!({
         "env_key": "NEW_TOKEN",
-        "http_headers": {
+        "query_params": {
             "alpha": "updated",
             "beta": "b"
         },
@@ -339,6 +376,7 @@ alpha = "a"
     });
 
     std::fs::write(&path, base)?;
+    crate::user_settings::migrate(tmp.path(), false).await?;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     service
@@ -352,7 +390,7 @@ alpha = "a"
         .await
         .expect("upsert succeeds");
 
-    let upserted: TomlValue = toml::from_str(&std::fs::read_to_string(&path)?)?;
+    let upserted = crate::user_settings::snapshot(tmp.path()).await?.settings;
     let expected_upsert: TomlValue = toml::from_str(
         r#"[model_providers.linear]
 env_key = "NEW_TOKEN"
@@ -362,14 +400,22 @@ base_url = "https://linear.example"
 [model_providers.linear.env_http_headers]
 existing = "keep"
 
-[model_providers.linear.http_headers]
+[model_providers.linear.query_params]
 alpha = "updated"
 beta = "b"
 "#,
     )?;
     assert_eq!(upserted, expected_upsert);
 
-    std::fs::write(&path, base)?;
+    let runtime = crate::user_settings::open(tmp.path()).await?;
+    let snapshot = runtime.settings_snapshot().await?;
+    runtime
+        .commit_settings(
+            snapshot.revision,
+            &serde_json::to_value(toml::from_str::<TomlValue>(base)?)?,
+            None,
+        )
+        .await?;
 
     service
         .write_value(ConfigValueWriteParams {
@@ -382,14 +428,14 @@ beta = "b"
         .await
         .expect("replace succeeds");
 
-    let replaced: TomlValue = toml::from_str(&std::fs::read_to_string(&path)?)?;
+    let replaced = crate::user_settings::snapshot(tmp.path()).await?.settings;
     let expected_replace: TomlValue = toml::from_str(
         r#"[model_providers.linear]
 env_key = "NEW_TOKEN"
 name = "linear"
 base_url = "https://linear.example"
 
-[model_providers.linear.http_headers]
+[model_providers.linear.query_params]
 alpha = "updated"
 beta = "b"
 "#,

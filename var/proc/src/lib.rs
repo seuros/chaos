@@ -22,6 +22,7 @@ pub use model::LogTailCursor;
 pub use runtime::ClampExchangeRecord;
 pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
+pub use runtime::{ApprovalState, RememberedApproval, SettingsSnapshot};
 
 /// Low-level storage engine: useful for focused tests.
 ///

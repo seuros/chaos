@@ -29,7 +29,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
         "add",
         "docs",
         "--env",
-        "TOKEN=secret",
+        &format!("TOKEN={}", common::TOKEN_REFERENCE),
         "--",
         "docs-server",
         "--port",
@@ -72,7 +72,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
                 "4000"
               ],
               "env": {
-                "TOKEN": "secret"
+                "TOKEN": common::TOKEN_REFERENCE
               },
               "env_vars": [
                 "APP_TOKEN",
@@ -132,7 +132,7 @@ async fn streamable_http_server_masks_stored_bearer_token() -> Result<()> {
             McpServerConfig {
                 transport: McpServerTransportConfig::StreamableHttp {
                     url: "https://example.com/mcp".to_string(),
-                    bearer_token: Some("secret-token".to_string()),
+                    bearer_token: Some(common::TOKEN_REFERENCE.to_string()),
                     bearer_token_env_var: None,
                     http_headers: None,
                     env_http_headers: None,
@@ -164,7 +164,7 @@ async fn streamable_http_server_masks_stored_bearer_token() -> Result<()> {
     let parsed: JsonValue = serde_json::from_str(&stdout)?;
     assert_eq!(
         parsed["transport"]["bearer_token"],
-        JsonValue::String("secret-token".to_string())
+        JsonValue::String(common::TOKEN_REFERENCE.to_string())
     );
 
     Ok(())

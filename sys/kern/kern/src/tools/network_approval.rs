@@ -165,6 +165,7 @@ pub(crate) struct NetworkApprovalService {
     pending_host_approvals: Mutex<HashMap<HostApprovalKey, Arc<PendingHostApproval>>>,
     session_approved_hosts: Mutex<HashSet<HostApprovalKey>>,
     session_denied_hosts: Mutex<HashSet<HostApprovalKey>>,
+    approval_revision: Mutex<Option<(i64, String)>>,
 }
 
 impl Default for NetworkApprovalService {
@@ -175,6 +176,7 @@ impl Default for NetworkApprovalService {
             pending_host_approvals: Mutex::new(HashMap::new()),
             session_approved_hosts: Mutex::new(HashSet::new()),
             session_denied_hosts: Mutex::new(HashSet::new()),
+            approval_revision: Mutex::new(None),
         }
     }
 }
@@ -289,6 +291,55 @@ impl NetworkApprovalService {
             NetworkProtocol::Socks5Udp => NetworkApprovalProtocol::Socks5Udp,
         };
         let key = HostApprovalKey::from_request(&request, protocol);
+        let Some(context) = Self::active_turn_context(&session).await else {
+            return NetworkDecision::deny("no_active_turn");
+        };
+        let persisted = async {
+            let home = &context.config.chaos_home;
+            let runtime = crate::user_settings::open(home).await?;
+            let scope = crate::user_settings::workspace_scope(&context.cwd)?;
+            let revision = runtime.approval_revision().await?;
+            let mut cache_revision = self.approval_revision.lock().await;
+            if cache_revision.as_ref() != Some(&(revision, scope.clone())) {
+                self.session_approved_hosts.lock().await.clear();
+                *cache_revision = Some((revision, scope.clone()));
+            }
+            let mut allowed = false;
+            for grant in runtime
+                .list_approvals(&crate::user_settings::installation_id(home)?)
+                .await?
+            {
+                if grant.kind != "network"
+                    || grant.scope != scope
+                    || grant.state != chaos_proc::ApprovalState::Active
+                {
+                    continue;
+                }
+                if grant.payload["host"].as_str().is_some_and(|host| {
+                    chaos_pf::normalize_host(host) == chaos_pf::normalize_host(&request.host)
+                }) && grant.payload["protocol"].as_str()
+                    == Some(key.protocol.replace('-', "_").as_str())
+                {
+                    if grant.payload["decision"] == "forbidden" {
+                        return Ok::<_, anyhow::Error>(Some(false));
+                    }
+                    if grant.payload["decision"] == "allow" {
+                        allowed = true;
+                    }
+                }
+            }
+            Ok(allowed.then_some(true))
+        }
+        .await;
+        match persisted {
+            Ok(Some(true)) => return NetworkDecision::Allow,
+            Ok(Some(false)) => return NetworkDecision::deny("remembered_deny"),
+            Ok(None) => {}
+            Err(err) => {
+                warn!("network approval lookup failed: {err}");
+                return NetworkDecision::deny("approval_storage_unavailable");
+            }
+        }
 
         {
             let denied_hosts = self.session_denied_hosts.lock().await;
@@ -384,6 +435,7 @@ impl NetworkApprovalService {
                                     &network_policy_amendment,
                                 )
                                 .await;
+                            PendingApprovalDecision::AllowOnce
                         }
                         Err(err) => {
                             let message =
@@ -395,9 +447,9 @@ impl NetworkApprovalService {
                                     msg: EventMsg::Warning(WarningEvent { message }),
                                 })
                                 .await;
+                            PendingApprovalDecision::Deny
                         }
                     }
-                    PendingApprovalDecision::AllowForSession
                 }
                 NetworkPolicyRuleAction::Deny => {
                     match session

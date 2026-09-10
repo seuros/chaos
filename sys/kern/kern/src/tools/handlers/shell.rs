@@ -360,17 +360,21 @@ impl ShellHandler {
         let exec_approval_requirement = session
             .services
             .exec_policy
-            .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-                command: &exec_params.command,
-                approval_policy: permission_snapshot.approval_policy,
-                vfs_policy: &permission_snapshot.vfs_policy,
-                sandbox_permissions: if effective_additional_permissions.permissions_preapproved {
-                    chaos_ipc::models::SandboxPermissions::UseDefault
-                } else {
-                    effective_additional_permissions.sandbox_permissions
+            .create_exec_approval_requirement_for_command_in(
+                ExecApprovalRequest {
+                    command: &exec_params.command,
+                    approval_policy: permission_snapshot.approval_policy,
+                    vfs_policy: &permission_snapshot.vfs_policy,
+                    sandbox_permissions: if effective_additional_permissions.permissions_preapproved
+                    {
+                        chaos_ipc::models::SandboxPermissions::UseDefault
+                    } else {
+                        effective_additional_permissions.sandbox_permissions
+                    },
+                    prefix_rule,
                 },
-                prefix_rule,
-            })
+                &exec_params.cwd,
+            )
             .await;
 
         let req = ShellRequest {

@@ -13,7 +13,6 @@ use chaos_ipc::approvals::ExecPolicyAmendment;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsPolicyKind;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_selinux::AmendError;
 use chaos_selinux::Decision;
 use chaos_selinux::Error as ExecPolicyRuleError;
 use chaos_selinux::Evaluation;
@@ -22,11 +21,8 @@ use chaos_selinux::NetworkRuleProtocol;
 use chaos_selinux::Policy;
 use chaos_selinux::PolicyParser;
 use chaos_selinux::RuleMatch;
-use chaos_selinux::blocking_append_allow_prefix_rule;
-use chaos_selinux::blocking_append_network_rule;
 use thiserror::Error;
 use tokio::fs;
-use tokio::task::spawn_blocking;
 use tracing::instrument;
 
 use crate::bash::parse_shell_lc_plain_commands;
@@ -43,6 +39,7 @@ const REJECT_RULES_APPROVAL_REASON: &str =
     "approval required by policy rule, but ApprovalPolicy::Granular.rules is false";
 const RULES_DIR_NAME: &str = "rules";
 const RULE_EXTENSION: &str = "decrees";
+#[cfg(test)]
 const DEFAULT_POLICY_FILE: &str = "default.decrees";
 static BANNED_PREFIX_SUGGESTIONS: &[&[&str]] = &[
     &["python3"],
@@ -122,6 +119,8 @@ pub(crate) fn prompt_is_rejected_by_policy(
 
 #[derive(Debug, Error)]
 pub enum ExecPolicyError {
+    #[error("failed to load database user policy: {0}")]
+    Storage(#[from] anyhow::Error),
     #[error("failed to read rules files from {dir}: {source}")]
     ReadDir {
         dir: PathBuf,
@@ -143,12 +142,8 @@ pub enum ExecPolicyError {
 
 #[derive(Debug, Error)]
 pub enum ExecPolicyUpdateError {
-    #[error("failed to update rules file {path}: {source}")]
-    AppendRule { path: PathBuf, source: AmendError },
-
-    #[error("failed to join blocking rules update task: {source}")]
-    JoinBlockingTask { source: tokio::task::JoinError },
-
+    #[error("approval database update failed: {0}")]
+    Storage(#[from] anyhow::Error),
     #[error("failed to update in-memory rules: {source}")]
     AddRule {
         #[from]
@@ -158,6 +153,7 @@ pub enum ExecPolicyUpdateError {
 
 pub(crate) struct ExecPolicyManager {
     policy: ArcSwap<Policy>,
+    storage: Option<(PathBuf, PathBuf)>,
 }
 
 pub(crate) struct ExecApprovalRequest<'a> {
@@ -172,15 +168,13 @@ impl ExecPolicyManager {
     pub(crate) fn new(policy: Arc<Policy>) -> Self {
         Self {
             policy: ArcSwap::from(policy),
+            storage: None,
         }
     }
 
     #[instrument(level = "info", skip_all)]
     pub(crate) async fn load(config_stack: &ConfigLayerStack) -> Result<Self, ExecPolicyError> {
-        let (policy, warning) = load_exec_policy_with_warning(config_stack).await?;
-        if let Some(err) = warning.as_ref() {
-            tracing::warn!("failed to parse rules: {err}");
-        }
+        let policy = load_exec_policy(config_stack).await?;
         Ok(Self::new(Arc::new(policy)))
     }
 
@@ -188,9 +182,28 @@ impl ExecPolicyManager {
         self.policy.load_full()
     }
 
+    pub(crate) fn with_storage(mut self, home: &Path, cwd: &Path) -> Self {
+        self.storage = Some((home.to_owned(), cwd.to_owned()));
+        self
+    }
+
     pub(crate) async fn create_exec_approval_requirement_for_command(
         &self,
         req: ExecApprovalRequest<'_>,
+    ) -> ExecApprovalRequirement {
+        let cwd = self
+            .storage
+            .as_ref()
+            .map(|(_, cwd)| cwd.as_path())
+            .unwrap_or(Path::new("."));
+        self.create_exec_approval_requirement_for_command_in(req, cwd)
+            .await
+    }
+
+    pub(crate) async fn create_exec_approval_requirement_for_command_in(
+        &self,
+        req: ExecApprovalRequest<'_>,
+        cwd: &Path,
     ) -> ExecApprovalRequirement {
         let ExecApprovalRequest {
             command,
@@ -199,7 +212,17 @@ impl ExecPolicyManager {
             sandbox_permissions,
             prefix_rule,
         } = req;
-        let exec_policy = self.current();
+        let mut exec_policy = self.current();
+        if let Some((home, _)) = &self.storage {
+            match crate::user_settings::shell_policy(home, cwd).await {
+                Ok(grants) => exec_policy = Arc::new(exec_policy.merge_overlay(&grants)),
+                Err(err) => {
+                    return ExecApprovalRequirement::Forbidden {
+                        reason: format!("Cannot verify authoritative shell approvals: {err}"),
+                    };
+                }
+            }
+        }
         let (commands, used_complex_parsing) = commands_for_exec_policy(command);
         // Keep heredoc prefix parsing for rule evaluation so existing
         // allow/prompt/forbidden rules still apply, but avoid auto-derived
@@ -275,62 +298,49 @@ impl ExecPolicyManager {
     pub(crate) async fn append_amendment_and_update(
         &self,
         chaos_home: &Path,
+        cwd: &Path,
         amendment: &ExecPolicyAmendment,
     ) -> Result<(), ExecPolicyUpdateError> {
-        let policy_path = default_policy_path(chaos_home);
         let prefix = amendment.command.clone();
-        spawn_blocking({
-            let policy_path = policy_path.clone();
-            let prefix = prefix.clone();
-            move || blocking_append_allow_prefix_rule(&policy_path, &prefix)
-        })
-        .await
-        .map_err(|source| ExecPolicyUpdateError::JoinBlockingTask { source })?
-        .map_err(|source| ExecPolicyUpdateError::AppendRule {
-            path: policy_path,
-            source,
-        })?;
-
-        let mut updated_policy = self.current().as_ref().clone();
-        updated_policy.add_prefix_rule(&prefix, Decision::Allow)?;
-        self.policy.store(Arc::new(updated_policy));
+        if prefix.is_empty()
+            || BANNED_PREFIX_SUGGESTIONS
+                .iter()
+                .any(|banned| prefix.iter().map(String::as_str).eq(banned.iter().copied()))
+        {
+            return Err(anyhow::anyhow!("unsafe or empty approval prefix").into());
+        }
+        let mut validation = Policy::empty();
+        validation.add_prefix_rule(&prefix, Decision::Allow)?;
+        crate::user_settings::put_scoped_approval(
+            chaos_home,
+            cwd,
+            "shell",
+            serde_json::json!({"prefix": prefix}),
+        )
+        .await?;
         Ok(())
     }
 
     pub(crate) async fn append_network_rule_and_update(
         &self,
         chaos_home: &Path,
+        cwd: &Path,
         host: &str,
         protocol: NetworkRuleProtocol,
         decision: Decision,
         justification: Option<String>,
     ) -> Result<(), ExecPolicyUpdateError> {
-        let policy_path = default_policy_path(chaos_home);
-        let host = host.to_string();
-        spawn_blocking({
-            let policy_path = policy_path.clone();
-            let host = host.clone();
-            let justification = justification.clone();
-            move || {
-                blocking_append_network_rule(
-                    &policy_path,
-                    &host,
-                    protocol,
-                    decision,
-                    justification.as_deref(),
-                )
-            }
-        })
-        .await
-        .map_err(|source| ExecPolicyUpdateError::JoinBlockingTask { source })?
-        .map_err(|source| ExecPolicyUpdateError::AppendRule {
-            path: policy_path,
-            source,
-        })?;
-
-        let mut updated_policy = self.current().as_ref().clone();
-        updated_policy.add_network_rule(&host, protocol, decision, justification)?;
-        self.policy.store(Arc::new(updated_policy));
+        let mut validation = Policy::empty();
+        validation.add_network_rule(host, protocol, decision, justification)?;
+        let host = &validation.network_rules()[0].host;
+        crate::user_settings::put_scoped_approval(
+            chaos_home,
+            cwd,
+            "network",
+            serde_json::json!({"host": host, "protocol": protocol.as_policy_string(),
+                "decision": decision}),
+        )
+        .await?;
         Ok(())
     }
 }
@@ -434,14 +444,33 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
     // from each layer, so that higher-precedence layers can override
     // rules defined in lower-precedence ones.
     let mut policy_paths = Vec::new();
+    let mut database_restrictions = Policy::empty();
     for layer in config_stack.get_layers(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ false,
     ) {
-        if let Some(config_folder) = layer.config_folder() {
+        if let chaos_ipc::api::ConfigLayerSource::Bootstrap { file } = &layer.name
+            && let Some(home) = file.parent()
+            && let Some(policy) =
+                crate::user_settings::migrated_user_restrictions(home.as_path()).await?
+        {
+            database_restrictions = database_restrictions.merge_overlay(&policy);
+            continue;
+        }
+        let config_folder = match &layer.name {
+            chaos_ipc::api::ConfigLayerSource::Bootstrap { file } => file.parent(),
+            _ => layer.config_folder(),
+        };
+        if let Some(config_folder) = config_folder {
             let policy_dir = config_folder.join(RULES_DIR_NAME);
             let layer_policy_paths = collect_policy_files(&policy_dir).await?;
-            policy_paths.extend(layer_policy_paths);
+            let restrictions_only =
+                !matches!(layer.name, chaos_ipc::api::ConfigLayerSource::System { .. });
+            policy_paths.extend(
+                layer_policy_paths
+                    .into_iter()
+                    .map(|path| (path, restrictions_only)),
+            );
         }
     }
     tracing::trace!(
@@ -449,8 +478,9 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
         "loaded exec policies"
     );
 
-    let mut parser = PolicyParser::new();
-    for policy_path in &policy_paths {
+    let mut policy = Policy::empty();
+    for (policy_path, restrictions_only) in &policy_paths {
+        let mut parser = PolicyParser::new();
         let contents =
             fs::read_to_string(policy_path)
                 .await
@@ -465,9 +495,23 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
                 path: identifier,
                 source,
             })?;
+        let parsed = parser.build();
+        if *restrictions_only && !parsed.host_executables().is_empty() {
+            return Err(ExecPolicyError::ParsePolicy {
+                path: policy_path.to_string_lossy().into_owned(),
+                source: chaos_selinux::Error::InvalidRule(
+                    "host executable identities must be defined in administrator policy".into(),
+                ),
+            });
+        }
+        policy = policy.merge_overlay(&if *restrictions_only {
+            parsed.restrictions_only()
+        } else {
+            parsed
+        });
     }
 
-    let policy = parser.build();
+    let policy = policy.merge_overlay(&database_restrictions);
     tracing::debug!("loaded rules from {} files", policy_paths.len());
     tracing::trace!(rules = ?policy, "exec policy rules loaded");
 
@@ -555,6 +599,7 @@ pub fn render_decision_for_unmatched_command(
     }
 }
 
+#[cfg(test)]
 fn default_policy_path(chaos_home: &Path) -> PathBuf {
     chaos_home.join(RULES_DIR_NAME).join(DEFAULT_POLICY_FILE)
 }

@@ -167,11 +167,7 @@ impl HttpTransportInner {
         }
 
         let request = self.build_post_request(message, initialize_request).await?;
-        let response = self
-            .client
-            .serve(request)
-            .await
-            .map_err(http_error)?;
+        let response = self.client.serve(request).await.map_err(http_error)?;
 
         self.handle_post_response(response, initialize_request, deliver_inbound)
             .await
@@ -208,9 +204,7 @@ impl HttpTransportInner {
             ],
         );
 
-        builder
-            .body(Body::from(body))
-            .map_err(http_error)
+        builder.body(Body::from(body)).map_err(http_error)
     }
 
     async fn handle_post_response(
@@ -427,9 +421,7 @@ impl HttpTransportInner {
             ],
         );
 
-        builder
-            .body(Body::empty())
-            .map_err(http_error)
+        builder.body(Body::empty()).map_err(http_error)
     }
 
     async fn consume_sse_response(
@@ -508,10 +500,7 @@ impl HttpTransportInner {
         *self.last_event_id.lock().await = None;
     }
 
-    async fn recover_session(
-        self: &Arc<Self>,
-        observed_generation: u64,
-    ) -> Result<(), GuestError> {
+    async fn recover_session(self: &Arc<Self>, observed_generation: u64) -> Result<(), GuestError> {
         let _recovery_guard = self.recovery_lock.lock().await;
 
         if self.closed.load(Ordering::Relaxed) {
@@ -729,11 +718,7 @@ fn header_value(headers: &rama::http::HeaderMap, name: impl AsRef<str>) -> Optio
 }
 
 async fn collect_body_bytes(response: Response) -> Result<Vec<u8>, GuestError> {
-    let collected = response
-        .into_body()
-        .collect()
-        .await
-        .map_err(http_error)?;
+    let collected = response.into_body().collect().await.map_err(http_error)?;
     Ok(collected.to_bytes().to_vec())
 }
 

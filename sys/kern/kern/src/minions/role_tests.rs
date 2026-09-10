@@ -331,6 +331,9 @@ model_provider = "test-provider"
     )
     .await
     .expect("write config.toml");
+    crate::user_settings::migrate(home.path(), false)
+        .await
+        .expect("migrate settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -382,6 +385,9 @@ model_verbosity = "low"
     )
     .await
     .expect("write config.toml");
+    crate::user_settings::migrate(home.path(), false)
+        .await
+        .expect("migrate settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -455,6 +461,9 @@ model_provider = "role-provider"
     )
     .await
     .expect("write config.toml");
+    crate::user_settings::migrate(home.path(), false)
+        .await
+        .expect("migrate settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -515,6 +524,9 @@ model_provider = "base-provider"
     )
     .await
     .expect("write config.toml");
+    crate::user_settings::migrate(home.path(), false)
+        .await
+        .expect("migrate settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -576,6 +588,9 @@ model_reasoning_effort = "low"
     )
     .await
     .expect("write config.toml");
+    crate::user_settings::migrate(home.path(), false)
+        .await
+        .expect("migrate settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -840,6 +855,9 @@ async fn role_instructions_preserve_project_child_defaults() {
     )
     .await
     .expect("write config");
+    crate::user_settings::migrate(home.path(), false)
+        .await
+        .expect("migrate settings");
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .fallback_cwd(Some(home.path().to_path_buf()))

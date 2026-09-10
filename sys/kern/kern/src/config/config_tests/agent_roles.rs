@@ -24,7 +24,11 @@ config_file = "./agents/researcher.toml"
         .build()
         .await
         .expect_err("split declarations are no longer supported");
-    assert!(err.to_string().contains("unknown field `researcher`"));
+    assert!(err.to_string().contains("must be migrated"));
+    let err = crate::user_settings::migrate(chaos_home.path(), true)
+        .await
+        .expect_err("migration must reject split declarations too");
+    assert!(format!("{err:#}").contains("unknown field `researcher`"));
     Ok(())
 }
 

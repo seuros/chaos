@@ -76,20 +76,14 @@ fn assert_no_matched_rules_invariant(output_item: &Value) {
 
 #[tokio::test]
 async fn execpolicy_blocks_shell_invocation() -> Result<()> {
-    let mut builder = test_chaos().with_config(|config| {
-        let policy_path = config.chaos_home.join("rules").join("policy.decrees");
-        fs::create_dir_all(
-            policy_path
-                .parent()
-                .expect("policy directory must have a parent"),
-        )
-        .expect("create policy directory");
-        fs::write(
-            &policy_path,
-            r#"prefix_rule {pattern={"echo"}, decision="forbidden"}"#,
-        )
-        .expect("write policy file");
-    });
+    let home = std::sync::Arc::new(tempfile::TempDir::new()?);
+    fs::create_dir_all(home.path().join("rules"))?;
+    fs::write(
+        home.path().join("rules/policy.decrees"),
+        r#"prefix_rule {pattern={"echo"}, decision="forbidden"}"#,
+    )?;
+    chaos_kern::user_settings::migrate(home.path(), false).await?;
+    let mut builder = test_chaos().with_home(home);
     let server = start_mock_server().await;
     let test = builder.build(&server).await?;
 

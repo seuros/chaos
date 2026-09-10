@@ -38,7 +38,6 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_realpath::AbsolutePathBuf;
-use chaos_realpath::AbsolutePathBufGuard;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -48,7 +47,6 @@ use std::path::PathBuf;
 
 use crate::config::profile::ConfigProfile;
 use toml::Value as TomlValue;
-use tracing::warn;
 
 pub(crate) mod agent_roles;
 pub mod edit;
@@ -1134,16 +1132,7 @@ pub(crate) async fn load_effective_mcp_servers(
     sqlite_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> std::io::Result<HashMap<String, McpServerConfig>> {
-    let global = match load_global_mcp_servers_from_runtime_db(storage_url, sqlite_home).await {
-        Ok(servers) => servers,
-        Err(err) => {
-            warn!(
-                error = %err,
-                "runtime storage unavailable while loading global MCP servers; continuing without them"
-            );
-            BTreeMap::new()
-        }
-    };
+    let global = load_global_mcp_servers_from_runtime_db(storage_url, sqlite_home).await?;
     let mut effective = global.into_iter().collect::<HashMap<_, _>>();
 
     for layer in config_layer_stack.get_layers(
@@ -1183,7 +1172,12 @@ async fn load_global_mcp_servers_from_runtime_db(
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_global_mcp_servers())
         .await
     {
-        Ok(servers) => Ok(servers),
+        Ok(servers) => {
+            for config in servers.values() {
+                ensure_mcp_credentials_migrated(config)?;
+            }
+            Ok(servers)
+        }
         Err(BreakerError::Open) => Err(std::io::Error::other(
             "runtime storage circuit is open while loading global MCP servers",
         )),
@@ -1208,7 +1202,12 @@ async fn load_global_mcp_server_from_runtime_db(
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.get_global_mcp_server(name))
         .await
     {
-        Ok(server) => Ok(server),
+        Ok(server) => {
+            if let Some(config) = &server {
+                ensure_mcp_credentials_migrated(config)?;
+            }
+            Ok(server)
+        }
         Err(BreakerError::Open) => Err(std::io::Error::other(format!(
             "runtime storage circuit is open while loading MCP server '{name}'"
         ))),
@@ -1218,11 +1217,37 @@ async fn load_global_mcp_server_from_runtime_db(
     }
 }
 
+fn ensure_mcp_credentials_migrated(config: &McpServerConfig) -> std::io::Result<()> {
+    ensure_mcp_endpoint_has_no_credentials(config)?;
+    let value = serde_json::to_value(config).map_err(std::io::Error::other)?;
+    if chaos_sysctl::secrets::has_literals(&value) {
+        return Err(std::io::Error::other(
+            "MCP configuration contains literal credentials/environment values; run `chaos config migrate`",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_mcp_endpoint_has_no_credentials(
+    config: &McpServerConfig,
+) -> std::io::Result<()> {
+    if let types::McpServerTransportConfig::StreamableHttp { url, .. } = &config.transport
+        && url::Url::parse(url)
+            .is_ok_and(|url| !url.username().is_empty() || url.password().is_some())
+    {
+        return Err(std::io::Error::other(
+            "MCP endpoint userinfo is not supported in stored configuration; move credentials to a bearer-token or header reference",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn upsert_global_mcp_server(
     chaos_home: &std::path::Path,
     name: &str,
     config: &McpServerConfig,
 ) -> anyhow::Result<()> {
+    ensure_mcp_endpoint_has_no_credentials(config)?;
     let storage_config = runtime_storage_config(chaos_home)?;
     let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
         storage_config.storage_url.as_deref(),
@@ -1230,7 +1255,8 @@ pub async fn upsert_global_mcp_server(
         "unknown",
     )
     .await?;
-    runtime.upsert_global_mcp_server(name, config).await
+    let config = chaos_sysctl::secrets::externalize_mcp(config)?;
+    runtime.upsert_global_mcp_server(name, &config).await
 }
 
 pub async fn delete_global_mcp_server(
@@ -1252,7 +1278,16 @@ pub fn replace_global_mcp_servers(
     servers: &BTreeMap<String, McpServerConfig>,
 ) -> anyhow::Result<()> {
     let storage_config = runtime_storage_config(chaos_home)?;
-    let servers = servers.clone();
+    let servers = servers
+        .iter()
+        .map(|(name, config)| {
+            ensure_mcp_endpoint_has_no_credentials(config)?;
+            Ok((
+                name.clone(),
+                chaos_sysctl::secrets::externalize_mcp(config)?,
+            ))
+        })
+        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
     std::thread::spawn(move || -> anyhow::Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1274,37 +1309,16 @@ pub fn replace_global_mcp_servers(
 #[cfg(test)]
 pub(crate) use requirements::resolve_web_search_mode;
 
-#[derive(Deserialize)]
-struct RuntimeStorageConfigToml {
-    storage_url: Option<String>,
-    sqlite_home: Option<AbsolutePathBuf>,
-}
-
 struct RuntimeStorageConfig {
     storage_url: Option<String>,
     sqlite_home: PathBuf,
 }
 
 fn runtime_storage_config(chaos_home: &std::path::Path) -> anyhow::Result<RuntimeStorageConfig> {
-    let config_path = chaos_home.join(CONFIG_TOML_FILE);
-    let contents = match std::fs::read_to_string(&config_path) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(RuntimeStorageConfig {
-                storage_url: None,
-                sqlite_home: chaos_home.to_path_buf(),
-            });
-        }
-        Err(err) => return Err(err.into()),
-    };
-    let _guard = AbsolutePathBufGuard::new(chaos_home);
-    let parsed: RuntimeStorageConfigToml = toml::from_str(&contents)?;
+    let parsed = crate::user_settings::BootstrapConfig::read(chaos_home)?;
     Ok(RuntimeStorageConfig {
-        storage_url: normalize_storage_url(parsed.storage_url.as_deref())?,
-        sqlite_home: parsed
-            .sqlite_home
-            .map(|path| path.to_path_buf())
-            .unwrap_or_else(|| chaos_home.to_path_buf()),
+        storage_url: normalize_storage_url(parsed.resolved_storage_url()?.as_deref())?,
+        sqlite_home: parsed.sqlite_home(chaos_home),
     })
 }
 

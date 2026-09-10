@@ -468,24 +468,24 @@ async fn handle_server_request_message(
             .list_roots()
             .await
             .and_then(|roots| serde_json::to_value(roots).map_err(GuestError::from)),
-        McpMethod::SamplingCreateMessage => match parse_params::<CreateMessageRequest>(
-            request.params,
-        ) {
-            Ok(params) => handler
-                .create_message(params)
-                .await
-                .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
-            Err(error) => Err(error),
-        },
-        McpMethod::ElicitationCreate => match parse_params::<CreateElicitationRequest>(
-            request.params,
-        ) {
-            Ok(params) => handler
-                .create_elicitation(params)
-                .await
-                .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
-            Err(error) => Err(error),
-        },
+        McpMethod::SamplingCreateMessage => {
+            match parse_params::<CreateMessageRequest>(request.params) {
+                Ok(params) => handler
+                    .create_message(params)
+                    .await
+                    .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
+                Err(error) => Err(error),
+            }
+        }
+        McpMethod::ElicitationCreate => {
+            match parse_params::<CreateElicitationRequest>(request.params) {
+                Ok(params) => handler
+                    .create_elicitation(params)
+                    .await
+                    .and_then(|value| serde_json::to_value(value).map_err(GuestError::from)),
+                Err(error) => Err(error),
+            }
+        }
         _ => {
             handler
                 .on_custom_request(request.method, request.params)
@@ -701,12 +701,12 @@ mod tests {
                     if request.method == "slow" {
                         std::future::pending::<()>().await;
                     }
-                    let _ = self.incoming_tx.send(JsonRpcMessage::Response(
-                        JsonRpcResponse::success(
-                            request.id.clone().unwrap(),
-                            serde_json::json!({"ok": true}),
-                        ),
-                    ));
+                    let _ =
+                        self.incoming_tx
+                            .send(JsonRpcMessage::Response(JsonRpcResponse::success(
+                                request.id.clone().unwrap(),
+                                serde_json::json!({"ok": true}),
+                            )));
                 }
                 Ok(())
             })

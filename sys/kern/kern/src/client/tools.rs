@@ -422,13 +422,16 @@ pub(crate) async fn handle_clamp_tool_permission(
             let exec_approval_requirement = session
                 .services
                 .exec_policy
-                .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-                    command: &command,
-                    approval_policy: turn_context.approval_policy.value(),
-                    vfs_policy: &turn_context.vfs_policy,
-                    sandbox_permissions: chaos_ipc::models::SandboxPermissions::UseDefault,
-                    prefix_rule: None,
-                })
+                .create_exec_approval_requirement_for_command_in(
+                    ExecApprovalRequest {
+                        command: &command,
+                        approval_policy: turn_context.approval_policy.value(),
+                        vfs_policy: &turn_context.vfs_policy,
+                        sandbox_permissions: chaos_ipc::models::SandboxPermissions::UseDefault,
+                        prefix_rule: None,
+                    },
+                    &turn_context.cwd,
+                )
                 .await;
             match exec_approval_requirement {
                 crate::tools::sandboxing::ExecApprovalRequirement::Skip { .. } => {

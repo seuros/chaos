@@ -138,7 +138,8 @@ invocation environment and are never persisted in Antigravity configuration.
 API key users connect directly through the kernel — no clamping needed.
 
 Headless `chaos exec` sessions can request the clamped transport through the
-layered configuration:
+layered configuration (see [database configuration and migration](docs/database-configuration.md)
+for user settings, remembered approvals, and bootstrap recovery):
 
 ```bash
 chaos exec --json -c clamp=true -m claude-sonnet-4-5 "say ok"

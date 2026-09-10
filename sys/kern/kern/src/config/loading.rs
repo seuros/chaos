@@ -74,6 +74,12 @@ impl ConfigBuilder {
         )
         .await?;
         let mut merged_toml = config_layer_stack.effective_config();
+        // Resolve credentials at runtime, not during inspection.
+        if let Some(providers) = merged_toml.get_mut("model_providers") {
+            let mut json = serde_json::to_value(&*providers).map_err(std::io::Error::other)?;
+            chaos_sysctl::secrets::transform(&mut json, false).map_err(std::io::Error::other)?;
+            *providers = serde_json::from_value(json).map_err(std::io::Error::other)?;
+        }
         strip_toml_global_mcp_servers(&mut merged_toml);
 
         let config_toml: ConfigToml = match merged_toml.try_into() {

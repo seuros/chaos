@@ -109,6 +109,13 @@ pub async fn load_config_layers_state(
         None
     } else {
         let mut cli_overrides_layer = build_cli_overrides_layer(cli_overrides);
+        for key in ["storage_url", "sqlite_home", "egress_url"] {
+            if cli_overrides_layer.get(key).is_some() {
+                return Err(io::Error::other(format!(
+                    "{key} must be configured through bootstrap or its environment variable, not session overrides"
+                )));
+            }
+        }
         reject_legacy_global_mcp_servers_in_cli_overrides(&cli_overrides_layer)?;
         strip_global_mcp_servers(&mut cli_overrides_layer);
         let base_dir = cwd
@@ -139,16 +146,24 @@ pub async fn load_config_layers_state(
     // Add a layer for $CHAOS_HOME/config.toml if it exists. Note if the file
     // exists, but is malformed, then this error should be propagated to the
     // user.
-    let user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, chaos_home);
-    let user_layer = load_config_toml_for_required_layer(&user_file, |config_toml| {
-        ConfigLayerEntry::new(
-            ConfigLayerSource::User {
-                file: user_file.clone(),
-            },
-            config_toml,
-        )
-    })
-    .await?;
+    let snapshot = crate::user_settings::snapshot(chaos_home)
+        .await
+        .map_err(io::Error::other)?;
+    let bootstrap = crate::user_settings::BootstrapConfig::read(chaos_home)
+        .and_then(|bootstrap| bootstrap.effective_values(chaos_home))
+        .map_err(io::Error::other)?;
+    layers.push(ConfigLayerEntry::new(
+        ConfigLayerSource::Bootstrap {
+            file: AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, chaos_home),
+        },
+        bootstrap,
+    ));
+    let user_layer = ConfigLayerEntry::new(
+        ConfigLayerSource::UserDatabase {
+            revision: snapshot.revision,
+        },
+        snapshot.settings,
+    );
     layers.push(user_layer);
 
     if let Some(cwd) = cwd {
@@ -205,6 +220,11 @@ pub async fn load_config_layers_state(
             chaos_home,
         )
         .await?;
+        for layer in &project_layers {
+            if !layer.is_disabled() && !matches!(layer.name, ConfigLayerSource::ProjectMcp { .. }) {
+                crate::user_settings::validate_project(&layer.config).map_err(io::Error::other)?;
+            }
+        }
         layers.extend(project_layers);
     }
 

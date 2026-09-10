@@ -67,17 +67,17 @@ impl Session {
         &self,
         amendment: &ExecPolicyAmendment,
     ) -> Result<(), ExecPolicyUpdateError> {
-        let chaos_home = self
-            .state
-            .lock()
-            .await
-            .session_configuration
-            .chaos_home()
-            .clone();
+        let (chaos_home, cwd) = {
+            let state = self.state.lock().await;
+            (
+                state.session_configuration.chaos_home().clone(),
+                state.session_configuration.cwd.clone(),
+            )
+        };
 
         self.services
             .exec_policy
-            .append_amendment_and_update(&chaos_home, amendment)
+            .append_amendment_and_update(&chaos_home, &cwd, amendment)
             .await?;
 
         Ok(())
@@ -120,34 +120,21 @@ impl Session {
     ) -> anyhow::Result<()> {
         let host =
             Self::validated_network_policy_amendment_host(amendment, network_approval_context)?;
-        let chaos_home = self
-            .state
-            .lock()
-            .await
-            .session_configuration
-            .chaos_home()
-            .clone();
+        let (chaos_home, cwd) = {
+            let state = self.state.lock().await;
+            (
+                state.session_configuration.chaos_home().clone(),
+                state.session_configuration.cwd.clone(),
+            )
+        };
         let execpolicy_amendment =
             execpolicy_network_rule_amendment(amendment, network_approval_context, &host);
-
-        if let Some(started_network_proxy) = self.services.network_proxy.as_ref() {
-            let proxy = started_network_proxy.proxy();
-            match amendment.action {
-                NetworkPolicyRuleAction::Allow => proxy
-                    .add_allowed_domain(&host)
-                    .await
-                    .map_err(|err| anyhow::anyhow!("failed to update runtime allowlist: {err}"))?,
-                NetworkPolicyRuleAction::Deny => proxy
-                    .add_denied_domain(&host)
-                    .await
-                    .map_err(|err| anyhow::anyhow!("failed to update runtime denylist: {err}"))?,
-            }
-        }
 
         self.services
             .exec_policy
             .append_network_rule_and_update(
                 &chaos_home,
+                &cwd,
                 &host,
                 execpolicy_amendment.protocol,
                 execpolicy_amendment.decision,

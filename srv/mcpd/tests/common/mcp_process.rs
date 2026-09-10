@@ -52,6 +52,32 @@ impl McpProcess {
         env_overrides: &[(&str, Option<&str>)],
     ) -> anyhow::Result<Self> {
         let program = chaos_which::cargo_bin("chaos").context("should find binary for chaos")?;
+        if chaos_home.join("config.toml").exists() {
+            let mut migration = Command::new(&program);
+            migration
+                .args(["config", "migrate"])
+                .env("CHAOS_HOME", chaos_home);
+            for (key, value) in env_overrides {
+                match value {
+                    Some(value) => {
+                        migration.env(key, value);
+                    }
+                    None => {
+                        migration.env_remove(key);
+                    }
+                }
+            }
+            // Mock-server Drop assertions can mask setup errors.
+            let status = migration
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit())
+                .status()
+                .await?;
+            anyhow::ensure!(
+                status.success(),
+                "test configuration migration failed: {status}"
+            );
+        }
         let mut cmd = Command::new(program);
         cmd.arg("mcp").arg("serve");
 

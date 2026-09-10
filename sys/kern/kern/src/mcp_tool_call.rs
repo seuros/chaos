@@ -13,8 +13,6 @@ use crate::arc_monitor::ArcMonitorOutcome;
 use crate::arc_monitor::monitor_action;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
-use crate::config::edit::ConfigEdit;
-use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::AppConfig;
 use crate::config::types::AppToolApproval;
 use crate::config::types::AppsConfigToml;
@@ -38,9 +36,7 @@ use chaos_mcp_runtime::ElicitationAction;
 use chaos_mcp_runtime::ElicitationResponse;
 use chaos_mcp_runtime::ToolAnnotations;
 use serde::Serialize;
-use std::path::Path;
 use std::sync::Arc;
-use toml_edit::value;
 
 /// Truncate a string for debug logging, appending an ellipsis marker if cut.
 fn truncate_for_debug(s: &str, max: usize) -> String {
@@ -386,6 +382,95 @@ struct McpToolApprovalKey {
     tool_name: String,
 }
 
+#[derive(Clone, Serialize)]
+struct BoundMcpApproval {
+    key: McpToolApprovalKey,
+    identity: String,
+    scope: String,
+    revision: i64,
+    installation_id: String,
+}
+
+async fn bind_mcp_approval(
+    sess: &Session,
+    context: &TurnContext,
+    key: McpToolApprovalKey,
+) -> anyhow::Result<BoundMcpApproval> {
+    use crate::config::types::McpServerTransportConfig;
+    let config = context
+        .config
+        .mcp_servers
+        .get()
+        .get(&key.server)
+        .ok_or_else(|| anyhow::anyhow!("MCP registration is unavailable"))?;
+    let mut transport = serde_json::to_value(&config.transport)?;
+    if let McpServerTransportConfig::Stdio {
+        command, cwd, env, ..
+    } = &config.transport
+    {
+        let base = cwd.as_deref().unwrap_or(context.cwd.as_path());
+        let resolved = if std::path::Path::new(command).components().count() > 1 {
+            std::fs::canonicalize(base.join(command))?
+        } else {
+            let path = env
+                .as_ref()
+                .and_then(|env| env.get("PATH"))
+                .map(|value| chaos_sysctl::secrets::resolve(value).map(std::ffi::OsString::from))
+                .transpose()?
+                .or_else(|| std::env::var_os("PATH"));
+            which::which_in(command, path, base)?
+        };
+        transport["command"] = serde_json::json!(resolved);
+        transport["cwd"] = serde_json::json!(std::fs::canonicalize(base)?);
+    }
+    let tool = sess
+        .services
+        .mcp_registry
+        .current_manager()
+        .list_all_tools()
+        .await
+        .into_values()
+        .find(|tool| tool.server_name == key.server && tool.tool.name == key.tool_name)
+        .ok_or_else(|| anyhow::anyhow!("MCP tool identity is unavailable"))?;
+    let tool_json = serde_json::to_value(&tool.tool)?;
+    let identity = crate::user_settings::fingerprint(&serde_json::json!({
+        "transport": transport,
+        "connector": key.connector_id,
+        "tool": key.tool_name,
+        "input_schema": tool_json.get("inputSchema"),
+        "annotations": tool_json.get("annotations"),
+    }))?;
+    let project = context
+        .config
+        .config_layer_stack
+        .layers_high_to_low()
+        .iter()
+        .any(|layer| {
+            matches!(
+                layer.name,
+                chaos_ipc::api::ConfigLayerSource::ProjectMcp { .. }
+            ) && layer
+                .config
+                .get("mcp_servers")
+                .and_then(|v| v.get(&key.server))
+                .is_some()
+                && !layer.is_disabled()
+        });
+    let scope = if project {
+        crate::user_settings::workspace_scope(context.cwd.as_path())?
+    } else {
+        "installation".into()
+    };
+    let runtime = crate::user_settings::open(&context.config.chaos_home).await?;
+    Ok(BoundMcpApproval {
+        key,
+        identity,
+        scope,
+        revision: runtime.approval_revision().await?,
+        installation_id: crate::user_settings::installation_id(&context.config.chaos_home)?,
+    })
+}
+
 fn mcp_tool_approval_prompt_options(
     session_approval_key: Option<&McpToolApprovalKey>,
     persistent_approval_key: Option<&McpToolApprovalKey>,
@@ -404,6 +489,27 @@ async fn maybe_request_mcp_tool_approval(
     metadata: Option<&McpToolApprovalMetadata>,
     approval_mode: AppToolApproval,
 ) -> Option<McpToolApprovalDecision> {
+    // Refresh approvals and fail closed on lookup errors.
+    let current = match crate::user_settings::snapshot(&turn_context.config.chaos_home).await {
+        Ok(snapshot) => snapshot.settings,
+        Err(err) => {
+            return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(format!(
+                "Cannot read authoritative approval settings: {err}"
+            )));
+        }
+    };
+    let connector = metadata
+        .and_then(|metadata| metadata.connector_id.as_deref())
+        .and_then(|id| configured_connector(&current, id));
+    let personal = invocation
+        .server
+        .as_deref()
+        .and_then(|server| configured_personal_mcp_approval(&current, server));
+    let approval_mode = if connector.is_some() || personal.is_some() {
+        resolve_mcp_tool_approval_mode(connector.as_ref(), personal.as_ref(), &invocation.tool)
+    } else {
+        approval_mode
+    };
     let annotations = metadata.and_then(|metadata| metadata.annotations.as_ref());
     let approval_required = requires_mcp_tool_approval(annotations);
     let mut monitor_reason = None;
@@ -449,10 +555,65 @@ async fn maybe_request_mcp_tool_approval(
     let session_approval_key = session_mcp_tool_approval_key(invocation, metadata, approval_mode);
     let persistent_approval_key =
         persistent_mcp_tool_approval_key(invocation, metadata, approval_mode);
-    if let Some(key) = session_approval_key.as_ref()
-        && mcp_tool_approval_is_remembered(sess, key).await
-    {
-        return Some(McpToolApprovalDecision::Accept);
+    let bound = if let Some(key) = session_approval_key.clone() {
+        match bind_mcp_approval(sess, turn_context, key).await {
+            Ok(bound) => Some(bound),
+            Err(err) => {
+                return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(format!(
+                    "Unable to verify MCP approval identity/storage: {err}"
+                )));
+            }
+        }
+    } else {
+        None
+    };
+    if let Some(bound) = &bound {
+        let runtime = match crate::user_settings::open(&turn_context.config.chaos_home).await {
+            Ok(runtime) => runtime,
+            Err(err) => {
+                return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(
+                    err.to_string(),
+                ));
+            }
+        };
+        let approvals = match runtime.list_approvals(&bound.installation_id).await {
+            Ok(approvals) => approvals,
+            Err(err) => {
+                return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(format!(
+                    "Unable to read authoritative approvals: {err}"
+                )));
+            }
+        };
+        let subject = serde_json::to_string(&bound.key).ok()?;
+        let persisted = approvals.iter().any(|grant| {
+            grant.kind == "mcp"
+                && grant.scope == bound.scope
+                && grant.subject == subject
+                && grant.identity == bound.identity
+                && grant.state == chaos_proc::ApprovalState::Active
+        });
+        let remembered = matches!(
+            sess.services.tool_approvals.lock().await.get(bound),
+            Some(ReviewDecision::ApprovedForSession)
+        );
+        if persisted || remembered {
+            match maybe_monitor_auto_approved_mcp_tool_call(
+                sess,
+                turn_context,
+                invocation,
+                metadata,
+            )
+            .await
+            {
+                ArcMonitorOutcome::Ok => return Some(McpToolApprovalDecision::Accept),
+                ArcMonitorOutcome::AskUser(reason) => monitor_reason = Some(reason),
+                ArcMonitorOutcome::SteerModel(reason) => {
+                    return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(
+                        arc_monitor_interrupt_message(&reason),
+                    ));
+                }
+            }
+        }
     }
     let prompt_options = mcp_tool_approval_prompt_options(
         session_approval_key.as_ref(),
@@ -515,15 +676,42 @@ async fn maybe_request_mcp_tool_approval(
         &question_id,
     );
     let decision = normalize_approval_decision_for_mode(decision, approval_mode);
-    apply_mcp_tool_approval_decision(
-        sess,
-        turn_context,
-        &decision,
-        session_approval_key,
-        persistent_approval_key,
-    )
-    .await;
+    if let Some(bound) = bound {
+        if matches!(decision, McpToolApprovalDecision::AcceptAndRemember) {
+            let result = persist_bound_mcp_approval(turn_context, &bound).await;
+            if let Err(err) = result {
+                return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(format!(
+                    "Approval was not saved and the call was not executed: {err}. Retry and explicitly choose Allow for a one-shot authorization."
+                )));
+            }
+        } else if matches!(decision, McpToolApprovalDecision::AcceptForSession) {
+            sess.services
+                .tool_approvals
+                .lock()
+                .await
+                .put(bound, ReviewDecision::ApprovedForSession);
+        }
+    }
     Some(decision)
+}
+
+async fn persist_bound_mcp_approval(
+    context: &TurnContext,
+    bound: &BoundMcpApproval,
+) -> anyhow::Result<()> {
+    crate::user_settings::open(&context.config.chaos_home)
+        .await?
+        .put_approval(&chaos_proc::RememberedApproval {
+            id: uuid::Uuid::new_v4().to_string(),
+            installation_id: bound.installation_id.clone(),
+            scope: bound.scope.clone(),
+            kind: "mcp".into(),
+            subject: serde_json::to_string(&bound.key)?,
+            identity: bound.identity.clone(),
+            state: chaos_proc::ApprovalState::Active,
+            payload: serde_json::Value::Null,
+        })
+        .await
 }
 
 async fn maybe_monitor_auto_approved_mcp_tool_call(
@@ -1025,115 +1213,6 @@ fn normalize_approval_decision_for_mode(
     } else {
         decision
     }
-}
-
-async fn mcp_tool_approval_is_remembered(sess: &Session, key: &McpToolApprovalKey) -> bool {
-    let store = sess.services.tool_approvals.lock().await;
-    matches!(store.get(key), Some(ReviewDecision::ApprovedForSession))
-}
-
-async fn remember_mcp_tool_approval(sess: &Session, key: McpToolApprovalKey) {
-    let mut store = sess.services.tool_approvals.lock().await;
-    store.put(key, ReviewDecision::ApprovedForSession);
-}
-
-async fn apply_mcp_tool_approval_decision(
-    sess: &Session,
-    turn_context: &TurnContext,
-    decision: &McpToolApprovalDecision,
-    session_approval_key: Option<McpToolApprovalKey>,
-    persistent_approval_key: Option<McpToolApprovalKey>,
-) {
-    match decision {
-        McpToolApprovalDecision::AcceptForSession => {
-            if let Some(key) = session_approval_key {
-                remember_mcp_tool_approval(sess, key).await;
-            }
-        }
-        McpToolApprovalDecision::AcceptAndRemember => {
-            if let Some(key) = persistent_approval_key {
-                maybe_persist_mcp_tool_approval(sess, turn_context, key).await;
-            } else if let Some(key) = session_approval_key {
-                remember_mcp_tool_approval(sess, key).await;
-            }
-        }
-        McpToolApprovalDecision::Accept
-        | McpToolApprovalDecision::Decline
-        | McpToolApprovalDecision::Cancel
-        | McpToolApprovalDecision::BlockedBySafetyMonitor(_) => {}
-    }
-}
-
-async fn maybe_persist_mcp_tool_approval(
-    sess: &Session,
-    turn_context: &TurnContext,
-    key: McpToolApprovalKey,
-) {
-    let connector_id = key.connector_id.clone();
-    let server_name = key.server.clone();
-    let tool_name = key.tool_name.clone();
-
-    let result = if let Some(connector_id) = connector_id.as_deref() {
-        persist_codex_app_tool_approval(&turn_context.config.chaos_home, connector_id, &tool_name)
-            .await
-    } else {
-        persist_mcp_server_tool_approval(&turn_context.config.chaos_home, &server_name, &tool_name)
-            .await
-    };
-
-    if let Err(err) = result {
-        error!(
-            error = %err,
-            server_name,
-            connector_id = ?connector_id,
-            tool_name,
-            "failed to persist MCP tool approval"
-        );
-        remember_mcp_tool_approval(sess, key).await;
-        return;
-    }
-
-    sess.reload_user_config_layer().await;
-    remember_mcp_tool_approval(sess, key).await;
-}
-
-async fn persist_mcp_server_tool_approval(
-    chaos_home: &Path,
-    server_name: &str,
-    tool_name: &str,
-) -> anyhow::Result<()> {
-    ConfigEditsBuilder::new(chaos_home)
-        .with_edits([ConfigEdit::SetPath {
-            segments: vec![
-                "mcp_tool_approvals".to_string(),
-                server_name.to_string(),
-                "tools".to_string(),
-                tool_name.to_string(),
-            ],
-            value: value("approve"),
-        }])
-        .apply()
-        .await
-}
-
-async fn persist_codex_app_tool_approval(
-    chaos_home: &Path,
-    connector_id: &str,
-    tool_name: &str,
-) -> anyhow::Result<()> {
-    ConfigEditsBuilder::new(chaos_home)
-        .with_edits([ConfigEdit::SetPath {
-            segments: vec![
-                "apps".to_string(),
-                connector_id.to_string(),
-                "tools".to_string(),
-                tool_name.to_string(),
-                "approval_mode".to_string(),
-            ],
-            value: value("approve"),
-        }])
-        .apply()
-        .await
 }
 
 fn requires_mcp_tool_approval(annotations: Option<&ToolAnnotations>) -> bool {

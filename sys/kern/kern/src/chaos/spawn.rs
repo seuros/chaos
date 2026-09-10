@@ -158,7 +158,8 @@ impl Chaos {
 
         let exec_policy = ExecPolicyManager::load(&config.config_layer_stack)
             .await
-            .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?;
+            .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?
+            .with_storage(&config.chaos_home, &config.cwd);
 
         let config = Arc::new(config);
         let auth_manager = auth_manager.for_provider(&config.model_provider_id);

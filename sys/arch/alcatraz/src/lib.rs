@@ -25,9 +25,9 @@ pub use alcatraz_linux::run_main;
 #[cfg(target_os = "macos")]
 pub use alcatraz_macos::prepare_command;
 #[cfg(target_os = "macos")]
-pub use alcatraz_macos::run_main;
+pub use alcatraz_macos::register_keyring_store;
 #[cfg(target_os = "macos")]
-pub fn register_keyring_store() {}
+pub use alcatraz_macos::run_main;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
 compile_error!("Alcatraz has no sandbox backend for this target OS");

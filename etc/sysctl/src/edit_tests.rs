@@ -1,9 +1,51 @@
+use super::apply_file_edits_blocking as apply_blocking;
 use super::*;
 use chaos_ipc::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
 use std::os::unix::fs::symlink;
-use tempfile::tempdir;
 use toml::Value as TomlValue;
+
+/// File-backed test adapter for revision-checked edits.
+struct TestPersistence;
+
+static REVISIONS: std::sync::LazyLock<std::sync::Mutex<HashMap<PathBuf, i64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+impl crate::persistence::SettingsPersistence for TestPersistence {
+    fn snapshot<'a>(
+        &'a self,
+        home: &'a Path,
+    ) -> crate::persistence::PersistenceFuture<'a, crate::persistence::SettingsSnapshot> {
+        Box::pin(async move {
+            let settings = toml::from_str(
+                &std::fs::read_to_string(home.join(CONFIG_TOML_FILE)).unwrap_or_default(),
+            )?;
+            let revision = *REVISIONS.lock().expect("revisions").get(home).unwrap_or(&0);
+            Ok(crate::persistence::SettingsSnapshot { settings, revision })
+        })
+    }
+
+    fn commit<'a>(
+        &'a self,
+        home: &'a Path,
+        revision: i64,
+        settings: toml::Value,
+    ) -> crate::persistence::PersistenceFuture<'a, ()> {
+        Box::pin(async move {
+            let mut revisions = REVISIONS.lock().expect("revisions");
+            let current = revisions.entry(home.to_path_buf()).or_default();
+            anyhow::ensure!(*current == revision, "revision conflict");
+            std::fs::write(home.join(CONFIG_TOML_FILE), toml::to_string(&settings)?)?;
+            *current += 1;
+            Ok(())
+        })
+    }
+}
+
+fn tempdir() -> std::io::Result<tempfile::TempDir> {
+    crate::persistence::install(std::sync::Arc::new(TestPersistence));
+    tempfile::tempdir()
+}
 
 #[test]
 fn blocking_set_model_top_level() {

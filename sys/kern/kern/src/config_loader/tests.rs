@@ -4,7 +4,6 @@ use crate::config::ConfigBuilder;
 use crate::config::ConfigOverrides;
 use crate::config::ConfigToml;
 use crate::config_loader::ConfigLayerEntry;
-use crate::config_loader::ConfigLoadError;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConfigRequirementsWithSources;
 use crate::config_loader::load_requirements_toml;
@@ -20,19 +19,13 @@ use std::path::Path;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
 
-fn config_error_from_io(err: &std::io::Error) -> &super::ConfigError {
-    err.get_ref()
-        .and_then(|err| err.downcast_ref::<ConfigLoadError>())
-        .map(ConfigLoadError::config_error)
-        .expect("expected ConfigLoadError")
-}
-
 async fn make_config_for_test(
     chaos_home: &Path,
     project_path: &Path,
     trust_level: TrustLevel,
     project_root_markers: Option<Vec<String>>,
 ) -> std::io::Result<()> {
+    crate::user_settings::install_persistence();
     tokio::fs::write(
         chaos_home.join(CONFIG_TOML_FILE),
         toml::to_string(&ConfigToml {
@@ -42,6 +35,9 @@ async fn make_config_for_test(
         .expect("serialize config"),
     )
     .await?;
+    crate::user_settings::migrate(chaos_home, false)
+        .await
+        .map_err(std::io::Error::other)?;
     let runtime = runtime_db::open_or_create_runtime_db(chaos_home, "test-provider")
         .await
         .map_err(std::io::Error::other)?;
@@ -95,11 +91,7 @@ async fn returns_config_error_for_invalid_user_config_toml() {
     .await
     .expect_err("expected error");
 
-    let config_error = config_error_from_io(&err);
-    let expected_toml_error = toml::from_str::<TomlValue>(contents).expect_err("parse error");
-    let expected_config_error =
-        super::config_error_from_toml(&config_path, contents, expected_toml_error);
-    assert_eq!(config_error, &expected_config_error);
+    assert!(err.to_string().contains("invalid bootstrap TOML"));
 }
 
 #[tokio::test]
@@ -116,12 +108,12 @@ async fn returns_config_error_for_schema_error_in_user_config() {
         .await
         .expect_err("expected error");
 
-    let config_error = config_error_from_io(&err);
-    let _guard = chaos_realpath::AbsolutePathBufGuard::new(tmp.path());
-    let expected_config_error =
-        chaos_sysctl::config_error_from_typed_toml::<ConfigToml>(&config_path, contents)
-            .expect("schema error");
-    assert_eq!(config_error, &expected_config_error);
+    assert!(err.to_string().contains("must be migrated"));
+    assert!(
+        crate::user_settings::migrate(tmp.path(), true)
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -143,9 +135,12 @@ command = "echo"
     .await
     .expect_err("expected error");
 
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("legacy top-level `mcp_servers`"));
-    assert!(err.to_string().contains(&config_path.display().to_string()));
+    assert!(err.to_string().contains("must be migrated"));
+    assert!(
+        crate::user_settings::migrate(tmp.path(), true)
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -186,12 +181,13 @@ async fn returns_empty_when_all_layers_missing() {
         .expect("expected a user layer even when CHAOS_HOME/config.toml does not exist");
     assert_eq!(
         &ConfigLayerEntry {
-            name: super::ConfigLayerSource::User {
-                file: AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, tmp.path()),
-            },
+            name: super::ConfigLayerSource::UserDatabase { revision: 0 },
             config: TomlValue::Table(toml::map::Map::new()),
             raw_toml: None,
-            version: version_for_toml(&TomlValue::Table(toml::map::Map::new())),
+            version: format!(
+                "db:0:{}",
+                version_for_toml(&TomlValue::Table(toml::map::Map::new()))
+            ),
             disabled_reason: None,
         },
         user_layer,
@@ -205,8 +201,8 @@ async fn returns_empty_when_all_layers_missing() {
     let binding = layers.effective_config();
     let base_table = binding.as_table().expect("base table expected");
     assert!(
-        base_table.is_empty(),
-        "expected empty base layer when configs missing"
+        base_table.contains_key("storage_url") && base_table.contains_key("sqlite_home"),
+        "bootstrap supplies the effective default storage destination"
     );
     let num_system_layers = layers
         .layers_high_to_low()
@@ -223,8 +219,8 @@ async fn returns_empty_when_all_layers_missing() {
         let effective = layers.effective_config();
         let table = effective.as_table().expect("top-level table expected");
         assert!(
-            table.is_empty(),
-            "expected empty table when configs missing"
+            table.contains_key("storage_url"),
+            "bootstrap supplies the effective default storage destination"
         );
     }
 }
@@ -528,7 +524,10 @@ async fn chaos_home_is_not_loaded_as_project_layer_from_home_dir() -> std::io::R
     let home_dir = tmp.path().join("home");
     let chaos_home = home_dir.join(".chaos");
     tokio::fs::create_dir_all(&chaos_home).await?;
-    tokio::fs::write(chaos_home.join(CONFIG_TOML_FILE), "foo = \"user\"\n").await?;
+    tokio::fs::write(chaos_home.join(CONFIG_TOML_FILE), "model = \"user\"\n").await?;
+    crate::user_settings::migrate(&chaos_home, false)
+        .await
+        .map_err(std::io::Error::other)?;
 
     let cwd = AbsolutePathBuf::from_absolute_path(&home_dir)?;
     let layers = load_config_layers_state(
@@ -550,7 +549,7 @@ async fn chaos_home_is_not_loaded_as_project_layer_from_home_dir() -> std::io::R
     let expected: Vec<&ConfigLayerEntry> = Vec::new();
     assert_eq!(expected, project_layers);
     assert_eq!(
-        layers.effective_config().get("foo"),
+        layers.effective_config().get("model"),
         Some(&TomlValue::String("user".to_string()))
     );
 
@@ -571,13 +570,11 @@ async fn chaos_home_within_project_tree_is_not_double_loaded() -> std::io::Resul
 
     tokio::fs::create_dir_all(&project_dot_codex).await?;
     make_config_for_test(&project_dot_codex, &project_root, TrustLevel::Trusted, None).await?;
-    let user_config_path = project_dot_codex.join(CONFIG_TOML_FILE);
-    let user_config_contents = tokio::fs::read_to_string(&user_config_path).await?;
-    tokio::fs::write(
-        &user_config_path,
-        format!("foo = \"user\"\n{user_config_contents}"),
-    )
-    .await?;
+    chaos_sysctl::edit::ConfigEditsBuilder::new(&project_dot_codex)
+        .set_model(Some("user"), None)
+        .apply()
+        .await
+        .map_err(std::io::Error::other)?;
 
     let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
     let layers = load_config_layers_state(
@@ -641,13 +638,11 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
         None,
     )
     .await?;
-    let untrusted_config_path = chaos_home_untrusted.join(CONFIG_TOML_FILE);
-    let untrusted_config_contents = tokio::fs::read_to_string(&untrusted_config_path).await?;
-    tokio::fs::write(
-        &untrusted_config_path,
-        format!("foo = \"user\"\n{untrusted_config_contents}"),
-    )
-    .await?;
+    chaos_sysctl::edit::ConfigEditsBuilder::new(&chaos_home_untrusted)
+        .set_model(Some("user"), None)
+        .apply()
+        .await
+        .map_err(std::io::Error::other)?;
 
     let layers_untrusted = load_config_layers_state(
         &chaos_home_untrusted,
@@ -674,17 +669,17 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
         Some(&TomlValue::String("child".to_string()))
     );
     assert_eq!(
-        layers_untrusted.effective_config().get("foo"),
+        layers_untrusted.effective_config().get("model"),
         Some(&TomlValue::String("user".to_string()))
     );
 
     let chaos_home_unknown = tmp.path().join("home_unknown");
     tokio::fs::create_dir_all(&chaos_home_unknown).await?;
-    tokio::fs::write(
-        chaos_home_unknown.join(CONFIG_TOML_FILE),
-        "foo = \"user\"\n",
-    )
-    .await?;
+    chaos_sysctl::edit::ConfigEditsBuilder::new(&chaos_home_unknown)
+        .set_model(Some("user"), None)
+        .apply()
+        .await
+        .map_err(std::io::Error::other)?;
 
     let layers_unknown = load_config_layers_state(
         &chaos_home_unknown,
@@ -711,7 +706,7 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
         Some(&TomlValue::String("child".to_string()))
     );
     assert_eq!(
-        layers_unknown.effective_config().get("foo"),
+        layers_unknown.effective_config().get("model"),
         Some(&TomlValue::String("user".to_string()))
     );
 
@@ -894,15 +889,15 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
     for (name, trust_level) in cases {
         let chaos_home = tmp.path().join(format!("home_{name}"));
         tokio::fs::create_dir_all(&chaos_home).await?;
-        let config_path = chaos_home.join(CONFIG_TOML_FILE);
-
         if let Some(trust_level) = trust_level {
             make_config_for_test(&chaos_home, &project_root, trust_level, None).await?;
-            let config_contents = tokio::fs::read_to_string(&config_path).await?;
-            tokio::fs::write(&config_path, format!("foo = \"user\"\n{config_contents}")).await?;
-        } else {
-            tokio::fs::write(&config_path, "foo = \"user\"\n").await?;
         }
+        crate::user_settings::install_persistence();
+        chaos_sysctl::edit::ConfigEditsBuilder::new(&chaos_home)
+            .set_model(Some("user"), None)
+            .apply()
+            .await
+            .map_err(std::io::Error::other)?;
 
         let layers = load_config_layers_state(
             &chaos_home,
@@ -933,7 +928,7 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
             TomlValue::Table(toml::map::Map::new())
         );
         assert_eq!(
-            layers.effective_config().get("foo"),
+            layers.effective_config().get("model"),
             Some(&TomlValue::String("user".to_string()))
         );
     }

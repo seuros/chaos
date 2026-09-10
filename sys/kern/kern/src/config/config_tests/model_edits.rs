@@ -3,14 +3,17 @@ use super::*;
 #[tokio::test]
 async fn set_model_updates_defaults() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::user_settings::install_persistence();
 
     ConfigEditsBuilder::new(chaos_home.path())
         .set_model(Some("serpent"), Some(ReasoningEffort::High))
         .apply()
         .await?;
 
-    let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
-    let parsed: ConfigToml = toml::from_str(&serialized)?;
+    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+        .await?
+        .settings
+        .try_into()?;
 
     assert_eq!(parsed.model.as_deref(), Some("serpent"));
     assert_eq!(parsed.model_reasoning_effort, Some(ReasoningEffort::High));
@@ -20,6 +23,7 @@ async fn set_model_updates_defaults() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn set_model_overwrites_existing_model() -> anyhow::Result<()> {
+    crate::user_settings::install_persistence();
     let chaos_home = TempDir::new()?;
     let config_path = chaos_home.path().join(CONFIG_TOML_FILE);
 
@@ -35,13 +39,16 @@ model = "gordon"
     )
     .await?;
 
+    crate::user_settings::migrate(chaos_home.path(), false).await?;
     ConfigEditsBuilder::new(chaos_home.path())
         .set_model(Some("o4-mini"), Some(ReasoningEffort::High))
         .apply()
         .await?;
 
-    let serialized = tokio::fs::read_to_string(config_path).await?;
-    let parsed: ConfigToml = toml::from_str(&serialized)?;
+    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+        .await?
+        .settings
+        .try_into()?;
 
     assert_eq!(parsed.model.as_deref(), Some("o4-mini"));
     assert_eq!(parsed.model_reasoning_effort, Some(ReasoningEffort::High));
@@ -59,6 +66,7 @@ model = "gordon"
 #[tokio::test]
 async fn set_model_updates_profile() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::user_settings::install_persistence();
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
@@ -66,8 +74,10 @@ async fn set_model_updates_profile() -> anyhow::Result<()> {
         .apply()
         .await?;
 
-    let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
-    let parsed: ConfigToml = toml::from_str(&serialized)?;
+    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+        .await?
+        .settings
+        .try_into()?;
     let profile = parsed
         .profiles
         .get("dev")
@@ -84,6 +94,7 @@ async fn set_model_updates_profile() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn set_model_updates_existing_profile() -> anyhow::Result<()> {
+    crate::user_settings::install_persistence();
     let chaos_home = TempDir::new()?;
     let config_path = chaos_home.path().join(CONFIG_TOML_FILE);
 
@@ -100,14 +111,17 @@ model = "sherlock"
     )
     .await?;
 
+    crate::user_settings::migrate(chaos_home.path(), false).await?;
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
         .set_model(Some("o4-high"), Some(ReasoningEffort::Medium))
         .apply()
         .await?;
 
-    let serialized = tokio::fs::read_to_string(config_path).await?;
-    let parsed: ConfigToml = toml::from_str(&serialized)?;
+    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+        .await?
+        .settings
+        .try_into()?;
 
     let dev_profile = parsed
         .profiles

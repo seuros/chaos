@@ -215,11 +215,13 @@ name = "alcatraz-macos"
 version = "47.4.0"
 dependencies = [
  "alcatraz-base",
+ "apple-native-keyring-store",
  "chaos-ipc",
  "chaos-parole",
  "chaos-pf",
  "chaos-realpath",
  "dirs 6.0.0",
+ "keyring-core",
  "libc",
  "pretty_assertions",
  "tempfile",
@@ -325,6 +327,17 @@ name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+
+[[package]]
+name = "apple-native-keyring-store"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b350bfd03649e07aa05c0a81b3e15934374e585c98204a57e20b9d49f49bb9a"
+dependencies = [
+ "keyring-core",
+ "log",
+ "security-framework",
+]
 
 [[package]]
 name = "approx"
@@ -1063,6 +1076,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "toml 1.1.4+spec-1.1.0",
+ "toml_edit",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -2042,6 +2057,7 @@ version = "47.4.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
+ "chaos-keyring",
  "chaos-pf",
  "chaos-realpath",
  "chaos-selinux",
@@ -2060,6 +2076,7 @@ dependencies = [
  "tracing",
  "unicode-segmentation",
  "unicode-width",
+ "uuid",
  "wildmatch",
 ]
 

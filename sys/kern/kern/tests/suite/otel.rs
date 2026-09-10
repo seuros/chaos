@@ -65,11 +65,10 @@ fn assert_empty_mcp_tool_fields(line: &str) -> Result<(), String> {
     Ok(())
 }
 
-async fn setup_test_chaos_with_server() -> (MockServer, Arc<Process>) {
+async fn setup_test_chaos_with_server() -> (MockServer, Arc<Process>, TestChaos) {
     let server = start_mock_server().await;
-    let TestChaos { process: chaos, .. } =
-        test_chaos().build(&server).await.expect("test_chaos build");
-    (server, chaos)
+    let test = test_chaos().build(&server).await.expect("test_chaos build");
+    (server, test.process.clone(), test)
 }
 
 async fn wait_for_completed_provider_usage(chaos: &Process) {
@@ -110,7 +109,7 @@ fn extract_log_field_does_not_confuse_similar_keys() {
 #[tokio::test]
 #[traced_test]
 async fn responses_api_emits_api_request_event() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(&server, sse(vec![ev_completed("done")])).await;
 
@@ -147,7 +146,7 @@ async fn responses_api_emits_api_request_event() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_emits_tracing_for_output_item() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -183,7 +182,7 @@ async fn process_sse_emits_tracing_for_output_item() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_emits_failed_event_on_parse_error() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(&server, "data: not-json\n\n".to_string()).await;
 
@@ -216,7 +215,7 @@ async fn process_sse_emits_failed_event_on_parse_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_records_response_error_message() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -270,7 +269,7 @@ async fn process_sse_failed_event_records_response_error_message() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_logs_parse_error() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -318,7 +317,7 @@ async fn process_sse_failed_event_logs_parse_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_logs_missing_error() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -356,7 +355,7 @@ async fn process_sse_failed_event_logs_missing_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_logs_response_completed_parse_error() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -406,7 +405,7 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_emits_completed_telemetry() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -468,7 +467,7 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -517,7 +516,7 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_custom_tool_call() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -582,7 +581,7 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_function_call() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -644,7 +643,7 @@ async fn handle_response_item_records_tool_result_for_function_call() {
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -710,7 +709,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_local_shell_call() {
-    let (server, chaos) = setup_test_chaos_with_server().await;
+    let (server, chaos, _test) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -741,7 +740,8 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
         .await
         .unwrap();
 
-    wait_for_completed_provider_usage(&chaos).await;
+    // Provider usage can arrive before tool completion.
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -761,7 +761,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
         if line[output_idx + "output=".len()..].is_empty() {
             return Err("empty output field".to_string());
         }
-        if !line.contains("success=false") {
+        if !line.contains("success=true") {
             return Err("missing success field".to_string());
         }
         assert_empty_mcp_tool_fields(line)?;
@@ -828,7 +828,13 @@ async fn handle_container_exec_autoapprove_from_config_records_tool_decision() {
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        process_table: _process_table,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy =
                 Constrained::allow_any(ApprovalPolicy::Interactive);
@@ -880,7 +886,13 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        process_table: _process_table,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -945,7 +957,13 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        process_table: _process_table,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1010,7 +1028,13 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        process_table: _process_table,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1075,7 +1099,13 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
         ]),
     )
     .await;
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        process_table: _process_table,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1140,7 +1170,13 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        process_table: _process_table,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1206,7 +1242,13 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        process_table: _process_table,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })

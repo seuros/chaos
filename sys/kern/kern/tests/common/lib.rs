@@ -85,6 +85,12 @@ pub fn test_tmp_path_buf() -> PathBuf {
 /// temporary directory. Using a per-test directory keeps tests hermetic and
 /// avoids clobbering a developer’s real `~/.chaos`.
 pub async fn load_default_config_for_test(chaos_home: &TempDir) -> Config {
+    // Migrate legacy fixtures before session startup.
+    if chaos_home.path().join("config.toml").exists() {
+        chaos_kern::user_settings::migrate(chaos_home.path(), false)
+            .await
+            .expect("test configuration should migrate");
+    }
     ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .harness_overrides(default_test_overrides())

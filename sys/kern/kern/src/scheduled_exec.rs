@@ -166,7 +166,8 @@ async fn check_current_rules(policy: &ScheduledShellPolicy, config: &Config) -> 
     // are fatal for unattended work.
     let manager = ExecPolicyManager::new(Arc::new(
         load_exec_policy(&config.config_layer_stack).await?,
-    ));
+    ))
+    .with_storage(&config.chaos_home, &policy.cwd);
     for approval in [
         policy.approval_policy,
         config.permissions.approval_policy.value(),
@@ -271,6 +272,15 @@ mod tests {
         let rules_path = cwd.join("rules/cron.decrees");
         let allowed = "prefix_rule {pattern = {'echo'}, decision = 'allow'}\n";
         std::fs::write(&rules_path, allowed).unwrap();
+        crate::user_settings::migrate(&cwd, false).await.unwrap();
+        crate::user_settings::put_scoped_approval(
+            &cwd,
+            &cwd,
+            "shell",
+            serde_json::json!({"prefix":["echo"]}),
+        )
+        .await
+        .unwrap();
         let config = load_current_config(&cwd, &cwd).await.unwrap();
         turn.config = Arc::new(config.clone());
         turn.cwd = cwd.clone();
@@ -339,14 +349,36 @@ mod tests {
             "prefix_rule {pattern = {'echo'}, decision = 'prompt'}\n",
             "not valid rules (",
         ] {
-            std::fs::write(&rules_path, rules).unwrap();
+            let runtime = crate::user_settings::open(&cwd).await.unwrap();
+            let snapshot = runtime.settings_snapshot().await.unwrap();
+            runtime
+                .commit_settings_import(
+                    snapshot.revision,
+                    &snapshot.settings,
+                    None,
+                    &[],
+                    Some(&serde_json::json!([rules])),
+                )
+                .await
+                .unwrap();
             assert!(
                 authorize(&session, &turn, "echo cron").await.is_err(),
                 "{rules}"
             );
             assert!(executor(&config)(&job).await.is_err(), "{rules}");
         }
-        std::fs::write(&rules_path, allowed).unwrap();
+        let runtime = crate::user_settings::open(&cwd).await.unwrap();
+        let snapshot = runtime.settings_snapshot().await.unwrap();
+        runtime
+            .commit_settings_import(
+                snapshot.revision,
+                &snapshot.settings,
+                None,
+                &[],
+                Some(&serde_json::json!([])),
+            )
+            .await
+            .unwrap();
 
         // The launcher cannot lend a saved grant different network access.
         let mut restricted_launcher = config.clone();
@@ -358,7 +390,15 @@ mod tests {
             .shell_environment_policy
             .inherit = crate::config::types::ShellEnvironmentPolicyInherit::None;
         assert!(prepare(&restricted_launcher, &job).await.is_err());
-        std::fs::write(&config_path, "sandbox_mode = 'read-only'\n").unwrap();
+        let snapshot = runtime.settings_snapshot().await.unwrap();
+        runtime
+            .commit_settings(
+                snapshot.revision,
+                &serde_json::json!({"sandbox_mode":"read-only"}),
+                None,
+            )
+            .await
+            .unwrap();
         assert!(authorize(&session, &turn, "echo cron").await.is_err());
         assert!(
             executor(&config)(&job)

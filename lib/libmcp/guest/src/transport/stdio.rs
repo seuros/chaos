@@ -352,15 +352,24 @@ mod tests {
     async fn read_line_bounded_splits_lines_and_signals_eof() {
         let mut reader: &[u8] = b"one\ntwo\nlast";
         assert_eq!(
-            read_line_bounded(&mut reader, 100).await.unwrap().as_deref(),
+            read_line_bounded(&mut reader, 100)
+                .await
+                .unwrap()
+                .as_deref(),
             Some("one")
         );
         assert_eq!(
-            read_line_bounded(&mut reader, 100).await.unwrap().as_deref(),
+            read_line_bounded(&mut reader, 100)
+                .await
+                .unwrap()
+                .as_deref(),
             Some("two")
         );
         assert_eq!(
-            read_line_bounded(&mut reader, 100).await.unwrap().as_deref(),
+            read_line_bounded(&mut reader, 100)
+                .await
+                .unwrap()
+                .as_deref(),
             Some("last")
         );
         assert!(read_line_bounded(&mut reader, 100).await.unwrap().is_none());
@@ -420,8 +429,7 @@ mod tests {
             .expect("child exits");
 
         let message = JsonRpcMessage::Notification(crate::protocol::JsonRpcRequest::notification(
-            "ping",
-            None,
+            "ping", None,
         ));
         let mut failed = false;
         for _ in 0..64 {

@@ -8,8 +8,10 @@ mod merge;
 mod overrides;
 pub mod path_utils;
 pub mod permissions;
+pub mod persistence;
 pub mod profile;
 mod requirements_exec_policy;
+pub mod secrets;
 mod state;
 pub mod types;
 

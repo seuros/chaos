@@ -52,6 +52,26 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
+async fn assert_persisted_grant(test: &TestChaos, kind: &str, payload: Value) -> Result<()> {
+    let home = test.home.path();
+    let grants = chaos_kern::user_settings::open(home)
+        .await?
+        .list_approvals(&chaos_kern::user_settings::installation_id(home)?)
+        .await?;
+    let scope = chaos_kern::user_settings::workspace_scope(test.cwd.path())?;
+    assert!(
+        grants.iter().any(|grant| {
+            grant.kind == kind
+                && grant.scope == scope
+                && grant.state == chaos_proc::ApprovalState::Active
+                && grant.payload == payload
+        }),
+        "missing active scoped {kind} grant: {grants:?}"
+    );
+    assert!(!home.join("rules/default.decrees").exists());
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 enum TargetPath {
     Workspace(&'static str),
@@ -1388,12 +1408,12 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
         .await?;
     wait_for_completion(&test).await;
 
-    let policy_path = test.home.path().join("rules").join("default.decrees");
-    let policy_contents = fs::read_to_string(&policy_path)?;
-    assert!(
-        policy_contents.contains("allow-prefix.txt"),
-        "unexpected policy contents: {policy_contents}"
-    );
+    assert_persisted_grant(
+        &test,
+        "shell",
+        json!({"prefix": expected_execpolicy_amendment.command}),
+    )
+    .await?;
 
     let first_output = parse_result(
         &first_results
@@ -1817,29 +1837,21 @@ allow_local_binding = true
         .await?;
     wait_for_completion(&test).await;
 
-    let policy_path = test.home.path().join("rules").join("default.decrees");
-    let policy_contents = fs::read_to_string(&policy_path)?;
-    let expected_rule = format!(
-        r#"network_rule {{host="{}", protocol="{}", decision="deny", justification="Deny {} access to {}"}}"#,
-        deny_network_amendment.host,
-        match network_context.protocol {
-            NetworkApprovalProtocol::Http => "http",
-            NetworkApprovalProtocol::Https => "https_connect",
-            NetworkApprovalProtocol::Socks5Tcp => "socks5_tcp",
-            NetworkApprovalProtocol::Socks5Udp => "socks5_udp",
-        },
-        match network_context.protocol {
-            NetworkApprovalProtocol::Http => "http",
-            NetworkApprovalProtocol::Https => "https_connect",
-            NetworkApprovalProtocol::Socks5Tcp => "socks5_tcp",
-            NetworkApprovalProtocol::Socks5Udp => "socks5_udp",
-        },
-        deny_network_amendment.host
-    );
-    assert!(
-        policy_contents.contains(&expected_rule),
-        "unexpected policy contents: {policy_contents}"
-    );
+    assert_persisted_grant(
+        &test,
+        "network",
+        json!({
+            "host": deny_network_amendment.host,
+            "protocol": match network_context.protocol {
+                NetworkApprovalProtocol::Http => "http",
+                NetworkApprovalProtocol::Https => "https_connect",
+                NetworkApprovalProtocol::Socks5Tcp => "socks5_tcp",
+                NetworkApprovalProtocol::Socks5Udp => "socks5_udp",
+            },
+            "decision": chaos_selinux::Decision::Forbidden,
+        }),
+    )
+    .await?;
 
     let first_output = parse_result(
         &first_results
@@ -1952,12 +1964,20 @@ async fn compound_command_with_one_safe_command_still_requires_approval() -> Res
     });
     let test = builder.build(&server).await?;
 
-    let rules_dir = test.home.path().join("rules");
-    fs::create_dir_all(&rules_dir)?;
-    fs::write(
-        rules_dir.join("default.decrees"),
-        r#"prefix_rule {pattern={"touch", "allow-prefix.txt"}, decision="allow"}"#,
-    )?;
+    let payload = json!({"prefix": ["touch", "allow-prefix.txt"]});
+    chaos_kern::user_settings::open(test.home.path())
+        .await?
+        .put_approval(&chaos_proc::RememberedApproval {
+            id: uuid::Uuid::new_v4().to_string(),
+            installation_id: chaos_kern::user_settings::installation_id(test.home.path())?,
+            scope: chaos_kern::user_settings::workspace_scope(test.cwd.path())?,
+            kind: "shell".into(),
+            subject: chaos_kern::user_settings::fingerprint(&payload)?,
+            identity: "v1".into(),
+            state: chaos_proc::ApprovalState::Active,
+            payload,
+        })
+        .await?;
 
     let call_id = "heredoc-with-chained-prefix";
     let command = "touch ./test.txt && rm ./test.txt";

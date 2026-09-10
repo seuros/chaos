@@ -145,9 +145,9 @@ async fn add_with_env_preserves_key_order_and_values() -> Result<()> {
         "add",
         "envy",
         "--env",
-        "FOO=bar",
+        &format!("FOO={}", common::TOKEN_REFERENCE),
         "--env",
-        "ALPHA=beta",
+        &format!("ALPHA={}", common::SECOND_TOKEN_REFERENCE),
         "--",
         "python",
         "server.py",
@@ -158,8 +158,14 @@ async fn add_with_env_preserves_key_order_and_values() -> Result<()> {
         assert_stdio_transport(&envy, "python", &["server.py"], &[]).context("env should exist")?;
 
     assert_eq!(env.len(), 2);
-    assert_eq!(env.get("FOO"), Some(&"bar".to_string()));
-    assert_eq!(env.get("ALPHA"), Some(&"beta".to_string()));
+    assert_eq!(
+        env.get("FOO").map(String::as_str),
+        Some(common::TOKEN_REFERENCE)
+    );
+    assert_eq!(
+        env.get("ALPHA").map(String::as_str),
+        Some(common::SECOND_TOKEN_REFERENCE)
+    );
 
     Ok(())
 }
@@ -215,14 +221,14 @@ async fn add_streamable_http_with_stored_bearer_token() -> Result<()> {
         "--url",
         "https://example.com/issues",
         "--bearer-token",
-        "secret-token",
+        common::TOKEN_REFERENCE,
     ])?;
 
     let issues = harness.server("issues").await?;
     assert_streamable_http_transport(
         &issues,
         "https://example.com/issues",
-        Some("secret-token"),
+        Some(common::TOKEN_REFERENCE),
         None,
     );
 

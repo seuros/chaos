@@ -56,6 +56,31 @@ impl Policy {
         &self.rules_by_program
     }
 
+    /// Remove grants while retaining restrictions and executable metadata.
+    pub fn restrictions_only(&self) -> Self {
+        let mut rules = MultiMap::new();
+        for (program, entries) in self.rules_by_program.iter_all() {
+            for rule in entries {
+                if rule
+                    .as_any()
+                    .downcast_ref::<PrefixRule>()
+                    .is_some_and(|rule| rule.decision != Decision::Allow)
+                {
+                    rules.insert(program.clone(), rule.clone());
+                }
+            }
+        }
+        Self::from_parts(
+            rules,
+            self.network_rules
+                .iter()
+                .filter(|rule| rule.decision != Decision::Allow)
+                .cloned()
+                .collect(),
+            self.host_executables_by_name.clone(),
+        )
+    }
+
     pub fn network_rules(&self) -> &[NetworkRule] {
         &self.network_rules
     }

@@ -7,7 +7,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
-use std::sync::{LazyLock, RwLock};
+use std::sync::{LazyLock, PoisonError, RwLock};
 
 use chaos_chassis::appearance::{Appearance, PaletteOverrides, TextStyle, ThemeColor};
 use chaos_ipc::config_types::ModeKind;
@@ -24,7 +24,7 @@ static APPEARANCE: LazyLock<RwLock<Appearance>> =
 
 /// Install the final configuration, replacing any previously active overrides.
 pub fn set_appearance(appearance: Appearance) {
-    *APPEARANCE.write().unwrap_or_else(|err| err.into_inner()) = appearance;
+    *APPEARANCE.write().unwrap_or_else(PoisonError::into_inner) = appearance;
 }
 
 fn terminal_color(color: &ThemeColor) -> Color {
@@ -85,7 +85,7 @@ fn resolve_text_style(mut base: Style, overrides: &TextStyle) -> Style {
 
 /// Sparse prose base: absent settings retain the renderer's inherited style.
 pub fn assistant_message() -> Style {
-    let appearance = APPEARANCE.read().unwrap_or_else(|err| err.into_inner());
+    let appearance = APPEARANCE.read().unwrap_or_else(PoisonError::into_inner);
     let base = resolve_text_style(
         Style::default(),
         &TextStyle {
@@ -235,7 +235,7 @@ pub(crate) fn palette_for_mode(mode: ModeKind, clamped: bool) -> Palette {
 
 /// Active palette. Switches to Anthropic orange when clamped.
 pub fn palette() -> Palette {
-    let appearance = APPEARANCE.read().unwrap_or_else(|err| err.into_inner());
+    let appearance = APPEARANCE.read().unwrap_or_else(PoisonError::into_inner);
     resolve_palette(
         palette_for_mode(collaboration_mode(), is_clamped()),
         &appearance.colors,
@@ -268,7 +268,7 @@ pub fn border() -> Style {
 /// User-authored message background.
 pub fn user_message() -> Style {
     let base = text_panel();
-    let appearance = APPEARANCE.read().unwrap_or_else(|err| err.into_inner());
+    let appearance = APPEARANCE.read().unwrap_or_else(PoisonError::into_inner);
     resolve_text_style(base, &appearance.user)
 }
 

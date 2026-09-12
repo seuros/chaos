@@ -1,5 +1,6 @@
 use super::*;
 use crate::history_cell::HistoryCell;
+use crate::terminal_palette::rgb_color;
 use ratatui::text::Line;
 
 struct Restore {
@@ -47,9 +48,9 @@ fn terminal_colors() {
         ("light_magenta", Color::LightMagenta),
         ("light_cyan", Color::LightCyan),
         ("white", Color::White),
-        ("#aAbBcC", Color::Rgb(0xaa, 0xbb, 0xcc)),
-        ("#000000", Color::Rgb(0, 0, 0)),
-        ("#FFFFFF", Color::Rgb(255, 255, 255)),
+        ("#aAbBcC", rgb_color((0xaa, 0xbb, 0xcc))),
+        ("#000000", rgb_color((0, 0, 0))),
+        ("#FFFFFF", rgb_color((255, 255, 255))),
     ] {
         let color = ThemeColor::try_from(value.to_owned()).unwrap();
         assert_eq!(terminal_color(&color), expected, "{value}");
@@ -68,7 +69,7 @@ fn defaults_and_mode_overrides() {
                 original
             );
             let resolved = resolve_palette(original, &overrides.colors);
-            assert_eq!(resolved.fg, Color::Rgb(0x12, 0x34, 0x56));
+            assert_eq!(resolved.fg, rgb_color((0x12, 0x34, 0x56)));
             assert_eq!(resolved.border, Color::Reset);
             assert_eq!(resolved.accent, Color::LightBlue);
             assert_eq!(resolved.warning, original.warning);
@@ -140,7 +141,7 @@ fn role_styles_and_streaming() {
     assert_eq!(crate::style::text_panel_style(), panel_before);
     assert_eq!(crate::style::proposed_plan_style(), panel_before);
     assert_eq!(user_message().fg, Some(Color::Red));
-    assert_eq!(assistant_message().fg, Some(Color::Rgb(0x12, 0x34, 0x56)));
+    assert_eq!(assistant_message().fg, Some(rgb_color((0x12, 0x34, 0x56))));
 
     let user = crate::history_cell::new_user_prompt(
         "user body".into(),
@@ -156,7 +157,7 @@ fn role_styles_and_streaming() {
     let mut rendered = Vec::new();
     crate::markdown::append_markdown(source, None, Some(&cwd), &mut rendered);
     let plain = find_style(&rendered, "Plain");
-    assert_eq!(plain.fg, Some(Color::Rgb(0x12, 0x34, 0x56)));
+    assert_eq!(plain.fg, Some(rgb_color((0x12, 0x34, 0x56))));
     assert_eq!(plain.bg, Some(Color::DarkGray));
     assert!(plain.add_modifier.contains(Modifier::ITALIC));
     assert!(!plain.add_modifier.contains(Modifier::BOLD));

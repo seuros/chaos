@@ -106,7 +106,7 @@ pub fn read_catalog(directory: &Path) -> Result<Vec<ManualPage>, String> {
     Ok(pages)
 }
 
-pub fn render_catalog(pages: &[ManualPage]) -> String {
+pub fn render_catalog(pages: &[ManualPage]) -> Result<String, std::fmt::Error> {
     let mut output = String::from("&[\n");
     for page in pages {
         // Debug string formatting produces escaped Rust literals, including for
@@ -115,11 +115,10 @@ pub fn render_catalog(pages: &[ManualPage]) -> String {
             output,
             "ManualPageSpec {{ id: {:?}, title: {:?}, summary: {:?}, source: {:?} }},",
             page.id, page.title, page.summary, page.body,
-        )
-        .expect("write generated source to String");
+        )?;
     }
     output.push_str("]\n");
-    output
+    Ok(output)
 }
 
 #[cfg(test)]

@@ -71,10 +71,10 @@ fn generated_catalog_contains_escaped_body_not_metadata_or_file_paths() {
     let source = format!("{PAGE}\n\"quoted\" \\ path ```rust``` λ\n");
     let page = parse_page("example.7", &source).unwrap();
     let expected_literal = format!("{:?}", page.body);
-    let generated = render_catalog(&[page]);
+    let generated = render_catalog(&[page]).unwrap();
     assert!(generated.contains(&format!("source: {expected_literal}")));
     assert!(!generated.contains("summary ="));
     assert!(!generated.contains("+++"));
     assert!(!generated.contains("include_str!"));
-    assert_eq!(render_catalog(&[]), "&[\n]\n");
+    assert_eq!(render_catalog(&[]).unwrap(), "&[\n]\n");
 }

@@ -94,6 +94,7 @@ impl App {
                     }
                 }
                 TuiEvent::Draw => {
+                    tui.set_machine_config(self.chat_widget.config_ref());
                     tui.set_sandbox_policy(
                         self.chat_widget
                             .config_ref()

@@ -5,7 +5,6 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use chaos_kern::PersistenceStatus;
-use chaos_sysinfo::PowerInfo;
 use jiff::Zoned;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -15,6 +14,7 @@ use tokio::task::JoinHandle;
 
 use super::Bar;
 use super::BarWidget;
+use super::machine;
 use super::widgets;
 use crate::tui::FrameRequester;
 
@@ -23,21 +23,28 @@ type EnvironmentTask = JoinHandle<Vec<BarWidget>>;
 pub(crate) struct Runtime {
     widgets: Arc<Mutex<Vec<BarWidget>>>,
     task: JoinHandle<()>,
+    machine: Option<machine::Monitor>,
 }
 
 impl Runtime {
-    pub(crate) fn new(requester: FrameRequester) -> Self {
-        let (power_tx, power_rx) = watch::channel(PowerInfo::default());
+    pub(crate) fn new(requester: FrameRequester, context: machine::Context) -> Self {
+        let monitor = machine::Monitor::new(context);
         let persistence = chaos_kern::subscribe_persistence_status();
         let environment =
             tokio::task::spawn_blocking(|| widgets::environment_widgets(chaos_sysinfo::sysinfo()));
-        Self::start(
+        let mut runtime = Self::start(
             requester,
-            widgets::initial_widgets(chaos_sysinfo::hostname(), power_rx, persistence.clone()),
-            Some(power_tx),
+            widgets::initial_widgets(
+                chaos_sysinfo::hostname(),
+                monitor.source.clone(),
+                persistence.clone(),
+            ),
+            Some(monitor.source.clone()),
             Some(persistence),
             Some(environment),
-        )
+        );
+        runtime.machine = Some(monitor);
+        runtime
     }
 
     #[cfg(test)]
@@ -48,7 +55,7 @@ impl Runtime {
     fn start(
         requester: FrameRequester,
         mut widgets: Vec<BarWidget>,
-        power: Option<watch::Sender<PowerInfo>>,
+        mut machine: Option<machine::Source>,
         mut persistence: Option<watch::Receiver<PersistenceStatus>>,
         mut environment: Option<EnvironmentTask>,
     ) -> Self {
@@ -58,9 +65,6 @@ impl Runtime {
         let widgets = Arc::new(Mutex::new(widgets));
         let state = Arc::clone(&widgets);
         let task = tokio::spawn(async move {
-            let mut power_ticks = tokio::time::interval(Duration::from_secs(30));
-            power_ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            let mut power_read: Option<JoinHandle<PowerInfo>> = None;
             loop {
                 let mut widgets_added = false;
                 tokio::select! {
@@ -89,24 +93,10 @@ impl Runtime {
                             }
                         }
                     }
-                    _ = power_ticks.tick(), if power.is_some() && power_read.is_none() => {
-                        // OS I/O never holds the widget lock or blocks the clock.
-                        // At most one read is in flight; missed polls are not replayed.
-                        power_read = Some(tokio::task::spawn_blocking(chaos_sysinfo::power_info));
-                        continue;
-                    }
-                    result = wait_for(power_read.as_mut()) => {
-                        power_read = None;
-                        match result {
-                            Ok(snapshot) => {
-                                if let Some(sender) = &power {
-                                    sender.send_replace(snapshot);
-                                }
-                            }
-                            Err(error) => {
-                                tracing::warn!(%error, "power snapshot worker failed");
-                                continue;
-                            }
+                    result = wait_for(machine.as_mut().map(watch::Receiver::changed)) => {
+                        if result.is_err() {
+                            machine = None;
+                            continue;
                         }
                     }
                 }
@@ -125,7 +115,11 @@ impl Runtime {
                 }
             }
         });
-        Self { widgets, task }
+        Self {
+            widgets,
+            task,
+            machine: None,
+        }
     }
 
     #[cfg(test)]
@@ -208,6 +202,61 @@ mod tests {
                 next: Some(Duration::from_secs(60)),
             }
         })
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn machine_updates_do_not_block_the_clock_or_redraw_unchanged_content() {
+        use crate::top_bar::tests::observations::{discharging, snapshot};
+
+        let (source, receiver) = watch::channel(None);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (tx, mut frames) = broadcast::channel(16);
+        let runtime = Runtime::start(
+            FrameRequester::new(tx),
+            vec![
+                widgets::battery::new(receiver.clone()),
+                probe(calls.clone()),
+            ],
+            Some(receiver),
+            None,
+            None,
+        );
+        tokio::task::yield_now().await;
+        assert!(runtime.widgets.try_lock().is_ok());
+        tokio::time::advance(Duration::from_secs(60)).await;
+        frames.recv().await.unwrap();
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            2,
+            "clock timer runs before a machine read finishes"
+        );
+        source.send_replace(snapshot(discharging(Some(80))));
+        frames.recv().await.unwrap();
+        let line: String = runtime
+            .buffer(7)
+            .content
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
+        assert_eq!(line, " ● 80% ");
+        source.send_replace(snapshot(discharging(Some(80))));
+        tokio::task::yield_now().await;
+        assert!(
+            frames.try_recv().is_err(),
+            "identical display must not redraw"
+        );
+        source.send_replace(None);
+        frames.recv().await.unwrap();
+        assert!(
+            runtime
+                .buffer(7)
+                .content
+                .iter()
+                .all(|cell| cell.symbol() == " ")
+        );
+        drop(runtime);
+        tokio::task::yield_now().await;
+        assert_eq!(source.receiver_count(), 0);
     }
 
     #[tokio::test]

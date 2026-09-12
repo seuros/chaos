@@ -3,7 +3,8 @@
 Detection foundation for environment-aware decisions. **No notifications,
 thresholds, execution blocks, background polling, or configuration are enabled
 by this crate.** The kernel exposes fresh observations through `chaos://machine`;
-the legacy startup/UI snapshot is unchanged.
+its separate warning policy can instruct the model to checkpoint and notify the
+operator. The terminal top bar consumes the same observations and kernel policy.
 
 ## Independent facts
 
@@ -88,9 +89,11 @@ or by cleanup even on ordinary disks.
 
 The harness resource `chaos://machine` is discoverable through
 `list_mcp_resources` and readable with `read_mcp_resource`, omitting `server`.
-It returns compact JSON with `scope: "harness_host"`, `machine`, and `storage`.
+It returns compact JSON with `scope: "harness_host"`, `machine`, `storage`, and
+`warnings`, plus `warning_instruction` when a configured threshold is reached.
 Every read runs new probes on a blocking worker; it is not a cached startup
-snapshot or a subscription.
+snapshot or a subscription. The kernel bounds the wait and keeps timed-out probes
+from accumulating workers.
 
 The in-session resource probes the active turn's cwd, configured ChaOS
 home/cache/log directories, and the process temporary directory. The standalone
@@ -102,6 +105,9 @@ tool hosts are not inferred. Probe failures stay separate from zero free space.
 Probes are fresh, synchronous, best-effort I/O. Use a blocking worker in async
 applications; timestamps mark collection start, not an atomic observation.
 Inspect the execution host/namespace, not a remote target from the local host.
+Async kernel/UI consumers share `chaos_kern::machine_status::ObservationRequest`:
+it captures active paths/policy and returns typed `MachineStatus` observations,
+with the same deadline and single-worker limit as the resource and model checks.
 
 ## Platform coverage
 
@@ -120,8 +126,14 @@ themselves. Without stronger evidence, the result stays unknown. Legacy Linux
 display drivers, missing sysfs/ACPI, and restricted probes can also be unknown.
 VM/container detection is best-effort and not exhaustive.
 
-`chaos-sysinfo` remains the legacy startup/UI snapshot API; it is unchanged.
+`chaos-sysinfo` remains the legacy startup/static-environment snapshot API.
 This crate deliberately does not derive safety facts from its lossy battery
-booleans or process-wide cached disk statistics. Moving remaining consumers onto
-these observations and adding configurable checkpoint/warning policy are later
-steps. Reading a resource does not enable alerts or execution interlocks.
+booleans or process-wide cached disk statistics. The kernel's
+[`machine_warnings` settings](../../../man/chaos-mcp.7.md#machine-warnings)
+default to 5% battery, 5% available filesystem space, and OS/sensor thermal warnings.
+Warnings are also injected before normal model requests, not just resource reads.
+Checkpointing is an instruction to the model, not an automatic save. There is no
+continuous model notification, interruption of running commands, or execution interlock.
+The [terminal top bar](../../../man/chaos-appearance.7.md#top-bar) polls the shared
+bounded kernel collector for display only; it does not replace fresh pre-request
+or resource observations. Its local clock continues updating independently of probes.

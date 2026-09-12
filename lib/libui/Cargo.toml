@@ -46,6 +46,7 @@ chaos-getopt = { workspace = true }
 chaos-glob = { workspace = true }
 chaos-jail-report = { workspace = true }
 chaos-locate = { workspace = true }
+chaos-machine = { workspace = true }
 chaos-pwd = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-sudoers = { workspace = true }

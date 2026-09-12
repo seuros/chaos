@@ -6,14 +6,9 @@ use tokio::sync::watch;
 use super::super::{BarWidget, Content, Side, Tone};
 
 pub(in crate::top_bar) fn new(source: watch::Receiver<PersistenceStatus>) -> BarWidget {
-    BarWidget::watched(
-        "storage",
-        Side::Right,
-        200,
-        source,
-        |status| status.backend,
-        present,
-    )
+    BarWidget::watched("storage", Side::Right, 200, source, |status| {
+        present(status.backend)
+    })
 }
 
 fn present(backend: RuntimeStorageBackend) -> Content {

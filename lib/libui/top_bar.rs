@@ -14,6 +14,7 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::WidgetRef;
 
 mod layout;
+mod machine;
 mod runtime;
 mod widget;
 mod widgets;

@@ -286,6 +286,8 @@ pub struct Tui {
     /// These rows are never scrolled and the viewport starts below them.
     top_reserved_rows: u16,
     top_bar: Option<crate::top_bar::Runtime>,
+    machine_context:
+        tokio::sync::watch::Sender<Option<chaos_kern::machine_status::ObservationRequest>>,
     sandbox_policy: Option<chaos_ipc::protocol::SandboxPolicy>,
     terminal_title_enabled: bool,
 }
@@ -294,7 +296,11 @@ impl Tui {
     pub fn new(terminal: Terminal) -> Self {
         let (draw_tx, _) = broadcast::channel(1);
         let frame_requester = FrameRequester::new(draw_tx.clone());
-        let top_bar = Some(crate::top_bar::Runtime::new(frame_requester.clone()));
+        let (machine_context, context) = tokio::sync::watch::channel(None);
+        let top_bar = Some(crate::top_bar::Runtime::new(
+            frame_requester.clone(),
+            context,
+        ));
 
         // Detect keyboard enhancement support before any EventStream is created so the
         // crossterm poller can acquire its lock without contention.
@@ -319,6 +325,7 @@ impl Tui {
             alt_screen_enabled: true,
             top_reserved_rows: 1,
             top_bar,
+            machine_context,
             sandbox_policy: None,
             terminal_title_enabled: false,
         }
@@ -330,6 +337,18 @@ impl Tui {
             self.sandbox_policy = Some(policy.clone());
             self.frame_requester.schedule_frame();
         }
+    }
+
+    /// Follow the active workspace/state paths; never infer disks from process cwd.
+    pub fn set_machine_config(&mut self, config: &chaos_kern::config::Config) {
+        let request = chaos_kern::machine_status::ObservationRequest::new(config, &config.cwd);
+        self.machine_context.send_if_modified(|current| {
+            if current.as_ref() == Some(&request) {
+                return false;
+            }
+            *current = Some(request);
+            true
+        });
     }
 
     pub fn set_terminal_title_enabled(&mut self, enabled: bool) {
@@ -357,7 +376,10 @@ impl Tui {
         if rows == 0 {
             self.top_bar = None;
         } else if self.top_bar.is_none() {
-            self.top_bar = Some(crate::top_bar::Runtime::new(self.frame_requester.clone()));
+            self.top_bar = Some(crate::top_bar::Runtime::new(
+                self.frame_requester.clone(),
+                self.machine_context.subscribe(),
+            ));
         }
     }
 

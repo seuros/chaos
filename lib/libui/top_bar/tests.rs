@@ -7,11 +7,15 @@ use crate::top_bar::widgets::multiplexer;
 use crate::top_bar::widgets::os;
 use crate::top_bar::widgets::sandbox;
 use crate::top_bar::widgets::storage;
+use chaos_kern::machine_status::MachineWarning;
 use chaos_kern::{PersistenceHealth, PersistenceStatus, RuntimeStorageBackend};
+use chaos_machine::{BatteryKind, PowerInfo, PowerSource};
 use chaos_sysinfo::MultiplexerInfo;
-use chaos_sysinfo::PowerInfo;
 use chaos_sysinfo::SandboxKind;
 use tokio::sync::watch;
+
+pub(super) mod observations;
+use observations::{discharging, machine_status, snapshot};
 
 fn clock(time: &str) -> BarWidget {
     let mut clock = widgets::clock::new();
@@ -155,8 +159,7 @@ fn watched_state_selects_coalesces_and_retains_snapshots() {
         Side::Left,
         128,
         rx,
-        |snapshot| snapshot.0,
-        |value| Content::new(value.to_string()),
+        |snapshot| Content::new(snapshot.0.to_string()),
     )];
     let now = "2026-09-05T12:34:00Z[UTC]".parse().unwrap();
     assert_eq!(text(&render(&widgets, 3)), " 5 ");
@@ -197,11 +200,7 @@ fn full_bar(status: watch::Receiver<PersistenceStatus>) -> Vec<BarWidget> {
         kind: "tmux".into(),
         id: "%3".into(),
     });
-    let (_, power) = watch::channel(PowerInfo {
-        has_battery: true,
-        battery_level: Some(87),
-        charger_connected: false,
-    });
+    let (_, power) = watch::channel(snapshot(discharging(Some(87))));
     // Match runtime registration, including the asynchronously appended group.
     let mut widgets = widgets::initial_widgets("host".into(), power, status);
     widgets.extend(widgets::environment_widgets(&info));
@@ -395,10 +394,10 @@ fn persistence_changes_preempt_and_restore_hidden_widgets() {
     let mut widgets = full_bar(rx);
     assert_eq!(text(&render(&widgets, 7)), " ● 87% ");
     let now = "2026-09-05T12:34:00Z[UTC]".parse().unwrap();
-    for health in [
-        PersistenceHealth::Degraded,
-        PersistenceHealth::Failing,
-        PersistenceHealth::Failed,
+    for (health, changed) in [
+        (PersistenceHealth::Degraded, true),
+        (PersistenceHealth::Failing, true),
+        (PersistenceHealth::Failed, false),
     ] {
         tx.send_modify(|status| status.health = health);
         let warning = widgets
@@ -406,7 +405,7 @@ fn persistence_changes_preempt_and_restore_hidden_widgets() {
             .find(|widget| widget.spec().id == "persistence")
             .unwrap();
         let update = warning.refresh(&now);
-        assert!(update.changed);
+        assert_eq!(update.changed, changed, "only presentation changes redraw");
         assert_eq!(update.next, None, "health is event-driven, not polled");
         assert!(!warning.refresh(&now).changed);
         assert_eq!(
@@ -485,11 +484,7 @@ fn storage_backend_changes_remeasure_whole_labels() {
 }
 
 fn three_widgets_resize_by_priority_and_reappear() {
-    let (_, rx) = watch::channel(PowerInfo {
-        has_battery: true,
-        battery_level: Some(87),
-        charger_connected: false,
-    });
+    let (_, rx) = watch::channel(snapshot(discharging(Some(87))));
     let mut widgets = [
         hostname::new("host".into()),
         battery::new(rx),
@@ -512,53 +507,54 @@ fn three_widgets_resize_by_priority_and_reappear() {
 }
 
 fn battery_snapshots_update_hidden_widgets_and_preserve_unknown_state() {
-    let (tx, rx) = watch::channel(PowerInfo::default());
+    let (tx, rx) = watch::channel(None);
     let mut widgets = vec![battery::new(rx)];
     let now = "2026-09-05T12:34:00Z[UTC]".parse().unwrap();
     assert!(!widgets[0].refresh(&now).changed);
     assert_eq!(widgets[0].spec().min_width, 0);
-    for (power, expected_text, color) in [
+    for (power, low, expected_text, color) in [
         (
-            PowerInfo {
-                has_battery: true,
-                battery_level: Some(15),
-                charger_connected: false,
-            },
-            "● 15%",
+            discharging(Some(5)),
+            true,
+            "● 5%",
             crate::theme::palette().error,
         ),
         (
             PowerInfo {
-                has_battery: true,
-                battery_level: Some(15),
-                charger_connected: true,
+                source: PowerSource::External,
+                external_power: Some(true),
+                ..discharging(Some(0))
             },
-            "⚡ 15%",
-            crate::theme::palette().success,
+            false,
+            "⚡ AC",
+            crate::theme::palette().top_bar_fg,
         ),
         (
-            PowerInfo {
-                has_battery: true,
-                battery_level: None,
-                charger_connected: false,
-            },
-            "● ?%",
-            crate::theme::palette().warning,
+            discharging(None),
+            false,
+            "● ?",
+            crate::theme::palette().top_bar_fg,
         ),
         (
-            PowerInfo {
-                has_battery: true,
-                battery_level: Some(100),
-                charger_connected: false,
-            },
+            discharging(Some(100)),
+            false,
             "● 100%",
             crate::theme::palette().top_bar_fg,
         ),
     ] {
-        tx.send_replace(power);
+        let mut status = machine_status(power);
+        if low {
+            status.warnings.push(MachineWarning::LowBattery {
+                name: "BAT0".into(),
+                battery_kind: BatteryKind::System,
+                charge_percent: 5,
+            });
+        }
+        tx.send_replace(Some(std::sync::Arc::new(status)));
         let update = widgets[0].refresh(&now);
         assert!(update.changed);
         assert_eq!(update.next, None, "the runtime owns power polling");
+        assert_eq!(widgets[0].spec().priority, if low { 250 } else { 240 });
         assert!(
             !widgets[0].refresh(&now).changed,
             "identical samples do not redraw"
@@ -587,7 +583,7 @@ fn battery_snapshots_update_hidden_widgets_and_preserve_unknown_state() {
         );
         assert_eq!(render(&widgets, 20), expected);
     }
-    tx.send_replace(PowerInfo::default());
+    tx.send_replace(None);
     assert!(widgets[0].refresh(&now).changed);
     assert_eq!(widgets[0].spec().min_width, 0);
     widgets.push(clock("2026-09-05T12:34:00Z[UTC]"));

@@ -6138,6 +6138,7 @@ dependencies = [
  "chaos-jail-report",
  "chaos-kern",
  "chaos-locate",
+ "chaos-machine",
  "chaos-pwd",
  "chaos-realpath",
  "chaos-services",

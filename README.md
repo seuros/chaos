@@ -77,8 +77,11 @@ For CI vs release coverage and provider wire formats, see
 
 Machine-profile, live power-source, thermal, and task-scoped filesystem detection
 live in [chaos-machine](./lib/libmisc/machine/README.md), exposed through the fresh
-`chaos://machine` harness resource. It does not yet emit health warnings or enforce
-execution interlocks.
+`chaos://machine` harness resource. Configurable model warnings request a persistent
+checkpoint and operator assistance before risky work. They are not execution
+interlocks; see [machine warnings](./man/chaos-mcp.7.md#machine-warnings).
+The [top bar](./man/chaos-appearance.7.md#top-bar) shows the same scoped machine
+status alongside local time, without blocking rendering on probes.
 
 ### Live permissions
 

@@ -235,6 +235,7 @@ impl App {
         let app_event_tx = AppEventSender::new(app_event_tx);
         emit_project_config_warnings(&app_event_tx, &config);
         tui.set_notification_method(config.tui_notification_method);
+        tui.set_machine_config(&config);
 
         let harness_overrides = normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd);
         let auth_manager = auth_manager.clone();

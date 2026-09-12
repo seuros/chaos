@@ -75,6 +75,7 @@ pub(super) struct BarWidget {
     id: &'static str,
     side: Side,
     priority: u8,
+    warning_priority: Option<u8>,
     content: Content,
     updater: Option<Box<Refresh>>,
 }
@@ -85,6 +86,7 @@ impl BarWidget {
             id,
             side,
             priority,
+            warning_priority: None,
             content,
             updater: None,
         }
@@ -117,29 +119,25 @@ impl BarWidget {
         })
     }
 
-    /// Retain the initial snapshot and update only when this widget's selected
-    /// state changes. Unrelated fields in a shared source do not cause redraws.
+    /// Retain the initial snapshot and redraw only when presentation changes.
+    /// Unrelated fields and sub-display precision changes do not cause redraws.
     /// The runtime wakes on notifications; this adapter creates no polling loop.
-    pub(super) fn watched<T, V>(
+    pub(super) fn watched<T>(
         id: &'static str,
         side: Side,
         priority: u8,
         mut source: watch::Receiver<T>,
-        select: fn(&T) -> V,
-        present: fn(V) -> Content,
+        present: impl Fn(&T) -> Content + Send + Sync + 'static,
     ) -> Self
     where
         T: Send + Sync + 'static,
-        V: Copy + Eq + Send + Sync + 'static,
     {
-        let mut value = select(&source.borrow_and_update());
-        Self::text(id, side, priority, present(value)).with_refresh(move |cached, _| {
-            // Release the channel borrow before running presentation code.
-            let next = select(&source.borrow_and_update());
-            let changed = value != next;
+        let content = present(&source.borrow_and_update());
+        Self::text(id, side, priority, content).with_refresh(move |cached, _| {
+            let content = present(&source.borrow_and_update());
+            let changed = *cached != content;
             if changed {
-                value = next;
-                *cached = present(value);
+                *cached = content;
             }
             Update {
                 changed,
@@ -148,11 +146,20 @@ impl BarWidget {
         })
     }
 
+    pub(super) fn with_warning_priority(mut self, priority: u8) -> Self {
+        self.warning_priority = Some(priority);
+        self
+    }
+
     pub(super) fn spec(&self) -> WidgetSpec {
         WidgetSpec {
             id: self.id,
             side: self.side,
-            priority: self.priority,
+            priority: if matches!(self.content.tone, Tone::Warning | Tone::Error) {
+                self.warning_priority.unwrap_or(self.priority)
+            } else {
+                self.priority
+            },
             min_width: crate::width::display_width(&self.content.text),
         }
     }

@@ -1652,6 +1652,16 @@ name = "chaos-lsd"
 version = "47.4.0"
 
 [[package]]
+name = "chaos-machine"
+version = "47.4.0"
+dependencies = [
+ "libc",
+ "objc2-foundation",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "chaos-mcp-protocol"
 version = "47.4.0"
 dependencies = [

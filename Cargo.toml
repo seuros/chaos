@@ -84,6 +84,7 @@ members = [
     "lib/libmisc/init",
     "lib/libmisc/session",
     "lib/libmisc/sysinfo",
+    "lib/libmisc/machine",
     "lib/libtrace/snitch",
     "lib/libui",
     "lib/libui/chassis",
@@ -210,6 +211,7 @@ chaos-synopsis = { path = "lib/libmisc/synopsis" }
 chaos-coreboot = { path = "lib/libmisc/init" }
 chaos-session = { path = "lib/libmisc/session" }
 chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
+chaos-machine = { path = "lib/libmisc/machine" }
 chaos-snitch = { path = "lib/libtrace/snitch" }
     libui = { path = "lib/libui" }
     chaos-chassis = { path = "lib/libui/chassis" }
@@ -299,6 +301,7 @@ mimalloc = { version = "0.1", default-features = false }
 mlua = { version = "0.12", features = ["lua54", "vendored", "async", "serialize", "send"] }
 multimap = "0.10.1"
 notify = "8.2.0"
+objc2-foundation = { version = "0.3.2", default-features = false }
 openssl-sys = "*"
 opentelemetry-appender-tracing = "0.32.0"
 opentelemetry-http = { version = "0.32.0", default-features = false }

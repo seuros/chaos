@@ -1,0 +1,20 @@
+[package]
+name = "chaos-machine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Machine, power-source, thermal, and task-scoped filesystem observations"
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { workspace = true, features = ["std", "NSProcessInfo"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

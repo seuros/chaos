@@ -75,6 +75,11 @@ Windows is not supported.
 For CI vs release coverage and provider wire formats, see
 [chaos-support(7)](./man/chaos-support.7.md).
 
+Machine-profile, live power-source, thermal, and task-scoped filesystem detection
+live in [chaos-machine](./lib/libmisc/machine/README.md), exposed through the fresh
+`chaos://machine` harness resource. It does not yet emit health warnings or enforce
+execution interlocks.
+
 ### Live permissions
 
 Use `/permissions` to change the current session's sandbox and approval policy,

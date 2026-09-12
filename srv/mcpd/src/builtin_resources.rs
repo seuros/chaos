@@ -35,6 +35,12 @@ struct McpHostBuiltinResourceBackend<'a> {
 }
 
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResourceBackend<'_> {
+    async fn machine_json(&self) -> Result<String, String> {
+        // There is no unique child session for a server-level resource read.
+        let config = load_config_for_resource("machine observations").await?;
+        builtin_mcp_resources::machine_json(&config, &config.cwd).await
+    }
+
     async fn sessions_json(&self) -> Result<String, String> {
         if let Some(runtime_db) = self.server.runtime_db.as_ref() {
             return builtin_mcp_resources::sessions_json_from_runtime_db(Some(runtime_db)).await;
@@ -199,6 +205,14 @@ fn manual_list_handler<'a>(
     read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MANUAL_URI)
 }
 
+fn machine_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    let _ = ctx;
+    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MACHINE_URI)
+}
+
 fn session_detail_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
@@ -281,6 +295,7 @@ pub(crate) fn resource_router() -> McpResourceRouter<ChaosMcpServer> {
             builtin_mcp_resources::ChaosBuiltinResourceKind::Modes => modes_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Mcp => mcp_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Manual => manual_list_handler,
+            builtin_mcp_resources::ChaosBuiltinResourceKind::Machine => machine_handler,
         };
         router = router.with_resource(resource_info(spec), handler, None);
     }

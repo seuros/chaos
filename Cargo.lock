@@ -1507,6 +1507,7 @@ dependencies = [
  "chaos-libration",
  "chaos-locate",
  "chaos-lsd",
+ "chaos-machine",
  "chaos-mcp-runtime",
  "chaos-minions",
  "chaos-model-catalog",

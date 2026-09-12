@@ -192,6 +192,7 @@ async fn resources_are_listed_after_initialize() -> Result<()> {
     assert!(uris.contains(&"chaos://modes"));
     assert!(uris.contains(&"chaos://mcp"));
     assert!(uris.contains(&"chaos://man"));
+    assert!(uris.contains(&"chaos://machine"));
 
     Ok(())
 }
@@ -267,6 +268,44 @@ async fn resource_templates_are_listed_after_initialize() -> Result<()> {
             .any(|uri_template| uri_template == "chaos://man/{page}")
     );
 
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn machine_resource_can_be_read_after_initialize() -> Result<()> {
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
+    mcp.initialize().await?;
+    let request_id = mcp
+        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://machine" })))
+        .await?;
+    let message = timeout(
+        Duration::from_secs(40),
+        mcp.read_stream_until_response_or_error_message(request_id.clone()),
+    )
+    .await??;
+    let JsonRpcMessage::Response(response) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+    };
+    assert_eq!(response.id, Some(request_id.to_value()));
+    assert!(
+        response.error.is_none(),
+        "unexpected error: {:?}",
+        response.error
+    );
+    let content = &response.result.as_ref().unwrap()["contents"][0];
+    assert_eq!(content["uri"], "chaos://machine");
+    assert_eq!(content["mimeType"], "application/json");
+    let text = content["text"].as_str().expect("machine observation text");
+    assert!(!text.contains('\n'), "resource JSON stays compact");
+    let payload: serde_json::Value = serde_json::from_str(text)?;
+    assert_eq!(payload["scope"], "harness_host");
+    assert!(payload["machine"]["observed_at"].is_object());
+    assert!(payload["machine"]["profile"].is_object());
+    assert!(payload["machine"]["power"].is_object());
+    assert!(payload["machine"]["thermal"]["state"].is_string());
+    assert!(payload["machine"]["thermal"]["cpu_temperatures"].is_array());
+    assert!(payload["storage"]["filesystems"].is_array());
+    assert!(payload["storage"]["unavailable"].is_array());
     Ok(())
 }
 

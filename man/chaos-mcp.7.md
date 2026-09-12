@@ -244,6 +244,7 @@ unchanged.
 | `chaos://models` | List available model presets |
 | `chaos://modes` | List the caller-visible collaboration mode catalog |
 | `chaos://mcp` | List configured MCP servers with auth and startup status |
+| `chaos://machine` | Read fresh host profile, power, thermals, and relevant filesystem space |
 | `chaos://man` | List embedded manual pages and their resource URIs |
 | `chaos://man/{page}` | Read an embedded manual page without its frontmatter |
 
@@ -253,6 +254,19 @@ environment variables, headers, and credentials are omitted. Per-session startup
 state is available when the resource is read from an active ChaOS session; the
 standalone `chaos mcp serve` endpoint reports it as unavailable because it has no
 single session to inspect.
+
+`chaos://machine` returns compact JSON containing `scope: "harness_host"`,
+`machine`, and `storage`. Each read collects new observations on a blocking
+worker. In-session reads use the active turn's cwd; standalone MCP reads use the
+server's configured cwd. Storage is scoped to that cwd, the configured ChaOS
+home/cache/log directories, and the process temporary directory, deduplicated by
+filesystem. Other output/checkpoint paths, custom database URL locations,
+per-command temp overrides, and remote tool hosts are not inferred.
+
+Unknown power/thermal values and storage probe failures are not evidence of
+safety. macOS provides thermal warning/pressure state rather than CPU Celsius
+readings. Read again before resource-sensitive work; this resource does not
+enable monitoring, configurable warnings, checkpointing, or execution blocks.
 
 ### Resource tool rules
 

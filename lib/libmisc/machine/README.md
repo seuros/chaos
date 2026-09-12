@@ -2,7 +2,8 @@
 
 Detection foundation for environment-aware decisions. **No notifications,
 thresholds, execution blocks, background polling, or configuration are enabled
-by this crate.** The legacy startup/UI snapshot is unchanged.
+by this crate.** The kernel exposes fresh observations through `chaos://machine`;
+the legacy startup/UI snapshot is unchanged.
 
 ## Independent facts
 
@@ -85,6 +86,19 @@ or by cleanup even on ordinary disks.
 `inspect_machine()` returns machine, power, and thermal observations.
 `inspect_storage(&[StorageTarget])` inspects the supplied task paths.
 
+The harness resource `chaos://machine` is discoverable through
+`list_mcp_resources` and readable with `read_mcp_resource`, omitting `server`.
+It returns compact JSON with `scope: "harness_host"`, `machine`, and `storage`.
+Every read runs new probes on a blocking worker; it is not a cached startup
+snapshot or a subscription.
+
+The in-session resource probes the active turn's cwd, configured ChaOS
+home/cache/log directories, and the process temporary directory. The standalone
+MCP server uses its configured cwd rather than guessing which child session the
+caller means. Only those paths are covered: other outputs/checkpoints, custom
+database URL locations, per-command temporary-directory overrides, and remote
+tool hosts are not inferred. Probe failures stay separate from zero free space.
+
 Probes are fresh, synchronous, best-effort I/O. Use a blocking worker in async
 applications; timestamps mark collection start, not an atomic observation.
 Inspect the execution host/namespace, not a remote target from the local host.
@@ -110,4 +124,4 @@ VM/container detection is best-effort and not exhaustive.
 This crate deliberately does not derive safety facts from its lossy battery
 booleans or process-wide cached disk statistics. Moving remaining consumers onto
 these observations and adding configurable checkpoint/warning policy are later
-steps.
+steps. Reading a resource does not enable alerts or execution interlocks.

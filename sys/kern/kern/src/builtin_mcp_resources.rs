@@ -13,7 +13,9 @@ use std::path::Path;
 
 use crate::runtime_db::RuntimeDbHandle;
 
+mod machine;
 mod man;
+pub use machine::machine_json;
 
 pub const JSON_MIME_TYPE: &str = "application/json";
 pub const CHAOS_SESSIONS_URI: &str = "chaos://sessions";
@@ -23,6 +25,7 @@ pub const CHAOS_SPOOL_URI: &str = "chaos://spool";
 pub const CHAOS_MODELS_URI: &str = "chaos://models";
 pub const CHAOS_MODES_URI: &str = "chaos://modes";
 pub const CHAOS_MCP_URI: &str = "chaos://mcp";
+pub const CHAOS_MACHINE_URI: &str = "chaos://machine";
 pub use man::MANUAL_INDEX_URI as CHAOS_MANUAL_URI;
 pub use man::MANUAL_PAGE_URI_TEMPLATE as CHAOS_MANUAL_URI_TEMPLATE;
 pub use man::MARKDOWN_MIME_TYPE;
@@ -36,6 +39,7 @@ pub enum ChaosBuiltinResourceKind {
     Modes,
     Mcp,
     Manual,
+    Machine,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +66,7 @@ pub struct ChaosBuiltinResourceTemplateSpec {
     pub mime_type: &'static str,
 }
 
-const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 7] = [
+const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 8] = [
     ChaosBuiltinResourceSpec {
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
@@ -112,6 +116,13 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 7] = [
         description: "List embedded ChaOS manual pages and their resource URIs",
         mime_type: JSON_MIME_TYPE,
     },
+    ChaosBuiltinResourceSpec {
+        kind: ChaosBuiltinResourceKind::Machine,
+        uri: CHAOS_MACHINE_URI,
+        name: "machine",
+        description: "Fresh host profile, power, thermals, and relevant filesystem space; not a safety verdict or live monitor",
+        mime_type: JSON_MIME_TYPE,
+    },
 ];
 
 const RESOURCE_TEMPLATE_SPECS: [ChaosBuiltinResourceTemplateSpec; 2] = [
@@ -148,6 +159,7 @@ pub enum ResolvedChaosBuiltinResource {
     Models,
     Modes,
     Mcp,
+    Machine,
     ManualIndex,
     ManualPage(&'static man::ManualPageSpec),
 }
@@ -171,6 +183,7 @@ pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinReso
         CHAOS_MODELS_URI => Ok(Some(ResolvedChaosBuiltinResource::Models)),
         CHAOS_MODES_URI => Ok(Some(ResolvedChaosBuiltinResource::Modes)),
         CHAOS_MCP_URI => Ok(Some(ResolvedChaosBuiltinResource::Mcp)),
+        CHAOS_MACHINE_URI => Ok(Some(ResolvedChaosBuiltinResource::Machine)),
         _ => match man::resolve_resource_uri(uri)? {
             Some(man::ResolvedManualResource::Index) => {
                 Ok(Some(ResolvedChaosBuiltinResource::ManualIndex))
@@ -463,6 +476,7 @@ pub trait ChaosBuiltinResourceBackend {
     async fn models_json(&self) -> Result<String, String>;
     async fn modes_json(&self) -> Result<String, String>;
     async fn mcp_json(&self) -> Result<String, String>;
+    async fn machine_json(&self) -> Result<String, String>;
 }
 
 pub async fn read_resource<B: ChaosBuiltinResourceBackend + Sync>(
@@ -493,6 +507,9 @@ pub async fn read_resource<B: ChaosBuiltinResourceBackend + Sync>(
         Some(ResolvedChaosBuiltinResource::Mcp) => {
             backend.mcp_json().await.map(json_resource).map(Some)
         }
+        Some(ResolvedChaosBuiltinResource::Machine) => {
+            backend.machine_json().await.map(json_resource).map(Some)
+        }
         Some(ResolvedChaosBuiltinResource::ManualIndex) => {
             man::index_json().map(json_resource).map(Some)
         }
@@ -512,6 +529,10 @@ mod tests {
 
     #[test]
     fn resolves_builtin_resource_uris() {
+        assert_eq!(
+            resolve_resource_uri(CHAOS_MACHINE_URI).expect("resolve machine"),
+            Some(ResolvedChaosBuiltinResource::Machine)
+        );
         assert_eq!(
             resolve_resource_uri(CHAOS_SESSIONS_URI).expect("resolve sessions"),
             Some(ResolvedChaosBuiltinResource::Sessions)

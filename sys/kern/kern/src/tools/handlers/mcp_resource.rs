@@ -377,6 +377,10 @@ struct KernelBuiltinResourceBackend<'a> {
 }
 
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourceBackend<'_> {
+    async fn machine_json(&self) -> Result<String, String> {
+        builtin_mcp_resources::machine_json(&self.turn.config, &self.turn.cwd).await
+    }
+
     async fn sessions_json(&self) -> Result<String, String> {
         let runtime_db = self.session.runtime_db();
         builtin_mcp_resources::sessions_json_from_runtime_db(runtime_db.as_ref()).await

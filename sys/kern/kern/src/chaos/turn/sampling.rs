@@ -21,6 +21,7 @@ use super::SamplingRequestResult;
 use super::execution::try_run_sampling_request;
 use super::progress::TurnProgressTracker;
 
+mod machine_warnings;
 mod mcp_instructions;
 
 use mcp_instructions::McpInstructionsDocument;
@@ -111,7 +112,7 @@ pub(super) async fn run_sampling_request(
         .await;
     append_mcp_server_instructions(&mut base_instructions, &server_instructions)?;
 
-    let prompt = build_prompt(
+    let mut prompt = build_prompt(
         input,
         router.as_ref(),
         turn_context.as_ref(),
@@ -125,7 +126,12 @@ pub(super) async fn run_sampling_request(
     );
     let mut retries = 0;
     let mut last_server_model: Option<String> = None;
+    let history_len = prompt.input.len();
     loop {
+        // Request-local warnings are refreshed even after tool batches/retries.
+        // Never persist them in history, where recovered conditions become stale.
+        prompt.input.truncate(history_len);
+        machine_warnings::append(&mut prompt.input, &turn_context, &cancellation_token).await?;
         let err = match try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),

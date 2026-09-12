@@ -442,6 +442,8 @@ async fn machine_resource_reads_are_fresh_and_use_the_active_turn_directory() {
     config.chaos_home = root.path().join("state");
     config.sqlite_home = root.path().join("cache");
     config.log_dir = root.path().join("logs");
+    config.machine_warnings.disk_free_percent = 100;
+    config.machine_warnings.probe_timeout_ms = 60_000;
     let mut previous_observed_at = None;
 
     for name in ["first-workspace", "second-workspace"] {
@@ -463,6 +465,20 @@ async fn machine_resource_reads_are_fresh_and_use_the_active_turn_directory() {
         assert!(!content.text.contains('\n'), "resource JSON stays compact");
         let value: Value = serde_json::from_str(&content.text).expect("machine JSON");
         assert_eq!(value["scope"], "harness_host");
+        assert!(
+            value["warnings"]
+                .as_array()
+                .expect("warnings")
+                .iter()
+                .any(|warning| warning["kind"] == "low_disk_space"),
+            "configured disk threshold is evaluated on resource reads"
+        );
+        assert!(
+            value["warning_instruction"]
+                .as_str()
+                .expect("warning instruction")
+                .contains("minimal checkpoint")
+        );
         assert!(value["machine"]["profile"].is_object());
         assert!(value["machine"]["power"].is_object());
         assert!(value["machine"]["thermal"]["state"].is_string());

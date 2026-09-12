@@ -749,6 +749,7 @@ pub(crate) fn validate_project(value: &Value) -> anyhow::Result<()> {
                 !matches!(
                     key.as_str(),
                     "storage_url"
+                        | "machine_warnings"
                         | "sqlite_home"
                         | "egress_url"
                         | "mcp_tool_approvals"

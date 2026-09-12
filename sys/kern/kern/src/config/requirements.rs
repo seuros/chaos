@@ -619,6 +619,7 @@ impl Config {
             egress_url,
             cwd: resolved_cwd,
             startup_warnings,
+            machine_warnings: cfg.machine_warnings.clone(),
             permissions: Permissions {
                 approval_policy: constrained_approval_policy.value,
                 sandbox_policy: constrained_sandbox_policy.value,

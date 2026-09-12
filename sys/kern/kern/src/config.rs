@@ -52,6 +52,7 @@ use toml::Value as TomlValue;
 pub(crate) mod agent_roles;
 pub mod edit;
 pub mod loading;
+mod machine_warnings;
 mod network_proxy_spec;
 pub(crate) mod parsing;
 mod permissions;
@@ -86,6 +87,7 @@ pub(crate) use validation::filter_mcp_servers_by_requirements;
 
 pub use loading::ConfigBuilder;
 pub use loading::load_config_or_exit;
+pub use machine_warnings::MachineWarningsConfig;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
 pub use permissions::FilesystemPermissionToml;
@@ -292,6 +294,9 @@ pub struct Config {
 
     /// Warnings collected during config load that should be shown on startup.
     pub startup_warnings: Vec<String>,
+
+    /// Configurable host resource warnings sent to the model, not execution blocks.
+    pub machine_warnings: MachineWarningsConfig,
 
     /// Optional override of model selection.
     pub model: Option<String>,
@@ -624,6 +629,10 @@ pub struct Config {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ConfigToml {
+    /// Host resource warnings before model requests, enabled by default.
+    #[serde(default)]
+    pub machine_warnings: MachineWarningsConfig,
+
     /// Optional override of model selection.
     pub model: Option<String>,
     /// Review model override used by the `/review` feature.

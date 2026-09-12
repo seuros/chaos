@@ -78,6 +78,7 @@ mod json_result;
 mod list_dir;
 #[path = "live_cli.rs"]
 mod live_cli;
+mod machine_warnings;
 #[path = "mcp_client.rs"]
 mod mcp_client;
 #[path = "minion_jobs.rs"]

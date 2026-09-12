@@ -52,6 +52,8 @@ mod exec_policy;
 mod file_watcher;
 mod flags;
 pub mod git_info;
+pub mod machine_status;
+mod machine_warnings;
 
 pub mod background_recovery;
 mod background_tasks;

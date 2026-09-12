@@ -256,8 +256,10 @@ standalone `chaos mcp serve` endpoint reports it as unavailable because it has n
 single session to inspect.
 
 `chaos://machine` returns compact JSON containing `scope: "harness_host"`,
-`machine`, and `storage`. Each read collects new observations on a blocking
-worker. In-session reads use the active turn's cwd; standalone MCP reads use the
+`machine`, `storage`, and a `warnings` array. When warnings are active,
+`warning_instruction` contains the model-facing checkpoint/operator instruction.
+Each read collects new observations on a blocking worker. In-session reads use
+the active turn's cwd; standalone MCP reads use the
 server's configured cwd. Storage is scoped to that cwd, the configured ChaOS
 home/cache/log directories, and the process temporary directory, deduplicated by
 filesystem. Other output/checkpoint paths, custom database URL locations,
@@ -265,8 +267,55 @@ per-command temp overrides, and remote tool hosts are not inferred.
 
 Unknown power/thermal values and storage probe failures are not evidence of
 safety. macOS provides thermal warning/pressure state rather than CPU Celsius
-readings. Read again before resource-sensitive work; this resource does not
-enable monitoring, configurable warnings, checkpointing, or execution blocks.
+readings. Empty warnings are not safety clearance.
+
+### Machine warnings
+
+The kernel checks the host before each normal model request, including requests
+after tool batches and stream retries. Active warnings are request-local developer
+instructions, not permanent conversation history: recovered conditions are
+re-evaluated rather than accumulating stale alerts. The model is told to save a
+minimal checkpoint to verified persistent storage outside temporary directories,
+verify the write, pause heavy/interruption-sensitive work, and notify the operator.
+It must not assume suspend prevents data loss or automatically delete files.
+
+Global `machine_warnings` settings use the normal settings database and
+`chaos config set` / `chaos config unset` interface, not bootstrap `config.toml`.
+Restart to apply changes. Project configuration cannot override this host policy.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `machine_warnings.enabled` | `true` | Enable warning evaluation and automatic model-request checks |
+| `machine_warnings.probe_timeout_ms` | `3000` | Observation wait budget, including queued probes; integer 1–60000 ms |
+| `machine_warnings.battery_percent` | `5` | Warn at or below this charge percentage; integer 0–100 |
+| `machine_warnings.disk_free_percent` | `5` | Warn at or below this caller-available percentage; integer 0–100 |
+| `machine_warnings.thermal` | `true` | Warn on OS thermal warning/critical state or a CPU channel reaching its own critical limit |
+| `machine_warnings.cpu_temperature_celsius` | unset | Additional physical CPU temperature threshold; finite −100–250°C, inclusive |
+
+Battery warnings require a present/not-known-absent, discharging battery of the
+current system/UPS power source, without external power. Dead, removed, idle, or
+maintenance-discharging batteries on AC do not trigger them. Multiple batteries
+remain individual observations, never an invented combined percentage.
+Disk warnings cover only the relevant paths listed above, once per filesystem.
+Unknown percentages and failed probes do not become zero free space.
+
+Thermal warnings do not depend on laptop classification. Custom Celsius thresholds
+apply only to physical readings, never AMD Tctl or unknown temperature scales;
+driver critical limits apply only to their own channel. An unknown thermal state
+alone does not trigger an overheating warning. Disabling `thermal` disables both
+OS/sensor and custom-temperature warnings.
+
+Probe waits default to three seconds with at most one blocking worker active.
+The budget can be increased for slow or restricted host APIs.
+A failed/timed-out model-request check asks for operator verification before risky
+work rather than inventing measurements. Model checks are not a background monitor and
+cannot interrupt a running tool, automatically save work, or block execution.
+Standalone MCP clients receive warnings when reading the resource, not pushed
+notifications.
+
+The terminal top bar polls the same bounded collector and policy for display
+(see `chaos-appearance(7)`). It follows the active UI workspace, never all disks,
+and does not push model notifications or replace fresh pre-request checks.
 
 ### Resource tool rules
 

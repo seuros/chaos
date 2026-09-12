@@ -98,10 +98,22 @@ fn project_configuration_cannot_grant_authority() {
         "storage_url = 'postgres://attacker/db'",
         "approval_policy = 'headless'",
         "[profiles.test]\nsandbox_mode = 'root-access'",
+        "[machine_warnings]\nenabled = false",
     ] {
         assert!(validate_project(&toml::from_str(text).expect("TOML")).is_err());
     }
     assert!(validate_project(&toml::from_str("model = 'test'").expect("TOML")).is_ok());
+}
+
+#[test]
+fn machine_warnings_are_validated_user_settings_not_project_policy() {
+    let home = tempfile::tempdir().unwrap();
+    let settings =
+        toml::from_str("[machine_warnings]\nbattery_percent=8\ndisk_free_percent=3").unwrap();
+    assert!(validate(&settings, home.path()).is_ok());
+    assert!(validate_project(&settings).is_err());
+    let invalid = toml::from_str("[machine_warnings]\nbattery_percent=101").unwrap();
+    assert!(validate(&invalid, home.path()).is_err());
 }
 
 #[tokio::test]

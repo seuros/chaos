@@ -299,6 +299,7 @@ async fn machine_resource_can_be_read_after_initialize() -> Result<()> {
     assert!(!text.contains('\n'), "resource JSON stays compact");
     let payload: serde_json::Value = serde_json::from_str(text)?;
     assert_eq!(payload["scope"], "harness_host");
+    assert!(payload["warnings"].is_array());
     assert!(payload["machine"]["observed_at"].is_object());
     assert!(payload["machine"]["profile"].is_object());
     assert!(payload["machine"]["power"].is_object());

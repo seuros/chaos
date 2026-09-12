@@ -1044,6 +1044,7 @@ fn expected_precedence_fixture_permissions(approval_policy: ApprovalPolicy) -> P
 
 fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) -> Config {
     Config {
+        machine_warnings: Default::default(),
         model: Some("o3".to_string()),
         review_model: None,
         model_context_window: None,

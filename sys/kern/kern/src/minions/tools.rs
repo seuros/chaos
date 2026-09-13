@@ -106,7 +106,6 @@ mod resume_agent;
 mod send_input;
 #[path = "tools/spawn.rs"]
 mod spawn;
-#[path = "tools/synopsis.rs"]
 mod synopsis;
 #[path = "tools/wait.rs"]
 pub(crate) mod wait;

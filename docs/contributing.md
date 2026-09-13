@@ -42,6 +42,25 @@ Everyone else: come in, the door is open.
   backend, platform, and build-profile conditions. Repeated fixtures alone are not
   duplicate tests; manually registered and ignored suites still count as coverage.
 
+### Test layout
+
+- Keep substantial unit-test modules in `<module>/tests.rs`, declared with
+  `#[cfg(test)] mod tests;`, following the machine crate's layout. Crate-root
+  tests use an adjacent `tests.rs`. Prefer native module resolution over `#[path]`.
+  Small blocks can remain inline.
+- Preserve module names, visibility, configuration gates, suite registrations,
+  assertions, and ignored tests when extracting a module. Private API access stays
+  unchanged; do not replace modules with `include!` fragments.
+- Keep fixture and snapshot locations stable, and check nested module paths after
+  a move. Integration tests remain in their existing owning test crates.
+- Auto-discovered tools use the same `<tool>/tests.rs` layout: `auto_tools!`
+  scans immediate `.rs` entries, not nested test directories. Its generated
+  `#[path]` module loaders require an explicit `<tool>/tests.rs` path on the
+  child test declaration.
+- For layout-only edits, compare the moved bodies with the originals and compile
+  the affected tests. Use focused runs to check path-sensitive fixtures and suites
+  rather than repeatedly running the full QA gate during the move.
+
 ### Pull requests
 
 - Fill in the PR template: **What? Why? How?**

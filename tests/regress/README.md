@@ -21,16 +21,18 @@ Each file in `tests/` compiles as its own integration-test binary and
 sees only the **public API** of the crates it depends on. If a test
 needs to peek at private state, it's the wrong test.
 
-## What lives here vs. inline `#[cfg(test)]`
+## What lives here vs. source-crate unit tests
 
 - **Here:** anything that exercises public behavior, especially across
   multiple crates. The "does the universe still hum" tests.
-- **Inline in the source crate:** tests that need access to private
+- **In the source crate:** tests that need access to private
   items, or that exist purely to make a failure debuggable at a module
-  boundary. Load-bearing only.
+  boundary. Load-bearing only. Substantial suites live in `<module>/tests.rs`
+  as test-only child modules; small blocks can remain inline.
 
-Inline tests are entropy. Keep them when they earn their keep; nuke
-them when a regress test already has the system covered.
+Keep source-crate tests when they earn their keep; remove them only
+when a surviving test covers the same behavior and conditions, per the
+[contribution guidelines](../../docs/contributing.md#invariants-and-error-handling).
 
 ## Running
 

@@ -32,9 +32,9 @@ where
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use std::time::Duration;
-    use tokio::task;
-    use tokio::time::sleep;
+    use std::future::pending;
+    use tokio_test::assert_pending;
+    use tokio_test::assert_ready;
 
     #[tokio::test]
     async fn returns_ok_when_future_completes_first() {
@@ -49,22 +49,12 @@ mod tests {
     #[tokio::test]
     async fn returns_err_when_token_cancelled_first() {
         let token = CancellationToken::new();
-        let token_clone = token.clone();
+        let mut task = tokio_test::task::spawn(pending::<i32>().or_cancel(&token));
 
-        let cancel_handle = task::spawn(async move {
-            sleep(Duration::from_millis(10)).await;
-            token_clone.cancel();
-        });
-
-        let result = async {
-            sleep(Duration::from_millis(100)).await;
-            7
-        }
-        .or_cancel(&token)
-        .await;
-
-        cancel_handle.await.expect("cancel task panicked");
-        assert_eq!(Err(CancelErr::Cancelled), result);
+        assert_pending!(task.poll());
+        token.cancel();
+        assert!(task.is_woken(), "cancellation must wake the waiting future");
+        assert_eq!(Err(CancelErr::Cancelled), assert_ready!(task.poll()));
     }
 
     #[tokio::test]
@@ -72,12 +62,7 @@ mod tests {
         let token = CancellationToken::new();
         token.cancel();
 
-        let result = async {
-            sleep(Duration::from_millis(50)).await;
-            5
-        }
-        .or_cancel(&token)
-        .await;
+        let result = pending::<i32>().or_cancel(&token).await;
 
         assert_eq!(Err(CancelErr::Cancelled), result);
     }

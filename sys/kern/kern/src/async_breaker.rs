@@ -3,9 +3,9 @@ use std::future::Future;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::time::Duration;
-use std::time::Instant;
 
 use breaker_machines::CircuitBreaker;
+use tokio::time::Instant;
 
 /// Error returned by an async operation guarded by [`AsyncCircuitBreaker`].
 #[derive(Debug)]
@@ -142,7 +142,7 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn opens_after_failure_and_rejects_without_running_operation() {
         let breaker = AsyncCircuitBreaker::new(
             "test",
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn timeout_allows_a_probe_that_closes_the_breaker() {
         let breaker = AsyncCircuitBreaker::new(
             "test-recovery",
@@ -183,9 +183,17 @@ mod tests {
 
         let first = breaker.call(|| async { Err::<(), _>("down") }).await;
         assert!(matches!(first, Err(BreakerError::Operation("down"))));
-        assert!(breaker.retry_after().is_some());
+        assert_eq!(breaker.retry_after(), Some(Duration::from_millis(10)));
 
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::advance(Duration::from_millis(9)).await;
+        let rejected: Result<(), BreakerError<&str>> = breaker
+            .call(|| async { panic!("probe must not run before the deadline") })
+            .await;
+        assert!(matches!(rejected, Err(BreakerError::Open)));
+        assert_eq!(breaker.retry_after(), Some(Duration::from_millis(1)));
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert_eq!(breaker.retry_after(), Some(Duration::ZERO));
         let recovered = breaker.call(|| async { Ok::<_, &str>("up") }).await;
 
         assert!(matches!(recovered, Ok("up")));

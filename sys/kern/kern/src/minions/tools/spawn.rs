@@ -11,6 +11,8 @@ use super::{
     function_arguments, input_preview, parse_arguments, parse_collab_input, process_spawn_source,
     tool_output_json_text, tool_output_response_item,
 };
+use crate::chaos::{Session, TurnContext};
+use crate::config::Config;
 use crate::internal_tasks;
 use crate::minions::control::SpawnAgentOptions;
 use crate::minions::role::DEFAULT_ROLE_NAME;
@@ -35,7 +37,7 @@ impl ToolHandler for Handler {
         } = invocation;
         let invocation_call_id = call_id.clone();
         let arguments = function_arguments(payload)?;
-        let args: SpawnAgentArgs = parse_arguments(&arguments)?;
+        let mut args: SpawnAgentArgs = parse_arguments(&arguments)?;
 
         // Resolve the role: explicit agent_type wins; otherwise route by topics.
         let explicit_role = args
@@ -74,7 +76,7 @@ impl ToolHandler for Handler {
             (None, None, Vec::new())
         };
 
-        let input_items = parse_collab_input(args.message, args.items)?;
+        let input_items = parse_collab_input(args.message.take(), args.items.take())?;
         let prompt = input_preview(&input_items);
         let child_depth = check_depth_limit(&turn.session_source, turn.config.agent_max_depth)?;
         session
@@ -92,49 +94,7 @@ impl ToolHandler for Handler {
                 .into(),
             )
             .await;
-        let mut config =
-            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref())?;
-        if let Some(model_provider) = args.model_provider.as_deref() {
-            apply_role_to_config(&mut config, role_name)
-                .await
-                .map_err(FunctionCallError::RespondToModel)?;
-            apply_requested_spawn_agent_provider_binding(
-                &session,
-                &mut config,
-                model_provider,
-                args.model.as_deref(),
-                args.reasoning_effort,
-            )
-            .await?;
-        } else {
-            // Preserve the existing override order when no provider binding is
-            // requested: role configuration continues to apply after model
-            // overrides exactly as it did before this parameter existed.
-            apply_requested_spawn_agent_model_overrides(
-                &session,
-                turn.as_ref(),
-                &mut config,
-                args.model.as_deref(),
-                args.reasoning_effort,
-            )
-            .await?;
-            apply_role_to_config(&mut config, role_name)
-                .await
-                .map_err(FunctionCallError::RespondToModel)?;
-        }
-        apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
-        apply_spawn_agent_overrides(&mut config, child_depth);
-        config.mode_policy_override = Some(
-            session
-                .child_mode_policy(
-                    turn.as_ref(),
-                    args.mode.as_deref(),
-                    args.allowed_modes.as_deref(),
-                    args.allow_mode_switching,
-                )
-                .await
-                .map_err(FunctionCallError::RespondToModel)?,
-        );
+        let config = prepare_config(&session, &turn, role_name, child_depth, &args).await?;
 
         session
             .begin_background_submission(&invocation_call_id)
@@ -250,8 +210,61 @@ impl ToolHandler for Handler {
     }
 }
 
+/// Resolve configuration before starting a child session or writing its submission.
+pub(super) async fn prepare_config(
+    session: &Session,
+    turn: &TurnContext,
+    role_name: Option<&str>,
+    child_depth: i32,
+    args: &SpawnAgentArgs,
+) -> Result<Config, FunctionCallError> {
+    let mut config = build_agent_spawn_config(&session.get_base_instructions().await, turn)?;
+    if let Some(model_provider) = args.model_provider.as_deref() {
+        apply_role_to_config(&mut config, role_name)
+            .await
+            .map_err(FunctionCallError::RespondToModel)?;
+        apply_requested_spawn_agent_provider_binding(
+            session,
+            &mut config,
+            model_provider,
+            args.model.as_deref(),
+            args.reasoning_effort,
+        )
+        .await?;
+    } else {
+        // Preserve the existing override order when no provider binding is
+        // requested: role configuration continues to apply after model
+        // overrides exactly as it did before this parameter existed.
+        apply_requested_spawn_agent_model_overrides(
+            session,
+            turn,
+            &mut config,
+            args.model.as_deref(),
+            args.reasoning_effort,
+        )
+        .await?;
+        apply_role_to_config(&mut config, role_name)
+            .await
+            .map_err(FunctionCallError::RespondToModel)?;
+    }
+    apply_spawn_agent_runtime_overrides(&mut config, turn)?;
+    apply_spawn_agent_overrides(&mut config, child_depth);
+    config.mode_policy_override = Some(
+        session
+            .child_mode_policy(
+                turn,
+                args.mode.as_deref(),
+                args.allowed_modes.as_deref(),
+                args.allow_mode_switching,
+            )
+            .await
+            .map_err(FunctionCallError::RespondToModel)?,
+    );
+    Ok(config)
+}
+
 #[derive(Debug, Deserialize)]
-struct SpawnAgentArgs {
+pub(super) struct SpawnAgentArgs {
     message: Option<String>,
     items: Option<Vec<UserInput>>,
     agent_type: Option<String>,

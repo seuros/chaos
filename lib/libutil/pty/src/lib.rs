@@ -3,8 +3,6 @@ pub mod pipe;
 mod process;
 pub mod process_group;
 pub mod pty;
-#[cfg(test)]
-mod tests;
 
 pub const DEFAULT_OUTPUT_BYTES_CAP: usize = 1024 * 1024;
 

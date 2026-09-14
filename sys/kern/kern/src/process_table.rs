@@ -422,51 +422,10 @@ impl ProcessTable {
     /// Processes that complete shutdown are removed from the manager; incomplete shutdowns
     /// remain tracked so callers can retry or inspect them later.
     pub async fn shutdown_all_processes_bounded(&self, timeout: Duration) -> ProcessShutdownReport {
-        let processes = {
-            let processes = self.state.processes.read().await;
-            processes
-                .iter()
-                .map(|(process_id, process)| (*process_id, Arc::clone(process)))
-                .collect::<Vec<_>>()
-        };
-
-        let mut shutdowns = processes
-            .into_iter()
-            .map(|(process_id, process)| async move {
-                let outcome = match tokio::time::timeout(timeout, process.shutdown_and_wait()).await
-                {
-                    Ok(Ok(())) => ShutdownOutcome::Complete,
-                    Ok(Err(_)) => ShutdownOutcome::SubmitFailed,
-                    Err(_) => ShutdownOutcome::TimedOut,
-                };
-                (process_id, outcome)
-            })
-            .collect::<FuturesUnordered<_>>();
-        let mut report = ProcessShutdownReport::default();
-
-        while let Some((process_id, outcome)) = shutdowns.next().await {
-            match outcome {
-                ShutdownOutcome::Complete => report.completed.push(process_id),
-                ShutdownOutcome::SubmitFailed => report.submit_failed.push(process_id),
-                ShutdownOutcome::TimedOut => report.timed_out.push(process_id),
-            }
-        }
-
-        let mut tracked_processes = self.state.processes.write().await;
-        for process_id in &report.completed {
-            tracked_processes.remove(process_id);
-        }
-
-        report
-            .completed
-            .sort_by_key(std::string::ToString::to_string);
-        report
-            .submit_failed
-            .sort_by_key(std::string::ToString::to_string);
-        report
-            .timed_out
-            .sort_by_key(std::string::ToString::to_string);
-        report
+        shutdown_processes_bounded(&self.state.processes, timeout, |process| async move {
+            process.shutdown_and_wait().await
+        })
+        .await
     }
 
     pub async fn fork_process_by_id(
@@ -783,6 +742,57 @@ impl ProcessTableState {
     pub(crate) fn notify_process_created(&self, process_id: ProcessId) {
         let _ = self.process_created_tx.send(process_id);
     }
+}
+
+/// The shutdown coordinator owns concurrency, deadlines, and retention; the
+/// supplied operation owns each process's submission/termination protocol.
+async fn shutdown_processes_bounded<P: Clone, F: std::future::Future<Output = ChaosResult<()>>>(
+    tracked: &RwLock<HashMap<ProcessId, P>>,
+    timeout: Duration,
+    shutdown: impl Fn(P) -> F,
+) -> ProcessShutdownReport {
+    let processes = tracked
+        .read()
+        .await
+        .iter()
+        .map(|(process_id, process)| (*process_id, process.clone()))
+        .collect::<Vec<_>>();
+    let mut shutdowns = processes
+        .into_iter()
+        .map(|(process_id, process)| {
+            let shutdown = shutdown(process);
+            async move {
+                let outcome = match tokio::time::timeout(timeout, shutdown).await {
+                    Ok(Ok(())) => ShutdownOutcome::Complete,
+                    Ok(Err(_)) => ShutdownOutcome::SubmitFailed,
+                    Err(_) => ShutdownOutcome::TimedOut,
+                };
+                (process_id, outcome)
+            }
+        })
+        .collect::<FuturesUnordered<_>>();
+    let mut report = ProcessShutdownReport::default();
+    while let Some((process_id, outcome)) = shutdowns.next().await {
+        match outcome {
+            ShutdownOutcome::Complete => report.completed.push(process_id),
+            ShutdownOutcome::SubmitFailed => report.submit_failed.push(process_id),
+            ShutdownOutcome::TimedOut => report.timed_out.push(process_id),
+        }
+    }
+    let mut processes = tracked.write().await;
+    for process_id in &report.completed {
+        processes.remove(process_id);
+    }
+    report
+        .completed
+        .sort_by_key(std::string::ToString::to_string);
+    report
+        .submit_failed
+        .sort_by_key(std::string::ToString::to_string);
+    report
+        .timed_out
+        .sort_by_key(std::string::ToString::to_string);
+    report
 }
 
 /// Return a prefix of `items` obtained by cutting strictly before the nth user message

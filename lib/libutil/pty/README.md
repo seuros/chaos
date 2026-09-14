@@ -57,8 +57,22 @@ Use `spawn_pipe_process_no_stdin` to force stdin closed (commands that read stdi
 
 ## Tests
 
-Unit tests live in `src/lib.rs` and cover both backends (PTY Python REPL and pipe-based stdin roundtrip). Run with:
+Unit tests in `src/process/tests.rs` exercise cancellation, stdin ownership, and
+output-channel draining with an in-memory child and channels. They do not launch
+subprocesses or wait for wall-clock delays:
 
+```sh
+cargo test -p chaos-pty --lib
 ```
-cargo test -p chaos-pty -- --nocapture
+
+Real PTY/pipe, Python REPL, inherited-FD, session, and process-group checks live
+in `tests/process.rs` and use the public API:
+
+```sh
+cargo test -p chaos-pty --test process
 ```
+
+Integration tests synchronize on readiness output, stdin handshakes, process exit,
+and output EOF. Their timeouts are failure guards, not successful completion signals.
+Python and `setsid` cases retain their existing availability checks. Both suites
+remain part of `cargo test -p chaos-pty` and `just test`.

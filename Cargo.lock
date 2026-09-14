@@ -1285,6 +1285,7 @@ dependencies = [
  "socket2",
  "tempfile",
  "tokio",
+ "tokio-test",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -1315,6 +1316,7 @@ version = "47.4.0"
 dependencies = [
  "pretty_assertions",
  "tokio",
+ "tokio-test",
  "tokio-util",
 ]
 
@@ -1884,6 +1886,7 @@ dependencies = [
  "portable-pty",
  "pretty_assertions",
  "tokio",
+ "tokio-test",
 ]
 
 [[package]]
@@ -2158,6 +2161,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-test",
 ]
 
 [[package]]

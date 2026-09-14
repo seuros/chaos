@@ -42,6 +42,57 @@ Everyone else: come in, the door is open.
   backend, platform, and build-profile conditions. Repeated fixtures alone are not
   duplicate tests; manually registered and ignored suites still count as coverage.
 
+### Test layout
+
+- Keep substantial unit-test modules in `<module>/tests.rs`, declared with
+  `#[cfg(test)] mod tests;`, following the machine crate's layout. Crate-root
+  tests use an adjacent `tests.rs`. Prefer native module resolution over `#[path]`.
+  Small blocks can remain inline.
+- Preserve module names, visibility, configuration gates, suite registrations,
+  assertions, and ignored tests when extracting a module. Private API access stays
+  unchanged; do not replace modules with `include!` fragments.
+- Keep fixture and snapshot locations stable, and check nested module paths after
+  a move. Integration tests remain in their existing owning test crates.
+- Auto-discovered tools use the same `<tool>/tests.rs` layout: `auto_tools!`
+  scans immediate `.rs` entries, not nested test directories. Its generated
+  `#[path]` module loaders require an explicit `<tool>/tests.rs` path on the
+  child test declaration.
+- For layout-only edits, compare the moved bodies with the originals and compile
+  the affected tests. Use focused runs to check path-sensitive fixtures and suites
+  rather than repeatedly running the full QA gate during the move.
+
+### Deterministic tests
+
+- Test policy, state transitions, cancellation, and buffering with in-memory
+  inputs or fakes. Do not boot a session, daemon, shell, or network service just
+  to test a local decision.
+- For Tokio timer logic, use `#[tokio::test(start_paused = true)]` and virtual
+  time. The implementation's elapsed-time accounting must use `tokio::time::Instant`
+  too; pausing Tokio does not pause `std::time::Instant` or an external process.
+- Establish ordering with channels, barriers, or explicit future polling.
+  A sleep or repeated `yield_now()` is not proof that another task reached a state.
+  Test backpressure by polling pending, releasing capacity, and checking readiness.
+- Keep real OS/process tests as integration tests. Synchronize on readiness
+  messages, exit notifications, and EOF, not startup sleeps or quiet windows.
+  Keep bounded timeouts to diagnose hangs, but never treat a timeout as success
+  or assert that integration work completes within a performance threshold.
+- Preserve backend/platform coverage when extracting unit tests. Do not hide
+  flaky tests with ignores, retries, or larger runner timeouts. `--lib` alone is
+  not a guarantee of isolation for crates that still mix test categories.
+- The kernel's `core_test_support` config disables machine-warning host probes.
+  Model/protocol tests must not inspect the operator's hardware. Warning unit
+  tests supply observation futures; machine-resource tests supply fixed snapshots
+  and timestamps. The live-host warning scenario was removed from the kernel
+  integration suite: request insertion and warning policy belong to deterministic
+  unit tests, not the operator's current battery/disk state. Production defaults
+  are unchanged. A timeout around `spawn_blocking` does not stop the worker:
+  Tokio runtime shutdown still waits for it, even after all assertions pass.
+- Agent configuration and resumed-identity tests stop before child-session
+  creation; identity restoration uses fixed metadata and real nickname reservations,
+  not a spawn/shutdown/resume cycle. Process-table shutdown tests use submission
+  channels and explicit completion acknowledgements; virtual time covers stalled
+  submissions and unfinished session loops.
+
 ### Pull requests
 
 - Fill in the PR template: **What? Why? How?**

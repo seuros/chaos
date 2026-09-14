@@ -23,11 +23,6 @@ pub struct MachineStatus {
 // cause later UI/model/resource reads to accumulate unbounded probe threads.
 static OBSERVATION_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
-#[cfg(test)]
-pub(crate) async fn lock_observations_for_test() -> tokio::sync::SemaphorePermit<'static> {
-    OBSERVATION_GATE.acquire().await.expect("observation gate")
-}
-
 /// Only the paths and policy needed for a read, not a retained session/config.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObservationRequest {
@@ -96,6 +91,25 @@ fn storage_targets(config: &Config, cwd: &Path, temporary: PathBuf) -> Vec<Stora
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn observation_deadline_includes_queueing_without_starting_a_host_probe() {
+        let _permit = OBSERVATION_GATE.acquire().await.expect("observation gate");
+        let request = ObservationRequest {
+            targets: vec![],
+            policy: MachineWarningsConfig {
+                probe_timeout_ms: 25,
+                ..Default::default()
+            },
+        };
+        let started = tokio::time::Instant::now();
+        let error = request
+            .observe()
+            .await
+            .expect_err("queued probe must time out");
+        assert_eq!(error, "machine observations unavailable: probe timed out");
+        assert_eq!(started.elapsed(), Duration::from_millis(25));
+    }
 
     #[test]
     fn storage_targets_use_turn_cwd_and_configured_paths_not_global_disks() {

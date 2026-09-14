@@ -18,6 +18,9 @@ serde_json = { workspace = true }
 inventory = { workspace = true }
 mcp-host = { workspace = true }
 
+[dev-dependencies]
+tokio-test = { workspace = true }
+
 [lints]
 workspace = true
 

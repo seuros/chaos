@@ -526,6 +526,21 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
+    #[tokio::test]
+    async fn test_config_disables_host_probes_unless_explicitly_enabled() -> Result<()> {
+        let home = TempDir::new()?;
+        let base_url = "http://127.0.0.1:1/v1";
+        let (config, _cwd) = test_chaos().prepare_config(base_url.into(), &home).await?;
+        assert!(!config.machine_warnings.enabled);
+
+        let (config, _cwd) = test_chaos()
+            .with_config(|config| config.machine_warnings.enabled = true)
+            .prepare_config(base_url.into(), &home)
+            .await?;
+        assert!(config.machine_warnings.enabled);
+        Ok(())
+    }
+
     #[test]
     fn custom_tool_call_output_text_returns_output_text() {
         let bodies = vec![json!({

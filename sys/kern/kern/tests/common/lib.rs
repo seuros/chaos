@@ -91,12 +91,17 @@ pub async fn load_default_config_for_test(chaos_home: &TempDir) -> Config {
             .await
             .expect("test configuration should migrate");
     }
-    ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .harness_overrides(default_test_overrides())
         .build()
         .await
-        .expect("defaults for test should always succeed")
+        .expect("defaults for test should always succeed");
+    // Model/protocol tests must not depend on the host's power, displays, or disks.
+    // A timed-out spawn_blocking probe still delays Tokio runtime shutdown.
+    // Dedicated machine-warning tests opt in explicitly.
+    config.machine_warnings.enabled = false;
+    config
 }
 
 #[cfg(target_os = "linux")]

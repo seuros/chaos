@@ -79,6 +79,19 @@ Everyone else: come in, the door is open.
 - Preserve backend/platform coverage when extracting unit tests. Do not hide
   flaky tests with ignores, retries, or larger runner timeouts. `--lib` alone is
   not a guarantee of isolation for crates that still mix test categories.
+- The kernel's `core_test_support` config disables machine-warning host probes.
+  Model/protocol tests must not inspect the operator's hardware. Warning unit
+  tests supply observation futures; machine-resource tests supply fixed snapshots
+  and timestamps. The live-host warning scenario was removed from the kernel
+  integration suite: request insertion and warning policy belong to deterministic
+  unit tests, not the operator's current battery/disk state. Production defaults
+  are unchanged. A timeout around `spawn_blocking` does not stop the worker:
+  Tokio runtime shutdown still waits for it, even after all assertions pass.
+- Agent configuration and resumed-identity tests stop before child-session
+  creation; identity restoration uses fixed metadata and real nickname reservations,
+  not a spawn/shutdown/resume cycle. Process-table shutdown tests use submission
+  channels and explicit completion acknowledgements; virtual time covers stalled
+  submissions and unfinished session loops.
 
 ### Pull requests
 

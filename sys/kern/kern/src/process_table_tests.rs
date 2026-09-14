@@ -9,7 +9,9 @@ use chaos_ipc::models::ReasoningItemReasoningSummary;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelsResponse;
 use core_test_support::responses::mount_models_once;
+use futures::FutureExt;
 use pretty_assertions::assert_eq;
+use std::task::Poll;
 use std::time::Duration;
 use tempfile::tempdir;
 use wiremock::MockServer;
@@ -98,42 +100,154 @@ async fn ignores_session_prefix_messages_when_truncating() {
     );
 }
 
-#[tokio::test]
-async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.chaos_home = temp_dir.path().join("chaos-home");
-    config.sqlite_home = config.chaos_home.clone();
-    config.storage_url = None;
-    config.cwd = config.chaos_home.clone();
-    std::fs::create_dir_all(&config.chaos_home).expect("create chaos home");
+#[derive(Clone)]
+struct ShutdownFixture {
+    submissions: async_channel::Sender<Op>,
+    termination: futures::future::Shared<futures::future::BoxFuture<'static, ()>>,
+}
 
-    let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        ChaosAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.chaos_home.clone(),
+impl ShutdownFixture {
+    async fn shutdown(self) -> ChaosResult<()> {
+        self.submissions.send(Op::Shutdown).await.unwrap();
+        self.termination.await;
+        Ok(())
+    }
+}
+
+async fn insert_shutdown_fixture(
+    processes: &RwLock<HashMap<ProcessId, ShutdownFixture>>,
+    termination: impl std::future::Future<Output = ()> + Send + 'static,
+) -> (ProcessId, async_channel::Receiver<Op>) {
+    let process_id = ProcessId::new();
+    let (submissions, receiver) = async_channel::bounded(1);
+    processes.write().await.insert(
+        process_id,
+        ShutdownFixture {
+            submissions,
+            termination: termination.boxed().shared(),
+        },
     );
-    let thread_1 = manager
-        .start_process(config.clone())
-        .await
-        .expect("start first thread")
-        .process_id;
-    let thread_2 = manager
-        .start_process(config)
-        .await
-        .expect("start second thread")
-        .process_id;
+    (process_id, receiver)
+}
 
-    let report = manager
-        .shutdown_all_processes_bounded(Duration::from_secs(10))
-        .await;
+#[tokio::test(start_paused = true)]
+async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
+    let processes = RwLock::new(HashMap::new());
+    let (done_1, terminated_1) = tokio::sync::oneshot::channel();
+    let (done_2, terminated_2) = tokio::sync::oneshot::channel();
+    let (thread_1, submissions_1) = insert_shutdown_fixture(&processes, async {
+        terminated_1.await.expect("first termination");
+    })
+    .await;
+    let (thread_2, submissions_2) = insert_shutdown_fixture(&processes, async {
+        terminated_2.await.expect("second termination");
+    })
+    .await;
+
+    let mut shutdown = std::pin::pin!(shutdown_processes_bounded(
+        &processes,
+        Duration::from_secs(10),
+        ShutdownFixture::shutdown
+    ));
+    assert!(futures::poll!(&mut shutdown).is_pending());
+    // Every submission must happen before either process acknowledges shutdown.
+    for submissions in [&submissions_1, &submissions_2] {
+        assert_matches!(
+            submissions.try_recv().expect("shutdown submission"),
+            Op::Shutdown
+        );
+        assert!(submissions.is_empty());
+    }
+    done_1.send(()).expect("complete first process");
+    assert!(futures::poll!(&mut shutdown).is_pending());
+    done_2.send(()).expect("complete second process");
+    let Poll::Ready(report) = futures::poll!(&mut shutdown) else {
+        panic!("shutdown should complete after both acknowledgements");
+    };
 
     let mut expected_completed = vec![thread_1, thread_2];
     expected_completed.sort_by_key(std::string::ToString::to_string);
     assert_eq!(report.completed, expected_completed);
     assert!(report.submit_failed.is_empty());
     assert!(report.timed_out.is_empty());
-    assert!(manager.list_process_ids().await.is_empty());
+    assert!(processes.read().await.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_all_threads_bounded_retains_unfinished_processes_for_retry() {
+    let processes = RwLock::new(HashMap::new());
+    let (completed, completed_submissions) =
+        insert_shutdown_fixture(&processes, std::future::ready(())).await;
+    let (pending, pending_submissions) =
+        insert_shutdown_fixture(&processes, std::future::pending()).await;
+    let (blocked, blocked_submissions) =
+        insert_shutdown_fixture(&processes, std::future::ready(())).await;
+    processes
+        .read()
+        .await
+        .get(&blocked)
+        .unwrap()
+        .submissions
+        .try_send(Op::Interrupt)
+        .expect("fill submission channel");
+
+    let timeout = Duration::from_millis(25);
+    let started = tokio::time::Instant::now();
+    let mut shutdown = std::pin::pin!(shutdown_processes_bounded(
+        &processes,
+        timeout,
+        ShutdownFixture::shutdown
+    ));
+    assert!(futures::poll!(&mut shutdown).is_pending());
+    for submissions in [&completed_submissions, &pending_submissions] {
+        assert_matches!(submissions.try_recv().unwrap(), Op::Shutdown);
+    }
+    tokio::time::advance(timeout).await;
+    let Poll::Ready(report) = futures::poll!(&mut shutdown) else {
+        panic!("all pending shutdowns must share the bounded deadline");
+    };
+    let mut unfinished = vec![pending, blocked];
+    unfinished.sort_by_key(std::string::ToString::to_string);
+    assert_eq!(report.completed, vec![completed]);
+    assert!(report.submit_failed.is_empty());
+    assert_eq!(report.timed_out, unfinished);
+    assert_eq!(started.elapsed(), timeout);
+    let mut tracked = processes.read().await.keys().copied().collect::<Vec<_>>();
+    tracked.sort_by_key(std::string::ToString::to_string);
+    assert_eq!(tracked, unfinished);
+    assert_matches!(blocked_submissions.try_recv().unwrap(), Op::Interrupt);
+    assert!(
+        blocked_submissions.is_empty(),
+        "timed-out submission was dropped"
+    );
+
+    // Releasing capacity permits a later retry; the still-running process stays tracked.
+    let report = shutdown_processes_bounded(&processes, timeout, ShutdownFixture::shutdown).await;
+    assert_eq!(report.completed, vec![blocked]);
+    assert_eq!(report.timed_out, vec![pending]);
+    assert_eq!(
+        processes.read().await.keys().copied().collect::<Vec<_>>(),
+        vec![pending]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_all_threads_bounded_reports_submission_errors_without_removing_them() {
+    let completed = ProcessId::new();
+    let failed = ProcessId::new();
+    let processes = RwLock::new(HashMap::from([(completed, true), (failed, false)]));
+    let report = shutdown_processes_bounded(&processes, Duration::from_secs(10), |succeeds| {
+        std::future::ready(if succeeds {
+            Ok(())
+        } else {
+            Err(ChaosErr::InternalAgentDied)
+        })
+    })
+    .await;
+    assert_eq!(report.completed, vec![completed]);
+    assert_eq!(report.submit_failed, vec![failed]);
+    assert!(report.timed_out.is_empty());
+    assert_eq!(*processes.read().await, HashMap::from([(failed, false)]));
 }
 
 #[tokio::test]

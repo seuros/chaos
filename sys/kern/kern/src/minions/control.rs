@@ -2,6 +2,7 @@ use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::minions::AgentStatus;
 use crate::minions::guards::Guards;
+use crate::minions::guards::SpawnReservation;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::resolve_role_config;
 use crate::minions::router::ForkArgs;
@@ -26,6 +27,7 @@ use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::user_input::UserInput;
 use chaos_traits::Adapter;
 use serde_json::Value;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::oneshot;
@@ -108,6 +110,42 @@ fn agent_nickname_candidates(
     let role_candidates =
         resolve_role_config(config, role_name).and_then(|role| role.nickname_candidates.clone());
     chaos_minions::nickname_candidates(role_candidates)
+}
+
+/// Restore a resumed child's identity before starting its session. Other sources
+/// must not load stored sub-agent metadata.
+async fn restore_resume_session_source(
+    config: &crate::config::Config,
+    session_source: SessionSource,
+    reservation: &mut SpawnReservation,
+    stored_identity: impl Future<Output = (Option<String>, Option<String>)>,
+) -> ChaosResult<SessionSource> {
+    let SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id,
+        depth,
+        ..
+    }) = session_source
+    else {
+        return Ok(session_source);
+    };
+    // Resume callers supply placeholders; stored identity is authoritative.
+    let (resumed_agent_nickname, resumed_agent_role) = stored_identity.await;
+    let reserved_agent_nickname = resumed_agent_nickname
+        .as_deref()
+        .map(|agent_nickname| {
+            let candidate_names = agent_nickname_candidates(config, resumed_agent_role.as_deref());
+            let candidate_name_refs: Vec<&str> =
+                candidate_names.iter().map(String::as_str).collect();
+            reservation
+                .reserve_agent_nickname_with_preference(&candidate_name_refs, Some(agent_nickname))
+        })
+        .transpose()?;
+    Ok(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id,
+        depth,
+        agent_nickname: reserved_agent_nickname,
+        agent_role: resumed_agent_role,
+    }))
 }
 
 /// Control-plane handle for multi-agent operations.
@@ -474,45 +512,18 @@ impl AgentControl {
     ) -> ChaosResult<ProcessId> {
         let state = self.upgrade()?;
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
-        let session_source = match session_source {
-            SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-                parent_process_id,
-                depth,
-                ..
-            }) => {
-                // Collab resume callers rebuild a placeholder ProcessSpawn source. Rehydrate the
-                // stored nickname/role from sqlite when available; otherwise leave both unset.
-                let (resumed_agent_nickname, resumed_agent_role) =
-                    if let Some(runtime_db_ctx) = runtime_db::get_runtime_db(&config) {
-                        match runtime_db_ctx.get_process(process_id).await {
-                            Ok(Some(metadata)) => (metadata.agent_nickname, metadata.agent_role),
-                            Ok(None) | Err(_) => (None, None),
-                        }
-                    } else {
-                        (None, None)
-                    };
-                let reserved_agent_nickname = resumed_agent_nickname
-                    .as_deref()
-                    .map(|agent_nickname| {
-                        let candidate_names =
-                            agent_nickname_candidates(&config, resumed_agent_role.as_deref());
-                        let candidate_name_refs: Vec<&str> =
-                            candidate_names.iter().map(String::as_str).collect();
-                        reservation.reserve_agent_nickname_with_preference(
-                            &candidate_name_refs,
-                            Some(agent_nickname),
-                        )
-                    })
-                    .transpose()?;
-                SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-                    parent_process_id,
-                    depth,
-                    agent_nickname: reserved_agent_nickname,
-                    agent_role: resumed_agent_role,
-                })
-            }
-            other => other,
-        };
+        let session_source =
+            restore_resume_session_source(&config, session_source, &mut reservation, async {
+                if let Some(runtime_db_ctx) = runtime_db::get_runtime_db(&config) {
+                    match runtime_db_ctx.get_process(process_id).await {
+                        Ok(Some(metadata)) => (metadata.agent_nickname, metadata.agent_role),
+                        Ok(None) | Err(_) => (None, None),
+                    }
+                } else {
+                    (None, None)
+                }
+            })
+            .await?;
         let inherited_shell_environment = self
             .inherited_shell_environment_for_source(&state, Some(&session_source))
             .await;

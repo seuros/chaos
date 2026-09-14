@@ -818,131 +818,96 @@ async fn spawn_process_subagent_uses_role_specific_nickname_candidates() {
 
 #[tokio::test]
 async fn resume_process_subagent_restores_stored_nickname_and_role() {
-    let (home, config) = test_config().await;
-    let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        ChaosAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.chaos_home.clone(),
-    );
-    let control = manager.agent_control();
-    let harness = AgentControlHarness {
-        _home: home,
-        config,
-        manager,
-        control,
-    };
-    let (parent_process_id, _parent_thread) = harness.start_process().await;
+    let config = crate::config::test_config();
+    let guards = Arc::new(Guards::default());
+    let parent_process_id = ProcessId::new();
+    let child_process_id = ProcessId::new();
+    // Keep the real reservation lifecycle, but not a running child, journal,
+    // model turn, metadata polling loop, or session restart.
+    let mut original = guards.reserve_spawn_slot(Some(1)).unwrap();
+    let nickname = original.reserve_agent_nickname(&["StoredScout"]).unwrap();
+    original.commit(child_process_id);
+    guards.release_spawned_thread(child_process_id);
 
-    let child_process_id = harness
-        .control
-        .spawn_agent(
-            harness.config.clone(),
-            text_input("hello child"),
-            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-                parent_process_id,
-                depth: 1,
-                agent_nickname: None,
-                agent_role: Some("scout".to_string()),
-            })),
-        )
-        .await
-        .expect("child spawn should succeed");
-
-    let child_thread = harness
-        .manager
-        .get_process(child_process_id)
-        .await
-        .expect("child thread should exist");
-    let mut status_rx = harness
-        .control
-        .subscribe_status(child_process_id)
-        .await
-        .expect("status subscription should succeed");
-    if matches!(status_rx.borrow().clone(), AgentStatus::PendingInit) {
-        timeout(Duration::from_secs(5), async {
-            loop {
-                status_rx
-                    .changed()
-                    .await
-                    .expect("child status should advance past pending init");
-                if !matches!(status_rx.borrow().clone(), AgentStatus::PendingInit) {
-                    break;
-                }
-            }
-        })
-        .await
-        .expect("child should initialize before shutdown");
-    }
-    let original_snapshot = child_thread.config_snapshot().await;
-    let original_nickname = original_snapshot
-        .session_source
-        .get_nickname()
-        .expect("spawned sub-agent should have a nickname");
-    let runtime_db = child_thread
-        .runtime_db()
-        .expect("sqlite runtime db should be available for nickname resume test");
-    timeout(Duration::from_secs(5), async {
-        loop {
-            if let Ok(Some(metadata)) = runtime_db.get_process(child_process_id).await
-                && metadata.agent_nickname.is_some()
-                && metadata.agent_role.as_deref() == Some("scout")
-            {
-                break;
-            }
-            sleep(Duration::from_millis(10)).await;
-        }
-    })
+    let mut reservation = guards.reserve_spawn_slot(Some(1)).unwrap();
+    let source = restore_resume_session_source(
+        &config,
+        SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+            parent_process_id,
+            depth: 1,
+            agent_nickname: None,
+            agent_role: None,
+        }),
+        &mut reservation,
+        std::future::ready((Some(nickname.clone()), Some("scout".into()))),
+    )
     .await
-    .expect("child thread metadata should be persisted to sqlite before shutdown");
+    .expect("restore stored identity");
+    assert_eq!(
+        source,
+        SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+            parent_process_id,
+            depth: 1,
+            agent_nickname: Some(nickname),
+            agent_role: Some("scout".into()),
+        })
+    );
+    assert!(matches!(
+        guards.reserve_spawn_slot(Some(1)),
+        Err(ChaosErr::AgentLimitReached { max_threads: 1 })
+    ));
+}
 
-    let _ = harness
-        .control
-        .shutdown_agent(child_process_id)
-        .await
-        .expect("child shutdown should submit");
-
-    let resumed_process_id = harness
-        .control
-        .resume_agent_from_rollout(
-            harness.config.clone(),
-            child_process_id,
+#[tokio::test]
+async fn resume_process_subagent_uses_only_available_stored_identity() {
+    let config = crate::config::test_config();
+    let guards = Arc::new(Guards::default());
+    let parent_process_id = ProcessId::new();
+    for (nickname, role) in [
+        (None, None),
+        (Some("StoredScout"), None),
+        (None, Some("scout")),
+    ] {
+        let nickname = nickname.map(str::to_string);
+        let role = role.map(str::to_string);
+        let mut reservation = guards.reserve_spawn_slot(Some(1)).unwrap();
+        let source = restore_resume_session_source(
+            &config,
             SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
                 parent_process_id,
-                depth: 1,
-                agent_nickname: None,
-                agent_role: None,
+                depth: 2,
+                agent_nickname: Some("placeholder".into()),
+                agent_role: Some("placeholder".into()),
             }),
+            &mut reservation,
+            std::future::ready((nickname.clone(), role.clone())),
         )
         .await
-        .expect("resume should succeed");
-    assert_eq!(resumed_process_id, child_process_id);
+        .expect("restore available identity");
+        assert_eq!(
+            source,
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
+                depth: 2,
+                agent_nickname: nickname,
+                agent_role: role,
+            })
+        );
+    }
+}
 
-    let resumed_snapshot = harness
-        .manager
-        .get_process(resumed_process_id)
+#[tokio::test]
+async fn resume_other_session_sources_do_not_load_subagent_identity() {
+    let config = crate::config::test_config();
+    let guards = Arc::new(Guards::default());
+    let mut reservation = guards.reserve_spawn_slot(Some(1)).unwrap();
+    let source =
+        restore_resume_session_source(&config, SessionSource::Exec, &mut reservation, async {
+            panic!("non-process-spawn sources must not load sub-agent metadata")
+        })
         .await
-        .expect("resumed child thread should exist")
-        .config_snapshot()
-        .await;
-    let SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-        parent_process_id: resumed_parent_process_id,
-        depth: resumed_depth,
-        agent_nickname: resumed_nickname,
-        agent_role: resumed_role,
-    }) = resumed_snapshot.session_source
-    else {
-        panic!("expected thread-spawn sub-agent source");
-    };
-    assert_eq!(resumed_parent_process_id, parent_process_id);
-    assert_eq!(resumed_depth, 1);
-    assert_eq!(resumed_nickname, Some(original_nickname));
-    assert_eq!(resumed_role, Some("scout".to_string()));
-
-    let _ = harness
-        .control
-        .shutdown_agent(resumed_process_id)
-        .await
-        .expect("resumed child shutdown should submit");
+        .unwrap();
+    assert_eq!(source, SessionSource::Exec);
 }
 
 #[test]

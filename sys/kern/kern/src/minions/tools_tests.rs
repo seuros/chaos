@@ -399,15 +399,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
             .unwrap_or(base)
     }
 
-    #[derive(Debug, Deserialize)]
-    struct SpawnAgentResult {
-        agent_id: String,
-        nickname: Option<String>,
-    }
-
-    let (mut session, mut turn) = make_session_and_context().await;
-    let manager = process_table();
-    session.services.agent_control = manager.agent_control();
+    let (session, mut turn) = make_session_and_context().await;
     let expected_sandbox = pick_allowed_sandbox_policy(
         &turn.config.permissions.sandbox_policy,
         turn.config.permissions.sandbox_policy.get().clone(),
@@ -425,46 +417,19 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         "test requires a runtime sandbox override that differs from base config"
     );
 
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "spawn_agent",
-        function_payload(json!({
-            "message": "await this command",
-            "agent_type": "scout"
-        })),
+    // Exercise the handler's actual configuration pipeline, not a child session
+    // (and its shell, journal, model requests, and runtime teardown).
+    let args = serde_json::from_value(json!({})).expect("spawn arguments");
+    let config = spawn::prepare_config(&session, &turn, Some("scout"), 1, &args)
+        .await
+        .expect("prepare child config");
+    assert_eq!(config.permissions.sandbox_policy.get(), &expected_sandbox);
+    assert_eq!(config.permissions.vfs_policy, expected_vfs_policy);
+    assert_eq!(config.permissions.socket_policy, expected_socket_policy);
+    assert_eq!(
+        config.permissions.approval_policy.get(),
+        &ApprovalPolicy::Interactive
     );
-    let output = SpawnAgentHandler
-        .handle(invocation)
-        .await
-        .expect("spawn_agent should succeed");
-    let (content, _) = expect_text_output(output);
-    let result: SpawnAgentResult =
-        serde_json::from_str(&content).expect("spawn_agent result should be json");
-    let agent_id = agent_id(&result.agent_id).expect("agent_id should be valid");
-    assert!(
-        result
-            .nickname
-            .as_deref()
-            .is_some_and(|nickname| !nickname.is_empty())
-    );
-
-    let snapshot = manager
-        .get_process(agent_id)
-        .await
-        .expect("spawned agent thread should exist")
-        .config_snapshot()
-        .await;
-    assert_eq!(snapshot.vfs_policy, expected_vfs_policy);
-    assert_eq!(snapshot.socket_policy, expected_socket_policy);
-    assert_eq!(snapshot.approval_policy, ApprovalPolicy::Interactive);
-    let child_thread = manager
-        .get_process(agent_id)
-        .await
-        .expect("spawned agent thread should exist");
-    let child_turn = child_thread.chaos.session.new_default_turn().await;
-    assert_eq!(child_turn.vfs_policy, expected_vfs_policy);
-    assert_eq!(child_turn.socket_policy, expected_socket_policy);
 }
 
 #[tokio::test]

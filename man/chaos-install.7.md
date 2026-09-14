@@ -68,6 +68,33 @@ just bigbang
 just build
 ```
 
+### Build without the TUI
+
+The `chaos-cli` package enables its `tui` feature by default. Disable it to
+exclude `chaos-console`, `libui`, Ratatui, and crossterm from the build:
+
+```bash
+cargo build --release --locked -p chaos-cli --bin chaos --no-default-features
+
+# HTTP daemon; configure provider credentials first and supply a bearer token.
+# CHAOS_BEARER_TOKEN must be set in the service environment.
+./target/release/chaos serve --bind 127.0.0.1 --port 4000
+```
+
+The headless binary retains `serve`, `mcp serve`, `taskd`, `exec` (including
+`exec resume`), review, account/configuration management, models, and completions.
+It omits the interactive prompt, `resume`/`fork` pickers, and TUI-only flags.
+Running it without a subcommand returns an explanatory error, not a daemon.
+Use launchd/systemd to supervise the chosen foreground service.
+
+This changes build contents, not server permissions or protocols: HTTP remains
+an authenticated, one-request/one-response trigger API, and MCP uses stdio.
+See [chaos-httpd.8](./chaos-httpd.8.md) and [chaos-mcp.7](./chaos-mcp.7.md).
+
+Build only `-p chaos-cli`; a workspace-wide build still builds the console
+workspace members. `--all-features` or `--features tui` enables the TUI again.
+The runtime `--headless` approval flag is separate from this Cargo feature.
+
 ### Shared build cache
 
 Mr. Boxington (`mbx`) is an optional Cargo frontend for local builds and the

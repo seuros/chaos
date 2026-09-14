@@ -1,16 +1,18 @@
+//! Real-process coverage for the public PTY and pipe APIs.
+
 use std::collections::HashMap;
 use std::path::Path;
 
 use pretty_assertions::assert_eq;
 
-use crate::combine_output_receivers;
-use crate::pipe::spawn_process_no_stdin_with_inherited_fds;
-use crate::pty::spawn_process_with_inherited_fds;
-use crate::spawn_pipe_process;
-use crate::spawn_pipe_process_no_stdin;
-use crate::spawn_pty_process;
-use crate::SpawnedProcess;
-use crate::TerminalSize;
+use chaos_pty::combine_output_receivers;
+use chaos_pty::pipe::spawn_process_no_stdin_with_inherited_fds;
+use chaos_pty::pty::spawn_process_with_inherited_fds;
+use chaos_pty::spawn_pipe_process;
+use chaos_pty::spawn_pipe_process_no_stdin;
+use chaos_pty::spawn_pty_process;
+use chaos_pty::SpawnedProcess;
+use chaos_pty::TerminalSize;
 
 fn find_python() -> Option<String> {
     for candidate in ["python3", "python"] {
@@ -41,10 +43,6 @@ fn shell_command(program: &str) -> (String, Vec<String>) {
     )
 }
 
-fn echo_sleep_command(marker: &str) -> String {
-    format!("echo {marker}; sleep 0.05")
-}
-
 fn split_stdout_stderr_command() -> String {
     "printf 'split-out\\n'; printf 'split-err\\n' >&2".to_string()
 }
@@ -72,7 +70,7 @@ async fn collect_split_output(mut output_rx: tokio::sync::mpsc::Receiver<Vec<u8>
 fn combine_spawned_output(
     spawned: SpawnedProcess,
 ) -> (
-    crate::ProcessHandle,
+    chaos_pty::ProcessHandle,
     tokio::sync::broadcast::Receiver<Vec<u8>>,
     tokio::sync::oneshot::Receiver<i32>,
 ) {
@@ -93,42 +91,27 @@ async fn collect_output_until_exit(
     mut output_rx: tokio::sync::broadcast::Receiver<Vec<u8>>,
     exit_rx: tokio::sync::oneshot::Receiver<i32>,
     timeout_ms: u64,
-) -> (Vec<u8>, i32) {
-    let mut collected = Vec::new();
-    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
-    tokio::pin!(exit_rx);
-
-    loop {
-        tokio::select! {
-            res = output_rx.recv() => {
-                if let Ok(chunk) = res {
-                    collected.extend_from_slice(&chunk);
-                }
-            }
-            res = &mut exit_rx => {
-                let code = res.unwrap_or(-1);
-                // It's possible to observe the exit notification before the final
-                // bytes are drained from the PTY reader thread. Drain for a brief
-                // "quiet" window to make output assertions deterministic.
-                let (quiet_ms, max_ms) = (50, 500);
-                let quiet = tokio::time::Duration::from_millis(quiet_ms);
-                let max_deadline =
-                    tokio::time::Instant::now() + tokio::time::Duration::from_millis(max_ms);
-                while tokio::time::Instant::now() < max_deadline {
-                    match tokio::time::timeout(quiet, output_rx.recv()).await {
-                        Ok(Ok(chunk)) => collected.extend_from_slice(&chunk),
-                        Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
-                        Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => break,
-                        Err(_) => break,
+) -> anyhow::Result<(Vec<u8>, i32)> {
+    // Exit and output EOF are independent signals: the reader can deliver its
+    // last bytes after the child exits. Wait for both, not for a quiet period.
+    // The timeout only bounds a broken process/reader; it never signals success.
+    tokio::time::timeout(tokio::time::Duration::from_millis(timeout_ms), async {
+        let output = async {
+            let mut collected = Vec::new();
+            loop {
+                match output_rx.recv().await {
+                    Ok(chunk) => collected.extend_from_slice(&chunk),
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        return Ok::<_, anyhow::Error>(collected);
                     }
+                    Err(err) => return Err(err.into()),
                 }
-                return (collected, code);
             }
-            _ = tokio::time::sleep_until(deadline) => {
-                return (collected, -1);
-            }
-        }
-    }
+        };
+        tokio::try_join!(output, async { exit_rx.await.map_err(anyhow::Error::from) })
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("timed out waiting for process exit and output EOF"))?
 }
 
 async fn wait_for_output_contains(
@@ -162,92 +145,6 @@ async fn wait_for_output_contains(
 
     anyhow::bail!(
         "timed out waiting for {needle:?} in PTY output: {:?}",
-        String::from_utf8_lossy(&collected)
-    );
-}
-
-async fn wait_for_python_repl_ready(
-    output_rx: &mut tokio::sync::broadcast::Receiver<Vec<u8>>,
-    timeout_ms: u64,
-    ready_marker: &str,
-) -> anyhow::Result<Vec<u8>> {
-    let mut collected = Vec::new();
-    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
-
-    while tokio::time::Instant::now() < deadline {
-        let now = tokio::time::Instant::now();
-        let remaining = deadline.saturating_duration_since(now);
-        match tokio::time::timeout(remaining, output_rx.recv()).await {
-            Ok(Ok(chunk)) => {
-                collected.extend_from_slice(&chunk);
-                if String::from_utf8_lossy(&collected).contains(ready_marker) {
-                    return Ok(collected);
-                }
-            }
-            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
-            Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => {
-                anyhow::bail!(
-                    "PTY output closed while waiting for Python REPL readiness: {:?}",
-                    String::from_utf8_lossy(&collected)
-                );
-            }
-            Err(_) => break,
-        }
-    }
-
-    anyhow::bail!(
-        "timed out waiting for Python REPL readiness marker {ready_marker:?} in PTY: {:?}",
-        String::from_utf8_lossy(&collected)
-    );
-}
-
-async fn wait_for_python_repl_ready_via_probe(
-    writer: &tokio::sync::mpsc::Sender<Vec<u8>>,
-    output_rx: &mut tokio::sync::broadcast::Receiver<Vec<u8>>,
-    timeout_ms: u64,
-    newline: &str,
-) -> anyhow::Result<Vec<u8>> {
-    let mut collected = Vec::new();
-    let marker = "__chaos_pty_ready__";
-    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
-    let probe_window = tokio::time::Duration::from_millis(250);
-
-    while tokio::time::Instant::now() < deadline {
-        writer
-            .send(format!("print('{marker}'){newline}").into_bytes())
-            .await?;
-
-        let probe_deadline = tokio::time::Instant::now() + probe_window;
-        loop {
-            let now = tokio::time::Instant::now();
-            if now >= deadline || now >= probe_deadline {
-                break;
-            }
-            let remaining = std::cmp::min(
-                deadline.saturating_duration_since(now),
-                probe_deadline.saturating_duration_since(now),
-            );
-            match tokio::time::timeout(remaining, output_rx.recv()).await {
-                Ok(Ok(chunk)) => {
-                    collected.extend_from_slice(&chunk);
-                    if String::from_utf8_lossy(&collected).contains(marker) {
-                        return Ok(collected);
-                    }
-                }
-                Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
-                Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => {
-                    anyhow::bail!(
-                        "PTY output closed while waiting for Python REPL readiness: {:?}",
-                        String::from_utf8_lossy(&collected)
-                    );
-                }
-                Err(_) => break,
-            }
-        }
-    }
-
-    anyhow::bail!(
-        "timed out waiting for Python REPL readiness in PTY: {:?}",
         String::from_utf8_lossy(&collected)
     );
 }
@@ -355,14 +252,15 @@ async fn pty_python_repl_emits_output_and_exits() -> anyhow::Result<()> {
     let newline = "\n";
     let startup_timeout_ms = 5_000;
     let mut output =
-        wait_for_python_repl_ready(&mut output_rx, startup_timeout_ms, ready_marker).await?;
+        wait_for_output_contains(&mut output_rx, ready_marker, startup_timeout_ms).await?;
     writer
         .send(format!("print('hello from pty'){newline}").into_bytes())
         .await?;
     writer.send(format!("exit(){newline}").into_bytes()).await?;
 
     let timeout_ms = 5_000;
-    let (remaining_output, code) = collect_output_until_exit(output_rx, exit_rx, timeout_ms).await;
+    let (remaining_output, code) =
+        collect_output_until_exit(output_rx, exit_rx, timeout_ms).await?;
     output.extend_from_slice(&remaining_output);
     let text = String::from_utf8_lossy(&output);
 
@@ -400,7 +298,7 @@ async fn pipe_process_round_trips_stdin() -> anyhow::Result<()> {
     drop(writer);
     session.close_stdin();
 
-    let (output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await;
+    let (output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await?;
     let text = String::from_utf8_lossy(&output);
 
     assert!(
@@ -420,19 +318,13 @@ async fn pipe_process_detaches_from_parent_session() -> anyhow::Result<()> {
     }
 
     let env_map: HashMap<String, String> = std::env::vars().collect();
-    let script = "echo $$; sleep 0.2";
+    // Keep the child alive until the parent has inspected its session ID.
+    let script = "printf '__sid_pid:%s\\n' \"$$\"; IFS= read -r _line";
     let (program, args) = shell_command(script);
     let spawned = spawn_pipe_process(&program, &args, Path::new("."), &env_map, &None).await?;
 
-    let (_session, mut output_rx, exit_rx) = combine_spawned_output(spawned);
-    let pid_bytes =
-        tokio::time::timeout(tokio::time::Duration::from_millis(500), output_rx.recv()).await??;
-    let pid_text = String::from_utf8_lossy(&pid_bytes);
-    let child_pid: i32 = pid_text
-        .split_whitespace()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("missing child pid output: {pid_text:?}"))?
-        .parse()?;
+    let (session, mut output_rx, exit_rx) = combine_spawned_output(spawned);
+    let child_pid = wait_for_marker_pid(&mut output_rx, "__sid_pid:", 5_000).await?;
 
     let child_sid = unsafe { libc::getsid(child_pid) };
     if child_sid == -1 {
@@ -445,7 +337,8 @@ async fn pipe_process_detaches_from_parent_session() -> anyhow::Result<()> {
         "expected child to be detached from parent session"
     );
 
-    let exit_code = exit_rx.await.unwrap_or(-1);
+    session.writer_sender().send(b"done\n".to_vec()).await?;
+    let (_, exit_code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await?;
     assert_eq!(
         exit_code, 0,
         "expected detached pipe process to exit cleanly"
@@ -458,8 +351,8 @@ async fn pipe_process_detaches_from_parent_session() -> anyhow::Result<()> {
 async fn pipe_and_pty_share_interface() -> anyhow::Result<()> {
     let env_map: HashMap<String, String> = std::env::vars().collect();
 
-    let (pipe_program, pipe_args) = shell_command(&echo_sleep_command("pipe_ok"));
-    let (pty_program, pty_args) = shell_command(&echo_sleep_command("pty_ok"));
+    let (pipe_program, pipe_args) = shell_command("echo pipe_ok");
+    let (pty_program, pty_args) = shell_command("echo pty_ok");
 
     let pipe =
         spawn_pipe_process(&pipe_program, &pipe_args, Path::new("."), &env_map, &None).await?;
@@ -477,9 +370,9 @@ async fn pipe_and_pty_share_interface() -> anyhow::Result<()> {
 
     let timeout_ms = 3_000;
     let (pipe_out, pipe_code) =
-        collect_output_until_exit(pipe_output_rx, pipe_exit_rx, timeout_ms).await;
+        collect_output_until_exit(pipe_output_rx, pipe_exit_rx, timeout_ms).await?;
     let (pty_out, pty_code) =
-        collect_output_until_exit(pty_output_rx, pty_exit_rx, timeout_ms).await;
+        collect_output_until_exit(pty_output_rx, pty_exit_rx, timeout_ms).await?;
 
     assert_eq!(pipe_code, 0);
     assert_eq!(pty_code, 0);
@@ -506,12 +399,25 @@ async fn pipe_drains_stderr_without_stdout_activity() -> anyhow::Result<()> {
     let args = vec!["-c".to_string(), script.to_string()];
     let env_map: HashMap<String, String> = std::env::vars().collect();
     let spawned = spawn_pipe_process(&python, &args, Path::new("."), &env_map, &None).await?;
-    let (_session, output_rx, exit_rx) = combine_spawned_output(spawned);
+    let SpawnedProcess {
+        session: _session,
+        stdout_rx,
+        stderr_rx,
+        exit_rx,
+    } = spawned;
+    let (stdout, stderr, code) =
+        tokio::time::timeout(tokio::time::Duration::from_secs(10), async {
+            tokio::join!(
+                collect_split_output(stdout_rx),
+                collect_split_output(stderr_rx),
+                exit_rx
+            )
+        })
+        .await?;
 
-    let (output, code) = collect_output_until_exit(output_rx, exit_rx, 10_000).await;
-
-    assert_eq!(code, 0, "expected python to exit cleanly");
-    assert!(!output.is_empty(), "expected stderr output to be drained");
+    assert_eq!(code?, 0, "expected python to exit cleanly");
+    assert!(stdout.is_empty(), "child only writes stderr");
+    assert_eq!(stderr, vec![b'E'; 64 * 65_536]);
 
     Ok(())
 }
@@ -555,39 +461,52 @@ async fn pipe_process_can_expose_split_stdout_and_stderr() -> anyhow::Result<()>
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_terminate_aborts_detached_readers() -> anyhow::Result<()> {
+    use std::os::fd::AsRawFd;
+    use std::os::fd::FromRawFd;
+
     if !setsid_available() {
         eprintln!("setsid not available; skipping pipe_terminate_aborts_detached_readers");
         return Ok(());
     }
 
-    let env_map: HashMap<String, String> = std::env::vars().collect();
-    let script =
-        "setsid sh -c 'i=0; while [ $i -lt 200 ]; do echo tick; sleep 0.01; i=$((i+1)); done' &";
+    // Keep the detached child blocked on a pipe owned by this test. Dropping
+    // the writer releases it even if startup or an assertion fails.
+    let mut fds = [0; 2];
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let read_end = unsafe { std::fs::File::from_raw_fd(fds[0]) };
+    let release_writer = unsafe { std::fs::File::from_raw_fd(fds[1]) };
+    set_cloexec_for_test(read_end.as_raw_fd())?;
+    set_cloexec_for_test(release_writer.as_raw_fd())?;
+
+    let mut env_map: HashMap<String, String> = std::env::vars().collect();
+    env_map.insert("CONTROL_FD".to_string(), read_end.as_raw_fd().to_string());
+    let script = "setsid sh -c 'echo __detached_ready__; IFS= read -r _line <&\"$CONTROL_FD\"' &";
     let (program, args) = shell_command(script);
-    let spawned = spawn_pipe_process(&program, &args, Path::new("."), &env_map, &None).await?;
+    let spawned = spawn_process_no_stdin_with_inherited_fds(
+        &program,
+        &args,
+        Path::new("."),
+        &env_map,
+        &None,
+        &[read_end.as_raw_fd()],
+    )
+    .await?;
+    drop(read_end);
     let (session, mut output_rx, _exit_rx) = combine_spawned_output(spawned);
 
-    let _ = tokio::time::timeout(tokio::time::Duration::from_millis(500), output_rx.recv())
-        .await
-        .map_err(|_| anyhow::anyhow!("expected detached output before terminate"))??;
-
-    session.terminate();
+    wait_for_output_contains(&mut output_rx, "__detached_ready__\n", 5_000).await?;
+    // terminate() must close the readers even while this unrelated session
+    // keeps stdout/stderr open.
     let mut post_rx = output_rx.resubscribe();
-
-    let post_terminate =
-        tokio::time::timeout(tokio::time::Duration::from_millis(200), post_rx.recv()).await;
-
-    match post_terminate {
-        Err(_) => Ok(()),
-        Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => Ok(()),
-        Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
-            anyhow::bail!("unexpected output after terminate (lagged)")
-        }
-        Ok(Ok(chunk)) => anyhow::bail!(
-            "unexpected output after terminate: {:?}",
-            String::from_utf8_lossy(&chunk)
-        ),
-    }
+    session.terminate();
+    assert_eq!(
+        tokio::time::timeout(tokio::time::Duration::from_secs(5), post_rx.recv()).await?,
+        Err(tokio::sync::broadcast::error::RecvError::Closed),
+        "termination must close detached readers, not merely leave them quiet"
+    );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -671,7 +590,7 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
     drop(write_end);
 
     let (_session, output_rx, exit_rx) = combine_spawned_output(spawned);
-    let (_, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await;
+    let (_, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await?;
     assert_eq!(code, 0, "expected preserved-fd PTY child to exit cleanly");
 
     let mut pipe_output = String::new();
@@ -724,8 +643,7 @@ async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Res
     let (session, mut output_rx, exit_rx) = combine_spawned_output(spawned);
     let writer = session.writer_sender();
     let newline = "\n";
-    let mut output =
-        wait_for_python_repl_ready_via_probe(&writer, &mut output_rx, 5_000, newline).await?;
+    let mut output = wait_for_output_contains(&mut output_rx, ">>> ", 5_000).await?;
     let marker = "__codex_preserved_py_pid:";
     writer
         .send(format!("import os; print('{marker}' + str(os.getpid())){newline}").into_bytes())
@@ -744,7 +662,7 @@ async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Res
     );
 
     writer.send(format!("exit(){newline}").into_bytes()).await?;
-    let (remaining_output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await;
+    let (remaining_output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await?;
     output.extend_from_slice(&remaining_output);
 
     assert_eq!(code, 0, "expected python to exit cleanly");
@@ -840,7 +758,7 @@ async fn pty_spawn_with_inherited_fds_supports_resize() -> anyhow::Result<()> {
     writer.send(b"go\n".to_vec()).await?;
     session.close_stdin();
 
-    let (remaining_output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await;
+    let (remaining_output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await?;
     output.extend_from_slice(&remaining_output);
     let text = String::from_utf8_lossy(&output);
     let normalized = text.replace("\r\n", "\n");
@@ -893,7 +811,7 @@ async fn pipe_spawn_no_stdin_can_preserve_inherited_fds() -> anyhow::Result<()> 
     drop(write_end);
 
     let (_session, output_rx, exit_rx) = combine_spawned_output(spawned);
-    let (_, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await;
+    let (_, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await?;
     assert_eq!(code, 0, "expected preserved-fd pipe child to exit cleanly");
 
     let mut pipe_output = String::new();

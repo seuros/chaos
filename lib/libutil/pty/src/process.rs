@@ -216,37 +216,43 @@ fn resize_raw_pty(raw_fd: RawFd, size: TerminalSize) -> anyhow::Result<()> {
 
 /// Combine split stdout/stderr receivers into a single broadcast receiver.
 pub fn combine_output_receivers(
-    mut stdout_rx: mpsc::Receiver<Vec<u8>>,
-    mut stderr_rx: mpsc::Receiver<Vec<u8>>,
+    stdout_rx: mpsc::Receiver<Vec<u8>>,
+    stderr_rx: mpsc::Receiver<Vec<u8>>,
 ) -> broadcast::Receiver<Vec<u8>> {
     let (combined_tx, combined_rx) = broadcast::channel(256);
-    tokio::spawn(async move {
-        let mut stdout_open = true;
-        let mut stderr_open = true;
-
-        loop {
-            tokio::select! {
-                stdout = stdout_rx.recv(), if stdout_open => match stdout {
-                    Some(chunk) => {
-                        let _ = combined_tx.send(chunk);
-                    }
-                    None => {
-                        stdout_open = false;
-                    }
-                },
-                stderr = stderr_rx.recv(), if stderr_open => match stderr {
-                    Some(chunk) => {
-                        let _ = combined_tx.send(chunk);
-                    }
-                    None => {
-                        stderr_open = false;
-                    }
-                },
-                else => break,
-            }
-        }
-    });
+    tokio::spawn(forward_output(stdout_rx, stderr_rx, combined_tx));
     combined_rx
+}
+
+async fn forward_output(
+    mut stdout_rx: mpsc::Receiver<Vec<u8>>,
+    mut stderr_rx: mpsc::Receiver<Vec<u8>>,
+    combined_tx: broadcast::Sender<Vec<u8>>,
+) {
+    let mut stdout_open = true;
+    let mut stderr_open = true;
+
+    loop {
+        tokio::select! {
+            stdout = stdout_rx.recv(), if stdout_open => match stdout {
+                Some(chunk) => {
+                    let _ = combined_tx.send(chunk);
+                }
+                None => {
+                    stdout_open = false;
+                }
+            },
+            stderr = stderr_rx.recv(), if stderr_open => match stderr {
+                Some(chunk) => {
+                    let _ = combined_tx.send(chunk);
+                }
+                None => {
+                    stderr_open = false;
+                }
+            },
+            else => break,
+        }
+    }
 }
 
 /// Return value from PTY or pipe spawn helpers.
@@ -257,3 +263,6 @@ pub struct SpawnedProcess {
     pub stderr_rx: mpsc::Receiver<Vec<u8>>,
     pub exit_rx: oneshot::Receiver<i32>,
 }
+
+#[cfg(test)]
+mod tests;

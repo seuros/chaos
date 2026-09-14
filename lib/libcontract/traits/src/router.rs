@@ -222,13 +222,14 @@ mod tests {
         let (adapter, mut rx) = Adapter::<PingOp>::bounded(1);
         adapter.send(PingOp::Ping).await.expect("first send");
         // Second send blocks until receiver drains the first.
-        let send_fut = adapter.send(PingOp::Ping);
-        tokio::pin!(send_fut);
-        tokio::select! {
-            _ = &mut send_fut => panic!("second send should back-pressure"),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
-        }
+        let mut send = tokio_test::task::spawn(adapter.send(PingOp::Ping));
+        tokio_test::assert_pending!(send.poll());
         let _ = rx.recv().await.expect("drain");
-        send_fut.await.expect("unblocked send");
+        assert!(send.is_woken(), "draining capacity must wake the sender");
+        tokio_test::assert_ready!(send.poll()).expect("unblocked send");
+        assert!(matches!(
+            rx.try_recv().expect("second packet").op,
+            PingOp::Ping
+        ));
     }
 }

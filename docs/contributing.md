@@ -61,6 +61,25 @@ Everyone else: come in, the door is open.
   the affected tests. Use focused runs to check path-sensitive fixtures and suites
   rather than repeatedly running the full QA gate during the move.
 
+### Deterministic tests
+
+- Test policy, state transitions, cancellation, and buffering with in-memory
+  inputs or fakes. Do not boot a session, daemon, shell, or network service just
+  to test a local decision.
+- For Tokio timer logic, use `#[tokio::test(start_paused = true)]` and virtual
+  time. The implementation's elapsed-time accounting must use `tokio::time::Instant`
+  too; pausing Tokio does not pause `std::time::Instant` or an external process.
+- Establish ordering with channels, barriers, or explicit future polling.
+  A sleep or repeated `yield_now()` is not proof that another task reached a state.
+  Test backpressure by polling pending, releasing capacity, and checking readiness.
+- Keep real OS/process tests as integration tests. Synchronize on readiness
+  messages, exit notifications, and EOF, not startup sleeps or quiet windows.
+  Keep bounded timeouts to diagnose hangs, but never treat a timeout as success
+  or assert that integration work completes within a performance threshold.
+- Preserve backend/platform coverage when extracting unit tests. Do not hide
+  flaky tests with ignores, retries, or larger runner timeouts. `--lib` alone is
+  not a guarantee of isolation for crates that still mix test categories.
+
 ### Pull requests
 
 - Fill in the PR template: **What? Why? How?**

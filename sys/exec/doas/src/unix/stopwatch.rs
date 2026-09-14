@@ -1,10 +1,10 @@
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Debug)]

@@ -17,6 +17,11 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+default = ["tui"]
+# Omit the interactive console and renderer from headless/server builds.
+tui = ["dep:chaos-console", "dep:owo-colors", "dep:supports-color"]
+
 [dependencies]
 alcatraz = { workspace = true }
 anyhow = { workspace = true }
@@ -34,18 +39,18 @@ chaos-httpd = { workspace = true }
 chaos-taskd = { workspace = true }
 chaos-pwd = { workspace = true }
 chaos-ipc = { workspace = true }
-chaos-console = { workspace = true }
+chaos-console = { workspace = true, optional = true }
 chaos-snitch = { workspace = true }
 chaos-client = { workspace = true }
 rama = { workspace = true }
 libc = { workspace = true }
 mimalloc = { workspace = true }
-owo-colors = { workspace = true }
+owo-colors = { workspace = true, optional = true }
 regex-lite = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-supports-color = { workspace = true }
+supports-color = { workspace = true, optional = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",

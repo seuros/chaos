@@ -4,6 +4,11 @@ The CLI entry point. Dispatches to the appropriate subcommand, handles operator
 login and configuration, and bootstraps the kernel for interactive or headless
 sessions.
 
+The default `tui` Cargo feature includes the interactive console. Build with
+`cargo build -p chaos-cli --bin chaos --no-default-features` for a renderer-free
+binary supporting `serve`, `mcp serve`, `taskd`, and `exec`. See
+[build and deployment](../../man/chaos-install.7.md#build-without-the-tui).
+
 ## Account management
 
 Connect a provider subscription account with device authorization:

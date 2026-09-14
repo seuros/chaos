@@ -13,17 +13,24 @@ use chaos_boot::accounts::run_connect_with_api_key;
 use chaos_boot::accounts::run_connect_with_chatgpt_account;
 use chaos_boot::accounts::run_connect_with_device_code;
 use chaos_boot::accounts::run_disconnect;
+#[cfg(feature = "tui")]
 use chaos_console::AppExitInfo;
+#[cfg(feature = "tui")]
 use chaos_console::Cli as TuiCli;
+#[cfg(feature = "tui")]
 use chaos_console::ExitReason;
 use chaos_fork::Cli as ExecCli;
 use chaos_fork::Command as ExecCommand;
 use chaos_fork::ReviewArgs;
 use chaos_getopt::CliConfigOverrides;
+#[cfg(feature = "tui")]
 use chaos_ipc::product::OS_NAME;
 use chaos_selinux::ExecPolicyCheckCommand;
+#[cfg(feature = "tui")]
 use owo_colors::OwoColorize;
+#[cfg(feature = "tui")]
 use std::io::IsTerminal;
+#[cfg(feature = "tui")]
 use supports_color::Stream;
 
 mod config_cmd;
@@ -34,12 +41,28 @@ mod models_cmd;
 use crate::mcp_cmd::McpCli;
 use crate::models_cmd::ModelsCli;
 
+#[cfg(feature = "tui")]
 use chaos_kern::terminal::TerminalName;
 
 /// Chaos
 ///
-/// If no subcommand is specified, options will be forwarded to the interactive CLI.
+#[cfg_attr(
+    feature = "tui",
+    doc = "If no subcommand is specified, options will be forwarded to the interactive CLI."
+)]
+#[cfg_attr(
+    not(feature = "tui"),
+    doc = "Built without the TUI. Use serve, mcp serve, taskd, or exec for headless operation."
+)]
 #[derive(Debug, usage::Cli)]
+#[cfg_attr(
+    feature = "tui",
+    usage(usage = "chaos [OPTIONS] [PROMPT]\n       chaos [OPTIONS] <COMMAND> [ARGS]")
+)]
+#[cfg_attr(
+    not(feature = "tui"),
+    usage(usage = "chaos [OPTIONS] <COMMAND> [ARGS]")
+)]
 #[usage(
     author = env!("CARGO_PKG_AUTHORS"),
     version = concat!(env!("CARGO_PKG_VERSION"), ".", env!("CHAOS_BUILD_TS")),
@@ -47,7 +70,6 @@ use chaos_kern::terminal::TerminalName;
     // `chaos-x86_64-unknown-linux-musl`, but the help output should always use
     // the generic `chaos` command name that users run.
     bin = "chaos",
-    usage = "chaos [OPTIONS] [PROMPT]\n       chaos [OPTIONS] <COMMAND> [ARGS]",
     completion,
     unknown_flags = "error",
     args_override_self = false
@@ -64,14 +86,32 @@ struct MultitoolCli {
     #[usage(flatten)]
     pub config_overrides: CliConfigOverrides,
 
+    #[cfg(feature = "tui")]
     #[usage(flatten)]
     interactive: TuiCli,
+
+    // Models also uses the root profile flag; do not require the console to parse it.
+    /// Configuration profile from config.toml to specify default options.
+    #[cfg(not(feature = "tui"))]
+    #[usage(long = "profile", short = 'p')]
+    config_profile: Option<String>,
 
     #[usage(subcommand)]
     subcommand: Option<Subcommand>,
 }
 
 impl MultitoolCli {
+    fn config_profile(&self) -> Option<&str> {
+        #[cfg(feature = "tui")]
+        {
+            self.interactive.config_profile.as_deref()
+        }
+        #[cfg(not(feature = "tui"))]
+        {
+            self.config_profile.as_deref()
+        }
+    }
+
     fn normalize(&mut self) {
         if let Some(Subcommand::Exec(exec)) = &mut self.subcommand {
             exec.normalize();
@@ -113,9 +153,11 @@ enum Subcommand {
     Execpolicy(ExecpolicyCommand),
 
     /// Resume a previous interactive session (picker by default; use --last to continue the most recent).
+    #[cfg(feature = "tui")]
     Resume(ResumeCommand),
 
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
+    #[cfg(feature = "tui")]
     Fork(ForkCommand),
 
     /// Run Chaos as an HTTP trigger server.
@@ -163,6 +205,7 @@ impl From<CompletionShell> for usage::complete::Shell {
     }
 }
 
+#[cfg(feature = "tui")]
 #[derive(Debug, usage::Args)]
 struct ResumeCommand {
     /// Conversation/session id (UUID) or thread name. UUIDs take precedence if it parses.
@@ -182,6 +225,7 @@ struct ResumeCommand {
     config_overrides: TuiCli,
 }
 
+#[cfg(feature = "tui")]
 #[derive(Debug, usage::Args)]
 struct ForkCommand {
     /// Conversation/session id (UUID). When provided, forks this session.
@@ -269,6 +313,7 @@ struct LogoutCommand {
     config_overrides: CliConfigOverrides,
 }
 
+#[cfg(feature = "tui")]
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
     let AppExitInfo {
         token_usage,
@@ -309,6 +354,7 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 }
 
 /// Handle the app exit and print the results. Optionally run the update action.
+#[cfg(feature = "tui")]
 fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
     match exit_info.exit_reason {
         ExitReason::Fatal(message) => {
@@ -354,13 +400,16 @@ macro_rules! prepend_root_flags {
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let mut cli = MultitoolCli::parse();
     cli.normalize();
+    let models_profile = cli.config_profile().map(str::to_owned);
 
     let MultitoolCli {
         debug,
         provider,
         config_overrides: mut root_config_overrides,
-        mut interactive,
+        #[cfg(feature = "tui")]
+        interactive,
         subcommand,
+        ..
     } = cli;
 
     // If --debug was passed, prepare the shared debug.log path before anything
@@ -381,11 +430,17 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     match subcommand {
         Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
         Some(Subcommand::Approvals(command)) => config_cmd::approvals(command).await?,
-        None => {
-            prepend_root_flags!(interactive, root_config_overrides);
+        #[cfg(feature = "tui")]
+        command @ (None | Some(Subcommand::Resume(_)) | Some(Subcommand::Fork(_))) => {
+            let interactive = finalize_interactive(interactive, root_config_overrides, command);
             let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
             handle_app_exit(exit_info)?;
         }
+        #[cfg(not(feature = "tui"))]
+        None => anyhow::bail!(
+            "this build has no TUI; use `chaos serve`, `chaos mcp serve`, `chaos taskd`, \
+             or `chaos exec`. Rebuild with `--features tui` for interactive mode."
+        ),
         Some(Subcommand::Exec(mut exec_cli)) => {
             prepend_root_flags!(exec_cli, root_config_overrides);
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
@@ -411,40 +466,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         Some(Subcommand::Taskd(cli)) => {
             chaos_taskd::run_main(arg0_paths.clone(), root_config_overrides, cli).await?;
-        }
-        Some(Subcommand::Resume(ResumeCommand {
-            session_id,
-            last,
-            all,
-            config_overrides,
-        })) => {
-            interactive = finalize_resume_interactive(
-                interactive,
-                root_config_overrides.clone(),
-                session_id,
-                last,
-                all,
-                config_overrides,
-            );
-            let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
-            handle_app_exit(exit_info)?;
-        }
-        Some(Subcommand::Fork(ForkCommand {
-            session_id,
-            last,
-            all,
-            config_overrides,
-        })) => {
-            interactive = finalize_fork_interactive(
-                interactive,
-                root_config_overrides.clone(),
-                session_id,
-                last,
-                all,
-                config_overrides,
-            );
-            let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
-            handle_app_exit(exit_info)?;
         }
         Some(Subcommand::Accounts(mut accounts_cli)) => {
             prepend_root_flags!(accounts_cli, root_config_overrides);
@@ -494,8 +515,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             ExecpolicySubcommand::Check(cmd) => run_execpolicycheck(cmd)?,
         },
         Some(Subcommand::Models(cli)) => {
-            let profile = interactive.config_profile.clone();
-            models_cmd::run(cli, profile, models_provider).await?;
+            models_cmd::run(cli, models_profile, models_provider).await?;
         }
         Some(Subcommand::ClampSessionBridge) => {
             chaos_mcpd::run_clamp_session_bridge_main().await?;
@@ -516,15 +536,11 @@ fn prepend_config_flags(
         .splice(0..0, cli_config_overrides.raw_overrides);
 }
 
+#[cfg(feature = "tui")]
 async fn run_interactive_tui(
-    mut interactive: TuiCli,
+    interactive: TuiCli,
     arg0_paths: Arg0DispatchPaths,
 ) -> std::io::Result<AppExitInfo> {
-    if let Some(prompt) = interactive.prompt.take() {
-        // Normalize CRLF/CR to LF so CLI-provided text can't leak `\r` into TUI state.
-        interactive.prompt = Some(prompt.replace("\r\n", "\n").replace('\r', "\n"));
-    }
-
     let terminal_info = chaos_kern::terminal::terminal_info();
     if terminal_info.name == TerminalName::Dumb {
         if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
@@ -551,6 +567,7 @@ async fn run_interactive_tui(
     .await
 }
 
+#[cfg(feature = "tui")]
 fn confirm(prompt: &str) -> std::io::Result<bool> {
     eprintln!("{prompt}");
 
@@ -560,54 +577,40 @@ fn confirm(prompt: &str) -> std::io::Result<bool> {
     Ok(answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"))
 }
 
-/// Build the final `TuiCli` for a `chaos resume` invocation.
-fn finalize_resume_interactive(
+/// Finalize fresh, resumed, and forked interactive sessions through one merge path.
+#[cfg(feature = "tui")]
+fn finalize_interactive(
     mut interactive: TuiCli,
     root_config_overrides: CliConfigOverrides,
-    session_id: Option<String>,
-    last: bool,
-    show_all: bool,
-    resume_cli: TuiCli,
+    command: Option<Subcommand>,
 ) -> TuiCli {
-    // Start with the parsed interactive CLI so resume shares the same
-    // configuration surface area as `chaos` without additional flags.
-    let resume_session_id = session_id;
-    interactive.resume_picker = resume_session_id.is_none() && !last;
-    interactive.resume_last = last;
-    interactive.resume_session_id = resume_session_id;
-    interactive.resume_show_all = show_all;
+    let subcommand_cli = match command {
+        Some(Subcommand::Resume(cmd)) => {
+            interactive.resume_picker = cmd.session_id.is_none() && !cmd.last;
+            interactive.resume_last = cmd.last;
+            interactive.resume_session_id = cmd.session_id;
+            interactive.resume_show_all = cmd.all;
+            Some(cmd.config_overrides)
+        }
+        Some(Subcommand::Fork(cmd)) => {
+            interactive.fork_picker = cmd.session_id.is_none() && !cmd.last;
+            interactive.fork_last = cmd.last;
+            interactive.fork_session_id = cmd.session_id;
+            interactive.fork_show_all = cmd.all;
+            Some(cmd.config_overrides)
+        }
+        None => None,
+        _ => unreachable!("expected an interactive command"),
+    };
 
-    // Merge resume-scoped flags and overrides with highest precedence.
-    merge_interactive_cli_flags(&mut interactive, resume_cli);
-
-    // Propagate any root-level config overrides (e.g. `-c key=value`).
+    if let Some(subcommand_cli) = subcommand_cli {
+        merge_interactive_cli_flags(&mut interactive, subcommand_cli);
+    }
     prepend_config_flags(&mut interactive.config_overrides, root_config_overrides);
-
-    interactive
-}
-
-/// Build the final `TuiCli` for a `chaos fork` invocation.
-fn finalize_fork_interactive(
-    mut interactive: TuiCli,
-    root_config_overrides: CliConfigOverrides,
-    session_id: Option<String>,
-    last: bool,
-    show_all: bool,
-    fork_cli: TuiCli,
-) -> TuiCli {
-    // Start with the parsed interactive CLI so fork shares the same
-    // configuration surface area as `chaos` without additional flags.
-    let fork_session_id = session_id;
-    interactive.fork_picker = fork_session_id.is_none() && !last;
-    interactive.fork_last = last;
-    interactive.fork_session_id = fork_session_id;
-    interactive.fork_show_all = show_all;
-
-    // Merge fork-scoped flags and overrides with highest precedence.
-    merge_interactive_cli_flags(&mut interactive, fork_cli);
-
-    // Propagate any root-level config overrides (e.g. `-c key=value`).
-    prepend_config_flags(&mut interactive.config_overrides, root_config_overrides);
+    if let Some(prompt) = interactive.prompt.take() {
+        // Normalize once, after selecting the highest-precedence prompt.
+        interactive.prompt = Some(prompt.replace("\r\n", "\n").replace('\r', "\n"));
+    }
 
     interactive
 }
@@ -615,6 +618,7 @@ fn finalize_fork_interactive(
 /// Merge flags provided to `chaos resume`/`chaos fork` so they take precedence over any
 /// root-level flags. Only overrides fields explicitly set on the subcommand-scoped
 /// CLI. Also appends `-c key=value` overrides with highest precedence.
+#[cfg(feature = "tui")]
 fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli) {
     if let Some(profile) = subcommand_cli.config_profile {
         interactive.config_profile = Some(profile);
@@ -625,25 +629,14 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     if let Some(approval) = subcommand_cli.approval_policy {
         interactive.approval_policy = Some(approval);
     }
-    if subcommand_cli.auto_exec.full_auto {
-        interactive.auto_exec.full_auto = true;
-    }
-    if subcommand_cli.auto_exec.headless {
-        interactive.auto_exec.headless = true;
-    }
+    interactive.auto_exec.full_auto |= subcommand_cli.auto_exec.full_auto;
+    interactive.auto_exec.headless |= subcommand_cli.auto_exec.headless;
     if let Some(cwd) = subcommand_cli.cwd {
         interactive.cwd = Some(cwd);
     }
-    if subcommand_cli.web_search {
-        interactive.web_search = true;
-    }
-    if !subcommand_cli.add_dir.is_empty() {
-        interactive.add_dir.extend(subcommand_cli.add_dir);
-    }
-    if let Some(prompt) = subcommand_cli.prompt {
-        // Normalize CRLF/CR to LF so CLI-provided text can't leak `\r` into TUI state.
-        interactive.prompt = Some(prompt.replace("\r\n", "\n").replace('\r', "\n"));
-    }
+    interactive.web_search |= subcommand_cli.web_search;
+    interactive.add_dir.extend(subcommand_cli.add_dir);
+    interactive.prompt = subcommand_cli.prompt.or(interactive.prompt.take());
 
     interactive
         .config_overrides

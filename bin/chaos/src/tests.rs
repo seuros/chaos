@@ -1,6 +1,8 @@
 use super::*;
 use assert_matches::assert_matches;
+#[cfg(feature = "tui")]
 use chaos_ipc::ProcessId;
+#[cfg(feature = "tui")]
 use chaos_ipc::protocol::TokenUsage;
 use pretty_assertions::assert_eq;
 use std::ffi::OsStr;
@@ -12,70 +14,35 @@ fn try_parse_cli<'v>(args: &[&'v str]) -> Result<MultitoolCli, usage::Error<'sta
     Ok(cli)
 }
 
-fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
-    let cli = try_parse_cli(args).expect("parse");
+#[cfg(feature = "tui")]
+fn finalize_interactive_from_args(args: &[&str]) -> TuiCli {
     let MultitoolCli {
-        debug: _,
         interactive,
-        config_overrides: root_overrides,
+        config_overrides,
         subcommand,
-        provider: _,
-    } = cli;
+        ..
+    } = try_parse_cli(args).expect("parse");
 
-    let Subcommand::Resume(ResumeCommand {
-        session_id,
-        last,
-        all,
-        config_overrides: resume_cli,
-    }) = subcommand.expect("resume present")
-    else {
-        unreachable!()
-    };
-
-    finalize_resume_interactive(
-        interactive,
-        root_overrides,
-        session_id,
-        last,
-        all,
-        resume_cli,
-    )
-}
-
-fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
-    let cli = try_parse_cli(args).expect("parse");
-    let MultitoolCli {
-        debug: _,
-        interactive,
-        config_overrides: root_overrides,
-        subcommand,
-        provider: _,
-    } = cli;
-
-    let Subcommand::Fork(ForkCommand {
-        session_id,
-        last,
-        all,
-        config_overrides: fork_cli,
-    }) = subcommand.expect("fork present")
-    else {
-        unreachable!()
-    };
-
-    finalize_fork_interactive(interactive, root_overrides, session_id, last, all, fork_cli)
+    finalize_interactive(interactive, config_overrides, subcommand)
 }
 
 #[test]
 fn cli_parser_and_exit_format_suite() {
     exec_resume_cli_parses_positionals_and_subcommand_flags();
     auto_exec_flags_do_not_leak_to_unrelated_subcommands();
-    format_exit_messages_handles_zero_usage_resume_color_and_thread_names();
-    resume_and_fork_picker_logic_cover_default_last_session_and_all_modes();
-    resume_merges_subcommand_scoped_flags_with_highest_precedence();
+    #[cfg(feature = "tui")]
+    {
+        format_exit_messages_handles_zero_usage_resume_color_and_thread_names();
+        resume_and_fork_picker_logic_cover_default_last_session_and_all_modes();
+        interactive_flags_and_prompts_keep_subcommand_precedence();
+    }
     debug_flag_is_global_and_defaults_false();
     mcp_add_transport_shapes_and_constraints_are_preserved();
     completion_shells_and_global_provider_are_preserved();
     global_config_order_and_duplicate_scalar_rejection_are_preserved();
+    headless_commands_and_profile_are_available();
+    #[cfg(not(feature = "tui"))]
+    headless_build_rejects_interactive_commands_and_flags();
 }
 
 fn exec_resume_cli_parses_positionals_and_subcommand_flags() {
@@ -149,6 +116,7 @@ fn auto_exec_flags_do_not_leak_to_unrelated_subcommands() {
     }
 }
 
+#[cfg(feature = "tui")]
 fn sample_exit_info(conversation_id: Option<&str>, process_name: Option<&str>) -> AppExitInfo {
     let token_usage = TokenUsage {
         output_tokens: 2,
@@ -165,6 +133,7 @@ fn sample_exit_info(conversation_id: Option<&str>, process_name: Option<&str>) -
     }
 }
 
+#[cfg(feature = "tui")]
 fn format_exit_messages_handles_zero_usage_resume_color_and_thread_names() {
     let exit_info = AppExitInfo {
         token_usage: TokenUsage::default(),
@@ -206,57 +175,69 @@ fn format_exit_messages_handles_zero_usage_resume_color_and_thread_names() {
     );
 }
 
+#[cfg(feature = "tui")]
 fn resume_and_fork_picker_logic_cover_default_last_session_and_all_modes() {
-    let interactive = finalize_resume_from_args(["chaos", "resume"].as_ref());
-    assert!(interactive.resume_picker);
-    assert!(!interactive.resume_last);
-    assert_eq!(interactive.resume_session_id, None);
-    assert!(!interactive.resume_show_all);
-
-    let interactive = finalize_resume_from_args(["chaos", "resume", "--last"].as_ref());
-    assert!(!interactive.resume_picker);
+    for command in ["resume", "fork"] {
+        for (flags, expected) in [
+            (&[][..], (true, false, None, false)),
+            (&["--last"][..], (false, true, None, false)),
+            (&["1234"][..], (false, false, Some("1234"), false)),
+            (&["--all"][..], (true, false, None, true)),
+            (&["--last", "--all"][..], (false, true, None, true)),
+            (&["1234", "--all"][..], (false, false, Some("1234"), true)),
+        ] {
+            let mut args = vec!["chaos", command];
+            args.extend_from_slice(flags);
+            let interactive = finalize_interactive_from_args(&args);
+            let resume = (
+                interactive.resume_picker,
+                interactive.resume_last,
+                interactive.resume_session_id.as_deref(),
+                interactive.resume_show_all,
+            );
+            let fork = (
+                interactive.fork_picker,
+                interactive.fork_last,
+                interactive.fork_session_id.as_deref(),
+                interactive.fork_show_all,
+            );
+            let (active, inactive) = if command == "resume" {
+                (resume, fork)
+            } else {
+                (fork, resume)
+            };
+            assert_eq!(active, expected, "{args:?}");
+            assert_eq!(inactive, (false, false, None, false), "{args:?}");
+        }
+    }
+    assert!(try_parse_cli(&["chaos", "fork", "1234", "--last"]).is_err());
+    let interactive = finalize_interactive_from_args(&["chaos", "resume", "1234", "--last"]);
     assert!(interactive.resume_last);
-    assert_eq!(interactive.resume_session_id, None);
-    assert!(!interactive.resume_show_all);
-
-    let interactive = finalize_resume_from_args(["chaos", "resume", "1234"].as_ref());
-    assert!(!interactive.resume_picker);
-    assert!(!interactive.resume_last);
     assert_eq!(interactive.resume_session_id.as_deref(), Some("1234"));
-    assert!(!interactive.resume_show_all);
-
-    let interactive = finalize_resume_from_args(["chaos", "resume", "--all"].as_ref());
-    assert!(interactive.resume_picker);
-    assert!(interactive.resume_show_all);
-
-    let interactive = finalize_fork_from_args(["chaos", "fork"].as_ref());
-    assert!(interactive.fork_picker);
-    assert!(!interactive.fork_last);
-    assert_eq!(interactive.fork_session_id, None);
-    assert!(!interactive.fork_show_all);
-
-    let interactive = finalize_fork_from_args(["chaos", "fork", "--last"].as_ref());
-    assert!(!interactive.fork_picker);
-    assert!(interactive.fork_last);
-    assert_eq!(interactive.fork_session_id, None);
-    assert!(!interactive.fork_show_all);
-
-    let interactive = finalize_fork_from_args(["chaos", "fork", "1234"].as_ref());
-    assert!(!interactive.fork_picker);
-    assert!(!interactive.fork_last);
-    assert_eq!(interactive.fork_session_id.as_deref(), Some("1234"));
-    assert!(!interactive.fork_show_all);
-
-    let interactive = finalize_fork_from_args(["chaos", "fork", "--all"].as_ref());
-    assert!(interactive.fork_picker);
-    assert!(interactive.fork_show_all);
 }
 
-fn resume_merges_subcommand_scoped_flags_with_highest_precedence() {
-    let interactive = finalize_resume_from_args(
-        [
+#[cfg(feature = "tui")]
+fn interactive_flags_and_prompts_keep_subcommand_precedence() {
+    let interactive = finalize_interactive_from_args(&[
+        "chaos",
+        "-p",
+        "root",
+        "-c",
+        "model=root",
+        "one\r\ntwo\rthree",
+    ]);
+    assert_eq!(interactive.config_profile.as_deref(), Some("root"));
+    assert_eq!(interactive.config_overrides.raw_overrides, ["model=root"]);
+    assert_eq!(interactive.prompt.as_deref(), Some("one\ntwo\nthree"));
+
+    for command in ["resume", "fork"] {
+        let interactive = finalize_interactive_from_args(&[
             "chaos",
-            "resume",
+            "-p",
+            "root",
+            "-c",
+            "model=root",
+            command,
             "sid",
             "--full-auto",
             "--search",
@@ -268,34 +249,34 @@ fn resume_merges_subcommand_scoped_flags_with_highest_precedence() {
             "my-profile",
             "-C",
             "/tmp",
-        ]
-        .as_ref(),
-    );
+            "-c",
+            "model=child",
+            "one\r\ntwo\rthree",
+        ]);
+        assert_eq!(interactive.config_profile.as_deref(), Some("my-profile"));
+        assert_eq!(
+            interactive.config_overrides.raw_overrides,
+            ["model=root", "model=child"]
+        );
+        assert_eq!(interactive.prompt.as_deref(), Some("one\ntwo\nthree"));
+        assert_matches!(
+            interactive.sandbox_mode,
+            Some(chaos_getopt::SandboxModeCliArg::WorkspaceWrite)
+        );
+        assert_matches!(
+            interactive.approval_policy,
+            Some(chaos_getopt::ApprovalModeCliArg::Interactive)
+        );
+        assert!(interactive.auto_exec.full_auto);
+        assert_eq!(
+            interactive.cwd.as_deref(),
+            Some(std::path::Path::new("/tmp"))
+        );
+        assert!(interactive.web_search);
 
-    assert_eq!(interactive.config_profile.as_deref(), Some("my-profile"));
-    assert_matches!(
-        interactive.sandbox_mode,
-        Some(chaos_getopt::SandboxModeCliArg::WorkspaceWrite)
-    );
-    assert_matches!(
-        interactive.approval_policy,
-        Some(chaos_getopt::ApprovalModeCliArg::Interactive)
-    );
-    assert!(interactive.auto_exec.full_auto);
-    assert_eq!(
-        interactive.cwd.as_deref(),
-        Some(std::path::Path::new("/tmp"))
-    );
-    assert!(interactive.web_search);
-    assert!(!interactive.resume_picker);
-    assert!(!interactive.resume_last);
-    assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));
-
-    let interactive = finalize_resume_from_args(["chaos", "resume", "--headless"].as_ref());
-    assert!(interactive.auto_exec.headless);
-    assert!(interactive.resume_picker);
-    assert!(!interactive.resume_last);
-    assert_eq!(interactive.resume_session_id, None);
+        let interactive = finalize_interactive_from_args(&["chaos", command, "--headless"]);
+        assert!(interactive.auto_exec.headless);
+    }
 }
 
 fn debug_flag_is_global_and_defaults_false() {
@@ -460,4 +441,64 @@ fn global_config_order_and_duplicate_scalar_rejection_are_preserved() {
     );
 
     assert!(try_parse_cli(&["chaos", "--provider", "openai", "--provider", "anthropic",]).is_err());
+}
+
+fn headless_commands_and_profile_are_available() {
+    let cli = try_parse_cli(&[
+        "chaos",
+        "--provider",
+        "openai",
+        "-c",
+        "model=test",
+        "serve",
+        "--bearer-token",
+        "test-token",
+        "--port",
+        "4040",
+    ])
+    .expect("HTTP server should parse");
+    assert_eq!(cli.provider.as_deref(), Some("openai"));
+    assert_eq!(cli.config_overrides.raw_overrides, ["model=test"]);
+    let Some(Subcommand::Serve(serve)) = cli.subcommand else {
+        panic!("expected serve");
+    };
+    assert_eq!(serve.port, 4040);
+    assert_eq!(serve.bearer_token.as_deref(), Some("test-token"));
+
+    let cli = try_parse_cli(&["chaos", "mcp", "serve"]).expect("MCP server should parse");
+    assert_matches!(
+        cli.subcommand,
+        Some(Subcommand::Mcp(McpCli {
+            subcommand: crate::mcp_cmd::McpSubcommand::Serve,
+            ..
+        }))
+    );
+
+    let cli = try_parse_cli(&["chaos", "taskd", "--once"]).expect("task supervisor should parse");
+    assert_matches!(
+        cli.subcommand,
+        Some(Subcommand::Taskd(chaos_taskd::TaskdCli { once: true }))
+    );
+    let cli = try_parse_cli(&["chaos", "clamp-session-bridge"]).expect("bridge should parse");
+    assert_matches!(cli.subcommand, Some(Subcommand::ClampSessionBridge));
+
+    for flag in ["--profile", "-p"] {
+        let cli = try_parse_cli(&["chaos", flag, "server", "models"])
+            .expect("models profile should not depend on the TUI");
+        assert_eq!(cli.config_profile(), Some("server"));
+        assert_matches!(cli.subcommand, Some(Subcommand::Models(_)));
+    }
+}
+
+#[cfg(not(feature = "tui"))]
+fn headless_build_rejects_interactive_commands_and_flags() {
+    for args in [
+        &["chaos", "resume"][..],
+        &["chaos", "fork"][..],
+        &["chaos", "hello"][..],
+        &["chaos", "--no-alt-screen"][..],
+        &["chaos", "--clamp"][..],
+    ] {
+        assert!(try_parse_cli(args).is_err(), "TUI input accepted: {args:?}");
+    }
 }

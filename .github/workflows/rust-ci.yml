@@ -89,6 +89,21 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
+      - name: Test TUI-free CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo tree --locked -p chaos-cli --no-default-features \
+            --target ${{ matrix.target }} --edges normal,build,dev --prefix none \
+            --format '{p}' > "$RUNNER_TEMP/headless-dependencies.txt"
+          if grep -E '^(chaos-console|libui|ratatui(-[^ ]*)?|crossterm|chaos-termcap|chaos-highlight) ' "$RUNNER_TEMP/headless-dependencies.txt"; then
+            echo "TUI dependency leaked into the headless build" >&2
+            exit 1
+          fi
+          mbx nextest run --locked -p chaos-cli --no-default-features \
+            --bin chaos --test cli_features --target ${{ matrix.target }} \
+            --cargo-profile ci-test
+
       - name: Build and export runtime binaries for tests
         run: |
           PKGS="-p chaos_journald -p chaos-cli -p alcatraz"

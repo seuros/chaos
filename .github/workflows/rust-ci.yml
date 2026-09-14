@@ -41,6 +41,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Test release packaging and installer
+        run: python3 -m unittest discover -s scripts/tests -p '*_test.py'
+
       - uses: seuros/setup-upkg@master
 
       - name: Install Linux build dependencies

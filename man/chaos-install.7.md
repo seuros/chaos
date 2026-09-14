@@ -29,6 +29,18 @@ In an installed system, this page would typically be installed as
 
 ### Prebuilt releases
 
+Each release target offers two archives, each with a matching `.sha256` asset:
+
+- `chaos-<tag>-<target>.tar.gz`: the default TUI build.
+- `chaos-headless-<tag>-<target>.tar.gz`: the TUI-free build for servers and automation.
+
+Both contain `chaos`, `alcatraz`, `chaos_journald`, `chaos-forkve-wrapper`, and
+the same bundled installer. Set `CHAOS_FLAVOR=headless` when running the
+repository's `install.sh` to select the headless archive; `tui` is the default.
+Both variants install as `chaos`, so installing one replaces the other in the
+chosen directory. The headless build still requires a subcommand such as
+`serve` or `mcp serve`; it does not start a daemon automatically.
+
 The repository's `install.sh` downloads a release archive and its `.sha256`
 asset, verifies SHA-256 before extraction, then checks all four required
 binaries before replacing any installed binary. It requires `sha256sum`,
@@ -40,6 +52,11 @@ before replacing binaries; it does not download or authenticate archives.
 This is integrity checking against the same GitHub release, not an independent
 signature or provenance guarantee. Replacement of the four binaries is still
 sequential, not a transactional bundle update.
+
+GitHub and Gitea releases share `scripts/build-release.sh TARGET TAG`. It builds
+the runtime helpers once, builds each CLI flavor separately with `--locked`,
+checks its help surface, and packages both variants with SHA-256 manifests.
+Release targets must run natively for that smoke check.
 
 ### Install from source
 

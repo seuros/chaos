@@ -5,6 +5,11 @@ REPO="${CHAOS_REPO:-seuros/chaos}"
 INSTALL_DIR="${CHAOS_INSTALL_DIR:-$HOME/.local/bin}"
 
 main() {
+    case "${CHAOS_FLAVOR:-tui}" in
+        tui) package=chaos ;;
+        headless) package=chaos-headless ;;
+        *) err "CHAOS_FLAVOR must be tui or headless" ;;
+    esac
     need_cmd curl
     need_cmd tar
     need_cmd uname
@@ -50,7 +55,7 @@ main() {
         say "latest release: $tag"
     fi
 
-    archive="chaos-${tag}-${target}.tar.gz"
+    archive="${package}-${tag}-${target}.tar.gz"
     url="https://github.com/${REPO}/releases/download/${tag}/${archive}"
 
     tmpdir="$(mktemp -d)"

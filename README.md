@@ -220,6 +220,12 @@ By default this downloads GitHub's latest stable prebuilt release for your
 OS/CPU into `~/.local/bin`. Override the destination with
 `CHAOS_INSTALL_DIR=/path/to/bin`, or pin a specific release tag with
 `CHAOS_VERSION=<tag>`.
+For a TUI-free daemon build, use `CHAOS_FLAVOR=headless` on the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seuros/chaos/master/install.sh | CHAOS_FLAVOR=headless sh
+```
+
 The installer verifies the release's SHA-256 checksum before extraction and
 checks the complete binary bundle before installation.
 

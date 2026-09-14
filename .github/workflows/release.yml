@@ -92,26 +92,12 @@ jobs:
         with:
           key: release-${{ matrix.os_label }}
 
-      - name: Build tarball
+      - name: Build TUI and headless tarballs
         shell: bash
         env:
           CHAOS_BUILD_TS: ${{ needs.prepare.outputs.build_ts }}
           RUSTC_WRAPPER: ""
-        run: |
-          set -euo pipefail
-          artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
-          cargo build --release --target ${{ matrix.target }} --bin chaos --bin alcatraz --bin chaos_journald --bin chaos-forkve-wrapper
-          release_dir="target/${{ matrix.target }}/release"
-          for bin in chaos alcatraz chaos_journald chaos-forkve-wrapper; do
-            strip "${release_dir}/$bin" 2>/dev/null || true
-          done
-          tmp=$(mktemp -d)
-          cp "${release_dir}/chaos" "${release_dir}/alcatraz" "${release_dir}/chaos_journald" \
-             "${release_dir}/chaos-forkve-wrapper" "$tmp/"
-          cp scripts/dist-install.sh "$tmp/install.sh"
-          tar czf "${artifact}" -C "$tmp" .
-          rm -rf "$tmp"
-          sha256sum "${artifact}" > "${artifact}.sha256"
+        run: bash scripts/build-release.sh "${{ matrix.target }}" "${{ needs.prepare.outputs.tag_name }}"
 
       - name: Upload to GitHub release
         uses: softprops/action-gh-release@v3.0.0
@@ -124,6 +110,8 @@ jobs:
           files: |
             chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
             chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz.sha256
+            chaos-headless-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
+            chaos-headless-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz.sha256
 
   build-gitea:
     name: Build — ${{ matrix.os_label }}
@@ -172,25 +160,12 @@ jobs:
         with:
           key: release-${{ matrix.os_label }}
 
-      - name: Build tarball
+      - name: Build TUI and headless tarballs
         shell: bash
         env:
           CHAOS_BUILD_TS: ${{ needs.prepare.outputs.build_ts }}
           RUSTC_WRAPPER: ""
-        run: |
-          set -euo pipefail
-          artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
-          cargo build --release --target "${{ matrix.target }}" --bin chaos --bin alcatraz --bin chaos_journald --bin chaos-forkve-wrapper
-          release_dir="target/${{ matrix.target }}/release"
-          for bin in chaos alcatraz chaos_journald chaos-forkve-wrapper; do
-            strip "${release_dir}/$bin" 2>/dev/null || true
-          done
-          tmp=$(mktemp -d)
-          cp "${release_dir}/chaos" "${release_dir}/alcatraz" "${release_dir}/chaos_journald" \
-             "${release_dir}/chaos-forkve-wrapper" "$tmp/"
-          cp scripts/dist-install.sh "$tmp/install.sh"
-          tar czf "${artifact}" -C "$tmp" .
-          rm -rf "$tmp"
+        run: bash scripts/build-release.sh "${{ matrix.target }}" "${{ needs.prepare.outputs.tag_name }}"
 
       - name: Upload to Gitea release
         uses: akkuman/gitea-release-action@v1
@@ -202,9 +177,12 @@ jobs:
           name: ${{ needs.prepare.outputs.tag_name }}
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
-          sha256sum: true
+          sha256sum: false
           files: |-
             chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
+            chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz.sha256
+            chaos-headless-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz
+            chaos-headless-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz.sha256
 
   summary:
     name: Release summary

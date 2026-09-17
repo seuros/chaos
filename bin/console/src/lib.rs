@@ -26,6 +26,7 @@ use chaos_kern::config::load_config_or_exit as kern_load_config_or_exit;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::LoaderOverrides;
 use chaos_kern::config_loader::format_config_error_with_source;
+use chaos_kern::config_loader::format_error_chain;
 use chaos_kern::find_process_id_by_name;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::models_manager::CollaborationModesConfig;
@@ -211,7 +212,7 @@ pub async fn run_main(
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("Error loading config.toml: {err}");
+                eprintln!("Error loading config.toml: {}", format_error_chain(&err));
             }
             std::process::exit(1);
         }

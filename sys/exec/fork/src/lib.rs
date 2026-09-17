@@ -34,6 +34,7 @@ use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::load_config_as_toml_with_cli_overrides;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::format_config_error_with_source;
+use chaos_kern::config_loader::format_error_chain;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::git_info::get_git_repo_root;
 use chaos_kern::models_manager::CollaborationModesConfig;
@@ -317,7 +318,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("Error loading config.toml: {err}");
+                eprintln!("Error loading config.toml: {}", format_error_chain(&err));
             }
             std::process::exit(1);
         }

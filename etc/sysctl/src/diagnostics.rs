@@ -259,6 +259,19 @@ pub fn format_config_error_with_source(error: &ConfigError) -> String {
     }
 }
 
+/// Format an error followed by each source on a new `Caused by:` line.
+///
+/// Errors without a source retain their original display message.
+pub fn format_error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut output = error.to_string();
+    let mut source = error.source();
+    while let Some(err) = source {
+        let _ = write!(output, "\nCaused by: {err}");
+        source = err.source();
+    }
+    output
+}
+
 fn position_for_offset(contents: &str, index: usize) -> TextPosition {
     let bytes = contents.as_bytes();
     if bytes.is_empty() {
@@ -367,3 +380,6 @@ fn seq_child<'a>(node: &TomlNode<'a>, index: usize) -> Option<TomlNode<'a>> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

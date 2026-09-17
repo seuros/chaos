@@ -45,6 +45,7 @@ pub use diagnostics::first_layer_config_error;
 pub use diagnostics::first_layer_config_error_from_entries;
 pub use diagnostics::format_config_error;
 pub use diagnostics::format_config_error_with_source;
+pub use diagnostics::format_error_chain;
 pub use diagnostics::io_error_from_config_error;
 pub use fingerprint::version_for_toml;
 pub use merge::merge_toml_values;

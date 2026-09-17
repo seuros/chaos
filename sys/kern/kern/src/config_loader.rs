@@ -47,6 +47,7 @@ pub(crate) use chaos_sysctl::build_cli_overrides_layer;
 pub(crate) use chaos_sysctl::config_error_from_toml;
 pub use chaos_sysctl::format_config_error;
 pub use chaos_sysctl::format_config_error_with_source;
+pub use chaos_sysctl::format_error_chain;
 pub(crate) use chaos_sysctl::io_error_from_config_error;
 pub use chaos_sysctl::merge_toml_values;
 #[cfg(test)]

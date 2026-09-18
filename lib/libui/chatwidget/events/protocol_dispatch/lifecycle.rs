@@ -69,7 +69,13 @@ impl ChatWidget {
         let initial_messages = event.initial_messages.clone();
         self.last_copyable_output = None;
         let forked_from_id = event.forked_from_id;
-        let model_for_header = event.model.clone();
+        // A startup /clamp selection may precede SessionConfigured. Do not
+        // replace its CLI model with the original direct-API model.
+        let model_for_header = if self.pre_clamp_selection.is_some() {
+            self.current_model().to_string()
+        } else {
+            event.model.clone()
+        };
         self.session_header.set_model(&model_for_header);
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             Some(model_for_header.clone()),

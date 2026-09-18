@@ -87,17 +87,15 @@ Any other string returns `None`.
 
 ## CLAMP TRANSPORTS
 
-When `clamp = true`, Chaos uses a first-party CLI as transport instead of a
-direct provider API. Backend enum: `ClampBackend`.
+Clamp uses a first-party CLI instead of a direct provider API:
 
 | Backend | Config | External binary | Level |
 |---------|--------|-----------------|-------|
 | Claude Code | `clamp_backend = "claude-code"` (default) | `claude` on `PATH` | Supported |
 | Antigravity | `clamp_backend = "antigravity"` | `agy` (`CHAOS_AGY_PATH` / `CHAOS_AGY_HOME`) | Experimental |
 
-Both paths are designed to fail closed (no silent fallback to metered API
-billing on auth/CLI failure). See README clamping section and `chaos-clamp`
-module docs.
+Both fail closed: CLI/auth failures never fall back to metered API billing.
+See [setup and commands](./chaos-providers.7.md#clamp-transports).
 
 ## PLATFORMS AND SANDBOXES
 

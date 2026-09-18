@@ -79,8 +79,8 @@ pub struct Cli {
     )]
     pub add_dir: Vec<PathBuf>,
 
-    /// Start the session in Claude Code MAX transport mode (clamp).
-    /// Equivalent to running /clamp immediately after launch.
+    /// Start with the configured CLI transport (Claude Code or Antigravity).
+    /// Equivalent to running /clamp immediately after launch; uses clamp_backend.
     #[usage(long = "clamp")]
     pub clamp: bool,
 

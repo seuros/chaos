@@ -13,6 +13,7 @@ use tracing::warn;
 
 use crate::auth::ChaosAuth;
 use crate::client::auth_breaker;
+use crate::config::ClampBackend;
 use crate::config::ClampSettings;
 use crate::error::ChaosErr;
 use crate::error::Result;
@@ -65,7 +66,7 @@ impl ModelClient {
                 beta_features_header,
                 resolved_wire: std::sync::OnceLock::new(),
                 clamped: std::sync::atomic::AtomicBool::new(initial_clamped),
-                clamp_settings,
+                clamp_settings: std::sync::Mutex::new(clamp_settings),
                 clamp_transport: tokio::sync::Mutex::new(None),
                 antigravity_transport: tokio::sync::Mutex::new(None),
                 antigravity_conversations,
@@ -141,10 +142,20 @@ impl ModelClient {
         }
     }
 
-    /// Toggle clamped mode (Claude Code subprocess as transport).
-    pub async fn set_clamped(&self, clamped: bool) {
+    pub fn clamp_backend(&self) -> ClampBackend {
+        self.state
+            .clamp_settings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .backend
+    }
+
+    /// Toggle clamped mode, releasing the old transport when changing backends.
+    pub async fn set_clamped(&self, clamped: bool, backend: Option<ClampBackend>) {
+        let previous_backend = self.clamp_backend();
+        let backend = backend.unwrap_or(previous_backend);
         let was_clamped = self.state.clamped.swap(clamped, Ordering::Relaxed);
-        if !clamped && was_clamped {
+        if was_clamped && (!clamped || backend != previous_backend) {
             let transport = {
                 let mut guard = self.state.clamp_transport.lock().await;
                 guard.take()
@@ -172,6 +183,11 @@ impl ModelClient {
                 warn!("failed to shut down clamp MCP bridge: {err}");
             }
         }
+        self.state
+            .clamp_settings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .backend = backend;
     }
 
     /// Whether the client is in clamped mode.
@@ -213,6 +229,10 @@ impl ModelClient {
 
     /// Switch the model on the clamped Claude Code subprocess.
     pub async fn set_clamp_model(&self, model: &str) -> std::result::Result<(), String> {
+        // Antigravity starts one process per turn and reads the model from that turn.
+        if self.clamp_backend() == ClampBackend::Antigravity {
+            return Ok(());
+        }
         let mut guard = self.state.clamp_transport.lock().await;
         if let Some(transport) = guard.as_mut() {
             transport
@@ -221,7 +241,8 @@ impl ModelClient {
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         } else {
-            Err("clamp transport not running".to_string())
+            // The first turn will initialize the transport with the selected model.
+            Ok(())
         }
     }
 

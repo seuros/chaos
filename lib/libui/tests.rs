@@ -49,6 +49,7 @@ libui_suites! {
     chat_composer_paste_suite => crate::bottom_pane::tests::chat_composer_paste_suite();
     chat_composer_prompt_suite => crate::bottom_pane::tests::chat_composer_prompt_suite();
     chatwidget_suite => run_async(crate::chatwidget::tests::chatwidget_suite());
+    clamp_suite => run_async(crate::chatwidget::tests::clamp_suite());
     clipboard_paste_suite => crate::clipboard_paste::pasted_paths_tests::clipboard_paste_suite();
     clipboard_text_suite => crate::clipboard_text::tests::clipboard_text_suite();
     custom_terminal_suite => crate::custom_terminal::tests::custom_terminal_suite();

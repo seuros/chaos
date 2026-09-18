@@ -6,6 +6,31 @@ use strum_macros::EnumIter;
 
 use crate::openai_models::ReasoningEffort;
 
+/// First-party CLI transport selected when clamp mode is enabled.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClampBackend {
+    #[default]
+    ClaudeCode,
+    Antigravity,
+}
+
+impl ClampBackend {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "Claude Code MAX",
+            Self::Antigravity => "Antigravity (agy)",
+        }
+    }
+
+    pub fn cli_name(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude",
+            Self::Antigravity => "agy",
+        }
+    }
+}
+
 /// A summary of the reasoning performed by the model. This can be useful for
 /// debugging and understanding the model's reasoning process.
 /// See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#reasoning-summaries

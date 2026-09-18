@@ -1,0 +1,76 @@
+use super::CHAOS_HOME_DIR_NAME;
+use super::CHAOS_HOME_ENV_VAR;
+use super::find_chaos_home_from_env;
+use dirs::home_dir;
+use pretty_assertions::assert_eq;
+use std::io::ErrorKind;
+use tempfile::TempDir;
+
+#[test]
+fn find_chaos_home_env_missing_path_is_fatal() {
+    let temp_home = TempDir::new().expect("temp home");
+    let missing = temp_home.path().join("missing-chaos-home");
+    let missing_str = missing
+        .to_str()
+        .expect("missing chaos home path should be valid utf-8");
+
+    let err = find_chaos_home_from_env(Some(missing_str)).expect_err("missing CHAOS_HOME");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+    assert!(
+        err.to_string().contains(CHAOS_HOME_ENV_VAR),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn find_chaos_home_env_file_path_is_fatal() {
+    let temp_home = TempDir::new().expect("temp home");
+    let file_path = temp_home.path().join("chaos-home.txt");
+    std::fs::write(&file_path, "not a directory").expect("write temp file");
+    let file_str = file_path
+        .to_str()
+        .expect("file chaos home path should be valid utf-8");
+
+    let err = find_chaos_home_from_env(Some(file_str)).expect_err("file CHAOS_HOME");
+    assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    assert!(
+        err.to_string().contains("not a directory"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn find_chaos_home_env_valid_directory_canonicalizes() {
+    let temp_home = TempDir::new().expect("temp home");
+    let temp_str = temp_home
+        .path()
+        .to_str()
+        .expect("temp chaos home path should be valid utf-8");
+
+    let resolved = find_chaos_home_from_env(Some(temp_str)).expect("valid CHAOS_HOME");
+    let expected = temp_home
+        .path()
+        .canonicalize()
+        .expect("canonicalize temp home");
+    assert_eq!(resolved, expected);
+}
+
+#[test]
+fn find_chaos_home_without_env_uses_default_chaos_home_dir() {
+    let resolved = find_chaos_home_from_env(None).expect("default home selection");
+    let expected = home_dir().expect("home dir").join(CHAOS_HOME_DIR_NAME);
+    assert_eq!(resolved, expected);
+}
+
+#[test]
+fn find_chaos_home_uses_chaos_env() {
+    let temp_home = TempDir::new().expect("temp home");
+    let chaos_home = temp_home.path().join(CHAOS_HOME_DIR_NAME);
+    std::fs::create_dir_all(&chaos_home).expect("create chaos home");
+    let resolved = find_chaos_home_from_env(Some(chaos_home.to_str().expect("utf8 chaos path")))
+        .expect("chaos env home");
+    assert_eq!(
+        resolved,
+        chaos_home.canonicalize().expect("canonicalize chaos home")
+    );
+}

@@ -237,7 +237,7 @@ impl ChatWidget {
 
     pub(crate) fn model_display_name(&self) -> &str {
         if crate::theme::is_clamped() {
-            return "claude (MAX)";
+            return self.config.clamp_backend.display_name();
         }
         let model = self.current_model();
         if model.is_empty() {
@@ -281,7 +281,7 @@ impl ChatWidget {
             Some(effort) => Some(effort.to_string()),
         };
         let model_label = if crate::theme::is_clamped() {
-            "claude (MAX)".to_string()
+            self.config.clamp_backend.display_name().to_string()
         } else if effective_mode.model().is_empty() {
             DEFAULT_MODEL_DISPLAY_NAME.to_string()
         } else {

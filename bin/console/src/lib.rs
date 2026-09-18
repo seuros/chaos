@@ -614,6 +614,8 @@ async fn run_ratatui_app(
         ..
     } = cli;
 
+    config.clamp |= start_clamped;
+    let start_clamped = config.clamp;
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
     let managers = boot_core(&config);

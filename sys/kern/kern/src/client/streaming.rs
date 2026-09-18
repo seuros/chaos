@@ -1,7 +1,7 @@
 //! `ModelClientSession` streaming implementation — one turn per session.
 //!
 //! Covers the Responses API (HTTP), Anthropic Messages API, Chat Completions
-//! API, TensorZero native API, and the clamped Claude Code subprocess path.
+//! API, TensorZero native API, and the clamped first-party CLI paths.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -676,7 +676,14 @@ impl ModelClientSession {
         use chaos_clamp::AntigravityConfig;
         use chaos_clamp::AntigravityTransport;
 
-        let settings = self.client.state.clamp_settings.antigravity.clone();
+        let clamp_settings = self
+            .client
+            .state
+            .clamp_settings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let settings = clamp_settings.antigravity;
         let full_prompt_state = render_clamp_full_prompt(prompt);
         let latest_user_content = render_latest_clamp_user_message(prompt);
         let model = settings
@@ -770,7 +777,7 @@ impl ModelClientSession {
                     .clone()
                     .or_else(|| std::env::current_dir().ok())
                     .unwrap_or_else(std::env::temp_dir);
-                let sandbox = match clamp_state.clamp_settings.sandbox_helper.as_deref() {
+                let sandbox = match clamp_settings.sandbox_helper.as_deref() {
                     Some(helper) => match crate::clamp_egress::antigravity_sandbox(
                         helper,
                         settings.home.as_deref(),
@@ -1343,7 +1350,7 @@ impl ModelClientSession {
         );
 
         if self.client.state.clamped.load(Ordering::Relaxed) {
-            return match self.client.state.clamp_settings.backend {
+            return match self.client.clamp_backend() {
                 crate::config::ClampBackend::ClaudeCode => {
                     self.stream_clamped(prompt, model_info, session_telemetry)
                         .await

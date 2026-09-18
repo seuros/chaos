@@ -537,7 +537,11 @@ impl Session {
                 config.model_verbosity,
                 true,
                 Self::build_model_client_beta_features_header(config.as_ref()),
-                config.clamp && matches!(session_configuration.session_source, SessionSource::Exec),
+                config.clamp
+                    && matches!(
+                        session_configuration.session_source,
+                        SessionSource::Cli | SessionSource::Exec
+                    ),
                 config.clamp_settings(),
             ),
         };

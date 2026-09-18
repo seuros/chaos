@@ -377,7 +377,11 @@ impl ChatWidget {
             rate_limit_snapshots.as_slice(),
             self.plan_type,
             Timestamp::now(),
-            self.model_display_name(),
+            if crate::theme::is_clamped() {
+                self.current_model()
+            } else {
+                self.model_display_name()
+            },
             collaboration_mode,
             reasoning_effort_override,
         ));

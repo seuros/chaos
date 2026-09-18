@@ -88,10 +88,10 @@ pub(super) struct ModelClientState {
     pub(super) beta_features_header: Option<String>,
     /// Cached result of auto wire-format detection.
     pub(super) resolved_wire: OnceLock<WireApi>,
-    /// When true, route all turns through the Claude Code subprocess (clamped mode).
+    /// When true, route turns through the selected first-party CLI.
     pub(super) clamped: AtomicBool,
     /// First-party CLI transport selected for clamped turns, plus its settings.
-    pub(super) clamp_settings: ClampSettings,
+    pub(super) clamp_settings: StdMutex<ClampSettings>,
     /// Persistent Claude Code subprocess for clamped mode.
     pub(super) clamp_transport: tokio::sync::Mutex<Option<chaos_clamp::ClampTransport>>,
     /// Session-scoped Antigravity conversation transport.

@@ -6,6 +6,36 @@ use serde_json::json;
 use std::path::PathBuf;
 
 #[test]
+fn set_clamped_preserves_legacy_toggle_and_round_trips_backends() -> Result<()> {
+    use crate::config_types::ClampBackend;
+
+    let legacy = json!({"type": "set_clamped", "enabled": true});
+    let op: Op = serde_json::from_value(legacy.clone())?;
+    assert_eq!(
+        op,
+        Op::SetClamped {
+            enabled: true,
+            backend: None
+        }
+    );
+    assert_eq!(serde_json::to_value(op)?, legacy);
+
+    for (backend, name) in [
+        (ClampBackend::ClaudeCode, "claude-code"),
+        (ClampBackend::Antigravity, "antigravity"),
+    ] {
+        let op = Op::SetClamped {
+            enabled: true,
+            backend: Some(backend),
+        };
+        let value = serde_json::to_value(&op)?;
+        assert_eq!(value["backend"], name);
+        assert_eq!(serde_json::from_value::<Op>(value)?, op);
+    }
+    Ok(())
+}
+
+#[test]
 fn session_meta_preserves_legacy_tool_visibility_without_reemitting_aliases() -> Result<()> {
     for (visibility, deferred) in [
         (json!({"exposeToContext": false}), true),

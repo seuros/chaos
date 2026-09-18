@@ -24,6 +24,7 @@ use crate::protocol::ApprovalPolicy;
 use crate::protocol::SandboxPolicy;
 use chaos_ipc::api::UserSavedConfig;
 use chaos_ipc::config_types::AltScreenMode;
+pub use chaos_ipc::config_types::ClampBackend;
 use chaos_ipc::config_types::ForcedLoginMethod;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ReasoningSummary;
@@ -154,15 +155,6 @@ pub enum TerminalTitleMode {
     #[default]
     ProcessName,
     Agent,
-}
-
-/// First-party CLI transport selected when clamp mode is enabled.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum ClampBackend {
-    #[default]
-    ClaudeCode,
-    Antigravity,
 }
 
 /// Settings for the Antigravity clamp backend, read from `[antigravity]` in
@@ -357,10 +349,8 @@ pub struct Config {
     /// users are only interested in the final agent responses.
     pub hide_agent_reasoning: bool,
 
-    /// Start `chaos exec` sessions using a first-party CLI subprocess transport.
-    ///
-    /// Interactive sessions ignore this setting and retain their existing
-    /// `/clamp` and `--clamp` controls.
+    /// Start sessions using a first-party CLI subprocess transport.
+    /// Interactive sessions also support `/clamp` and `--clamp`.
     pub clamp: bool,
 
     /// First-party CLI transport selected when clamp mode is enabled.
@@ -818,7 +808,7 @@ pub struct ConfigToml {
     /// UI/output. Defaults to `false`.
     pub hide_agent_reasoning: Option<bool>,
 
-    /// Start `chaos exec` sessions using a first-party CLI subprocess transport.
+    /// Start interactive and `chaos exec` sessions using a first-party CLI transport.
     /// Defaults to `false`.
     pub clamp: Option<bool>,
 

@@ -177,29 +177,7 @@ impl ChatWidget {
                 self.submit_op(Op::ListAllTools);
             }
             SlashCommand::Clamp => {
-                // Toggle clamped mode — Claude Code subprocess as transport.
-                let is_clamped = crate::theme::is_clamped();
-                let new_state = !is_clamped;
-                crate::theme::set_clamped(new_state);
-                self.app_event_tx
-                    .send(AppEvent::ChaosOp(Op::SetClamped { enabled: new_state }));
-                if new_state {
-                    // Save the current direct-API selection before clamping so we can
-                    // restore it when switching transports back off.
-                    self.capture_pre_clamp_selection();
-                    self.add_info_message(
-                        "Clamped: using Claude Code MAX subscription as transport.".to_string(),
-                        Some("Type /clamp again to switch back".to_string()),
-                    );
-                } else {
-                    self.restore_pre_clamp_selection();
-                    self.add_info_message(
-                        "Unclamped: using direct API transport.".to_string(),
-                        None,
-                    );
-                    // Force a full screen repaint so the green theme takes effect
-                    // on all chrome (borders, status bar, input prompt).
-                }
+                self.dispatch_clamp_command("");
             }
         }
     }
@@ -226,6 +204,10 @@ impl ChatWidget {
 
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Clamp => {
+                self.dispatch_clamp_command(trimmed);
+                self.bottom_pane.drain_pending_submission_state();
+            }
             SlashCommand::Rename if !trimmed.is_empty() => {
                 self.session_telemetry
                     .counter("chaos.process.rename", /*inc*/ 1, &[]);

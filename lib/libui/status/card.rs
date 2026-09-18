@@ -6,6 +6,7 @@ use crate::version::OS_NAME;
 use crate::version::version_badge;
 use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
+use chaos_ipc::config_types::ClampBackend;
 use chaos_ipc::config_types::SANDBOX_MODE_READ_ONLY;
 use chaos_ipc::config_types::SANDBOX_MODE_ROOT_ACCESS;
 use chaos_ipc::config_types::SANDBOX_MODE_WORKSPACE_WRITE;
@@ -61,6 +62,7 @@ pub struct StatusTokenUsageData {
 
 #[derive(Debug)]
 struct StatusHistoryCell {
+    clamp_backend: Option<ClampBackend>,
     model_name: String,
     model_details: Vec<String>,
     directory: PathBuf,
@@ -254,6 +256,7 @@ impl StatusHistoryCell {
         };
 
         Self {
+            clamp_backend: crate::theme::is_clamped().then_some(config.clamp_backend),
             model_name,
             model_details,
             directory: config.cwd.clone(),
@@ -475,10 +478,10 @@ impl HistoryCell for StatusHistoryCell {
         let formatter = FieldFormatter::from_labels(labels.iter().map(String::as_str));
         let value_width = formatter.value_width(available_inner_width);
 
-        if crate::theme::is_clamped() {
+        if let Some(backend) = self.clamp_backend {
             let note_line = Line::from(vec![
                 Span::from("Transport: ").fg(crate::theme::accent_color()),
-                Span::from("Claude Code MAX (clamped)")
+                Span::from(format!("{} (clamped)", backend.display_name()))
                     .fg(crate::theme::accent_color())
                     .bold(),
             ]);
@@ -486,7 +489,7 @@ impl HistoryCell for StatusHistoryCell {
 
             // Show subprocess PID/RAM/uptime if running.
             if let Ok(out) = std::process::Command::new("ps")
-                .args(["-o", "pid=,rss=,etime=", "-C", "claude"])
+                .args(["-o", "pid=,rss=,etime=", "-C", backend.cli_name()])
                 .output()
             {
                 let stdout = String::from_utf8_lossy(&out.stdout);
@@ -508,10 +511,10 @@ impl HistoryCell for StatusHistoryCell {
         }
         lines.push(Line::from(Vec::<Span<'static>>::new()));
 
-        let model_spans = if crate::theme::is_clamped() {
+        let model_spans = if let Some(backend) = self.clamp_backend {
             vec![
-                Span::from("claude-sonnet-4-6").fg(crate::theme::accent_color()),
-                Span::from(" (via MAX subscription)").dim(),
+                Span::from(self.model_name.clone()).fg(crate::theme::accent_color()),
+                Span::from(format!(" (via {})", backend.display_name())).dim(),
             ]
         } else {
             let mut spans = vec![Span::from(self.model_name.clone())];
@@ -526,7 +529,7 @@ impl HistoryCell for StatusHistoryCell {
         let directory_value = format_directory_display(&self.directory, Some(value_width));
 
         lines.push(formatter.line("Model", model_spans));
-        if !crate::theme::is_clamped()
+        if self.clamp_backend.is_none()
             && let Some(model_provider) = self.model_provider.as_ref()
         {
             lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));

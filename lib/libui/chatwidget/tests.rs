@@ -24,6 +24,7 @@ use super::{
     UnifiedExecProcessSummary, UserMessage, UserMessageEvent, VecDeque, collaboration_modes,
     queued_message_edit_binding_for_terminal, remap_placeholders_for_message,
 };
+
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event::UiCommand;
@@ -188,6 +189,14 @@ fn snapshot(percent: f64) -> RateLimitSnapshot {
         credits: None,
         plan_type: None,
     }
+}
+
+#[cfg(test)]
+mod clamp;
+
+#[cfg(test)]
+pub(crate) async fn clamp_suite() {
+    clamp::run().await;
 }
 
 #[cfg(test)]

@@ -220,7 +220,7 @@ pub(super) async fn submission_loop(
                             /*developer_instructions*/ None,
                         )
                     };
-                    // If clamped and model changed, forward to claude subprocess.
+                    // Forward model changes to a persistent clamp subprocess, if any.
                     if sess.services.model_client.is_clamped()
                         && let Some(ref model_slug) = model
                         && let Err(e) = sess.services.model_client.set_clamp_model(model_slug).await
@@ -268,12 +268,18 @@ pub(super) async fn submission_loop(
                     handlers::set_dynamic_parent_effort(&sess, sub.id.clone(), enabled).await;
                     false
                 }
-                Op::SetClamped { enabled } => {
-                    sess.services.model_client.set_clamped(enabled).await;
+                Op::SetClamped { enabled, backend } => {
+                    sess.services
+                        .model_client
+                        .set_clamped(enabled, backend)
+                        .await;
                     let mode = if enabled {
-                        "clamped (Claude Code MAX)"
+                        format!(
+                            "clamped ({})",
+                            sess.services.model_client.clamp_backend().display_name()
+                        )
                     } else {
-                        "direct API"
+                        "direct API".to_string()
                     };
                     sess.send_event_raw(Event {
                         id: sub.id.clone(),

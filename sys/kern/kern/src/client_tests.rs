@@ -73,6 +73,58 @@ fn model_client_can_start_clamped_before_the_first_turn() {
     assert!(client.is_clamped());
 }
 
+#[tokio::test]
+async fn clamp_switches_backends_and_clears_stale_provider_conversations() {
+    use crate::config::ClampBackend;
+    use crate::config::ClampSettings;
+
+    let home = tempfile::tempdir().expect("temporary Antigravity home");
+    let client = test_model_client_for_process(
+        SessionSource::Cli,
+        ProcessId::new(),
+        ClampSettings {
+            backend: ClampBackend::Antigravity,
+            antigravity: crate::config::AntigravitySettings {
+                home: Some(home.path().to_path_buf()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    let shared = client.clone();
+    client.set_clamped(true, None).await;
+    assert!(shared.is_clamped());
+    assert_eq!(shared.clamp_backend(), ClampBackend::Antigravity);
+    client.set_clamp_model("gemini-3.1-pro-low").await.unwrap();
+
+    let store = client.state.antigravity_conversations.as_ref().unwrap();
+    store.save("gemini-3.1-pro-low", "conversation-1").unwrap();
+    client
+        .set_clamped(true, Some(ClampBackend::Antigravity))
+        .await;
+    assert!(
+        store.load("gemini-3.1-pro-low").is_some(),
+        "same backend retains history"
+    );
+
+    client
+        .set_clamped(true, Some(ClampBackend::ClaudeCode))
+        .await;
+    assert!(shared.is_clamped());
+    assert_eq!(shared.clamp_backend(), ClampBackend::ClaudeCode);
+    assert!(store.load("gemini-3.1-pro-low").is_none());
+
+    client
+        .set_clamped(true, Some(ClampBackend::Antigravity))
+        .await;
+    store.save("gemini-3.1-pro-low", "conversation-2").unwrap();
+    client.set_clamped(false, None).await;
+    assert!(!shared.is_clamped());
+    assert!(store.load("gemini-3.1-pro-low").is_none());
+    client.set_clamped(true, None).await;
+    assert_eq!(shared.clamp_backend(), ClampBackend::Antigravity);
+}
+
 #[test]
 fn antigravity_conversation_state_resumes_across_model_clients() {
     let home = tempfile::tempdir().expect("temporary Antigravity home");

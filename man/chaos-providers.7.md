@@ -50,6 +50,59 @@ FreeChaOS ships with these providers preconfigured:
 Any other provider — DeepSeek, Groq, Ollama, MiniMax, Kimi, TensorZero,
 self-hosted gateways — is a config entry away.
 
+## CLAMP TRANSPORTS
+
+Clamp uses an installed, authenticated first-party CLI with Chaos tools over MCP.
+Claude Code is the default; Antigravity (`agy`) is experimental. CLI, authentication,
+or bridge failures never fall back to metered API billing.
+
+- `/clamp claude` or `/clamp agy` selects a backend (`claude-code` and `antigravity`
+  are aliases).
+- Bare `/clamp` toggles the configured or last-selected backend; `/clamp off`
+  restores the original API model and reasoning settings.
+- Switching is session-local, disabled during turns, and needs no API account.
+- Start clamped with `--clamp` or `-c clamp=true`; select AGY with
+  `-c clamp_backend=antigravity`.
+
+With AGY, `/model` accepts a slug from `agy models`. `antigravity.model` or
+`CHAOS_AGY_MODEL` pins the model until a new session; otherwise activation keeps
+a compatible current model or uses `gemini-3.1-pro-low`.
+
+### Antigravity setup
+
+Use a dedicated private home: Chaos replaces its MCP and permission configuration
+and denies native AGY tools. Authenticate through the official CLI using that home:
+
+```bash
+export CHAOS_AGY_HOME=/private/antigravity-state
+export CHAOS_AGY_PATH=/opt/antigravity/bin/agy # optional if agy is on PATH
+mkdir -p "$CHAOS_AGY_HOME"
+chmod 700 "$CHAOS_AGY_HOME"
+env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
+  HOME="$CHAOS_AGY_HOME" XDG_CONFIG_HOME="$CHAOS_AGY_HOME/.config" \
+  "${CHAOS_AGY_PATH:-agy}" models
+```
+
+The CLI owns login, refresh, account selection, and logout. Keep its home on private
+persistent storage for hosted workers; never put browser authorization codes in
+config or logs. Chaos removes metered API keys from AGY's environment.
+Using the official CLI does not guarantee provider approval; verify that your
+subscription terms permit this use.
+
+### Headless sessions and resume
+
+```bash
+chaos exec --json -c clamp=true -m claude-sonnet-4-5 "say ok"
+chaos exec --json -c clamp=true -c clamp_backend=antigravity \
+  -m gemini-3.1-pro-low "say ok"
+chaos exec --json -c clamp=true -c clamp_backend=antigravity \
+  -m gemini-3.1-pro-low resume <process_id> "continue"
+```
+
+Resumes require the same effective clamp configuration, including any non-default
+backend. For AGY, retain the process ID, dedicated home, CLI path, and model
+selection across invocations and workers.
+
 ## SESSION PICKER
 
 The resume and fork pickers show sessions across providers. When the selected

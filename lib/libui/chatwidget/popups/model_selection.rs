@@ -15,6 +15,13 @@ impl ChatWidget {
             return;
         }
 
+        if crate::theme::is_clamped()
+            && self.config.clamp_backend == chaos_ipc::config_types::ClampBackend::Antigravity
+        {
+            self.open_antigravity_model_prompt();
+            return;
+        }
+
         let presets: Vec<ModelPreset> = if crate::theme::is_clamped() {
             use chaos_ipc::openai_models::ReasoningEffort;
             use chaos_ipc::openai_models::ReasoningEffortPreset;

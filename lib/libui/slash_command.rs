@@ -84,7 +84,7 @@ impl SlashCommand {
             SlashCommand::Mcp => "list configured MCP tools".into(),
             SlashCommand::McpAdd => "add a new MCP server".into(),
             SlashCommand::Tools => "show all tools visible to the model".into(),
-            SlashCommand::Clamp => "use Claude Code MAX subscription as transport".into(),
+            SlashCommand::Clamp => "toggle CLI transport: /clamp claude|agy|off".into(),
             SlashCommand::Accounts => {
                 "manage provider accounts and connections (disconnect via CLI)".into()
             }
@@ -106,6 +106,7 @@ impl SlashCommand {
                 | SlashCommand::Plan
                 | SlashCommand::ContextWindow
                 | SlashCommand::DynamicEffort
+                | SlashCommand::Clamp
         )
     }
 
@@ -122,7 +123,8 @@ impl SlashCommand {
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear
-            | SlashCommand::Accounts => false,
+            | SlashCommand::Accounts
+            | SlashCommand::Clamp => false,
             SlashCommand::Permissions
             | SlashCommand::Diff
             | SlashCommand::Copy
@@ -137,7 +139,6 @@ impl SlashCommand {
             | SlashCommand::Quit
             | SlashCommand::Exit => true,
             SlashCommand::Collab => true,
-            SlashCommand::Clamp => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
             SlashCommand::Theme => false,
         }
@@ -147,34 +148,19 @@ impl SlashCommand {
     ///
     /// When logged out the model has no usable identity (the active model
     /// resolves to an empty slug), so every command that would touch the
-    /// provider is hidden. Only account management and the exits remain so the
-    /// user can connect an account or leave.
+    /// provider is hidden. Account management, clamp (which uses CLI-owned
+    /// credentials), and the exits remain available.
     pub fn available_when_logged_out(self) -> bool {
         matches!(
             self,
-            SlashCommand::Accounts | SlashCommand::Quit | SlashCommand::Exit
+            SlashCommand::Accounts | SlashCommand::Clamp | SlashCommand::Quit | SlashCommand::Exit
         )
-    }
-
-    fn is_visible(self) -> bool {
-        match self {
-            SlashCommand::Clamp => std::process::Command::new("claude")
-                .arg("-v")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok(),
-            _ => true,
-        }
     }
 }
 
 /// Return all built-in commands in a Vec paired with their command string.
 pub fn built_in_slash_commands() -> Vec<(&'static str, SlashCommand)> {
-    SlashCommand::iter()
-        .filter(|command| command.is_visible())
-        .map(|c| (c.command(), c))
-        .collect()
+    SlashCommand::iter().map(|c| (c.command(), c)).collect()
 }
 
 #[cfg(test)]

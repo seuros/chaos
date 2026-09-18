@@ -25,6 +25,7 @@ fn login_required_hides_all_but_logged_out_safe_commands() {
         .map(|(_, cmd)| cmd)
         .collect();
     assert!(visible.contains(&SlashCommand::Accounts));
+    assert!(visible.contains(&SlashCommand::Clamp));
     assert!(visible.iter().all(|cmd| cmd.available_when_logged_out()));
     assert!(!visible.contains(&SlashCommand::Model));
     // /accounts must still resolve when typed so the user can connect.
@@ -33,6 +34,10 @@ fn login_required_hides_all_but_logged_out_safe_commands() {
         Some(SlashCommand::Accounts)
     );
     assert_eq!(find_builtin_command("model", flags), None);
+    assert_eq!(
+        find_builtin_command("clamp", flags),
+        Some(SlashCommand::Clamp)
+    );
 }
 
 fn clear_command_resolves_for_dispatch() {

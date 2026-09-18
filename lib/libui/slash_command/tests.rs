@@ -8,7 +8,17 @@ pub(crate) fn slash_command_suite() {
     clean_alias_parses_to_stop_command();
     dynamic_effort_accepts_inline_args();
     context_window_accepts_inline_args();
+    clamp_is_discoverable_without_a_claude_installation();
     removed_commands_do_not_parse();
+}
+
+#[test]
+fn clamp_is_discoverable_without_a_claude_installation() {
+    assert!(super::built_in_slash_commands().contains(&("clamp", SlashCommand::Clamp)));
+    assert!(SlashCommand::Clamp.supports_inline_args());
+    assert!(SlashCommand::Clamp.available_when_logged_out());
+    assert!(!SlashCommand::Clamp.available_during_task());
+    assert!(SlashCommand::Clamp.description().contains("agy"));
 }
 #[cfg(test)]
 fn stop_command_is_canonical_name() {

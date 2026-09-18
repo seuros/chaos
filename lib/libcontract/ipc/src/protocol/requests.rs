@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::approvals::ElicitationAction;
 use crate::config_types::ApprovalsReviewer;
+use crate::config_types::ClampBackend;
 use crate::config_types::CollaborationMode;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
@@ -231,8 +232,13 @@ pub enum Op {
     /// Enable or disable the model-callable parent effort control for future turns.
     SetDynamicParentEffort { enabled: bool },
 
-    /// Toggle clamped mode (Claude Code subprocess as transport).
-    SetClamped { enabled: bool },
+    /// Toggle first-party CLI transport, optionally selecting a backend.
+    SetClamped {
+        enabled: bool,
+        /// When omitted, retain the session's configured or last-selected backend.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        backend: Option<ClampBackend>,
+    },
 
     /// Approve a command execution
     ExecApproval {

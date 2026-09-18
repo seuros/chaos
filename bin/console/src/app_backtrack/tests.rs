@@ -4,6 +4,28 @@ use crate::history_cell::HistoryCell;
 use ratatui::prelude::Line;
 use std::sync::Arc;
 
+#[test]
+fn accounts_connection_selects_the_connected_provider_model() {
+    for (current, provider_changed, default, expected) in [
+        ("gpt-5", true, Some("kimi-k3"), Some("kimi-k3")),
+        (
+            "kimi-k3",
+            true,
+            Some("kimi-for-coding"),
+            Some("kimi-for-coding"),
+        ),
+        ("gpt-5", true, None, Some("")),
+        ("", false, Some("kimi-k3"), Some("kimi-k3")),
+        ("kimi-for-coding", false, Some("k3"), None),
+        ("kimi-for-coding", false, None, None),
+    ] {
+        assert_eq!(
+            model_after_account_connection(current, provider_changed, default),
+            expected,
+        );
+    }
+}
+
 fn user(message: &str) -> Arc<dyn HistoryCell> {
     Arc::new(UserHistoryCell {
         message: message.to_string(),

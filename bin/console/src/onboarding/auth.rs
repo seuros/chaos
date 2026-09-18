@@ -186,6 +186,7 @@ pub(crate) struct AccountProvider {
     id: String,
     display_name: String,
     env_key: Option<String>,
+    env_key_instructions: Option<String>,
     supports_chatgpt_account: bool,
     supports_xai_account: bool,
     supports_api_key: bool,
@@ -255,7 +256,7 @@ impl KeyboardHandler for AccountsWidget {
                     self.move_highlight(/*delta*/ 1);
                 }
             }
-            KeyCode::Char(digit @ '1'..='3') => {
+            KeyCode::Char(digit @ '1'..='9') => {
                 let index = digit as usize - '1' as usize;
                 if matches!(self.sign_in_state(), SignInState::PickProvider) {
                     self.select_provider_by_index(index);
@@ -425,6 +426,7 @@ impl AccountsWidget {
                     id: id.clone(),
                     display_name: provider.name.clone(),
                     env_key: provider.env_key.clone(),
+                    env_key_instructions: provider.env_key_instructions.clone(),
                     supports_chatgpt_account,
                     supports_xai_account,
                     supports_api_key,
@@ -522,18 +524,12 @@ impl AccountsWidget {
     fn select_provider_by_index(&mut self, index: usize) {
         if let Some(provider) = self.providers.get(index).cloned() {
             self.highlighted_provider = index;
-            self.set_selected_provider(&provider);
             self.open_provider(provider);
         }
     }
 
     fn open_selected_provider(&mut self) {
-        if let Some(provider) = self
-            .selected_provider()
-            .or_else(|| self.providers.get(self.highlighted_provider).cloned())
-        {
-            self.open_provider(provider);
-        }
+        self.select_provider_by_index(self.highlighted_provider);
     }
 
     fn open_provider(&mut self, provider: AccountProvider) {
@@ -668,7 +664,11 @@ impl AccountsWidget {
             );
         }
         lines.push("  Use ↑/↓ (or j/k) to choose".dim().into());
-        lines.push("  Press Enter to continue".dim().into());
+        lines.push(
+            "  Press Enter to continue, or 1–9 for a shortcut"
+                .dim()
+                .into(),
+        );
         push_error_line(&mut lines, error);
 
         Paragraph::new(lines)
@@ -884,13 +884,6 @@ impl AccountsWidget {
             .as_ref()
             .map(|provider| provider.display_name.as_str())
             .unwrap_or("provider");
-        let [intro_area, input_area, footer_area] = Layout::vertical([
-            Constraint::Min(4),
-            Constraint::Length(3),
-            Constraint::Min(2),
-        ])
-        .areas(area);
-
         let mut intro_lines: Vec<Line> = vec![
             Line::from(vec![
                 "> ".into(),
@@ -900,6 +893,14 @@ impl AccountsWidget {
             "  Paste or type your API key below. It will be stored locally in auth.json.".into(),
             "".into(),
         ];
+        if let Some(instructions) = state
+            .provider
+            .as_ref()
+            .and_then(|provider| provider.env_key_instructions.as_deref())
+        {
+            intro_lines.push(format!("  {instructions}").into());
+            intro_lines.push("".into());
+        }
         if state.prepopulated_from_env {
             if let Some(provider) = state.provider.as_ref()
                 && let Some(env_key) = provider.env_key.as_deref()
@@ -913,9 +914,27 @@ impl AccountsWidget {
             );
             intro_lines.push("".into());
         }
-        Paragraph::new(intro_lines)
-            .wrap(Wrap { trim: false })
-            .render(intro_area, buf);
+        let intro = Paragraph::new(intro_lines).wrap(Wrap { trim: false });
+        let mut footer_lines: Vec<Line> = vec![
+            "  Press Enter to save".dim().into(),
+            "  Press Esc to go back".dim().into(),
+        ];
+        push_error_line(&mut footer_lines, self.error_message());
+        let footer = Paragraph::new(footer_lines).wrap(Wrap { trim: false });
+        let footer_height = footer
+            .line_count(area.width)
+            .min(usize::from(area.height.saturating_sub(3))) as u16;
+        let intro_height = intro
+            .line_count(area.width)
+            .min(usize::from(area.height.saturating_sub(3 + footer_height)))
+            as u16;
+        let [intro_area, input_area, footer_area] = Layout::vertical([
+            Constraint::Length(intro_height),
+            Constraint::Length(3),
+            Constraint::Min(footer_height),
+        ])
+        .areas(area);
+        intro.render(intro_area, buf);
 
         let content_line: Line = if state.value.is_empty() {
             vec!["Paste or type your API key".dim()].into()
@@ -933,14 +952,7 @@ impl AccountsWidget {
             )
             .render(input_area, buf);
 
-        let mut footer_lines: Vec<Line> = vec![
-            "  Press Enter to save".dim().into(),
-            "  Press Esc to go back".dim().into(),
-        ];
-        push_error_line(&mut footer_lines, self.error_message());
-        Paragraph::new(footer_lines)
-            .wrap(Wrap { trim: false })
-            .render(footer_area, buf);
+        footer.render(footer_area, buf);
     }
 
     fn handle_api_key_entry_key_event(&mut self, key_event: &KeyEvent) -> bool {

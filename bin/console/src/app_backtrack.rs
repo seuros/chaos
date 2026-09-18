@@ -104,6 +104,20 @@ pub(crate) struct PendingBacktrackRollback {
     pub(crate) process_id: Option<ProcessId>,
 }
 
+/// Preserve an existing model only when reconnecting the same provider.
+/// An unavailable catalog must not carry a foreign model into a new provider.
+fn model_after_account_connection<'a>(
+    current_model: &str,
+    provider_changed: bool,
+    default_model: Option<&'a str>,
+) -> Option<&'a str> {
+    if provider_changed || current_model.is_empty() {
+        Some(default_model.unwrap_or_default())
+    } else {
+        None
+    }
+}
+
 impl App {
     /// Route overlay events while the transcript overlay is active.
     ///
@@ -479,17 +493,17 @@ impl App {
         let models_manager = self.server.get_models_manager();
         let models_refresh_result = models_manager.refresh_models(RefreshStrategy::Online).await;
         let refreshed_models = models_manager.try_list_models().unwrap_or_default();
-        // The session can start before any account exists, leaving the model
-        // slug empty. Once login surfaces the catalog, adopt the provider's
-        // default (or the first available) so the next turn isn't rejected for
-        // requesting the '' model.
-        if self.chat_widget.current_model().is_empty()
-            && let Some(default_model) = refreshed_models
-                .iter()
-                .find(|preset| preset.is_default)
-                .or_else(|| refreshed_models.first())
-        {
-            self.chat_widget.set_model(&default_model.model);
+        let default_model = refreshed_models
+            .iter()
+            .find(|preset| preset.is_default)
+            .or_else(|| refreshed_models.first())
+            .map(|preset| preset.model.as_str());
+        if let Some(model) = model_after_account_connection(
+            self.chat_widget.current_model(),
+            provider_changed,
+            default_model,
+        ) {
+            self.chat_widget.set_model(model);
         }
         self.chat_widget.sync_login_required();
         self.chat_widget.refresh_status_line();

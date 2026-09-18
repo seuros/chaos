@@ -194,3 +194,66 @@ fn xai_subscription_auth_adds_cli_token_header_only_for_oauth() {
     assert_eq!(api_key.base_url, "https://api.x.ai/v1");
     assert!(api_key.headers.get(XAI_TOKEN_AUTH_HEADER).is_none());
 }
+
+#[test]
+fn built_in_moonshotai_providers_keep_api_and_subscription_routes_separate() {
+    let providers = built_in_model_providers();
+    assert!(!providers.contains_key("kimi"));
+    assert!(!providers.contains_key("kimi-coding"));
+    for (id, name, base_url, env_key) in [
+        (
+            "moonshotai",
+            "Moonshot AI",
+            "https://api.moonshot.ai/v1",
+            "MOONSHOT_API_KEY",
+        ),
+        (
+            "moonshotai-coding",
+            "Moonshot AI Coding",
+            "https://api.kimi.ai/coding/v1",
+            "KIMI_API_KEY",
+        ),
+    ] {
+        let provider = providers
+            .get(id)
+            .expect("Moonshot AI provider should be bundled");
+        assert_eq!(provider.name, name);
+        assert_eq!(provider.base_url.as_deref(), Some(base_url));
+        assert_eq!(provider.env_key.as_deref(), Some(env_key));
+        assert!(
+            provider
+                .env_key_instructions
+                .as_ref()
+                .unwrap()
+                .contains(env_key)
+        );
+        assert_eq!(provider.model_family, ModelFamily::new("kimi"));
+        assert_eq!(provider.wire_api, WireApi::Responses);
+        assert_eq!(
+            provider.auth_capabilities().methods,
+            vec![ProviderAuthMethod::ApiKey]
+        );
+        assert!(!provider.is_openai());
+        assert!(!provider.requires_openai_auth);
+        assert!(!provider.supports_account_auth());
+        assert!(!provider.supports_websockets);
+        assert!(!is_anthropic_wire(provider.base_url.as_deref()));
+        assert_eq!(provider.native_server_side_tools, vec!["web_search"]);
+
+        // A different session's account login must not change the endpoint.
+        for auth_mode in [
+            None,
+            Some(AuthMode::ApiKey),
+            Some(AuthMode::Chatgpt),
+            Some(AuthMode::Xai),
+        ] {
+            let api = provider.to_api_provider(auth_mode).unwrap();
+            assert_eq!(api.base_url, base_url);
+            assert_eq!(
+                api.url_for_path("responses"),
+                format!("{base_url}/responses")
+            );
+            assert!(api.headers.get(XAI_TOKEN_AUTH_HEADER).is_none());
+        }
+    }
+}

@@ -11,6 +11,14 @@ use tempfile::TempDir;
 
 use chaos_kern::auth::AuthCredentialsStoreMode;
 
+mod key_validation;
+mod moonshotai;
+
+#[test]
+fn accounts_widget_regressions() {
+    auth_suite();
+}
+
 fn widget_forced_chatgpt() -> (AccountsWidget, TempDir) {
     let chaos_home = TempDir::new().unwrap();
     let chaos_home_path = chaos_home.path().to_path_buf();

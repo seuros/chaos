@@ -21,6 +21,105 @@ fn make_req(model: &str) -> TurnRequest {
 }
 
 #[test]
+fn kimi_request_uses_plaintext_reasoning_controls_and_preserves_output_schema() {
+    let representer = crate::representer::SessionRepresenter::for_compatible_endpoint(
+        "https://api.moonshot.ai/v1",
+    );
+    let mut req = make_req("kimi-k3");
+    req.reasoning = Some(ReasoningConfig {
+        effort: Some(chaos_abi::ReasoningEffort::Medium),
+        summary: Some(chaos_abi::ReasoningSummary::Auto),
+    });
+    req.verbosity = Some(VerbosityConfig::High);
+    req.extensions
+        .insert("service_tier".into(), json!("priority"));
+    req.output_schema = Some(json!({"type": "object"}));
+
+    let api = turn_request_to_api_request(req, representer.as_representer());
+    let body = serde_json::to_value(api).unwrap();
+    assert_eq!(body["reasoning"], json!({"effort": "high"}));
+    assert_eq!(body["include"], json!([]));
+    assert!(body.get("service_tier").is_none());
+    assert!(body["text"].get("verbosity").is_none());
+    assert_eq!(body["text"]["format"]["schema"], json!({"type": "object"}));
+}
+
+#[test]
+fn kimi_reasoning_effort_maps_to_supported_levels() {
+    use chaos_abi::ReasoningEffort;
+    for base_url in [
+        "https://api.moonshot.ai/v1",
+        "https://api.moonshot.cn/v1/",
+        "https://api.kimi.ai/coding/v1",
+        "https://api.kimi.com/coding/v1/",
+    ] {
+        let representer = crate::representer::SessionRepresenter::for_compatible_endpoint(base_url);
+        for (effort, expected) in [
+            (ReasoningEffort::None, "low"),
+            (ReasoningEffort::Minimal, "low"),
+            (ReasoningEffort::Low, "low"),
+            (ReasoningEffort::Medium, "high"),
+            (ReasoningEffort::High, "high"),
+            (ReasoningEffort::XHigh, "max"),
+            (ReasoningEffort::Max, "max"),
+            (ReasoningEffort::Ultra, "max"),
+        ] {
+            let mut req = make_req("kimi-for-coding");
+            req.reasoning = Some(ReasoningConfig {
+                effort: Some(effort),
+                summary: None,
+            });
+            req.verbosity = Some(VerbosityConfig::Low);
+            let api = turn_request_to_api_request(req, representer.as_representer());
+            let body = serde_json::to_value(api).unwrap();
+            assert_eq!(
+                body["reasoning"]["effort"], expected,
+                "{base_url}: {effort}"
+            );
+            assert!(body.get("text").is_none());
+        }
+    }
+}
+
+#[test]
+fn kimi_does_not_inject_effort_when_it_is_unspecified() {
+    let representer = crate::representer::SessionRepresenter::for_compatible_endpoint(
+        "https://api.kimi.ai/coding/v1",
+    );
+    for reasoning in [
+        None,
+        Some(ReasoningConfig {
+            effort: None,
+            summary: Some(chaos_abi::ReasoningSummary::Auto),
+        }),
+    ] {
+        let mut req = make_req("kimi-for-coding");
+        req.reasoning = reasoning;
+        let api = turn_request_to_api_request(req, representer.as_representer());
+        let body = serde_json::to_value(api).unwrap();
+        assert!(body["reasoning"].get("effort").is_none());
+    }
+}
+
+#[test]
+fn none_effort_is_preserved_for_non_kimi_providers() {
+    for representer in [
+        crate::representer::SessionRepresenter::openai(),
+        crate::representer::SessionRepresenter::for_compatible_endpoint("https://api.x.ai/v1"),
+        crate::representer::SessionRepresenter::for_compatible_endpoint("https://custom.test/v1"),
+    ] {
+        let mut req = make_req("test-model");
+        req.reasoning = Some(ReasoningConfig {
+            effort: Some(chaos_abi::ReasoningEffort::None),
+            summary: None,
+        });
+        let api = turn_request_to_api_request(req, representer.as_representer());
+        let body = serde_json::to_value(api).unwrap();
+        assert_eq!(body["reasoning"]["effort"], "none");
+    }
+}
+
+#[test]
 fn turn_request_converts_to_responses_api_request() {
     let req = TurnRequest {
         model: TEST_MODEL.to_string(),

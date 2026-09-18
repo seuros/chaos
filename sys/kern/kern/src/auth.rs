@@ -1,3 +1,4 @@
+mod api_key_validation;
 pub(crate) mod permissions;
 pub(crate) mod policies;
 mod storage;
@@ -35,6 +36,8 @@ use chaos_ipc::account::PlanType as AccountPlanType;
 use thiserror::Error;
 
 // Re-export the public surface from submodules.
+pub use api_key_validation::ApiKeyValidationError;
+pub use api_key_validation::validate_provider_api_key;
 pub use permissions::disconnect_all_provider_accounts;
 pub use permissions::disconnect_provider_account;
 pub use permissions::enforce_login_restrictions;

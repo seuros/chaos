@@ -32,6 +32,24 @@ env_key              = "CHARM_API_KEY"
 env_key_instructions = "Get an API key at https://charm.land and export it as CHARM_API_KEY."
 wire_api             = "chat_completions"
 
+[moonshotai]
+name                 = "Moonshot AI"
+model_family         = "kimi"
+base_url             = "https://api.moonshot.ai/v1"
+env_key              = "MOONSHOT_API_KEY"
+env_key_instructions = "Get an API key at https://platform.kimi.ai/console/api-keys and export it as MOONSHOT_API_KEY."
+wire_api             = "responses"
+native_server_side_tools = ["web_search"]
+
+[moonshotai-coding]
+name                 = "Moonshot AI Coding"
+model_family         = "kimi"
+base_url             = "https://api.kimi.ai/coding/v1"
+env_key              = "KIMI_API_KEY"
+env_key_instructions = "Create a Kimi Code API key at https://www.kimi.com/code/console and export it as KIMI_API_KEY. Moonshot API keys do not use this subscription endpoint."
+wire_api             = "responses"
+native_server_side_tools = ["web_search"]
+
 [xai]
 name                 = "xAI"
 model_family         = "xai"

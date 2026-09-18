@@ -73,7 +73,7 @@ pub(crate) fn turn_request_to_api_request(
         .and_then(Value::as_str)
         .map(String::from);
 
-    ResponsesApiRequest {
+    let mut request = ResponsesApiRequest {
         model: req.model,
         instructions: req.instructions,
         input: representer.represent(req.input),
@@ -87,7 +87,9 @@ pub(crate) fn turn_request_to_api_request(
         service_tier,
         prompt_cache_key,
         text,
-    }
+    };
+    representer.prepare_request(&mut request);
+    request
 }
 
 // ---------------------------------------------------------------------------

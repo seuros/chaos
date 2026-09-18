@@ -32,7 +32,7 @@ Support levels used below:
 Built-ins come from two places:
 
 1. Hardcoded constructors in `sys/kern/kern` (`openai`, `anthropic`)
-2. Bundled `lib/libnet/services/thirdparty.toml` (`xai`, `zai`, `zai-coding`, `charm`)
+2. Bundled `lib/libnet/services/thirdparty.toml` (`xai`, `moonshotai`, `moonshotai-coding`, `zai`, `zai-coding`, `charm`)
 
 User entries under `[model_providers.<id>]` in `~/.chaos/config.toml` override
 or extend these.
@@ -42,6 +42,8 @@ or extend these.
 | `openai` | OpenAI | `responses` | ChatGPT account + API key (`requires_openai_auth`) | Default provider path; WebSocket support enabled in provider info | Supported |
 | `anthropic` | Anthropic | `auto` (URL forces Messages) | `ANTHROPIC_API_KEY` | Base URL contains `anthropic` → Messages adapter | Supported |
 | `xai` | xAI | `responses` | `XAI_API_KEY`; also `xai_account` | URLs containing `x.ai` inject native `web_search` / `x_search` | Supported |
+| `moonshotai` | Moonshot AI | `responses` | `MOONSHOT_API_KEY` | Pay-per-token API; Kimi K3; native `web_search` | Supported |
+| `moonshotai-coding` | Moonshot AI Coding | `responses` | `KIMI_API_KEY` | Kimi Code subscription endpoint; native `web_search` | Supported |
 | `zai` | Z.ai | `chat_completions` | `ZAI_API_KEY` | Pay-per-token GLM endpoint | Supported |
 | `zai-coding` | Z.ai Coding Plan | `chat_completions` | `ZAI_API_KEY` | Subscription coding endpoint | Supported |
 | `charm` | Charm Hyper | `chat_completions` | `CHARM_API_KEY` | Bundled third-party gateway | Supported |
@@ -55,7 +57,7 @@ Documented in `chaos-providers(7)`; same adapters, operator-supplied config:
 | `ollama` | `auto` / chat completions on local OpenAI-compatible server | none | Config-only |
 | `deepseek` | OpenAI-compatible | `DEEPSEEK_API_KEY` | Config-only |
 | `groq` | OpenAI-compatible | `GROQ_API_KEY` | Config-only |
-| `minimax` / `kimi` | Anthropic-compatible if `base_url` contains `anthropic` | provider-specific | Config-only |
+| `minimax` | Anthropic-compatible if `base_url` contains `anthropic` | provider-specific | Config-only |
 | `tensorzero` | explicit `wire_api = "tensorzero"` | optional | Config-only |
 | Azure OpenAI-compatible | `responses` with Azure URL detection helpers | provider-specific | Config-only |
 

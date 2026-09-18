@@ -875,7 +875,7 @@ impl ModelsManager {
         let representer = if self.provider.is_openai() {
             chaos_parrot::SessionRepresenter::openai()
         } else {
-            chaos_parrot::SessionRepresenter::wannabe()
+            chaos_parrot::SessionRepresenter::for_compatible_endpoint(&api_provider.base_url)
         };
         let adapter = OpenAiAdapter::new(
             chaos_parrot::RamaTransport::default_client_with_egress(api_provider.egress.clone()),

@@ -185,7 +185,11 @@ pub fn login_with_api_key(
     )
 }
 
-/// Writes or updates a provider-scoped API key record inside `auth.json`.
+/// Validates and then writes or updates a provider-scoped API key record.
+///
+/// Invalid input returns `InvalidInput` before accessing any credential store,
+/// preserving existing credentials. Both interactive and CLI account entry use
+/// this boundary.
 pub fn login_with_provider_api_key(
     chaos_home: &Path,
     provider_id: &str,
@@ -193,6 +197,10 @@ pub fn login_with_provider_api_key(
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<()> {
     use chaos_ipc::api::AuthMode as ApiAuthMode;
+
+    let api_key = api_key.trim();
+    super::validate_provider_api_key(provider_id, api_key)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
 
     let mut auth_dot_json = super::load_auth_dot_json(chaos_home, auth_credentials_store_mode)?
         .unwrap_or(AuthDotJson {

@@ -22,6 +22,9 @@ use std::sync::Arc;
 use chaos_abi::ReasoningEffort;
 use chaos_abi::ResponseItem;
 
+mod moonshootai;
+pub(crate) use moonshootai::is_kimi_endpoint;
+
 // ---------------------------------------------------------------------------
 // Trait
 // ---------------------------------------------------------------------------
@@ -35,6 +38,9 @@ pub trait Representer: Send + Sync {
     fn represent_reasoning_effort(&self, effort: ReasoningEffort) -> ReasoningEffort {
         effort
     }
+
+    /// Apply endpoint-specific controls after the common Responses projection.
+    fn prepare_request(&self, _request: &mut crate::common::ResponsesApiRequest) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +223,15 @@ impl SessionRepresenter {
     /// (xAI/Grok and future compat clones).
     pub fn wannabe() -> Self {
         Self(Arc::new(OpenwAInnabeRepresenter))
+    }
+
+    /// Select a compatible endpoint's dialect without treating it as OpenAI.
+    pub fn for_compatible_endpoint(base_url: &str) -> Self {
+        if moonshootai::is_kimi_endpoint(base_url) {
+            Self(Arc::new(moonshootai::KimiRepresenter))
+        } else {
+            Self::wannabe()
+        }
     }
 
     /// Project a batch of ABI items for wire serialization.

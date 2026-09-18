@@ -83,12 +83,18 @@ impl<A: AuthProvider> std::fmt::Debug for OpenAiAdapter<A> {
 
 impl OpenAiAdapter<StaticAuthProvider> {
     /// Convenience constructor for standalone / test use.
-    /// Defaults to the OpenAI representer (`system` → `developer`).
+    /// Uses Kimi's dialect for its official endpoints, otherwise defaults to
+    /// the OpenAI representer (`system` → `developer`).
     pub fn from_base_url_and_api_key(
         base_url: String,
         api_key: String,
         default_model: Option<String>,
     ) -> Self {
+        let representer = if crate::representer::is_kimi_endpoint(&base_url) {
+            crate::representer::SessionRepresenter::for_compatible_endpoint(&base_url)
+        } else {
+            crate::representer::SessionRepresenter::openai()
+        };
         let provider =
             Provider::from_base_url_with_default_streaming_config("OpenAI", base_url, false);
         let auth = StaticAuthProvider::new(Some(api_key), None);
@@ -97,7 +103,7 @@ impl OpenAiAdapter<StaticAuthProvider> {
             provider,
             auth,
             default_model,
-            crate::representer::SessionRepresenter::openai(),
+            representer,
         )
     }
 }

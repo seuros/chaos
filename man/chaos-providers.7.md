@@ -43,12 +43,33 @@ FreeChaOS ships with these providers preconfigured:
 | `openai` | Responses API | Default, hardcoded |
 | `anthropic` | Anthropic Messages | Hardcoded; URL-detected |
 | `xai` | Responses API | Bundled; native `web_search` / `x_search` tools |
+| `moonshotai` | Responses API | Bundled; Moonshot AI pay-per-token API |
+| `moonshotai-coding` | Responses API | Bundled; Kimi Code subscription |
 | `zai` | Chat Completions | Bundled; Z.ai pay-per-token (GLM-5 / GLM-5.1) |
 | `zai-coding` | Chat Completions | Bundled; Z.ai GLM Coding Plan subscription |
 | `charm` | Chat Completions | Bundled via `thirdparty.toml` |
 
-Any other provider — DeepSeek, Groq, Ollama, MiniMax, Kimi, TensorZero,
+Any other provider — DeepSeek, Groq, Ollama, MiniMax, LSD,
 self-hosted gateways — is a config entry away.
+
+### API-key validation
+
+`/accounts` and `chaos accounts --with-api-key` validate keys in the kernel
+before saving credentials. A format mismatch leaves existing credentials
+unchanged and does not switch providers.
+
+The harness has internal format rules for `openai`, `anthropic`, `charm`,
+`moonshotai`, `moonshotai-coding`, and `xai`. For example, an OpenAI
+`sk-proj-…` key cannot be saved for `anthropic`, and a Kimi Code `sk-kimi-…`
+key cannot be saved for the pay-per-token `moonshotai` account. Custom
+provider IDs have no vendor-specific format rules. All keys must be nonempty,
+printable ASCII without embedded whitespace; surrounding pasted whitespace
+is stripped on save.
+
+These checks are local format validation, not remote authentication. They
+cannot prove a key is active or distinguish providers sharing the same format
+(such as legacy OpenAI and Moonshot `sk-…` keys). Prefix rules are not
+user-configurable.
 
 ## CLAMP TRANSPORTS
 
@@ -350,6 +371,72 @@ chaos --provider zai-coding --model glm-5.1
 ```
 
 Z.ai is the international brand for ZhipuAI's GLM models (GLM-5, GLM-5.1).
+
+### Moonshot AI (Kimi)
+
+Bundled as two providers with separate endpoints and credentials. No custom
+provider configuration is required.
+
+In the TUI, open `/accounts` and choose **Moonshot AI** for the pay-per-token
+API or **Moonshot AI Coding** for a Kimi Code subscription. Both open API-key
+entry with the corresponding key-creation instructions. Paste the key and
+press Enter to save it in the configured credential store; environment
+variables are not required. The two providers keep separate credentials.
+
+Pay-per-token API:
+
+```bash
+export MOONSHOT_API_KEY=your-platform-key
+chaos --provider moonshotai --model kimi-k3
+```
+
+Kimi Code subscription:
+
+```bash
+export KIMI_API_KEY=your-coding-key
+chaos --provider moonshotai-coding --model kimi-for-coding
+```
+
+`moonshotai` uses `https://api.moonshot.ai/v1`; `moonshotai-coding` uses the international
+Kimi Code endpoint, `https://api.kimi.ai/coding/v1`. Create the corresponding
+key in the Kimi API Platform or Kimi Code console. These are separate billing
+routes: Chaos never falls back from the subscription to the metered API.
+
+Both use HTTP/SSE Responses requests, including function tools and native
+`web_search`. Kimi's plaintext reasoning history is preserved across tool calls;
+OpenAI encrypted reasoning, summary controls, and service tiers are not sent.
+Use `low`, `high`, or `max` effort; `none`/`minimal` map to `low`, `medium` to
+`high`, and `xhigh`/`ultra` to `max`. Kimi does not support disabling reasoning
+with `none`; Chaos sends its lowest supported effort instead. An unspecified
+effort is left unspecified.
+
+The pay-per-token Responses endpoint currently supports `kimi-k3`; other
+models advertised by `/models` may require a different wire API. Kimi Code
+model access depends on your subscription. Refresh the catalog with:
+
+```bash
+chaos --provider moonshotai models --refresh
+chaos --provider moonshotai-coding models --refresh
+```
+
+Context windows and image/thinking capabilities are taken from the provider's
+model catalog, not guessed from model names. For a regional endpoint, override
+the bundled provider in `~/.chaos/config.toml` and use a key for that region.
+For example, the China Kimi Code endpoint is:
+
+```toml
+[model_providers.moonshotai-coding]
+name = "Moonshot AI Coding"
+model_family = "kimi"
+base_url = "https://api.kimi.com/coding/v1"
+env_key = "KIMI_API_KEY"
+wire_api = "responses"
+native_server_side_tools = ["web_search"]
+```
+
+Protocol references:
+`https://platform.kimi.ai/docs/api/responses` and
+`https://www.kimi.com/code/docs/en/third-party-tools/codex.html`.
 
 ### DeepSeek
 

@@ -37,3 +37,15 @@ Use the CLI to disconnect stored provider credentials:
 
 The interactive TUI exposes `/accounts` for connecting and managing providers,
 but it does not expose `/logout`. Disconnect accounts from the CLI instead.
+
+API-key saves in `/accounts` and the CLI share kernel validation. Keys with the
+wrong format for a known provider are rejected before writing credentials; an
+existing saved account remains unchanged. Validation does not detect or switch
+the selected provider. Format rules are built into the harness, not configurable.
+Custom provider IDs accept their own key formats, subject to nonempty,
+printable-ASCII checks.
+
+For Kimi models, choose **Moonshot AI** (pay-per-token API) or **Moonshot AI
+Coding** (Kimi Code subscription) in `/accounts`, then paste the corresponding
+API key. Keys are stored separately under `moonshotai` and `moonshotai-coding`;
+you do not need to export environment variables when connecting this way.

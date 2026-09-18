@@ -41,7 +41,9 @@ impl ModelClient {
         let representer = if provider.is_openai() {
             chaos_parrot::SessionRepresenter::openai()
         } else {
-            chaos_parrot::SessionRepresenter::wannabe()
+            chaos_parrot::SessionRepresenter::for_compatible_endpoint(
+                provider.base_url.as_deref().unwrap_or_default(),
+            )
         };
         let auth_breaker = auth_breaker::AuthBreaker::new(&provider_id);
         let antigravity_conversations =

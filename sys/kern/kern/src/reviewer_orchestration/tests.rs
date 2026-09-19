@@ -31,6 +31,37 @@ fn invalid_output_diagnostics_are_content_free() {
     assert!(!format!("{error:#}").contains("private-marker"));
 }
 
+#[test]
+fn missing_selection_rejections_get_an_actionable_hint() {
+    let raw = r#"[{"type":"text","text":"No task selected. Use select_task first."}]"#;
+    let annotated = annotate_submission_rejection("coordinator", REVIEW_VERDICT_TOOL, raw);
+    assert!(
+        annotated.starts_with(raw),
+        "original server error must be preserved verbatim"
+    );
+    assert!(annotated.contains("start_attested_review"));
+    assert!(annotated.contains(REVIEW_VERDICT_TOOL));
+    assert!(annotated.contains("coordinator"));
+
+    for raw in [
+        r#"[{"type":"text","text":"No project selected. Use select_project first."}]"#,
+        r#"[{"type":"text","text":"Task has no live review assignment selected. Claim review work first."}]"#,
+    ] {
+        assert_ne!(
+            annotate_submission_rejection("coordinator", REVIEW_VERDICT_TOOL, raw),
+            raw,
+            "expected a hint to be appended for: {raw}"
+        );
+    }
+
+    let unrelated = "verdict rejected: idempotency key does not match the allocated review key";
+    assert_eq!(
+        annotate_submission_rejection("coordinator", REVIEW_VERDICT_TOOL, unrelated),
+        unrelated,
+        "unrelated rejections must pass through unannotated"
+    );
+}
+
 #[derive(Default)]
 struct FakeState {
     spawn_calls: Vec<ReviewerBinding>,

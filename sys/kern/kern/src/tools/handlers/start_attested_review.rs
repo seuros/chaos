@@ -170,7 +170,7 @@ pub(crate) fn tool() -> ToolSpec {
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: TOOL_NAME.to_string(),
-        description: "Start one host-attested independent review through a selected MCP server's currently visible `submit_review_verdict` capability. ChaOS binds an exact configured provider/account and canonical model family, runs the reviewer with strict structured output, persists the state machine before side effects, and submits the verdict with protected provenance. Pass the same review_scope for every independent reviewer in one review round. Use only after the user authorized independent or multi-model review. Returns a run id immediately; use resume_attested_review until terminal."
+        description: "Start one host-attested independent review through a selected MCP server's currently visible `submit_review_verdict` capability. ChaOS binds an exact configured provider/account and canonical model family, runs the reviewer with strict structured output, persists the state machine before side effects, and submits the verdict with protected provenance. Pass the same review_scope for every independent reviewer in one review round. Use only after the user authorized independent or multi-model review. Returns a run id immediately; use resume_attested_review until terminal. PRECONDITION: the reviewer has no MCP tools; verdict submission uses THIS session's selection/claim state on `server`, so select and claim the review work on that server yourself first or submission is rejected."
             .to_string(),
         strict: false,
         defer_loading: None,

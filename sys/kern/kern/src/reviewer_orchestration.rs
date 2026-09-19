@@ -1122,10 +1122,11 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             .call_tool_with_review_provenance(server, tool, Some(arguments), None, provenance)
             .await?;
         if result.is_error == Some(true) {
-            return Ok(SubmissionOutcome::Rejected(
-                serde_json::to_string(&result.content)
-                    .unwrap_or_else(|_| "MCP server rejected review submission".to_string()),
-            ));
+            let raw = serde_json::to_string(&result.content)
+                .unwrap_or_else(|_| "MCP server rejected review submission".to_string());
+            return Ok(SubmissionOutcome::Rejected(annotate_submission_rejection(
+                server, tool, &raw,
+            )));
         }
         Ok(SubmissionOutcome::Acknowledged)
     }
@@ -1152,6 +1153,38 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             .await
             .map_err(|error| anyhow::anyhow!("{error}"))?;
         Ok(())
+    }
+}
+
+/// Substrings that identify a rejection caused by missing selection or
+/// claim state on the target server.
+const MISSING_SELECTION_HINTS: [&str; 9] = [
+    "no task selected",
+    "no project selected",
+    "not selected",
+    "select_task",
+    "select_project",
+    "no review authority",
+    "no claim",
+    "no live review",
+    "claim review",
+];
+
+fn annotate_submission_rejection(server: &str, tool: &str, raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    if MISSING_SELECTION_HINTS
+        .iter()
+        .any(|needle| lower.contains(needle))
+    {
+        format!(
+            "{raw}\n\nHint: `{tool}` on `{server}` submits through THIS host session's already-established \
+selection/claim state, not the spawned reviewer's session (which has no MCP tools and cannot \
+select or claim anything itself). Before calling `start_attested_review`, call `{server}`'s own \
+selection/claim tool yourself in this same session first, then \
+retry `start_attested_review` with the same idempotency_key."
+        )
+    } else {
+        raw.to_string()
     }
 }
 

@@ -18,7 +18,6 @@ use crate::external_editor;
 use crate::file_search::FileSearchManager;
 use crate::history_cell;
 use crate::history_cell::HistoryCell;
-use crate::multi_agents::agent_picker_status_dot_spans;
 use crate::multi_agents::format_agent_picker_item_name;
 use crate::multi_agents::next_agent_shortcut_matches;
 use crate::multi_agents::previous_agent_shortcut_matches;
@@ -454,6 +453,7 @@ pub(crate) struct App {
     process_event_channels: HashMap<ProcessId, ProcessEventChannel>,
     process_event_listener_tasks: HashMap<ProcessId, JoinHandle<()>>,
     agent_navigation: AgentNavigationState,
+    activity: libui::activity::Tracker,
     active_process_id: Option<ProcessId>,
     active_process_rx: Option<mpsc::Receiver<Event>>,
     primary_process_id: Option<ProcessId>,

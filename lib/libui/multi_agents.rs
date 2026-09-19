@@ -67,6 +67,22 @@ pub fn agent_picker_status_dot_spans(is_closed: bool) -> Vec<Span<'static>> {
     vec![dot, " ".into()]
 }
 
+pub fn agent_activity_dot_spans(
+    activity: &crate::activity::Activity,
+    now: std::time::Instant,
+) -> Vec<Span<'static>> {
+    use crate::activity::Phase;
+    let palette = crate::theme::palette();
+    let color = match activity.phase {
+        Phase::Failed | Phase::Disconnected => palette.error,
+        Phase::NeedsInput | Phase::Reconnecting => palette.warning,
+        _ if activity.is_quiet(now) => palette.warning,
+        Phase::Starting | Phase::Working | Phase::Tools => palette.accent,
+        _ => palette.dim,
+    };
+    vec!["• ".fg(color)]
+}
+
 pub fn format_agent_picker_item_name(
     agent_nickname: Option<&str>,
     agent_role: Option<&str>,

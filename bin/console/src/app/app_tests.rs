@@ -49,6 +49,9 @@ use tokio::time;
 #[path = "app_tests/mouse_scroll.rs"]
 mod mouse_scroll;
 
+#[path = "app_tests/activity.rs"]
+mod activity;
+
 pub(crate) async fn app_tests_suite() {
     super::agent_navigation::tests::agent_navigation_state_preserves_order_wraps_and_formats_labels(
     );
@@ -1544,6 +1547,7 @@ async fn make_test_app() -> App {
         process_event_channels: HashMap::new(),
         process_event_listener_tasks: HashMap::new(),
         agent_navigation: AgentNavigationState::default(),
+        activity: libui::activity::Tracker::default(),
         active_process_id: None,
         active_process_rx: None,
         primary_process_id: None,
@@ -1644,6 +1648,7 @@ async fn make_test_app_with_channels() -> (
             process_event_channels: HashMap::new(),
             process_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
+            activity: libui::activity::Tracker::default(),
             active_process_id: None,
             active_process_rx: None,
             primary_process_id: None,

@@ -7,6 +7,7 @@
     )
 )]
 
+pub mod activity;
 pub mod app_event;
 pub mod app_event_sender;
 pub mod bottom_pane;

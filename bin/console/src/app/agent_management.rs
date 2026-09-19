@@ -1,8 +1,7 @@
 use super::{
     AgentNavigationState, App, AppEvent, BacktrackState, ChatWidget, EventMsg, PathBuf,
     ProcessEventSnapshot, ProcessId, Result, SelectionItem, SelectionViewParams,
-    agent_picker_status_dot_spans, format_agent_picker_item_name, standard_popup_hint_line, tui,
-    unbounded_channel,
+    format_agent_picker_item_name, standard_popup_hint_line, tui, unbounded_channel,
 };
 use chaos_kern::Process;
 use std::sync::Arc;
@@ -116,10 +115,14 @@ impl App {
                     is_primary,
                 );
                 let uuid = process_id.to_string();
+                let activity = self.activity.get(*process_id);
+                let now = std::time::Instant::now();
                 SelectionItem {
                     name: name.clone(),
-                    name_prefix_spans: agent_picker_status_dot_spans(entry.is_closed),
-                    description: Some(uuid.clone()),
+                    name_prefix_spans: crate::multi_agents::agent_activity_dot_spans(
+                        &activity, now,
+                    ),
+                    description: Some(format!("{} · {uuid}", activity.description(now))),
                     is_current: self.active_process_id == Some(*process_id),
                     actions: vec![Box::new(move |tx| {
                         tx.send(AppEvent::SelectAgentProcess(id));
@@ -163,6 +166,7 @@ impl App {
     /// transcripts, and the stable next/previous traversal order should not collapse around them.
     pub(super) fn mark_agent_picker_process_closed(&mut self, process_id: ProcessId) {
         self.agent_navigation.mark_closed(process_id);
+        self.activity.closed(process_id);
         self.sync_active_agent_label();
     }
 

@@ -7,6 +7,46 @@ use crate::top_bar::Content;
 use crate::top_bar::Side;
 use crate::top_bar::Update;
 
+#[tokio::test(start_paused = true)]
+async fn activity_ages_without_events_and_idle_stops_its_timer() {
+    use crate::activity::{Activity, Phase, Snapshot};
+    let now = tokio::time::Instant::now().into_std();
+    let (source, receiver) = watch::channel(Snapshot::default());
+    let (tx, mut frames) = broadcast::channel(16);
+    let runtime = Runtime::start(
+        FrameRequester::new(tx),
+        widgets::activity::new(receiver.clone()),
+        None,
+        None,
+        None,
+        Some(receiver),
+    );
+    tokio::task::yield_now().await;
+    source.send_modify(|snapshot| {
+        snapshot.selected = Activity {
+            phase: Phase::Working,
+            last_activity: Some(now),
+            ..Default::default()
+        };
+        snapshot.animations = false;
+    });
+    frames.recv().await.unwrap();
+    assert!(super::super::tests::text(&runtime.buffer(80)).contains("Working"));
+    tokio::time::advance(Duration::from_secs(45)).await;
+    frames.recv().await.unwrap();
+    assert!(super::super::tests::text(&runtime.buffer(80)).contains("No activity · 45s"));
+    source.send_replace(Snapshot::default());
+    frames.recv().await.unwrap();
+    assert!(super::super::tests::text(&runtime.buffer(80)).contains("Idle"));
+    while frames.try_recv().is_ok() {}
+    tokio::time::advance(Duration::from_secs(60)).await;
+    tokio::task::yield_now().await;
+    assert!(frames.try_recv().is_err(), "idle activity has no timer");
+    drop(runtime);
+    tokio::task::yield_now().await;
+    assert_eq!(source.receiver_count(), 0);
+}
+
 fn probe(calls: Arc<AtomicUsize>) -> BarWidget {
     BarWidget::text("probe", Side::Right, 0, Content::new(" ")).with_refresh(move |_, _| {
         let count = calls.fetch_add(1, Ordering::Relaxed);
@@ -31,6 +71,7 @@ async fn machine_updates_do_not_block_the_clock_or_redraw_unchanged_content() {
             probe(calls.clone()),
         ],
         Some(receiver),
+        None,
         None,
         None,
     );
@@ -159,6 +200,7 @@ async fn persistence_events_update_while_hidden_and_release_subscriptions() {
         None,
         Some(status_rx),
         None,
+        None,
     );
     assert_eq!(status_tx.receiver_count(), 3);
     assert!(
@@ -220,6 +262,7 @@ async fn static_environment_loading_does_not_block_timers_or_rendering() {
         None,
         None,
         Some(environment),
+        None,
     );
     tokio::task::yield_now().await;
     assert!(

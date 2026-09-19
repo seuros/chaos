@@ -61,6 +61,8 @@ pub enum AppEvent {
         process_id: ProcessId,
         event: Event,
     },
+    /// The live event source ended. This is not a model-progress heartbeat.
+    ProcessStreamClosed(ProcessId),
 
     /// Start a new session.
     NewSession,

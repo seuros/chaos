@@ -7,6 +7,7 @@ use tokio::sync::watch;
 use super::machine::Source;
 use super::{BarWidget, Content, Side};
 
+pub(super) mod activity;
 pub(super) mod architecture;
 pub(super) mod battery;
 pub(super) mod clock;

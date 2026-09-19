@@ -102,7 +102,11 @@ fn spawn_event_bridge(
 ) {
     tokio::spawn(async move {
         let mut seen_first = false;
+        let mut process_id = None;
         while let Some(event) = event_rx.recv().await {
+            if let EventMsg::SessionConfigured(session) = &event.msg {
+                process_id = Some(session.session_id);
+            }
             let is_boot_error = !seen_first && matches!(event.msg, EventMsg::Error(_));
             seen_first = true;
 
@@ -123,8 +127,11 @@ fn spawn_event_bridge(
             let is_shutdown = matches!(event.msg, EventMsg::ShutdownComplete);
             app_event_tx.send(AppEvent::ChaosEvent(event));
             if is_shutdown {
-                break;
+                return;
             }
+        }
+        if let Some(process_id) = process_id {
+            app_event_tx.send(AppEvent::ProcessStreamClosed(process_id));
         }
     });
 }

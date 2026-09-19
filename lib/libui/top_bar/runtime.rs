@@ -27,21 +27,28 @@ pub(crate) struct Runtime {
 }
 
 impl Runtime {
-    pub(crate) fn new(requester: FrameRequester, context: machine::Context) -> Self {
+    pub(crate) fn new(
+        requester: FrameRequester,
+        context: machine::Context,
+        activity: watch::Receiver<crate::activity::Snapshot>,
+    ) -> Self {
         let monitor = machine::Monitor::new(context);
         let persistence = chaos_kern::subscribe_persistence_status();
         let environment =
             tokio::task::spawn_blocking(|| widgets::environment_widgets(chaos_sysinfo::sysinfo()));
+        let mut initial_widgets = widgets::activity::new(activity.clone());
+        initial_widgets.extend(widgets::initial_widgets(
+            chaos_sysinfo::hostname(),
+            monitor.source.clone(),
+            persistence.clone(),
+        ));
         let mut runtime = Self::start(
             requester,
-            widgets::initial_widgets(
-                chaos_sysinfo::hostname(),
-                monitor.source.clone(),
-                persistence.clone(),
-            ),
+            initial_widgets,
             Some(monitor.source.clone()),
             Some(persistence),
             Some(environment),
+            Some(activity),
         );
         runtime.machine = Some(monitor);
         runtime
@@ -49,7 +56,7 @@ impl Runtime {
 
     #[cfg(test)]
     fn with_widgets(requester: FrameRequester, widgets: Vec<BarWidget>) -> Self {
-        Self::start(requester, widgets, None, None, None)
+        Self::start(requester, widgets, None, None, None, None)
     }
 
     fn start(
@@ -58,6 +65,7 @@ impl Runtime {
         mut machine: Option<machine::Source>,
         mut persistence: Option<watch::Receiver<PersistenceStatus>>,
         mut environment: Option<EnvironmentTask>,
+        mut activity: Option<watch::Receiver<crate::activity::Snapshot>>,
     ) -> Self {
         let sampled_at = tokio::time::Instant::now();
         let (_, next) = refresh(&mut widgets, &Zoned::now());
@@ -69,6 +77,12 @@ impl Runtime {
                 let mut widgets_added = false;
                 tokio::select! {
                     _ = wait_for(next.map(tokio::time::sleep_until)) => {}
+                    result = wait_for(activity.as_mut().map(watch::Receiver::changed)) => {
+                        if result.is_err() {
+                            activity = None;
+                            continue;
+                        }
+                    }
                     result = wait_for(persistence.as_mut().map(watch::Receiver::changed)) => {
                         if result.is_err() {
                             // A closed source must not become a busy loop.

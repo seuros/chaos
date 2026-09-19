@@ -25,6 +25,7 @@ pub(super) enum Tone {
     Success,
     Warning,
     Error,
+    Dim,
 }
 
 /// Semantic styling is resolved against the container's palette at draw time.
@@ -33,6 +34,8 @@ pub(super) struct Content {
     text: Cow<'static, str>,
     tone: Tone,
     bold: bool,
+    /// Only the activity eye breathes; labels retain their ordinary style.
+    intensity: Option<u8>,
 }
 
 impl Content {
@@ -53,6 +56,11 @@ impl Content {
         self
     }
 
+    pub(super) fn intensity(mut self, intensity: Option<u8>) -> Self {
+        self.intensity = intensity;
+        self
+    }
+
     fn style(&self, palette: Palette) -> Style {
         let color = match self.tone {
             Tone::Normal => palette.top_bar_fg,
@@ -60,11 +68,15 @@ impl Content {
             Tone::Success => palette.success,
             Tone::Warning => palette.warning,
             Tone::Error => palette.error,
+            Tone::Dim => palette.top_bar_dim,
         };
-        Style::default().fg(color).add_modifier(if self.bold {
+        let style = Style::default().fg(color).add_modifier(if self.bold {
             Modifier::BOLD
         } else {
             Modifier::empty()
+        });
+        self.intensity.map_or(style, |level| {
+            crate::theme::activity_eye_style(style, color, level)
         })
     }
 }

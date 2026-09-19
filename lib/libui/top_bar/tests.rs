@@ -23,7 +23,7 @@ fn clock(time: &str) -> BarWidget {
     clock
 }
 
-fn render(widgets: &[BarWidget], width: u16) -> Buffer {
+pub(super) fn render(widgets: &[BarWidget], width: u16) -> Buffer {
     let area = Rect::new(0, 0, width, 1);
     let mut buffer = Buffer::empty(area);
     Bar {
@@ -34,7 +34,7 @@ fn render(widgets: &[BarWidget], width: u16) -> Buffer {
     buffer
 }
 
-fn text(buffer: &Buffer) -> String {
+pub(super) fn text(buffer: &Buffer) -> String {
     buffer
         .content
         .iter()

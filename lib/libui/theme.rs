@@ -152,6 +152,28 @@ pub struct Palette {
     pub tertiary_accent: Color,
 }
 
+/// Breathing changes only the activity glyph, never the text/background.
+/// Preserve terminal-defined ANSI colors rather than guessing their RGB values.
+pub(crate) fn activity_eye_style(base: Style, color: Color, level: u8) -> Style {
+    if let Color::Rgb(r, g, b) = color
+        && crate::terminal_palette::stdout_color_level()
+            == crate::terminal_palette::StdoutColorLevel::TrueColor
+    {
+        return base.fg(crate::terminal_palette::rgb_color(crate::color::blend(
+            (r, g, b),
+            (0, 0, 0),
+            0.4 + 0.6 * f32::from(level) / 100.0,
+        )));
+    }
+    if level < 33 {
+        base.add_modifier(Modifier::DIM)
+    } else if level > 66 {
+        base.add_modifier(Modifier::BOLD)
+    } else {
+        base
+    }
+}
+
 fn execution_palette(clamped: bool) -> Palette {
     if clamped {
         Palette {

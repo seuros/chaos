@@ -69,6 +69,7 @@ impl App {
         self.abort_all_process_event_listeners();
         self.process_event_channels.clear();
         self.agent_navigation.clear();
+        self.activity.clear();
         self.active_process_id = None;
         self.active_process_rx = None;
         self.primary_process_id = None;
@@ -401,6 +402,7 @@ impl App {
             process_event_channels: HashMap::new(),
             process_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
+            activity: libui::activity::Tracker::default(),
             active_process_id: None,
             active_process_rx: None,
             primary_process_id: None,
@@ -437,6 +439,10 @@ impl App {
                         .as_ref()
                         .is_none_or(Overlay::wants_mouse_capture),
                 );
+                tui.set_activity(app.activity.snapshot(
+                    app.current_displayed_process_id(),
+                    app.chat_widget.config_ref().animations,
+                ));
                 let control = select! {
                     Some(event) = app_event_rx.recv() => {
                         match app.handle_event(tui, event).await {
@@ -577,6 +583,7 @@ impl App {
                     Ok(event) => event,
                     Err(err) => {
                         tracing::debug!("external process {process_id} listener stopped: {err}");
+                        app_event_tx.send(AppEvent::ProcessStreamClosed(process_id));
                         break;
                     }
                 };

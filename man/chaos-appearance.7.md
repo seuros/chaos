@@ -75,6 +75,36 @@ depend on the terminal's palette and capabilities.
 
 ## Top bar
 
+The activity eye (`◉`) follows the currently viewed agent. It breathes while
+recent work is observed; only the eye's styling breathes, never the transcript
+background or status text. Colors follow `accent`, `warning`, `error`, and `top_bar_dim`.
+RGB accents breathe smoothly on true-color terminals; terminal-defined ANSI
+colors use dim/normal/bold levels. Set `tui.animations=false` to keep it static:
+
+```sh
+chaos config set tui.animations false
+```
+
+After 30 seconds without observed work, it becomes steady warning-colored and
+shows `No activity · Ns` (or `Tools · no activity Ns`). This means **quiet,
+possibly stalled**, not proof of a frozen model: reasoning and tools can be
+silent. Waiting on agents, operator input, reconnecting, errors, interruption,
+and closed/disconnected event sources have distinct states. This is advisory;
+it never cancels or retries work.
+
+Each agent has its own activity clock, including background agents. `Others:`
+summarizes the other tracked agents, including the parent when viewing a child.
+A quiet or failed sibling makes the eye warning/error-colored even if the
+viewed agent is busy. `/agent` shows per-agent state and the ages of its last
+observed activity and runtime event, sampled when the picker opens. Switching
+transcripts does not reset these clocks; replayed history is not live activity.
+Estimated token progress may update the runtime-event age, but **never** renews
+observed activity. Runtime traffic is not a provider/model heartbeat.
+
+The eye has highest layout priority and remains when its labels no longer fit.
+The eye stops breathing when idle or hidden. Idle activity has no timer.
+Quiet-state detection continues with animations disabled.
+
 The pinned row includes local time (`HH:MM`) and live `chaos-machine` observations:
 form factor, headless/SSH hints, current power, relevant disk space, and thermals.
 Headless describes display detection, not chassis; SSH does not imply headless.

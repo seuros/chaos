@@ -481,6 +481,12 @@ impl App {
             AppEvent::ProcessEvent { process_id, event } => {
                 self.handle_routed_process_event(process_id, event).await?;
             }
+            AppEvent::ProcessStreamClosed(process_id) => {
+                if self.process_event_channels.contains_key(&process_id) {
+                    self.activity.disconnected(process_id);
+                    tui.frame_requester().schedule_frame();
+                }
+            }
             AppEvent::Exit(mode) => {
                 return Ok(self.handle_exit_mode(mode));
             }

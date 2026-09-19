@@ -90,6 +90,8 @@ impl App {
     }
 
     pub(super) async fn note_process_outbound_op(&mut self, process_id: ProcessId, op: &Op) {
+        self.activity
+            .note_op(process_id, op, std::time::Instant::now());
         let Some(channel) = self.process_event_channels.get(&process_id) else {
             return;
         };
@@ -112,6 +114,10 @@ impl App {
         process_id: ProcessId,
         event: Event,
     ) -> Result<()> {
+        // Live ingress is shared by foreground and background agents. Replays
+        // deliberately bypass this, so switching transcripts cannot renew a clock.
+        self.activity
+            .observe(process_id, &event, std::time::Instant::now());
         let refresh_pending_process_approvals =
             ProcessEventStore::event_can_change_pending_process_approvals(&event);
         let inactive_interactive_request = if self.active_process_id != Some(process_id) {

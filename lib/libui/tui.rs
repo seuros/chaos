@@ -219,6 +219,7 @@ pub struct Tui {
     /// These rows are never scrolled and the viewport starts below them.
     top_reserved_rows: u16,
     top_bar: Option<crate::top_bar::Runtime>,
+    activity: tokio::sync::watch::Sender<crate::activity::Snapshot>,
     machine_context:
         tokio::sync::watch::Sender<Option<chaos_kern::machine_status::ObservationRequest>>,
     sandbox_policy: Option<chaos_ipc::protocol::SandboxPolicy>,
@@ -230,9 +231,12 @@ impl Tui {
         let (draw_tx, _) = broadcast::channel(1);
         let frame_requester = FrameRequester::new(draw_tx.clone());
         let (machine_context, context) = tokio::sync::watch::channel(None);
+        let (activity, activity_rx) =
+            tokio::sync::watch::channel(crate::activity::Snapshot::default());
         let top_bar = Some(crate::top_bar::Runtime::new(
             frame_requester.clone(),
             context,
+            activity_rx,
         ));
 
         // Detect keyboard enhancement support before any EventStream is created so the
@@ -258,10 +262,22 @@ impl Tui {
             alt_screen_enabled: true,
             top_reserved_rows: 1,
             top_bar,
+            activity,
             machine_context,
             sandbox_policy: None,
             terminal_title_enabled: false,
         }
+    }
+
+    /// Publish live activity without waking the top bar for identical snapshots.
+    pub fn set_activity(&mut self, snapshot: crate::activity::Snapshot) {
+        self.activity.send_if_modified(|current| {
+            if *current == snapshot {
+                return false;
+            }
+            *current = snapshot;
+            true
+        });
     }
 
     /// Update the top-bar session indicator; individual command escalations do not change it.
@@ -312,6 +328,7 @@ impl Tui {
             self.top_bar = Some(crate::top_bar::Runtime::new(
                 self.frame_requester.clone(),
                 self.machine_context.subscribe(),
+                self.activity.subscribe(),
             ));
         }
     }

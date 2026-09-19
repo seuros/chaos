@@ -46,10 +46,8 @@ use tempfile::tempdir;
 use tokio::time;
 
 #[cfg(feature = "vt100-tests")]
-#[path = "app_tests/mouse_scroll.rs"]
 mod mouse_scroll;
 
-#[path = "app_tests/activity.rs"]
 mod activity;
 
 pub(crate) async fn app_tests_suite() {

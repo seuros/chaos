@@ -475,5 +475,4 @@ fn normalize_harness_overrides_for_cwd(
 }
 
 #[cfg(test)]
-#[path = "app/app_tests.rs"]
 pub(crate) mod tests;

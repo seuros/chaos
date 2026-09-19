@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::{AgentStatus, Event, EventMsg, Op};
 
+pub(crate) mod captions;
 mod events;
 
 pub const QUIET_AFTER: Duration = Duration::from_secs(30);

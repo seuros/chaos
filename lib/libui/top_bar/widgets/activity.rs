@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 use super::super::{BarWidget, Content, Side, Tone, Update};
+use crate::activity::captions;
 use crate::activity::{Activity, Phase, Snapshot};
 
 const ANIMATION_TICK: Duration = Duration::from_millis(100);
@@ -16,11 +17,18 @@ pub(in crate::top_bar) fn new(source: watch::Receiver<Snapshot>) -> Vec<BarWidge
         .map(|(part, id)| {
             let mut source = source.clone();
             let started = tokio::time::Instant::now();
+            let mut captions = captions::Selector::default();
             BarWidget::text(id, Side::Left, 255 - part as u8, Content::default()).with_refresh(
                 move |cached, _| {
                     let snapshot = source.borrow_and_update();
                     let now = tokio::time::Instant::now();
-                    let (content, next) = present(&snapshot, now.into_std(), now - started, part);
+                    let (content, next) = present(
+                        &snapshot,
+                        now.into_std(),
+                        now - started,
+                        part,
+                        &mut captions,
+                    );
                     let changed = *cached != content;
                     *cached = content;
                     Update { changed, next }
@@ -45,6 +53,7 @@ fn present(
     now: Instant,
     elapsed: Duration,
     part: usize,
+    captions: &mut captions::Selector,
 ) -> (Content, Option<Duration>) {
     let selected_tone = tone(&snapshot.selected, now);
     let mut eye_tone = selected_tone;
@@ -74,7 +83,24 @@ fn present(
     }
     let breathing =
         has_active && snapshot.animations && !matches!(eye_tone, Tone::Warning | Tone::Error);
-    // Quiet clocks still update with animations disabled; idle has no timer.
+    let (caption, caption_next) = if part == 1 {
+        captions.select(
+            captions::Context {
+                phase: snapshot.selected.phase,
+                active_peers: active,
+                needs_attention: matches!(eye_tone, Tone::Warning | Tone::Error),
+            },
+            elapsed,
+            snapshot.animations,
+            // Thread-local randomness is seeded by the OS; do not capture the
+            // non-Send RNG in the widget's background refresh closure.
+            &mut rand::rng(),
+        )
+    } else {
+        (None, None)
+    };
+    // Quiet clocks still update with animations disabled. Healthy idle text
+    // rotates slowly when enabled, without animating the eye or faking activity.
     let next = if part == 0 && breathing {
         Some(ANIMATION_TICK)
     } else if has_active {
@@ -82,6 +108,7 @@ fn present(
     } else {
         None
     };
+    let next = next.into_iter().chain(caption_next).min();
     let content = match part {
         0 => {
             let intensity = breathing.then(|| {
@@ -90,7 +117,11 @@ fn present(
             });
             Content::new("◉").tone(eye_tone).intensity(intensity)
         }
-        1 => Content::new(snapshot.selected.label(now)).tone(selected_tone),
+        1 => match caption {
+            Some(text) => Content::new(text),
+            None => Content::new(snapshot.selected.label(now)),
+        }
+        .tone(selected_tone),
         _ => {
             let counts = [
                 (active, "active"),

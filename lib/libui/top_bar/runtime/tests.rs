@@ -8,6 +8,53 @@ use crate::top_bar::Side;
 use crate::top_bar::Update;
 
 #[tokio::test(start_paused = true)]
+async fn idle_captions_rotate_without_events_and_stop_with_reduced_motion() {
+    use crate::activity::Snapshot;
+    let initial = Snapshot {
+        animations: true,
+        ..Default::default()
+    };
+    let (source, receiver) = watch::channel(initial.clone());
+    let (tx, mut frames) = broadcast::channel(16);
+    let runtime = Runtime::start(
+        FrameRequester::new(tx),
+        widgets::activity::new(receiver.clone()),
+        None,
+        None,
+        None,
+        Some(receiver),
+    );
+    let first = super::super::tests::text(&runtime.buffer(80));
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(9)).await;
+    tokio::task::yield_now().await;
+    assert!(frames.try_recv().is_err(), "no caption rotation before 10s");
+    tokio::time::advance(crate::activity::captions::MAX_ROTATION_INTERVAL - Duration::from_secs(9))
+        .await;
+    frames.recv().await.unwrap();
+    assert_ne!(super::super::tests::text(&runtime.buffer(80)), first);
+    assert_eq!(
+        *source.borrow(),
+        initial,
+        "captions must not mutate activity"
+    );
+    source.send_modify(|snapshot| snapshot.animations = false);
+    // A random caption may already be "Idle", so this need not request a frame.
+    tokio::task::yield_now().await;
+    assert!(super::super::tests::text(&runtime.buffer(80)).contains("Idle"));
+    while frames.try_recv().is_ok() {}
+    tokio::time::advance(Duration::from_secs(60)).await;
+    tokio::task::yield_now().await;
+    assert!(
+        frames.try_recv().is_err(),
+        "reduced-motion idle has no caption timer"
+    );
+    drop(runtime);
+    tokio::task::yield_now().await;
+    assert_eq!(source.receiver_count(), 0);
+}
+
+#[tokio::test(start_paused = true)]
 async fn activity_ages_without_events_and_idle_stops_its_timer() {
     use crate::activity::{Activity, Phase, Snapshot};
     let now = tokio::time::Instant::now().into_std();

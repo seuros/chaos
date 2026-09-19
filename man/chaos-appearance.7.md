@@ -85,6 +85,17 @@ colors use dim/normal/bold levels. Set `tui.animations=false` to keep it static:
 chaos config set tui.animations false
 ```
 
+Working, idle, and tool captions use system-seeded randomness, changing every
+10–60 seconds without immediate repeats. Tool captions carry a `🔧` marker.
+Phase and active-peer changes can select a different catalog; redraws and runtime
+traffic do not reset the timer. Interrupted captions are selected once and stay
+fixed until the phase changes.
+
+Quiet, input, retry, and error signals take precedence over captions.
+Starting, waiting, and closed/disconnected states keep their explicit labels.
+Setting `tui.animations=false` restores literal labels and disables caption timers.
+`/agent` always shows the literal phase.
+
 After 30 seconds without observed work, it becomes steady warning-colored and
 shows `No activity · Ns` (or `Tools · no activity Ns`). This means **quiet,
 possibly stalled**, not proof of a frozen model: reasoning and tools can be
@@ -102,8 +113,9 @@ Estimated token progress may update the runtime-event age, but **never** renews
 observed activity. Runtime traffic is not a provider/model heartbeat.
 
 The eye has highest layout priority and remains when its labels no longer fit.
-The eye stops breathing when idle or hidden. Idle activity has no timer.
-Quiet-state detection continues with animations disabled.
+The eye stops breathing when idle, while captions use a random 10–60-second
+timer. Hiding the top bar stops both; with animations disabled, idle captions
+have no timer. Quiet-state detection continues with animations disabled.
 
 The pinned row includes local time (`HH:MM`) and live `chaos-machine` observations:
 form factor, headless/SSH hints, current power, relevant disk space, and thermals.

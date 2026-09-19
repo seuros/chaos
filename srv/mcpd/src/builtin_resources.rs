@@ -319,3 +319,6 @@ pub(crate) fn resource_template_router() -> McpResourceTemplateRouter<ChaosMcpSe
     }
     router
 }
+
+#[cfg(test)]
+mod tests;

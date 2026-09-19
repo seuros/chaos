@@ -248,6 +248,10 @@ unchanged.
 | `chaos://man` | List embedded manual pages and their resource URIs |
 | `chaos://man/{page}` | Read an embedded manual page without its frontmatter |
 
+These built-in resources are read-on-demand snapshots. The standalone
+`chaos mcp serve` endpoint does not support subscriptions to them; read them
+again to refresh their contents.
+
 `chaos://mcp` reports each server's enabled, required, transport, authentication,
 and startup state. Failed startup states include the error. Commands, endpoints,
 environment variables, headers, and credentials are omitted. Per-session startup

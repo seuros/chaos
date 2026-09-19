@@ -266,6 +266,7 @@ fn resource_info(spec: &builtin_mcp_resources::ChaosBuiltinResourceSpec) -> Reso
         annotations: None,
         size: None,
         meta: None,
+        subscribable: false,
     }
 }
 
@@ -281,6 +282,7 @@ fn template_info(
         icons: None,
         annotations: None,
         meta: None,
+        subscribable: false,
     }
 }
 

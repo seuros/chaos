@@ -243,7 +243,7 @@ chaos-check = { path = "tests/check" }
 chaos-test-fixtures = { path = "tests/fixtures" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.2.5", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.5.1", default-features = false, features = ["stdio", "macros"] }
 
 # External
 age = "0.12.1"

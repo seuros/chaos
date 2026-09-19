@@ -35,7 +35,9 @@ fn turn(model: &str, input: Vec<ResponseItem>) -> TurnRequest {
     }
 }
 
-fn sse(items: &[Value]) -> ResponseTemplate {
+type TestResult<T> = Result<T, Box<dyn std::error::Error>>;
+
+fn sse(items: &[Value]) -> TestResult<ResponseTemplate> {
     let mut events = vec![json!({
         "type": "response.created",
         "response": {"id": "resp_kimi"}
@@ -66,31 +68,26 @@ fn sse(items: &[Value]) -> ResponseTemplate {
             }
         }
     }));
-    let body: String = events
-        .iter()
-        .map(|event| {
-            format!(
-                "event: {}\ndata: {event}\n\n",
-                event["type"].as_str().unwrap()
-            )
-        })
-        .collect();
-    ResponseTemplate::new(200).set_body_raw(body, "text/event-stream")
+    let mut body = String::new();
+    for event in &events {
+        let kind = event["type"]
+            .as_str()
+            .ok_or("SSE event without a string `type`")?;
+        body.push_str(&format!("event: {kind}\ndata: {event}\n\n"));
+    }
+    Ok(ResponseTemplate::new(200).set_body_raw(body, "text/event-stream"))
 }
 
 async fn collect(
     adapter: &OpenAiAdapter<StaticAuthProvider>,
     request: TurnRequest,
-) -> Vec<TurnEvent> {
-    let mut stream = adapter.stream(request).await.unwrap();
+) -> TestResult<Vec<TurnEvent>> {
+    let mut stream = adapter.stream(request).await?;
     let mut events = Vec::new();
-    while let Some(event) = timeout(Duration::from_secs(5), stream.rx_event.recv())
-        .await
-        .unwrap()
-    {
-        events.push(event.unwrap());
+    while let Some(event) = timeout(Duration::from_secs(5), stream.rx_event.recv()).await? {
+        events.push(event?);
     }
-    events
+    Ok(events)
 }
 
 #[tokio::test]
@@ -171,14 +168,14 @@ async fn kimi_discovery_and_reasoning_tool_round_trip_use_the_selected_endpoint(
             .and(path(&responses_path))
             .and(header("authorization", "Bearer kimi-test-key"))
             .and(header("x-lsd-upstream", upstream))
-            .respond_with(sse(&[reasoning.clone(), call]))
+            .respond_with(sse(&[reasoning.clone(), call]).unwrap())
             .expect(1)
             .mount(&gateway)
             .await;
 
         let mut request = turn(model, vec![]);
         request.reasoning.as_mut().unwrap().effort = Some(ReasoningEffort::None);
-        let events = collect(&adapter, request).await;
+        let events = collect(&adapter, request).await.unwrap();
         let requests = gateway.received_requests().await.unwrap();
         let body: Value = requests[0].body_json().unwrap();
         assert_eq!(body["reasoning"], json!({"effort": "low"}));
@@ -211,15 +208,18 @@ async fn kimi_discovery_and_reasoning_tool_round_trip_use_the_selected_endpoint(
             .and(path(&responses_path))
             .and(header("authorization", "Bearer kimi-test-key"))
             .and(header("x-lsd-upstream", upstream))
-            .respond_with(sse(&[json!({
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "output_text", "text": "Done."}]
-            })]))
+            .respond_with(
+                sse(&[json!({
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "Done."}]
+                })])
+                .unwrap(),
+            )
             .expect(1)
             .mount(&gateway)
             .await;
-        let events = collect(&adapter, turn(model, history)).await;
+        let events = collect(&adapter, turn(model, history)).await.unwrap();
         assert!(events.iter().any(|event| matches!(
             event,
             TurnEvent::OutputItemDone(ResponseItem::Message { content, .. })

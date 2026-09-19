@@ -671,79 +671,46 @@ Continue from the latest user request instead of restarting the conversation.\n\
 }
 
 pub(crate) fn render_latest_clamp_user_message(prompt: &Prompt) -> String {
-    prompt
-        .get_formatted_input()
-        .iter()
-        .rev()
-        .find_map(|item| match item {
-            ResponseItem::Message { role, content, .. } if role == "user" => {
+    let input = prompt.get_formatted_input();
+    let latest_user = input.iter().rev().find_map(|item| match item {
+        ResponseItem::Message { role, content, .. } if role == "user" => {
+            let rendered = render_clamp_content_items(content);
+            (!rendered.is_empty()).then_some(rendered)
+        }
+        _ => None,
+    });
+
+    let Some(user_content) = latest_user else {
+        return render_clamp_full_prompt(prompt);
+    };
+
+    match latest_mcp_notification_after_last_user(prompt) {
+        Some(notification) => format!("{notification}\n\n{user_content}"),
+        None => user_content,
+    }
+}
+
+/// Marker emitted by the MCP notification handler to identify resource-update
+/// system messages.
+const MCP_RESOURCE_UPDATE_MARKER: &str = "<mcp_resource_update>";
+
+/// Rendered text of the most recent MCP resource-update system message
+/// that follows the latest user message.
+fn latest_mcp_notification_after_last_user(prompt: &Prompt) -> Option<String> {
+    for item in prompt.get_formatted_input().iter().rev() {
+        match item {
+            ResponseItem::Message { role, content, .. } if role == "system" => {
                 let rendered = render_clamp_content_items(content);
-                (!rendered.is_empty()).then_some(rendered)
+                if rendered.contains(MCP_RESOURCE_UPDATE_MARKER) {
+                    return Some(rendered);
+                }
             }
-            _ => None,
-        })
-        .unwrap_or_else(|| render_clamp_full_prompt(prompt))
+            ResponseItem::Message { role, .. } if role == "user" => return None,
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
-mod clamp_permission_tests {
-    use super::ClampToolPermissionDecision;
-    use super::clamp_bypasses_permission_prompt;
-    use super::clamp_tool_permission_decision;
-    use super::is_clamp_mcp_tool;
-    use chaos_ipc::permissions::VfsPolicy;
-    use chaos_ipc::protocol::ApprovalPolicy;
-    use chaos_ipc::protocol::GranularApprovalConfig;
-    use std::path::Path;
-
-    #[test]
-    fn headless_bypasses_permission_prompt() {
-        assert!(clamp_bypasses_permission_prompt(ApprovalPolicy::Headless));
-    }
-
-    #[test]
-    fn interactive_supervised_granular_still_prompt() {
-        assert!(!clamp_bypasses_permission_prompt(
-            ApprovalPolicy::Interactive
-        ));
-        assert!(!clamp_bypasses_permission_prompt(
-            ApprovalPolicy::Supervised
-        ));
-        assert!(!clamp_bypasses_permission_prompt(ApprovalPolicy::Granular(
-            GranularApprovalConfig {
-                sandbox_approval: true,
-                rules: true,
-                request_permissions: true,
-                mcp_elicitations: true,
-            }
-        )));
-    }
-
-    #[test]
-    fn chaos_mcp_bridge_tools_are_allowed_at_claude_permission_layer() {
-        assert!(is_clamp_mcp_tool("mcp__chaos__git_repo"));
-        assert_eq!(
-            clamp_tool_permission_decision(
-                "mcp__chaos__git_repo",
-                &serde_json::json!({}),
-                Path::new("/tmp"),
-                &VfsPolicy::default(),
-            ),
-            ClampToolPermissionDecision::Allow
-        );
-    }
-
-    #[test]
-    fn non_bridge_mcp_tools_are_not_implicitly_allowed() {
-        assert!(!is_clamp_mcp_tool("mcp__other__git_repo"));
-        assert!(matches!(
-            clamp_tool_permission_decision(
-                "mcp__other__git_repo",
-                &serde_json::json!({}),
-                Path::new("/tmp"),
-                &VfsPolicy::default(),
-            ),
-            ClampToolPermissionDecision::Deny(_)
-        ));
-    }
-}
+mod tests;

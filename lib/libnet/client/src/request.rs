@@ -5,6 +5,8 @@ use rama::http::StatusCode;
 use serde_json::Value;
 use std::time::Duration;
 
+use crate::error::TransportError;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RequestCompression {
     #[default]
@@ -51,4 +53,19 @@ pub struct Response {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Bytes,
+}
+
+impl Response {
+    pub(crate) fn into_result(self, url: String) -> Result<Self, TransportError> {
+        if self.status.is_success() {
+            Ok(self)
+        } else {
+            Err(TransportError::Http {
+                status: self.status,
+                url: Some(url),
+                headers: Some(self.headers),
+                body: Some(String::from_utf8_lossy(&self.body).into_owned()),
+            })
+        }
+    }
 }

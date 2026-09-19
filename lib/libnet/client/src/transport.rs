@@ -70,6 +70,14 @@ impl RamaTransport {
             .unwrap_or(rama::http::Method::GET);
 
         let rama_body = if let Some(body) = body {
+            let json =
+                serde_json::to_vec(&body).map_err(|err| TransportError::Build(err.to_string()))?;
+            if !headers.contains_key(rama::http::header::CONTENT_TYPE) {
+                headers.insert(
+                    rama::http::header::CONTENT_TYPE,
+                    rama::http::HeaderValue::from_static("application/json"),
+                );
+            }
             if compression != RequestCompression::None {
                 if headers.contains_key(rama::http::header::CONTENT_ENCODING) {
                     return Err(TransportError::Build(
@@ -78,8 +86,6 @@ impl RamaTransport {
                     ));
                 }
 
-                let json = serde_json::to_vec(&body)
-                    .map_err(|err| TransportError::Build(err.to_string()))?;
                 let pre_compression_bytes = json.len();
                 let compression_start = std::time::Instant::now();
                 let (compressed, content_encoding) = match compression {
@@ -94,13 +100,6 @@ impl RamaTransport {
                 let compression_duration = compression_start.elapsed();
 
                 headers.insert(rama::http::header::CONTENT_ENCODING, content_encoding);
-                if !headers.contains_key(rama::http::header::CONTENT_TYPE) {
-                    headers.insert(
-                        rama::http::header::CONTENT_TYPE,
-                        rama::http::HeaderValue::from_static("application/json"),
-                    );
-                }
-
                 tracing::info!(
                     pre_compression_bytes,
                     post_compression_bytes,
@@ -110,21 +109,12 @@ impl RamaTransport {
 
                 Body::from(compressed)
             } else {
-                if !headers.contains_key(rama::http::header::CONTENT_TYPE) {
-                    headers.insert(
-                        rama::http::header::CONTENT_TYPE,
-                        rama::http::HeaderValue::from_static("application/json"),
-                    );
-                }
-                let json_bytes = serde_json::to_vec(&body)
-                    .map_err(|err| TransportError::Build(err.to_string()))?;
-                Body::from(json_bytes)
+                Body::from(json)
             }
         } else {
             Body::empty()
         };
 
-        // Inject trace headers.
         inject_trace_headers(&mut headers);
 
         let mut builder = rama::http::Request::builder()
@@ -178,6 +168,15 @@ impl RamaTransport {
     }
 }
 
+async fn collect_body(response: rama::http::Response) -> Result<Bytes, TransportError> {
+    response
+        .into_body()
+        .collect()
+        .await
+        .map(rama::http::body::util::Collected::to_bytes)
+        .map_err(|err| TransportError::Network(err.to_string()))
+}
+
 impl HttpTransport for RamaTransport {
     async fn execute(&self, req: Request) -> Result<Response, TransportError> {
         let raw = self.send(req).await?;
@@ -188,28 +187,12 @@ impl HttpTransport for RamaTransport {
             body,
         } = raw;
 
-        let body_bytes = body
-            .into_body()
-            .collect()
-            .await
-            .map_err(|err| TransportError::Network(err.to_string()))?
-            .to_bytes();
-
-        if !status.is_success() {
-            let body = String::from_utf8(body_bytes.to_vec()).ok();
-            return Err(TransportError::Http {
-                status,
-                url: Some(url),
-                headers: Some(headers),
-                body,
-            });
-        }
-
-        Ok(Response {
+        Response {
             status,
             headers,
-            body: body_bytes,
-        })
+            body: collect_body(body).await?,
+        }
+        .into_result(url)
     }
 
     async fn stream(&self, req: Request) -> Result<StreamResponse, TransportError> {
@@ -222,12 +205,7 @@ impl HttpTransport for RamaTransport {
         } = raw;
 
         if !status.is_success() {
-            let body_bytes = body
-                .into_body()
-                .collect()
-                .await
-                .map_err(|err| TransportError::Network(err.to_string()))?
-                .to_bytes();
+            let body_bytes = collect_body(body).await?;
             let body = String::from_utf8(body_bytes.to_vec()).ok();
             return Err(TransportError::Http {
                 status,

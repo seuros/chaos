@@ -37,6 +37,7 @@ pub enum SlashCommand {
     Tools,
     Clamp,
     Accounts,
+    Reflex,
     Quit,
     Exit,
     Ps,
@@ -88,6 +89,9 @@ impl SlashCommand {
             SlashCommand::Accounts => {
                 "manage provider accounts and connections (disconnect via CLI)".into()
             }
+            SlashCommand::Reflex => {
+                "configure reflex backends and keys, or run /reflex test".into()
+            }
         }
     }
 
@@ -107,6 +111,7 @@ impl SlashCommand {
                 | SlashCommand::ContextWindow
                 | SlashCommand::DynamicEffort
                 | SlashCommand::Clamp
+                | SlashCommand::Reflex
         )
     }
 
@@ -124,6 +129,7 @@ impl SlashCommand {
             | SlashCommand::Plan
             | SlashCommand::Clear
             | SlashCommand::Accounts
+            | SlashCommand::Reflex
             | SlashCommand::Clamp => false,
             SlashCommand::Permissions
             | SlashCommand::Diff
@@ -153,7 +159,11 @@ impl SlashCommand {
     pub fn available_when_logged_out(self) -> bool {
         matches!(
             self,
-            SlashCommand::Accounts | SlashCommand::Clamp | SlashCommand::Quit | SlashCommand::Exit
+            SlashCommand::Accounts
+                | SlashCommand::Reflex
+                | SlashCommand::Clamp
+                | SlashCommand::Quit
+                | SlashCommand::Exit
         )
     }
 }

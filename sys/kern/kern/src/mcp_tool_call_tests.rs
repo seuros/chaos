@@ -1,9 +1,6 @@
 use super::*;
 use crate::chaos::make_session_and_context;
 
-/// Test-local stand-in: the real constant was removed because all MCP servers
-/// are now treated equally. Tests that were written against the old apps server
-/// keep this name so the approval/metadata plumbing is still exercised.
 const CHAOS_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
 use crate::config::types::AppConfig;
 use crate::config::types::AppToolConfig;
@@ -903,6 +900,7 @@ fn session_approval_identity_includes_revision_and_scope() {
 }
 
 #[tokio::test]
+#[serial]
 async fn approval_without_external_server_is_cancelled() {
     let (session, turn_context) = make_session_and_context().await;
     let invocation = McpInvocation {
@@ -923,6 +921,7 @@ async fn approval_without_external_server_is_cancelled() {
 }
 
 #[tokio::test]
+#[serial]
 async fn approve_mode_skips_when_annotations_do_not_require_approval() {
     let (session, turn_context) = make_session_and_context().await;
     let session = Arc::new(session);
@@ -956,7 +955,7 @@ async fn approve_mode_skips_when_annotations_do_not_require_approval() {
 }
 
 #[tokio::test]
-#[serial(arc_monitor_server)]
+#[serial]
 async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
     use wiremock::Mock;
     use wiremock::MockServer;
@@ -1023,4 +1022,311 @@ async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
             "Tool call was cancelled because of safety risks: high-risk action".to_string(),
         ))
     );
+}
+
+fn require_unavailable_monitor(context: &mut TurnContext, policy: ApprovalPolicy) {
+    let (name, settings) = crate::reflex::configuration::presets()
+        .into_iter()
+        .next()
+        .unwrap();
+    Arc::make_mut(&mut context.config).reflex = BTreeMap::from([(name.into(), settings)]);
+    context.approval_policy = chaos_sysctl::Constrained::allow_any(policy);
+}
+
+#[test]
+fn monitor_outcomes_respect_prompt_policy() {
+    use chaos_ipc::protocol::GranularApprovalConfig;
+    let no_mcp_prompts = ApprovalPolicy::Granular(GranularApprovalConfig {
+        sandbox_approval: true,
+        rules: true,
+        request_permissions: true,
+        mcp_elicitations: false,
+    });
+    for policy in [ApprovalPolicy::Headless, no_mcp_prompts] {
+        for outcome in [
+            ArcMonitorOutcome::Unavailable("deadline"),
+            ArcMonitorOutcome::AskUser("review this action".into()),
+            ArcMonitorOutcome::SteerModel("unsafe".into()),
+        ] {
+            assert!(matches!(
+                monitor_approval(outcome, policy),
+                Err(McpToolApprovalDecision::BlockedBySafetyMonitor(_))
+            ));
+        }
+    }
+    assert!(matches!(
+        monitor_approval(
+            ArcMonitorOutcome::Unavailable("remote_http"),
+            ApprovalPolicy::Interactive
+        ),
+        Ok(Some(reason)) if reason.contains("One-time approval")
+    ));
+}
+
+#[test]
+fn denial_messages_preserve_approval_decisions() {
+    for decision in [
+        McpToolApprovalDecision::Accept,
+        McpToolApprovalDecision::AcceptForSession,
+        McpToolApprovalDecision::AcceptAndRemember,
+    ] {
+        assert_eq!(decision.denial_message("rejected", "cancelled"), None);
+    }
+    for (decision, expected) in [
+        (McpToolApprovalDecision::Decline, "rejected"),
+        (McpToolApprovalDecision::Cancel, "cancelled"),
+        (
+            McpToolApprovalDecision::BlockedBySafetyMonitor("blocked".into()),
+            "blocked",
+        ),
+    ] {
+        assert_eq!(
+            decision.denial_message("rejected", "cancelled").as_deref(),
+            Some(expected)
+        );
+    }
+}
+
+#[tokio::test]
+async fn task_completion_preserves_results_and_events() {
+    let (session, context, events) = crate::chaos::make_session_and_context_with_rx().await;
+    let task: McpTask = serde_json::from_value(serde_json::json!({
+        "taskId": "task-1",
+        "status": "working",
+        "createdAt": "2026-09-19T00:00:00Z",
+        "lastUpdatedAt": "2026-09-19T00:00:00Z",
+        "ttl": null,
+    }))
+    .unwrap();
+    for mode in ["async", "cancel"] {
+        for success in [true, false] {
+            let outcome = if success {
+                Ok(task.clone())
+            } else {
+                Err(FunctionCallError::RespondToModel("transport failed".into()))
+            };
+            let expected_error = outcome.as_ref().err().map(ToString::to_string);
+            let returned = finish_mcp_task_call(
+                &session,
+                &context,
+                mode.into(),
+                McpInvocation {
+                    server: Some("test".into()),
+                    tool: "test-tool".into(),
+                    arguments: None,
+                },
+                Duration::from_millis(7),
+                outcome,
+                mode,
+            )
+            .await;
+            assert_eq!(returned.is_ok(), success);
+            if let Ok(returned) = returned {
+                assert_eq!(
+                    serde_json::to_value(returned).unwrap(),
+                    serde_json::to_value(&task).unwrap()
+                );
+            }
+            let end = loop {
+                if let EventMsg::McpToolCallEnd(end) = events.try_recv().unwrap().msg {
+                    break end;
+                }
+            };
+            assert_eq!(end.call_id, mode);
+            assert_eq!(end.duration, Duration::from_millis(7));
+            match end.result {
+                Ok(result) => {
+                    assert!(success);
+                    assert_eq!(result.is_error, Some(false));
+                    assert_eq!(
+                        result.content[0]["text"],
+                        serde_json::to_string(&task).unwrap()
+                    );
+                }
+                Err(error) => assert_eq!(Some(error), expected_error),
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn required_monitor_precedes_headless_annotation_and_approval_shortcuts() {
+    let (session, mut context) = make_session_and_context().await;
+    require_unavailable_monitor(&mut context, ApprovalPolicy::Headless);
+    let bound = test_bound_approval(&context, None);
+    persist_bound_mcp_approval(&context, &bound).await.unwrap();
+    session
+        .services
+        .tool_approvals
+        .lock()
+        .await
+        .put(bound, ReviewDecision::ApprovedForSession);
+    let session = Arc::new(session);
+    let context = Arc::new(context);
+    let invocation = McpInvocation {
+        server: Some("test".into()),
+        tool: "test-tool".into(),
+        arguments: None,
+    };
+    for mode in [
+        AppToolApproval::Approve,
+        AppToolApproval::Auto,
+        AppToolApproval::Prompt,
+    ] {
+        for read_only in [true, false] {
+            let mut metadata = approval_metadata(None, None, None, None, None);
+            metadata.annotations = Some(annotations(Some(read_only), None, None));
+            assert!(matches!(
+                maybe_request_mcp_tool_approval(
+                    &session, &context, "test", &invocation, Some(&metadata), mode,
+                ).await,
+                Some(McpToolApprovalDecision::BlockedBySafetyMonitor(reason))
+                    if reason.contains("Safety check unavailable")
+                        && reason.contains("Approval prompts are disabled")
+            ));
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn unavailable_monitor_approval_is_one_shot_even_with_forged_persistence() {
+    use crate::chaos::make_session_and_context_with_rx;
+    let (session, mut context, events) = make_session_and_context_with_rx().await;
+    require_unavailable_monitor(
+        Arc::get_mut(&mut context).unwrap(),
+        ApprovalPolicy::Interactive,
+    );
+    *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
+    let invocation = McpInvocation {
+        server: Some("test".into()),
+        tool: "test-tool".into(),
+        arguments: None,
+    };
+    for persist in [
+        MCP_TOOL_APPROVAL_PERSIST_SESSION,
+        MCP_TOOL_APPROVAL_PERSIST_ALWAYS,
+    ] {
+        let approval = maybe_request_mcp_tool_approval(
+            &session,
+            &context,
+            persist,
+            &invocation,
+            None,
+            AppToolApproval::Auto,
+        );
+        let respond = async {
+            loop {
+                let event = events.recv().await.unwrap();
+                let EventMsg::ElicitationRequest(request) = event.msg else {
+                    continue;
+                };
+                let chaos_ipc::approvals::ElicitationRequest::Form { meta, message, .. } =
+                    request.request
+                else {
+                    panic!("expected form")
+                };
+                assert!(message.contains("Safety check unavailable"));
+                assert!(meta.unwrap().get(MCP_TOOL_APPROVAL_PERSIST_KEY).is_none());
+                session
+                    .resolve_elicitation(
+                        "test".into(),
+                        chaos_mcp_runtime::McpRequestId::string(format!(
+                            "{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{persist}"
+                        )),
+                        ElicitationResponse {
+                            action: ElicitationAction::Accept,
+                            content: None,
+                            meta: Some(serde_json::json!({MCP_TOOL_APPROVAL_PERSIST_KEY: persist})),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                break;
+            }
+        };
+        let (decision, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(approval, respond)
+        })
+        .await
+        .expect("approval prompt");
+        assert_eq!(decision, Some(McpToolApprovalDecision::Accept));
+    }
+    let bound = test_bound_approval(&context, None);
+    assert!(
+        session
+            .services
+            .tool_approvals
+            .lock()
+            .await
+            .get(&bound)
+            .is_none()
+    );
+    assert!(
+        crate::user_settings::open(&context.config.chaos_home)
+            .await
+            .unwrap()
+            .list_approvals(&bound.installation_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn unavailable_monitor_stops_sync_async_and_cancel_before_dispatch() {
+    let (session, mut context, events) = crate::chaos::make_session_and_context_with_rx().await;
+    require_unavailable_monitor(
+        Arc::get_mut(&mut context).unwrap(),
+        ApprovalPolicy::Headless,
+    );
+    // Dispatch would fail with unknown-server, not monitor denial.
+    let result = handle_mcp_tool_call(
+        session.clone(),
+        &context,
+        "sync".into(),
+        "test".into(),
+        "test-tool".into(),
+        "{}".into(),
+    )
+    .await;
+    assert!(
+        serde_json::to_string(&result)
+            .unwrap()
+            .contains("Safety check unavailable")
+    );
+    let error = handle_mcp_tool_call_async(
+        session.clone(),
+        &context,
+        "async".into(),
+        "test".into(),
+        "test-tool".into(),
+        None,
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("Safety check unavailable"));
+    let error = handle_mcp_cancel_task(
+        session,
+        &context,
+        "cancel".into(),
+        "test".into(),
+        "task-id".into(),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("Safety check unavailable"));
+
+    let mut skipped = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        if let EventMsg::McpToolCallEnd(end) = event.msg {
+            assert_eq!(end.duration, Duration::ZERO);
+            assert!(end.result.unwrap_err().contains("Safety check unavailable"));
+            skipped.push(end.call_id);
+        }
+    }
+    assert_eq!(skipped, ["sync", "async", "cancel"]);
 }

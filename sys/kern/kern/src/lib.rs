@@ -30,6 +30,7 @@ pub(crate) mod collaboration_modes;
 pub use chaos::SteerInputError;
 mod distill_remote;
 mod process;
+pub mod reflex;
 pub use process::Process;
 pub use process::ProcessConfigSnapshot;
 mod chaos_delegate;

@@ -1,4 +1,3 @@
-use std::env;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -9,6 +8,7 @@ use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::default_client::build_http_client;
 use crate::distill::content_items_to_text;
+use crate::env::read_non_empty_env_var;
 use crate::event_mapping::is_contextual_user_message_content;
 use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseItem;
@@ -19,9 +19,17 @@ const CHAOS_ARC_MONITOR_TOKEN: &str = "CHAOS_ARC_MONITOR_TOKEN";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ArcMonitorOutcome {
+    Disabled,
     Ok,
     SteerModel(String),
     AskUser(String),
+    Unavailable(&'static str),
+}
+
+pub(crate) fn monitoring_required(config: &crate::config::Config) -> bool {
+    crate::reflex::action_risk_settings(config).is_some()
+        || std::env::var_os(CHAOS_ARC_MONITOR_TOKEN).is_some()
+        || std::env::var_os(CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE).is_some()
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -100,6 +108,60 @@ pub(crate) async fn monitor_action(
     turn_context: &TurnContext,
     action: serde_json::Value,
 ) -> ArcMonitorOutcome {
+    let outcome = tokio::time::timeout(
+        ARC_MONITOR_TIMEOUT,
+        monitor_action_inner(sess, turn_context, action),
+    )
+    .await
+    .unwrap_or(ArcMonitorOutcome::Unavailable("deadline"));
+    if let ArcMonitorOutcome::Unavailable(category) = &outcome {
+        warn!(error_kind = category, "safety check unavailable");
+    }
+    outcome
+}
+
+async fn monitor_action_inner(
+    sess: &Session,
+    turn_context: &TurnContext,
+    action: serde_json::Value,
+) -> ArcMonitorOutcome {
+    let serde_json::Value::Object(action) = action else {
+        return ArcMonitorOutcome::Unavailable("invalid_action");
+    };
+    if let Some((_, settings)) = crate::reflex::action_risk_settings(&turn_context.config) {
+        let config = turn_context.config.clone();
+        let auth = turn_context.auth_manager.clone();
+        let initialized = tokio::task::spawn_blocking(move || {
+            crate::reflex::from_config(&config, auth.as_deref())
+        })
+        .await;
+        let outcome = match initialized {
+            Ok(Ok(Some(reflex))) => {
+                let history = sess.clone_history().await;
+                let conversation = build_arc_monitor_messages(history.raw_items())
+                    .iter()
+                    .filter_map(|message| serde_json::to_value(message).ok())
+                    .collect();
+                let instructions = crate::reflex::joined_instructions(
+                    turn_context.developer_instructions.as_deref(),
+                    turn_context.user_instructions.as_deref(),
+                );
+                crate::reflex::assess_action(
+                    &reflex,
+                    conversation,
+                    serde_json::Value::Object(action.clone()),
+                    instructions,
+                )
+                .await
+            }
+            Ok(Err(reason)) => ArcMonitorOutcome::Unavailable(reason),
+            _ => ArcMonitorOutcome::Unavailable("backend_initialization"),
+        };
+        if !matches!(outcome, ArcMonitorOutcome::Unavailable(_)) || !settings.allow_remote_fallback
+        {
+            return outcome;
+        }
+    }
     let auth = match turn_context.auth_manager.as_ref() {
         Some(auth_manager) => match auth_manager.auth().await {
             Some(auth) if auth.is_chatgpt_auth() => Some(auth),
@@ -111,16 +173,17 @@ pub(crate) async fn monitor_action(
         token
     } else {
         let Some(auth) = auth.as_ref() else {
-            return ArcMonitorOutcome::Ok;
+            return if monitoring_required(&turn_context.config) {
+                ArcMonitorOutcome::Unavailable("remote_credentials")
+            } else {
+                ArcMonitorOutcome::Disabled
+            };
         };
         match auth.get_token() {
             Ok(token) => token,
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    "skipping safety monitor because auth token is unavailable"
-                );
-                return ArcMonitorOutcome::Ok;
+            Err(_) => {
+                warn!("safety monitor auth token unavailable");
+                return ArcMonitorOutcome::Unavailable("remote_credentials");
             }
         }
     };
@@ -131,13 +194,6 @@ pub(crate) async fn monitor_action(
             turn_context.config.chatgpt_base_url.trim_end_matches('/')
         )
     });
-    let action = match action {
-        serde_json::Value::Object(action) => action,
-        _ => {
-            warn!("skipping safety monitor because action payload is not an object");
-            return ArcMonitorOutcome::Ok;
-        }
-    };
     let body = build_arc_monitor_request(sess, turn_context, action).await;
     let client = build_http_client();
     let mut request = client
@@ -154,30 +210,27 @@ pub(crate) async fn monitor_action(
 
     let response = match request.send().await {
         Ok(response) => response,
-        Err(err) => {
-            warn!(error = %err, %url, "safety monitor request failed");
-            return ArcMonitorOutcome::Ok;
+        Err(_) => {
+            warn!("safety monitor request failed");
+            return ArcMonitorOutcome::Unavailable("remote_transport");
         }
     };
     let status = response.status();
     if !status.is_success() {
-        let response_text = response.text().await.unwrap_or_default();
-        warn!(
-            %status,
-            %url,
-            response_text,
-            "safety monitor returned non-success status"
-        );
-        return ArcMonitorOutcome::Ok;
+        warn!(%status, "safety monitor returned non-success status");
+        return ArcMonitorOutcome::Unavailable("remote_http");
     }
 
     let response = match response.json::<ArcMonitorResult>().await {
         Ok(response) => response,
-        Err(err) => {
-            warn!(error = %err, %url, "failed to parse safety monitor response");
-            return ArcMonitorOutcome::Ok;
+        Err(_) => {
+            warn!("failed to parse safety monitor response");
+            return ArcMonitorOutcome::Unavailable("remote_malformed");
         }
     };
+    if response.risk_score > 100 {
+        return ArcMonitorOutcome::Unavailable("remote_malformed");
+    }
     tracing::debug!(
         risk_score = response.risk_score,
         risk_level = ?response.risk_level,
@@ -211,23 +264,6 @@ pub(crate) async fn monitor_action(
                     "Tool call was cancelled because of safety risks.".to_string(),
                 )
             }
-        }
-    }
-}
-
-fn read_non_empty_env_var(key: &str) -> Option<String> {
-    match env::var(key) {
-        Ok(value) => {
-            let value = value.trim();
-            (!value.is_empty()).then(|| value.to_string())
-        }
-        Err(env::VarError::NotPresent) => None,
-        Err(env::VarError::NotUnicode(_)) => {
-            warn!(
-                env_var = key,
-                "ignoring non-unicode safety monitor env override"
-            );
-            None
         }
     }
 }

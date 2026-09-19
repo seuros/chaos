@@ -39,6 +39,16 @@ pub fn externalize(value: &str) -> anyhow::Result<String> {
     Ok(format!("{PREFIX}{id}"))
 }
 
+/// Delete an unused credential.
+pub fn remove(reference: &str) -> anyhow::Result<()> {
+    let account = reference
+        .strip_prefix(PREFIX)
+        .context("expected a secure credential reference")?;
+    uuid::Uuid::parse_str(account).context("invalid credential reference")?;
+    DefaultKeyringStore.delete(SERVICE, account)?;
+    Ok(())
+}
+
 pub fn has_literals(value: &Value) -> bool {
     if let Some(values) = value.as_array() {
         return values.iter().any(has_literals);

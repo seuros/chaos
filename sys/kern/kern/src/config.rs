@@ -224,6 +224,69 @@ impl AntigravitySettings {
     }
 }
 
+/// Backend settings under `reflex.<name>`, selected in name order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReflexBackendSettings {
+    /// Model family behind this backend.
+    pub kind: ReflexKind,
+    /// Endpoint base URL. `jev` defaults to the TypeSafe API; local kinds
+    /// need an OpenAI-compatible base such as `http://host:11434/v1`.
+    pub base_url: Option<String>,
+    /// Model route or tag. Defaults: `jev-latest`, `bespoke-minicheck`,
+    /// `shieldgemma`.
+    pub model: Option<String>,
+    /// Decisions path under `base_url` for `jev`. Default: `/v1/systemone`;
+    /// OpenRouter serves Jev on `/alpha/decisions`.
+    pub path: Option<String>,
+    /// Opaque secure-store reference. Literal API keys are never valid settings.
+    pub api_key: Option<String>,
+    /// Explicit provider account to reuse (API keys only, same endpoint origin).
+    pub auth_provider: Option<String>,
+    /// Optional environment credential source for headless deployments.
+    /// Mutually exclusive with `api_key` and `auth_provider`; no implicit lookup.
+    pub env_key: Option<String>,
+    /// Per-request timeout in milliseconds. Default: 10000.
+    pub timeout_ms: Option<u64>,
+    /// Opt-in remote fallback on failure; defaults to false.
+    #[serde(default)]
+    pub allow_remote_fallback: bool,
+}
+
+impl ReflexBackendSettings {
+    pub fn timeout(&self) -> std::time::Duration {
+        self.timeout_ms
+            .map(std::time::Duration::from_millis)
+            .unwrap_or(chaos_reflex::DEFAULT_TIMEOUT)
+    }
+
+    pub fn model(&self) -> &str {
+        self.model.as_deref().unwrap_or(self.kind.default_model())
+    }
+}
+
+/// Model families a reflex backend can be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReflexKind {
+    /// TypeSafe Jev over the System One HTTP API.
+    Jev,
+    /// MiniCheck grounding checker over an OpenAI-compatible chat endpoint.
+    Minicheck,
+    /// ShieldGemma content-policy classifier over an OpenAI-compatible chat endpoint.
+    Shieldgemma,
+}
+
+impl ReflexKind {
+    pub fn default_model(self) -> &'static str {
+        match self {
+            Self::Jev => chaos_reflex::jev::DEFAULT_MODEL,
+            Self::Minicheck => chaos_reflex::MiniCheckBackend::DEFAULT_MODEL,
+            Self::Shieldgemma => chaos_reflex::ShieldGemmaBackend::DEFAULT_MODEL,
+        }
+    }
+}
+
 /// Clamp transport selection handed to the model client.
 #[derive(Debug, Clone, Default)]
 pub struct ClampSettings {
@@ -358,6 +421,9 @@ pub struct Config {
 
     /// Settings for the Antigravity clamp backend.
     pub antigravity: AntigravitySettings,
+
+    /// Reflex backends keyed by name, in answer order.
+    pub reflex: std::collections::BTreeMap<String, ReflexBackendSettings>,
 
     /// Optional user-provided instructions (currently always `None`; a
     /// schema-based replacement for the removed AGENTS.md loader will
@@ -818,6 +884,10 @@ pub struct ConfigToml {
 
     /// Settings for the Antigravity clamp backend.
     pub antigravity: Option<AntigravitySettings>,
+
+    /// Reflex backends keyed by name. See chaos-providers(7).
+    #[serde(default)]
+    pub reflex: Option<std::collections::BTreeMap<String, ReflexBackendSettings>>,
 
     pub model_reasoning_effort: Option<ReasoningEffort>,
     /// Allow the parent model to change its own reasoning effort for subsequent turns.

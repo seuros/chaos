@@ -1,0 +1,24 @@
+[package]
+name = "chaos-reflex"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Reflex — System One judgments that bypass the LLM"
+
+[lints]
+workspace = true
+
+[dependencies]
+chaos-client = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+# In-memory HTTP services for retry and body-timeout tests; production uses chaos-client.
+rama = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
+wiremock = { workspace = true }

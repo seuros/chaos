@@ -30,6 +30,7 @@ chaos-machine = { workspace = true }
 chardetng = { workspace = true }
 jiff = { workspace = true }
 chaos-parrot = { workspace = true }
+chaos-reflex = { workspace = true }
 chaos-clamp = { workspace = true }
 chaos-halluacinate = { workspace = true }
 chaos-lsd = { workspace = true }

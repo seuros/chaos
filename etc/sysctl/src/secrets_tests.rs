@@ -28,5 +28,9 @@ fn references_round_trip_without_exposing_values_or_resolving_instructions() -> 
         "keyring:chaos-settings/00000000-0000-0000-0000-000000000000"
     );
     assert!(externalize("keyring:chaos-settings/not-a-uuid").is_err());
+    let reference = references["bearer_token"].as_str().unwrap();
+    remove(reference)?;
+    assert!(resolve(reference).is_err());
+    assert!(remove("not-a-reference").is_err());
     Ok(())
 }

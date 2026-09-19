@@ -20,6 +20,14 @@ fn clamp_is_discoverable_without_a_claude_installation() {
     assert!(!SlashCommand::Clamp.available_during_task());
     assert!(SlashCommand::Clamp.description().contains("agy"));
 }
+
+#[test]
+fn reflex_setup_and_test_are_available_without_a_model_account() {
+    assert!(super::built_in_slash_commands().contains(&("reflex", SlashCommand::Reflex)));
+    assert!(SlashCommand::Reflex.supports_inline_args());
+    assert!(SlashCommand::Reflex.available_when_logged_out());
+    assert!(!SlashCommand::Reflex.available_during_task());
+}
 #[cfg(test)]
 fn stop_command_is_canonical_name() {
     assert_eq!(SlashCommand::Stop.command(), "stop");

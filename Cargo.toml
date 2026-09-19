@@ -20,6 +20,8 @@ members = [
     "sys/modules/clamp",
     # sys/kern/providers — kernel-side provider adapters
     "sys/kern/providers/parrot",
+    # sys/kern/reflex — System One judgments
+    "sys/kern/reflex",
 
     # include/ — external contracts third parties implement
     "include/ration",
@@ -123,7 +125,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "47.4.0"
+version = "47.5.0"
 # Track the edition for all workspace crates in one place. Individual
 # crates can still override this value, but keeping it here means new
 # crates created with `cargo new -w ...` automatically inherit the 2024
@@ -164,6 +166,7 @@ chaos-clamp = { path = "sys/modules/clamp" }
 
 # Internal — sys/kern/providers/
 chaos-parrot = { path = "sys/kern/providers/parrot" }
+chaos-reflex = { path = "sys/kern/reflex" }
 chaos-ration = { path = "include/ration" }
 chaos-mcp-protocol = { path = "include/mcp-protocol" }
 chaos-libration = { path = "lib/libration" }

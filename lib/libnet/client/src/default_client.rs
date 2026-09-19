@@ -9,10 +9,15 @@ use rama::http::Method;
 use rama::http::body::util::BodyExt;
 use serde::Serialize;
 use std::fmt::Display;
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::time::Instant;
 
+use crate::TransportError;
 use crate::http_client::{RamaClient, raw_http_client, with_http_policies};
+use crate::request::Response;
 use crate::telemetry::inject_trace_headers;
 
 /// HTTP client wrapper backed by rama. Provides convenience methods
@@ -65,6 +70,7 @@ impl ChaosHttpClient {
             default_headers: self.default_headers.clone(),
             headers: HeaderMap::new(),
             body: None,
+            timeout: None,
         }
     }
 
@@ -82,6 +88,7 @@ pub struct ChaosRequestBuilder {
     default_headers: HeaderMap,
     headers: HeaderMap,
     body: Option<Vec<u8>>,
+    timeout: Option<Duration>,
 }
 
 impl std::fmt::Debug for ChaosRequestBuilder {
@@ -119,8 +126,9 @@ impl ChaosRequestBuilder {
         self.header(rama::http::header::AUTHORIZATION, format!("Bearer {token}"))
     }
 
-    pub fn timeout(self, _timeout: std::time::Duration) -> Self {
-        // TODO: implement per-request timeout via rama layer
+    /// Deadline from `send`, including the client lock and response body.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
         self
     }
 
@@ -144,12 +152,14 @@ impl ChaosRequestBuilder {
     }
 
     pub async fn send(self) -> Result<ChaosResponse, ChaosClientError> {
+        let deadline = self
+            .timeout
+            .and_then(|timeout| Instant::now().checked_add(timeout));
         let mut headers = self.default_headers;
         for (key, value) in &self.headers {
             headers.insert(key, value.clone());
         }
 
-        // Inject trace headers.
         inject_trace_headers(&mut headers);
 
         let rama_body = match self.body {
@@ -169,13 +179,15 @@ impl ChaosRequestBuilder {
             .body(rama_body)
             .map_err(|e| ChaosClientError::Build(e.to_string()))?;
 
-        let response = self
-            .client
-            .lock()
-            .await
-            .serve(request)
-            .await
-            .map_err(|e| ChaosClientError::Network(e.to_string()))?;
+        let response = within_deadline(deadline, async {
+            self.client
+                .lock()
+                .await
+                .serve(request)
+                .await
+                .map_err(|e| ChaosClientError::Network(e.to_string()))
+        })
+        .await?;
 
         tracing::debug!(
             method = %self.method,
@@ -184,13 +196,32 @@ impl ChaosRequestBuilder {
             "Request completed"
         );
 
-        Ok(ChaosResponse { inner: response })
+        Ok(ChaosResponse {
+            inner: response,
+            deadline,
+        })
+    }
+
+    /// Buffer the response; non-success statuses become `TransportError::Http`.
+    pub async fn execute(self) -> Result<Response, TransportError> {
+        let url = self.url.clone();
+        let response = self.send().await?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = response.bytes().await?;
+        Response {
+            status,
+            headers,
+            body,
+        }
+        .into_result(url)
     }
 }
 
 /// Response wrapper providing convenience methods over rama's Response.
 pub struct ChaosResponse {
     inner: rama::http::Response,
+    deadline: Option<Instant>,
 }
 
 impl ChaosResponse {
@@ -203,12 +234,15 @@ impl ChaosResponse {
     }
 
     pub async fn bytes(self) -> Result<Bytes, ChaosClientError> {
-        self.inner
-            .into_body()
-            .collect()
-            .await
-            .map(rama::http::body::util::Collected::to_bytes)
-            .map_err(|e| ChaosClientError::Body(e.to_string()))
+        within_deadline(self.deadline, async {
+            self.inner
+                .into_body()
+                .collect()
+                .await
+                .map(rama::http::body::util::Collected::to_bytes)
+                .map_err(|e| ChaosClientError::Body(e.to_string()))
+        })
+        .await
     }
 
     pub async fn text(self) -> Result<String, ChaosClientError> {
@@ -224,6 +258,8 @@ impl ChaosResponse {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChaosClientError {
+    #[error("request timed out")]
+    Timeout,
     #[error("request build error: {0}")]
     Build(String),
     #[error("network error: {0}")]
@@ -232,6 +268,32 @@ pub enum ChaosClientError {
     Body(String),
     #[error("json error: {0}")]
     Json(String),
+}
+
+impl From<ChaosClientError> for TransportError {
+    fn from(error: ChaosClientError) -> Self {
+        match error {
+            ChaosClientError::Timeout => Self::Timeout,
+            ChaosClientError::Build(message) | ChaosClientError::Json(message) => {
+                Self::Build(message)
+            }
+            ChaosClientError::Network(message) | ChaosClientError::Body(message) => {
+                Self::Network(message)
+            }
+        }
+    }
+}
+
+async fn within_deadline<T>(
+    deadline: Option<Instant>,
+    future: impl Future<Output = Result<T, ChaosClientError>>,
+) -> Result<T, ChaosClientError> {
+    match deadline {
+        Some(deadline) => tokio::time::timeout_at(deadline, future)
+            .await
+            .map_err(|_| ChaosClientError::Timeout)?,
+        None => future.await,
+    }
 }
 
 #[cfg(test)]

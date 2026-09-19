@@ -913,6 +913,47 @@ impl App {
                 );
                 tui.frame_requester().schedule_frame();
             }
+            AppEvent::OpenReflexPopup => {
+                let view = self.chat_widget.reflex_picker_view();
+                self.open_overlay(tui, Overlay::new_settings("reflex", view));
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::OpenReflexSetup { name, settings } => {
+                if let Some(Overlay::Settings(overlay)) = &mut self.overlay
+                    && overlay.title == "reflex"
+                {
+                    overlay.open_form(self.chat_widget.reflex_setup_view(name, settings));
+                    tui.frame_requester().schedule_frame();
+                }
+            }
+            AppEvent::ReflexSetupFinished {
+                process_id,
+                name,
+                result,
+            } => {
+                match result {
+                    Ok(settings) => {
+                        self.config.reflex.insert(name.clone(), settings.clone());
+                        self.chat_widget.reflex_backend_saved(name, settings);
+                        if let Some(process_id) = process_id {
+                            self.submit_op_to_process(process_id, Op::ReloadUserConfig)
+                                .await;
+                        }
+                        self.chat_widget.add_info_message(
+                            "Reflex settings saved. Changes apply from the next turn.".into(),
+                            None,
+                        );
+                    }
+                    Err(err) => self.chat_widget.add_error_message(format!(
+                        "Could not save reflex settings: {err}. Open /reflex to retry."
+                    )),
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ReflexTestFinished { process_id, result } => {
+                self.chat_widget.reflex_test_finished(process_id, result);
+                tui.frame_requester().schedule_frame();
+            }
             AppEvent::OpenAgentPicker => {
                 self.open_agent_picker().await;
             }

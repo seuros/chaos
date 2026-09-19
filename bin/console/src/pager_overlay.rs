@@ -16,9 +16,11 @@
 //! mutates in place or when its transcript output is time-dependent.
 
 mod pager_view;
+mod settings_overlay;
 mod static_overlay;
 mod transcript_overlay;
 
+pub(crate) use settings_overlay::SettingsOverlay;
 pub(crate) use static_overlay::{AccountsOverlay, StaticOverlay};
 pub(crate) use transcript_overlay::TranscriptOverlay;
 
@@ -42,6 +44,7 @@ pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
     Accounts(AccountsOverlay),
+    Settings(SettingsOverlay),
 }
 
 impl Overlay {
@@ -66,11 +69,19 @@ impl Overlay {
         Self::Accounts(AccountsOverlay::new(widget))
     }
 
+    pub(crate) fn new_settings(
+        title: &'static str,
+        view: Box<dyn libui::bottom_pane::BottomPaneView>,
+    ) -> Self {
+        Self::Settings(SettingsOverlay::new(title, view))
+    }
+
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         match self {
             Overlay::Transcript(o) => o.handle_event(tui, event),
             Overlay::Static(o) => o.handle_event(tui, event),
             Overlay::Accounts(o) => o.handle_event(tui, event),
+            Overlay::Settings(o) => o.handle_event(tui, event),
         }
     }
 
@@ -79,6 +90,7 @@ impl Overlay {
             Overlay::Transcript(o) => o.is_done(),
             Overlay::Static(o) => o.is_done(),
             Overlay::Accounts(o) => o.is_done(),
+            Overlay::Settings(o) => o.is_done(),
         }
     }
 

@@ -195,6 +195,14 @@ fn snapshot(percent: f64) -> RateLimitSnapshot {
 mod clamp;
 
 #[cfg(test)]
+mod reflex;
+
+#[cfg(test)]
+pub(crate) async fn reflex_suite() {
+    reflex::run().await;
+}
+
+#[cfg(test)]
 pub(crate) async fn clamp_suite() {
     clamp::run().await;
 }

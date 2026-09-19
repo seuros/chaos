@@ -1063,6 +1063,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         clamp: false,
         clamp_backend: Default::default(),
         antigravity: Default::default(),
+        reflex: Default::default(),
         user_instructions: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),

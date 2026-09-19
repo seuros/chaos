@@ -6,7 +6,7 @@ use crossterm::event::KeyEvent;
 
 use super::CancellationEvent;
 
-/// Trait implemented by every view that can be shown in the bottom pane.
+/// Interactive view hosted in the bottom pane or a settings dialog.
 pub trait BottomPaneView: Renderable {
     /// Handle a key event while the view is active. A redraw is always
     /// scheduled after this call.

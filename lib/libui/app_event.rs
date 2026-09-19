@@ -246,6 +246,22 @@ pub enum AppEvent {
     /// Open the interactive accounts popup.
     OpenAccountsPopup,
 
+    OpenReflexPopup,
+
+    OpenReflexSetup {
+        name: String,
+        settings: chaos_kern::config::ReflexBackendSettings,
+    },
+    ReflexSetupFinished {
+        process_id: Option<ProcessId>,
+        name: String,
+        result: Result<chaos_kern::config::ReflexBackendSettings, String>,
+    },
+    ReflexTestFinished {
+        process_id: Option<ProcessId>,
+        result: Result<chaos_kern::reflex::diagnostics::TestReport, String>,
+    },
+
     /// Re-open the permissions presets popup.
     OpenPermissionsPopup,
 

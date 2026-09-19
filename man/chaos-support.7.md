@@ -61,6 +61,22 @@ Documented in `chaos-providers(7)`; same adapters, operator-supplied config:
 | `tensorzero` | explicit `wire_api = "tensorzero"` | optional | Config-only |
 | Azure OpenAI-compatible | `responses` with Azure URL detection helpers | provider-specific | Config-only |
 
+## REFLEX BACKENDS
+
+Set up with `/reflex`; test the configured action-risk backend with
+`/reflex test` or `chaos reflex test`.
+Only action risk runs automatically; other judgments are library-only.
+
+| `kind` | Transport | Judgments | Authentication | Level |
+|--------|-----------|-----------|----------------|-------|
+| `jev` | Decisions API (TypeSafe or OpenRouter) | action risk, grounding, policy violation | API key required | Experimental |
+| `minicheck` | OpenAI-compatible chat completions | grounding | optional API key | Experimental |
+| `shieldgemma` | OpenAI-compatible chat completions | policy violation | optional API key | Experimental |
+
+New keys use the OS keyring; settings store references. Saved provider accounts
+and explicit `env_key` sources are also supported; no environment key is assumed.
+See [chaos-reflex(7)](./chaos-reflex.7.md).
+
 ## WIRE FORMATS
 
 Config enum `WireApi` (`model_provider_info`):
@@ -151,6 +167,7 @@ See `chaos-storage(7)`.
 |-------|-----------------|
 | Bundled third-party providers | `lib/libnet/services/thirdparty.toml` |
 | Built-in OpenAI/Anthropic + `WireApi` | `sys/kern/kern/src/model_provider_info.rs` |
+| Reflex backends and judgments | `sys/kern/reflex/src/`, `sys/kern/kern/src/reflex.rs` |
 | Wire → adapter map | `sys/kern/providers/parrot/src/lib.rs` (`adapter_for_wire`) |
 | Clamp backends | `sys/kern/kern/src/config.rs` (`ClampBackend`), `sys/modules/clamp/` |
 | Sandboxes | `sys/arch/linux`, `sys/arch/macos`, `sys/arch/freebsd`, `sys/arch/base` |

@@ -210,7 +210,7 @@ async fn build_arc_monitor_request_includes_relevant_history_and_null_policies()
 }
 
 #[tokio::test]
-#[serial(arc_monitor_env)]
+#[serial]
 async fn monitor_action_posts_expected_arc_request() {
     let server = MockServer::start().await;
     let (session, mut turn_context) = make_session_and_context().await;
@@ -282,7 +282,7 @@ async fn monitor_action_posts_expected_arc_request() {
 }
 
 #[tokio::test]
-#[serial(arc_monitor_env)]
+#[serial]
 async fn monitor_action_uses_env_url_and_token_overrides() {
     let server = MockServer::start().await;
     let _url_guard = EnvVarGuard::set(
@@ -328,7 +328,7 @@ async fn monitor_action_uses_env_url_and_token_overrides() {
 }
 
 #[tokio::test]
-#[serial(arc_monitor_env)]
+#[serial]
 async fn monitor_action_rejects_legacy_response_fields() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -361,5 +361,65 @@ async fn monitor_action_rejects_legacy_response_fields() {
     )
     .await;
 
-    assert_eq!(outcome, ArcMonitorOutcome::Ok);
+    assert_eq!(outcome, ArcMonitorOutcome::Unavailable("remote_malformed"));
+}
+
+#[tokio::test]
+#[serial]
+async fn remote_failures_are_unavailable_not_allow() {
+    let server = MockServer::start().await;
+    let (session, mut context) = make_session_and_context().await;
+    context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
+        crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
+    ));
+    Arc::make_mut(&mut context.config).chatgpt_base_url = server.uri();
+
+    for status in [401, 429, 500] {
+        server.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(status).set_body_string("private upstream detail"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        assert_eq!(
+            monitor_action(&session, &context, serde_json::json!({"tool": "test"})).await,
+            ArcMonitorOutcome::Unavailable("remote_http")
+        );
+    }
+    for body in [
+        serde_json::json!({"outcome": "ok"}),
+        serde_json::json!({
+            "outcome": "ok", "short_reason": "", "rationale": "",
+            "risk_score": 101, "risk_level": "low", "evidence": []
+        }),
+    ] {
+        server.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .expect(1)
+            .mount(&server)
+            .await;
+        assert_eq!(
+            monitor_action(&session, &context, serde_json::json!({"tool": "test"})).await,
+            ArcMonitorOutcome::Unavailable("remote_malformed")
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn absent_monitor_is_disabled_but_explicit_broken_monitor_is_unavailable() {
+    let (session, mut context) = make_session_and_context().await;
+    context.auth_manager = None;
+    assert!(!monitoring_required(&context.config));
+    assert_eq!(
+        monitor_action(&session, &context, serde_json::json!({})).await,
+        ArcMonitorOutcome::Disabled
+    );
+    let _token = EnvVarGuard::set(CHAOS_ARC_MONITOR_TOKEN, OsStr::new(""));
+    assert!(monitoring_required(&context.config));
+    assert_eq!(
+        monitor_action(&session, &context, serde_json::json!({})).await,
+        ArcMonitorOutcome::Unavailable("remote_credentials")
+    );
 }

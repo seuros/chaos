@@ -1,5 +1,4 @@
 use crate::error::TransportError;
-use crate::request::Request;
 use chrono_machines::Policy;
 use std::future::Future;
 use std::time::Duration;
@@ -7,6 +6,7 @@ use tokio::time::sleep;
 
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
+    /// Maximum retries after the initial attempt. Zero sends once.
     pub max_attempts: u64,
     pub base_delay: Duration,
     pub retry_on: RetryOn,
@@ -46,13 +46,13 @@ impl RetryOn {
     }
 }
 
-pub async fn run_with_retry<T, F, Fut>(
+pub async fn run_with_retry<T, R, F, Fut>(
     policy: RetryPolicy,
-    mut make_req: impl FnMut() -> Request,
+    mut make_req: impl FnMut() -> R,
     op: F,
 ) -> Result<T, TransportError>
 where
-    F: Fn(Request, u64) -> Fut,
+    F: Fn(R, u64) -> Fut,
     Fut: Future<Output = Result<T, TransportError>>,
 {
     let chrono_policy = policy.to_chrono_policy();

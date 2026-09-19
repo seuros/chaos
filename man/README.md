@@ -53,6 +53,7 @@ installed manpage paths such as:
 - [chaos-keyboard.7](./chaos-keyboard.7.md) — terminal UI keyboard shortcuts
 - [chaos-appearance.7](./chaos-appearance.7.md) — terminal colors and message styles
 - [chaos-providers.7](./chaos-providers.7.md) — provider configuration
+- [chaos-reflex.7](./chaos-reflex.7.md) — reflex setup, credentials, and live checks
 - [chaos-support.7](./chaos-support.7.md) — support matrix (providers, OS, CI)
 - [chaos-mcp.7](./chaos-mcp.7.md) — MCP client and server usage
 - [chaos-modes.7](./chaos-modes.7.md) — collaboration mode discovery and switching

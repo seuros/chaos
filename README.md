@@ -139,6 +139,16 @@ AGY requires a dedicated authenticated `CHAOS_AGY_HOME`. See
 
 ---
 
+## Reflex
+
+Reflex provides typed judgments through model-specific backends. Configure them
+with `/reflex`; settings live in the database and new keys go to the OS keyring.
+Run `/reflex test` or `chaos reflex test` for a synthetic action-risk check with
+verdict and latency—no chat history or file contents sent.
+
+The kernel supplies no content policy. See [chaos-reflex(7)](man/chaos-reflex.7.md)
+for supported judgments, MCP checks, data sharing, and fallback behavior.
+
 ## Install
 
 ```bash

@@ -1,5 +1,20 @@
 //! Functions for environment detection that need to be shared across crates.
 
+/// Trimmed environment value, excluding blank or non-Unicode values.
+pub(crate) fn read_non_empty_env_var(key: &str) -> Option<String> {
+    match std::env::var(key) {
+        Ok(value) => {
+            let value = value.trim();
+            (!value.is_empty()).then(|| value.to_string())
+        }
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            tracing::warn!(env_var = key, "ignoring non-unicode environment value");
+            None
+        }
+    }
+}
+
 fn env_var_set(key: &str) -> bool {
     std::env::var(key).is_ok_and(|v| !v.trim().is_empty())
 }

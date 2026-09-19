@@ -131,6 +131,20 @@ impl Session {
         config.config_layer_stack = config
             .config_layer_stack
             .with_database_settings(snapshot.revision, snapshot.settings);
+        let reflex = config
+            .config_layer_stack
+            .effective_config()
+            .get("reflex")
+            .cloned()
+            .map(toml::Value::try_into)
+            .transpose();
+        match reflex {
+            Ok(reflex) => config.reflex = reflex.unwrap_or_default(),
+            Err(_) => {
+                warn!("failed to reload reflex settings");
+                return;
+            }
+        }
         state.session_configuration.original_config_do_not_use = Arc::new(config);
     }
 

@@ -108,6 +108,7 @@ impl ChatWidget {
             SlashCommand::Accounts => {
                 self.app_event_tx.send(AppEvent::OpenAccountsPopup);
             }
+            SlashCommand::Reflex => self.open_reflex_popup(),
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
                 let tx = self.app_event_tx.clone();
@@ -204,6 +205,19 @@ impl ChatWidget {
 
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Reflex => {
+                // Never record arguments: an operator might paste a key here.
+                self.bottom_pane
+                    .set_composer_text(String::new(), Vec::new(), Vec::new());
+                self.bottom_pane.drain_pending_submission_state();
+                match trimmed {
+                    "" => self.open_reflex_popup(),
+                    "test" => self.test_reflex(),
+                    _ => self.add_error_message(
+                        "Usage: /reflex or /reflex test. Enter keys only in the setup form.".into(),
+                    ),
+                }
+            }
             SlashCommand::Clamp => {
                 self.dispatch_clamp_command(trimmed);
                 self.bottom_pane.drain_pending_submission_state();

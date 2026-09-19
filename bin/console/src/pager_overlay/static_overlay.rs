@@ -1,11 +1,10 @@
 use std::io::Result;
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Margin, Rect};
-use ratatui::style::{Color, Style, Stylize};
+use ratatui::layout::Rect;
 use ratatui::text::Line;
 use ratatui::text::Text;
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, WidgetRef, Wrap};
+use ratatui::widgets::{Paragraph, WidgetRef, Wrap};
 
 use crate::key_hint::KeyBinding;
 use crate::onboarding::auth::{AccountsCompletion, AccountsWidget};
@@ -14,8 +13,9 @@ use crate::render::renderable::Renderable;
 use crate::tui::{self, TuiEvent};
 
 use super::pager_view::PagerView;
+use super::settings_overlay::render_settings_panel;
 use super::transcript_overlay::CachedRenderable;
-use super::{KEY_CTRL_C, KEY_Q, PAGER_KEY_HINTS, PagerOverlay, centered_rect, render_key_hints};
+use super::{KEY_CTRL_C, KEY_Q, PAGER_KEY_HINTS, PagerOverlay, render_key_hints};
 
 pub(crate) struct StaticOverlay {
     pub(super) view: PagerView,
@@ -118,29 +118,7 @@ impl AccountsOverlay {
             }
             TuiEvent::Draw => {
                 tui.draw(u16::MAX, |frame| {
-                    let area = frame.area();
-                    Clear.render(area, frame.buffer);
-
-                    let popup = centered_rect(
-                        area,
-                        area.width.saturating_sub(4).clamp(56, 88),
-                        area.height.saturating_sub(4).clamp(14, 24),
-                    );
-                    let inner = popup.inner(Margin {
-                        horizontal: 2,
-                        vertical: 1,
-                    });
-
-                    let block = Block::default()
-                        .title(Line::from(vec![
-                            "/".dim(),
-                            " accounts".fg(crate::theme::accent_color()),
-                        ]))
-                        .title_alignment(Alignment::Left)
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Color::DarkGray));
-                    block.render(popup, frame.buffer);
+                    let inner = render_settings_panel(frame.area(), frame.buffer, "accounts");
                     self.widget.render_ref(inner, frame.buffer);
                 })?;
             }

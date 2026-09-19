@@ -37,6 +37,7 @@ mod config_cmd;
 mod debug_logging;
 mod mcp_cmd;
 mod models_cmd;
+mod reflex_cmd;
 
 use crate::mcp_cmd::McpCli;
 use crate::models_cmd::ModelsCli;
@@ -125,6 +126,8 @@ enum Subcommand {
     Config(config_cmd::ConfigCommand),
     /// Inspect or revoke installation-local remembered approvals.
     Approvals(config_cmd::ApprovalsCommand),
+    /// Diagnose configured reflex backends without sending session contents.
+    Reflex(reflex_cmd::ReflexCommand),
     /// Run Chaos non-interactively.
     #[usage(alias = "e")]
     Exec(ExecCli),
@@ -430,6 +433,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     match subcommand {
         Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
         Some(Subcommand::Approvals(command)) => config_cmd::approvals(command).await?,
+        Some(Subcommand::Reflex(command)) => {
+            reflex_cmd::run(command, root_config_overrides, models_profile).await?
+        }
         #[cfg(feature = "tui")]
         command @ (None | Some(Subcommand::Resume(_)) | Some(Subcommand::Fork(_))) => {
             let interactive = finalize_interactive(interactive, root_config_overrides, command);

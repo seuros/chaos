@@ -14,6 +14,33 @@ fn try_parse_cli<'v>(args: &[&'v str]) -> Result<MultitoolCli, usage::Error<'sta
     Ok(cli)
 }
 
+#[test]
+fn reflex_test_is_a_local_subcommand_with_global_config_flags() {
+    let cli = try_parse_cli(&[
+        "chaos",
+        "-p",
+        "work",
+        "-c",
+        "reflex.typesafe.timeout_ms=50",
+        "reflex",
+        "test",
+    ])
+    .unwrap();
+    assert_eq!(cli.config_profile(), Some("work"));
+    assert_eq!(
+        cli.config_overrides.raw_overrides,
+        vec!["reflex.typesafe.timeout_ms=50"]
+    );
+    assert_matches!(
+        cli.subcommand,
+        Some(Subcommand::Reflex(reflex_cmd::ReflexCommand {
+            command: reflex_cmd::ReflexSubcommand::Test
+        }))
+    );
+    assert!(try_parse_cli(&["chaos", "reflex", "unknown"]).is_err());
+    assert!(try_parse_cli(&["chaos", "reflex", "test", "--api-key", "not-a-key"]).is_err());
+}
+
 #[cfg(feature = "tui")]
 fn finalize_interactive_from_args(args: &[&str]) -> TuiCli {
     let MultitoolCli {

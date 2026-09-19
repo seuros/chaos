@@ -486,6 +486,12 @@ Prompt caching remains opt-in for compatible endpoints because some providers
 reject Anthropic-specific request fields. Set `CHAOS_ANTHROPIC_CACHE_TTL=5m`
 or `1h` only when the endpoint supports top-level `cache_control`.
 
+## REFLEX
+
+Use `/reflex` to configure judgment backends and save keys securely.
+Test the configured action-risk backend with `/reflex test` or `chaos reflex test`.
+See [chaos-reflex(7)](./chaos-reflex.7.md).
+
 ## CONFIGURATION
 
 | Field | Required | Description |
@@ -539,5 +545,6 @@ stream_idle_timeout_ms = 600000
 ## SEE ALSO
 
 - [chaos-install.7](./chaos-install.7.md)
+- [chaos-reflex.7](./chaos-reflex.7.md)
 - [chaos-mcp.7](./chaos-mcp.7.md)
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md)

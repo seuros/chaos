@@ -23,26 +23,23 @@ pub(crate) struct BackfillWorkflow {
 }
 
 impl BackfillWorkflow {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self {
             machine: DynamicBackfillLifecycle::new(()),
         }
     }
 
-    /// Reconstruct the workflow at a known persisted state.
+    /// Restore persisted state without replaying transitions or callbacks.
     pub(crate) fn from_status(status: BackfillStatus) -> Self {
-        let mut wf = Self::new();
-        match status {
-            BackfillStatus::Pending => {}
-            BackfillStatus::Running => {
-                wf.start();
-            }
-            BackfillStatus::Complete => {
-                wf.start();
-                wf.complete();
-            }
+        let state = match status {
+            BackfillStatus::Pending => BackfillLifecycleState::Pending,
+            BackfillStatus::Running => BackfillLifecycleState::Running,
+            BackfillStatus::Complete => BackfillLifecycleState::Complete,
+        };
+        Self {
+            machine: DynamicBackfillLifecycle::new_init_state((), state),
         }
-        wf
     }
 
     pub(crate) fn start(&mut self) -> bool {

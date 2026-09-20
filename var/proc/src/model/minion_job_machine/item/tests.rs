@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn workflow_transitions_retry_and_persisted_status_replay() {
+fn workflow_transitions_retry_and_persisted_status_restore() {
     let mut wf = MinionJobItemWorkflow::new();
     assert_eq!(wf.current_state(), MinionJobItemLifecycleState::Pending);
 

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn backfill_workflow_transitions_and_persisted_status_replay() {
+fn backfill_workflow_transitions_and_persisted_status_restore() {
     let mut wf = BackfillWorkflow::new();
     assert_eq!(wf.current_state(), BackfillLifecycleState::Pending);
 

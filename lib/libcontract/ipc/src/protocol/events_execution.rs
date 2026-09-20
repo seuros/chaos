@@ -3,10 +3,7 @@ use std::time::Duration;
 
 use crate::parse_command::ParsedCommand;
 use base64::Engine as _;
-use base64::alphabet;
-use base64::engine::DecodePaddingMode;
-use base64::engine::GeneralPurpose;
-use base64::engine::GeneralPurposeConfig;
+use base64::engine::general_purpose::STANDARD_PAD_INDIFFERENT;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -136,20 +133,11 @@ mod base64_bytes {
 
     use super::*;
 
-    fn engine() -> GeneralPurpose {
-        GeneralPurpose::new(
-            &alphabet::STANDARD,
-            GeneralPurposeConfig::new()
-                .with_encode_padding(true)
-                .with_decode_padding_mode(DecodePaddingMode::Indifferent),
-        )
-    }
-
     pub(super) fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_str(&engine().encode(bytes))
+        serializer.serialize_str(&STANDARD_PAD_INDIFFERENT.encode(bytes))
     }
 
     pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -157,7 +145,9 @@ mod base64_bytes {
         D: Deserializer<'de>,
     {
         let encoded = String::deserialize(deserializer)?;
-        engine().decode(encoded).map_err(D::Error::custom)
+        STANDARD_PAD_INDIFFERENT
+            .decode(encoded)
+            .map_err(D::Error::custom)
     }
 }
 

@@ -53,45 +53,21 @@ pub(crate) struct ReviewAttemptWorkflow {
 }
 
 impl ReviewAttemptWorkflow {
+    /// Restore persisted state without replaying transitions or callbacks.
     pub(crate) fn from_state(state: ReviewAttemptState) -> Self {
-        let mut workflow = Self {
-            machine: DynamicReviewAttemptLifecycle::new(()),
+        let state = match state {
+            ReviewAttemptState::Selection => ReviewAttemptLifecycleState::Selection,
+            ReviewAttemptState::Spawn => ReviewAttemptLifecycleState::Spawn,
+            ReviewAttemptState::ModelExecution => ReviewAttemptLifecycleState::ModelExecution,
+            ReviewAttemptState::OutputParse => ReviewAttemptLifecycleState::OutputParse,
+            ReviewAttemptState::SubmissionUnknown => ReviewAttemptLifecycleState::SubmissionUnknown,
+            ReviewAttemptState::Acknowledged => ReviewAttemptLifecycleState::Acknowledged,
+            ReviewAttemptState::Cancelled => ReviewAttemptLifecycleState::Cancelled,
+            ReviewAttemptState::TerminalFailure => ReviewAttemptLifecycleState::TerminalFailure,
         };
-        match state {
-            ReviewAttemptState::Selection => {}
-            ReviewAttemptState::Spawn => {
-                workflow.handle(ReviewAttemptLifecycleEvent::Select);
-            }
-            ReviewAttemptState::ModelExecution => {
-                workflow.handle(ReviewAttemptLifecycleEvent::Select);
-                workflow.handle(ReviewAttemptLifecycleEvent::Spawned);
-            }
-            ReviewAttemptState::OutputParse => {
-                workflow.handle(ReviewAttemptLifecycleEvent::Select);
-                workflow.handle(ReviewAttemptLifecycleEvent::Spawned);
-                workflow.handle(ReviewAttemptLifecycleEvent::OutputReceived);
-            }
-            ReviewAttemptState::SubmissionUnknown => {
-                workflow.handle(ReviewAttemptLifecycleEvent::Select);
-                workflow.handle(ReviewAttemptLifecycleEvent::Spawned);
-                workflow.handle(ReviewAttemptLifecycleEvent::OutputReceived);
-                workflow.handle(ReviewAttemptLifecycleEvent::OutputParsed);
-            }
-            ReviewAttemptState::Acknowledged => {
-                workflow.handle(ReviewAttemptLifecycleEvent::Select);
-                workflow.handle(ReviewAttemptLifecycleEvent::Spawned);
-                workflow.handle(ReviewAttemptLifecycleEvent::OutputReceived);
-                workflow.handle(ReviewAttemptLifecycleEvent::OutputParsed);
-                workflow.handle(ReviewAttemptLifecycleEvent::Acknowledge);
-            }
-            ReviewAttemptState::Cancelled => {
-                workflow.handle(ReviewAttemptLifecycleEvent::Cancel);
-            }
-            ReviewAttemptState::TerminalFailure => {
-                workflow.handle(ReviewAttemptLifecycleEvent::Fail);
-            }
+        Self {
+            machine: DynamicReviewAttemptLifecycle::new_init_state((), state),
         }
-        workflow
     }
 
     pub(crate) fn permits(&mut self, target: ReviewAttemptState) -> bool {

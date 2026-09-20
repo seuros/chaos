@@ -18,6 +18,9 @@ use tracing::trace;
 use crate::http_client::{RamaClient, raw_http_client, with_http_policies};
 use crate::telemetry::inject_trace_headers;
 
+#[cfg(test)]
+mod tests;
+
 pub type ByteStream = BoxStream<'static, Result<Bytes, TransportError>>;
 
 pub struct StreamResponse {

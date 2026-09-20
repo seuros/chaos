@@ -32,34 +32,25 @@ pub(crate) mod job {
     }
 
     impl MinionJobWorkflow {
+        #[cfg(test)]
         pub(crate) fn new() -> Self {
             Self {
                 machine: DynamicMinionJobLifecycle::new(()),
             }
         }
 
-        /// Reconstruct the workflow at a known persisted state by replaying
-        /// the minimal events needed to reach it.
+        /// Restore persisted state without replaying transitions or callbacks.
         pub(crate) fn from_status(status: MinionJobStatus) -> Self {
-            let mut wf = Self::new();
-            match status {
-                MinionJobStatus::Pending => {}
-                MinionJobStatus::Running => {
-                    wf.start();
-                }
-                MinionJobStatus::Completed => {
-                    wf.start();
-                    wf.complete();
-                }
-                MinionJobStatus::Failed => {
-                    wf.start();
-                    wf.fail();
-                }
-                MinionJobStatus::Cancelled => {
-                    wf.cancel();
-                }
+            let state = match status {
+                MinionJobStatus::Pending => MinionJobLifecycleState::Pending,
+                MinionJobStatus::Running => MinionJobLifecycleState::Running,
+                MinionJobStatus::Completed => MinionJobLifecycleState::Completed,
+                MinionJobStatus::Failed => MinionJobLifecycleState::Failed,
+                MinionJobStatus::Cancelled => MinionJobLifecycleState::Cancelled,
+            };
+            Self {
+                machine: DynamicMinionJobLifecycle::new_init_state((), state),
             }
-            wf
         }
 
         pub(crate) fn start(&mut self) -> bool {
@@ -129,24 +120,17 @@ pub(crate) mod item {
             }
         }
 
-        /// Reconstruct the workflow at a known persisted state.
+        /// Restore persisted state without replaying transitions or callbacks.
         pub(crate) fn from_status(status: MinionJobItemStatus) -> Self {
-            let mut wf = Self::new();
-            match status {
-                MinionJobItemStatus::Pending => {}
-                MinionJobItemStatus::Running => {
-                    wf.start();
-                }
-                MinionJobItemStatus::Completed => {
-                    wf.start();
-                    wf.complete();
-                }
-                MinionJobItemStatus::Failed => {
-                    wf.start();
-                    wf.fail();
-                }
+            let state = match status {
+                MinionJobItemStatus::Pending => MinionJobItemLifecycleState::Pending,
+                MinionJobItemStatus::Running => MinionJobItemLifecycleState::Running,
+                MinionJobItemStatus::Completed => MinionJobItemLifecycleState::Completed,
+                MinionJobItemStatus::Failed => MinionJobItemLifecycleState::Failed,
+            };
+            Self {
+                machine: DynamicMinionJobItemLifecycle::new_init_state((), state),
             }
-            wf
         }
 
         pub(crate) fn start(&mut self) -> bool {

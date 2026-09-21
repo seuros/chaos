@@ -5,14 +5,13 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
+use ratatui::widgets::Padding;
 use ratatui::widgets::Widget;
 use std::borrow::Cow;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 use crate::key_hint::KeyBinding;
-use crate::render::Insets;
-use crate::render::RectExt as _;
 use crate::style::text_panel_style;
 
 use super::scroll_state::ScrollState;
@@ -132,7 +131,12 @@ const MENU_SURFACE_INSET_H: u16 = 2;
 /// Rendering code should generally call [`render_menu_surface`] and then lay
 /// out content inside the returned inset rect.
 pub fn menu_surface_inset(area: Rect) -> Rect {
-    area.inset(Insets::vh(MENU_SURFACE_INSET_V, MENU_SURFACE_INSET_H))
+    Block::default()
+        .padding(Padding::symmetric(
+            MENU_SURFACE_INSET_H,
+            MENU_SURFACE_INSET_V,
+        ))
+        .inner(area)
 }
 
 /// Total vertical padding introduced by the menu surface treatment.

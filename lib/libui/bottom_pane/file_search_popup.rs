@@ -4,9 +4,7 @@ use chaos_locate::FileMatch;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::WidgetRef;
-
-use crate::render::Insets;
-use crate::render::RectExt;
+use ratatui::widgets::{Block, Padding};
 
 use super::popup_consts::MAX_POPUP_ROWS;
 use super::scroll_state::ScrollState;
@@ -138,9 +136,7 @@ impl WidgetRef for &FileSearchPopup {
         };
 
         render_rows(
-            area.inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            Block::default().padding(Padding::left(2)).inner(area),
             buf,
             &rows_all,
             &self.state,

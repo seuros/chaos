@@ -11,13 +11,13 @@ use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 
 use crate::key_hint;
 use crate::onboarding::onboarding_screen::KeyboardHandler;
 use crate::onboarding::onboarding_screen::StepStateProvider;
-use crate::render::Insets;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
@@ -56,7 +56,7 @@ impl Widget for &TrustDirectoryWidget {
                 "Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection.".to_string(),
             )
                 .wrap(Wrap { trim: true })
-                .inset(Insets::tlbr(/*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0)),
+                .inset(Padding::left(2)),
         );
         column.push("");
 
@@ -80,9 +80,7 @@ impl Widget for &TrustDirectoryWidget {
                 Paragraph::new(error.to_string())
                     .red()
                     .wrap(Wrap { trim: true })
-                    .inset(Insets::tlbr(
-                        /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-                    )),
+                    .inset(Padding::left(2)),
             );
             column.push("");
         }
@@ -97,9 +95,7 @@ impl Widget for &TrustDirectoryWidget {
                     " to continue".dim()
                 },
             ])
-            .inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            .inset(Padding::left(2)),
         );
 
         column.render(area, buf);

@@ -198,6 +198,14 @@ mod clamp;
 mod reflex;
 
 #[cfg(test)]
+mod mcp_image;
+
+#[cfg(test)]
+pub(crate) async fn mcp_image_suite() {
+    mcp_image::run().await;
+}
+
+#[cfg(test)]
 pub(crate) async fn reflex_suite() {
     reflex::run().await;
 }
@@ -526,6 +534,30 @@ async fn resumed_initial_messages_render_history() {
         text_blob.contains("assistant reply"),
         "expected replayed agent message",
     );
+
+    #[derive(Debug)]
+    struct DeferredCell(bool);
+    impl crate::history_cell::HistoryCell for DeferredCell {
+        fn has_display_content(&self) -> bool {
+            self.0
+        }
+
+        fn display_lines(&self, _: u16) -> Vec<ratatui::text::Line<'static>> {
+            panic!("history insertion must defer rendering");
+        }
+    }
+
+    for visible in [false, true] {
+        chat.active_cell = Some(Box::new(crate::history_cell::PlainHistoryCell::new(vec![
+            "pending tool".into(),
+        ])));
+        chat.add_to_history(DeferredCell(visible));
+        assert_eq!(chat.active_cell.is_none(), visible);
+        let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+            .count();
+        assert_eq!(inserted, 1 + usize::from(visible));
+    }
 }
 
 #[cfg(test)]

@@ -44,6 +44,12 @@ pub enum UiCommand {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum AppEvent {
+    /// Widget work belongs to one activation, not whichever tab receives it later.
+    ForView {
+        view: u64,
+        current_view: std::sync::Arc<std::sync::atomic::AtomicU64>,
+        event: Box<AppEvent>,
+    },
     ChaosEvent(Event),
     /// Open the agent picker for switching active processes.
     OpenAgentPicker,
@@ -322,8 +328,28 @@ pub enum AppEvent {
         name: String,
     },
 
+    ToggleToolList,
+
     /// All-tools response received from the kernel, forwarded to TileManager.
     AllToolsReceived(chaos_ipc::protocol::AllToolsResponseEvent),
+}
+
+impl AppEvent {
+    pub fn into_current_view(self) -> Option<Self> {
+        let mut event = self;
+        while let Self::ForView {
+            view,
+            current_view,
+            event: inner,
+        } = event
+        {
+            if current_view.load(std::sync::atomic::Ordering::Relaxed) != view {
+                return None;
+            }
+            event = *inner;
+        }
+        Some(event)
+    }
 }
 
 /// The exit strategy requested by the UI layer.

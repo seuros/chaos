@@ -23,6 +23,7 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+base64 = { workspace = true }
 chaos-mcp-runtime = { workspace = true }
 chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
@@ -39,10 +40,12 @@ chaos-realpath = { workspace = true }
 chaos-getopt = { workspace = true }
 color-eyre = { workspace = true }
 crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
+image = { workspace = true, features = ["png", "jpeg", "webp"] }
 jiff = { workspace = true }
 pulldown-cmark = { workspace = true }
 ratatui-hypertile = { workspace = true }
 ratatui-hypertile-extras = { workspace = true }
+ratatui-image = { workspace = true }
 ratatui = { workspace = true, features = [
     "scrolling-regions",
     "unstable-backend-writer",
@@ -64,11 +67,13 @@ tokio = { workspace = true, features = [
     "time",
 ] }
 tokio-stream = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = ["rt"] }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tui-tree-widget = { workspace = true }
 unicode-width = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }

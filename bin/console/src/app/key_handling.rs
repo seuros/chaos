@@ -1,12 +1,74 @@
 use super::{
-    AgentNavigationDirection, App, ExternalEditorState, KeyCode, KeyEvent, KeyEventKind, PaneId,
+    AgentNavigationDirection, App, ExternalEditorState, KeyCode, KeyEvent, KeyEventKind, PaneKind,
     TuiEvent, keychord_from_crossterm, next_agent_shortcut_matches,
     previous_agent_shortcut_matches, tui,
 };
 
 impl App {
     pub(super) async fn handle_key_event(&mut self, tui: &mut tui::Tui, key_event: KeyEvent) {
+        if key_event.kind != KeyEventKind::Release && self.tile_manager.cancel_layout_drag() {
+            tui.frame_requester().schedule_frame();
+            if key_event.code == KeyCode::Esc {
+                self.chat_widget.suppress_repeats_of(key_event.code);
+                return;
+            }
+        }
         if self.chat_widget.suppress_key_repeat(key_event) {
+            return;
+        }
+        let palette_shortcut = matches!(
+            (key_event.code, key_event.modifiers),
+            (KeyCode::F(2), crossterm::event::KeyModifiers::NONE)
+                | (KeyCode::Char('p'), crossterm::event::KeyModifiers::ALT)
+        );
+        if self.tile_manager.runtime.is_palette_open() {
+            if key_event.kind != KeyEventKind::Release {
+                use crossterm::event::KeyModifiers;
+
+                let mut key = key_event;
+                key.kind = KeyEventKind::Press;
+                if (key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL)
+                    || (palette_shortcut && key_event.kind == KeyEventKind::Press)
+                {
+                    key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+                } else if matches!(key.code, KeyCode::Char(_) | KeyCode::BackTab) {
+                    key.modifiers.remove(KeyModifiers::SHIFT);
+                }
+                if let Some(chord) = keychord_from_crossterm(key) {
+                    self.tile_manager.handle_focused_plugin_key(chord);
+                }
+                if let Some(selection) = self.tile_manager.runtime.take_palette_selection() {
+                    match PaneKind::from_str(&selection.plugin_type) {
+                        Some(PaneKind::Chat) => {
+                            self.tile_manager.open_or_focus(
+                                PaneKind::Chat,
+                                ratatui::layout::Direction::Horizontal,
+                            );
+                        }
+                        Some(PaneKind::ToolList) => self.open_tool_list(),
+                        Some(PaneKind::Inspector) => {
+                            if let Ok(size) = tui.terminal.size() {
+                                self.tile_manager.open_inspector(size.width);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if !self.tile_manager.runtime.is_palette_open() {
+                    self.chat_widget.suppress_repeats_of(key_event.code);
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            return;
+        }
+        if palette_shortcut
+            && key_event.kind == KeyEventKind::Press
+            && self.overlay.is_none()
+            && self.chat_widget.no_modal_or_popup_active()
+        {
+            let _ = self.tile_manager.runtime.open_palette();
+            self.reset_backtrack_state();
+            tui.frame_requester().schedule_frame();
             return;
         }
         if self.tile_manager.leave_inspector(key_event) {
@@ -31,36 +93,39 @@ impl App {
         // editing behavior for moving across words inside a draft.
         let allow_agent_word_motion_fallback = !self.enhanced_keys_supported
             && self.chat_widget.composer_text_with_pending().is_empty();
-        if self.overlay.is_none()
-            && self.chat_widget.no_modal_or_popup_active()
-            // Alt+Left/Right are also natural word-motion keys in the composer. Keep agent
-            // fast-switch available only once the draft is empty so editing behavior wins whenever
-            // there is text on screen.
-            && self.chat_widget.composer_text_with_pending().is_empty()
-            && previous_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
-        {
-            if let Some(process_id) = self.agent_navigation.adjacent_process_id(
-                self.current_displayed_process_id(),
-                AgentNavigationDirection::Previous,
-            ) {
-                let _ = self.select_agent_process(tui, process_id).await;
+        if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() {
+            let direction = match (key_event.code, key_event.modifiers) {
+                (KeyCode::PageUp, crossterm::event::KeyModifiers::CONTROL) => {
+                    Some(AgentNavigationDirection::Previous)
+                }
+                (KeyCode::PageDown, crossterm::event::KeyModifiers::CONTROL) => {
+                    Some(AgentNavigationDirection::Next)
+                }
+                _ if self.chat_widget.composer_text_with_pending().is_empty() => {
+                    if previous_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
+                    {
+                        Some(AgentNavigationDirection::Previous)
+                    } else if next_agent_shortcut_matches(
+                        key_event,
+                        allow_agent_word_motion_fallback,
+                    ) {
+                        Some(AgentNavigationDirection::Next)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            if let Some(direction) = direction {
+                if key_event.kind == KeyEventKind::Press
+                    && let Some(process_id) = self
+                        .agent_navigation
+                        .adjacent_process_id(self.current_displayed_process_id(), direction)
+                {
+                    let _ = self.select_agent_process(tui, process_id).await;
+                }
+                return;
             }
-            return;
-        }
-        if self.overlay.is_none()
-            && self.chat_widget.no_modal_or_popup_active()
-            // Mirror the previous-agent rule above: empty drafts may use these keys for process
-            // switching, but non-empty drafts keep them for expected word-wise cursor motion.
-            && self.chat_widget.composer_text_with_pending().is_empty()
-            && next_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
-        {
-            if let Some(process_id) = self.agent_navigation.adjacent_process_id(
-                self.current_displayed_process_id(),
-                AgentNavigationDirection::Next,
-            ) {
-                let _ = self.select_agent_process(tui, process_id).await;
-            }
-            return;
         }
 
         // Tiling shortcuts — only active when multiple panes are open.
@@ -137,26 +202,21 @@ impl App {
             }
         }
 
-        // Read-only inspector navigation must not open the transcript or edit chat.
-        if self.tile_manager.focused_kind() == Some(super::PaneKind::Inspector)
-            && key_event.modifiers.is_empty()
-            && matches!(
-                key_event.code,
-                KeyCode::Tab
-                    | KeyCode::Left
-                    | KeyCode::Right
-                    | KeyCode::Up
-                    | KeyCode::Down
-                    | KeyCode::PageUp
-                    | KeyCode::PageDown
-                    | KeyCode::Home
-                    | KeyCode::End
-                    | KeyCode::Char('r')
-            )
+        // Pane-local navigation wins over global transcript shortcuts.
+        if !self.tile_manager.chat_focused()
+            && matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+            && let Some(chord) = keychord_from_crossterm(key_event)
         {
-            self.tile_manager.inspector.handle_key(key_event);
-            tui.frame_requester().schedule_frame();
-            return;
+            let outcome = self.tile_manager.handle_focused_plugin_key(chord);
+            let close = self.tool_list_close.replace(false)
+                || (key_event.kind == KeyEventKind::Press && key_event.code == KeyCode::Esc);
+            if close {
+                self.tile_manager.close_focused();
+            }
+            if close || outcome == ratatui_hypertile::EventOutcome::Consumed {
+                tui.frame_requester().schedule_frame();
+                return;
+            }
         }
 
         // ── Global shortcuts ─────────────────────────────────────────
@@ -226,28 +286,9 @@ impl App {
         }
 
         // ── Focused-pane local input ────────────────────────────────
-        // When an auxiliary pane is focused, give it the key first.
-        // If the pane ignores the key we swallow it — unmodified keys
+        // Pane-local input was already dispatched above. Swallow ignored keys — they
         // must never leak into the chat composer.
-        if let Some(focused) = self.tile_manager.focused()
-            && focused != PaneId::ROOT
-        {
-            if self.tile_manager.kind(focused) == Some(super::PaneKind::Inspector) {
-                self.tile_manager.inspector.handle_key(key_event);
-            }
-            if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-                && let Some(chord) = keychord_from_crossterm(key_event)
-            {
-                let _ = self.tile_manager.handle_focused_plugin_key(chord);
-            }
-
-            let should_close = self.tool_list_close.replace(false)
-                || (key_event.kind == KeyEventKind::Press && key_event.code == KeyCode::Esc);
-
-            if should_close {
-                self.tile_manager.close_pane(focused);
-            }
-
+        if !self.tile_manager.chat_focused() {
             tui.frame_requester().schedule_frame();
             return;
         }

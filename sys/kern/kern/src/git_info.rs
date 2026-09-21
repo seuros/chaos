@@ -14,20 +14,10 @@ use tokio::process::Command;
 use tokio::time::Duration as TokioDuration;
 use tokio::time::timeout;
 
-/// Return `true` if the project folder specified by the `Config` is inside a
-/// Git repository.
-///
-/// The check walks up the directory hierarchy looking for a `.git` file or
-/// directory (note `.git` can be a file that contains a `gitdir` entry). This
-/// approach does **not** require the `git` binary or the `git2` crate and is
-/// therefore fairly lightweight.
-///
-/// Note that this does **not** detect *work-trees* created with
-/// `git worktree add` where the checkout lives outside the main repository
-/// directory. If you need Chaos to work from such a checkout simply pass the
-/// `--allow-no-git-exec` CLI flag that disables the repo requirement.
+/// Discover the repository root, including linked worktrees, without scanning
+/// the worktree or index for changes.
 pub fn get_git_repo_root(base_dir: &Path) -> Option<PathBuf> {
-    chaos_git::repo_info(base_dir).ok().map(|info| info.root)
+    chaos_git::repo_root(base_dir).ok()
 }
 
 /// Timeout for git commands to prevent freezing on large repositories.

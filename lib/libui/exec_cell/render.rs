@@ -181,9 +181,8 @@ pub fn spinner(start_time: Option<Instant>, animations_enabled: bool) -> Span<'s
         return "•".dim();
     }
     let elapsed = start_time.map(|st| st.elapsed()).unwrap_or_default();
-    if supports_color::on_cached(supports_color::Stream::Stdout)
-        .map(|level| level.has_16m)
-        .unwrap_or(false)
+    if crate::terminal_palette::stdout_color_level()
+        == crate::terminal_palette::StdoutColorLevel::TrueColor
     {
         shimmer_spans("•")[0].clone()
     } else {

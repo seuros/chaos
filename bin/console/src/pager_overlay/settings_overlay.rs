@@ -3,12 +3,12 @@ use std::io::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use libui::bottom_pane::BottomPaneView;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Margin, Rect};
+use ratatui::layout::{Alignment, Constraint, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Widget};
 
-use super::{KEY_CTRL_C, centered_rect};
+use super::KEY_CTRL_C;
 use crate::tui::{self, TuiEvent};
 
 pub(crate) struct SettingsOverlay {
@@ -101,25 +101,23 @@ pub(super) fn render_settings_panel(area: Rect, buf: &mut Buffer, title: &str) -
         return area;
     }
     Clear.render(area, buf);
-    let popup = centered_rect(
-        area,
-        area.width.saturating_sub(4).clamp(56, 88),
-        area.height.saturating_sub(4).clamp(14, 24),
+    let popup = area.centered(
+        Constraint::Length(area.width.saturating_sub(4).clamp(56, 88)),
+        Constraint::Length(area.height.saturating_sub(4).clamp(14, 24)),
     );
-    Block::default()
+    let block = Block::default()
         .title(Line::from(vec![
             "/".dim(),
             format!(" {title}").fg(crate::theme::accent_color()),
         ]))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .render(popup, buf);
-    popup.inner(Margin {
-        horizontal: 2,
-        vertical: 1,
-    })
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(popup);
+    block.render(popup, buf);
+    inner
 }
 
 #[cfg(test)]

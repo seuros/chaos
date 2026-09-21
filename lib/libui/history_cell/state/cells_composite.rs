@@ -1,7 +1,6 @@
 use crate::live_wrap::take_prefix_by_width;
 use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_kern::config::Config;
-use image::DynamicImage;
 use ratatui::prelude::*;
 use ratatui::style::Stylize;
 use unicode_segmentation::UnicodeSegmentation;
@@ -170,21 +169,6 @@ impl ApprovalDecisionActor {
         match self {
             Self::User => "You ",
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// CompletedMcpToolCallWithImageOutput
-// ---------------------------------------------------------------------------
-
-#[derive(Debug)]
-pub(crate) struct CompletedMcpToolCallWithImageOutput {
-    pub(crate) _image: DynamicImage,
-}
-
-impl HistoryCell for CompletedMcpToolCallWithImageOutput {
-    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
-        vec!["tool result (image output)".into()]
     }
 }
 

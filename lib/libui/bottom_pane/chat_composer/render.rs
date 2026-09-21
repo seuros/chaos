@@ -1,8 +1,6 @@
 use super::{ActivePopup, ChatComposer, FOOTER_SPACING_HEIGHT};
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
-use crate::render::Insets;
-use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::style::text_panel_style;
 use crate::ui_consts::FOOTER_INDENT_COLS;
@@ -16,6 +14,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
+use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::Widget;
@@ -58,12 +57,9 @@ impl ChatComposer {
         };
         let [composer_rect, popup_rect] =
             Layout::vertical([Constraint::Min(3), popup_constraint]).areas(area);
-        let mut textarea_rect = composer_rect.inset(Insets::tlbr(
-            /*top*/ 1,
-            LIVE_PREFIX_COLS,
-            /*bottom*/ 1,
-            /*right*/ 1,
-        ));
+        let mut textarea_rect = Block::default()
+            .padding(Padding::new(LIVE_PREFIX_COLS, 1, 1, 1))
+            .inner(composer_rect);
         let remote_images_height = self
             .remote_images_lines(textarea_rect.width)
             .len()

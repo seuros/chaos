@@ -23,6 +23,7 @@ pub mod exec_cell;
 pub mod exec_command;
 pub mod get_git_diff;
 pub mod history_cell;
+pub mod image_preview;
 pub mod insert_history;
 pub mod key_hint;
 pub mod line_truncation;

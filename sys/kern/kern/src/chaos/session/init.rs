@@ -673,7 +673,10 @@ impl Session {
                 ));
             }
         }
-        let mcp_tools = mcp_connection_manager.list_all_tools().await;
+        let mcp_tools = mcp_connection_manager
+            .list_all_tools()
+            .instrument(info_span!("session_init.mcp_tools"))
+            .await;
         let catalog_tools = mcp_tools
             .values()
             .map(|tool_info| {
@@ -692,6 +695,7 @@ impl Session {
                 mcp_catalog_gate,
                 catalog_tools,
             )
+            .instrument(info_span!("session_init.mcp_registry"))
             .await
             .context("failed to bootstrap MCP registry actor")?;
         let session_start_source = match &initial_history {
@@ -724,7 +728,9 @@ impl Session {
             sess.recover_background_tasks(&initial_history.get_rollout_items())
                 .await;
         }
-        sess.record_initial_history(initial_history).await;
+        sess.record_initial_history(initial_history)
+            .instrument(info_span!("session_init.initial_history"))
+            .await;
         // Restore wake dedup/delivery markers before accepting reconnect hints.
         sess.start_mcp_notification_listener(mcp_notification_rx);
         {

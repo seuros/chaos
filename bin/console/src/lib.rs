@@ -100,10 +100,13 @@ pub use libui::theme_picker;
 use libui::tool_badges;
 use libui::tui;
 
+const DEFAULT_LOG_FILTER: &str = "chaos_kern=info,chaos_console=info,libui=warn,\
+chaos_mcp_runtime=info,mcp_guest=info";
+
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_snitch=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_halluacinate=debug,\
-mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
+chaos_mcp_runtime=debug,mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
 
 fn init_optional_debug_file_layer() -> std::io::Result<(
     Option<BoxedLogLayer<tracing_subscriber::Registry>>,
@@ -289,7 +292,7 @@ pub async fn run_main(
     // grep for a specific module/target while troubleshooting.
     let (file_layer, _guard) = open_log_file_layer(
         &log_dir.join("chaos-console.log"),
-        "chaos_kern=info,chaos_console=info,codex_mcp_guest=info",
+        DEFAULT_LOG_FILTER,
         tracing_subscriber::fmt::format::FmtSpan::NEW
             | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
     )?;
@@ -325,11 +328,8 @@ pub async fn run_main(
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
 
     let log_state_db = get_runtime_db(&config);
-    let env_filter = || {
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("chaos_kern=info,chaos_console=info,codex_mcp_guest=info")
-        })
-    };
+    let env_filter =
+        || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
     let log_db_layer = log_state_db
         .as_ref()
         .map(|db| runtime_db::start_runtime_db_layer(db.clone()).with_filter(env_filter()));

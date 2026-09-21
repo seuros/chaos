@@ -1,5 +1,5 @@
 use super::{
-    AgentNavigationState, App, AppEvent, BacktrackState, ChatWidget, EventMsg, PathBuf,
+    AgentNavigationState, App, AppEvent, ChatWidget, EventMsg, ExitMode, Op, PathBuf,
     ProcessEventSnapshot, ProcessId, Result, SelectionItem, SelectionViewParams,
     format_agent_picker_item_name, standard_popup_hint_line, tui, unbounded_channel,
 };
@@ -75,6 +75,9 @@ impl App {
     pub(super) async fn open_agent_picker(&mut self) {
         let process_ids: Vec<ProcessId> = self.process_event_channels.keys().cloned().collect();
         for process_id in process_ids {
+            if self.agent_navigation.is_closed(process_id) {
+                continue;
+            }
             match self.server.get_process(process_id).await {
                 Ok(thread) => {
                     let session_source = thread.config_snapshot().await.session_source;
@@ -174,6 +177,9 @@ impl App {
         &mut self,
         process_id: ProcessId,
     ) -> Option<Arc<Process>> {
+        if self.agent_navigation.is_closed(process_id) {
+            return None;
+        }
         match self.server.get_process(process_id).await {
             Ok(thread) => Some(thread),
             Err(err) => {
@@ -190,6 +196,7 @@ impl App {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(%process_id))]
     async fn begin_process_switch(
         &mut self,
         process_id: ProcessId,
@@ -211,6 +218,7 @@ impl App {
         Some(snapshot)
     }
 
+    #[tracing::instrument(skip_all)]
     fn rebuild_chat_widget_for_process_switch(
         &mut self,
         tui: &mut tui::Tui,
@@ -234,6 +242,7 @@ impl App {
         self.sync_active_agent_label();
     }
 
+    #[tracing::instrument(skip_all, fields(%process_id))]
     async fn finalize_process_switch(
         &mut self,
         tui: &mut tui::Tui,
@@ -245,11 +254,10 @@ impl App {
         self.replay_process_snapshot(snapshot, !replay_only);
         if replay_only {
             self.chat_widget.add_info_message(
-                format!("Agent process {process_id} is closed. Replaying saved transcript."),
+                format!("Agent process {process_id} is unavailable. Replaying saved transcript."),
                 /*hint*/ None,
             );
         }
-        self.drain_active_process_events(tui).await?;
         self.refresh_pending_process_approvals().await;
         Ok(())
     }
@@ -267,8 +275,17 @@ impl App {
         if live_process.is_none() && !self.process_event_channels.contains_key(&process_id) {
             return Ok(());
         }
-        let replay_only = live_process.is_none();
+        self.attach_agent_process(tui, process_id, live_process)
+            .await
+    }
 
+    async fn attach_agent_process(
+        &mut self,
+        tui: &mut tui::Tui,
+        process_id: ProcessId,
+        live_process: Option<Arc<Process>>,
+    ) -> Result<()> {
+        let replay_only = live_process.is_none();
         let Some(snapshot) = self.begin_process_switch(process_id).await else {
             return Ok(());
         };
@@ -277,16 +294,70 @@ impl App {
             .await
     }
 
+    pub(super) async fn return_to_primary_after_agent_closed(
+        &mut self,
+        tui: &mut tui::Tui,
+        process_id: ProcessId,
+        primary_process_id: ProcessId,
+    ) -> Result<()> {
+        self.select_agent_process(tui, primary_process_id).await?;
+        if self.active_process_id == Some(primary_process_id) {
+            self.chat_widget.add_info_message(
+                format!(
+                    "Agent process {process_id} disconnected. Switched back to the main process."
+                ),
+                None,
+            );
+        } else {
+            self.clear_active_thread().await;
+            self.chat_widget.add_error_message(format!(
+                "Agent process {process_id} disconnected. Failed to switch back to the main process {primary_process_id}.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) async fn handle_process_stream_closed(
+        &mut self,
+        tui: &mut tui::Tui,
+        process_id: ProcessId,
+    ) -> Result<()> {
+        let Some(channel) = self.process_event_channels.get(&process_id) else {
+            return Ok(());
+        };
+        if self.agent_navigation.is_closed(process_id) {
+            return Ok(());
+        }
+        channel.store.lock().await.note_outbound_op(&Op::Shutdown);
+        self.abort_process_event_listener(process_id);
+        self.agent_navigation.mark_closed(process_id);
+        self.activity.disconnected(process_id);
+        self.sync_active_agent_label();
+        if self.active_process_id == Some(process_id) {
+            if self.pending_shutdown_exit_process_id == Some(process_id) {
+                self.pending_shutdown_exit_process_id = None;
+                self.app_event_tx.send(AppEvent::Exit(ExitMode::Immediate));
+            } else if let Some((_, primary_process_id)) =
+                self.active_non_primary_shutdown_target(&EventMsg::ShutdownComplete)
+            {
+                self.return_to_primary_after_agent_closed(tui, process_id, primary_process_id)
+                    .await?;
+            } else {
+                self.attach_agent_process(tui, process_id, None).await?;
+            }
+        }
+        self.refresh_pending_process_approvals().await;
+        tui.frame_requester().schedule_frame();
+        Ok(())
+    }
+
     pub(super) fn reset_for_process_switch(&mut self, tui: &mut tui::Tui) -> Result<()> {
-        self.close_overlay(tui);
-        self.transcript_cells.clear();
-        self.reset_transcript_reflow();
-        self.deferred_history_lines.clear();
-        self.has_emitted_history_lines = false;
-        self.backtrack = BacktrackState::default();
-        self.backtrack_render_pending = false;
-        tui.terminal.clear_scrollback()?;
-        tui.terminal.clear()?;
+        self.reset_app_ui_state_after_clear(tui);
+        tui.clear_pending_history_lines();
+        tui.terminal.clear_scrollback_and_visible_screen_ansi()?;
+        let mut area = tui.terminal.viewport_area;
+        area.y = tui.top_reserved_rows();
+        tui.terminal.set_viewport_area(area);
         Ok(())
     }
 }

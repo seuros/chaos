@@ -16,7 +16,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn add_boxed_history(&mut self, cell: Box<dyn HistoryCell>) {
-        if !cell.display_lines(u16::MAX).is_empty() {
+        if cell.has_display_content() {
             // Only break exec grouping if the cell renders visible lines.
             self.flush_active_cell();
             self.needs_final_message_separator = true;

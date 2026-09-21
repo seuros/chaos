@@ -243,8 +243,7 @@ impl Tui {
         // crossterm poller can acquire its lock without contention.
         let enhanced_keys_supported = supports_keyboard_enhancement().unwrap_or(false);
         // Cache this to avoid contention with the event reader.
-        supports_color::on_cached(supports_color::Stream::Stdout);
-        let _ = crate::terminal_palette::default_colors();
+        crate::terminal_palette::stdout_color_level();
 
         Self {
             frame_requester,

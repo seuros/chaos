@@ -108,7 +108,7 @@ enum RolloutCmd {
         ack: oneshot::Sender<std::io::Result<()>>,
     },
     Shutdown {
-        ack: oneshot::Sender<()>,
+        ack: oneshot::Sender<std::io::Result<()>>,
     },
 }
 
@@ -426,17 +426,20 @@ impl RolloutRecorder {
         }
         if config.unattended_recovery()
             && let JournalSinkState::Active(writer) = &journal_sink.state
-            && writer
-                .client
-                .get_process(session_id_for_default)
-                .await
-                .map_err(IoError::other)?
-                .is_none_or(|process| process.archived_at.is_some())
         {
-            journal_sink.shutdown().await;
-            return Err(IoError::other(
-                "archived or missing process is not eligible for unattended recovery",
-            ));
+            let eligibility = match writer.client.get_process(session_id_for_default).await {
+                Ok(Some(process)) if process.archived_at.is_none() => Ok(()),
+                Ok(_) => Err(IoError::other(
+                    "archived or missing process is not eligible for unattended recovery",
+                )),
+                Err(error) => Err(IoError::other(error)),
+            };
+            if let Err(error) = eligibility {
+                if let Err(cleanup_error) = journal_sink.shutdown().await {
+                    warn!(%cleanup_error, "failed to release rejected recovery writer");
+                }
+                return Err(error);
+            }
         }
 
         // Clone the cwd for the spawned task to collect git info asynchronously
@@ -696,28 +699,19 @@ impl RolloutRecorder {
             })
     }
 
+    /// Wait for queued writes and the lease release attempt before returning.
+    /// A caller may bound its overall shutdown, but must not mistake a still
+    /// draining writer for a completed shutdown and tear down its runtime.
     pub async fn shutdown(&self) -> std::io::Result<()> {
         let (tx_done, rx_done) = oneshot::channel();
-        match self.tx.send(RolloutCmd::Shutdown { ack: tx_done }) {
-            Ok(_) => match tokio::time::timeout(Duration::from_millis(250), rx_done).await {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => {
-                    return Err(IoError::other(format!(
-                        "failed waiting for rollout shutdown: {err}"
-                    )));
-                }
-                Err(_) => {
-                    warn!("rollout shutdown is still draining in the background");
-                }
-            },
-            Err(e) => {
-                warn!("failed to send rollout shutdown command: {e}");
-                return Err(IoError::other(format!(
-                    "failed to send rollout shutdown command: {e}"
-                )));
-            }
-        };
-        Ok(())
+        self.tx
+            .send(RolloutCmd::Shutdown { ack: tx_done })
+            .map_err(|error| {
+                IoError::other(format!("failed to send rollout shutdown command: {error}"))
+            })?;
+        rx_done.await.map_err(|error| {
+            IoError::other(format!("failed waiting for rollout shutdown: {error}"))
+        })?
     }
 }
 
@@ -936,24 +930,28 @@ impl JournalSink {
         }
     }
 
-    async fn shutdown(&mut self) {
+    async fn shutdown(&mut self) -> std::io::Result<()> {
         let state = std::mem::replace(&mut self.state, JournalSinkState::Disabled);
         if let JournalSinkState::Active(mut writer) = state {
-            match self.breaker.call(|| writer.flush_pending_items()).await {
-                Ok(()) => {}
-                Err(BreakerError::Open) => return,
-                Err(BreakerError::Operation(err)) => {
+            match tokio::time::timeout(JOURNAL_REQUEST_TIMEOUT, writer.flush_pending_items()).await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => {
                     warn!("failed to flush pending journal items during shutdown: {err}");
-                    return;
+                }
+                Err(_) => {
+                    warn!("timed out flushing pending journal items during shutdown");
                 }
             }
-            match self.breaker.call(|| writer.release_lease()).await {
-                Ok(()) | Err(BreakerError::Open) => {}
-                Err(BreakerError::Operation(err)) => {
-                    warn!("failed to release journal lease: {err}");
-                }
+            // Cleanup must not be gated by the write circuit breaker or a failed
+            // flush. Use the writer's original client, regardless of the currently
+            // mounted database, and await release before acknowledging shutdown.
+            if let Err(error) = writer.release_lease().await {
+                warn!(%error, "failed to release journal lease during shutdown");
+                return Err(IoError::other(error));
             }
         }
+        Ok(())
     }
 }
 
@@ -1043,7 +1041,12 @@ impl ActiveJournalWriter {
         debug_assert!(matches!(config.mode, JournalSinkMode::Resume));
         let client = journal_client_for_mounted_backend().await?;
         let mut writer = Self::connect_existing(client, &config).await?;
-        writer.append_items(items).await?;
+        if let Err(error) = writer.append_items(items).await {
+            if let Err(cleanup_error) = writer.release_lease().await {
+                warn!(%cleanup_error, "failed to release partially attached journal writer");
+            }
+            return Err(error);
+        }
         Ok(writer)
     }
 
@@ -1081,23 +1084,30 @@ impl ActiveJournalWriter {
             )
             .await
             .map_err(|err| format!("acquire_lease failed: {err}"))?;
-        let loaded = client
-            .load_journal(config.process_id)
-            .await
-            .map_err(|err| format!("load_journal failed: {err}"))?;
-
-        Ok(Self {
+        let mut writer = Self {
             client,
             process_id: config.process_id,
             owner_id: config.owner_id.clone(),
             lease_token: lease.lease_token,
-            next_seq: loaded.next_seq,
+            next_seq: 0,
             last_lease_refresh: Instant::now(),
             pending_items: Vec::new(),
             fenced: false,
             lease_confirmed: true,
             needs_reacquire: false,
-        })
+        };
+        match writer.client.load_journal(config.process_id).await {
+            Ok(loaded) => {
+                writer.next_seq = loaded.next_seq;
+                Ok(writer)
+            }
+            Err(error) => {
+                if let Err(cleanup_error) = writer.release_lease().await {
+                    warn!(%cleanup_error, "failed to release partially connected journal writer");
+                }
+                Err(format!("load_journal failed: {error}"))
+            }
+        }
     }
 
     async fn append_items(&mut self, items: &[RolloutItem]) -> Result<(), String> {
@@ -1323,10 +1333,29 @@ impl ActiveJournalWriter {
     }
 
     async fn release_lease(self) -> Result<(), String> {
-        self.client
-            .release_lease(self.process_id, self.owner_id, self.lease_token)
-            .await
-            .map_err(|err| format!("release_lease failed: {err}"))
+        match tokio::time::timeout(
+            JOURNAL_REQUEST_TIMEOUT,
+            self.client
+                .release_lease(self.process_id, self.owner_id, self.lease_token),
+        )
+        .await
+        {
+            Ok(Ok(())) => Ok(()),
+            // There is no longer a live lease owned by this token. In particular,
+            // never clear another writer's lease after a takeover.
+            Ok(Err(JournalClientError::Remote(payload)))
+                if matches!(
+                    payload.code,
+                    JournalErrorCode::InvalidLease
+                        | JournalErrorCode::LeaseExpired
+                        | JournalErrorCode::NotFound
+                ) =>
+            {
+                Ok(())
+            }
+            Ok(Err(error)) => Err(format!("release_lease failed: {error}")),
+            Err(_) => Err("release_lease timed out".into()),
+        }
     }
 }
 
@@ -1687,15 +1716,14 @@ async fn rollout_writer(
                 let _ = ack.send(result);
             }
             RolloutCmd::Shutdown { ack } => {
-                journal_sink.shutdown().await;
-                let _ = ack.send(());
+                let result = journal_sink.shutdown().await;
+                let _ = ack.send(result);
                 return Ok(());
             }
         }
     }
 
-    journal_sink.shutdown().await;
-    Ok(())
+    journal_sink.shutdown().await
 }
 
 /// Assemble the SessionMeta rollout line (with git enrichment) and seed the runtime-db

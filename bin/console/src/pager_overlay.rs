@@ -179,16 +179,6 @@ pub(crate) const PAGER_KEY_HINTS: &[(&[KeyBinding], &str)] = &[
     (&[KEY_HOME, KEY_END], "to jump"),
 ];
 
-pub(crate) fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width).max(1);
-    let height = height.min(area.height).max(1);
-    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
-    let y = area
-        .y
-        .saturating_add(area.height.saturating_sub(height) / 2);
-    Rect::new(x, y, width, height)
-}
-
 // Render a single line of key hints from (key(s), description) pairs.
 pub(crate) fn render_key_hints(area: Rect, buf: &mut Buffer, pairs: &[(&[KeyBinding], &str)]) {
     let mut spans: Vec<Span<'static>> = vec![" ".into()];

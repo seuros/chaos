@@ -1,5 +1,4 @@
 //! Reflex settings form.
-use std::cell::RefCell;
 use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
@@ -10,11 +9,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
-use ratatui::widgets::{Clear, Paragraph, StatefulWidgetRef, Widget};
+use ratatui::widgets::{Clear, Paragraph, Widget};
 
 use super::CancellationEvent;
 use super::bottom_pane_view::BottomPaneView;
-use super::textarea::{TextArea, TextAreaState};
+use super::form_layout::FormLayout;
+use super::single_line_input::SingleLineInput;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::render::renderable::Renderable;
@@ -42,8 +42,7 @@ pub struct ReflexSetupForm {
     process_id: Option<ProcessId>,
     settings: ReflexBackendSettings,
     tx: AppEventSender,
-    fields: [TextArea; LABELS.len()],
-    states: [RefCell<TextAreaState>; LABELS.len()],
+    fields: [SingleLineInput; LABELS.len()],
     focused: usize,
     complete: bool,
     error: Option<String>,
@@ -70,11 +69,7 @@ impl ReflexSetupForm {
             settings.auth_provider.clone().unwrap_or_default(),
             String::new(),
         ];
-        let fields = values.map(|value| {
-            let mut field = TextArea::new();
-            field.insert_str(&value);
-            field
-        });
+        let fields = values.map(SingleLineInput::from);
         Self {
             config,
             auth,
@@ -82,7 +77,6 @@ impl ReflexSetupForm {
             settings,
             tx,
             fields,
-            states: std::array::from_fn(|_| RefCell::default()),
             focused: 0,
             complete: false,
             error: None,
@@ -141,7 +135,7 @@ impl ReflexSetupForm {
                 result,
             });
         });
-        self.fields[KEY] = TextArea::new(); // Also discard the field's private kill buffer.
+        self.fields[KEY] = SingleLineInput::default();
         self.complete = true;
     }
 }
@@ -174,17 +168,16 @@ impl BottomPaneView for ReflexSetupForm {
     }
 
     fn handle_paste(&mut self, pasted: String) -> bool {
-        if pasted.trim().chars().any(char::is_control) {
-            self.error = Some("Paste a single-line value".into());
-        } else {
-            self.fields[self.focused].insert_str(pasted.trim());
+        if self.fields[self.focused].insert_str(pasted.trim()) {
             self.error = None;
+        } else {
+            self.error = Some("Paste a single-line value".into());
         }
         true
     }
 
     fn on_ctrl_c(&mut self) -> CancellationEvent {
-        self.fields[KEY] = TextArea::new();
+        self.fields[KEY] = SingleLineInput::default();
         self.complete = true;
         CancellationEvent::Handled
     }
@@ -204,44 +197,38 @@ impl Renderable for ReflexSetupForm {
             return;
         }
         Clear.render(area, buf);
-        let row = |offset| Rect::new(area.x, area.y + offset, area.width, 1);
+        let layout = FormLayout::new(area, LABELS.len(), self.focused, 3);
         Paragraph::new("Reflex setup · database settings / OS keyring keys".bold())
-            .render(row(0), buf);
-        let count = usize::from(area.height.saturating_sub(4) / 2).min(LABELS.len());
-        let first = (self.focused + 1).saturating_sub(count);
-        for (offset, index) in (first..LABELS.len()).take(count).enumerate() {
-            let y = 1 + offset as u16 * 2;
+            .render(layout.title, buf);
+        for (index, label_area, input_area) in layout.fields {
             let label = if index == self.focused {
                 format!("> {}", LABELS[index]).cyan()
             } else {
                 LABELS[index].to_string().dim()
             };
-            Paragraph::new(label).render(row(y), buf);
+            Paragraph::new(label).render(label_area, buf);
             if index == KEY {
                 let mask = if self.fields[KEY].text().is_empty() {
                     ""
                 } else {
                     "••••••••"
                 };
-                Paragraph::new(mask).render(row(y + 1), buf);
+                Paragraph::new(mask).render(input_area, buf);
             } else {
-                (&self.fields[index]).render_ref(
-                    row(y + 1),
-                    buf,
-                    &mut self.states[index].borrow_mut(),
-                );
+                (&self.fields[index]).render(input_area, buf);
             }
         }
         if area.height >= 3 {
-            Paragraph::new("Tab/Shift-Tab move · Enter advances/saves · Esc back".dim())
-                .render(row(area.height - 3), buf);
-            Paragraph::new(
-                "New keys stay local; never sent to chat. Blank key preserves existing auth.".dim(),
-            )
-            .render(row(area.height - 2), buf);
-            if let Some(error) = &self.error {
-                Paragraph::new(error.as_str().red()).render(row(area.height - 1), buf);
-            }
+            Paragraph::new(vec![
+                "Tab/Shift-Tab move · Enter advances/saves · Esc back"
+                    .dim()
+                    .into(),
+                "New keys stay local; never sent to chat. Blank key preserves existing auth."
+                    .dim()
+                    .into(),
+                self.error.as_deref().unwrap_or_default().red().into(),
+            ])
+            .render(layout.footer, buf);
         }
     }
 }

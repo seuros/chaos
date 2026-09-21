@@ -4,6 +4,22 @@ use super::Process;
 use chaos_mcp_runtime::{PaginatedRequestParams, ReadResourceRequestParams};
 
 impl Process {
+    /// The installed MCP generation and its enabled servers, not the startup config.
+    /// Attached clients can invalidate cached resources after a mount or reset,
+    /// including resets that keep the same server names.
+    pub fn mcp_resource_servers(&self) -> (u64, Vec<String>) {
+        let registry = &self.chaos.session.services.mcp_registry;
+        let revision = registry.revision();
+        let mut servers: Vec<_> = registry
+            .configs_snapshot()
+            .iter()
+            .filter(|(_, config)| config.enabled)
+            .map(|(name, _)| name.clone())
+            .collect();
+        servers.sort();
+        (revision, servers)
+    }
+
     /// Uses the process's existing MCP connections and sandbox, without creating a turn
     /// or recording resource contents in model history.
     pub async fn list_mcp_resources(

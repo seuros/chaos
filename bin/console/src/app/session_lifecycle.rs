@@ -40,7 +40,7 @@ impl App {
         crate::chatwidget::ChatWidgetInit {
             config: cfg,
             frame_requester: tui.frame_requester(),
-            app_event_tx: self.app_event_tx.clone(),
+            app_event_tx: self.app_event_tx.for_new_view(),
             // Fork/resume bootstraps here don't carry any prefilled message content.
             initial_user_message: None,
             enhanced_keys_supported: self.enhanced_keys_supported,
@@ -62,6 +62,20 @@ impl App {
             self.chat_widget.submit_op(Op::Shutdown);
             self.server.remove_process(&process_id).await;
             self.abort_process_event_listener(process_id);
+        }
+    }
+
+    async fn shutdown_all_processes(&self) {
+        let report = self
+            .server
+            .shutdown_all_processes_bounded(Duration::from_secs(10))
+            .await;
+        if !report.submit_failed.is_empty() || !report.timed_out.is_empty() {
+            tracing::warn!(
+                submit_failed = report.submit_failed.len(),
+                timed_out = report.timed_out.len(),
+                "failed to close all processes; unreleased journal leases must expire"
+            );
         }
     }
 
@@ -110,21 +124,11 @@ impl App {
             self.chat_widget.process_name(),
         );
         self.shutdown_current_process().await;
-        let report = self
-            .server
-            .shutdown_all_processes_bounded(Duration::from_secs(10))
-            .await;
-        if !report.submit_failed.is_empty() || !report.timed_out.is_empty() {
-            tracing::warn!(
-                submit_failed = report.submit_failed.len(),
-                timed_out = report.timed_out.len(),
-                "failed to close all processes"
-            );
-        }
+        self.shutdown_all_processes().await;
         let init = crate::chatwidget::ChatWidgetInit {
             config,
             frame_requester: tui.frame_requester(),
-            app_event_tx: self.app_event_tx.clone(),
+            app_event_tx: self.app_event_tx.for_new_view(),
             // New sessions start without prefilled message content.
             initial_user_message: None,
             enhanced_keys_supported: self.enhanced_keys_supported,
@@ -176,11 +180,11 @@ impl App {
         snapshot: ProcessEventSnapshot,
         resume_restored_queue: bool,
     ) {
+        self.chat_widget
+            .set_queue_autosend_suppressed(/*suppressed*/ true);
         if let Some(event) = snapshot.session_configured {
             self.handle_codex_event_replay(event);
         }
-        self.chat_widget
-            .set_queue_autosend_suppressed(/*suppressed*/ true);
         self.chat_widget
             .restore_process_input_state(snapshot.input_state);
         for event in snapshot.events {
@@ -267,26 +271,31 @@ impl App {
         let enhanced_keys_supported = tui.enhanced_keys_supported();
         let wait_for_initial_session_configured =
             Self::should_wait_for_initial_session(&session_selection);
+        // Create the view only when its branch is ready, after any resume/fork succeeds.
+        let make_chatwidget_init = || crate::chatwidget::ChatWidgetInit {
+            config: config.clone(),
+            frame_requester: tui.frame_requester(),
+            app_event_tx: app_event_tx.for_new_view(),
+            initial_user_message: crate::chatwidget::create_initial_user_message(
+                initial_prompt,
+                initial_images,
+                // CLI prompt args are plain strings, so they don't provide element ranges.
+                Vec::new(),
+            ),
+            enhanced_keys_supported,
+            auth_manager: auth_manager.clone(),
+            models_manager: process_table.get_models_manager(),
+            is_first_run,
+            model: None,
+            session_telemetry: session_telemetry.clone(),
+            halluacinate: None,
+            resumed_session: None,
+        };
         let chat_widget = match session_selection {
             SessionSelection::StartFresh | SessionSelection::Exit => {
                 let init = crate::chatwidget::ChatWidgetInit {
-                    config: config.clone(),
-                    frame_requester: tui.frame_requester(),
-                    app_event_tx: app_event_tx.clone(),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
-                        initial_prompt.clone(),
-                        initial_images.clone(),
-                        // CLI prompt args are plain strings, so they don't provide element ranges.
-                        Vec::new(),
-                    ),
-                    enhanced_keys_supported,
-                    auth_manager: auth_manager.clone(),
-                    models_manager: process_table.get_models_manager(),
-                    is_first_run,
                     model: Some(model.clone()),
-                    session_telemetry: session_telemetry.clone(),
-                    halluacinate: None,
-                    resumed_session: None,
+                    ..make_chatwidget_init()
                 };
                 ChatWidget::new(init, process_table.clone())
             }
@@ -303,23 +312,10 @@ impl App {
                     .wrap_err_with(|| format!("Failed to resume session {target_process_id}"))?;
                 let (_, process, session_configured) = resumed.into_parts();
                 let init = crate::chatwidget::ChatWidgetInit {
-                    config: config.clone(),
-                    frame_requester: tui.frame_requester(),
-                    app_event_tx: app_event_tx.clone(),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
-                        initial_prompt.clone(),
-                        initial_images.clone(),
-                        // CLI prompt args are plain strings, so they don't provide element ranges.
-                        Vec::new(),
-                    ),
-                    enhanced_keys_supported,
-                    auth_manager: auth_manager.clone(),
-                    models_manager: process_table.get_models_manager(),
-                    is_first_run,
                     model: config.model.clone(),
-                    session_telemetry: session_telemetry.clone(),
                     halluacinate: process.halluacinate_handle(),
                     resumed_session: Some(target_process_id),
+                    ..make_chatwidget_init()
                 };
                 ChatWidget::new_from_existing(init, process, session_configured)
             }
@@ -343,23 +339,9 @@ impl App {
                     })?;
                 let (_, process, session_configured) = forked.into_parts();
                 let init = crate::chatwidget::ChatWidgetInit {
-                    config: config.clone(),
-                    frame_requester: tui.frame_requester(),
-                    app_event_tx: app_event_tx.clone(),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
-                        initial_prompt.clone(),
-                        initial_images.clone(),
-                        // CLI prompt args are plain strings, so they don't provide element ranges.
-                        Vec::new(),
-                    ),
-                    enhanced_keys_supported,
-                    auth_manager: auth_manager.clone(),
-                    models_manager: process_table.get_models_manager(),
-                    is_first_run,
                     model: config.model.clone(),
-                    session_telemetry: session_telemetry.clone(),
                     halluacinate: process.halluacinate_handle(),
-                    resumed_session: None,
+                    ..make_chatwidget_init()
                 };
                 ChatWidget::new_from_existing(init, process, session_configured)
             }
@@ -513,6 +495,11 @@ impl App {
                 }
             }
         };
+        // Exiting the active tab is not enough: background agents and error
+        // exits also own journal leases. Keep the runtime alive until their
+        // session loops have had a bounded chance to release those leases.
+        app.shutdown_all_processes().await;
+        app.abort_all_process_event_listeners();
         let clear_result = tui.terminal.clear();
         let exit_reason = match exit_reason_result {
             Ok(exit_reason) => {
@@ -601,7 +588,7 @@ impl App {
 /// torn down with the runtime.
 ///
 /// The listener is best-effort: a second signal escalates to `ExitMode::Immediate`
-/// so an unresponsive shutdown can still be force-quit by the user.
+/// to leave the event loop. The final all-process cleanup is still bounded.
 fn spawn_graceful_signal_listener(app_event_tx: AppEventSender) {
     #[cfg(unix)]
     {

@@ -36,6 +36,7 @@ use mcp_guest::protocol::PaginatedRequestParams;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use uuid::Uuid;
 
 pub(super) const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str =
@@ -653,7 +654,8 @@ pub(super) async fn make_managed_client(
                 builder.connect().await.map_err(|e| anyhow!("{e}"))
             }
         }
-    };
+    }
+    .instrument(tracing::info_span!("mcp_startup.connect", server = %server_name));
 
     // Wrap with startup timeout
     let session = if let Some(timeout) = startup_timeout {
@@ -675,6 +677,7 @@ pub(super) async fn make_managed_client(
     // List tools
     let fetch_start = Instant::now();
     let tools = list_tools_for_session_uncached(&server_name, &session, startup_timeout)
+        .instrument(tracing::info_span!("mcp_startup.tools", server = %server_name))
         .await
         .map_err(StartupOutcomeError::from)?;
     emit_duration(

@@ -15,6 +15,12 @@ pub trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
     /// Returns the logical lines for the main chat viewport.
     fn display_lines(&self, width: u16) -> Vec<Line<'static>>;
 
+    /// Whether this cell contributes visible history. Override to avoid rendering
+    /// merely to decide whether it should break an active tool group.
+    fn has_display_content(&self) -> bool {
+        !self.display_lines(u16::MAX).is_empty()
+    }
+
     /// Returns the number of viewport rows needed to render this cell.
     fn desired_height(&self, width: u16) -> u16 {
         Paragraph::new(Text::from(self.display_lines(width)))

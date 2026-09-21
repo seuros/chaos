@@ -3,7 +3,6 @@ use super::super::*;
 
 impl ChatWidget {
     pub(crate) fn on_all_tools_response(&mut self, ev: chaos_ipc::protocol::AllToolsResponseEvent) {
-        // Forward to the app layer where the TileManager can open/populate the tools pane.
         self.app_event_tx.send(AppEvent::AllToolsReceived(ev));
     }
 

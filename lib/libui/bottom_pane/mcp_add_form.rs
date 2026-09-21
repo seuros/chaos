@@ -22,7 +22,6 @@
 //! }
 //! ```
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -30,8 +29,8 @@ use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::bottom_pane_view::BottomPaneView;
-use crate::bottom_pane::textarea::TextArea;
-use crate::bottom_pane::textarea::TextAreaState;
+use crate::bottom_pane::form_layout::FormLayout;
+use crate::bottom_pane::single_line_input::SingleLineInput;
 use crate::render::renderable::Renderable;
 use chaos_ipc::ProcessId;
 use chaos_kern::McpAddServerParams;
@@ -40,15 +39,15 @@ use chaos_kern::config_loader::ConfigLayerStack;
 use chaos_kern::project_mcp_json_path_for_cwd;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::Widget;
 
 /// Number of form fields.
@@ -76,10 +75,7 @@ pub struct McpAddForm {
     process_id: Option<ProcessId>,
     app_event_tx: AppEventSender,
 
-    /// One text area per field.
-    fields: [TextArea; FIELD_COUNT],
-    /// Render state (scroll offset) for each field.
-    field_states: [RefCell<TextAreaState>; FIELD_COUNT],
+    fields: [SingleLineInput; FIELD_COUNT],
     /// Index of the currently focused field.
     focused: usize,
     /// Set when the form has been dismissed (submitted or cancelled).
@@ -100,8 +96,7 @@ impl McpAddForm {
             config_layer_stack,
             process_id,
             app_event_tx,
-            fields: std::array::from_fn(|_| TextArea::new()),
-            field_states: std::array::from_fn(|_| RefCell::new(TextAreaState::default())),
+            fields: std::array::from_fn(|_| SingleLineInput::default()),
             focused: FIELD_NAME,
             complete: false,
             error: None,
@@ -229,6 +224,9 @@ impl McpAddForm {
 
 impl BottomPaneView for McpAddForm {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if key_event.kind == KeyEventKind::Release {
+            return;
+        }
         match key_event {
             // Esc cancels.
             KeyEvent {
@@ -263,7 +261,6 @@ impl BottomPaneView for McpAddForm {
                 self.advance_field();
             }
 
-            // Everything else goes to the active textarea.
             other => {
                 self.fields[self.focused].input(other);
                 // Clear any previous validation error while the user is typing.
@@ -289,7 +286,11 @@ impl BottomPaneView for McpAddForm {
         if pasted.is_empty() {
             return false;
         }
-        self.fields[self.focused].insert_str(&pasted);
+        if self.fields[self.focused].insert_str(&pasted) {
+            self.error = None;
+        } else {
+            self.error = Some("Paste a single-line value".into());
+        }
         true
     }
 }
@@ -309,182 +310,72 @@ impl Renderable for McpAddForm {
             return;
         }
 
-        let mut y = area.y;
-
-        // ── title ─────────────────────────────────────────────────────────────
-        if y < area.y + area.height {
-            let title_spans: Vec<Span<'static>> = vec![gutter(), "Add MCP server".bold()];
-            Paragraph::new(Line::from(title_spans)).render(
-                Rect {
-                    x: area.x,
-                    y,
-                    width: area.width,
-                    height: 1,
-                },
-                buf,
-            );
-            y = y.saturating_add(1);
-        }
-
-        // ── fields ────────────────────────────────────────────────────────────
-        for idx in 0..FIELD_COUNT {
-            if y >= area.y + area.height {
-                break;
-            }
-
+        Clear.render(area, buf);
+        let layout = self.layout(area);
+        Paragraph::new(Line::from(vec![gutter(), "Add MCP server".bold()]))
+            .render(layout.title, buf);
+        for (idx, label_area, input_area) in layout.fields {
             let is_focused = idx == self.focused;
             let label = FIELD_LABELS[idx];
             let required = idx == FIELD_NAME || idx == FIELD_COMMAND;
             let required_marker = if required { " *" } else { "" };
-
-            // Label row
-            {
-                let label_text = format!("  {label}{required_marker}");
-                let label_span: Span<'static> = if is_focused {
-                    label_text.fg(crate::theme::accent_color()).bold()
-                } else {
-                    label_text.dim()
-                };
-                Paragraph::new(Line::from(vec![label_span])).render(
-                    Rect {
-                        x: area.x,
-                        y,
-                        width: area.width,
-                        height: 1,
-                    },
-                    buf,
-                );
-                y = y.saturating_add(1);
+            let label_text = format!("  {label}{required_marker}");
+            let label_span = if is_focused {
+                label_text.fg(crate::theme::accent_color()).bold()
+            } else {
+                label_text.dim()
+            };
+            Paragraph::new(Line::from(label_span)).render(label_area, buf);
+            let [gutter_area, input_area] =
+                Layout::horizontal([Constraint::Length(2), Constraint::Fill(1)]).areas(input_area);
+            if is_focused {
+                Paragraph::new(Line::from(gutter())).render(gutter_area, buf);
             }
-
-            if y >= area.y + area.height {
-                break;
-            }
-
-            // Input row
-            {
-                // Clear the line first so focus highlight is clean.
-                Clear.render(
-                    Rect {
-                        x: area.x,
-                        y,
-                        width: area.width,
-                        height: 1,
-                    },
-                    buf,
-                );
-
-                // Gutter accent
-                let gutter_width: u16 = 2;
-                Paragraph::new(Line::from(vec![if is_focused {
-                    gutter()
-                } else {
-                    "  ".into()
-                }]))
-                .render(
-                    Rect {
-                        x: area.x,
-                        y,
-                        width: gutter_width,
-                        height: 1,
-                    },
-                    buf,
-                );
-
-                if area.width > gutter_width {
-                    let input_rect = Rect {
-                        x: area.x + gutter_width,
-                        y,
-                        width: area.width.saturating_sub(gutter_width),
-                        height: 1,
-                    };
-                    let mut state = self.field_states[idx].borrow_mut();
-                    StatefulWidgetRef::render_ref(
-                        &(&self.fields[idx]),
-                        input_rect,
-                        buf,
-                        &mut state,
-                    );
-                    // Show placeholder when empty
-                    if self.fields[idx].text().is_empty() {
-                        Paragraph::new(Line::from(FIELD_PLACEHOLDERS[idx].to_string().dim()))
-                            .render(input_rect, buf);
-                    }
-                }
-
-                y = y.saturating_add(1);
+            (&self.fields[idx]).render(input_area, buf);
+            if self.fields[idx].text().is_empty() {
+                Paragraph::new(FIELD_PLACEHOLDERS[idx].dim()).render(input_area, buf);
             }
         }
-
-        // ── error row ─────────────────────────────────────────────────────────
-        if let Some(err) = &self.error
-            && y < area.y + area.height
-        {
-            let err_text: Span<'static> = format!("  {err}").fg(crate::theme::error_color());
-            Paragraph::new(Line::from(vec![err_text])).render(
-                Rect {
-                    x: area.x,
-                    y,
-                    width: area.width,
-                    height: 1,
-                },
-                buf,
-            );
-            y = y.saturating_add(1);
+        let mut footer = Vec::new();
+        if let Some(error) = &self.error {
+            footer.push(Line::from(
+                format!("  {error}").fg(crate::theme::error_color()),
+            ));
         }
-
-        // blank line before hint
-        y = y.saturating_add(1);
-
-        // ── hint ──────────────────────────────────────────────────────────────
-        if y < area.y + area.height {
-            let hint = Line::from(vec![
-                "Tab".fg(crate::theme::accent_color()),
-                "/".into(),
-                "Shift+Tab".fg(crate::theme::accent_color()),
-                " navigate  ".into(),
-                "Enter".fg(crate::theme::accent_color()),
-                " next/submit  ".into(),
-                "Esc".fg(crate::theme::accent_color()),
-                " cancel".into(),
-            ]);
-            Paragraph::new(hint).render(
-                Rect {
-                    x: area.x,
-                    y,
-                    width: area.width,
-                    height: 1,
-                },
-                buf,
-            );
-        }
+        footer.push(Line::default());
+        footer.push(Line::from(vec![
+            "Tab".fg(crate::theme::accent_color()),
+            "/".into(),
+            "Shift+Tab".fg(crate::theme::accent_color()),
+            " navigate  ".into(),
+            "Enter".fg(crate::theme::accent_color()),
+            " next/submit  ".into(),
+            "Esc".fg(crate::theme::accent_color()),
+            " cancel".into(),
+        ]));
+        Paragraph::new(footer).render(layout.footer, buf);
     }
 
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
-        if area.height == 0 || area.width < 2 {
-            return None;
-        }
+        let (_, _, row) = self
+            .layout(area)
+            .fields
+            .into_iter()
+            .find(|(index, _, _)| *index == self.focused)?;
+        let [_, input] =
+            Layout::horizontal([Constraint::Length(2), Constraint::Fill(1)]).areas(row);
+        self.fields[self.focused].cursor_pos(input)
+    }
+}
 
-        // title row + (label + input) * focused_field + label row = title(1) + focused*2 + 1
-        let input_y = area
-            .y
-            .saturating_add(1)
-            .saturating_add((self.focused as u16) * 2)
-            .saturating_add(1);
-
-        if input_y >= area.y + area.height {
-            return None;
-        }
-
-        let input_rect = Rect {
-            x: area.x.saturating_add(2),
-            y: input_y,
-            width: area.width.saturating_sub(2),
-            height: 1,
-        };
-
-        let state = *self.field_states[self.focused].borrow();
-        self.fields[self.focused].cursor_pos_with_state(input_rect, state)
+impl McpAddForm {
+    fn layout(&self, area: Rect) -> FormLayout {
+        FormLayout::new(
+            area,
+            FIELD_COUNT,
+            self.focused,
+            2 + u16::from(self.error.is_some()),
+        )
     }
 }
 

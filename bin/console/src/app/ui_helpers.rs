@@ -65,6 +65,8 @@ impl App {
     /// Open an overlay: enter alt-screen (or stay inline), then conditionally enable mouse
     /// capture so pager overlays can receive wheel events without breaking normal scrollback.
     pub(crate) fn open_overlay(&mut self, tui: &mut tui::Tui, overlay: Overlay) {
+        self.tile_manager.cancel_layout_drag();
+        self.tile_manager.runtime.close_palette();
         let wants_mouse = overlay.wants_mouse_capture();
         let _ = tui.enter_alt_screen();
         self.overlay = Some(overlay);
@@ -171,21 +173,24 @@ impl App {
         }
     }
 
+    pub(super) fn open_tool_list(&mut self) {
+        let existing = self.tile_manager.find_pane(PaneKind::ToolList).is_some();
+        self.tool_list_close.set(false);
+        self.tile_manager
+            .open_or_focus(PaneKind::ToolList, ratatui::layout::Direction::Horizontal);
+        if !existing {
+            self.chat_widget.submit_op(super::Op::ListAllTools);
+        }
+    }
+
     pub(super) fn on_all_tools_received(
         &mut self,
         tui: &mut tui::Tui,
         ev: chaos_ipc::protocol::AllToolsResponseEvent,
     ) {
-        use ratatui::layout::Direction;
-        // Toggle: if already open, close it; otherwise open.
-        self.tool_list_close.set(false);
         if self.tile_manager.find_pane(PaneKind::ToolList).is_some() {
-            self.tile_manager.close_kind(PaneKind::ToolList);
-        } else {
             self.tool_list_pane.borrow_mut().set_tools(ev.tools);
-            self.tile_manager
-                .open_or_focus(PaneKind::ToolList, Direction::Horizontal);
+            tui.frame_requester().schedule_frame();
         }
-        tui.frame_requester().schedule_frame();
     }
 }

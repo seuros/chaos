@@ -30,9 +30,9 @@ use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use ratatui::widgets::Padding;
 
 use crate::app_event::AppEvent;
-use crate::render::Insets;
 use crate::render::renderable::FlexRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt;
@@ -64,18 +64,14 @@ impl Renderable for ChatWidget {
 impl ChatWidget {
     pub(super) fn as_renderable(&self) -> RenderableItem<'_> {
         let active_cell_renderable = match &self.active_cell {
-            Some(cell) => RenderableItem::Borrowed(cell).inset(Insets::tlbr(
-                /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
-            )),
+            Some(cell) => RenderableItem::Borrowed(cell).inset(Padding::top(1)),
             None => RenderableItem::Owned(Box::new(())),
         };
         let mut flex = FlexRenderable::new();
         flex.push(/*flex*/ 1, active_cell_renderable);
         flex.push(
             /*flex*/ 0,
-            RenderableItem::Borrowed(&self.bottom_pane).inset(Insets::tlbr(
-                /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
-            )),
+            RenderableItem::Borrowed(&self.bottom_pane).inset(Padding::top(1)),
         );
         RenderableItem::Owned(Box::new(flex))
     }

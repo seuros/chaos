@@ -242,6 +242,15 @@ pub fn repo_info(cwd: &Path) -> Result<RepoInfo, GitError> {
     repo::info(cwd)
 }
 
+/// Discover the worktree root (or bare git directory) without inspecting status.
+pub fn repo_root(cwd: &Path) -> Result<std::path::PathBuf, GitError> {
+    let repo = open_repo(cwd)?;
+    Ok(repo
+        .workdir()
+        .unwrap_or_else(|| repo.git_dir())
+        .to_path_buf())
+}
+
 /// `git://status` — staged, unstaged, untracked files.
 pub fn status(cwd: &Path) -> Result<StatusInfo, GitError> {
     status::collect(cwd)

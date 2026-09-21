@@ -195,6 +195,20 @@ pub async fn run_main(
         None => AbsolutePathBuf::current_dir()?,
     };
 
+    // Config loading opens authoritative settings storage. Choose the backend
+    // first so a fresh PostgreSQL installation never boots against SQLite.
+    if chaos_kern::user_settings::storage_setup::is_needed(&chaos_home)
+        .map_err(std::io::Error::other)?
+        && !onboarding::storage::run(&chaos_home).await?
+    {
+        return Ok(AppExitInfo {
+            token_usage: chaos_ipc::protocol::TokenUsage::default(),
+            process_id: None,
+            process_name: None,
+            exit_reason: ExitReason::UserRequested,
+        });
+    }
+
     #[allow(clippy::print_stderr)]
     let config_toml = match load_config_as_toml_with_cli_overrides(
         &chaos_home,

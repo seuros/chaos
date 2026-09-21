@@ -5,6 +5,31 @@ SQLite by default, or the configured PostgreSQL database/schema. Use one owner
 per database/schema. Storage failure does not fall back to TOML or another
 database.
 
+## First-run storage setup
+
+On a new installation, the interactive console asks where to store data before
+loading database-backed settings:
+
+- **PostgreSQL (Recommended)** connects to an existing database on a local or
+  remote PostgreSQL server. Enter a `postgresql://user:password@host:5432/database`
+  URL or an `env:VARIABLE` reference. ChaOS initializes its tables; it does not
+  install PostgreSQL or create the database itself. Use one owner per
+  database/schema.
+- **SQLite** creates `chaos.sqlite` in the ChaOS home, with no server required.
+
+Connection input is shown as entered. Literal PostgreSQL URLs are stored in the
+secure credential store, never in bootstrap TOML; environment references are saved
+unchanged. If the secure store is unavailable, use an environment reference.
+Setup saves `storage_url` only after successful database initialization.
+Connection failures stay on the setup screen for retry or a different choice;
+there is no automatic SQLite fallback. Escape goes back or quits, and Ctrl+C
+quits without saving a choice.
+
+An existing `storage_url`, `CHAOS_STORAGE_URL`, `CHAOS_SQLITE_HOME`, or local
+database bypasses this screen. Deleting `installation-id` does not reset storage
+setup. Non-interactive commands retain the default SQLite behavior unless storage
+has been explicitly configured.
+
 ## Ownership
 
 - `~/.chaos/config.toml` contains bootstrap `storage_url` and `egress_url`.

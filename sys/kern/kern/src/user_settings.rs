@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 const BOOTSTRAP_KEYS: &[&str] = &["storage_url", "egress_url", "sqlite_home"];
 
+pub mod storage_setup;
+
 #[cfg(test)]
 mod tests;
 
@@ -144,6 +146,10 @@ pub fn set_bootstrap(home: &Path, key: &str, value: &str) -> anyhow::Result<()> 
     }
     // Serialize bootstrap edits with migration; keep recovery offline.
     let _lock = lock_bootstrap(home)?;
+    write_bootstrap(home, key, value)
+}
+
+fn write_bootstrap(home: &Path, key: &str, value: &str) -> anyhow::Result<()> {
     // Bootstrap edits are top-level, never profile-scoped.
     chaos_sysctl::edit::apply_file_edits_blocking(
         home,

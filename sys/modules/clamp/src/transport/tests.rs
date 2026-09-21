@@ -77,7 +77,8 @@ fn build_command_no_bare_mode_by_default() {
     // bare_mode is false by default; keychain auth must remain accessible
     // for Claude Code MAX OAuth to work.
     let config = ClampConfig::default();
-    let command = build_command(&PathBuf::from("claude"), &config);
+    let (command, _config_files) =
+        build_command(&PathBuf::from("claude"), &config).expect("build command");
     let args: Vec<_> = command
         .as_std()
         .get_args()
@@ -97,7 +98,8 @@ fn build_command_sets_anthropic_base_url_when_configured() {
         anthropic_base_url: Some("http://127.0.0.1:4567".to_string()),
         ..Default::default()
     };
-    let command = build_command(&PathBuf::from("claude"), &config);
+    let (command, _config_files) =
+        build_command(&PathBuf::from("claude"), &config).expect("build command");
     let envs: Vec<_> = command
         .as_std()
         .get_envs()
@@ -113,7 +115,8 @@ fn build_command_sets_anthropic_base_url_when_configured() {
 #[test]
 fn build_command_omits_anthropic_base_url_by_default() {
     let config = ClampConfig::default();
-    let command = build_command(&PathBuf::from("claude"), &config);
+    let (command, _config_files) =
+        build_command(&PathBuf::from("claude"), &config).expect("build command");
     let has_base_url = command
         .as_std()
         .get_envs()
@@ -129,7 +132,8 @@ fn build_command_includes_disallowed_tools() {
         allow_claude_code_tools: true,
         ..Default::default()
     };
-    let command = build_command(&PathBuf::from("claude"), &config);
+    let (command, _config_files) =
+        build_command(&PathBuf::from("claude"), &config).expect("build command");
     let args: Vec<_> = command
         .as_std()
         .get_args()
@@ -147,7 +151,8 @@ fn build_command_includes_allowed_tools_when_builtin_tools_disabled() {
         allowed_tools: vec!["mcp__chaos__*".to_string()],
         ..Default::default()
     };
-    let command = build_command(&PathBuf::from("claude"), &config);
+    let (command, _config_files) =
+        build_command(&PathBuf::from("claude"), &config).expect("build command");
     let args: Vec<_> = command
         .as_std()
         .get_args()
@@ -164,4 +169,75 @@ fn build_command_includes_allowed_tools_when_builtin_tools_disabled() {
             .any(|window| { window[0] == "--allowedTools" && window[1] == "mcp__chaos__*" }),
         "MCP bridge allow rule must be passed through: {args:?}"
     );
+}
+
+#[test]
+fn config_files_keep_private_contents_out_of_argv() {
+    let prompt = "private-prompt: '\" $HOME 🦀\n".repeat(16_384);
+    let mcp = serde_json::json!({
+        "mcpServers": {"chaos": {"env": {"CHAOS_CLAMP_MCP_TOKEN": "private-token"}}}
+    });
+    let config = ClampConfig {
+        system_prompt: Some(prompt.clone()),
+        mcp_config: Some(mcp.clone()),
+        ..Default::default()
+    };
+    let (command, files) = build_command(&PathBuf::from("claude"), &config).expect("build command");
+    let args: Vec<_> = command.as_std().get_args().collect();
+    assert!(!args.iter().any(|arg| *arg == "--system-prompt"));
+    assert!(
+        args.iter()
+            .all(|arg| !arg.to_string_lossy().contains("private-"))
+    );
+
+    let paths = [
+        ("--system-prompt-file", files.system_prompt.as_ref(), prompt),
+        ("--mcp-config", files.mcp.as_ref(), mcp.to_string()),
+    ]
+    .map(|(flag, file, contents)| {
+        let path = file.expect("config file").to_path_buf();
+        assert!(path.is_absolute());
+        assert!(
+            args.windows(2)
+                .any(|window| window[0] == flag && window[1] == path.as_os_str())
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read config"),
+            contents
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = std::fs::metadata(&path).expect("metadata").permissions();
+            assert_eq!(permissions.mode() & 0o777, 0o600);
+        }
+        path
+    });
+
+    drop(files);
+    assert!(paths.iter().all(|path| !path.exists()));
+}
+
+#[test]
+fn empty_configuration_preserves_blank_prompt_without_files() {
+    for system_prompt in [None, Some(String::new())] {
+        let config = ClampConfig {
+            system_prompt,
+            ..Default::default()
+        };
+        let (command, files) =
+            build_command(&PathBuf::from("claude"), &config).expect("build command");
+        let args: Vec<_> = command.as_std().get_args().collect();
+
+        assert!(files.system_prompt.is_none() && files.mcp.is_none());
+        assert!(
+            args.windows(2)
+                .any(|window| window[0] == "--system-prompt" && window[1].is_empty())
+        );
+        assert!(
+            !args
+                .iter()
+                .any(|arg| *arg == "--system-prompt-file" || *arg == "--mcp-config")
+        );
+    }
 }

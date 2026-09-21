@@ -7,7 +7,13 @@ the full Antigravity security design, see
 [`docs/antigravity-oauth-risk-and-design.md`](../../../docs/antigravity-oauth-risk-and-design.md).
 
 - **Claude Code:** bidirectional stream-JSON control transport. Chaos owns
-  tools and permissions through its MCP bridge.
+  tools and permissions through its MCP bridge. User messages are sent over
+  stdin; nonempty system prompts use `--system-prompt-file`, and MCP
+  configuration uses `--mcp-config` with a JSON file path. Both files are
+  owner-only temporary files, keeping prompt contents and MCP bridge credentials
+  out of process arguments. The files are removed when the transport is shut
+  down or dropped (including spawn failures). Claude Code must support
+  `--system-prompt-file`.
 - **Google Antigravity (`agy`):** one subprocess per model turn with explicit
   provider conversation resume and normalized JSONL usage. `agy` runs
   sandboxed with native command, filesystem, unsandboxed, and URL operations

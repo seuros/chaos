@@ -699,9 +699,7 @@ impl RolloutRecorder {
             })
     }
 
-    /// Wait for queued writes and the lease release attempt before returning.
-    /// A caller may bound its overall shutdown, but must not mistake a still
-    /// draining writer for a completed shutdown and tear down its runtime.
+    /// Wait up to 30 seconds for queued writes and the lease release attempt.
     pub async fn shutdown(&self) -> std::io::Result<()> {
         let (tx_done, rx_done) = oneshot::channel();
         self.tx
@@ -709,9 +707,17 @@ impl RolloutRecorder {
             .map_err(|error| {
                 IoError::other(format!("failed to send rollout shutdown command: {error}"))
             })?;
-        rx_done.await.map_err(|error| {
-            IoError::other(format!("failed waiting for rollout shutdown: {error}"))
-        })?
+        tokio::time::timeout(JOURNAL_SHUTDOWN_TIMEOUT, rx_done)
+            .await
+            .map_err(|_| {
+                IoError::new(
+                    std::io::ErrorKind::TimedOut,
+                    "timed out waiting for rollout shutdown; journal cleanup may still be running",
+                )
+            })?
+            .map_err(|error| {
+                IoError::other(format!("failed waiting for rollout shutdown: {error}"))
+            })?
     }
 }
 
@@ -720,6 +726,7 @@ const JOURNALD_BIN_ENV: &str = "CHAOS_JOURNALD_BIN";
 const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
 const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
 const JOURNAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const JOURNAL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const JOURNAL_APPEND_MAX_ATTEMPTS: usize = 8;
 const JOURNAL_APPEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(25);
 const JOURNAL_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);

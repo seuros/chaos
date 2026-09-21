@@ -108,6 +108,11 @@ async fn mouse_scroll_routes_into_thread_and_reaches_both_ends() {
         );
         assert_eq!(app.tile_manager.find_pane(PaneKind::ToolList), Some(id));
     }
+    app.refresh_tool_list(true);
+    assert_matches!(ops.try_recv().unwrap(), Op::ListAllTools);
+    assert_eq!(app.tile_manager.find_pane(PaneKind::ToolList), tools);
+    app.refresh_tool_list(false);
+    assert!(ops.try_recv().is_err(), "closed agents cannot reload tools");
     app.handle_key_event(&mut tui, palette).await;
     app.handle_key_event(&mut tui, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
         .await;

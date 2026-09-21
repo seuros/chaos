@@ -471,18 +471,29 @@ async fn postgres_shutdown_releases_lease_on_every_exit_path() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn shutdown_waits_for_release_acknowledgement_past_250ms() {
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    let recorder = recorder(tx);
-    let shutdown = tokio::spawn(async move { recorder.shutdown().await });
-    let Some(RolloutCmd::Shutdown { ack }) = rx.recv().await else {
-        panic!("expected shutdown command");
-    };
-    tokio::time::advance(Duration::from_secs(1)).await;
-    tokio::task::yield_now().await;
-    assert!(!shutdown.is_finished(), "lease cleanup is still running");
-    ack.send(Ok(())).unwrap();
-    shutdown.await.unwrap().unwrap();
+async fn shutdown_waits_for_release_acknowledgement_with_a_deadline() {
+    for complete in [true, false] {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let recorder = recorder(tx);
+        let shutdown = tokio::spawn(async move { recorder.shutdown().await });
+        let Some(RolloutCmd::Shutdown { ack }) = rx.recv().await else {
+            panic!("expected shutdown command");
+        };
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert!(!shutdown.is_finished(), "lease cleanup is still running");
+        if complete {
+            ack.send(Ok(())).unwrap();
+            shutdown.await.unwrap().unwrap();
+        } else {
+            tokio::time::advance(JOURNAL_SHUTDOWN_TIMEOUT).await;
+            assert_eq!(
+                shutdown.await.unwrap().unwrap_err().kind(),
+                std::io::ErrorKind::TimedOut
+            );
+            assert!(ack.is_closed());
+        }
+    }
 }
 
 #[tokio::test]

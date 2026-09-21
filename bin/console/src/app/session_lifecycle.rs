@@ -411,6 +411,7 @@ impl App {
         let mut process_created_rx = process_table.subscribe_process_created();
         let mut listen_for_threads = true;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
+        let mut exit_immediately = false;
 
         let exit_reason_result = {
             loop {
@@ -492,13 +493,19 @@ impl App {
                 match control {
                     AppRunControl::Continue => {}
                     AppRunControl::Exit(reason) => break Ok(reason),
+                    AppRunControl::ExitImmediately(reason) => {
+                        exit_immediately = true;
+                        break Ok(reason);
+                    }
                 }
             }
         };
-        // Exiting the active tab is not enough: background agents and error
-        // exits also own journal leases. Keep the runtime alive until their
-        // session loops have had a bounded chance to release those leases.
-        app.shutdown_all_processes().await;
+        if !exit_immediately {
+            tokio::select! {
+                _ = app.shutdown_all_processes() => {}
+                _ = wait_for_immediate_exit(&mut app_event_rx) => {}
+            }
+        }
         app.abort_all_process_event_listeners();
         let clear_result = tui.terminal.clear();
         let exit_reason = match exit_reason_result {
@@ -583,12 +590,21 @@ impl App {
     }
 }
 
-/// Translate process-level termination signals into `AppEvent::Exit(ShutdownFirst)`
-/// so the rollout writer drains pending journald appends instead of being abruptly
-/// torn down with the runtime.
-///
-/// The listener is best-effort: a second signal escalates to `ExitMode::Immediate`
-/// to leave the event loop. The final all-process cleanup is still bounded.
+pub(super) async fn wait_for_immediate_exit(
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) {
+    while let Some(event) = events.recv().await {
+        if matches!(
+            event.into_current_view(),
+            Some(AppEvent::Exit(ExitMode::Immediate))
+        ) {
+            return;
+        }
+    }
+    std::future::pending::<()>().await;
+}
+
+/// Request graceful shutdown on the first signal and immediate exit on the second.
 fn spawn_graceful_signal_listener(app_event_tx: AppEventSender) {
     #[cfg(unix)]
     {
@@ -613,8 +629,6 @@ fn spawn_graceful_signal_listener(app_event_tx: AppEventSender) {
         let already_requested = StdArc::new(AtomicBool::new(false));
         tokio::spawn(async move {
             loop {
-                // Match `Some(_)` so a closed signal stream falls through to the
-                // outer break instead of spinning the select! on a ready-but-empty arm.
                 let signal_name = tokio::select! {
                     Some(_) = sigterm.recv() => "SIGTERM",
                     Some(_) = sighup.recv() => "SIGHUP",

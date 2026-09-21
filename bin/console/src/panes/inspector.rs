@@ -39,6 +39,7 @@ pub(crate) struct InspectorPane {
     tree: TreeState<String>,
     tree_area: Rect,
     preview_area: Rect,
+    preview_text_area: Rect,
     scroll: u16,
     content: String,
     image: Option<Box<ImagePreview>>,
@@ -83,6 +84,7 @@ impl InspectorPane {
         }
         self.tree_area = Rect::ZERO;
         self.preview_area = Rect::ZERO;
+        self.preview_text_area = Rect::ZERO;
         if let Some(json) = &mut self.json {
             json.area = Rect::ZERO;
             json.focused = false;
@@ -177,10 +179,14 @@ impl InspectorPane {
                 // Resource leaves must not acquire expansion state.
                 KeyCode::Right if self.tree.selected().len() != 1 => {}
                 KeyCode::PageUp => {
-                    self.scroll = self.scroll.saturating_sub(self.preview_area.height.max(1));
+                    self.scroll = self
+                        .scroll
+                        .saturating_sub(self.preview_text_area.height.max(1));
                 }
                 KeyCode::PageDown => {
-                    self.scroll = self.scroll.saturating_add(self.preview_area.height.max(1));
+                    self.scroll = self
+                        .scroll
+                        .saturating_add(self.preview_text_area.height.max(1));
                 }
                 KeyCode::Char('r') if self.catalog_loaded => {
                     self.refresh_catalog();
@@ -300,6 +306,7 @@ impl InspectorPane {
         self.reset_preview();
         self.tree_area = Rect::ZERO;
         self.preview_area = Rect::ZERO;
+        self.preview_text_area = Rect::ZERO;
         Ok(())
     }
 
@@ -320,6 +327,7 @@ impl InspectorPane {
             Constraint::Fill(1),
         ])
         .areas(inner);
+        self.preview_text_area = self.preview_area;
         if let Ok(tree) = Tree::new(&self.items) {
             StatefulWidget::render(
                 tree.highlight_style(crate::theme::highlight())
@@ -362,7 +370,7 @@ impl InspectorPane {
                 Constraint::Fill(1),
             ])
             .areas(self.preview_area);
-            self.preview_area = text_area;
+            self.preview_text_area = text_area;
             image.render(image_area, buf);
         }
         let mut lines = vec![
@@ -392,12 +400,12 @@ impl InspectorPane {
         );
         let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
         let max_scroll = paragraph
-            .line_count(self.preview_area.width)
-            .saturating_sub(usize::from(self.preview_area.height));
+            .line_count(self.preview_text_area.width)
+            .saturating_sub(usize::from(self.preview_text_area.height));
         self.scroll = self.scroll.min(max_scroll.min(u16::MAX as usize) as u16);
         paragraph
             .scroll((self.scroll, 0))
-            .render(self.preview_area, buf);
+            .render(self.preview_text_area, buf);
     }
 }
 

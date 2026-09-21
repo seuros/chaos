@@ -312,8 +312,22 @@ async fn inspector_mouse_targeting_and_resource_preview() {
         );
         assert!(image_cells.iter().all(|&(x, y)| x > area.x
             && x < area.right() - 1
-            && y >= pane.preview_area.bottom()
+            && y >= pane.preview_text_area.bottom()
             && y < area.bottom() - 1));
+        let (x, y) = image_cells[0];
+        pane.scroll = 0;
+        let selected = pane.tree.selected().to_vec();
+        for (kind, expected) in [
+            (MouseEventKind::ScrollDown, 1),
+            (MouseEventKind::ScrollUp, 0),
+        ] {
+            assert_eq!(
+                pane.handle_event(&HypertileEvent::Mouse(MouseEvent::new(kind, x, y))),
+                EventOutcome::Consumed
+            );
+            assert_eq!(pane.scroll, expected);
+            assert_eq!(pane.tree.selected(), selected);
+        }
         assert!(
             buf.content
                 .iter()

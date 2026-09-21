@@ -1155,11 +1155,35 @@ async fn open_agent_picker_selects_existing_agent_process() -> Result<()> {
         .upsert(other, Some("Other".into()), None, true);
     let mut tui = make_test_tui();
     app.select_agent_process(&mut tui, process_id).await?;
+    app.open_tool_list();
+    app.tool_list_pane
+        .borrow_mut()
+        .set_tools(vec![chaos_ipc::protocol::ToolSummary {
+            name: "main-only-tool".into(),
+            description: String::new(),
+            source: "builtin".into(),
+            annotation_labels: Vec::new(),
+            annotations: None,
+        }]);
+    let tools_text = |app: &App| {
+        let area = ratatui::layout::Rect::new(0, 0, 50, 10);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        app.tool_list_pane.borrow().render(area, &mut buf, true);
+        buf.content
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>()
+    };
+    assert!(tools_text(&app).contains("main-only-tool"));
     app.chat_widget.apply_external_edit("tab draft".into());
     let next = KeyEvent::new(KeyCode::PageDown, KeyModifiers::CONTROL);
     app.handle_key_event(&mut tui, next).await;
     assert_eq!(app.active_process_id, Some(other));
     assert!(app.chat_widget.composer_text_with_pending().is_empty());
+    assert!(!tools_text(&app).contains("main-only-tool"));
+    assert!(tools_text(&app).contains("No tools available."));
+    assert!(app.tile_manager.find_pane(PaneKind::ToolList).is_some());
+    app.tile_manager.close_kind(PaneKind::ToolList);
     while let Ok(event) = app_event_rx.try_recv() {
         app.handle_event(&mut tui, event).await?;
     }
@@ -2526,10 +2550,14 @@ async fn page_up_opens_transcript_overlay_from_main_view() {
         Arc::new(AgentMessageCell::new(vec![Line::from("reply")], false)) as Arc<dyn HistoryCell>,
     ];
 
-    app.handle_key_event(&mut tui, KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
-        .await;
-
-    assert!(matches!(app.overlay, Some(Overlay::Transcript(_))));
+    for modifiers in [KeyModifiers::NONE, KeyModifiers::CONTROL] {
+        for code in [KeyCode::PageUp, KeyCode::PageDown] {
+            app.handle_key_event(&mut tui, KeyEvent::new(code, modifiers))
+                .await;
+            assert!(matches!(app.overlay, Some(Overlay::Transcript(_))));
+            app.close_transcript_overlay(&mut tui);
+        }
+    }
 }
 
 #[cfg(feature = "vt100-tests")]
@@ -2608,7 +2636,7 @@ async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails()
 }
 
 async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
-    let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+    let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
     app.active_process_id = Some(process_id);
 
@@ -2617,6 +2645,21 @@ async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
     assert_eq!(app.pending_shutdown_exit_process_id, Some(process_id));
     assert!(matches!(control, AppRunControl::Continue));
     assert_eq!(op_rx.try_recv(), Ok(Op::Shutdown));
+
+    let mut immediate = std::pin::pin!(super::session_lifecycle::wait_for_immediate_exit(
+        &mut app_event_rx
+    ));
+    app.app_event_tx
+        .send(AppEvent::Exit(ExitMode::ShutdownFirst));
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(std::future::Future::poll(immediate.as_mut(), &mut cx).is_pending());
+    app.app_event_tx.send(AppEvent::Exit(ExitMode::Immediate));
+    immediate.await;
+    assert!(matches!(
+        app.handle_exit_mode(ExitMode::Immediate),
+        AppRunControl::ExitImmediately(ExitReason::UserRequested)
+    ));
+    assert_eq!(app.pending_shutdown_exit_process_id, None);
 }
 
 #[cfg(feature = "vt100-tests")]

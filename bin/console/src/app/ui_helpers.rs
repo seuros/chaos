@@ -179,7 +179,14 @@ impl App {
         self.tile_manager
             .open_or_focus(PaneKind::ToolList, ratatui::layout::Direction::Horizontal);
         if !existing {
-            self.chat_widget.submit_op(super::Op::ListAllTools);
+            self.refresh_tool_list(true);
+        }
+    }
+
+    pub(super) fn refresh_tool_list(&mut self, live_process: bool) {
+        if self.tile_manager.find_pane(PaneKind::ToolList).is_some() {
+            let loading = live_process && self.chat_widget.submit_op(super::Op::ListAllTools);
+            self.tool_list_pane.borrow_mut().reset(loading);
         }
     }
 

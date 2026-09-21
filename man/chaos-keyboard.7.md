@@ -103,6 +103,8 @@ process's draft and showing only its transcript. Closed or disconnected processe
 are marked `×` and remain available for replay. If the coordinator closes or
 disconnects the agent you are watching, the UI returns to the main process
 without exiting or losing drafts.
+With no other agent to switch to, `Ctrl+PageUp` / `Ctrl+PageDown` retain their
+normal paging behavior.
 The active tab stays visible on narrow terminals. Tabs do not create new sessions
 or independent pane layouts, and switching is disabled while a dialog or palette
 is open.

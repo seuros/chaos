@@ -1160,7 +1160,7 @@ impl App {
             }
             ExitMode::Immediate => {
                 self.pending_shutdown_exit_process_id = None;
-                AppRunControl::Exit(ExitReason::UserRequested)
+                AppRunControl::ExitImmediately(ExitReason::UserRequested)
             }
         }
     }

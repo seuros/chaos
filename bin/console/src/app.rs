@@ -152,6 +152,7 @@ impl AppExitInfo {
 pub(crate) enum AppRunControl {
     Continue,
     Exit(ExitReason),
+    ExitImmediately(ExitReason),
 }
 
 #[derive(Debug, Clone)]

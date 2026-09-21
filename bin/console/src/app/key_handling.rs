@@ -116,12 +116,12 @@ impl App {
                 }
                 _ => None,
             };
-            if let Some(direction) = direction {
-                if key_event.kind == KeyEventKind::Press
-                    && let Some(process_id) = self
-                        .agent_navigation
-                        .adjacent_process_id(self.current_displayed_process_id(), direction)
-                {
+            if let Some(direction) = direction
+                && let Some(process_id) = self
+                    .agent_navigation
+                    .adjacent_process_id(self.current_displayed_process_id(), direction)
+            {
+                if key_event.kind == KeyEventKind::Press {
                     let _ = self.select_agent_process(tui, process_id).await;
                 }
                 return;

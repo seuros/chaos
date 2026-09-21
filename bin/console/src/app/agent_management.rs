@@ -252,6 +252,7 @@ impl App {
     ) -> Result<()> {
         self.reset_for_process_switch(tui)?;
         self.replay_process_snapshot(snapshot, !replay_only);
+        self.refresh_tool_list(!replay_only);
         if replay_only {
             self.chat_widget.add_info_message(
                 format!("Agent process {process_id} is unavailable. Replaying saved transcript."),

@@ -104,6 +104,62 @@ fn profile_keeps_chassis_display_and_session_independent() {
 }
 
 #[test]
+fn power_visibility_follows_desktop_classification() {
+    let mut ups = discharging(Some(80));
+    ups.source = PowerSource::Ups;
+    ups.batteries.as_mut().unwrap()[0].kind = BatteryKind::Ups;
+
+    for power in [
+        PowerInfo::default(),
+        PowerInfo {
+            batteries: Some(vec![]),
+            ..PowerInfo::default()
+        },
+        PowerInfo {
+            source: PowerSource::External,
+            external_power: Some(true),
+            batteries: Some(vec![]),
+        },
+        discharging(Some(80)),
+        ups,
+    ] {
+        let mut status = machine_status(power);
+        status.machine.profile.form_factor = FormFactor::Desktop;
+        let (tx, rx) = watch::channel(Some(Arc::new(status.clone())));
+        let mut bar = [
+            widgets::battery::new(rx),
+            clock("2026-09-05T12:34:00Z[UTC]"),
+        ];
+        assert_eq!(bar[0].spec().min_width, 0);
+
+        for form_factor in [
+            FormFactor::Laptop,
+            FormFactor::Tablet,
+            FormFactor::Server,
+            FormFactor::Other,
+            FormFactor::Unknown,
+            FormFactor::Desktop,
+        ] {
+            status.machine.profile.form_factor = form_factor;
+            tx.send_replace(Some(Arc::new(status.clone())));
+            refresh_all(&mut bar);
+            if form_factor == FormFactor::Desktop {
+                assert_eq!(bar[0].spec().min_width, 0);
+                for width in [7, 30] {
+                    assert_eq!(
+                        render(&bar, width),
+                        render(&bar[1..], width),
+                        "hidden power must not take space or leave a separator"
+                    );
+                }
+            } else {
+                assert!(bar[0].spec().min_width > 0, "{form_factor:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn power_uses_primary_supply_and_keeps_battery_percentages_separate() {
     let (tx, rx) = watch::channel(None);
     let mut bar = [widgets::battery::new(rx)];

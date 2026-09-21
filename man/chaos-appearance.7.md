@@ -126,11 +126,15 @@ the active workspace/configuration changes. The clock updates at minute boundari
 even while a probe is slow. Hiding the row stops its polling. Failed/timed-out reads
 clear old values and show a neutral `machine ?`, not a health claim.
 
-Power shows AC without low-battery coloring for dead/removed batteries on external
-power. System/UPS percentages stay individual, separated by `/`. Disk space is the
-lowest caller-available percentage among the active workspace, state, and temporary
-filesystems, not all mounted drives or a combined capacity. A trailing `?` means
-some relevant storage observations are unavailable.
+The power indicator is hidden on machines identified as desktops; an absent
+battery alone does not establish that classification. On other machines, power
+shows AC without low-battery coloring for dead/removed batteries on external
+power, or `power ?` when the source is unknown. System/UPS percentages stay
+individual, separated by `/`.
+
+Disk space is the lowest caller-available percentage among the active workspace,
+state, and temporary filesystems, not all mounted drives or a combined capacity.
+A trailing `?` means some relevant storage observations are unavailable.
 
 CPU Celsius shows the highest observed **physical** CPU channel, not a package
 average. Control/unknown-scale readings are never relabeled as physical Celsius.

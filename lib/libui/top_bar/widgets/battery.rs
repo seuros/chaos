@@ -1,7 +1,7 @@
 //! Battery presentation consumes snapshots published by the shared runtime.
 
 use chaos_kern::machine_status::{MachineStatus, MachineWarning};
-use chaos_machine::{BatteryKind, PowerSource};
+use chaos_machine::{BatteryKind, FormFactor, PowerSource};
 
 use super::super::machine::Source;
 use super::super::{BarWidget, Content, Tone};
@@ -11,6 +11,10 @@ pub(in crate::top_bar) fn new(source: Source) -> BarWidget {
 }
 
 fn present(status: &MachineStatus) -> Content {
+    if status.machine.profile.form_factor == FormFactor::Desktop {
+        return Content::default();
+    }
+
     let power = &status.machine.power;
     let (icon, kind) = match (power.source, power.external_power) {
         // AC takes precedence over dead, removed, or maintenance-discharging batteries.

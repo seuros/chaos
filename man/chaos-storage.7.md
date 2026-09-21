@@ -58,8 +58,12 @@ the session, current writer, and lease expiry time.
 Close the other instance of that session before retrying. A crashed writer's
 lease normally expires within 30 seconds; a live writer renews it. Do not
 delete lease rows to force a resume, as that can allow competing writers.
-Closing a subagent waits for its session loop to finish before returning, so
-an immediate resume does not race its previous journal writer.
+Orderly process shutdown (including closing a subagent or disconnecting its
+last client) waits for journal lease cleanup on both SQLite and PostgreSQL.
+Lease release is attempted even after write failures. Recorder shutdown returns
+a timeout error after 30 seconds; lease expiry remains the fallback.
+Console exit gives all processes up to 10 seconds to shut down. Immediate exit
+or a second termination signal skips the remaining grace period.
 
 Lease failures pause work without exiting. ChaOS retries every 10 seconds
 with a 5-second timeout; queued entries remain in memory until committed.

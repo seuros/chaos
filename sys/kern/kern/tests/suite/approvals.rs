@@ -1218,16 +1218,22 @@ fn scenarios() -> Vec<ScenarioSpec> {
     ]
 }
 
+// Run each scenario in its own nextest process: runtime storage mounts and other
+// shared services live for the process lifetime and must not accumulate here.
+#[test_case::test_matrix(0..39)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn approval_matrix_covers_all_modes() -> Result<()> {
+#[test_log::test]
+async fn approval_matrix_covers_all_modes(scenario_index: usize) -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox_unenforceable!(Ok(()));
 
-    for scenario in scenarios() {
-        run_scenario(&scenario).await?;
-    }
-
-    Ok(())
+    let scenarios = scenarios();
+    assert_eq!(
+        scenarios.len(),
+        39,
+        "update the test_matrix range when adding or removing approval scenarios"
+    );
+    run_scenario(&scenarios[scenario_index]).await
 }
 
 async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
@@ -1327,6 +1333,9 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
             wait_for_completion(&test).await;
         }
     }
+
+    // Finish background persistence before the scenario's temporary home is removed.
+    test.process.shutdown_and_wait().await?;
 
     let output_item = results_mock.single_request().function_call_output(call_id);
     let result = parse_result(&output_item);

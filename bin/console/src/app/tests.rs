@@ -1116,8 +1116,27 @@ async fn open_agent_picker_keeps_cached_closed_processes() -> Result<()> {
 async fn open_agent_picker_selects_existing_agent_process() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
-    app.process_event_channels
-        .insert(process_id, ProcessEventChannel::new(1));
+    app.primary_process_id = Some(process_id);
+    let mut configured = session_configured_event(process_id);
+    if let EventMsg::SessionConfigured(event) = &mut configured.msg {
+        event.initial_messages = Some(
+            (0..32)
+                .map(|_| {
+                    EventMsg::UserMessage(UserMessageEvent {
+                        message: "main history".into(),
+                        images: None,
+                        local_images: Vec::new(),
+                        text_elements: Vec::new(),
+                    })
+                })
+                .chain(std::iter::once(EventMsg::ShutdownComplete))
+                .collect(),
+        );
+    }
+    app.process_event_channels.insert(
+        process_id,
+        ProcessEventChannel::new_with_session_configured(1, configured),
+    );
 
     app.open_agent_picker().await;
     app.chat_widget
@@ -1126,6 +1145,214 @@ async fn open_agent_picker_selects_existing_agent_process() -> Result<()> {
     assert_matches!(
         app_event_rx.try_recv(),
         Ok(AppEvent::SelectAgentProcess(selected_process_id)) if selected_process_id == process_id
+    );
+    let other = ProcessId::new();
+    app.process_event_channels.insert(
+        other,
+        ProcessEventChannel::new_with_session_configured(1, session_configured_event(other)),
+    );
+    app.agent_navigation
+        .upsert(other, Some("Other".into()), None, true);
+    let mut tui = make_test_tui();
+    app.select_agent_process(&mut tui, process_id).await?;
+    app.open_tool_list();
+    app.tool_list_pane
+        .borrow_mut()
+        .set_tools(vec![chaos_ipc::protocol::ToolSummary {
+            name: "main-only-tool".into(),
+            description: String::new(),
+            source: "builtin".into(),
+            annotation_labels: Vec::new(),
+            annotations: None,
+        }]);
+    let tools_text = |app: &App| {
+        let area = ratatui::layout::Rect::new(0, 0, 50, 10);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        app.tool_list_pane.borrow().render(area, &mut buf, true);
+        buf.content
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>()
+    };
+    assert!(tools_text(&app).contains("main-only-tool"));
+    app.chat_widget.apply_external_edit("tab draft".into());
+    let next = KeyEvent::new(KeyCode::PageDown, KeyModifiers::CONTROL);
+    app.handle_key_event(&mut tui, next).await;
+    assert_eq!(app.active_process_id, Some(other));
+    assert!(app.chat_widget.composer_text_with_pending().is_empty());
+    assert!(!tools_text(&app).contains("main-only-tool"));
+    assert!(tools_text(&app).contains("No tools available."));
+    assert!(app.tile_manager.find_pane(PaneKind::ToolList).is_some());
+    app.tile_manager.close_kind(PaneKind::ToolList);
+    while let Ok(event) = app_event_rx.try_recv() {
+        app.handle_event(&mut tui, event).await?;
+    }
+    assert!(
+        app.transcript_cells
+            .iter()
+            .all(|cell| cell.as_any().downcast_ref::<UserHistoryCell>().is_none()),
+        "queued Main history must not leak into the agent view"
+    );
+    assert_eq!(tui.terminal.viewport_area.y, tui.top_reserved_rows());
+    for kind in [KeyEventKind::Repeat, KeyEventKind::Release] {
+        app.handle_key_event(&mut tui, KeyEvent { kind, ..next })
+            .await;
+        assert_eq!(app.active_process_id, Some(other));
+        assert!(app.overlay.is_none());
+    }
+    let area = ratatui::layout::Rect::new(0, 1, 100, 1);
+    app.agent_navigation.render_tabs(
+        area,
+        &mut ratatui::buffer::Buffer::empty(area),
+        Some(other),
+        Some(process_id),
+    );
+    assert_eq!(
+        app.agent_navigation.tab_at(area.as_position()),
+        Some(process_id)
+    );
+    assert!(app.chat_widget.no_modal_or_popup_active());
+    let click = TuiEvent::Mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: area.x,
+        row: area.y,
+        modifiers: KeyModifiers::NONE,
+    });
+    app.tile_manager.runtime.open_palette().unwrap();
+    app.handle_tui_event(&mut tui, click.clone()).await?;
+    assert_eq!(app.active_process_id, Some(other));
+    app.tile_manager.runtime.close_palette();
+    app.handle_tui_event(&mut tui, click).await?;
+    assert_eq!(app.active_process_id, Some(process_id));
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "tab draft");
+
+    let third = ProcessId::new();
+    app.process_event_channels.insert(
+        third,
+        ProcessEventChannel::new_with_session_configured(1, session_configured_event(third)),
+    );
+    app.agent_navigation
+        .upsert(third, Some("Third".into()), None, false);
+    app.select_agent_process(&mut tui, other).await?;
+    app.chat_widget.apply_external_edit("agent draft".into());
+    let stale_sender = app.process_event_channels[&other].sender.clone();
+    for _ in 0..2 {
+        app.enqueue_process_event(
+            other,
+            Event {
+                id: String::new(),
+                msg: EventMsg::ShutdownComplete,
+            },
+        )
+        .await?;
+    }
+    let ids = [process_id, other, third];
+    let mut index = 1;
+    while app_event_rx.try_recv().is_ok() {}
+    for (code, step) in [(KeyCode::PageDown, 1), (KeyCode::PageUp, 2)] {
+        for _ in 0..ids.len() * 3 {
+            index = (index + step) % ids.len();
+            app.handle_key_event(&mut tui, KeyEvent::new(code, KeyModifiers::CONTROL))
+                .await;
+            assert_eq!(app.active_process_id, Some(ids[index]));
+            assert_eq!(app.chat_widget.process_id(), Some(ids[index]));
+            let mut restored_messages = 0;
+            while let Ok(event) = app_event_rx.try_recv() {
+                let Some(event) = event.into_current_view() else {
+                    continue;
+                };
+                assert!(
+                    !matches!(event, AppEvent::Exit(_) | AppEvent::FatalExitRequest(_)),
+                    "cycling must not replay a queued shutdown as an application exit"
+                );
+                if let AppEvent::InsertHistoryCell(cell) = event
+                    && let Some(cell) = cell.as_any().downcast_ref::<UserHistoryCell>()
+                {
+                    assert_eq!(cell.message, "main history");
+                    restored_messages += 1;
+                }
+            }
+            assert_eq!(
+                restored_messages,
+                if ids[index] == process_id { 32 } else { 0 }
+            );
+        }
+    }
+    assert!(stale_sender.is_closed());
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "agent draft");
+
+    app.agent_navigation
+        .upsert(other, Some("Other".into()), None, false);
+    app.handle_event(&mut tui, AppEvent::ProcessStreamClosed(other))
+        .await?;
+    assert_eq!(app.active_process_id, Some(process_id));
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "tab draft");
+    assert!(app.agent_navigation.get(&other).unwrap().is_closed);
+    assert_eq!(
+        app.activity.get(other).phase,
+        libui::activity::Phase::Closed
+    );
+    app.agent_navigation
+        .upsert(third, Some("Third".into()), None, false);
+    app.enqueue_process_event(
+        third,
+        Event {
+            id: "disconnected-turn".into(),
+            msg: EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: "disconnected-turn".into(),
+                model_context_window: None,
+                collaboration_mode_kind: ModeKind::Default,
+            }),
+        },
+    )
+    .await?;
+    app.handle_event(&mut tui, AppEvent::ProcessStreamClosed(third))
+        .await?;
+    assert_eq!(app.active_process_id, Some(process_id));
+    assert!(app.agent_navigation.get(&third).unwrap().is_closed);
+    assert_eq!(
+        app.activity.get(third).phase,
+        libui::activity::Phase::Disconnected
+    );
+    app.select_agent_process(&mut tui, other).await?;
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "agent draft");
+    app.handle_event(&mut tui, AppEvent::ProcessStreamClosed(other))
+        .await?;
+    assert_eq!(app.active_process_id, Some(other), "duplicate EOF is inert");
+    app.select_agent_process(&mut tui, third).await?;
+    app.agent_navigation.upsert(third, None, None, false);
+    app.handle_event(&mut tui, AppEvent::ProcessStreamClosed(third))
+        .await?;
+    assert_eq!(app.active_process_id, Some(process_id));
+
+    app.agent_navigation.upsert(process_id, None, None, false);
+    app.handle_event(&mut tui, AppEvent::ProcessStreamClosed(process_id))
+        .await?;
+    assert_eq!(app.active_process_id, Some(process_id));
+    assert_eq!(app.chat_widget.composer_text_with_pending(), "tab draft");
+    while let Ok(event) = app_event_rx.try_recv() {
+        assert!(!matches!(event, AppEvent::Exit(_)));
+    }
+
+    app.select_agent_process(&mut tui, other).await?;
+    app.agent_navigation.upsert(other, None, None, false);
+    app.pending_shutdown_exit_process_id = Some(other);
+    app.handle_event(&mut tui, AppEvent::ProcessStreamClosed(other))
+        .await?;
+    assert_eq!(app.active_process_id, Some(other));
+    assert_eq!(app.pending_shutdown_exit_process_id, None);
+    assert!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::Exit(ExitMode::Immediate)))
+    );
+    let stale_view = app.app_event_tx.for_new_view();
+    let _current_view = app.app_event_tx.for_new_view();
+    stale_view.send(AppEvent::ApplyProcessRollback { num_turns: 1 });
+    stale_view.send(AppEvent::ChaosEvent(session_configured_event(process_id)));
+    assert!(app_event_rx.try_recv()?.into_current_view().is_none());
+    assert_matches!(
+        app_event_rx.try_recv()?.into_current_view(),
+        Some(AppEvent::ChaosEvent(_))
     );
     Ok(())
 }
@@ -2323,10 +2550,14 @@ async fn page_up_opens_transcript_overlay_from_main_view() {
         Arc::new(AgentMessageCell::new(vec![Line::from("reply")], false)) as Arc<dyn HistoryCell>,
     ];
 
-    app.handle_key_event(&mut tui, KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
-        .await;
-
-    assert!(matches!(app.overlay, Some(Overlay::Transcript(_))));
+    for modifiers in [KeyModifiers::NONE, KeyModifiers::CONTROL] {
+        for code in [KeyCode::PageUp, KeyCode::PageDown] {
+            app.handle_key_event(&mut tui, KeyEvent::new(code, modifiers))
+                .await;
+            assert!(matches!(app.overlay, Some(Overlay::Transcript(_))));
+            app.close_transcript_overlay(&mut tui);
+        }
+    }
 }
 
 #[cfg(feature = "vt100-tests")]
@@ -2405,7 +2636,7 @@ async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails()
 }
 
 async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
-    let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+    let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();
     app.active_process_id = Some(process_id);
 
@@ -2414,6 +2645,21 @@ async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
     assert_eq!(app.pending_shutdown_exit_process_id, Some(process_id));
     assert!(matches!(control, AppRunControl::Continue));
     assert_eq!(op_rx.try_recv(), Ok(Op::Shutdown));
+
+    let mut immediate = std::pin::pin!(super::session_lifecycle::wait_for_immediate_exit(
+        &mut app_event_rx
+    ));
+    app.app_event_tx
+        .send(AppEvent::Exit(ExitMode::ShutdownFirst));
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(std::future::Future::poll(immediate.as_mut(), &mut cx).is_pending());
+    app.app_event_tx.send(AppEvent::Exit(ExitMode::Immediate));
+    immediate.await;
+    assert!(matches!(
+        app.handle_exit_mode(ExitMode::Immediate),
+        AppRunControl::ExitImmediately(ExitReason::UserRequested)
+    ));
+    assert_eq!(app.pending_shutdown_exit_process_id, None);
 }
 
 #[cfg(feature = "vt100-tests")]

@@ -39,10 +39,12 @@ use std::time::Duration;
 
 mod app_link_view;
 mod approval_overlay;
+mod form_layout;
 mod mcp_add_form;
 mod mcp_server_elicitation;
 mod reflex_setup;
 mod request_user_input;
+mod single_line_input;
 pub use app_link_view::AppLinkElicitationTarget;
 pub use app_link_view::AppLinkSuggestionType;
 pub use app_link_view::AppLinkView;

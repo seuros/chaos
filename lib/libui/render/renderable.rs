@@ -4,11 +4,10 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use ratatui::widgets::Block;
+use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::WidgetRef;
-
-use crate::render::Insets;
-use crate::render::RectExt as _;
 
 pub trait Renderable {
     fn render(&self, area: Rect, buf: &mut Buffer);
@@ -385,46 +384,59 @@ impl<'a> RowRenderable<'a> {
     }
 }
 
+/// Adapts Ratatui padding to measured content and its cursor, without painting a block.
 pub struct InsetRenderable<'a> {
     child: RenderableItem<'a>,
-    insets: Insets,
+    padding: Padding,
 }
 
 impl<'a> Renderable for InsetRenderable<'a> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        self.child.render(area.inset(self.insets), buf);
+        let inner = Block::default().padding(self.padding).inner(area);
+        if !inner.is_empty() {
+            self.child.render(inner, buf);
+        }
     }
     fn desired_height(&self, width: u16) -> u16 {
         self.child
-            .desired_height(width - self.insets.left - self.insets.right)
-            + self.insets.top
-            + self.insets.bottom
+            .desired_height(
+                width
+                    .saturating_sub(self.padding.left)
+                    .saturating_sub(self.padding.right),
+            )
+            .saturating_add(self.padding.top)
+            .saturating_add(self.padding.bottom)
     }
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
-        self.child.cursor_pos(area.inset(self.insets))
+        let inner = Block::default().padding(self.padding).inner(area);
+        if inner.is_empty() {
+            None
+        } else {
+            self.child.cursor_pos(inner)
+        }
     }
 }
 
 impl<'a> InsetRenderable<'a> {
-    pub fn new(child: impl Into<RenderableItem<'a>>, insets: Insets) -> Self {
+    pub fn new(child: impl Into<RenderableItem<'a>>, padding: Padding) -> Self {
         Self {
             child: child.into(),
-            insets,
+            padding,
         }
     }
 }
 
 pub trait RenderableExt<'a> {
-    fn inset(self, insets: Insets) -> RenderableItem<'a>;
+    fn inset(self, padding: Padding) -> RenderableItem<'a>;
 }
 
 impl<'a, R> RenderableExt<'a> for R
 where
     R: Renderable + 'a,
 {
-    fn inset(self, insets: Insets) -> RenderableItem<'a> {
+    fn inset(self, padding: Padding) -> RenderableItem<'a> {
         let child: RenderableItem<'a> =
             RenderableItem::Owned(Box::new(self) as Box<dyn Renderable + 'a>);
-        RenderableItem::Owned(Box::new(InsetRenderable { child, insets }))
+        RenderableItem::Owned(Box::new(InsetRenderable { child, padding }))
     }
 }

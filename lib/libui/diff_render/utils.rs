@@ -9,11 +9,9 @@ use ratatui::style::Modifier;
 use ratatui::style::Style;
 
 use crate::color::is_light;
-use crate::color::perceptual_distance;
 use crate::render::highlight::DiffScopeBackgroundRgbs;
 use crate::render::highlight::diff_scope_background_rgbs;
 use crate::terminal_palette::StdoutColorLevel;
-use crate::terminal_palette::XTERM_COLORS;
 use crate::terminal_palette::default_bg;
 use crate::terminal_palette::indexed_color;
 use crate::terminal_palette::rgb_color;
@@ -74,7 +72,7 @@ pub(super) enum DiffTheme {
 /// Palette depth the diff renderer will target.
 ///
 /// This is the *renderer's own* notion of color depth, derived from the raw
-/// [`StdoutColorLevel`] reported by `supports-color` via
+/// [`StdoutColorLevel`] reported by `termprofile` via
 /// [`diff_color_level_for_terminal`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DiffColorLevel {
@@ -220,25 +218,8 @@ pub(super) fn color_from_rgb_for_level(
     }
 }
 
-/// Find the closest ANSI-256 color (indices 16–255) to `target` using
-/// perceptual distance.
-///
-/// Skips the first 16 entries (system colors) because their actual RGB
-/// values depend on the user's terminal configuration and are unreliable
-/// for distance calculations.
 pub(super) fn quantize_rgb_to_ansi256(target: (u8, u8, u8)) -> Color {
-    let best_index = XTERM_COLORS
-        .iter()
-        .enumerate()
-        .skip(16)
-        .min_by(|(_, a), (_, b)| {
-            perceptual_distance(**a, target).total_cmp(&perceptual_distance(**b, target))
-        })
-        .map(|(index, _)| index as u8);
-    match best_index {
-        Some(index) => indexed_color(index),
-        None => indexed_color(DARK_256_ADD_LINE_BG_IDX),
-    }
+    indexed_color(termprofile::rgb_to_ansi256(target.into()))
 }
 
 pub fn line_number_width(max_line_number: usize) -> usize {

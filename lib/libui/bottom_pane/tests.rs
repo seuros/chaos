@@ -238,6 +238,33 @@ fn status_and_composer_fill_height_without_bottom_padding() {
         "status_and_composer_fill_height_without_bottom_padding",
         render_to_first_char_string(&pane, area)
     );
+
+    // The padding adapter must measure, paint and position the composer cursor
+    // using the same inner area, including panes smaller than their padding.
+    use crate::render::renderable::{InsetRenderable, RenderableItem};
+    use ratatui::widgets::Padding;
+    pane.set_task_running(false);
+    let padded = InsetRenderable::new(RenderableItem::Borrowed(&pane), Padding::new(2, 1, 1, 2));
+    assert!(pane.cursor_pos(Rect::new(7, 8, 27, 7)).is_some());
+    for (width, height) in [(30u16, 10u16), (3, 10), (2, 2), (0, 0)] {
+        let area = Rect::new(5, 7, width, height);
+        let inner = Rect::new(7, 8, width.saturating_sub(3), height.saturating_sub(3));
+        assert_eq!(
+            padded.desired_height(width),
+            pane.desired_height(inner.width).saturating_add(3),
+        );
+        let mut actual = Buffer::empty(area);
+        let mut expected = Buffer::empty(area);
+        padded.render(area, &mut actual);
+        let cursor = if inner.is_empty() {
+            None
+        } else {
+            pane.render(inner, &mut expected);
+            pane.cursor_pos(inner)
+        };
+        assert_eq!(actual, expected);
+        assert_eq!(padded.cursor_pos(area), cursor);
+    }
 }
 
 fn status_only_snapshot() {

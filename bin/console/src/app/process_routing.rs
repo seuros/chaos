@@ -1,7 +1,7 @@
 use super::{
     App, Event, EventMsg, Op, PROCESS_EVENT_CHANNEL_CAPACITY, ProcessEventChannel,
     ProcessEventSnapshot, ProcessEventStore, ProcessId, ProcessInteractiveRequest, Result,
-    TryRecvError, TrySendError, mpsc, tui,
+    TrySendError, mpsc,
 };
 use std::sync::Arc;
 
@@ -74,10 +74,14 @@ impl App {
         process_id: ProcessId,
     ) -> Option<(mpsc::Receiver<Event>, ProcessEventSnapshot)> {
         let channel = self.process_event_channels.get_mut(&process_id)?;
-        let receiver = channel.receiver.take()?;
+        drop(channel.receiver.take()?);
         let mut store = channel.store.lock().await;
         store.active = true;
         let snapshot = store.snapshot();
+        // The snapshot already includes queued events and blocked sends from the
+        // previous activation. Neither may run again as live events after replay.
+        let (sender, receiver) = mpsc::channel(channel.sender.max_capacity());
+        channel.sender = sender;
         Some((receiver, snapshot))
     }
 
@@ -118,6 +122,9 @@ impl App {
         // deliberately bypass this, so switching transcripts cannot renew a clock.
         self.activity
             .observe(process_id, &event, std::time::Instant::now());
+        if matches!(event.msg, EventMsg::ShutdownComplete) {
+            self.mark_agent_picker_process_closed(process_id);
+        }
         let refresh_pending_process_approvals =
             ProcessEventStore::event_can_change_pending_process_approvals(&event);
         let inactive_interactive_request = if self.active_process_id != Some(process_id) {
@@ -146,7 +153,9 @@ impl App {
                 Err(TrySendError::Full(event)) => {
                     tokio::spawn(async move {
                         if let Err(err) = sender.send(event).await {
-                            tracing::warn!("process {process_id} event channel closed: {err}");
+                            tracing::debug!(
+                                "process {process_id} event channel replaced or closed: {err}"
+                            );
                         }
                     });
                 }
@@ -176,7 +185,9 @@ impl App {
         process_id: ProcessId,
         event: Event,
     ) -> Result<()> {
-        if !self.process_event_channels.contains_key(&process_id) {
+        if !self.process_event_channels.contains_key(&process_id)
+            || self.agent_navigation.is_closed(process_id)
+        {
             tracing::debug!("dropping stale event for untracked process {process_id}");
             return Ok(());
         }
@@ -215,35 +226,6 @@ impl App {
             }
         } else {
             self.pending_primary_events.push_back(event);
-        }
-        Ok(())
-    }
-
-    pub(super) async fn drain_active_process_events(&mut self, tui: &mut tui::Tui) -> Result<()> {
-        let Some(mut rx) = self.active_process_rx.take() else {
-            return Ok(());
-        };
-
-        let mut disconnected = false;
-        loop {
-            match rx.try_recv() {
-                Ok(event) => self.handle_codex_event_now(event),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    disconnected = true;
-                    break;
-                }
-            }
-        }
-
-        if !disconnected {
-            self.active_process_rx = Some(rx);
-        } else {
-            self.clear_active_thread().await;
-        }
-
-        if self.backtrack_render_pending {
-            tui.frame_requester().schedule_frame();
         }
         Ok(())
     }

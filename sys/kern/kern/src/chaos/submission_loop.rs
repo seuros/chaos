@@ -130,7 +130,13 @@ pub(super) async fn submission_loop(
             },
             sub = rx_sub.recv() => match sub {
                 Ok(sub) => sub,
-                Err(_) => break,
+                Err(_) => {
+                    // Dropping the last client is also a process exit. Session
+                    // tasks can retain the recorder, so dropping `sess` alone
+                    // does not stop lease heartbeats or release ownership.
+                    handlers::shutdown(&sess, "client-disconnected".into()).await;
+                    break;
+                },
             },
             _ = sess.completions.changed.notified() => {
                 finalize_finished_tasks(&sess).await;

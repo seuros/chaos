@@ -22,12 +22,11 @@ use super::bottom_pane_view::BottomPaneView;
 use super::scroll_state::ScrollState;
 use super::selection_popup_common::GenericDisplayRow;
 use super::selection_popup_common::measure_rows_height;
+use super::selection_popup_common::menu_surface_inset;
 use super::selection_popup_common::render_rows;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::key_hint;
-use crate::render::Insets;
-use crate::render::RectExt as _;
 use crate::style::text_panel_style;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
@@ -480,7 +479,7 @@ impl crate::render::renderable::Renderable for AppLinkView {
         ])
         .areas(area);
 
-        let inner = content_area.inset(Insets::vh(/*v*/ 1, /*h*/ 2));
+        let inner = menu_surface_inset(content_area);
         let content_width = inner.width.max(1);
         let lines = self.content_lines(content_width);
         Paragraph::new(lines)

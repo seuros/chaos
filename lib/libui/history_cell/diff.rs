@@ -27,6 +27,10 @@ pub struct PatchHistoryCell {
 }
 
 impl HistoryCell for PatchHistoryCell {
+    fn has_display_content(&self) -> bool {
+        true
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         create_diff_summary(&self.changes, &self.cwd, width as usize)
     }

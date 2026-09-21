@@ -34,6 +34,7 @@ pub(crate) enum ToolListKeyResult {
 pub(crate) struct ToolListPane {
     tools: Vec<ToolSummary>,
     scroll: u16,
+    loading: bool,
 }
 
 impl ToolListPane {
@@ -41,7 +42,14 @@ impl ToolListPane {
         Self {
             tools: Vec::new(),
             scroll: 0,
+            loading: true,
         }
+    }
+
+    pub fn reset(&mut self, loading: bool) {
+        self.tools.clear();
+        self.scroll = 0;
+        self.loading = loading;
     }
 
     /// Replace the tool list contents.
@@ -52,6 +60,7 @@ impl ToolListPane {
         tools.sort_by(|a, b| a.source.cmp(&b.source));
         self.tools = tools;
         self.scroll = 0;
+        self.loading = false;
     }
 
     pub fn scroll_up(&mut self, n: u16) {
@@ -115,8 +124,13 @@ impl ToolListPane {
         block.render(area, buf);
 
         if self.tools.is_empty() {
-            let loading = Paragraph::new("Loading tools...").style(theme::dim());
-            loading.render(inner, buf);
+            Paragraph::new(if self.loading {
+                "Loading tools..."
+            } else {
+                "No tools available."
+            })
+            .style(theme::dim())
+            .render(inner, buf);
             return;
         }
 

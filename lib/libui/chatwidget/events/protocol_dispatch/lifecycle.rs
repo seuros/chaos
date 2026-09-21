@@ -22,7 +22,7 @@ impl ChatWidget {
 
     pub(crate) fn on_session_configured(
         &mut self,
-        event: chaos_ipc::protocol::SessionConfiguredEvent,
+        mut event: chaos_ipc::protocol::SessionConfiguredEvent,
     ) {
         let sandbox_policy = event
             .vfs_policy
@@ -66,7 +66,7 @@ impl ChatWidget {
             }
         }
         self.config.approvals_reviewer = event.approvals_reviewer;
-        let initial_messages = event.initial_messages.clone();
+        let initial_messages = event.initial_messages.take();
         self.last_copyable_output = None;
         let forked_from_id = event.forked_from_id;
         // A startup /clamp selection may precede SessionConfigured. Do not
@@ -406,11 +406,30 @@ impl ChatWidget {
     // ── Replay ────────────────────────────────────────────────────────────────
 
     pub(crate) fn replay_initial_messages(&mut self, events: Vec<chaos_ipc::protocol::EventMsg>) {
+        let started = std::time::Instant::now();
+        let event_count = events.len();
+        let mut timings = std::collections::BTreeMap::<String, std::time::Duration>::new();
         for msg in events {
+            let kind = msg.to_string();
+            let event_started = std::time::Instant::now();
             self.dispatch_event_msg(
                 /*id*/ None,
                 msg,
                 Some(ReplayKind::ResumeInitialMessages),
+            );
+            *timings.entry(kind).or_default() += event_started.elapsed();
+        }
+        let elapsed = started.elapsed();
+        if elapsed >= std::time::Duration::from_millis(250) {
+            let mut timings: Vec<_> = timings.into_iter().collect();
+            timings.sort_unstable_by_key(|(_, duration)| std::cmp::Reverse(*duration));
+            timings.truncate(5);
+            tracing::warn!(
+                process_id = ?self.process_id,
+                event_count,
+                ?elapsed,
+                slowest_event_types = ?timings,
+                "slow initial UI history replay"
             );
         }
     }

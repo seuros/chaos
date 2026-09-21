@@ -424,6 +424,7 @@ async fn test_get_git_working_tree_state_branch_fallback() {
 fn resolve_root_git_project_for_trust_returns_none_outside_repo() {
     let tmp = TempDir::new().expect("tempdir");
     assert!(resolve_root_git_project_for_trust(tmp.path()).is_none());
+    assert!(get_git_repo_root(tmp.path()).is_none());
 }
 
 #[tokio::test]
@@ -432,13 +433,18 @@ async fn resolve_root_git_project_for_trust_regular_repo_returns_repo_root() {
     let repo_path = create_test_git_repo(&temp_dir).await;
     let expected = std::fs::canonicalize(&repo_path).unwrap();
 
-    assert_eq!(
-        resolve_root_git_project_for_trust(&repo_path),
-        Some(expected.clone())
-    );
     let nested = repo_path.join("sub/dir");
     std::fs::create_dir_all(&nested).unwrap();
-    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(expected));
+    for path in [&repo_path, &nested] {
+        assert_eq!(
+            resolve_root_git_project_for_trust(path),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            get_git_repo_root(path).and_then(|root| fs::canonicalize(root).ok()),
+            Some(expected.clone())
+        );
+    }
 }
 
 #[tokio::test]
@@ -469,6 +475,10 @@ async fn resolve_root_git_project_for_trust_detects_worktree_and_returns_main_ro
     let got_nested =
         resolve_root_git_project_for_trust(&nested).and_then(|p| std::fs::canonicalize(p).ok());
     assert_eq!(got_nested, expected);
+    assert_eq!(
+        get_git_repo_root(&nested).and_then(|root| fs::canonicalize(root).ok()),
+        fs::canonicalize(&wt_root).ok()
+    );
 }
 
 #[test]

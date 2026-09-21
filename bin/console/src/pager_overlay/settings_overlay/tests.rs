@@ -8,7 +8,10 @@ fn rendered(overlay: &SettingsOverlay, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(area);
     overlay.render(area, &mut buf);
-    buf.content.iter().map(|cell| cell.symbol()).collect()
+    buf.content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect()
 }
 
 #[test]
@@ -21,8 +24,29 @@ fn accounts_and_settings_share_centered_frame_geometry() {
         assert_eq!(buf[(16, 8)].symbol(), "╭");
         assert_eq!(buf[(103, 31)].symbol(), "╯");
         assert_eq!(buf[(0, 0)].symbol(), " ");
-        let text: String = buf.content.iter().map(|cell| cell.symbol()).collect();
+        let text: String = buf
+            .content
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
         assert!(text.contains(&format!("/ {title}")));
+    }
+    for area in [
+        Rect::new(5, 7, 81, 23),
+        Rect::new(5, 7, 40, 10),
+        Rect::new(5, 7, 3, 2),
+        Rect::new(5, 7, 1, 1),
+        Rect::new(5, 7, 0, 0),
+    ] {
+        let mut buf = Buffer::filled(Rect::new(0, 0, 120, 40), ratatui::buffer::Cell::new("x"));
+        let inner = render_settings_panel(area, &mut buf, "accounts");
+        assert!(inner.is_empty() || inner.intersection(area) == inner);
+        for (i, cell) in buf.content.iter().enumerate() {
+            let (x, y) = buf.pos_of(i);
+            if !area.contains((x, y).into()) {
+                assert_eq!(cell.symbol(), "x", "settings panel escaped its area");
+            }
+        }
     }
 }
 

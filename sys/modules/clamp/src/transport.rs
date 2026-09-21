@@ -143,6 +143,13 @@ struct PendingRequest {
     tx: oneshot::Sender<Result<Value, String>>,
 }
 
+/// Private configuration files retained while Claude may need to read them.
+#[derive(Default)]
+struct ClampConfigFiles {
+    system_prompt: Option<tempfile::TempPath>,
+    mcp: Option<tempfile::TempPath>,
+}
+
 /// The Claude Code subprocess transport.
 ///
 /// Drives Claude Code via the stream-json control protocol.
@@ -165,6 +172,8 @@ pub struct ClampTransport {
     request_counter: AtomicU64,
     /// The child process handle.
     child: Child,
+    /// Keep private configuration files available until the transport is dropped.
+    _config_files: ClampConfigFiles,
     /// Whether the transport has been initialized.
     initialized: bool,
     /// When the subprocess was spawned.
@@ -224,9 +233,27 @@ fn find_claude_cli(config: &ClampConfig) -> Result<PathBuf, ClampError> {
     })
 }
 
-/// Build the command-line arguments for the Claude Code subprocess.
-fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
+/// Write an owner-only temporary file, closing the handle before Claude opens it.
+fn write_config_file(
+    prefix: &str,
+    suffix: &str,
+    contents: &[u8],
+) -> Result<tempfile::TempPath, ClampError> {
+    let mut file = tempfile::Builder::new()
+        .prefix(prefix)
+        .suffix(suffix)
+        .tempfile()?;
+    std::io::Write::write_all(&mut file, contents)?;
+    Ok(file.into_temp_path())
+}
+
+/// Build the command and retain private configuration files for the subprocess.
+fn build_command(
+    cli_path: &PathBuf,
+    config: &ClampConfig,
+) -> Result<(Command, ClampConfigFiles), ClampError> {
     let mut cmd = Command::new(cli_path);
+    let mut files = ClampConfigFiles::default();
 
     // Core stream-json flags (matching the SDK's SubprocessCLITransport)
     cmd.args(["--output-format", "stream-json"]);
@@ -239,12 +266,16 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
     // Skip all setting discovery — we provide everything explicitly.
     cmd.args(["--setting-sources", ""]);
 
-    // System prompt
-    match &config.system_prompt {
-        Some(prompt) => {
-            cmd.args(["--system-prompt", prompt]);
+    // Keep prompt contents out of argv (process listings and argument-size
+    // limits). Stdin is already reserved for the stream-json control protocol.
+    match config.system_prompt.as_deref() {
+        Some(prompt) if !prompt.is_empty() => {
+            let path = write_config_file("chaos-clamp-system-prompt-", ".txt", prompt.as_bytes())?;
+            cmd.arg("--system-prompt-file").arg(&path);
+            files.system_prompt = Some(path);
         }
-        None => {
+        _ => {
+            // Preserve the explicit blank override rather than Claude's default.
             cmd.args(["--system-prompt", ""]);
         }
     }
@@ -254,9 +285,15 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
         cmd.args(["--permission-mode", mode]);
     }
 
-    // MCP config
+    // MCP config can contain bridge credentials; keep those out of argv too.
     if let Some(mcp) = &config.mcp_config {
-        cmd.args(["--mcp-config", &mcp.to_string()]);
+        let path = write_config_file(
+            "chaos-clamp-mcp-config-",
+            ".json",
+            &serde_json::to_vec(mcp)?,
+        )?;
+        cmd.arg("--mcp-config").arg(&path);
+        files.mcp = Some(path);
     }
 
     // Tool exposure: when allow_claude_code_tools is false (the default),
@@ -294,7 +331,7 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
         cmd.env("ANTHROPIC_BASE_URL", base_url);
     }
 
-    cmd
+    Ok((cmd, files))
 }
 
 /// Errors from the clamp transport.
@@ -334,7 +371,7 @@ impl ClampTransport {
         let cli_path = find_claude_cli(&config)?;
         info!(cli = %cli_path.display(), "spawning claude subprocess for clamping");
 
-        let mut cmd = build_command(&cli_path, &config);
+        let (mut cmd, config_files) = build_command(&cli_path, &config)?;
         let mut child = cmd.spawn()?;
 
         let stdin = child
@@ -383,6 +420,7 @@ impl ClampTransport {
             queued_messages: VecDeque::new(),
             request_counter: AtomicU64::new(0),
             child,
+            _config_files: config_files,
             initialized: false,
             spawned_at: std::time::Instant::now(),
             init_response: None,

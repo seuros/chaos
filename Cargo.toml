@@ -125,7 +125,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "47.5.0"
+version = "47.5.1"
 # Track the edition for all workspace crates in one place. Individual
 # crates can still override this value, but keeping it here means new
 # crates created with `cargo new -w ...` automatically inherit the 2024
@@ -326,10 +326,11 @@ rama-http-hyperium = { version = "0.4.0" }
 rama-http-types = { version = "0.4.0" }
 rand = "0.10"
 ratatui = "0.30.2"
-ratatui-hypertile = "0.4.0"
-ratatui-hypertile-extras = { version = "0.4.0", default-features = false, features = [
+ratatui-hypertile = { git = "https://github.com/seuros/ratatui-hypertile", rev = "3b0f2888a293a3b5196e0499abee986d621c8f25" }
+ratatui-hypertile-extras = { git = "https://github.com/seuros/ratatui-hypertile", rev = "3b0f2888a293a3b5196e0499abee986d621c8f25", default-features = false, features = [
     "crossterm",
 ] }
+ratatui-image = { version = "12.0.0-rc.0", default-features = false, features = ["tokio"] }
 ratatui-macros = "0.7.2"
 regex = "1.13.1"
 regex-lite = "0.1.9"
@@ -369,6 +370,7 @@ sqlx = { version = "0.9.0", default-features = false, features = [
 strum = "0.28.0"
 strum_macros = "0.28.0"
 supports-color = "3.0.2"
+termprofile = { version = "0.2.4", features = ["convert"] }
 supports-hyperlinks = "3.2"
 syntect = "5"
 sys-locale = "0.3.2"
@@ -393,6 +395,8 @@ tracing-subscriber = "0.3.23"
 tracing-test = "0.2.6"
 tree-sitter = "0.27.0"
 tree-sitter-bash = "0.25"
+tui-input = { version = "0.15.4", default-features = false, features = ["crossterm"] }
+tui-tree-widget = "0.24.1"
 # uds_windows removed — Chaos targets Linux/macOS/FreeBSD only
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2"

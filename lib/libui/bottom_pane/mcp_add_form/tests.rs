@@ -32,12 +32,62 @@ pub(crate) fn mcp_add_form_suite() {
 }
 
 fn initial_field_is_name() {
-    let form = make_form();
+    let mut form = make_form();
     assert_eq!(form.focused, FIELD_NAME);
+    form.handle_paste("ab界e\u{301}".into());
+    form.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    form.handle_paste("X".into());
+    assert_eq!(form.fields[FIELD_NAME].text(), "ab界Xe\u{301}");
+    form.handle_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    form.handle_key_event(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+    assert_eq!(form.fields[FIELD_NAME].text(), "ab界");
+
+    form.handle_key_event(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+    form.handle_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+    form.handle_key_event(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    assert_eq!(form.fields[FIELD_NAME].text(), "b界");
+    form.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
+    assert_eq!(form.fields[FIELD_NAME].text(), "ab界");
+    for pasted in ["two\nlines", "a\tb", "\u{1b}[2J"] {
+        form.handle_paste(pasted.into());
+        assert_eq!(form.fields[FIELD_NAME].text(), "ab界");
+        assert_eq!(form.error.as_deref(), Some("Paste a single-line value"));
+    }
+    form.handle_key_event(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
+    form.handle_paste("界".repeat(30));
+    for width in [3, 4, 6, 12] {
+        let area = Rect::new(3, 5, width, 11);
+        let mut buf = Buffer::empty(area);
+        form.render(area, &mut buf);
+        let (x, y) = form.cursor_pos(area).unwrap();
+        assert!(area.contains((x, y).into()));
+        assert_eq!(y, area.y + 2);
+        if width >= 6 {
+            assert_eq!(buf[(area.x + 2, y)].symbol(), "界");
+        }
+    }
+    form.focused = FIELD_ENV;
+    form.handle_paste("TOKEN=value".into());
+    for (width, height) in [(1, 1), (2, 3), (12, 6), (40, 11)] {
+        let area = Rect::new(3, 5, width, height);
+        let mut buf = Buffer::empty(area);
+        form.render(area, &mut buf);
+        if width > 2 && height >= 6 {
+            assert!(area.contains(form.cursor_pos(area).unwrap().into()));
+        } else {
+            assert!(form.cursor_pos(area).is_none());
+        }
+    }
 }
 
 fn tab_advances_field() {
     let mut form = make_form();
+    form.handle_key_event(KeyEvent::new_with_kind(
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+        KeyEventKind::Release,
+    ));
+    assert_eq!(form.focused, FIELD_NAME);
     form.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(form.focused, FIELD_COMMAND);
 }

@@ -5,6 +5,7 @@
 
 mod cells_basic;
 mod cells_composite;
+mod cells_image;
 mod cells_mcp;
 mod cells_misc;
 mod cells_plan;
@@ -21,12 +22,13 @@ pub use cells_basic::new_unified_exec_interaction;
 pub use cells_basic::new_user_prompt;
 
 pub use cells_composite::ApprovalDecisionActor;
-pub(super) use cells_composite::CompletedMcpToolCallWithImageOutput;
 pub use cells_composite::CompositeHistoryCell;
 pub use cells_composite::SessionInfoCell;
 pub use cells_composite::UnifiedExecProcessDetails;
 pub use cells_composite::new_session_info;
 pub use cells_composite::new_unified_exec_processes_output;
+
+pub(super) use cells_image::CompletedMcpToolCallWithImageOutput;
 
 pub use cells_misc::FinalMessageSeparator;
 pub use cells_misc::new_approval_decision_cell;

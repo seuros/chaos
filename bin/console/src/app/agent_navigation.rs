@@ -26,6 +26,8 @@ use chaos_ipc::ProcessId;
 use ratatui::text::Span;
 use std::collections::HashMap;
 
+mod tabs;
+
 /// Small state container for multi-agent picker ordering and labeling.
 ///
 /// `App` owns process lifecycle and UI side effects. This type keeps the pure rules for stable
@@ -41,6 +43,8 @@ pub(crate) struct AgentNavigationState {
     processes: HashMap<ProcessId, AgentPickerProcessEntry>,
     /// Stable first-seen traversal order for picker rows and keyboard cycling.
     order: Vec<ProcessId>,
+    tab_hits: Vec<(ProcessId, ratatui::layout::Rect)>,
+    tab_area: ratatui::layout::Rect,
 }
 
 /// Direction of keyboard traversal through the stable picker order.
@@ -61,6 +65,10 @@ impl AgentNavigationState {
     /// this stays optional.
     pub(crate) fn get(&self, process_id: &ProcessId) -> Option<&AgentPickerProcessEntry> {
         self.processes.get(process_id)
+    }
+
+    pub(crate) fn is_closed(&self, process_id: ProcessId) -> bool {
+        self.get(&process_id).is_some_and(|entry| entry.is_closed)
     }
 
     /// Returns whether the picker cache currently knows about any processes.
@@ -120,6 +128,8 @@ impl AgentNavigationState {
     pub(crate) fn clear(&mut self) {
         self.processes.clear();
         self.order.clear();
+        self.tab_hits.clear();
+        self.tab_area = ratatui::layout::Rect::ZERO;
     }
 
     /// Returns live picker rows in the same order users cycle through them.

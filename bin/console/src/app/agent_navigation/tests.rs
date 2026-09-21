@@ -70,4 +70,28 @@ pub(crate) fn agent_navigation_state_preserves_order_wraps_and_formats_labels() 
         state.active_agent_label(Some(main_process_id), Some(main_process_id)),
         Some("Main [default]".to_string())
     );
+    for width in [1, 12, 40, 100] {
+        let area = ratatui::layout::Rect::new(3, 2, width, 1);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        let mut active = main_process_id;
+        for direction in [
+            AgentNavigationDirection::Next,
+            AgentNavigationDirection::Previous,
+        ] {
+            for _ in 0..9 {
+                active = state.adjacent_process_id(Some(active), direction).unwrap();
+                state.render_tabs(area, &mut buf, Some(active), Some(main_process_id));
+                assert!(state.tab_hits.iter().any(|(id, _)| *id == active));
+                for (id, rect) in &state.tab_hits {
+                    assert!(area.contains(rect.as_position()));
+                    assert!(rect.right() <= area.right());
+                    assert_eq!(state.tab_at(rect.as_position()), Some(*id));
+                }
+            }
+        }
+        assert_eq!(state.tab_at((area.x, area.y + 1).into()), None);
+    }
+    state.clear();
+    assert!(!state.has_tabs());
+    assert!(!state.tabs_contain((3, 2).into()));
 }

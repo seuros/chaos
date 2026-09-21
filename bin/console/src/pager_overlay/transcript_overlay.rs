@@ -5,12 +5,11 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Paragraph, Widget, Wrap};
+use ratatui::widgets::{Padding, Paragraph, Widget, Wrap};
 
 use crate::chatwidget::ActiveCellTranscriptKey;
 use crate::history_cell::{HistoryCell, UserHistoryCell};
 use crate::key_hint::KeyBinding;
-use crate::render::Insets;
 use crate::render::renderable::{InsetRenderable, Renderable};
 use crate::style::user_message_style;
 use crate::tui::{self, TuiEvent};
@@ -137,12 +136,8 @@ impl TranscriptOverlay {
                     })) as Box<dyn Renderable>
                 };
                 if !c.is_stream_continuation() && i > 0 {
-                    cell_renderable = Box::new(InsetRenderable::new(
-                        cell_renderable,
-                        Insets::tlbr(
-                            /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
-                        ),
-                    ));
+                    cell_renderable =
+                        Box::new(InsetRenderable::new(cell_renderable, Padding::top(1)));
                 }
                 v.push(cell_renderable);
                 v
@@ -163,12 +158,7 @@ impl TranscriptOverlay {
                     .live_tail_key
                     .is_some_and(|key| !key.is_stream_continuation)
             {
-                Box::new(InsetRenderable::new(
-                    tail,
-                    Insets::tlbr(
-                        /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
-                    ),
-                )) as Box<dyn Renderable>
+                Box::new(InsetRenderable::new(tail, Padding::top(1))) as Box<dyn Renderable>
             } else {
                 tail
             };
@@ -266,12 +256,7 @@ impl TranscriptOverlay {
         let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
         let mut renderable: Box<dyn Renderable> = Box::new(CachedRenderable::new(paragraph));
         if has_prior_cells && !is_stream_continuation {
-            renderable = Box::new(InsetRenderable::new(
-                renderable,
-                Insets::tlbr(
-                    /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
-                ),
-            ));
+            renderable = Box::new(InsetRenderable::new(renderable, Padding::top(1)));
         }
         renderable
     }

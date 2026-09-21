@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::key_hint;
-use crate::render::Insets;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
@@ -20,6 +19,7 @@ use ratatui::prelude::Widget;
 use ratatui::style::Stylize as _;
 use ratatui::text::Line;
 use ratatui::widgets::Clear;
+use ratatui::widgets::Padding;
 use tokio_stream::StreamExt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -212,14 +212,10 @@ impl Widget for &CwdPromptScreen {
                 "Session = latest cwd recorded in the {action_past} session"
             ))
             .dim()
-            .inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            .inset(Padding::left(2)),
         );
         column.push(
-            Line::from("Current = your current working directory".dim()).inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            Line::from("Current = your current working directory".dim()).inset(Padding::left(2)),
         );
         column.push("");
         column.push(selection_option_row(
@@ -239,9 +235,7 @@ impl Widget for &CwdPromptScreen {
                 key_hint::plain(KeyCode::Enter).into(),
                 " to continue".dim(),
             ])
-            .inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            .inset(Padding::left(2)),
         );
         column.render(area, buf);
     }

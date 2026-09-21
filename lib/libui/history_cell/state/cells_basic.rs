@@ -239,6 +239,10 @@ impl AgentMessageCell {
 }
 
 impl HistoryCell for AgentMessageCell {
+    fn has_display_content(&self) -> bool {
+        !self.lines.is_empty()
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         adaptive_wrap_lines(
             &self.lines,
@@ -273,6 +277,10 @@ impl PlainHistoryCell {
 }
 
 impl HistoryCell for PlainHistoryCell {
+    fn has_display_content(&self) -> bool {
+        !self.lines.is_empty()
+    }
+
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
         self.lines.clone()
     }

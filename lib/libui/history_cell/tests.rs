@@ -37,6 +37,8 @@ use chaos_ipc::mcp::Tool;
 use chaos_ipc::protocol::ExecCommandSource;
 use mcp_guest::ContentBlock;
 
+mod mcp_images;
+
 const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 async fn test_config() -> (tempfile::TempDir, Config) {
     let chaos_home = tempfile::tempdir().expect("create temp chaos home");
@@ -103,6 +105,7 @@ fn resource_link_block(
 }
 
 pub(crate) async fn history_cell_suite() {
+    mcp_images::run();
     unified_exec_interaction_cell_renders_input();
     unified_exec_interaction_cell_renders_wait();
     final_message_separator_hides_short_worked_label_and_includes_runtime_metrics();
@@ -393,8 +396,13 @@ async fn mcp_tools_output_masks_sensitive_values() {
 
 fn empty_agent_message_cell_transcript() {
     let cell = AgentMessageCell::new(vec![Line::default()], false);
+    assert!(cell.has_display_content());
     assert_eq!(cell.transcript_lines(80), vec![Line::from("  ")]);
     assert_eq!(cell.desired_transcript_height(80), 1);
+    assert!(!AgentMessageCell::new(Vec::new(), false).has_display_content());
+    assert!(!PlainHistoryCell::new(Vec::new()).has_display_content());
+    assert!(PlainHistoryCell::new(vec![Line::default()]).has_display_content());
+    assert!(new_patch_event(HashMap::new(), &test_cwd()).has_display_content());
 }
 
 fn prefixed_wrapped_history_cell_indents_wrapped_lines() {
@@ -671,6 +679,7 @@ fn completed_mcp_tool_call_success_snapshot() {
     assert_snapshot!(rendered);
 }
 
+#[expect(clippy::disallowed_methods, reason = "Source image pixel assertions")]
 fn completed_mcp_tool_call_image_after_text_returns_extra_cell() {
     let invocation = McpInvocation {
         server: Some("image".into()),
@@ -696,7 +705,19 @@ fn completed_mcp_tool_call_image_after_text_returns_extra_cell() {
         .expect("expected image cell");
 
     let rendered = render_lines(&extra_cell.display_lines(80));
-    assert_eq!(rendered, vec!["tool result (image output)"]);
+    assert_eq!(rendered, vec!["Image 1×1 · preview", "▀"]);
+    let lines = extra_cell.display_lines(80);
+    assert_eq!(lines[1].spans[0].style.fg, Some(Color::Rgb(255, 0, 0)));
+    assert_eq!(
+        extra_cell.transcript_lines(80),
+        lines,
+        "the transcript should show the same color preview as chat"
+    );
+    assert!(
+        render_lines(&cell.display_lines(80))
+            .join("\n")
+            .contains("Here is the image:")
+    );
 }
 
 fn completed_mcp_tool_call_accepts_data_url_image_blocks() {
@@ -722,7 +743,7 @@ fn completed_mcp_tool_call_accepts_data_url_image_blocks() {
         .expect("expected image cell");
 
     let rendered = render_lines(&extra_cell.display_lines(80));
-    assert_eq!(rendered, vec!["tool result (image output)"]);
+    assert_eq!(rendered, vec!["Image 1×1 · preview", "▀"]);
 }
 
 fn completed_mcp_tool_call_skips_invalid_image_blocks() {
@@ -747,7 +768,7 @@ fn completed_mcp_tool_call_skips_invalid_image_blocks() {
         .expect("expected image cell");
 
     let rendered = render_lines(&extra_cell.display_lines(80));
-    assert_eq!(rendered, vec!["tool result (image output)"]);
+    assert_eq!(rendered, vec!["Image 1×1 · preview", "▀"]);
 }
 
 fn completed_mcp_tool_call_error_snapshot() {

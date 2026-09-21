@@ -88,7 +88,26 @@ These bindings apply in the composer, not in full-screen viewers.
 | `Ctrl+U` / `Ctrl+K` | Cut to the beginning/end of the line. |
 | `Ctrl+Y` | Yank (restore) the most recently killed text. |
 
+## SINGLE-LINE SETTINGS FIELDS
+
+MCP-add and Reflex fields accept single-line values and scroll horizontally.
+On short terminals, the focused field stays visible as you navigate.
+Paste inserts at the cursor. `Tab` / `Shift+Tab` navigate fields, `Enter`
+advances or submits, and `Esc` cancels.
+
 ## AGENT SWITCHING
+
+When multiple agent processes are available, a tab row shows them in spawn order.
+Click a tab or use `Ctrl+PageUp` / `Ctrl+PageDown` to switch, preserving each
+process's draft and showing only its transcript. Closed or disconnected processes
+are marked `×` and remain available for replay. If the coordinator closes or
+disconnects the agent you are watching, the UI returns to the main process
+without exiting or losing drafts.
+With no other agent to switch to, `Ctrl+PageUp` / `Ctrl+PageDown` retain their
+normal paging behavior.
+The active tab stays visible on narrow terminals. Tabs do not create new sessions
+or independent pane layouts, and switching is disabled while a dialog or palette
+is open.
 
 | Shortcut | Action |
 | --- | --- |
@@ -105,7 +124,18 @@ send those sequences for Option+Left/Right. A non-empty draft keeps word motion.
 
 ## PANE MANAGEMENT
 
-These bindings are active only when multiple panes are open and no popup, modal,
+`F2` or `Alt+P` opens the pane palette, including from chat-only mode, when no popup,
+modal, or full-screen overlay is active. Type to filter `chat`, `tool_list`, and
+`inspector`; use `Up` / `Down` or `Tab` / `Shift+Tab` to select and `Enter` to
+open or focus the pane. Existing panes are reused, never duplicated. The
+Inspector keeps its 110-column visibility rule. `Esc`, `Ctrl+C`, `F2`, or `Alt+P`
+cancel without changing panes or the draft. Mouse input and pasted text do not
+reach the underlying panes while the palette is open.
+
+If Option+P types `π` on macOS, use `F2` (or `Fn+F2` on media-key keyboards),
+or configure your terminal to send Option as Alt/Meta (`Esc+`).
+
+The following bindings are active only when multiple panes are open and no popup, modal,
 or full-screen overlay is active. They take precedence over composer editing.
 
 | Shortcut | Action |
@@ -119,6 +149,13 @@ or full-screen overlay is active. They take precedence over composer editing.
 | `Esc` | Close the focused auxiliary pane. |
 
 Pane-local keys belong to the focused pane and do not type into the chat draft.
+
+With mouse reporting enabled, left-drag the divider between panes to resize.
+Alt+left-drag from inside a pane onto another pane to swap their positions on
+release (there is no floating preview). Ordinary content clicks and wheel events
+remain pane-local. These gestures are disabled behind popups, dialogs, and
+full-screen overlays. `Esc` cancels an active gesture without closing a pane;
+resize steps already applied are kept.
 
 ## TRANSCRIPT AND LOG VIEWERS
 
@@ -134,6 +171,44 @@ Pane-local keys belong to the focused pane and do not type into the chat draft.
 | `Esc` | Start previous-message preview in the transcript viewer; it does not close the log viewer. |
 
 Letter keys in these tables do not require Shift unless explicitly shown.
+
+## MCP RESOURCE INSPECTOR
+
+`F4` toggles the read-only Inspector. It temporarily hides below 110 terminal
+columns without forgetting the toggle. Resource contents are previewed locally,
+not sent to the model.
+
+| Shortcut | Action while the Inspector is focused |
+| --- | --- |
+| `Up` / `Down` | Select a server or resource in the tree; selecting a resource loads its preview. |
+| `Left` / `Right` | Collapse/go to the parent or expand a server group. |
+| `Home` / `End` | Select the first/last visible tree item. |
+| `PageUp` / `PageDown` | Scroll the text preview without opening the transcript. |
+| `r` | Refresh the resource catalog and selected preview. |
+| `Esc` / `Tab` / `Shift+Tab` | Return focus to chat without closing the Inspector. |
+
+Click a tree row to select it; click a selected server again to fold/unfold it.
+The mouse wheel navigates the tree or scrolls the preview under the pointer.
+Closing the pane cancels pending reads. Refreshes preserve live resource
+identities and expanded groups; switching processes clears them.
+Mounting, removing or resetting MCP servers in the displayed session automatically
+refreshes the Inspector from that session's live registry, not its startup config.
+
+JSON objects and arrays display as expandable trees. `Enter` switches between
+the resource list and JSON navigation; arrow keys select and fold nodes,
+`Home` / `End` jump, and `PageUp` / `PageDown` move through the JSON tree.
+Click JSON nodes to select or fold them; `j` toggles the JSON and plain-text views.
+Invalid, overly large, or deeply nested
+JSON keeps the plain-text preview.
+
+PNG, JPEG and WebP resource blobs show a local Unicode half-block preview, fitted
+to the pane. Transparency is composited onto neutral gray to keep black and white
+artwork visible. Text and image metadata remain scrollable above it. Only the first
+image is considered; other binary content is omitted. Preview decoding is limited
+to 4 MiB of image bytes, 4096 pixels per side and 8 megapixels, and runs off the UI
+thread. Chat image previews share these decoding limits. Unsupported, corrupt or
+oversized resource images show an explanation instead.
+No image is uploaded, and no Kitty/Sixel terminal support is required.
 
 ## TERMINAL NOTES
 

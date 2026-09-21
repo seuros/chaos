@@ -5,6 +5,42 @@ use chaos_ipc::protocol::PermissionGrantUpdate;
 use chaos_ipc::protocol::PermissionUpdateScope;
 
 #[tokio::test]
+async fn submission_disconnect_runs_session_shutdown() {
+    let (session, turn, rx) = make_session_and_context_with_rx().await;
+    session
+        .spawn_task(
+            turn,
+            Vec::new(),
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
+        )
+        .await;
+    let (tx_sub, rx_sub) = async_channel::unbounded();
+    drop(tx_sub);
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        submission_loop::submission_loop(Arc::clone(&session), session.get_config().await, rx_sub),
+    )
+    .await
+    .expect("disconnect must complete session cleanup");
+    assert!(session.active_turn.lock().await.is_none());
+    assert!(session.services.rollout.lock().await.is_none());
+    assert!(
+        session
+            .services
+            .internal_task_store
+            .observer_cancel
+            .is_cancelled()
+    );
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event.msg, EventMsg::ShutdownComplete))
+    );
+}
+
+#[tokio::test]
 async fn update_permissions_changes_running_turn_without_waiting_for_completion() {
     let (session, turn, rx) = make_session_and_context_with_rx().await;
     session

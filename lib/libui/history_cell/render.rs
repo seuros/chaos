@@ -8,19 +8,15 @@ use crate::render::line_utils::push_owned_lines;
 use crate::render::renderable::Renderable;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
-use base64::Engine;
 use chaos_ipc::models::local_image_label_text;
 use chaos_ipc::protocol::McpInvocation;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_snitch::RuntimeMetricsSummary;
 use image::DynamicImage;
-use image::ImageReader;
 use ratatui::prelude::*;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
-use std::io::Cursor;
 use tracing::error;
-use unicode_width::UnicodeWidthStr;
 
 use super::state::HistoryCell;
 
@@ -142,15 +138,7 @@ pub(super) fn with_border_internal(
     lines: Vec<Line<'static>>,
     forced_inner_width: Option<usize>,
 ) -> Vec<Line<'static>> {
-    let max_line_width = lines
-        .iter()
-        .map(|line| {
-            line.iter()
-                .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
-                .sum::<usize>()
-        })
-        .max()
-        .unwrap_or(0);
+    let max_line_width = lines.iter().map(Line::width).max().unwrap_or(0);
     let content_width = forced_inner_width
         .unwrap_or(max_line_width)
         .max(max_line_width);
@@ -167,10 +155,7 @@ pub(super) fn with_border_internal(
     );
 
     for line in lines.into_iter() {
-        let used_width: usize = line
-            .iter()
-            .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
-            .sum();
+        let used_width = line.width();
         let span_count = line.spans.len();
         let mut spans: Vec<Span<'static>> = Vec::with_capacity(span_count + 4);
         spans.push(Span::styled("│ ", border_style));
@@ -228,37 +213,24 @@ pub(super) fn try_new_completed_mcp_tool_call_with_image_output(
         .iter()
         .find_map(decode_mcp_image)?;
 
-    Some(super::state::CompletedMcpToolCallWithImageOutput { _image: image })
+    Some(super::state::CompletedMcpToolCallWithImageOutput::new(
+        image,
+    ))
 }
 
 /// Decodes an MCP `ImageContent` block into an in-memory image.
 pub(super) fn decode_mcp_image(block: &serde_json::Value) -> Option<DynamicImage> {
-    let content = serde_json::from_value::<mcp_guest::ContentBlock>(block.clone()).ok()?;
-    let mcp_guest::ContentBlock::Image { data, .. } = content else {
+    if block.get("type")?.as_str()? != "image" {
         return None;
-    };
+    }
+    // Borrow the payload and reject oversized input before cloning or decoding it.
+    let data = block.get("data")?.as_str()?;
     let base64_data = if let Some(data_url) = data.strip_prefix("data:") {
         data_url.split_once(',')?.1
     } else {
-        data.as_str()
+        data
     };
-    let raw_data = base64::engine::general_purpose::STANDARD
-        .decode(base64_data)
-        .map_err(|e| {
-            error!("Failed to decode image data: {e}");
-            e
-        })
-        .ok()?;
-    let reader = ImageReader::new(Cursor::new(raw_data))
-        .with_guessed_format()
-        .map_err(|e| {
-            error!("Failed to guess image format: {e}");
-            e
-        })
-        .ok()?;
-
-    reader
-        .decode()
+    crate::image_preview::decode_base64(base64_data, None)
         .map_err(|e| {
             error!("Image decoding failed: {e}");
             e

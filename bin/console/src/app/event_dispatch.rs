@@ -16,6 +16,10 @@ impl App {
         tui: &mut tui::Tui,
         event: TuiEvent,
     ) -> Result<AppRunControl> {
+        if self.overlay.is_some() || !self.chat_widget.no_modal_or_popup_active() {
+            self.tile_manager.cancel_layout_drag();
+            self.tile_manager.runtime.close_palette();
+        }
         if matches!(event, TuiEvent::Draw) {
             let size = tui.terminal.size()?;
             self.refresh_inspector(tui, size.width).await;
@@ -30,48 +34,38 @@ impl App {
                     self.handle_key_event(tui, key_event).await;
                 }
                 TuiEvent::Mouse(mouse_event) => {
+                    if !self.chat_widget.no_modal_or_popup_active()
+                        || self.tile_manager.runtime.is_palette_open()
+                    {
+                        return Ok(AppRunControl::Continue);
+                    }
                     let position =
                         ratatui::layout::Position::new(mouse_event.column, mouse_event.row);
-                    if mouse_event.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left)
-                        && self
-                            .tile_manager
-                            .pane_rect(PaneId::ROOT)
-                            .is_some_and(|rect| rect.contains(position))
+                    if self.agent_navigation.tabs_contain(position)
+                        && matches!(
+                            mouse_event.kind,
+                            MouseEventKind::Down(_)
+                                | MouseEventKind::ScrollUp
+                                | MouseEventKind::ScrollDown
+                        )
                     {
-                        let _ = self.tile_manager.runtime.focus_pane(PaneId::ROOT);
-                        tui.frame_requester().schedule_frame();
-                    }
-                    if let Some(id) = self.tile_manager.find_pane(super::PaneKind::Inspector)
-                        && self
-                            .tile_manager
-                            .pane_rect(id)
-                            .is_some_and(|rect| rect.contains(position))
-                    {
-                        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton};
-                        match mouse_event.kind {
-                            MouseEventKind::Down(MouseButton::Left) => {
-                                let _ = self.tile_manager.runtime.focus_pane(id);
-                            }
-                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                                let code = if mouse_event.kind == MouseEventKind::ScrollUp {
-                                    KeyCode::Up
-                                } else {
-                                    KeyCode::Down
-                                };
-                                self.tile_manager
-                                    .inspector
-                                    .handle_key(KeyEvent::new(code, KeyModifiers::NONE));
-                            }
-                            _ => {}
+                        if mouse_event.kind
+                            == MouseEventKind::Down(crossterm::event::MouseButton::Left)
+                            && mouse_event.modifiers.is_empty()
+                            && let Some(process_id) = self.agent_navigation.tab_at(position)
+                        {
+                            self.tile_manager.cancel_layout_drag();
+                            self.select_agent_process(tui, process_id).await?;
+                            tui.frame_requester().schedule_frame();
                         }
+                        return Ok(AppRunControl::Continue);
+                    }
+                    if self.tile_manager.handle_pane_mouse(mouse_event) {
                         tui.frame_requester().schedule_frame();
                         return Ok(AppRunControl::Continue);
                     }
                     if mouse_event.kind == MouseEventKind::ScrollUp
-                        && self
-                            .tile_manager
-                            .focused()
-                            .is_none_or(|id| id == PaneId::ROOT)
+                        && self.tile_manager.chat_focused()
                         && (!self.transcript_cells.is_empty()
                             || self.chat_widget.active_cell_transcript_key().is_some())
                     {
@@ -80,13 +74,13 @@ impl App {
                 }
 
                 TuiEvent::Paste(pasted) => {
+                    self.tile_manager.cancel_layout_drag();
+                    if self.tile_manager.runtime.is_palette_open() {
+                        return Ok(AppRunControl::Continue);
+                    }
                     // Only paste into chat when chat is focused — do not leak
                     // clipboard content into the composer from auxiliary panes.
-                    let chat_focused = self
-                        .tile_manager
-                        .focused()
-                        .is_none_or(|id| id == PaneId::ROOT);
-                    if chat_focused {
+                    if self.tile_manager.chat_focused() {
                         // Many terminals convert newlines to \r when pasting (e.g., iTerm2),
                         // but tui-textarea expects \n. Normalize CR to LF.
                         let pasted = pasted.replace("\r", "\n");
@@ -119,19 +113,35 @@ impl App {
                     // When tiled, the viewport must be tall enough for the
                     // auxiliary panes, not just the chat content.
                     let chat_area: ratatui::layout::Rect = terminal_size.into();
-                    let desired = self.chat_widget.desired_height(chat_area.width);
-                    let draw_height = if self.tile_manager.is_single_pane() {
-                        desired
-                    } else {
+                    let desired = self
+                        .chat_widget
+                        .desired_height(chat_area.width)
+                        .saturating_add(u16::from(self.agent_navigation.has_tabs()));
+                    let draw_height = if self.tile_manager.uses_full_viewport() {
                         desired.max(terminal_size.height)
+                    } else {
+                        desired
                     };
                     libui::theme::set_collaboration_mode(
                         self.chat_widget.collaboration_mode_kind(),
                     );
                     tui.draw(draw_height, |frame| {
-                        let main_area = frame.area();
+                        let [tabs_area, main_area] = ratatui::layout::Layout::vertical([
+                            ratatui::layout::Constraint::Length(u16::from(
+                                self.agent_navigation.has_tabs(),
+                            )),
+                            ratatui::layout::Constraint::Fill(1),
+                        ])
+                        .areas(frame.area());
+                        let active = self.current_displayed_process_id();
+                        self.agent_navigation.render_tabs(
+                            tabs_area,
+                            frame.buffer,
+                            active,
+                            self.primary_process_id,
+                        );
 
-                        if self.tile_manager.is_single_pane() {
+                        if !self.tile_manager.uses_full_viewport() {
                             // Fast path: no tiling overhead, identical to pre-hypertile.
                             self.chat_widget.render(main_area, frame.buffer);
                             if let Some((x, y)) = self.chat_widget.cursor_pos(main_area) {
@@ -191,12 +201,16 @@ impl App {
                                 };
                                 self.chat_widget.render(live_rect, frame.buffer);
                                 if self.tile_manager.focused() == Some(PaneId::ROOT)
+                                    && !self.tile_manager.runtime.is_palette_open()
                                     && let Some((x, y)) = self.chat_widget.cursor_pos(live_rect)
                                 {
                                     frame.set_cursor_position((x, y));
                                 }
                             }
                         }
+                        self.tile_manager
+                            .runtime
+                            .render_palette(main_area, frame.buffer);
                     })?;
                     if self.chat_widget.external_editor_state() == ExternalEditorState::Requested {
                         self.chat_widget
@@ -214,7 +228,11 @@ impl App {
         tui: &mut tui::Tui,
         event: AppEvent,
     ) -> Result<AppRunControl> {
+        let Some(event) = event.into_current_view() else {
+            return Ok(AppRunControl::Continue);
+        };
         match event {
+            AppEvent::ForView { .. } => unreachable!("view envelopes were unwrapped"),
             AppEvent::NewSession => {
                 self.start_fresh_session_with_summary_hint(tui).await;
             }
@@ -482,10 +500,7 @@ impl App {
                 self.handle_routed_process_event(process_id, event).await?;
             }
             AppEvent::ProcessStreamClosed(process_id) => {
-                if self.process_event_channels.contains_key(&process_id) {
-                    self.activity.disconnected(process_id);
-                    tui.frame_requester().schedule_frame();
-                }
+                self.handle_process_stream_closed(tui, process_id).await?;
             }
             AppEvent::Exit(mode) => {
                 return Ok(self.handle_exit_mode(mode));
@@ -1100,6 +1115,18 @@ impl App {
                     }
                 }
             }
+            AppEvent::ToggleToolList => {
+                if self
+                    .tile_manager
+                    .find_pane(super::PaneKind::ToolList)
+                    .is_some()
+                {
+                    self.tile_manager.close_kind(super::PaneKind::ToolList);
+                } else {
+                    self.open_tool_list();
+                }
+                tui.frame_requester().schedule_frame();
+            }
             AppEvent::AllToolsReceived(ev) => {
                 self.on_all_tools_received(tui, ev);
             }
@@ -1111,6 +1138,7 @@ impl App {
                         "failed to reload project MCP layer for process"
                     );
                 }
+                tui.frame_requester().schedule_frame();
             }
         }
         Ok(AppRunControl::Continue)
@@ -1132,7 +1160,7 @@ impl App {
             }
             ExitMode::Immediate => {
                 self.pending_shutdown_exit_process_id = None;
-                AppRunControl::Exit(ExitReason::UserRequested)
+                AppRunControl::ExitImmediately(ExitReason::UserRequested)
             }
         }
     }
@@ -1188,20 +1216,8 @@ impl App {
             self.active_non_primary_shutdown_target(&event.msg)
         {
             self.mark_agent_picker_process_closed(closed_process_id);
-            self.select_agent_process(tui, primary_process_id).await?;
-            if self.active_process_id == Some(primary_process_id) {
-                self.chat_widget.add_info_message(
-                    format!(
-                        "Agent process {closed_process_id} closed. Switched back to the main process."
-                    ),
-                    /*hint*/ None,
-                );
-            } else {
-                self.clear_active_thread().await;
-                self.chat_widget.add_error_message(format!(
-                    "Agent process {closed_process_id} closed. Failed to switch back to the main process {primary_process_id}.",
-                ));
-            }
+            self.return_to_primary_after_agent_closed(tui, closed_process_id, primary_process_id)
+                .await?;
             return Ok(());
         }
 

@@ -175,7 +175,7 @@ impl ChatWidget {
                 self.open_mcp_add_form();
             }
             SlashCommand::Tools => {
-                self.submit_op(Op::ListAllTools);
+                self.app_event_tx.send(AppEvent::ToggleToolList);
             }
             SlashCommand::Clamp => {
                 self.dispatch_clamp_command("");

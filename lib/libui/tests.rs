@@ -59,6 +59,7 @@ libui_suites! {
     exec_cell_suite => crate::exec_cell::tests::exec_cell_suite();
     exec_command_suite => crate::exec_command::tests::exec_command_suite();
     history_cell_suite => run_async(crate::history_cell::tests::history_cell_suite());
+    mcp_image_suite => run_async(crate::chatwidget::tests::mcp_image_suite());
     insert_history_suite => crate::insert_history::tests::insert_history_suite();
     live_wrap_suite => crate::live_wrap::tests::live_wrap_suite();
     markdown_suite => crate::markdown::tests::markdown_suite();

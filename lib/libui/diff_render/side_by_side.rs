@@ -11,13 +11,13 @@ use ratatui::prelude::Widget;
 use ratatui::style::Stylize;
 use ratatui::text::Line as RtLine;
 use ratatui::text::Span as RtSpan;
+use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 
 use crate::exec_command::relativize_to_home;
-use crate::render::Insets;
 use crate::render::line_utils::prefix_lines;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::InsetRenderable;
@@ -67,9 +67,7 @@ impl From<DiffSummary> for Box<dyn Renderable> {
             rows.push(Box::new(RtLine::from("")));
             rows.push(Box::new(InsetRenderable::new(
                 Box::new(row.change) as Box<dyn Renderable>,
-                Insets::tlbr(
-                    /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-                ),
+                Padding::left(2),
             )));
         }
 

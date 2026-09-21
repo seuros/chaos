@@ -315,7 +315,7 @@ async fn writer_actor_survives_outage_and_conflict() {
     );
     let (ack, done) = oneshot::channel();
     tx.send(RolloutCmd::Shutdown { ack }).unwrap();
-    done.await.unwrap();
+    done.await.unwrap().unwrap();
     actor.await.unwrap().unwrap();
 }
 
@@ -371,4 +371,245 @@ async fn heartbeat_timeout_keeps_writer_retryable() {
     assert!(!writer.fenced);
     assert!(!writer.lease_confirmed);
     assert_eq!(writer.pending_items.len(), 1);
+}
+
+fn recorder(tx: UnboundedSender<RolloutCmd>) -> RolloutRecorder {
+    RolloutRecorder {
+        tx,
+        runtime_db: None,
+        event_persistence_mode: EventPersistenceMode::Extended,
+        live_rollout_items: Arc::new(Mutex::new(Vec::new())),
+        writer_status: watch::channel(JournalWriterStatus::Ready).1,
+    }
+}
+
+async fn assert_shutdown_releases_lease(client: JournalClient, config: PendingJournalConfig) {
+    // Exercise the same writer lifecycle through either SQLite RPC or the
+    // direct PostgreSQL client, without consulting the mounted database.
+    for scenario in ["normal", "open-breaker", "failed-flush", "dropped-recorder"] {
+        let mut config = config.clone();
+        config.process_id = ProcessId::new();
+        let mut writer = ActiveJournalWriter::connect_existing(client.clone(), &config)
+            .await
+            .unwrap();
+        writer.defer_items(&[item("queued before shutdown")]);
+        let mut sink = JournalSink::pending(config.clone());
+        if scenario == "open-breaker" {
+            let _ = sink.breaker.call(|| async { Err::<(), _>("outage") }).await;
+            assert!(sink.breaker.retry_after().is_some());
+        }
+        if scenario == "failed-flush" {
+            // A history conflict can fence a writer while it still owns a lease.
+            writer.fenced = true;
+        }
+        sink.state = JournalSinkState::Active(writer);
+        let (tx, rx) = mpsc::unbounded_channel();
+        let actor = AbortOnDropHandle::new(tokio::spawn(rollout_writer(
+            true,
+            rx,
+            None,
+            config.cwd.clone(),
+            None,
+            None,
+            "test".into(),
+            false,
+            sink,
+            Arc::new(Mutex::new(None)),
+            watch::channel(JournalWriterStatus::Ready).0,
+        )));
+        let recorder = recorder(tx);
+        if scenario == "dropped-recorder" {
+            drop(recorder);
+        } else {
+            recorder.shutdown().await.unwrap();
+        }
+        actor.await.unwrap().unwrap();
+
+        let lease = client
+            .acquire_lease(config.process_id, "next-writer".into(), 30_000)
+            .await
+            .unwrap_or_else(|error| panic!("{scenario} left a live lease: {error}"));
+        if scenario != "failed-flush" {
+            let loaded = client.load_journal(config.process_id).await.unwrap();
+            assert_eq!(loaded.next_seq, 1);
+            assert_item(&loaded.items[0].item, &item("queued before shutdown"));
+        }
+        client
+            .release_lease(config.process_id, lease.owner_id, lease.lease_token)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn sqlite_shutdown_releases_lease_on_every_exit_path() {
+    let journal = TestJournal::new().await;
+    assert_shutdown_releases_lease(journal.client.clone(), journal.config()).await;
+}
+
+#[tokio::test]
+async fn postgres_shutdown_releases_lease_on_every_exit_path() {
+    let Ok(url) = std::env::var("TEST_DATABASE_URL") else {
+        tracing::warn!("skipping PostgreSQL lease cleanup; TEST_DATABASE_URL is not set");
+        return;
+    };
+    let pool = chaos_proc::open_runtime_db_postgres_url(&url)
+        .await
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let config = PendingJournalConfig {
+        process_id: ProcessId::new(),
+        source: SessionSource::Cli,
+        cwd: dir.path().to_path_buf(),
+        created_at: Timestamp::now(),
+        model_provider: "test".into(),
+        cli_version: "test".into(),
+        owner_id: "shutdown-test".into(),
+        mode: JournalSinkMode::Resume,
+    };
+    assert_shutdown_releases_lease(JournalClient::postgres_pool(pool), config).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_waits_for_release_acknowledgement_with_a_deadline() {
+    for complete in [true, false] {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let recorder = recorder(tx);
+        let shutdown = tokio::spawn(async move { recorder.shutdown().await });
+        let Some(RolloutCmd::Shutdown { ack }) = rx.recv().await else {
+            panic!("expected shutdown command");
+        };
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert!(!shutdown.is_finished(), "lease cleanup is still running");
+        if complete {
+            ack.send(Ok(())).unwrap();
+            shutdown.await.unwrap().unwrap();
+        } else {
+            tokio::time::advance(JOURNAL_SHUTDOWN_TIMEOUT).await;
+            assert_eq!(
+                shutdown.await.unwrap().unwrap_err().kind(),
+                std::io::ErrorKind::TimedOut
+            );
+            assert!(ack.is_closed());
+        }
+    }
+}
+
+#[tokio::test]
+async fn shutdown_reports_release_failure() {
+    let journal = TestJournal::new().await;
+    let mut writer = journal.writer().await;
+    writer.client = JournalClient::rpc(JournalRpcClient::new(
+        journal.socket.with_extension("missing"),
+    ));
+    let mut sink = JournalSink::pending(journal.config());
+    sink.state = JournalSinkState::Active(writer);
+    let error = sink.shutdown().await.unwrap_err();
+    assert!(error.to_string().contains("release_lease failed"));
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let recorder = recorder(tx);
+    let shutdown = tokio::spawn(async move { recorder.shutdown().await });
+    let Some(RolloutCmd::Shutdown { ack }) = rx.recv().await else {
+        panic!("expected shutdown command");
+    };
+    ack.send(Err(error)).unwrap();
+    assert!(
+        shutdown
+            .await
+            .unwrap()
+            .unwrap_err()
+            .to_string()
+            .contains("release_lease failed")
+    );
+}
+
+#[tokio::test]
+async fn failed_resume_releases_lease_acquired_before_loading_journal() {
+    let journal = TestJournal::new().await;
+    let config = journal.config();
+    let writer = ActiveJournalWriter::connect_existing(journal.client.clone(), &config)
+        .await
+        .unwrap();
+    writer.release_lease().await.unwrap();
+    sqlx::query(
+        "INSERT INTO journal_entries (process_id, seq, recorded_at, item_type, payload_json)
+         VALUES (?, 0, 0, 'compacted', 'invalid')",
+    )
+    .bind(config.process_id.to_string())
+    .execute(journal.store.pool())
+    .await
+    .unwrap();
+    let error = ActiveJournalWriter::connect_existing(journal.client.clone(), &config)
+        .await
+        .err()
+        .expect("loading corrupt history should fail");
+    assert!(error.contains("load_journal failed"));
+    journal
+        .client
+        .acquire_lease(config.process_id, "next-writer".into(), 30_000)
+        .await
+        .expect("failed resume must not leave a live lease");
+}
+
+#[tokio::test]
+async fn stale_shutdown_does_not_release_another_writers_lease() {
+    let journal = TestJournal::new().await;
+    let mut writer = journal.writer().await;
+    let process_id = writer.process_id;
+    journal.expire(process_id).await;
+    let lease = journal
+        .client
+        .acquire_lease(process_id, "next-writer".into(), 30_000)
+        .await
+        .unwrap();
+    writer.fenced = true;
+    writer.defer_items(&[item("must not be written")]);
+    let mut sink = JournalSink::pending(journal.config());
+    sink.state = JournalSinkState::Active(writer);
+    sink.shutdown().await.unwrap();
+    journal
+        .client
+        .heartbeat_lease(process_id, lease.owner_id, lease.lease_token, 30_000)
+        .await
+        .expect("stale shutdown must leave the new owner untouched");
+    assert_eq!(
+        journal
+            .client
+            .load_journal(process_id)
+            .await
+            .unwrap()
+            .next_seq,
+        0
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn release_timeout_is_bounded_and_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("stalled.sock");
+    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    let _server = AbortOnDropHandle::new(tokio::spawn(async move {
+        let _connection = listener.accept().await.unwrap();
+        std::future::pending::<()>().await;
+    }));
+    let writer = ActiveJournalWriter {
+        client: JournalClient::rpc(JournalRpcClient::new(socket)),
+        process_id: ProcessId::new(),
+        owner_id: "owner".into(),
+        lease_token: "lease".into(),
+        next_seq: 0,
+        last_lease_refresh: Instant::now(),
+        pending_items: Vec::new(),
+        fenced: false,
+        lease_confirmed: true,
+        needs_reacquire: false,
+    };
+    let started = tokio::time::Instant::now();
+    assert_eq!(
+        writer.release_lease().await.unwrap_err(),
+        "release_lease timed out"
+    );
+    assert_eq!(started.elapsed(), JOURNAL_REQUEST_TIMEOUT);
 }

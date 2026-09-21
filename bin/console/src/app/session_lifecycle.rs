@@ -40,7 +40,7 @@ impl App {
         crate::chatwidget::ChatWidgetInit {
             config: cfg,
             frame_requester: tui.frame_requester(),
-            app_event_tx: self.app_event_tx.clone(),
+            app_event_tx: self.app_event_tx.for_new_view(),
             // Fork/resume bootstraps here don't carry any prefilled message content.
             initial_user_message: None,
             enhanced_keys_supported: self.enhanced_keys_supported,
@@ -62,6 +62,20 @@ impl App {
             self.chat_widget.submit_op(Op::Shutdown);
             self.server.remove_process(&process_id).await;
             self.abort_process_event_listener(process_id);
+        }
+    }
+
+    async fn shutdown_all_processes(&self) {
+        let report = self
+            .server
+            .shutdown_all_processes_bounded(Duration::from_secs(10))
+            .await;
+        if !report.submit_failed.is_empty() || !report.timed_out.is_empty() {
+            tracing::warn!(
+                submit_failed = report.submit_failed.len(),
+                timed_out = report.timed_out.len(),
+                "failed to close all processes; unreleased journal leases must expire"
+            );
         }
     }
 
@@ -110,21 +124,11 @@ impl App {
             self.chat_widget.process_name(),
         );
         self.shutdown_current_process().await;
-        let report = self
-            .server
-            .shutdown_all_processes_bounded(Duration::from_secs(10))
-            .await;
-        if !report.submit_failed.is_empty() || !report.timed_out.is_empty() {
-            tracing::warn!(
-                submit_failed = report.submit_failed.len(),
-                timed_out = report.timed_out.len(),
-                "failed to close all processes"
-            );
-        }
+        self.shutdown_all_processes().await;
         let init = crate::chatwidget::ChatWidgetInit {
             config,
             frame_requester: tui.frame_requester(),
-            app_event_tx: self.app_event_tx.clone(),
+            app_event_tx: self.app_event_tx.for_new_view(),
             // New sessions start without prefilled message content.
             initial_user_message: None,
             enhanced_keys_supported: self.enhanced_keys_supported,
@@ -176,11 +180,11 @@ impl App {
         snapshot: ProcessEventSnapshot,
         resume_restored_queue: bool,
     ) {
+        self.chat_widget
+            .set_queue_autosend_suppressed(/*suppressed*/ true);
         if let Some(event) = snapshot.session_configured {
             self.handle_codex_event_replay(event);
         }
-        self.chat_widget
-            .set_queue_autosend_suppressed(/*suppressed*/ true);
         self.chat_widget
             .restore_process_input_state(snapshot.input_state);
         for event in snapshot.events {
@@ -267,26 +271,31 @@ impl App {
         let enhanced_keys_supported = tui.enhanced_keys_supported();
         let wait_for_initial_session_configured =
             Self::should_wait_for_initial_session(&session_selection);
+        // Create the view only when its branch is ready, after any resume/fork succeeds.
+        let make_chatwidget_init = || crate::chatwidget::ChatWidgetInit {
+            config: config.clone(),
+            frame_requester: tui.frame_requester(),
+            app_event_tx: app_event_tx.for_new_view(),
+            initial_user_message: crate::chatwidget::create_initial_user_message(
+                initial_prompt,
+                initial_images,
+                // CLI prompt args are plain strings, so they don't provide element ranges.
+                Vec::new(),
+            ),
+            enhanced_keys_supported,
+            auth_manager: auth_manager.clone(),
+            models_manager: process_table.get_models_manager(),
+            is_first_run,
+            model: None,
+            session_telemetry: session_telemetry.clone(),
+            halluacinate: None,
+            resumed_session: None,
+        };
         let chat_widget = match session_selection {
             SessionSelection::StartFresh | SessionSelection::Exit => {
                 let init = crate::chatwidget::ChatWidgetInit {
-                    config: config.clone(),
-                    frame_requester: tui.frame_requester(),
-                    app_event_tx: app_event_tx.clone(),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
-                        initial_prompt.clone(),
-                        initial_images.clone(),
-                        // CLI prompt args are plain strings, so they don't provide element ranges.
-                        Vec::new(),
-                    ),
-                    enhanced_keys_supported,
-                    auth_manager: auth_manager.clone(),
-                    models_manager: process_table.get_models_manager(),
-                    is_first_run,
                     model: Some(model.clone()),
-                    session_telemetry: session_telemetry.clone(),
-                    halluacinate: None,
-                    resumed_session: None,
+                    ..make_chatwidget_init()
                 };
                 ChatWidget::new(init, process_table.clone())
             }
@@ -303,23 +312,10 @@ impl App {
                     .wrap_err_with(|| format!("Failed to resume session {target_process_id}"))?;
                 let (_, process, session_configured) = resumed.into_parts();
                 let init = crate::chatwidget::ChatWidgetInit {
-                    config: config.clone(),
-                    frame_requester: tui.frame_requester(),
-                    app_event_tx: app_event_tx.clone(),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
-                        initial_prompt.clone(),
-                        initial_images.clone(),
-                        // CLI prompt args are plain strings, so they don't provide element ranges.
-                        Vec::new(),
-                    ),
-                    enhanced_keys_supported,
-                    auth_manager: auth_manager.clone(),
-                    models_manager: process_table.get_models_manager(),
-                    is_first_run,
                     model: config.model.clone(),
-                    session_telemetry: session_telemetry.clone(),
                     halluacinate: process.halluacinate_handle(),
                     resumed_session: Some(target_process_id),
+                    ..make_chatwidget_init()
                 };
                 ChatWidget::new_from_existing(init, process, session_configured)
             }
@@ -343,23 +339,9 @@ impl App {
                     })?;
                 let (_, process, session_configured) = forked.into_parts();
                 let init = crate::chatwidget::ChatWidgetInit {
-                    config: config.clone(),
-                    frame_requester: tui.frame_requester(),
-                    app_event_tx: app_event_tx.clone(),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
-                        initial_prompt.clone(),
-                        initial_images.clone(),
-                        // CLI prompt args are plain strings, so they don't provide element ranges.
-                        Vec::new(),
-                    ),
-                    enhanced_keys_supported,
-                    auth_manager: auth_manager.clone(),
-                    models_manager: process_table.get_models_manager(),
-                    is_first_run,
                     model: config.model.clone(),
-                    session_telemetry: session_telemetry.clone(),
                     halluacinate: process.halluacinate_handle(),
-                    resumed_session: None,
+                    ..make_chatwidget_init()
                 };
                 ChatWidget::new_from_existing(init, process, session_configured)
             }
@@ -429,6 +411,7 @@ impl App {
         let mut process_created_rx = process_table.subscribe_process_created();
         let mut listen_for_threads = true;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
+        let mut exit_immediately = false;
 
         let exit_reason_result = {
             loop {
@@ -510,9 +493,20 @@ impl App {
                 match control {
                     AppRunControl::Continue => {}
                     AppRunControl::Exit(reason) => break Ok(reason),
+                    AppRunControl::ExitImmediately(reason) => {
+                        exit_immediately = true;
+                        break Ok(reason);
+                    }
                 }
             }
         };
+        if !exit_immediately {
+            tokio::select! {
+                _ = app.shutdown_all_processes() => {}
+                _ = wait_for_immediate_exit(&mut app_event_rx) => {}
+            }
+        }
+        app.abort_all_process_event_listeners();
         let clear_result = tui.terminal.clear();
         let exit_reason = match exit_reason_result {
             Ok(exit_reason) => {
@@ -596,12 +590,21 @@ impl App {
     }
 }
 
-/// Translate process-level termination signals into `AppEvent::Exit(ShutdownFirst)`
-/// so the rollout writer drains pending journald appends instead of being abruptly
-/// torn down with the runtime.
-///
-/// The listener is best-effort: a second signal escalates to `ExitMode::Immediate`
-/// so an unresponsive shutdown can still be force-quit by the user.
+pub(super) async fn wait_for_immediate_exit(
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) {
+    while let Some(event) = events.recv().await {
+        if matches!(
+            event.into_current_view(),
+            Some(AppEvent::Exit(ExitMode::Immediate))
+        ) {
+            return;
+        }
+    }
+    std::future::pending::<()>().await;
+}
+
+/// Request graceful shutdown on the first signal and immediate exit on the second.
 fn spawn_graceful_signal_listener(app_event_tx: AppEventSender) {
     #[cfg(unix)]
     {
@@ -626,8 +629,6 @@ fn spawn_graceful_signal_listener(app_event_tx: AppEventSender) {
         let already_requested = StdArc::new(AtomicBool::new(false));
         tokio::spawn(async move {
             loop {
-                // Match `Some(_)` so a closed signal stream falls through to the
-                // outer break instead of spinning the select! on a ready-but-empty arm.
                 let signal_name = tokio::select! {
                     Some(_) = sigterm.recv() => "SIGTERM",
                     Some(_) = sighup.recv() => "SIGHUP",

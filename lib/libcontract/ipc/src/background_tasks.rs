@@ -11,6 +11,8 @@ use serde_json::Value;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskSource {
+    /// Opt-in host recovery wake. Never restored across session lifetimes.
+    MachineRecovery,
     /// Durable wake admission only; delivery is not a remote inbox ack.
     FleetInbox {
         server: String,

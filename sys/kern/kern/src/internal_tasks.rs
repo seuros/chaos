@@ -111,6 +111,7 @@ impl InternalTaskStore {
                 agent_id: process_id,
             }),
             TaskSource::Mcp { .. }
+            | TaskSource::MachineRecovery
             | TaskSource::AgentMessage { .. }
             | TaskSource::FleetInbox { .. } => None,
         }
@@ -481,6 +482,23 @@ impl Session {
 
     pub(crate) async fn cancel_internal_task(&self, task_id: &str) -> anyhow::Result<McpTask> {
         let current = self.get_internal_task(task_id).await?;
+        if self
+            .services
+            .internal_task_store
+            .get(task_id)
+            .await
+            .is_some_and(|task| task.source == Some(TaskSource::MachineRecovery))
+        {
+            if self.state.lock().await.machine_recovery.wait_id.as_deref() == Some(task_id) {
+                self.cancel_machine_recovery_wait().await;
+            } else {
+                self.services
+                    .internal_task_store
+                    .cancel_machine_wake(task_id)
+                    .await;
+            }
+            return self.get_internal_task(task_id).await;
+        }
         if task_status_is_final(current.status) {
             return Ok(current);
         }

@@ -378,7 +378,14 @@ struct KernelBuiltinResourceBackend<'a> {
 
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourceBackend<'_> {
     async fn machine_json(&self) -> Result<String, String> {
-        builtin_mcp_resources::machine_json(&self.turn.config, &self.turn.cwd).await
+        let mut resource = match self.session.refresh_machine_recovery().await {
+            Ok(status) => serde_json::to_value(status).map_err(|error| error.to_string())?,
+            Err(error) => serde_json::json!({ "observation_error": error }),
+        };
+        resource["scope"] = serde_json::json!("harness_host");
+        resource["recovery"] = serde_json::to_value(self.session.machine_recovery_status().await)
+            .map_err(|error| error.to_string())?;
+        serde_json::to_string_pretty(&resource).map_err(|error| error.to_string())
     }
 
     async fn sessions_json(&self) -> Result<String, String> {

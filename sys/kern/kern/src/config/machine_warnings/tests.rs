@@ -37,6 +37,12 @@ fn machine_warnings_reject_invalid_thresholds_and_typos() {
         "enable = false",
         "probe_timeout_ms = 0",
         "probe_timeout_ms = 60001",
+        "recovery_stable_seconds = 0",
+        "recovery_stable_seconds = 86401",
+        "recovery_temperature_margin_celsius = nan",
+        "recovery_temperature_margin_celsius = 0.0",
+        "recovery_disk_margin_percent = 101",
+        "recovery_disk_margin_bytes = -1",
     ] {
         assert!(
             toml::from_str::<MachineWarningsConfig>(setting).is_err(),

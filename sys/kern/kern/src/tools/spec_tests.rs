@@ -113,6 +113,28 @@ fn capability_group_test_config() -> ToolsConfig {
     })
 }
 
+#[test]
+fn machine_recovery_tool_is_conditional_exclusive_and_not_hidden_by_groups() {
+    let catalog = crate::tools::groups::build_catalog().unwrap();
+    let state = catalog.new_state();
+    let mut config = capability_group_test_config();
+    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool.spec.name() == "wait_for_machine_recovery")
+    );
+    config.machine_recovery = true;
+    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
+    let wait = tools
+        .iter()
+        .find(|tool| tool.spec.name() == "wait_for_machine_recovery")
+        .unwrap();
+    assert!(!wait.supports_parallel_tool_calls);
+    config.model_tools_disabled = true;
+    assert!(build_grouped_tools(&config, &catalog, &state, None, &[]).is_empty());
+}
+
 fn build_grouped_tools(
     config: &ToolsConfig,
     catalog: &mcp_host::prelude::ToolGroupCatalog,

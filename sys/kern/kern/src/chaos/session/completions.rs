@@ -158,6 +158,7 @@ impl Session {
                 Some(chaos_ipc::background_tasks::TaskSource::AgentMessage { .. }) => "agent_message",
                 Some(chaos_ipc::background_tasks::TaskSource::Mcp { .. }) => "mcp",
                 Some(chaos_ipc::background_tasks::TaskSource::FleetInbox { .. }) => "fleet_inbox",
+                Some(chaos_ipc::background_tasks::TaskSource::MachineRecovery) => "machine_recovery",
                 None => "unknown",
             },
             "state": task.state,
@@ -267,7 +268,16 @@ impl Session {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) async fn admit_completion_turn(self: &Arc<Self>) {
+        self.admit_completion_turn_with_input(None).await;
+    }
+
+    pub(crate) async fn admit_completion_turn_with_input(
+        self: &Arc<Self>,
+        input: Option<&async_channel::Receiver<chaos_ipc::protocol::Submission>>,
+    ) {
+        let owner_pending = || input.is_some_and(|receiver| !receiver.is_empty());
         if *self.out_of_band_elicitation_paused.borrow()
             || self
                 .completions
@@ -275,7 +285,14 @@ impl Session {
                 .load(std::sync::atomic::Ordering::SeqCst)
             || self.active_turn.lock().await.is_some()
             || self.services.internal_task_store.pending().await.is_empty()
+            || owner_pending()
         {
+            return;
+        }
+        if !self.machine_recovery_allows_wake().await {
+            return;
+        }
+        if owner_pending() {
             return;
         }
         if let Err(error) = self.checkpoint_background_tasks().await {
@@ -295,6 +312,37 @@ impl Session {
                 .set_policy(WakePolicy::Interrupted)
                 .await;
             tracing::warn!(%error, "continuation admission could not be committed");
+            return;
+        }
+        if owner_pending() {
+            self.services
+                .internal_task_store
+                .continuation_finished(&context.sub_id)
+                .await;
+            let _ = self.checkpoint_background_tasks().await;
+            return;
+        }
+        // Only runner admission consumes an opt-in wait. A queued success alone
+        // is not clearance, and other background completions cannot bypass it.
+        let still_ready = {
+            let mut state = self.state.lock().await;
+            if state.machine_recovery.parked {
+                if state.machine_recovery.phase != crate::machine_recovery::Phase::Recovered {
+                    false
+                } else {
+                    state.machine_recovery.cancel_wait();
+                    true
+                }
+            } else {
+                true
+            }
+        };
+        if !still_ready {
+            self.services
+                .internal_task_store
+                .continuation_finished(&context.sub_id)
+                .await;
+            let _ = self.checkpoint_background_tasks().await;
             return;
         }
         self.spawn_task(context, Vec::new(), crate::tasks::RegularTask::Completion)

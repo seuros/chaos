@@ -370,6 +370,9 @@ pub(crate) async fn run_turn(
     }
 
     loop {
+        if sess.machine_recovery_parked().await {
+            break;
+        }
         if let Some(session_start_source) = sess.take_pending_session_start_source().await {
             let session_start_request = chaos_dtrace::SessionStartRequest {
                 session_id: sess.conversation_id,
@@ -473,6 +476,9 @@ pub(crate) async fn run_turn(
         .await
         {
             Ok(sampling_request_output) => {
+                if sess.machine_recovery_parked().await {
+                    break;
+                }
                 let SamplingRequestResult {
                     needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
@@ -791,8 +797,11 @@ pub(crate) async fn built_tools(
     }
 
     let plan_mode = !turn_context.mode_capabilities.mutation;
+    let mut tools_config = turn_context.tools_config.clone();
+    tools_config.machine_recovery = turn_context.config.machine_warnings.enabled
+        && sess.state.lock().await.machine_recovery.unresolved();
     Ok(Arc::new(ToolRouter::from_config(
-        &turn_context.tools_config,
+        &tools_config,
         ToolRouterParams {
             mcp_tools: has_mcp_servers.then(|| {
                 mcp_tools

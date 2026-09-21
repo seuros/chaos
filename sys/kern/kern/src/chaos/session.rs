@@ -4,6 +4,7 @@ mod context;
 mod event;
 mod history;
 mod init;
+mod machine_recovery;
 mod mcp_notifications;
 mod modes;
 pub(crate) mod tokens;

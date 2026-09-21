@@ -295,6 +295,39 @@ Restart to apply changes. Project configuration cannot override this host policy
 | `machine_warnings.disk_free_percent` | `5` | Warn at or below this caller-available percentage; integer 0–100 |
 | `machine_warnings.thermal` | `true` | Warn on OS thermal warning/critical state or a CPU channel reaching its own critical limit |
 | `machine_warnings.cpu_temperature_celsius` | unset | Additional physical CPU temperature threshold; finite −100–250°C, inclusive |
+| `machine_warnings.recovery_stable_seconds` | `300` | Continuous observed recovery before an opted-in wake; integer 30–86400 seconds |
+| `machine_warnings.recovery_temperature_margin_celsius` | `5.0` | Headroom below a triggering sensor's threshold; finite 0.1–100 degrees on that channel's scale |
+| `machine_warnings.recovery_disk_margin_percent` | `2` | Additional free percentage points above the warning threshold; integer 0–100 |
+| `machine_warnings.recovery_disk_margin_bytes` | `1073741824` | Additional free bytes above the warning threshold; required alongside the percentage margin |
+
+### Opt-in recovery wake
+
+A live session monitors host conditions every 30 seconds, independently of the
+terminal UI. Warnings expose `wait_for_machine_recovery`. After checkpointing and
+stopping/checking its heavy background work, the model can call this tool **alone**
+to park the turn and request one recovery wake. The tool does not kill processes,
+suspend the host, delete files, or restart commands. Unrelated background
+completions remain pending and cannot restart a parked model.
+
+Recovery requires all outstanding conditions to meet their recovery margins for
+five continuous observed minutes by default. Power warnings require positively
+confirmed external power; OS thermal warnings require a normal state. Temperature
+and disk warnings require the margins above. Missing triggering sensors, remounted
+or unavailable filesystems, probe failures, and observation gaps over 60 seconds
+reset the window. Host suspend is not observed recovery time. Unattainable disk
+targets are reported as blocked, not silently weakened.
+
+Recovery produces a UI notice. Only an opted-in wait starts a model turn; otherwise
+the recovery update accompanies the next normal request. The wake includes a task
+resource containing observations and recent episode counts. It asks the model to
+**reassess**, reduce workload, or stop, not blindly restart. Ordinary heat below
+existing warning thresholds does not create a new warning. Repeated thermal
+episodes are reported without an automatic retry limit.
+
+New operator input, interruption, workspace/policy changes, or session closure
+cancel a wait. Waits and pending recovery wakes **do not survive restart**.
+`chaos://machine` in a kernel session includes recovery phase, stability progress,
+outstanding conditions, wait ID, and bounded last-hour interruption counts.
 
 Battery warnings require a present/not-known-absent, discharging battery of the
 current system/UPS power source, without external power. Dead, removed, idle, or

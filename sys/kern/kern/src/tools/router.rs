@@ -213,6 +213,16 @@ impl ToolRouter {
         } = call;
         let payload_outputs_custom = matches!(payload, ToolPayload::Custom { .. });
         let payload_outputs_tool_search = matches!(payload, ToolPayload::ToolSearch { .. });
+        let wait_requested = {
+            let state = session.state.lock().await;
+            state.machine_recovery.parked || state.machine_recovery.requested_turn.is_some()
+        };
+        if wait_requested && tool_name != crate::tools::handlers::machine_recovery::NAME {
+            return Ok(Self::failure_result(
+                call_id, tool_name, payload_outputs_custom, payload_outputs_tool_search,
+                FunctionCallError::RespondToModel("Recovery wait requested; do not dispatch more work in this response. Call the wait tool alone.".into()),
+            ));
+        }
         let failure_call_id = call_id.clone();
         let failure_tool_name = tool_name.clone();
 

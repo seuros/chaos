@@ -72,6 +72,7 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
             "request_user_input",
             "request_permissions",
             "refresh_models",
+            "wait_for_machine_recovery",
         ],
         ToolExposure::Always,
     )?;

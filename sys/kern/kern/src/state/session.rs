@@ -32,6 +32,7 @@ pub(crate) struct SessionState {
     /// Context-pressure window state; rotates on each distillation.
     pub(crate) pressure: Window,
     pub(crate) session_title_reflex: SessionTitleReflex,
+    pub(crate) machine_recovery: crate::machine_recovery::Recovery,
 }
 
 impl SessionState {
@@ -49,6 +50,7 @@ impl SessionState {
             granted_permissions: None,
             pressure: Window::new(),
             session_title_reflex: SessionTitleReflex::default(),
+            machine_recovery: Default::default(),
         }
     }
 

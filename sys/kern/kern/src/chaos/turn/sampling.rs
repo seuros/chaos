@@ -95,6 +95,17 @@ pub(super) async fn run_sampling_request(
     server_model_warning_emitted_for_turn: &mut bool,
     cancellation_token: CancellationToken,
 ) -> ChaosResult<SamplingRequestResult> {
+    sess.state.lock().await.machine_recovery.begin_sample();
+    // Observe before constructing the dynamic tool surface, so the very first
+    // warning request also advertises the opt-in wait tool.
+    let mut machine_input = Vec::new();
+    machine_warnings::append(
+        &mut machine_input,
+        &sess,
+        &turn_context,
+        &cancellation_token,
+    )
+    .await?;
     let router = super::super::built_tools(
         sess.as_ref(),
         turn_context.as_ref(),
@@ -118,7 +129,7 @@ pub(super) async fn run_sampling_request(
         turn_context.as_ref(),
         base_instructions,
     );
-    let tool_runtime = ToolCallRuntime::new(
+    let mut tool_runtime = ToolCallRuntime::new(
         Arc::clone(&router),
         Arc::clone(&sess),
         Arc::clone(&turn_context),
@@ -131,7 +142,39 @@ pub(super) async fn run_sampling_request(
         // Request-local warnings are refreshed even after tool batches/retries.
         // Never persist them in history, where recovered conditions become stale.
         prompt.input.truncate(history_len);
-        machine_warnings::append(&mut prompt.input, &turn_context, &cancellation_token).await?;
+        if retries > 0 {
+            machine_input.clear();
+            machine_warnings::append(
+                &mut machine_input,
+                &sess,
+                &turn_context,
+                &cancellation_token,
+            )
+            .await?;
+            // Conditions (and the wait tool's visibility) may change while a
+            // disconnected stream is backing off.
+            let router = super::super::built_tools(
+                sess.as_ref(),
+                turn_context.as_ref(),
+                &prompt.input,
+                &cancellation_token,
+            )
+            .await?;
+            prompt.tools = build_prompt(
+                Vec::new(),
+                router.as_ref(),
+                turn_context.as_ref(),
+                prompt.base_instructions.clone(),
+            )
+            .tools;
+            tool_runtime = ToolCallRuntime::new(
+                router,
+                Arc::clone(&sess),
+                Arc::clone(&turn_context),
+                Arc::clone(&turn_diff_tracker),
+            );
+        }
+        prompt.input.extend(machine_input.iter().cloned());
         let err = match try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
@@ -148,20 +191,29 @@ pub(super) async fn run_sampling_request(
         .await
         {
             Ok(output) => {
+                sess.finish_machine_wait_request(&turn_context, tool_runtime.call_count())
+                    .await;
                 return Ok(output);
             }
             Err(ChaosErr::ContextWindowExceeded) => {
+                sess.discard_machine_wait_request(&turn_context).await;
                 sess.set_total_tokens_full(&turn_context).await;
                 return Err(ChaosErr::ContextWindowExceeded);
             }
             Err(ChaosErr::UsageLimitReached(e)) => {
+                sess.discard_machine_wait_request(&turn_context).await;
                 let rate_limits = e.rate_limits.clone();
                 if let Some(rate_limits) = rate_limits {
                     sess.update_rate_limits(&turn_context, *rate_limits).await;
                 }
                 return Err(ChaosErr::UsageLimitReached(e));
             }
-            Err(err) => err,
+            Err(err) => {
+                // A partially completed sample must not leave a tentative wait
+                // blocking future tool calls or unexpectedly parking a retry.
+                sess.discard_machine_wait_request(&turn_context).await;
+                err
+            }
         };
 
         if !err.is_retryable() {

@@ -4,6 +4,7 @@ mod catalog_module;
 mod compaction_control;
 mod dynamic;
 mod halluacinate;
+pub(crate) mod machine_recovery;
 mod mcp;
 mod mcp_resource;
 mod mcp_task;

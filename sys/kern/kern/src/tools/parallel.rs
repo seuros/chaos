@@ -27,6 +27,7 @@ use chaos_ipc::models::ResponseInputItem;
 
 #[derive(Clone)]
 pub(crate) struct ToolCallRuntime {
+    call_count: Arc<std::sync::atomic::AtomicUsize>,
     router: Arc<ToolRouter>,
     session: Arc<Session>,
     turn_context: Arc<TurnContext>,
@@ -42,12 +43,17 @@ impl ToolCallRuntime {
         tracker: SharedTurnDiffTracker,
     ) -> Self {
         Self {
+            call_count: Arc::default(),
             router,
             session,
             turn_context,
             tracker,
             scheduler: ToolSchedulerActor::spawn(),
         }
+    }
+
+    pub(crate) fn call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     #[instrument(level = "trace", skip_all)]
@@ -68,6 +74,8 @@ impl ToolCallRuntime {
         source: ToolCallSource,
         cancellation_token: CancellationToken,
     ) -> impl std::future::Future<Output = Result<AnyToolResult, ChaosErr>> {
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let supports_parallel = self.router.tool_supports_parallel(&call.tool_name);
         let router = Arc::clone(&self.router);
         let session = Arc::clone(&self.session);

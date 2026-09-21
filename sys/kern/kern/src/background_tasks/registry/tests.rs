@@ -1,6 +1,32 @@
 use super::*;
 
 #[tokio::test]
+async fn machine_recovery_pending_success_is_never_replayed() {
+    let registry = TaskRegistry::default();
+    registry
+        .register(BackgroundTask {
+            id: "machine-recovery:old".into(),
+            source: Some(TaskSource::MachineRecovery),
+            state: TaskState::Succeeded,
+            status_message: None,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+            result: None,
+            origin_call_id: None,
+            origin_turn_id: None,
+            execution_id: None,
+            ready: true,
+            notify: true,
+            delivered: false,
+        })
+        .await;
+    let restored = TaskRegistry::default();
+    restored.restore(&registry.take_journal().await).await;
+    assert!(restored.pending().await.is_empty());
+    assert_eq!(restored.list().await[0].state, TaskState::Cancelled);
+}
+
+#[tokio::test]
 async fn completion_is_gated_deduplicated_and_resume_stable() {
     let registry = TaskRegistry::default();
     registry

@@ -95,6 +95,14 @@ Every read runs new probes on a blocking worker; it is not a cached startup
 snapshot or a subscription. The kernel bounds the wait and keeps timed-out probes
 from accumulating workers.
 
+Kernel sessions also include `recovery` status: outstanding conditions, stability
+progress, an optional live-session wait ID, and recent interruption counts. Failed
+reads return `observation_error` alongside recovery status, not invented readings.
+The kernel's `wait_for_machine_recovery` tool can park an opted-in model until
+five minutes of stable recovery with headroom. This only wakes the model to
+reassess; it never restarts commands. See the
+[recovery policy](../../../man/chaos-mcp.7.md#opt-in-recovery-wake).
+
 The in-session resource probes the active turn's cwd, configured ChaOS
 home/cache/log directories, and the process temporary directory. The standalone
 MCP server uses its configured cwd rather than guessing which child session the

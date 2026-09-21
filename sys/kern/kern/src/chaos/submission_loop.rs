@@ -67,6 +67,7 @@ pub(super) async fn submission_loop(
     rx_sub: Receiver<Submission>,
 ) {
     // To break out of this loop, send Op::Shutdown.
+    sess.start_machine_recovery_monitor();
     let mut maintenance = tokio::time::interval(std::time::Duration::from_secs(10));
     maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut writer_status = sess
@@ -141,7 +142,7 @@ pub(super) async fn submission_loop(
             _ = sess.completions.changed.notified() => {
                 finalize_finished_tasks(&sess).await;
                 if !journal_paused {
-                    sess.admit_completion_turn().await;
+                    sess.admit_completion_turn_with_input(Some(&rx_sub)).await;
                 }
                 continue;
             },
@@ -150,7 +151,7 @@ pub(super) async fn submission_loop(
                     warn!(%error, "background lifecycle checkpoint deferred");
                 }
                 if !journal_paused {
-                    sess.admit_completion_turn().await;
+                    sess.admit_completion_turn_with_input(Some(&rx_sub)).await;
                 }
                 continue;
             },
@@ -162,7 +163,7 @@ pub(super) async fn submission_loop(
                     warn!(%error, "background lifecycle maintenance deferred");
                 }
                 if !journal_paused {
-                    sess.admit_completion_turn().await;
+                    sess.admit_completion_turn_with_input(Some(&rx_sub)).await;
                 }
                 continue;
             },
@@ -191,6 +192,19 @@ pub(super) async fn submission_loop(
         // Owner input wins over background admission, but must see completed
         // foreground work as idle rather than steering into a finished future.
         finalize_finished_tasks(&sess).await;
+        if matches!(
+            &sub.op,
+            Op::Interrupt
+                | Op::Shutdown
+                | Op::UserInput { .. }
+                | Op::UserTurn { .. }
+                | Op::Compact
+                | Op::Review { .. }
+                | Op::ProcessRollback { .. }
+                | Op::RunUserShellCommand { .. }
+        ) {
+            sess.cancel_machine_recovery_wait().await;
+        }
         debug!(?sub, "Submission");
         let dispatch_span = submission_dispatch_span(&sub);
         let should_exit = async {

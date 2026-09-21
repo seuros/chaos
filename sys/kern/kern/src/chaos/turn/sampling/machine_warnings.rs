@@ -2,12 +2,12 @@ use chaos_ipc::models::{DeveloperInstructions, ResponseItem};
 use std::future::Future;
 use tokio_util::sync::CancellationToken;
 
-use crate::chaos::TurnContext;
+use crate::chaos::{Session, TurnContext};
 use crate::error::{ChaosErr, Result as ChaosResult};
-use crate::machine_status::ObservationRequest;
 
 pub(super) async fn append(
     input: &mut Vec<ResponseItem>,
+    session: &Session,
     turn: &TurnContext,
     cancellation: &CancellationToken,
 ) -> ChaosResult<()> {
@@ -16,13 +16,36 @@ pub(super) async fn append(
         turn.config.machine_warnings.enabled,
         cancellation,
         async {
-            ObservationRequest::new(&turn.config, &turn.cwd)
-                .observe()
-                .await
-                .map(|observation| observation.warning_instruction)
+            let observation = session.refresh_machine_recovery().await?;
+            let mut instruction = observation.warning_instruction;
+            if session.machine_recovery_status().await.phase == crate::machine_recovery::Phase::Recovered {
+                // Only fixed vocabulary and measured values enter privileged text.
+                let temperatures = observation.machine.thermal.cpu_temperatures.iter()
+                    .filter_map(|sensor| sensor.celsius.filter(|value| value.is_finite())
+                        .map(|value| (sensor.kind, value)))
+                    .collect::<Vec<_>>();
+                let disk = observation.storage.filesystems.iter()
+                    .filter_map(chaos_machine::Filesystem::available_percent)
+                    .collect::<Vec<_>>();
+                let measurements = format!(
+                    "Current recovery observations (harness host): external power {:?}; CPU channels (kind, degrees) {:?}; relevant filesystem free percentages {:?}. These readings are not a guarantee the previous workload is sustainable.",
+                    observation.machine.power.external_power, temperatures, disk,
+                );
+                instruction = Some(match instruction {
+                    Some(warning) => format!("{warning}\n{measurements}"),
+                    None => measurements,
+                });
+            }
+            Ok(instruction)
         },
     )
-    .await
+    .await?;
+    if turn.config.machine_warnings.enabled
+        && let Some(instruction) = session.machine_recovery_instruction().await
+    {
+        input.push(DeveloperInstructions::new(instruction).into());
+    }
+    Ok(())
 }
 
 async fn append_with_observation(

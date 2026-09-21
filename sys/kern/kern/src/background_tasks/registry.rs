@@ -108,6 +108,20 @@ impl TaskRegistry {
         self.state.lock().await.tasks.get(id).cloned()
     }
 
+    /// Revoke a session-local wake, including a success already queued for admission.
+    pub(crate) async fn cancel_machine_wake(&self, id: &str) {
+        let Some(mut task) = self.get(id).await else {
+            return;
+        };
+        if task.source != Some(TaskSource::MachineRecovery) {
+            return;
+        }
+        task.state = TaskState::Cancelled;
+        task.notify = false;
+        task.delivered = true;
+        self.register(task).await;
+    }
+
     /// Atomically coalesce wake retries without reopening delivered records.
     pub(crate) async fn register_wakes_if_absent(&self, tasks: Vec<BackgroundTask>) {
         let mut state = self.state.lock().await;
@@ -417,6 +431,14 @@ impl TaskRegistry {
                 TaskJournalEvent::RecoveryContext { context } => {
                     state.recovery_context = Some(context.clone())
                 }
+            }
+        }
+        // Host observations and opt-in waits belong only to the live session.
+        for task in state.tasks.values_mut() {
+            if task.source == Some(TaskSource::MachineRecovery) {
+                task.state = TaskState::Cancelled;
+                task.notify = false;
+                task.delivered = true;
             }
         }
         // Never blindly replay a model continuation which may already have

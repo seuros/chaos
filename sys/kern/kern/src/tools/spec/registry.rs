@@ -132,6 +132,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
     if config.model_tools_disabled {
         return builder;
     }
+    if config.machine_recovery {
+        use crate::tools::handlers::machine_recovery;
+        push_tool_spec(&mut builder, machine_recovery::tool(), false);
+        builder.register_handler(machine_recovery::NAME, Arc::new(machine_recovery::Handler));
+    }
 
     let shell_handler = Arc::new(ShellHandler);
     let unified_exec_handler = Arc::new(UnifiedExecHandler);

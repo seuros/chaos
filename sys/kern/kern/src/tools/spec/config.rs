@@ -24,6 +24,7 @@ pub enum UnifiedExecShellMode {
 #[derive(Debug, Clone)]
 pub(crate) struct ToolsConfig {
     pub model_tools_disabled: bool,
+    pub machine_recovery: bool,
     pub available_models: Vec<ModelPreset>,
     pub shell_type: ConfigShellToolType,
     pub unified_exec_shell_mode: UnifiedExecShellMode,
@@ -120,6 +121,7 @@ impl ToolsConfig {
 
         Self {
             model_tools_disabled,
+            machine_recovery: false,
             available_models: available_models_ref.to_vec(),
             shell_type,
             unified_exec_shell_mode: UnifiedExecShellMode::Direct,

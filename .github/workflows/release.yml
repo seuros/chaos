@@ -84,9 +84,13 @@ jobs:
         shell: bash
         run: upkg install pkg-config libcap-dev libdbus-1-dev libclang-dev
 
-      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: jdx/mise-action@v4
         with:
-          targets: ${{ matrix.target }}
+          install_args: rust
+          cache: false
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2.9.1
         with:
@@ -136,9 +140,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: blackship
-            target: x86_64-unknown-freebsd
-            os_label: freebsd-x86_64
           - runner: linux-aarch64
             target: aarch64-unknown-linux-gnu
             os_label: linux-aarch64
@@ -153,20 +154,13 @@ jobs:
         shell: bash
         run: upkg install pkg-config libcap-dev libdbus-1-dev libclang-dev
 
-      - name: Install FreeBSD build dependencies
-        if: matrix.os_label == 'freebsd-x86_64'
-        shell: sh
-        run: |
-          set -eu
-          upkg install llvm pkgconf dbus
-          libclang_path=$(ls -d /usr/local/llvm*/lib 2>/dev/null | sort -V -r | head -1)
-          if [ -n "$libclang_path" ] && [ -f "$libclang_path/libclang.so" ]; then
-            echo "LIBCLANG_PATH=${libclang_path}" >> "$GITHUB_ENV"
-          fi
-
-      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: jdx/mise-action@v4
         with:
-          targets: ${{ matrix.target }}
+          install_args: rust
+          cache: false
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2.9.1
         with:

@@ -22,7 +22,7 @@ jobs:
   # --- Tests -------------------------------------------------------------------
   tests:
     name: Tests — ${{ matrix.runner }} - ${{ matrix.target }}
-    runs-on: ${{ matrix.runs_on || matrix.runner }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
       CARGO_INCREMENTAL: "0"
@@ -60,9 +60,13 @@ jobs:
       - name: Install DotSlash
         uses: facebook/install-dotslash@v2
 
-      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: jdx/mise-action@v4
         with:
-          targets: ${{ matrix.target }}
+          install_args: rust
+          cache: false
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
 
       # Restore Cargo's target tree and registry; do not layer another compiler
       # or target cache over this. Only successful default-branch pushes save.

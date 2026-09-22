@@ -89,6 +89,17 @@ With AGY, `/model` accepts a slug from `agy models`. `antigravity.model` or
 `CHAOS_AGY_MODEL` pins the model until a new session; otherwise activation keeps
 a compatible current model or uses `gemini-3.1-pro-low`.
 
+Both backends receive the same Chaos base instructions used by direct API
+requests. Claude Code receives them through `--system-prompt-file` at subprocess
+startup. AGY's TLS-inspecting egress proxy replaces the CLI-generated
+`systemInstruction` in supported Cloud Code and Gemini JSON generation requests.
+The canonical prompt is refreshed before every turn, including resumes; empty
+instructions remove the CLI's system instructions. No custom AGY agent or
+user-message prompt injection is used. Encoded, malformed, cached-content, and
+unsupported generation requests fail rather than falling back to the CLI prompt.
+Clamp still serializes restored history as text rather than sending the direct
+API's structured conversation.
+
 ### Antigravity setup
 
 Use a dedicated private home: Chaos replaces its MCP and permission configuration

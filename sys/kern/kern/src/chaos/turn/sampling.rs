@@ -175,7 +175,7 @@ pub(super) async fn run_sampling_request(
             );
         }
         prompt.input.extend(machine_input.iter().cloned());
-        let err = match try_run_sampling_request(
+        let err = match Box::pin(try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
             Arc::clone(&turn_context),
@@ -187,7 +187,7 @@ pub(super) async fn run_sampling_request(
             &mut last_server_model,
             &prompt,
             cancellation_token.child_token(),
-        )
+        ))
         .await
         {
             Ok(output) => {

@@ -22,6 +22,16 @@ the full Antigravity security design, see
   bridge socket/token are inherited by the MCP child without being written to
   persistent configuration.
 
+ChaOS owns the prompt as well as tools and policy. The kernel supplies its
+canonical base instructions to AGY's egress proxy before each fresh or resumed
+turn. The proxy replaces `request.systemInstruction` on Cloud Code generation
+requests and `systemInstruction` on Gemini generation requests, without touching
+conversation content, tool definitions, authentication, or control requests.
+An empty prompt removes the CLI's system instructions. This does not configure a
+custom AGY agent or embed system instructions in a user message. Unsupported
+generation endpoints, encoded/non-JSON bodies, and explicit cached-content
+requests fail closed because their system instructions cannot be safely replaced.
+
 Every Antigravity turn also starts a loopback `CONNECT` proxy and runs `agy`
 under the platform sandbox helper. The helper permits exactly one TCP
 destination — the port the proxy bound — and the proxy answers `403` for any
@@ -34,8 +44,8 @@ the missing confinement is logged.
 The proxy terminates TLS with a per-session certificate authority written
 owner-only next to the conversation state and exported as `SSL_CERT_FILE`, so
 request and response bodies land in the same wiretap sink as the Claude Code
-transport. A CLI that pins certificates would need the relay mode instead,
-which keeps the allowlist and loses body visibility.
+transport. Kernel-managed AGY clamp requires inspection for system-prompt
+replacement; a CLI that pins certificates cannot fall back to opaque relay.
 
 As with Claude Code, authentication remains an external responsibility of the
 official provider CLI:

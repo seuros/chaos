@@ -8,7 +8,11 @@ fn rendered(screen: &StorageScreen, width: u16) -> String {
     let area = Rect::new(0, 0, width, 30);
     let mut buffer = Buffer::empty(area);
     screen.render(area, &mut buffer);
-    buffer.content.iter().map(|cell| cell.symbol()).collect()
+    buffer
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect()
 }
 
 #[test]

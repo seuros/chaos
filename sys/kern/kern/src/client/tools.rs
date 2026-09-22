@@ -662,7 +662,7 @@ pub(crate) fn render_clamp_full_prompt(prompt: &Prompt) -> String {
     }
 
     format!(
-        "Chaos restored the current Chaos conversation state after connecting Claude Code.\n\
+        "Chaos restored the current Chaos conversation state after connecting the clamp transport.\n\
 Treat the transcript below as authoritative prior context, including tool calls and tool outputs that already happened.\n\
 Continue from the latest user request instead of restarting the conversation.\n\n\
 <conversation_state>\n{}\n</conversation_state>",

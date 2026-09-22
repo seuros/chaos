@@ -31,13 +31,18 @@ const LINUX_SANDBOX_ARG0: &str = "alcatraz";
 
 /// Starts the Antigravity egress proxy and returns the environment the CLI
 /// needs to route through it, along with the handle keeping it alive.
+/// Generation requests receive the canonical system prompt at this boundary;
+/// callers must refresh it on the returned proxy before subsequent turns.
 pub async fn start_antigravity_egress(
     sink: Arc<dyn WiretapSink>,
     ca_bundle_path: PathBuf,
     gateway: Option<chaos_client::Egress>,
+    system_prompt: String,
 ) -> Result<(EgressProxy, AntigravityEgress), String> {
     let proxy = EgressProxy::start(
-        EgressPolicy::antigravity().with_gateway(gateway),
+        EgressPolicy::antigravity()
+            .with_gateway(gateway)
+            .with_antigravity_system_prompt(system_prompt),
         sink,
         Some(ca_bundle_path),
     )

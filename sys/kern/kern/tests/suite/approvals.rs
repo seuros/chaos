@@ -1220,7 +1220,12 @@ fn scenarios() -> Vec<ScenarioSpec> {
 
 // Run each scenario in its own nextest process: runtime storage mounts and other
 // shared services live for the process lifetime and must not accumulate here.
-#[test_case::test_matrix(0..39)]
+// Explicit indices avoid the range expansion's shared span triggering Clippy's
+// zero_prefixed_literal lint on the generated integer arguments.
+#[test_case::test_matrix([
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38
+])]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[test_log::test]
 async fn approval_matrix_covers_all_modes(scenario_index: usize) -> Result<()> {
@@ -1231,7 +1236,7 @@ async fn approval_matrix_covers_all_modes(scenario_index: usize) -> Result<()> {
     assert_eq!(
         scenarios.len(),
         39,
-        "update the test_matrix range when adding or removing approval scenarios"
+        "update the test_matrix indices when adding or removing approval scenarios"
     );
     run_scenario(&scenarios[scenario_index]).await
 }

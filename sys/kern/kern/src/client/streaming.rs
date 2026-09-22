@@ -684,6 +684,7 @@ impl ModelClientSession {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let settings = clamp_settings.antigravity;
+        let system_prompt = prompt.base_instructions.text.clone();
         let full_prompt_state = render_clamp_full_prompt(prompt);
         let latest_user_content = render_latest_clamp_user_message(prompt);
         let model = settings
@@ -757,6 +758,7 @@ impl ModelClientSession {
                     clamp_wiretap_sink(clamp_wiretap_mode(), &session),
                     ca_bundle_path,
                     clamp_state.provider.egress.clone(),
+                    system_prompt.clone(),
                 )
                 .await
                 {
@@ -851,6 +853,23 @@ impl ModelClientSession {
                     .await;
                 return;
             };
+            // The CLI is only the transport: the canonical system prompt goes
+            // into its provider request, never into the user-content frame.
+            let prompt_update = {
+                let egress = clamp_state.antigravity_egress.lock().await;
+                match egress.as_ref() {
+                    Some(egress) => egress
+                        .set_antigravity_system_prompt(system_prompt)
+                        .map_err(|error| error.to_string()),
+                    None => Err("Antigravity system-prompt egress is missing".to_string()),
+                }
+            };
+            if let Err(error) = prompt_update {
+                let _ = tx_event
+                    .send(Err(chaos_parrot::error::ApiError::Stream(error)))
+                    .await;
+                return;
+            }
             let content = if transport.conversation_id().is_none() {
                 format!(
                     "Use the Chaos MCP server as your sole action surface. Native Antigravity tools are unavailable. You may call multiple Chaos tools before answering. Tool results are authoritative. Return only the user-facing answer without checkpoint or timestamp boilerplate.\n\n{full_prompt_state}"

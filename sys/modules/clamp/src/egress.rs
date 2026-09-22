@@ -51,6 +51,9 @@ use crate::proxy::{
     RecordParts, WiretapExchange, WiretapSink, error_response, forward_recorded_request,
 };
 
+mod prompt;
+use prompt::AntigravitySystemPrompt;
+
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
 /// endpoint, and the generative-language surface. Everything else the binary
 /// references (telemetry, Play, mTLS variants) is deliberately absent.
@@ -67,6 +70,7 @@ pub struct EgressPolicy {
     allowed_hosts: Vec<String>,
     inspect_bodies: bool,
     gateway: Option<chaos_client::Egress>,
+    system_prompt: Option<AntigravitySystemPrompt>,
 }
 
 impl EgressPolicy {
@@ -87,12 +91,20 @@ impl EgressPolicy {
                 .collect(),
             inspect_bodies: true,
             gateway: None,
+            system_prompt: None,
         }
     }
 
     /// The default policy for Google's Antigravity CLI.
     pub fn antigravity() -> Self {
         Self::new(ANTIGRAVITY_ALLOWED_HOSTS)
+    }
+
+    /// Replace AGY's system instructions at the generation-request boundary.
+    /// Empty text removes CLI instructions rather than keeping its defaults.
+    pub fn with_antigravity_system_prompt(mut self, text: String) -> Self {
+        self.system_prompt = Some(AntigravitySystemPrompt::new(text));
+        self
     }
 
     /// Route permitted requests through the global LSD gateway after TLS
@@ -127,6 +139,7 @@ impl EgressPolicy {
 pub struct EgressProxy {
     port: u16,
     ca_bundle_path: Option<PathBuf>,
+    system_prompt: Option<AntigravitySystemPrompt>,
     task: JoinHandle<()>,
 }
 
@@ -176,6 +189,9 @@ impl EgressProxy {
                 "global egress requires TLS inspection; direct tunnel relay is disabled".into(),
             );
         }
+        if policy.system_prompt.is_some() && !policy.inspect_bodies {
+            return Err("clamp system-prompt replacement requires TLS inspection".into());
+        }
         let (tls, ca_bundle_path) = if policy.inspect_bodies {
             let path = ca_bundle_path
                 .ok_or_else(|| BoxError::from("body inspection requires a CA bundle path"))?;
@@ -195,6 +211,7 @@ impl EgressProxy {
             .await?;
         let port = listener.local_addr()?.port();
 
+        let system_prompt = policy.system_prompt.clone();
         let state = EgressState {
             policy,
             sink,
@@ -225,6 +242,7 @@ impl EgressProxy {
         Ok(Self {
             port,
             ca_bundle_path,
+            system_prompt,
             task,
         })
     }
@@ -243,6 +261,15 @@ impl EgressProxy {
     /// Path to the session CA bundle, when body inspection is enabled.
     pub fn ca_bundle_path(&self) -> Option<&Path> {
         self.ca_bundle_path.as_deref()
+    }
+
+    /// Publish the canonical Chaos prompt before starting a fresh or resumed
+    /// AGY turn. All generation requests in its tool loop use this snapshot.
+    pub fn set_antigravity_system_prompt(&self, text: String) -> Result<(), BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without system-prompt replacement")?
+            .update(text)
     }
 
     /// Stop the proxy.
@@ -380,6 +407,18 @@ async fn inspect_and_forward(
         return Ok(error_response(StatusCode::FORBIDDEN));
     }
 
+    let req = if let Some(prompt) = &state.policy.system_prompt {
+        match prompt.rewrite(req, &host).await {
+            Ok(req) => req,
+            Err(err) => {
+                warn!("egress: system-prompt replacement failed: {err}");
+                return Ok(error_response(StatusCode::BAD_GATEWAY));
+            }
+        }
+    } else {
+        req
+    };
+    // Record the effective provider request, not the discarded CLI prompt.
     let (mut upstream_req, record) = match RecordParts::capture(req).await {
         Ok(captured) => captured,
         Err(err) => {

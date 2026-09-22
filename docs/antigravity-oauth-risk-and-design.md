@@ -168,8 +168,13 @@ telemetry and Play endpoints the list exists to exclude.
 The proxy terminates TLS using a per-session certificate authority written
 owner-only beside the conversation state and handed to the CLI as
 `SSL_CERT_FILE`. Bodies are therefore recordable through the existing wiretap
-sink rather than opaque. A future CLI build that pins certificates would fall
-back to verbatim relay, keeping the allowlist and losing body visibility.
+sink rather than opaque. The proxy also replaces the system-instruction field
+on supported JSON generation requests with ChaOS's canonical base instructions,
+refreshed before each turn. It leaves authentication and control requests alone.
+System instructions are not sent as user content and no custom AGY agent is
+selected. Opaque relay cannot satisfy this contract: a CLI that pins certificates,
+or sends an unsupported generation format, must fail rather than silently use
+its own system prompt.
 
 Two limits are worth stating plainly. UDP is not restricted, so a datagram
 covert channel remains available to a subprocess that wants one. And the CLI

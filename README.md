@@ -176,6 +176,12 @@ installing, use `just chaos`. For a local release run, use
 `just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
 for system requirements and logging controls.
 
+Run `just qa` for formatting, compilation, Clippy, and the all-features nextest
+suite (cargo-nextest 0.9.99 or newer). On macOS, nextest launches `chaos-console`
+and `libui` test binaries through hard links in `<build-profile>/nextest-ui/`.
+This avoids AppKit's pre-main scan of Cargo's large `deps` directory without
+raising test timeouts. Explicit target runners take precedence over this wrapper.
+
 During a running turn, the console status row may show an approximate live token
 progress counter such as `~1.2K tokens`. This is a liveness/size indicator for
 the current response, not provider usage accounting; exact usage is still shown

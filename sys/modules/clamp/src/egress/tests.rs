@@ -58,6 +58,21 @@ async fn global_egress_cannot_use_direct_tunnel_relay() {
 }
 
 #[tokio::test]
+async fn system_prompt_replacement_cannot_use_opaque_relay() {
+    let policy = EgressPolicy::antigravity()
+        .with_antigravity_system_prompt("canonical instructions".to_string())
+        .without_body_inspection();
+    let error = EgressProxy::start(policy, Arc::new(TestSink::default()), None)
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("system-prompt replacement requires TLS inspection")
+    );
+}
+
+#[tokio::test]
 async fn global_egress_routes_inspected_antigravity_requests() {
     let exec = Executor::default();
     let listener = TcpListener::build(exec.clone())
@@ -76,6 +91,22 @@ async fn global_egress_routes_inspected_antigravity_requests() {
                 "https://cloudcode-pa.googleapis.com"
             );
             assert_eq!(req.headers()["authorization"], "Bearer vendor-token");
+            let length: usize = req.headers()["content-length"]
+                .to_str()
+                .unwrap()
+                .parse()
+                .unwrap();
+            let body = req.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(length, body.len());
+            let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                payload["request"]["systemInstruction"]["parts"][0]["text"],
+                "canonical instructions"
+            );
+            assert_eq!(
+                payload["request"]["contents"][0]["parts"][0]["text"],
+                "operator request"
+            );
             Ok::<_, std::convert::Infallible>(
                 Response::builder()
                     .status(200)
@@ -84,20 +115,34 @@ async fn global_egress_routes_inspected_antigravity_requests() {
             )
         })));
     let gateway = tokio::spawn(async move { listener.serve(http).await });
+    let sink = Arc::new(TestSink::default());
     let state = EgressState {
-        policy: EgressPolicy::antigravity().with_gateway(Some(
-            chaos_client::Egress::parse(&format!("http://127.0.0.1:{port}/egress/chaos")).unwrap(),
-        )),
-        sink: Arc::new(TestSink::default()),
+        policy: EgressPolicy::antigravity()
+            .with_antigravity_system_prompt("canonical instructions".to_string())
+            .with_gateway(Some(
+                chaos_client::Egress::parse(&format!("http://127.0.0.1:{port}/egress/chaos"))
+                    .unwrap(),
+            )),
+        sink: sink.clone(),
         tls: None,
         exec,
     };
     // Origin-form HTTP/1 request inside the already-terminated tunnel.
     let request = Request::builder()
+        .method("POST")
         .uri("/v1internal:streamGenerateContent?alt=sse")
         .header("host", "cloudcode-pa.googleapis.com")
         .header("authorization", "Bearer vendor-token")
-        .body(Body::from("{}"))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "request": {
+                    "systemInstruction": {"parts": [{"text": "CLI default prompt"}]},
+                    "contents": [{"role": "user", "parts": [{"text": "operator request"}]}]
+                }
+            })
+            .to_string(),
+        ))
         .unwrap();
     let response = inspect_and_forward(request, state.clone()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -105,6 +150,34 @@ async fn global_egress_routes_inspected_antigravity_requests() {
         response.into_body().collect().await.unwrap().to_bytes(),
         "data: done\n\n"
     );
+    {
+        let recorded = sink.recorded.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        let request = recorded[0].request.as_ref().unwrap();
+        assert_eq!(
+            request["request"]["systemInstruction"]["parts"][0]["text"],
+            "canonical instructions"
+        );
+        assert!(!request.to_string().contains("CLI default prompt"));
+        assert_eq!(recorded[0].headers["authorization"], "<redacted>");
+    }
+
+    // Malformed inference must be rejected before contacting the gateway.
+    let malformed = Request::builder()
+        .method("POST")
+        .uri("/v1internal:streamGenerateContent")
+        .header("host", "cloudcode-pa.googleapis.com")
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    assert_eq!(
+        inspect_and_forward(malformed, state.clone())
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_GATEWAY
+    );
+    assert_eq!(sink.recorded.lock().unwrap().len(), 1);
 
     let blocked = Request::builder()
         .uri("https://aiplatform.googleapis.com/v1/predict")
@@ -132,6 +205,11 @@ async fn session_ca_is_written_as_owner_only_pem_covering_the_allowlist() {
         proxy.proxy_url(),
         format!("http://127.0.0.1:{}", proxy.port())
     );
+    assert!(
+        proxy
+            .set_antigravity_system_prompt("cannot enable rewriting after startup".to_string())
+            .is_err()
+    );
 
     let pem = std::fs::read_to_string(&path).expect("read ca bundle");
     assert!(pem.starts_with("-----BEGIN CERTIFICATE-----\n"));
@@ -145,6 +223,46 @@ async fn session_ca_is_written_as_owner_only_pem_covering_the_allowlist() {
     }
 
     proxy.shutdown();
+}
+
+#[tokio::test]
+async fn proxy_handle_refreshes_system_prompt_for_existing_connections() {
+    let dir = tempfile::tempdir().unwrap();
+    let policy =
+        EgressPolicy::antigravity().with_antigravity_system_prompt("initial prompt".to_string());
+    // Existing TLS connections carry a cloned policy, not a new prompt copy.
+    let connected_policy = policy.clone();
+    let proxy = EgressProxy::start(
+        policy,
+        Arc::new(TestSink::default()),
+        Some(dir.path().join("ca.pem")),
+    )
+    .await
+    .unwrap();
+    for text in ["fresh turn instructions", "resumed turn instructions"] {
+        proxy
+            .set_antigravity_system_prompt(text.to_string())
+            .unwrap();
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1internal:generateContent")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"request":{"contents":[]}}"#))
+            .unwrap();
+        let request = connected_policy
+            .system_prompt
+            .as_ref()
+            .unwrap()
+            .rewrite(request, "cloudcode-pa.googleapis.com")
+            .await
+            .unwrap();
+        let body = request.into_body().collect().await.unwrap().to_bytes();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            value["request"]["systemInstruction"]["parts"][0]["text"],
+            text
+        );
+    }
 }
 
 #[tokio::test]

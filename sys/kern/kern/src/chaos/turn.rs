@@ -462,7 +462,7 @@ pub(crate) async fn run_turn(
         let turn_metadata_header = sampling_turn_context
             .turn_metadata_state
             .current_header_value();
-        match run_sampling_request(
+        match Box::pin(run_sampling_request(
             Arc::clone(&sess),
             Arc::clone(&sampling_turn_context),
             Arc::clone(&turn_diff_tracker),
@@ -472,7 +472,7 @@ pub(crate) async fn run_turn(
             sampling_request_input,
             &mut server_model_warning_emitted_for_turn,
             cancellation_token.child_token(),
-        )
+        ))
         .await
         {
             Ok(sampling_request_output) => {

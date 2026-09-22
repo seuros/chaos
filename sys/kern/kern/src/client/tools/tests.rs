@@ -99,6 +99,22 @@ fn make_prompt(input: Vec<ResponseItem>) -> Prompt {
 const NOTIFICATION: &str = "<mcp_resource_update>\nserver: \"coordinator\"\n</mcp_resource_update>";
 
 #[test]
+fn clamp_user_content_does_not_demote_base_instructions() {
+    let mut prompt = make_prompt(vec![
+        user_message("first turn"),
+        user_message("latest turn"),
+    ]);
+    prompt.base_instructions.text = "Canonical system instructions.".to_string();
+    for rendered in [
+        render_clamp_full_prompt(&prompt),
+        render_latest_clamp_user_message(&prompt),
+    ] {
+        assert!(!rendered.contains(&prompt.base_instructions.text));
+        assert!(rendered.contains("latest turn"));
+    }
+}
+
+#[test]
 fn notification_after_user_message_is_included() {
     let prompt = make_prompt(vec![
         user_message("do something"),

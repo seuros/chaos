@@ -9,25 +9,15 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-chaos-traits = { workspace = true }
 gix = { version = "=0.87.1", features = [
     "max-performance-safe",
     "blob-diff",
     "status",
     "revision",
 ] }
-inventory = { workspace = true }
-mcp-host = { workspace = true, features = ["macros"] }
-schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
 similar = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["rt", "time"] }
-url = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-
-[package.metadata.cargo-shear]
-ignored = ["serde_json", "tempfile"]

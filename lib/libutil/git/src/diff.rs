@@ -9,7 +9,6 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use gix::bstr::ByteSlice;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use similar::ChangeTag;
@@ -27,7 +26,7 @@ const MAX_PATCH_BYTES: usize = 8 * 1024 * 1024;
 const MAX_WHITESPACE_ERRORS: usize = 10_000;
 const TEXT_DIFF_TIMEOUT: Duration = Duration::from_millis(200);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiffScope {
     Worktree,
@@ -35,7 +34,7 @@ pub enum DiffScope {
     All,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiffFormat {
     /// Return unified patches grouped by file.

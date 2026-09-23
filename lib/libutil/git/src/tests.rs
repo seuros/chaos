@@ -1,116 +1,162 @@
-#[test]
-fn mutation_tools_are_marked_mutating_and_non_parallel() {
-    let tools = super::git_catalog_tools();
-    for name in ["git_add", "git_commit", "git_branch"] {
-        let tool = tools
-            .iter()
-            .find(|tool| tool.name == name)
-            .unwrap_or_else(|| panic!("missing {name}"));
-        assert_eq!(tool.read_only_hint, Some(false));
-        assert!(!tool.supports_parallel_tool_calls);
-    }
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 
-    let status = tools
-        .iter()
-        .find(|tool| tool.name == "git_status")
-        .expect("git_status");
-    assert_eq!(status.read_only_hint, Some(true));
-    assert!(status.supports_parallel_tool_calls);
+use tempfile::tempdir;
+
+use crate::DiffFormat;
+use crate::DiffScope;
+use crate::GitError;
+use crate::diff_report;
+
+fn git(dir: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("failed to run git");
     assert!(
-        tools.iter().all(|tool| tool.name != "git_branches"),
-        "branch listing must be exposed as a resource, not a tool"
+        status.success(),
+        "git command failed: git {}",
+        args.join(" ")
+    );
+}
+
+fn init_repo(dir: &Path) {
+    git(dir, &["init"]);
+    git(dir, &["config", "user.name", "Test User"]);
+    git(dir, &["config", "user.email", "test@example.com"]);
+}
+
+#[test]
+fn diff_report_returns_scoped_formats_and_whitespace_checks() {
+    let temp = tempdir().expect("tempdir");
+    let dir = temp.path();
+    init_repo(dir);
+
+    let file = dir.join("file.txt");
+    fs::write(&file, "one\ntwo\n").expect("write initial file");
+    git(dir, &["add", "file.txt"]);
+    git(dir, &["commit", "-m", "initial"]);
+
+    fs::write(&file, "one\nstaged\n").expect("write staged file");
+    git(dir, &["add", "file.txt"]);
+    fs::write(&file, "one\nworktree  \n").expect("write worktree file");
+
+    let staged = diff_report(
+        dir,
+        DiffScope::Staged,
+        DiffFormat::Patch,
+        None,
+        Some(&["file.txt"]),
+        false,
+    )
+    .expect("staged patch");
+    let staged_patch = &staged.files[0].patch;
+    assert!(staged_patch.contains("--- a/file.txt"));
+    assert!(staged_patch.contains("+++ b/file.txt"));
+    assert!(staged_patch.contains("-two"));
+    assert!(staged_patch.contains("+staged"));
+    assert!(!staged_patch.contains("worktree"));
+
+    let worktree = diff_report(
+        dir,
+        DiffScope::Worktree,
+        DiffFormat::Stat,
+        None,
+        None,
+        false,
+    )
+    .expect("worktree stat");
+    assert_eq!(worktree.summary.files_changed, 1);
+    assert_eq!(worktree.files[0].path, "file.txt");
+    assert_eq!(worktree.files[0].additions, Some(1));
+    assert_eq!(worktree.files[0].deletions, Some(1));
+
+    let all = diff_report(dir, DiffScope::All, DiffFormat::NameOnly, None, None, true)
+        .expect("all changed paths");
+    assert_eq!(all.paths, vec!["file.txt".to_string()]);
+    assert_eq!(all.whitespace_errors[0].kind, "trailing_whitespace");
+    assert_eq!(all.whitespace_errors[0].line, 2);
+
+    let error = diff_report(
+        dir,
+        DiffScope::Worktree,
+        DiffFormat::NameOnly,
+        Some("HEAD"),
+        None,
+        false,
+    )
+    .expect_err("worktree base must be rejected");
+    assert!(matches!(error, GitError::InvalidInput(_)));
+    assert!(
+        error
+            .to_string()
+            .contains("base cannot be used with worktree scope")
     );
 }
 
 #[test]
-fn git_diff_schema_requires_structured_scope_format_and_check() {
-    let tools = super::git_catalog_tools();
-    let diff = tools
-        .iter()
-        .find(|tool| tool.name == "git_diff")
-        .expect("git_diff");
-    let required = diff.input_schema["required"]
-        .as_array()
-        .expect("required properties");
+fn diff_report_name_only_skips_oversized_blob_content() {
+    let temp = tempdir().expect("tempdir");
+    let dir = temp.path();
+    git(dir, &["init"]);
 
-    for name in ["scope", "format", "check"] {
-        assert!(
-            required.iter().any(|value| value == name),
-            "{name} must be required: {}",
-            diff.input_schema
-        );
-    }
-    for name in ["base", "paths"] {
-        assert!(
-            required.iter().all(|value| value != name),
-            "{name} must remain optional: {}",
-            diff.input_schema
-        );
-    }
+    let large = vec![b'x'; 9 * 1024 * 1024];
+    fs::write(dir.join("generated.txt"), large).expect("write large file");
+    git(dir, &["add", "generated.txt"]);
+
+    let names = diff_report(
+        dir,
+        DiffScope::Staged,
+        DiffFormat::NameOnly,
+        None,
+        None,
+        false,
+    )
+    .expect("name-only should not load blob content");
+    assert_eq!(names.paths, vec!["generated.txt".to_string()]);
+    assert!(names.summary.insertions.is_none());
+
+    let error = diff_report(dir, DiffScope::Staged, DiffFormat::Patch, None, None, false)
+        .expect_err("patch generation must reject oversized content");
+    assert!(matches!(error, GitError::DiffLimit(_)));
+    assert!(error.to_string().contains("generated.txt"));
 }
 
 #[test]
-fn git_commit_schema_exposes_optional_trailers_and_destructive_amend() {
-    let commit = super::tools::tool_infos()
-        .into_iter()
-        .find(|tool| tool.name == "git_commit")
-        .expect("git_commit");
-    let required = commit.input_schema["required"]
-        .as_array()
-        .expect("required properties");
+fn diff_report_all_filters_staged_changes_undone_in_worktree() {
+    let temp = tempdir().expect("tempdir");
+    let dir = temp.path();
+    init_repo(dir);
 
-    assert!(required.iter().any(|value| value == "message"));
-    assert!(required.iter().all(|value| value != "amend"));
-    assert!(required.iter().all(|value| value != "trailers"));
-    assert_eq!(
-        commit.input_schema["properties"]["amend"]["type"],
-        "boolean"
-    );
-    assert_eq!(
-        commit.input_schema["properties"]["trailers"]["type"],
-        "array"
-    );
-    let destructive = commit
-        .annotations
-        .as_ref()
-        .and_then(|annotations| annotations.destructive_hint)
-        .unwrap_or(true);
-    assert!(destructive);
+    fs::write(dir.join("file.txt"), "head\n").expect("write initial file");
+    git(dir, &["add", "file.txt"]);
+    git(dir, &["commit", "-m", "initial"]);
+
+    fs::write(dir.join("file.txt"), "staged\n").expect("write staged content");
+    git(dir, &["add", "file.txt"]);
+    fs::write(dir.join("file.txt"), "head\n").expect("restore head content");
+
+    let all = diff_report(dir, DiffScope::All, DiffFormat::NameOnly, None, None, false)
+        .expect("all diff");
+    assert!(all.paths.is_empty());
+    assert_eq!(all.summary.files_changed, 0);
 }
 
 #[test]
-fn git_show_file_schema_requires_path_and_uses_integer_line_fields() {
-    let tool = super::git_catalog_tools()
-        .into_iter()
-        .find(|tool| tool.name == "git_show_file")
-        .expect("git_show_file");
-    let required = tool.input_schema["required"]
-        .as_array()
-        .expect("required properties");
+fn diff_renders_unified_patch_against_head() {
+    let temp = tempdir().expect("tempdir");
+    let dir = temp.path();
+    init_repo(dir);
 
-    assert!(required.iter().any(|value| value == "file_path"));
-    for name in ["rev", "start_line", "end_line"] {
-        assert!(
-            required.iter().all(|value| value != name),
-            "{name} must remain optional: {}",
-            tool.input_schema
-        );
-    }
-    for name in ["start_line", "end_line"] {
-        let ty = &tool.input_schema["properties"][name]["type"];
-        assert!(
-            *ty == "integer" || *ty == serde_json::json!(["integer", "null"]),
-            "{name} must be advertised as integer: {ty}"
-        );
-    }
-    assert_eq!(tool.read_only_hint, Some(true));
-    assert!(tool.supports_parallel_tool_calls);
-}
+    fs::write(dir.join("file.txt"), "one\n").expect("write initial file");
+    git(dir, &["add", "file.txt"]);
+    git(dir, &["commit", "-m", "initial"]);
+    fs::write(dir.join("file.txt"), "one\ntwo\n").expect("write change");
 
-#[test]
-fn branch_resource_template_is_registered() {
-    let templates = super::git_resource_templates();
-    assert_eq!(templates.len(), 1);
-    assert_eq!(templates[0].uri_template, "git://branches{?scope,contains}");
-    assert_eq!(templates[0].mime_type.as_deref(), Some("application/json"));
+    let patch = crate::diff(dir, None, None).expect("diff");
+    assert!(patch.contains("+two"));
+    assert_eq!(crate::status(dir).expect("status").unstaged.len(), 1);
+    assert_eq!(crate::log(dir, Some(1), None).expect("log").len(), 1);
 }

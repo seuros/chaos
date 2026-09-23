@@ -1417,18 +1417,11 @@ dependencies = [
 name = "chaos-git"
 version = "47.5.2"
 dependencies = [
- "chaos-traits",
  "gix",
- "inventory",
- "mcp-host",
- "schemars",
  "serde",
- "serde_json",
  "similar 3.2.0",
  "tempfile",
  "thiserror 2.0.20",
- "tokio",
- "url",
 ]
 
 [[package]]

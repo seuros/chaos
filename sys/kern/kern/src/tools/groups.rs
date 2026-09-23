@@ -3,8 +3,6 @@ use mcp_host::prelude::{
     ToolExposure, ToolGroupCatalog, ToolGroupDefinition, ToolGroupError, ToolGroupState,
 };
 
-pub(crate) const GIT: &str = "git";
-pub(crate) const GIT_WRITE: &str = "git-write";
 pub(crate) const SHELL: &str = "shell";
 pub(crate) const FILESYSTEM: &str = "filesystem";
 pub(crate) const EDITING: &str = "editing";
@@ -37,8 +35,6 @@ impl ToolGroupFilter<'_> {
 pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     let catalog = ToolGroupCatalog::new();
     for (id, description) in [
-        (GIT, "Gix-backed read-only repository inspection"),
-        (GIT_WRITE, "Gix-backed repository mutation operations"),
         (SHELL, "Command execution and PTY input"),
         (
             FILESYSTEM,

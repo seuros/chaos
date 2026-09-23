@@ -121,6 +121,7 @@ members = [
 exclude = [
     "drivers/dictator",
     "drivers/helmsman",
+    "drivers/skipper",
 ]
 resolver = "2"
 

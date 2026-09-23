@@ -4,3 +4,6 @@
 [submodule "drivers/helmsman"]
 	path = drivers/helmsman
 	url = https://github.com/seuros/helmsman.git
+[submodule "drivers/skipper"]
+	path = drivers/skipper
+	url = https://github.com/seuros/skipper.git

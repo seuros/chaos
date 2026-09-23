@@ -55,6 +55,36 @@ isn't already.
 
 If something is missing during the build, ask again.
 
+### Drivers
+
+Model-facing git and forge tools are not built into `chaos`. They come from
+[skipper](https://github.com/seuros/skipper), an external MCP driver vendored
+at `drivers/skipper`. Without it the model has no `git_*` tools and no CI or
+pull request visibility.
+
+Install the `skipper-mcp` binary with the prebuilt installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seuros/skipper/master/scripts/install.sh | bash
+```
+
+Or from this checkout:
+
+```bash
+just install-skipper
+```
+
+Then register it once as a global stdio server:
+
+```bash
+chaos mcp add skipper -- skipper-mcp
+```
+
+Local git tools need nothing else. Forge tools appear only for repositories
+whose remote points at a forge whose CLI is installed and authenticated: `gh`
+for GitHub, `glab` for GitLab, `tea` for Gitea and Forgejo. Run the CLI's
+login command once; skipper stores no tokens of its own.
+
 ### Run without installing
 
 ```bash
@@ -201,6 +231,7 @@ See the Rust docs on [`RUST_LOG`](https://docs.rs/env_logger/latest/env_logger/#
 ## FILES
 
 - `~/.cargo/bin/chaos` - installed binary path used by `just install`
+- `~/.cargo/bin/skipper-mcp` - git/forge MCP driver installed by `just install-skipper`
 - `~/.chaos/debug.log` - debug log enabled by `--debug`
 - `~/.chaos/log/chaos-console.log` - default TUI log file
 - `./justfile` - source-tree entry point for build and run shortcuts

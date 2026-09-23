@@ -32,6 +32,11 @@ install: (_install "")
 # Install chaos into ~/.cargo/bin using the debug profile.
 debug: (_install "--debug")
 
+# Install the skipper git/forge MCP driver into ~/.cargo/bin.
+install-skipper:
+    git submodule update --init drivers/skipper
+    cargo install --path drivers/skipper --locked
+
 _install profile_flag:
     #!/usr/bin/env sh
     set -e

@@ -176,6 +176,36 @@ installing, use `just chaos`. For a local release run, use
 `just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
 for system requirements and logging controls.
 
+### Drivers
+
+Model-facing git and forge tools are not built into `chaos`. They come from
+[skipper](https://github.com/seuros/skipper), an external MCP driver vendored
+at `drivers/skipper`. Without it the model has no `git_*` tools and no CI or
+pull request visibility.
+
+Install the `skipper-mcp` binary with the prebuilt installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seuros/skipper/master/scripts/install.sh | bash
+```
+
+Or from this checkout:
+
+```bash
+just install-skipper
+```
+
+Then register it once as a global stdio server:
+
+```bash
+chaos mcp add skipper -- skipper-mcp
+```
+
+Local git tools need nothing else. Forge tools appear only for repositories
+whose remote points at a forge whose CLI is installed and authenticated: `gh`
+for GitHub, `glab` for GitLab, `tea` for Gitea and Forgejo. Run the CLI's
+login command once; skipper stores no tokens of its own.
+
 Run `just qa` for formatting, compilation, Clippy, and the all-features nextest
 suite (cargo-nextest 0.9.99 or newer). On macOS, nextest launches `chaos-console`
 and `libui` test binaries through hard links in `<build-profile>/nextest-ui/`.

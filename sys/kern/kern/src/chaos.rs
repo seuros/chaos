@@ -74,6 +74,8 @@ pub(crate) use submission_loop::initial_replay_event_msgs;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]
+pub(crate) use tests::make_session_and_context_with_home;
+#[cfg(test)]
 pub(crate) use tests::make_session_and_context_with_rx;
 #[cfg(test)]
 pub(crate) use tests::make_session_configuration_for_tests;

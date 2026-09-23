@@ -1786,7 +1786,7 @@ fn make_test_tui() -> crate::tui::Tui {
     use ratatui::backend::CrosstermBackend;
     let backend = CrosstermBackend::new(std::io::stdout());
     let terminal = crate::custom_terminal::Terminal::new_for_test(backend, 100, 30);
-    let mut tui = crate::tui::Tui::new(terminal);
+    let mut tui = crate::tui::Tui::new_for_test(terminal);
     tui.set_alt_screen_enabled(false);
     tui
 }

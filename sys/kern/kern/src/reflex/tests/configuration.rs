@@ -1,5 +1,6 @@
 use super::*;
 use crate::auth::{AuthCredentialsStoreMode, login_with_provider_api_key};
+use crate::chaos::make_session_and_context_with_home;
 use crate::reflex::configuration::{presets, resolve_api_key, save_backend, validate};
 use chaos_sysctl::secrets;
 use pretty_assertions::assert_eq;
@@ -16,8 +17,10 @@ fn auth(config: &Config) -> crate::AuthManager {
 #[serial]
 async fn setup_stores_only_a_reference_and_resolves_without_environment() {
     let _keyring = chaos_keyring::tests::MockKeyringStore::default();
-    let (session, context) = make_session_and_context().await;
+    let home = tempfile::tempdir().unwrap();
+    let (session, context) = make_session_and_context_with_home(home.path()).await;
     let config = &context.config;
+    assert!(config.chaos_home.is_dir());
     let auth = auth(config);
     let (_, settings) = presets().into_iter().next().unwrap();
     let saved = save_backend(
@@ -89,10 +92,8 @@ async fn setup_stores_only_a_reference_and_resolves_without_environment() {
 async fn a_failed_settings_write_does_not_replace_existing_credentials() {
     let _keyring = chaos_keyring::tests::MockKeyringStore::default();
     let home = tempfile::tempdir().unwrap();
-    let (_, context) = make_session_and_context().await;
-    let mut config = (*context.config).clone();
-    config.chaos_home = home.path().to_path_buf();
-    let config = &config;
+    let (_, context) = make_session_and_context_with_home(home.path()).await;
+    let config = &context.config;
     let auth = auth(config);
     let (_, settings) = presets().into_iter().next().unwrap();
     let saved = save_backend(config, &auth, "typesafe", settings, Some("original-key"))
@@ -128,7 +129,8 @@ async fn a_failed_settings_write_does_not_replace_existing_credentials() {
 #[tokio::test]
 #[serial]
 async fn stored_provider_account_is_reused_only_for_its_origin() {
-    let (_, context) = make_session_and_context().await;
+    let home = tempfile::tempdir().unwrap();
+    let (_, context) = make_session_and_context_with_home(home.path()).await;
     let mut config = (*context.config).clone();
     let (_, mut settings) = presets().into_iter().nth(1).unwrap();
     config.model_providers.insert(
@@ -171,7 +173,8 @@ async fn stored_provider_account_is_reused_only_for_its_origin() {
 #[tokio::test]
 #[serial]
 async fn invalid_setup_is_rejected_without_persistence() {
-    let (_, context) = make_session_and_context().await;
+    let home = tempfile::tempdir().unwrap();
+    let (_, context) = make_session_and_context_with_home(home.path()).await;
     let config = &context.config;
     let auth = auth(config);
     let (_, mut settings) = presets().into_iter().next().unwrap();

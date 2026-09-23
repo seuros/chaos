@@ -14,6 +14,21 @@ pub(crate) fn tui_suite() {
     super::frame_requester::tests::frame_requester_suite();
 }
 
+#[cfg(feature = "vt100-tests")]
+#[tokio::test]
+async fn test_constructor_uses_fixed_capabilities() {
+    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
+    let terminal = super::Terminal::new_for_test(backend, 100, 30);
+    let tui = super::Tui::new_for_test(terminal);
+
+    assert!(!tui.enhanced_keys_supported);
+    assert!(tui.notification_backend.is_none());
+    assert_eq!(
+        tui.terminal.last_known_screen_size,
+        ratatui::layout::Size::new(100, 30)
+    );
+}
+
 #[test]
 fn bottom_anchored_viewport_tracks_terminal_growth() {
     let viewport = ratatui::layout::Rect::new(0, 18, 80, 6);

@@ -531,9 +531,15 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
 }
 
 pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
-    let (tx_event, _rx_event) = async_channel::unbounded();
     let chaos_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(chaos_home.path()).await;
+    make_session_and_context_with_home(chaos_home.path()).await
+}
+
+pub(crate) async fn make_session_and_context_with_home(
+    chaos_home: &std::path::Path,
+) -> (Session, TurnContext) {
+    let (tx_event, _rx_event) = async_channel::unbounded();
+    let config = build_test_config(chaos_home).await;
     let config = Arc::new(config);
     let conversation_id = ProcessId::default();
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));

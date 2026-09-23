@@ -228,6 +228,25 @@ pub struct Tui {
 
 impl Tui {
     pub fn new(terminal: Terminal) -> Self {
+        let enhanced_keys_supported = supports_keyboard_enhancement().unwrap_or(false);
+        crate::terminal_palette::stdout_color_level();
+        Self::with_capabilities(
+            terminal,
+            enhanced_keys_supported,
+            Some(detect_backend(NotificationMethod::default())),
+        )
+    }
+
+    #[cfg(feature = "vt100-tests")]
+    pub fn new_for_test(terminal: Terminal) -> Self {
+        Self::with_capabilities(terminal, false, None)
+    }
+
+    fn with_capabilities(
+        terminal: Terminal,
+        enhanced_keys_supported: bool,
+        notification_backend: Option<DesktopNotificationBackend>,
+    ) -> Self {
         let (draw_tx, _) = broadcast::channel(1);
         let frame_requester = FrameRequester::new(draw_tx.clone());
         let (machine_context, context) = tokio::sync::watch::channel(None);
@@ -238,12 +257,6 @@ impl Tui {
             context,
             activity_rx,
         ));
-
-        // Detect keyboard enhancement support before any EventStream is created so the
-        // crossterm poller can acquire its lock without contention.
-        let enhanced_keys_supported = supports_keyboard_enhancement().unwrap_or(false);
-        // Cache this to avoid contention with the event reader.
-        crate::terminal_palette::stdout_color_level();
 
         Self {
             frame_requester,
@@ -257,7 +270,7 @@ impl Tui {
             mouse_capture_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
             enhanced_keys_supported,
-            notification_backend: Some(detect_backend(NotificationMethod::default())),
+            notification_backend,
             alt_screen_enabled: true,
             top_reserved_rows: 1,
             top_bar,

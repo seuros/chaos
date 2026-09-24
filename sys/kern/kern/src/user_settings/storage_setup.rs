@@ -11,25 +11,17 @@ pub enum StorageChoice {
     Sqlite,
 }
 
-/// Do not redirect an existing installation or override unattended provisioning.
-/// The installation ID is deliberately not an onboarding-completion marker.
+/// Require a non-empty storage_url in config.toml before interactive startup.
 pub fn is_needed(home: &Path) -> anyhow::Result<bool> {
-    is_needed_with_environment(
-        home,
-        std::env::var_os("CHAOS_STORAGE_URL").is_some()
-            || chaos_proc::sqlite_home_env_value().is_some(),
-    )
+    Ok(!has_storage_url(&read_toml(home)?)?)
 }
 
-fn is_needed_with_environment(home: &Path, storage_in_environment: bool) -> anyhow::Result<bool> {
-    if storage_in_environment {
-        return Ok(false);
+fn has_storage_url(file: &toml::Value) -> anyhow::Result<bool> {
+    match file.get("storage_url") {
+        None => Ok(false),
+        Some(toml::Value::String(url)) => Ok(!url.trim().is_empty()),
+        Some(_) => Err(anyhow!("storage_url in config.toml must be a string.")),
     }
-    let file = read_toml(home)?;
-    if file.get("storage_url").is_some() {
-        return Ok(false);
-    }
-    Ok(!home.join("chaos.sqlite").try_exists()?)
 }
 
 fn postgres_url(connection: &str) -> anyhow::Result<String> {
@@ -57,7 +49,7 @@ fn postgres_url(connection: &str) -> anyhow::Result<String> {
 pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()> {
     let before = read_toml(home)?;
     ensure!(
-        before.get("storage_url").is_none(),
+        !has_storage_url(&before)?,
         "Storage configuration changed. Restart ChaOS to use it."
     );
     let (url, reference) = match choice {
@@ -83,6 +75,22 @@ pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()>
     .map_err(|_| anyhow!("Database connection timed out. Check the server and network, then retry."))?
     .map_err(|_| anyhow!("Cannot initialize the database. Check the connection, credentials, and database permissions, then retry."))?;
 
+    persist_choice(
+        home,
+        before,
+        url,
+        reference,
+        chaos_sysctl::secrets::externalize,
+    )
+}
+
+fn persist_choice(
+    home: &Path,
+    before: toml::Value,
+    url: String,
+    reference: Option<String>,
+    externalize: impl FnOnce(&str) -> anyhow::Result<String>,
+) -> anyhow::Result<()> {
     let _lock = lock_bootstrap(home)?;
     ensure!(
         read_toml(home)? == before,
@@ -95,13 +103,21 @@ pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()>
         {
             reference
         }
-        Some(_) => {
-            let reference = chaos_sysctl::secrets::externalize(&url).map_err(|_| {
-                anyhow!("Cannot save the connection in the secure credential store. Use an env:VARIABLE reference instead.")
-            })?;
-            new_secret = true;
-            reference
-        }
+        Some(_) => match externalize(&url) {
+            Ok(reference) => {
+                new_secret = true;
+                reference
+            }
+            // FreeBSD fallback: config.toml, written atomically with mode 0600.
+            #[cfg(target_os = "freebsd")]
+            Err(_) => url,
+            #[cfg(not(target_os = "freebsd"))]
+            Err(_) => {
+                return Err(anyhow!(
+                    "Cannot save the connection in the secure credential store. Use an env:VARIABLE reference instead."
+                ));
+            }
+        },
         None => url,
     };
     if write_bootstrap(home, "storage_url", &stored).is_err() {

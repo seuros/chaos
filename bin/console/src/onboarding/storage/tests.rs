@@ -41,6 +41,23 @@ fn sqlite_requires_an_explicit_choice() {
 }
 
 #[test]
+fn postgres_discloses_platform_credential_storage() {
+    let mut screen = StorageScreen::default();
+    press(&mut screen, KeyCode::Enter);
+    let text = rendered(&screen, 80);
+    assert!(text.contains("Or: env:CHAOS_DATABASE_URL"));
+    #[cfg(target_os = "freebsd")]
+    {
+        assert!(text.contains("URLs use the credential store, or plaintext config.toml."));
+    }
+    #[cfg(not(target_os = "freebsd"))]
+    {
+        assert!(text.contains("URLs use the secure credential store."));
+        assert!(!text.contains("plaintext config.toml"));
+    }
+}
+
+#[test]
 fn pasted_connections_are_visible_and_q_is_input_not_quit() {
     let mut screen = StorageScreen::default();
     press(&mut screen, KeyCode::Enter);
@@ -82,7 +99,7 @@ fn cancellation_does_not_select_a_backend() {
 fn connection_failure_can_be_retried_or_changed_to_sqlite() {
     let mut screen = StorageScreen::default();
     press(&mut screen, KeyCode::Enter);
-    screen.handle_paste("env:CHAOS_DATABASE_CONNECTION".into());
+    screen.handle_paste("env:CHAOS_DATABASE_URL".into());
     assert!(press(&mut screen, KeyCode::Enter).is_some());
     screen.failed(anyhow::anyhow!("Cannot initialize the database."));
     assert!(screen.page == Page::Postgres);

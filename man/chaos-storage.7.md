@@ -17,9 +17,10 @@ jobs and the spool, token accounting, the model catalog cache, project trust
 decisions, and globally registered MCP servers.
 
 That database is mounted once at boot and never swapped for the life of the
-process. Two backends exist. SQLite is the default and needs no configuration.
-PostgreSQL is opt-in, for operators who want several machines reading the same
-history, or who want the semantic recall store.
+process. Two backends exist. Interactive startup asks for an explicit storage
+choice in `config.toml`; non-interactive commands default to SQLite.
+PostgreSQL supports operators who want several machines reading the same history,
+or who want the semantic recall store.
 
 Shell environment capture stays in memory. ChaOS no longer reads, creates, or
 automatically removes the retired `$CHAOS_HOME/shell_snapshots` directory.
@@ -83,8 +84,15 @@ binary before running the suite so SQLite tests do not launch a stale binary.
 
 ## SQLITE
 
-The default. On first run FreeChaOS creates `chaos.sqlite` under the chaos
-home and applies its migrations. Nothing to configure.
+The default for non-interactive commands. The interactive console first checks
+`storage_url` in `$CHAOS_HOME/config.toml`. If it is missing or empty, onboarding
+asks you to choose PostgreSQL or SQLite before loading database-backed settings.
+Selecting SQLite creates or opens `chaos.sqlite` under the chaos home, applies
+its migrations, and saves the URL in `config.toml`.
+
+A configured PostgreSQL/SQLite URL or reference such as `env:CHAOS_DATABASE_URL`
+skips storage onboarding. Literal URLs need no environment variable. Environment
+variables alone or an existing SQLite file do not replace the TOML choice.
 
 The home is the `sqlite_home` config key when set, then `$CHAOS_SQLITE_HOME`,
 then the chaos home — `$CHAOS_HOME`, or `~/.chaos`. A relative
@@ -105,6 +113,14 @@ FreeChaOS needs — but it will not create the database or the role for you.
 When PostgreSQL is selected, connection or migration failure stops startup.
 FreeChaOS never falls back to SQLite for an explicitly selected PostgreSQL
 backend.
+
+On FreeBSD, interactive onboarding uses the credential store when available.
+If the optional D-Bus Secret Service is unavailable, it saves the connection URL
+directly in `$CHAOS_HOME/config.toml`, atomically written with owner-only
+permissions (`0600`). The URL is not encrypted.
+The setup screen discloses this before submission. Use an `env:VARIABLE`
+reference instead to avoid saving the URL in TOML. Treat config backups as
+sensitive. Subsequent launches do not need D-Bus.
 
 ### Provisioning
 

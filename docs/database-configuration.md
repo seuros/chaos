@@ -7,8 +7,8 @@ database.
 
 ## First-run storage setup
 
-On a new installation, the interactive console asks where to store data before
-loading database-backed settings:
+When `storage_url` is missing or empty in `$CHAOS_HOME/config.toml`, the interactive
+console asks where to store data before loading database-backed settings:
 
 - **PostgreSQL (Recommended)** connects to an existing database on a local or
   remote PostgreSQL server. Enter a `postgresql://user:password@host:5432/database`
@@ -17,18 +17,35 @@ loading database-backed settings:
   database/schema.
 - **SQLite** creates `chaos.sqlite` in the ChaOS home, with no server required.
 
-Connection input is shown as entered. Literal PostgreSQL URLs are stored in the
-secure credential store, never in bootstrap TOML; environment references are saved
-unchanged. If the secure store is unavailable, use an environment reference.
+Connection input is shown as entered. Literal PostgreSQL URLs use the secure
+credential store when available; environment references are saved unchanged.
+On FreeBSD, D-Bus Secret Service is optional and often absent in headless sessions.
+If the secure store is unavailable, onboarding saves the URL directly in the
+existing `$CHAOS_HOME/config.toml`, atomically replacing it with an owner-only
+file (`0600`). The screen discloses this before submission: the URL is **not
+encrypted** and is accessible to your account and root. No separate credential
+file or environment setup is required for subsequent launches.
+
+Use `env:VARIABLE` if you do not want the URL saved in TOML. Other platforms still
+require an environment reference when the secure store is unavailable. This
+fallback applies only to onboarding bootstrap connections, not other settings
+credentials or existing keyring references. Treat config backups as sensitive.
+
 Setup saves `storage_url` only after successful database initialization.
 Connection failures stay on the setup screen for retry or a different choice;
 there is no automatic SQLite fallback. Escape goes back or quits, and Ctrl+C
 quits without saving a choice.
 
-An existing `storage_url`, `CHAOS_STORAGE_URL`, `CHAOS_SQLITE_HOME`, or local
-database bypasses this screen. Deleting `installation-id` does not reset storage
-setup. Non-interactive commands retain the default SQLite behavior unless storage
-has been explicitly configured.
+A non-empty `storage_url` in `config.toml` bypasses this screen: use a PostgreSQL or
+SQLite URL, or a reference such as `env:CHAOS_DATABASE_URL`. Literal URLs do not
+require an environment variable. Configured references are resolved during normal
+startup; a missing referenced variable or unavailable keyring remains an error,
+not a reason to silently select another database.
+
+Environment variables alone (`CHAOS_STORAGE_URL`, `CHAOS_DATABASE_URL`, or
+`CHAOS_SQLITE_HOME`), an existing local database, and `installation-id` do not
+replace the TOML storage choice. Non-interactive commands retain their existing
+environment/default SQLite behavior.
 
 ## Ownership
 
@@ -43,6 +60,7 @@ has been explicitly configured.
 - Migrated literal credentials use opaque keyring references. macOS uses the
   native login Keychain. Existing login/OAuth storage options retain their own
   behavior; this migration adds no plaintext fallback for settings credentials.
+  The disclosed FreeBSD onboarding bootstrap fallback is separate.
 - The owner-only `installation-id` is local application state, not an export.
 
 Preference precedence remains system defaults, database user settings, trusted
@@ -54,7 +72,7 @@ Configured storage URLs retain precedence over `CHAOS_STORAGE_URL`.
 Bootstrap accepts connection references such as:
 
 ```toml
-storage_url = "env:CHAOS_DATABASE_CONNECTION"
+storage_url = "env:CHAOS_DATABASE_URL"
 egress_url = "https://gateway.example/egress/chaos"
 ```
 
@@ -112,7 +130,7 @@ Recovery without starting providers, MCP servers, or schedulers:
 
 ```sh
 chaos config bootstrap show
-chaos config bootstrap set storage_url env:CHAOS_DATABASE_CONNECTION
+chaos config bootstrap set storage_url env:CHAOS_DATABASE_URL
 ```
 
 Inspection redacts bootstrap connection values and preserves opaque credential

@@ -193,16 +193,17 @@ impl Widget for &StorageScreen {
                     .wrap(Wrap { trim: false }),
                 );
                 column.push("Example: postgresql://user:password@localhost:5432/chaos");
-                column.push("Or: env:CHAOS_DATABASE_CONNECTION");
+                column.push("Or: env:CHAOS_DATABASE_URL");
                 column.push("");
                 column.push(
                     Paragraph::new(format!("> {}_", self.connection)).wrap(Wrap { trim: false }),
                 );
                 column.push("");
-                column.push(
-                    Paragraph::new("URLs are saved in the secure credential store; environment references remain references.")
-                        .wrap(Wrap { trim: false }),
-                );
+                #[cfg(target_os = "freebsd")]
+                let storage_notice = "URLs use the credential store, or plaintext config.toml.";
+                #[cfg(not(target_os = "freebsd"))]
+                let storage_notice = "URLs use the secure credential store.";
+                column.push(Paragraph::new(storage_notice).wrap(Wrap { trim: false }));
                 column.push("");
                 column
                     .push(Line::from("Enter to connect · Ctrl+U to clear · Esc to go back").dim());

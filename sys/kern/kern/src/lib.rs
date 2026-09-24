@@ -11,7 +11,6 @@
 // static CatalogRegistration entries.
 extern crate chaos_arsenal;
 extern crate chaos_cron;
-extern crate chaos_git;
 
 pub mod api_bridge;
 mod apply_patch;

@@ -3,7 +3,7 @@ use crate::config::test_config;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::model_info::with_config_overrides;
 use crate::tools::ToolRouter;
-use crate::tools::groups::{FILESYSTEM, GIT, GIT_WRITE, ToolGroupFilter};
+use crate::tools::groups::{CRON, FILESYSTEM, ToolGroupFilter};
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::spec::tool_builders::create_read_session_history_tool;
@@ -574,10 +574,6 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
     );
     assert_lacks_tool_name(&tools, "disable_tools");
     for name in [
-        "git_status",
-        "git_add",
-        "git_branch",
-        "git_commit",
         "read_file",
         "apply_patch",
         "shell_command",
@@ -592,15 +588,11 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
     assert!(!find_tool(&tools, "enable_tools").supports_parallel_tool_calls);
 
     let change = catalog
-        .set_groups_enabled(&state, [GIT, GIT_WRITE, FILESYSTEM], true)
-        .expect("enable git read, git write, and filesystem");
+        .set_groups_enabled(&state, [CRON, FILESYSTEM], true)
+        .expect("enable cron and filesystem");
     assert_eq!(
         change.changed_groups,
-        vec![
-            FILESYSTEM.to_string(),
-            GIT.to_string(),
-            GIT_WRITE.to_string()
-        ]
+        vec![CRON.to_string(), FILESYSTEM.to_string()]
     );
 
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
@@ -609,10 +601,8 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
         &[
             "enable_tools",
             "disable_tools",
-            "git_status",
-            "git_add",
-            "git_branch",
-            "git_commit",
+            "cron_create",
+            "cron_toggle",
             "read_file",
             "list_dir",
             "view_image",
@@ -622,18 +612,11 @@ fn capability_groups_hide_native_tools_until_enabled_and_rebuild_cleanly() {
     assert!(!find_tool(&tools, "disable_tools").supports_parallel_tool_calls);
 
     catalog
-        .set_groups_enabled(&state, [GIT], false)
-        .expect("disable git");
+        .set_groups_enabled(&state, [CRON], false)
+        .expect("disable cron");
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
-    assert_lacks_tool_name(&tools, "git_status");
-    assert_contains_tool_names(&tools, &["git_commit", "git_branch"]);
-
-    catalog
-        .set_groups_enabled(&state, [GIT_WRITE], false)
-        .expect("disable git writes");
-    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
-    assert_lacks_tool_name(&tools, "git_commit");
-    assert_lacks_tool_name(&tools, "git_branch");
+    assert_lacks_tool_name(&tools, "cron_create");
+    assert_lacks_tool_name(&tools, "cron_toggle");
     assert_contains_tool_names(&tools, &["read_file", "disable_tools"]);
 }
 
@@ -679,7 +662,7 @@ fn capability_groups_do_not_filter_external_mcp_or_dynamic_tools() {
             "cancel_mcp_task",
         ],
     );
-    assert_lacks_tool_name(&tools, "git_status");
+    assert_lacks_tool_name(&tools, "cron_create");
     assert_lacks_tool_name(&tools, "read_file");
 }
 
@@ -1475,17 +1458,6 @@ const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "cron_toggle",
     // spool_submit is only listed when a spool backend is registered; none is
     // in the test harness.
-    "git_add",
-    "git_blame",
-    "git_branch",
-    "git_commit",
-    "git_diff",
-    "git_log",
-    "git_remotes",
-    "git_repo",
-    "git_show",
-    "git_show_file",
-    "git_status",
     "mcp_add_server",
     "mcp_server",
     "web_search",

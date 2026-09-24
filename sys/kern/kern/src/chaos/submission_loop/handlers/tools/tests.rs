@@ -81,7 +81,7 @@ async fn listing_uses_model_visible_registry_for_native_and_grouped_tools() {
     assert!(names.contains("switch_mode"));
     assert!(names.contains("request_user_input"));
     assert!(!names.contains("disable_tools"));
-    assert!(!names.contains("git_status"));
+    assert!(!names.contains("cron_create"));
     assert!(!names.contains("read_file"));
     assert_eq!(
         tools
@@ -94,8 +94,8 @@ async fn listing_uses_model_visible_registry_for_native_and_grouped_tools() {
     session
         .services
         .tool_group_catalog
-        .set_groups_enabled(&session.services.tool_group_state, [groups::GIT], true)
-        .expect("enable git tools");
+        .set_groups_enabled(&session.services.tool_group_state, [groups::CRON], true)
+        .expect("enable cron tools");
     list_all_tools(
         &session,
         &turn_context.config,
@@ -110,12 +110,12 @@ async fn listing_uses_model_visible_registry_for_native_and_grouped_tools() {
 
     assert!(names.contains("enable_tools"));
     assert!(names.contains("disable_tools"));
-    assert!(names.contains("git_status"));
+    assert!(names.contains("cron_create"));
     assert_eq!(
         tools
             .iter()
-            .find(|tool| tool.name == "git_status")
+            .find(|tool| tool.name == "cron_create")
             .map(|tool| tool.source.as_str()),
-        Some("git")
+        Some("cron")
     );
 }

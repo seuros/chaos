@@ -146,7 +146,7 @@ See `chaos-storage(7)`.
 |---------|-------|-------|
 | MCP client (`.mcp.json`, managed servers) | Supported | Kernel + `mcpd` runtime |
 | In-tree tools / arsenal | Supported | Local FS/shell/etc. tool surface |
-| External drivers (`drivers/dictator`, `drivers/helmsman`) | Separate repos/submodules | Excluded from main workspace members; own release cycles |
+| External drivers (`drivers/dictator`, `drivers/helmsman`, `drivers/skipper`) | Separate repos/submodules | Excluded from main workspace members; own release cycles |
 
 ## WHAT IS NOT CLAIMED
 

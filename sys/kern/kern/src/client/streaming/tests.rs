@@ -140,3 +140,16 @@ fn clamp_usage_leaves_context_unknown_without_assistant_usage() {
     assert_eq!(usage.output_tokens, 19);
     assert_eq!(usage.total_tokens, 0);
 }
+#[test]
+fn claude_failures_cannot_replay_a_native_turn_through_sampling_retries() {
+    for error in [
+        chaos_clamp::ClampError::Closed,
+        chaos_clamp::ClampError::TurnFailed,
+        chaos_clamp::ClampError::AuthenticationUnavailable,
+        chaos_clamp::ClampError::Timeout("initialize".into()),
+    ] {
+        let error =
+            crate::api_bridge::map_api_error(super::clamp_failure(&error, "clamp_runtime_failed"));
+        assert!(!error.is_retryable());
+    }
+}

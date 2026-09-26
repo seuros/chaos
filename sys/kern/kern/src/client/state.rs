@@ -46,6 +46,12 @@ impl ModelClient {
             )
         };
         let auth_breaker = auth_breaker::AuthBreaker::new(&provider_id);
+        let claude_resume = super::claude_resume::ClaudeResume::new(
+            clamp_settings
+                .claude_resume_dir
+                .as_ref()
+                .map(|directory| directory.join(format!("{conversation_id}.json"))),
+        );
         let antigravity_conversations =
             clamp_settings
                 .antigravity
@@ -70,6 +76,7 @@ impl ModelClient {
                 clamped: std::sync::atomic::AtomicBool::new(initial_clamped),
                 clamp_settings: std::sync::Mutex::new(clamp_settings),
                 clamp_transport: tokio::sync::Mutex::new(None),
+                claude_resume,
                 antigravity_transport: tokio::sync::Mutex::new(None),
                 antigravity_conversations,
                 antigravity_egress: tokio::sync::Mutex::new(None),
@@ -167,6 +174,9 @@ impl ModelClient {
                 egress.shutdown();
             }
             self.state.clear_antigravity_conversation();
+            if let Err(error) = self.state.claude_resume.clear() {
+                warn!("failed to clear Claude resume checkpoint: {error}");
+            }
             let bridge = {
                 let mut guard = self.state.clamp_mcp_bridge.lock().await;
                 guard.take()
@@ -213,6 +223,9 @@ impl ModelClient {
             egress.shutdown();
         }
         self.state.clear_antigravity_conversation();
+        if let Err(error) = self.state.claude_resume.clear() {
+            warn!("failed to clear Claude resume checkpoint: {error}");
+        }
         if let Some(wiretap) = self.state.clamp_wiretap.lock().await.take() {
             wiretap.shutdown();
         }

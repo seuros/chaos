@@ -65,6 +65,8 @@ pub struct ClampConfig {
     pub bare_mode: bool,
     /// Working directory for the subprocess.
     pub cwd: Option<PathBuf>,
+    /// Native Claude Code session to resume, after the caller validates its checkpoint.
+    pub resume_session_id: Option<String>,
     /// System prompt to send (empty string = blank).
     pub system_prompt: Option<String>,
     /// MCP server config JSON to pass via --mcp-config.
@@ -95,6 +97,7 @@ impl std::fmt::Debug for ClampConfig {
             .field("cli_path", &self.cli_path)
             .field("bare_mode", &self.bare_mode)
             .field("cwd", &self.cwd)
+            .field("resume_session_id", &self.resume_session_id)
             .field("system_prompt", &self.system_prompt)
             .field("mcp_config", &self.mcp_config)
             .field("permission_mode", &self.permission_mode)
@@ -124,6 +127,7 @@ impl Default for ClampConfig {
             cli_path: None,
             bare_mode: false,
             cwd: None,
+            resume_session_id: None,
             system_prompt: Some(String::new()),
             mcp_config: None,
             permission_mode: Some("default".to_string()),
@@ -265,6 +269,9 @@ fn build_command(
 
     // Skip all setting discovery — we provide everything explicitly.
     cmd.args(["--setting-sources", ""]);
+    if let Some(session_id) = &config.resume_session_id {
+        cmd.args(["--resume", session_id]);
+    }
 
     // Keep prompt contents out of argv (process listings and argument-size
     // limits). Stdin is already reserved for the stream-json control protocol.
@@ -424,7 +431,9 @@ impl ClampTransport {
             initialized: false,
             spawned_at: std::time::Instant::now(),
             init_response: None,
-            session_id: "default".to_string(),
+            session_id: config
+                .resume_session_id
+                .unwrap_or_else(|| "default".to_string()),
             allow_claude_code_tools: config.allow_claude_code_tools,
             tool_permission_handler: config.tool_permission_handler,
             hook_callback_handler: config.hook_callback_handler,
@@ -570,16 +579,19 @@ impl ClampTransport {
     /// 4. Returns assistant/result/system messages to the caller
     pub async fn next_message(&mut self) -> Result<Option<Message>, ClampError> {
         loop {
-            if let Some(msg) = self.queued_messages.pop_front() {
-                return Ok(Some(msg));
-            }
-
-            let msg = match self.message_rx.recv().await {
-                Some(msg) => msg,
-                None => return Err(self.closed_error().await),
+            // Resume failures can arrive during initialize/set_model. Validate
+            // queued results too, before callers can checkpoint them as success.
+            let message = if let Some(msg) = self.queued_messages.pop_front() {
+                Some(msg)
+            } else {
+                let msg = match self.message_rx.recv().await {
+                    Some(msg) => msg,
+                    None => return Err(self.closed_error().await),
+                };
+                self.handle_message(msg).await?
             };
 
-            if let Some(message) = self.handle_message(msg).await? {
+            if let Some(message) = message {
                 if let Message::Result {
                     result,
                     subtype,

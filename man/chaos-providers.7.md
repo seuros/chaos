@@ -97,8 +97,9 @@ The canonical prompt is refreshed before every turn, including resumes; empty
 instructions remove the CLI's system instructions. No custom AGY agent or
 user-message prompt injection is used. Encoded, malformed, cached-content, and
 unsupported generation requests fail rather than falling back to the CLI prompt.
-Clamp still serializes restored history as text rather than sending the direct
-API's structured conversation.
+Clamp serializes history as text when bootstrapping a new provider conversation.
+Compatible Claude Code resumes retain the CLI's native assistant/tool history
+and append only the new Chaos input, including new hook/developer messages.
 
 ### Antigravity setup
 
@@ -134,6 +135,23 @@ chaos exec --json -c clamp=true -c clamp_backend=antigravity \
 Resumes require the same effective clamp configuration, including any non-default
 backend. For AGY, retain the process ID, dedicated home, CLI path, and model
 selection across invocations and workers.
+
+Claude Code resumes also require its native session files (normally under
+`~/.claude/projects`) and the same working directory to survive between
+invocations. Chaos stores owner-only, per-process checkpoints under
+`$CHAOS_HOME/clamp/claude`; these contain a native session ID and history
+fingerprints, not transcript contents. Ephemeral Chaos sessions keep checkpoints
+only in memory.
+
+A checkpoint is reused only when the model, base instructions, working directory,
+and completed Chaos history prefix still match. New/forked sessions, rewritten
+history, changed instructions, and absent checkpoints bootstrap from the current
+Chaos transcript instead. Checkpoints are consumed before dispatch and renewed
+only after successful completion. A missing native session or failed resume
+surfaces an error, rather than automatically replaying a potentially
+side-effecting turn; the next attempt bootstraps without that stale checkpoint.
+Native resume enables prefix reuse but does not guarantee a cache hit: cache
+expiry and provider/tool-prefix changes still apply.
 
 ## SESSION PICKER
 

@@ -559,6 +559,13 @@ fn prepare_managed_home(config: &AntigravityConfig) -> Result<(), AntigravityErr
 fn read_json_object_or_empty(path: &Path) -> Result<Value, AntigravityError> {
     match std::fs::read(path) {
         Ok(bytes) => {
+            // Antigravity creates zero-byte placeholder configuration files
+            // during first-run initialization. This home is dedicated to the
+            // managed clamp, so an empty placeholder has the same meaning as a
+            // missing file and can be initialized safely.
+            if bytes.iter().all(u8::is_ascii_whitespace) {
+                return Ok(Value::Object(Default::default()));
+            }
             let value: Value = serde_json::from_slice(&bytes).map_err(|error| {
                 AntigravityError::Protocol(format!(
                     "invalid managed Antigravity configuration {}: {error}",

@@ -104,7 +104,9 @@ and append only the new Chaos input, including new hook/developer messages.
 ### Antigravity setup
 
 Use a dedicated private home: Chaos replaces its MCP and permission configuration
-and denies native AGY tools. Authenticate through the official CLI using that home:
+and denies native AGY tools. Missing or empty (ASCII-whitespace-only) managed
+configuration files are initialized; malformed JSON and non-object values are
+rejected rather than overwritten. Authenticate through the official CLI using that home:
 
 ```bash
 export CHAOS_AGY_HOME=/private/antigravity-state

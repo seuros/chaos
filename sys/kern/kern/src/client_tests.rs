@@ -96,32 +96,47 @@ async fn clamp_switches_backends_and_clears_stale_provider_conversations() {
     assert_eq!(shared.clamp_backend(), ClampBackend::Antigravity);
     client.set_clamp_model("gemini-3.1-pro-low").await.unwrap();
 
-    let store = client.state.antigravity_conversations.as_ref().unwrap();
-    store.save("gemini-3.1-pro-low", "conversation-1").unwrap();
+    let store = &client.state.antigravity_resume;
+    store
+        .save(antigravity_checkpoint("conversation-1"))
+        .unwrap();
     client
         .set_clamped(true, Some(ClampBackend::Antigravity))
         .await;
-    assert!(
-        store.load("gemini-3.1-pro-low").is_some(),
-        "same backend retains history"
-    );
+    let retained = store.take().unwrap().expect("same backend retains history");
+    store.save(retained).unwrap();
 
     client
         .set_clamped(true, Some(ClampBackend::ClaudeCode))
         .await;
     assert!(shared.is_clamped());
     assert_eq!(shared.clamp_backend(), ClampBackend::ClaudeCode);
-    assert!(store.load("gemini-3.1-pro-low").is_none());
+    assert!(store.take().unwrap().is_none());
 
     client
         .set_clamped(true, Some(ClampBackend::Antigravity))
         .await;
-    store.save("gemini-3.1-pro-low", "conversation-2").unwrap();
+    store
+        .save(antigravity_checkpoint("conversation-2"))
+        .unwrap();
     client.set_clamped(false, None).await;
     assert!(!shared.is_clamped());
-    assert!(store.load("gemini-3.1-pro-low").is_none());
+    assert!(store.take().unwrap().is_none());
     client.set_clamped(true, None).await;
     assert_eq!(shared.clamp_backend(), ClampBackend::Antigravity);
+}
+
+fn antigravity_checkpoint(id: &str) -> super::native_resume::Checkpoint {
+    super::native_resume::Checkpoint::completed(
+        super::native_resume::Backend::Antigravity,
+        id,
+        "gemini-3.1-pro-low",
+        "system",
+        "/work".into(),
+        vec!["first".into()],
+        "answer",
+    )
+    .unwrap()
 }
 
 #[test]
@@ -140,30 +155,36 @@ fn antigravity_conversation_state_resumes_across_model_clients() {
         .path()
         .join(".chaos-conversations")
         .join(format!("{process_id}.json"));
-
     let initial =
         test_model_client_for_process(SessionSource::Exec, process_id, clamp_settings.clone());
-    let initial_store = initial
+    initial
         .state
-        .antigravity_conversations
-        .as_ref()
-        .expect("Antigravity conversation store");
-    assert_eq!(initial_store.path(), expected_path.as_path());
-    initial_store
-        .save("gemini-3.1-pro-low", "conversation-e2e")
-        .expect("persist provider conversation");
+        .antigravity_resume
+        .save(antigravity_checkpoint("conversation-e2e"))
+        .unwrap();
+    assert!(expected_path.is_file());
     drop(initial);
 
     let resumed = test_model_client_for_process(SessionSource::Exec, process_id, clamp_settings);
-    let resumed_store = resumed
-        .state
-        .antigravity_conversations
-        .as_ref()
-        .expect("Antigravity conversation store");
-    assert_eq!(resumed_store.path(), expected_path.as_path());
+    let checkpoint = resumed.state.antigravity_resume.take().unwrap().unwrap();
+    assert!(
+        !expected_path.exists(),
+        "consume the exact process-scoped path"
+    );
+    let input = vec![
+        "first".into(),
+        "<message role=\"assistant\">\nanswer\n</message>".into(),
+        "second".into(),
+    ];
     assert_eq!(
-        resumed_store.load("gemini-3.1-pro-low"),
-        Some("conversation-e2e".to_string())
+        checkpoint.continuation(
+            super::native_resume::Backend::Antigravity,
+            "gemini-3.1-pro-low",
+            "system",
+            std::path::Path::new("/work"),
+            &input,
+        ),
+        Some(("conversation-e2e".into(), "second".into()))
     );
 }
 

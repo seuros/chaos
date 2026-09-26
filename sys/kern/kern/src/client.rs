@@ -100,7 +100,7 @@ pub(super) struct ModelClientState {
     pub(super) antigravity_transport: tokio::sync::Mutex<Option<chaos_clamp::AntigravityTransport>>,
     /// Per-Chaos-process record used to resume the provider conversation after
     /// a later `chaos exec resume` starts a new operating-system process.
-    pub(super) antigravity_resume: native_resume::NativeResume,
+    antigravity_resume: native_resume::NativeResume,
     /// Allowlisting CONNECT proxy that is the Antigravity subprocess's only
     /// route off the machine, held for the lifetime of its transport.
     pub(super) antigravity_egress: tokio::sync::Mutex<Option<chaos_clamp::EgressProxy>>,

@@ -222,8 +222,16 @@ fn rendered_delta_delivers_new_hook_and_system_items_without_replaying_consumed_
                 .iter()
                 .all(|item| !item.contains("Canonical system instructions"))
         );
-        let cp =
-            Checkpoint::completed(backend, ID, "system", "/work".into(), first, "answer").unwrap();
+        let cp = Checkpoint::completed(
+            backend,
+            ID,
+            "model",
+            "system",
+            "/work".into(),
+            first,
+            "answer",
+        )
+        .unwrap();
         prompt.input.extend([
             message("assistant", "answer"),
             message("developer", "Stop hook: continue once"),
@@ -233,6 +241,7 @@ fn rendered_delta_delivers_new_hook_and_system_items_without_replaying_consumed_
         let (_, delta) = cp
             .continuation(
                 backend,
+                "model",
                 "system",
                 std::path::Path::new("/work"),
                 &rendered_input(&prompt),

@@ -11,6 +11,13 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[dependencies]
+serde_json = { workspace = true }
+
+[[bin]]
+name = "clamp-test-peer"
+path = "fixtures/clamp_peer.rs"
+
 [dev-dependencies]
 anyhow = { workspace = true }
 chaos-kern = { workspace = true }
@@ -29,9 +36,10 @@ chaos-scm = { workspace = true }
 chaos-tmpfs = { workspace = true }
 chaos-uptime = { workspace = true }
 chaos-wchar = { workspace = true }
+chaos-which = { workspace = true }
+chaos_journald = { workspace = true }
 dirs = { workspace = true }
 pretty_assertions = { workspace = true }
-serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 toml = { workspace = true }

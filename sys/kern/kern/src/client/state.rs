@@ -46,21 +46,18 @@ impl ModelClient {
             )
         };
         let auth_breaker = auth_breaker::AuthBreaker::new(&provider_id);
-        let claude_resume = super::claude_resume::ClaudeResume::new(
+        let claude_resume = super::native_resume::NativeResume::new(
             clamp_settings
                 .claude_resume_dir
                 .as_ref()
                 .map(|directory| directory.join(format!("{conversation_id}.json"))),
         );
-        let antigravity_conversations =
+        let antigravity_resume = super::native_resume::NativeResume::new(
             clamp_settings
                 .antigravity
                 .conversation_dir()
-                .map(|directory| {
-                    chaos_clamp::AntigravityConversationStore::new(
-                        directory.join(format!("{conversation_id}.json")),
-                    )
-                });
+                .map(|directory| directory.join(format!("{conversation_id}.json"))),
+        );
         Self {
             state: Arc::new(ModelClientState {
                 auth_manager,
@@ -78,7 +75,7 @@ impl ModelClient {
                 clamp_transport: tokio::sync::Mutex::new(None),
                 claude_resume,
                 antigravity_transport: tokio::sync::Mutex::new(None),
-                antigravity_conversations,
+                antigravity_resume,
                 antigravity_egress: tokio::sync::Mutex::new(None),
                 clamp_wiretap: tokio::sync::Mutex::new(None),
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),
@@ -349,8 +346,8 @@ impl ModelClientState {
     /// Drops the persisted provider conversation, so the next clamped turn
     /// starts a fresh Antigravity conversation instead of resuming a stale one.
     pub(super) fn clear_antigravity_conversation(&self) {
-        if let Some(store) = self.antigravity_conversations.as_ref() {
-            store.clear();
+        if let Err(error) = self.antigravity_resume.clear() {
+            warn!("failed to clear Antigravity checkpoint: {error}");
         }
     }
 }

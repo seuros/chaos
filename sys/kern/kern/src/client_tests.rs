@@ -7,7 +7,6 @@ use super::UnauthorizedRecoveryExecution;
 use super::clamp_permission_mode;
 use super::clamp_tool_routing;
 use super::render_clamp_full_prompt;
-use super::render_latest_clamp_user_message;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputPayload;
@@ -463,7 +462,7 @@ fn render_clamp_full_prompt_preserves_prior_messages_and_tool_outputs() {
 }
 
 #[test]
-fn render_latest_clamp_user_message_keeps_non_text_content() {
+fn native_delta_keeps_non_text_content() {
     let prompt = crate::client_common::Prompt {
         input: vec![
             ResponseItem::Message {
@@ -493,7 +492,8 @@ fn render_latest_clamp_user_message_keeps_non_text_content() {
         ..Default::default()
     };
 
-    let rendered = render_latest_clamp_user_message(&prompt);
+    let input = super::native_resume::rendered_input(&prompt);
+    let rendered = &input[1];
 
     assert!(rendered.contains("latest prompt"));
     assert!(rendered.contains("[image: https://example.com/cat.png]"));

@@ -12,7 +12,12 @@ use tokio::process::Command;
 
 #[tokio::test]
 async fn claude_resume_preserves_tools_across_exec_processes() -> Result<()> {
-    tool_continuity(false).await
+    tool_continuity(false, false).await
+}
+
+#[tokio::test]
+async fn antigravity_resume_preserves_tools_and_does_not_replay_failed_actions() -> Result<()> {
+    tool_continuity(false, true).await
 }
 
 /// Requires an authenticated Claude CLI; never part of the default CI gate.
@@ -24,10 +29,10 @@ async fn live_claude_resume_preserves_tools_across_exec_processes() -> Result<()
         std::env::var_os("CHAOS_CLAMP_SMOKE").is_some(),
         "set CHAOS_CLAMP_SMOKE=1"
     );
-    tool_continuity(true).await
+    tool_continuity(true, false).await
 }
 
-async fn tool_continuity(live: bool) -> Result<()> {
+async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
     // Short paths also fit macOS's Unix socket path limit under nextest's TMPDIR.
     let root = tempfile::Builder::new()
         .prefix("clamp-")
@@ -45,13 +50,15 @@ async fn tool_continuity(live: bool) -> Result<()> {
         &catalog_path,
         serde_json::to_vec(&serde_json::json!({"models":[model]}))?,
     )?;
+    let agy_home = root.path().join("agy-home");
+    std::fs::create_dir(&agy_home)?;
     let peer_dir = root.path().join("bin");
     std::fs::create_dir(&peer_dir)?;
     std::os::unix::fs::symlink(
         env!("CARGO_BIN_EXE_clamp-test-peer"),
-        peer_dir.join("claude"),
+        peer_dir.join(if agy { "agy" } else { "claude" }),
     )?;
-    let path = std::env::join_paths([peer_dir].into_iter().chain(std::env::split_paths(
+    let path = std::env::join_paths([peer_dir.clone()].into_iter().chain(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     )))?;
     let binary = chaos_which::cargo_bin("chaos")?;
@@ -115,6 +122,14 @@ async fn tool_continuity(live: bool) -> Result<()> {
                     "-c", "clamp=true", "-c", "machine_warnings.enabled=false",
                     "-c", "disable_user_scripts=true", "-m", "claude-haiku-4-5"])
                 .kill_on_drop(true);
+            if agy {
+                command.args(["-c", "clamp_backend=antigravity"])
+                    .env("CHAOS_AGY_PATH", peer_dir.join("agy"))
+                    .env("CHAOS_AGY_HOME", &agy_home)
+                    .env("CHAOS_AGY_CWD", &work)
+                    .env("CHAOS_AGY_CONVERSATION_DIR", home.join("clamp/antigravity"))
+                    .env("CHAOS_AGY_MODEL", "gemini-test");
+            }
             if !live {
                 command.env("PATH", &path).env("CLAMP_TEST_ROOT", root.path())
                     .args(["-c", &format!("model_catalog_json={}", catalog_path.display())]);
@@ -136,7 +151,7 @@ async fn tool_continuity(live: bool) -> Result<()> {
             }
             let id = process.as_deref().context("process ID")?;
             let checkpoint: Value = serde_json::from_slice(&std::fs::read(
-                home.join("clamp/claude").join(format!("{id}.json"))
+                home.join(if agy { "clamp/antigravity" } else { "clamp/claude" }).join(format!("{id}.json"))
             )?)?;
             let current = checkpoint["session_id"].as_str().context("native ID")?.to_string();
             if let Some(expected) = &native {
@@ -157,6 +172,40 @@ async fn tool_continuity(live: bool) -> Result<()> {
                 "missing or replayed side effect on turn {turn}");
             if live {
                 verify_native_tools(native.as_deref().context("native ID")?, turn)?;
+            }
+        }
+        if agy {
+            let id = process.as_deref().context("process ID")?;
+            for recover in [false, true] {
+                let mut command = Command::new(&binary);
+                command.current_dir(&work)
+                    .env("CHAOS_HOME", &home)
+                    .env_remove("CHAOS_STORAGE_URL").env_remove("CHAOS_SQLITE_HOME")
+                    .env_remove("CHAOS_JOURNALD_SOCKET")
+                    .env("PATH", &path).env("CLAMP_TEST_ROOT", root.path())
+                    .env("CHAOS_AGY_PATH", peer_dir.join("agy"))
+                    .env("CHAOS_AGY_HOME", &agy_home).env("CHAOS_AGY_CWD", &work)
+                    .env("CHAOS_AGY_CONVERSATION_DIR", home.join("clamp/antigravity"))
+                    .env("CHAOS_AGY_MODEL", "gemini-test")
+                    .env(if recover { "CLAMP_TEST_RECOVER" } else { "CLAMP_TEST_FAIL" }, "1")
+                    .args(["exec", "--json", "--headless", "--skip-git-repo-check",
+                        "-c", "clamp=true", "-c", "clamp_backend=antigravity",
+                        "-c", "machine_warnings.enabled=false", "-c", "disable_user_scripts=true",
+                        "-c", &format!("model_catalog_json={}", catalog_path.display()),
+                        "-m", "claude-haiku-4-5", "resume", id,
+                        if recover { "Explicit fresh attempt; do not repeat the failed write." } else { "Write once then fail." }])
+                    .kill_on_drop(true);
+                let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+                    .await.context("failure/recovery exec timed out")??;
+                ensure!(output.status.success() == recover, "unexpected failure/recovery status: {}\n{}",
+                    String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+                if !recover {
+                    ensure!(!home.join("clamp/antigravity").join(format!("{id}.json")).exists(),
+                        "failed dispatch renewed checkpoint");
+                }
+                let invocations = std::fs::read_to_string(work.join("invocations.jsonl"))?;
+                ensure!(invocations.lines().count() == if recover { 5 } else { 4 }, "automatic native retry: {invocations}");
+                ensure!(std::fs::read_to_string(work.join("audit.txt"))? == "turn1\nturn2\nturn3\nfailed-once\n", "side effect replayed");
             }
         }
         Ok(())

@@ -577,3 +577,20 @@ stream_idle_timeout_ms = 600000
 - [chaos-reflex.7](./chaos-reflex.7.md)
 - [chaos-mcp.7](./chaos-mcp.7.md)
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md)
+
+### Antigravity continuation safety
+
+Antigravity resume checkpoints bind the native conversation to its completed
+Chaos history prefix, model, canonical instructions and working directory.
+Compatible continuations send every unsent rendered item, including developer
+and Stop-hook messages, without changing their roles in the Chaos journal.
+Rewritten/compacted history, changed context, or old ID-only state bootstraps
+from the current canonical transcript instead of resuming incompatible history.
+
+A checkpoint is consumed before dispatch and renewed only after success.
+Antigravity transport errors are terminal for that turn: automatic sampling
+retries must not repeat potentially executed tool actions. A subsequent explicit
+attempt starts fresh when there is no completed checkpoint. This is not a
+rollback of side effects and does not guarantee that a model will never choose
+to repeat an action; inspect the canonical transcript after an interrupted turn.
+Keep the configured conversation directory and native CLI history together.

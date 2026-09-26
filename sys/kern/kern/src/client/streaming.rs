@@ -60,7 +60,7 @@ use crate::util::emit_feedback_auth_recovery_tags;
 use super::tools::{
     CLAMP_MCP_ALLOWED_TOOL_RULE, build_clamp_mcp_config, clamp_permission_mode,
     handle_clamp_hook_callback, handle_clamp_mcp_message, handle_clamp_tool_permission,
-    render_clamp_full_prompt, render_latest_clamp_user_message,
+    render_clamp_full_prompt,
 };
 use super::{
     ApiTelemetry, AuthRequestTelemetryContext, HttpTurnRequestConfig, ModelClientSession,
@@ -686,7 +686,11 @@ impl ModelClientSession {
         let settings = clamp_settings.antigravity;
         let system_prompt = prompt.base_instructions.text.clone();
         let full_prompt_state = render_clamp_full_prompt(prompt);
-        let latest_user_content = render_latest_clamp_user_message(prompt);
+        let checkpoint_input = super::native_resume::rendered_input(prompt);
+        let clamp_cwd = match settings.cwd.clone() {
+            Some(cwd) => cwd,
+            None => std::env::current_dir()?,
+        };
         let model = settings
             .model
             .clone()
@@ -699,12 +703,41 @@ impl ModelClientSession {
         let session_telemetry = session_telemetry.clone();
         tokio::spawn(async move {
             let mut guard = clamp_state.antigravity_transport.lock().await;
-            if guard
-                .as_ref()
-                .is_some_and(|transport| transport.model() != model)
+            let checkpoint = match clamp_state.antigravity_resume.take() {
+                Ok(checkpoint) => checkpoint,
+                Err(error) => {
+                    guard.take();
+                    let _ = tx_event
+                        .send(Err(chaos_parrot::error::ApiError::InvalidRequest {
+                            message: format!(
+                                "cannot consume Antigravity resume checkpoint: {error}"
+                            ),
+                        }))
+                        .await;
+                    return;
+                }
+            };
+            let continuation = checkpoint.and_then(|checkpoint| {
+                checkpoint.continuation(
+                    super::native_resume::Backend::Antigravity,
+                    &model,
+                    &system_prompt,
+                    &clamp_cwd,
+                    &checkpoint_input,
+                )
+            });
+            // Neither an in-memory ID nor a legacy ID-only file establishes that
+            // native history matches the current canonical Chaos prefix.
+            if guard.as_ref().is_some_and(|transport| {
+                transport.model() != model
+                    || transport.conversation_id()
+                        != continuation.as_ref().map(|(id, _)| id.as_str())
+            }) || continuation.is_none()
             {
                 guard.take();
-                clamp_state.clear_antigravity_conversation();
+                if let Some(egress) = clamp_state.antigravity_egress.lock().await.take() {
+                    egress.shutdown();
+                }
             }
             if guard.is_none() {
                 let (bridge_socket_path, bridge_token) =
@@ -774,11 +807,7 @@ impl ModelClientSession {
                     }
                 };
 
-                let sandbox_cwd = settings
-                    .cwd
-                    .clone()
-                    .or_else(|| std::env::current_dir().ok())
-                    .unwrap_or_else(std::env::temp_dir);
+                let sandbox_cwd = clamp_cwd.clone();
                 let sandbox = match clamp_settings.sandbox_helper.as_deref() {
                     Some(helper) => match crate::clamp_egress::antigravity_sandbox(
                         helper,
@@ -804,10 +833,7 @@ impl ModelClientSession {
                 let mut config = AntigravityConfig {
                     cli_path: settings.cli_path.clone(),
                     home: settings.home.clone(),
-                    cwd: settings
-                        .cwd
-                        .clone()
-                        .or_else(|| std::env::current_dir().ok()),
+                    cwd: Some(clamp_cwd.clone()),
                     model: model.clone(),
                     bridge: Some(chaos_clamp::AntigravityBridgeConfig {
                         socket_path: bridge_socket_path,
@@ -821,13 +847,9 @@ impl ModelClientSession {
                 if let Some(seconds) = settings.print_timeout_seconds {
                     config.print_timeout = std::time::Duration::from_secs(seconds.max(1));
                 }
-                let persisted_conversation = clamp_state
-                    .antigravity_conversations
-                    .as_ref()
-                    .and_then(|store| store.load(&model));
-                let transport = match persisted_conversation {
-                    Some(conversation_id) => {
-                        AntigravityTransport::with_conversation_id(config, conversation_id)
+                let transport = match continuation.as_ref() {
+                    Some((conversation_id, _)) => {
+                        AntigravityTransport::with_conversation_id(config, conversation_id.clone())
                     }
                     None => AntigravityTransport::new(config),
                 };
@@ -835,10 +857,10 @@ impl ModelClientSession {
                     Ok(transport) => *guard = Some(transport),
                     Err(error) => {
                         let _ = tx_event
-                            .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                                "{}: {error}",
-                                antigravity_failure_marker(&error, "antigravity_startup_failed")
-                            ))))
+                            .send(Err(antigravity_failure(
+                                &error,
+                                "antigravity_startup_failed",
+                            )))
                             .await;
                         return;
                     }
@@ -859,7 +881,7 @@ impl ModelClientSession {
                 let egress = clamp_state.antigravity_egress.lock().await;
                 match egress.as_ref() {
                     Some(egress) => egress
-                        .set_antigravity_system_prompt(system_prompt)
+                        .set_antigravity_system_prompt(system_prompt.clone())
                         .map_err(|error| error.to_string()),
                     None => Err("Antigravity system-prompt egress is missing".to_string()),
                 }
@@ -870,14 +892,13 @@ impl ModelClientSession {
                     .await;
                 return;
             }
-            let content = if transport.conversation_id().is_none() {
-                format!(
+            let content = match continuation.as_ref() {
+                None => format!(
                     "Use the Chaos MCP server as your sole action surface. Native Antigravity tools are unavailable. You may call multiple Chaos tools before answering. Tool results are authoritative. Return only the user-facing answer without checkpoint or timestamp boilerplate.\n\n{full_prompt_state}"
-                )
-            } else {
-                format!(
-                    "Continue using only the Chaos MCP server for actions. Return only the user-facing answer.\n\n{latest_user_content}"
-                )
+                ),
+                Some((_, delta)) => format!(
+                    "Continue using only the Chaos MCP server for actions. Return only the user-facing answer.\n\n{delta}"
+                ),
             };
 
             let _ = tx_event.send(Ok(ResponseEvent::Created)).await;
@@ -939,11 +960,6 @@ impl ModelClientSession {
 
             match turn {
                 Ok(turn) => {
-                    if let Some(store) = clamp_state.antigravity_conversations.as_ref()
-                        && let Err(error) = store.save(transport.model(), &turn.conversation_id)
-                    {
-                        warn!("failed to persist Antigravity conversation state: {error}");
-                    }
                     // `agy` repeats the whole answer in its result event; the
                     // deltas already carried it, so only emit what was missed.
                     let response = if turn.response.is_empty() {
@@ -956,6 +972,18 @@ impl ModelClientSession {
                         }
                         turn.response
                     };
+                    if let Some(checkpoint) = super::native_resume::Checkpoint::completed(
+                        super::native_resume::Backend::Antigravity,
+                        &turn.conversation_id,
+                        &model,
+                        &system_prompt,
+                        clamp_cwd,
+                        checkpoint_input,
+                        &response,
+                    ) && let Err(error) = clamp_state.antigravity_resume.save(checkpoint)
+                    {
+                        warn!("failed to persist Antigravity resume checkpoint: {error}");
+                    }
                     let _ = tx_event
                         .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
                             id: None,
@@ -973,12 +1001,12 @@ impl ModelClientSession {
                         .await;
                 }
                 Err(error) => {
-                    clamp_state.clear_antigravity_conversation();
+                    guard.take();
                     let _ = tx_event
-                        .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                            "{}: {error}",
-                            antigravity_failure_marker(&error, "antigravity_runtime_failed")
-                        ))))
+                        .send(Err(antigravity_failure(
+                            &error,
+                            "antigravity_runtime_failed",
+                        )))
                         .await;
                 }
             }
@@ -1013,7 +1041,7 @@ impl ModelClientSession {
         use chaos_clamp::Message as ClampMessage;
         let system_prompt = prompt.base_instructions.text.clone();
         let full_prompt_state = render_clamp_full_prompt(prompt);
-        let checkpoint_input = super::claude_resume::rendered_input(prompt);
+        let checkpoint_input = super::native_resume::rendered_input(prompt);
         let clamp_cwd = self
             .client
             .state
@@ -1050,6 +1078,7 @@ impl ModelClientSession {
             };
             let continuation = checkpoint.and_then(|checkpoint| {
                 checkpoint.continuation(
+                    super::native_resume::Backend::Claude,
                     &clamp_model_slug,
                     &system_prompt,
                     &clamp_cwd,
@@ -1259,7 +1288,8 @@ impl ModelClientSession {
                         session_id, usage, ..
                     })) => {
                         if let Some(checkpoint) = session_id.as_deref().and_then(|id| {
-                            super::claude_resume::Checkpoint::completed(
+                            super::native_resume::Checkpoint::completed(
+                                super::native_resume::Backend::Claude,
                                 id,
                                 &clamp_model_slug,
                                 &system_prompt,
@@ -1694,6 +1724,17 @@ fn clamp_failure(
     };
     // A native turn can have executed tools before its stream fails. Do not let
     // the outer sampling loop replay it with either stale history or a fresh CLI.
+    chaos_parrot::error::ApiError::InvalidRequest {
+        message: format!("{marker}: {error}"),
+    }
+}
+
+fn antigravity_failure(
+    error: &chaos_clamp::AntigravityError,
+    fallback: &'static str,
+) -> chaos_parrot::error::ApiError {
+    let marker = antigravity_failure_marker(error, fallback);
+    // A failed native subprocess may already have executed MCP tools.
     chaos_parrot::error::ApiError::InvalidRequest {
         message: format!("{marker}: {error}"),
     }

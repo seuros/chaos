@@ -153,3 +153,18 @@ fn claude_failures_cannot_replay_a_native_turn_through_sampling_retries() {
         assert!(!error.is_retryable());
     }
 }
+
+#[test]
+fn antigravity_failures_cannot_replay_a_native_turn_through_sampling_retries() {
+    for error in [
+        chaos_clamp::AntigravityError::Timeout,
+        chaos_clamp::AntigravityError::AuthenticationUnavailable,
+        chaos_clamp::AntigravityError::Protocol("failed after tool execution".into()),
+    ] {
+        let error = crate::api_bridge::map_api_error(super::antigravity_failure(
+            &error,
+            "antigravity_runtime_failed",
+        ));
+        assert!(!error.is_retryable());
+    }
+}

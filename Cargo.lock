@@ -2004,6 +2004,8 @@ dependencies = [
  "chaos-tmpfs",
  "chaos-uptime",
  "chaos-wchar",
+ "chaos-which",
+ "chaos_journald",
  "core_test_support",
  "dirs 7.0.0",
  "pretty_assertions",

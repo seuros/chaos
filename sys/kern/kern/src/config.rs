@@ -291,6 +291,10 @@ impl ReflexKind {
 #[derive(Debug, Clone, Default)]
 pub struct ClampSettings {
     pub backend: ClampBackend,
+    /// Local checkpoints for Claude Code native resume; absent for ephemeral sessions.
+    pub claude_resume_dir: Option<PathBuf>,
+    /// Stable project directory used by Claude Code to locate native sessions.
+    pub claude_cwd: Option<PathBuf>,
     pub antigravity: AntigravitySettings,
     /// Sandbox helper executable used to confine clamp subprocesses. `None`
     /// leaves the subprocess unconfined, which is the only option on platforms

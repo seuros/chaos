@@ -1013,7 +1013,19 @@ impl ModelClientSession {
         use chaos_clamp::Message as ClampMessage;
         let system_prompt = prompt.base_instructions.text.clone();
         let full_prompt_state = render_clamp_full_prompt(prompt);
-        let latest_user_content = render_latest_clamp_user_message(prompt);
+        let checkpoint_input = super::claude_resume::rendered_input(prompt);
+        let clamp_cwd = self
+            .client
+            .state
+            .clamp_settings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .claude_cwd
+            .clone();
+        let clamp_cwd = match clamp_cwd {
+            Some(cwd) => cwd,
+            None => std::env::current_dir()?,
+        };
         let clamp_model_slug = model_info.slug.clone();
         let client = self.client.clone();
 
@@ -1025,7 +1037,31 @@ impl ModelClientSession {
         let session_telemetry = session_telemetry.clone();
         tokio::spawn(async move {
             let mut guard = clamp_state.clamp_transport.lock().await;
-            let mut spawned_fresh = false;
+            let checkpoint = match clamp_state.claude_resume.take() {
+                Ok(checkpoint) => checkpoint,
+                Err(error) => {
+                    let _ = tx_event
+                        .send(Err(chaos_parrot::error::ApiError::InvalidRequest {
+                            message: format!("cannot consume Claude resume checkpoint: {error}"),
+                        }))
+                        .await;
+                    return;
+                }
+            };
+            let continuation = checkpoint.and_then(|checkpoint| {
+                checkpoint.continuation(
+                    &clamp_model_slug,
+                    &system_prompt,
+                    &clamp_cwd,
+                    &checkpoint_input,
+                )
+            });
+            if continuation.is_none()
+                && let Some(transport) = guard.take()
+                && let Err(error) = transport.shutdown().await
+            {
+                warn!("failed to shut down stale Claude transport: {error}");
+            }
             let session = clamp_state
                 .session
                 .lock()
@@ -1087,7 +1123,9 @@ impl ModelClientSession {
                 };
 
                 let config = ClampConfig {
-                    system_prompt: Some(system_prompt),
+                    system_prompt: Some(system_prompt.clone()),
+                    cwd: Some(clamp_cwd.clone()),
+                    resume_session_id: continuation.as_ref().map(|(id, _)| id.clone()),
                     permission_mode: Some(clamp_permission_mode(clamp_state.approval_policy)),
                     mcp_config: Some(build_clamp_mcp_config(&bridge_socket_path, &bridge_token)),
                     allow_claude_code_tools: false,
@@ -1123,10 +1161,7 @@ impl ModelClientSession {
                     Ok(mut t) => {
                         if let Err(e) = t.initialize().await {
                             let _ = tx_event
-                                .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                                    "{}: {e}",
-                                    clamp_failure_marker(&e, "clamp_startup_failed")
-                                ))))
+                                .send(Err(clamp_failure(&e, "clamp_startup_failed")))
                                 .await;
                             return;
                         }
@@ -1135,15 +1170,11 @@ impl ModelClientSession {
                         {
                             chaos_clamp::set_cached_models(models);
                         }
-                        spawned_fresh = true;
                         *guard = Some(t);
                     }
                     Err(e) => {
                         let _ = tx_event
-                            .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                                "{}: {e}",
-                                clamp_failure_marker(&e, "clamp_startup_failed")
-                            ))))
+                            .send(Err(clamp_failure(&e, "clamp_startup_failed")))
                             .await;
                         return;
                     }
@@ -1167,10 +1198,7 @@ impl ModelClientSession {
             {
                 *guard = None;
                 let _ = tx_event
-                    .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                        "{}: {e}",
-                        clamp_failure_marker(&e, "clamp_runtime_failed")
-                    ))))
+                    .send(Err(clamp_failure(&e, "clamp_runtime_failed")))
                     .await;
                 return;
             }
@@ -1187,19 +1215,15 @@ impl ModelClientSession {
                 })))
                 .await;
 
-            let content = if spawned_fresh {
-                full_prompt_state.as_str()
-            } else {
-                latest_user_content.as_str()
-            };
+            let content = continuation
+                .as_ref()
+                .map(|(_, delta)| delta.as_str())
+                .unwrap_or(full_prompt_state.as_str());
 
             if let Err(e) = transport.send_user_message(content).await {
                 *guard = None;
                 let _ = tx_event
-                    .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                        "{}: {e}",
-                        clamp_failure_marker(&e, "clamp_runtime_failed")
-                    ))))
+                    .send(Err(clamp_failure(&e, "clamp_runtime_failed")))
                     .await;
                 return;
             }
@@ -1234,6 +1258,19 @@ impl ModelClientSession {
                     Ok(Some(ClampMessage::Result {
                         session_id, usage, ..
                     })) => {
+                        if let Some(checkpoint) = session_id.as_deref().and_then(|id| {
+                            super::claude_resume::Checkpoint::completed(
+                                id,
+                                &clamp_model_slug,
+                                &system_prompt,
+                                clamp_cwd.clone(),
+                                checkpoint_input.clone(),
+                                &full_text,
+                            )
+                        }) && let Err(error) = clamp_state.claude_resume.save(checkpoint)
+                        {
+                            warn!("failed to persist Claude resume checkpoint: {error}");
+                        }
                         let _ = tx_event
                             .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
                                 id: None,
@@ -1269,10 +1306,7 @@ impl ModelClientSession {
                     Err(e) => {
                         *guard = None;
                         let _ = tx_event
-                            .send(Err(chaos_parrot::error::ApiError::Stream(format!(
-                                "{}: {e}",
-                                clamp_failure_marker(&e, "clamp_runtime_failed")
-                            ))))
+                            .send(Err(clamp_failure(&e, "clamp_runtime_failed")))
                             .await;
                         break;
                     }
@@ -1649,11 +1683,19 @@ impl ModelClientSession {
     }
 }
 
-fn clamp_failure_marker(error: &chaos_clamp::ClampError, fallback: &'static str) -> &'static str {
-    match error {
+fn clamp_failure(
+    error: &chaos_clamp::ClampError,
+    fallback: &'static str,
+) -> chaos_parrot::error::ApiError {
+    let marker = match error {
         chaos_clamp::ClampError::CliNotFound(_) => "clamp_cli_not_found",
         chaos_clamp::ClampError::AuthenticationUnavailable => "clamp_auth_unavailable",
         _ => fallback,
+    };
+    // A native turn can have executed tools before its stream fails. Do not let
+    // the outer sampling loop replay it with either stale history or a fresh CLI.
+    chaos_parrot::error::ApiError::InvalidRequest {
+        message: format!("{marker}: {error}"),
     }
 }
 

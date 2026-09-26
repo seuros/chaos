@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn build_command_resumes_only_the_explicit_native_session() {
+    let config = ClampConfig {
+        resume_session_id: Some("2eb242f5-85ad-4407-b9d3-459c32d06d91".into()),
+        ..Default::default()
+    };
+    let (command, _files) = build_command(&PathBuf::from("claude"), &config).unwrap();
+    let args: Vec<_> = command.as_std().get_args().collect();
+    assert!(
+        args.windows(2)
+            .any(|pair| pair == ["--resume", "2eb242f5-85ad-4407-b9d3-459c32d06d91"])
+    );
+    assert!(!args.contains(&std::ffi::OsStr::new("--continue")));
+    let (fresh, _files) = build_command(&PathBuf::from("claude"), &ClampConfig::default()).unwrap();
+    assert!(!fresh.as_std().get_args().any(|arg| arg == "--resume"));
+}
+
+#[test]
 fn explicit_missing_cli_path_is_distinguishable() {
     let config = ClampConfig {
         cli_path: Some(PathBuf::from("/definitely/not/a/real/claude-code-binary")),

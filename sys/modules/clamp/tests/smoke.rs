@@ -2,6 +2,9 @@
 //!
 //! Run with:
 //!   CHAOS_CLAMP_SMOKE=1 cargo test -p chaos-clamp --test smoke -- --ignored --nocapture
+//!
+//! Cross-process tool-use/native-resume smoke coverage lives in
+//! `chaos-regress`'s `clamp_resume` integration test.
 
 use chaos_clamp::ClampConfig;
 use chaos_clamp::ClampTransport;

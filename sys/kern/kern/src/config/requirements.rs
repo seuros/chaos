@@ -134,6 +134,8 @@ impl Config {
     pub fn clamp_settings(&self) -> crate::config::ClampSettings {
         crate::config::ClampSettings {
             backend: self.clamp_backend,
+            claude_resume_dir: (!self.ephemeral).then(|| self.chaos_home.join("clamp/claude")),
+            claude_cwd: Some(self.cwd.clone()),
             antigravity: self.antigravity.resolved(),
             sandbox_helper: cfg!(target_os = "linux").then(|| self.alcatraz_exe.clone()),
         }

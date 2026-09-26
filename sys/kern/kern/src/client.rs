@@ -13,6 +13,7 @@
 //! per-turn state such as the `x-chaos-turn-state` token used for sticky routing.
 
 pub(crate) mod auth_breaker;
+mod claude_resume;
 pub(crate) mod state;
 pub(crate) mod streaming;
 pub(crate) mod tools;
@@ -94,6 +95,7 @@ pub(super) struct ModelClientState {
     pub(super) clamp_settings: StdMutex<ClampSettings>,
     /// Persistent Claude Code subprocess for clamped mode.
     pub(super) clamp_transport: tokio::sync::Mutex<Option<chaos_clamp::ClampTransport>>,
+    claude_resume: claude_resume::ClaudeResume,
     /// Session-scoped Antigravity conversation transport.
     pub(super) antigravity_transport: tokio::sync::Mutex<Option<chaos_clamp::AntigravityTransport>>,
     /// Per-Chaos-process record used to resume the provider conversation after

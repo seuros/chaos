@@ -45,3 +45,30 @@ Or as part of the full QA gate:
 ```sh
 just qa
 ```
+
+### Claude clamp continuation
+
+`clamp_resume` runs three separate `chaos exec` processes against a scripted
+Claude peer and a private journald. The peer launches the actual session MCP
+bridge and calls real file/shell tools; only the provider's native history is
+faked. The regression checks delta-only continuation, retention of a tool-only
+result after its source is deleted, fresh reads, and no repeated audit writes.
+It requires neither Claude nor provider credentials.
+
+The same scenario can exercise an installed, authenticated Claude CLI:
+
+```sh
+cargo build --bin chaos --bin chaos_journald
+CHAOS_CLAMP_SMOKE=1 cargo test -p chaos-regress --test clamp_resume -- --ignored --nocapture
+```
+
+Build those binaries before a focused deterministic run too; the full
+workspace test gate builds them already.
+
+This opt-in smoke test makes paid model calls. Tools are instructed to operate
+only in its temporary workspace, under `--full-auto`'s workspace-write sandbox.
+The scripted peer uses headless execution for its fixed, test-owned commands
+so default CI does not depend on platform sandbox support.
+The tests check behavior, not exact cache counters or model phrasing.
+The deterministic test belongs in CI; the live test checks compatibility with
+the actual Claude CLI's native session implementation.

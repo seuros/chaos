@@ -57,8 +57,9 @@ use prompt::AntigravitySystemPrompt;
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
 /// endpoint, and the generative-language surface. Everything else the binary
 /// references (telemetry, Play, mTLS variants) is deliberately absent.
-pub const ANTIGRAVITY_ALLOWED_HOSTS: [&str; 3] = [
+pub const ANTIGRAVITY_ALLOWED_HOSTS: [&str; 4] = [
     "cloudcode-pa.googleapis.com",
+    "daily-cloudcode-pa.googleapis.com",
     "oauth2.googleapis.com",
     "generativelanguage.googleapis.com",
 ];

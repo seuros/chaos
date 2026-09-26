@@ -135,7 +135,7 @@ fn generation_envelope(host: &str, path: &str) -> Result<Option<GenerationEnvelo
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     match (host.as_str(), path) {
         (
-            "cloudcode-pa.googleapis.com",
+            "cloudcode-pa.googleapis.com" | "daily-cloudcode-pa.googleapis.com",
             "/v1internal:generateContent" | "/v1internal:streamGenerateContent",
         ) => return Ok(Some(GenerationEnvelope::CloudCode)),
         ("generativelanguage.googleapis.com", path) => {

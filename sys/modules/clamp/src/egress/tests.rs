@@ -20,6 +20,11 @@ fn allowlist_matches_exact_hosts_and_parses_connect_targets() {
     let policy = EgressPolicy::antigravity();
 
     assert!(policy.permits("cloudcode-pa.googleapis.com"));
+    assert!(policy.permits("daily-cloudcode-pa.googleapis.com"));
+    assert!(policy.permits("Daily-CloudCode-PA.googleapis.com."));
+    assert!(!policy.permits("daily-cloudcode-pa.googleapis.com.evil.test"));
+    assert!(!policy.permits("www.googleapis.com"));
+    assert!(!policy.permits("lh3.googleusercontent.com"));
     // Case and a trailing root dot are normalized away.
     assert!(policy.permits("CloudCode-PA.googleapis.com."));
     // Sibling endpoints on the same apex are not implied by an allowed one.

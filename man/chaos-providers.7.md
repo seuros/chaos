@@ -93,6 +93,9 @@ Both backends receive the same Chaos base instructions used by direct API
 requests. Claude Code receives them through `--system-prompt-file` at subprocess
 startup. AGY's TLS-inspecting egress proxy replaces the CLI-generated
 `systemInstruction` in supported Cloud Code and Gemini JSON generation requests.
+Both `cloudcode-pa.googleapis.com` and `daily-cloudcode-pa.googleapis.com` use
+this replacement for `v1internal:generateContent` and
+`v1internal:streamGenerateContent`. Allowing a host never bypasses prompt ownership.
 The canonical prompt is refreshed before every turn, including resumes; empty
 instructions remove the CLI's system instructions. No custom AGY agent or
 user-message prompt injection is used. Encoded, malformed, cached-content, and

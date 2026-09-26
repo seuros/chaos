@@ -13,9 +13,33 @@ use sha2::Sha256;
 use super::tools::render_clamp_response_item;
 use crate::client_common::Prompt;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub(super) enum Backend {
+    #[default]
+    Claude,
+    Antigravity,
+}
+
+impl Backend {
+    fn valid_id(self, id: &str) -> bool {
+        match self {
+            Self::Claude => uuid::Uuid::parse_str(id).is_ok(),
+            Self::Antigravity => {
+                !id.is_empty()
+                    && id.len() <= 256
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub(super) struct Checkpoint {
     version: u8,
+    #[serde(default)]
+    backend: Backend,
     session_id: String,
     model: String,
     system: String,
@@ -25,7 +49,7 @@ pub(super) struct Checkpoint {
 }
 
 #[derive(Debug)]
-pub(super) struct ClaudeResume {
+pub(super) struct NativeResume {
     path: Option<PathBuf>,
     memory: Mutex<Option<Checkpoint>>,
 }
@@ -52,6 +76,7 @@ pub(super) fn rendered_input(prompt: &Prompt) -> Vec<String> {
 
 impl Checkpoint {
     pub(super) fn completed(
+        backend: Backend,
         session_id: &str,
         model: &str,
         system: &str,
@@ -59,13 +84,15 @@ impl Checkpoint {
         mut input: Vec<String>,
         output: &str,
     ) -> Option<Self> {
-        // Claude's --resume accepts a UUID, not an arbitrary result label.
-        uuid::Uuid::parse_str(session_id).ok()?;
+        if !backend.valid_id(session_id) {
+            return None;
+        }
         input.push(format!(
             "<message role=\"assistant\">\n{output}\n</message>"
         ));
         Some(Self {
             version: 1,
+            backend,
             session_id: session_id.to_string(),
             model: model.to_string(),
             system: fingerprint(&[system.to_string()]),
@@ -77,17 +104,19 @@ impl Checkpoint {
 
     pub(super) fn continuation(
         &self,
+        backend: Backend,
         model: &str,
         system: &str,
         cwd: &std::path::Path,
         input: &[String],
     ) -> Option<(String, String)> {
         if self.version != 1
+            || self.backend != backend
             || self.model != model
             || self.system != fingerprint(&[system.to_string()])
             || self.cwd != cwd
             || self.input_len >= input.len()
-            || uuid::Uuid::parse_str(&self.session_id).is_err()
+            || !backend.valid_id(&self.session_id)
             || self.prefix != fingerprint(&input[..self.input_len])
         {
             return None;
@@ -101,7 +130,7 @@ impl Checkpoint {
     }
 }
 
-impl ClaudeResume {
+impl NativeResume {
     pub(super) fn new(path: Option<PathBuf>) -> Self {
         Self {
             path,
@@ -128,7 +157,7 @@ impl ClaudeResume {
         match serde_json::from_slice(&bytes) {
             Ok(checkpoint) => Ok(Some(checkpoint)),
             Err(error) => {
-                tracing::warn!("ignoring invalid Claude resume checkpoint: {error}");
+                tracing::warn!("ignoring invalid native resume checkpoint: {error}");
                 Ok(None)
             }
         }

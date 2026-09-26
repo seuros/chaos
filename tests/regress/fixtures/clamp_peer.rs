@@ -27,8 +27,10 @@ impl Bridge {
         for arg in server["args"].as_array().ok_or("bridge args")? {
             command.arg(arg.as_str().ok_or("bridge arg")?);
         }
-        for (key, value) in server["env"].as_object().ok_or("bridge env")? {
-            command.env(key, value.as_str().ok_or("bridge env value")?);
+        if let Some(env) = server["env"].as_object() {
+            for (key, value) in env {
+                command.env(key, value.as_str().ok_or("bridge env value")?);
+            }
         }
         let mut child = command
             .stdin(Stdio::piped())
@@ -93,22 +95,34 @@ fn main() -> Result<()> {
             .find(|pair| pair[0] == name)
             .map(|pair| pair[1].clone())
     };
-    let resumed = option("--resume");
+    let agy = args.iter().any(|arg| arg == "--disable-slash-commands");
+    let resumed = option(if agy { "--conversation" } else { "--resume" });
     if let Some(id) = &resumed {
         assert_eq!(id, SESSION, "wrong native session resumed");
     }
     let root = std::path::PathBuf::from(std::env::var("CLAMP_TEST_ROOT")?);
-    let state_path = root.join("native.json");
+    let state_path = root.join("work/native.json");
     let mut state: Value = if resumed.is_some() {
         serde_json::from_slice(&std::fs::read(&state_path)?)?
     } else {
         json!({"turn":0})
     };
-    let config: Value =
-        serde_json::from_slice(&std::fs::read(option("--mcp-config").ok_or("MCP config")?)?)?;
+    let config_path = if agy {
+        std::path::PathBuf::from(std::env::var("HOME")?).join(".gemini/config/mcp_config.json")
+    } else {
+        option("--mcp-config").ok_or("MCP config")?.into()
+    };
+    let config: Value = serde_json::from_slice(&std::fs::read(config_path)?)?;
+    if agy {
+        let mut log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(root.join("work/invocations.jsonl"))?;
+        writeln!(log, "{}", json!({"resumed": resumed}))?;
+    }
     for line in std::io::stdin().lock().lines() {
         let message: Value = serde_json::from_str(&line?)?;
-        match message["type"].as_str() {
+        match message[if agy { "event" } else { "type" }].as_str() {
             Some("control_request") => emit(json!({"type":"control_response","response":{
                 "subtype":"success","request_id":message["request_id"],"response":{}
             }}))?,
@@ -116,6 +130,25 @@ fn main() -> Result<()> {
                 let content = message["message"]["content"]
                     .as_str()
                     .ok_or("user content")?;
+                if agy && std::env::var_os("CLAMP_TEST_RECOVER").is_some() {
+                    assert!(resumed.is_none(), "failed native state was reused");
+                    assert!(content.contains("<conversation_state>"));
+                    emit(json!({"event":"result", "result":{
+                        "conversation_id":SESSION,"status":"SUCCESS","response":"RECOVERED_OK"
+                    }}))?;
+                    return Ok(());
+                }
+                if agy && std::env::var_os("CLAMP_TEST_FAIL").is_some() {
+                    let mut bridge = Bridge::spawn(&config)?;
+                    bridge.tool("exec_command", json!({
+                        "cmd":"printf 'failed-once\n' >> audit.txt", "workdir":root.join("work"),
+                        "yield_time_ms":1000,"shell":"/bin/sh","login":false
+                    }))?;
+                    emit(json!({"event":"result", "result":{
+                        "conversation_id":SESSION,"status":"ERROR","response":"failure after actual tool write"
+                    }}))?;
+                    return Ok(());
+                }
                 let turn = state["turn"].as_u64().ok_or("native turn")? + 1;
                 assert!(
                     content.contains(&format!("STAGE_{turn}")),
@@ -158,12 +191,18 @@ fn main() -> Result<()> {
                 };
                 state["turn"] = json!(turn);
                 std::fs::write(&state_path, serde_json::to_vec(&state)?)?;
-                emit(
-                    json!({"type":"assistant","message":{"content":[{"type":"text","text":text}]}}),
-                )?;
-                emit(
-                    json!({"type":"result","subtype":"success","result":text,"session_id":SESSION}),
-                )?;
+                if agy {
+                    emit(json!({"event":"result", "result":{
+                        "conversation_id":SESSION,"status":"SUCCESS","response":text
+                    }}))?;
+                } else {
+                    emit(
+                        json!({"type":"assistant","message":{"content":[{"type":"text","text":text}]}}),
+                    )?;
+                    emit(
+                        json!({"type":"result","subtype":"success","result":text,"session_id":SESSION}),
+                    )?;
+                }
             }
             _ => {}
         }

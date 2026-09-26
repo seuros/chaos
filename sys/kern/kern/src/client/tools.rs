@@ -670,47 +670,5 @@ Continue from the latest user request instead of restarting the conversation.\n\
     )
 }
 
-pub(crate) fn render_latest_clamp_user_message(prompt: &Prompt) -> String {
-    let input = prompt.get_formatted_input();
-    let latest_user = input.iter().rev().find_map(|item| match item {
-        ResponseItem::Message { role, content, .. } if role == "user" => {
-            let rendered = render_clamp_content_items(content);
-            (!rendered.is_empty()).then_some(rendered)
-        }
-        _ => None,
-    });
-
-    let Some(user_content) = latest_user else {
-        return render_clamp_full_prompt(prompt);
-    };
-
-    match latest_mcp_notification_after_last_user(prompt) {
-        Some(notification) => format!("{notification}\n\n{user_content}"),
-        None => user_content,
-    }
-}
-
-/// Marker emitted by the MCP notification handler to identify resource-update
-/// system messages.
-const MCP_RESOURCE_UPDATE_MARKER: &str = "<mcp_resource_update>";
-
-/// Rendered text of the most recent MCP resource-update system message
-/// that follows the latest user message.
-fn latest_mcp_notification_after_last_user(prompt: &Prompt) -> Option<String> {
-    for item in prompt.get_formatted_input().iter().rev() {
-        match item {
-            ResponseItem::Message { role, content, .. } if role == "system" => {
-                let rendered = render_clamp_content_items(content);
-                if rendered.contains(MCP_RESOURCE_UPDATE_MARKER) {
-                    return Some(rendered);
-                }
-            }
-            ResponseItem::Message { role, .. } if role == "user" => return None,
-            _ => {}
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests;

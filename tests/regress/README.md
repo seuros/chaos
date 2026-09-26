@@ -72,3 +72,18 @@ so default CI does not depend on platform sandbox support.
 The tests check behavior, not exact cache counters or model phrasing.
 The deterministic test belongs in CI; the live test checks compatibility with
 the actual Claude CLI's native session implementation.
+
+### Antigravity clamp continuation
+
+The same `clamp_resume` suite also drives a scripted Antigravity peer through
+three separate `chaos exec` processes and actual MCP file/shell calls. It checks
+native ID reuse, tool-only memory, fresh reads, and exact audit writes, then
+injects an error after a real write and verifies one dispatch, no renewed
+checkpoint, and a fresh explicit retry. Only native model behavior is faked;
+no credentials or provider network access are required. This is not a live
+Antigravity CLI compatibility result.
+
+Shared checkpoint unit tests own history/context compatibility, consume-before-
+dispatch, backend identity, old-format rejection, private storage and all-unsent
+hook/system-message deltas. The obsolete last-user/MCP-only selector is removed;
+its non-text and instruction-separation coverage now tests rendered native input.

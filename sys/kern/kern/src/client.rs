@@ -13,7 +13,7 @@
 //! per-turn state such as the `x-chaos-turn-state` token used for sticky routing.
 
 pub(crate) mod auth_breaker;
-mod claude_resume;
+mod native_resume;
 pub(crate) mod state;
 pub(crate) mod streaming;
 pub(crate) mod tools;
@@ -23,7 +23,7 @@ pub(crate) use tools::active_clamp_turn_context;
 #[cfg(test)]
 pub(super) use tools::{
     ClampLocalToolKind, ClampToolRouting, clamp_permission_mode, clamp_tool_routing,
-    render_clamp_full_prompt, render_latest_clamp_user_message,
+    render_clamp_full_prompt,
 };
 
 use std::sync::Arc;
@@ -95,12 +95,12 @@ pub(super) struct ModelClientState {
     pub(super) clamp_settings: StdMutex<ClampSettings>,
     /// Persistent Claude Code subprocess for clamped mode.
     pub(super) clamp_transport: tokio::sync::Mutex<Option<chaos_clamp::ClampTransport>>,
-    claude_resume: claude_resume::ClaudeResume,
+    claude_resume: native_resume::NativeResume,
     /// Session-scoped Antigravity conversation transport.
     pub(super) antigravity_transport: tokio::sync::Mutex<Option<chaos_clamp::AntigravityTransport>>,
     /// Per-Chaos-process record used to resume the provider conversation after
     /// a later `chaos exec resume` starts a new operating-system process.
-    pub(super) antigravity_conversations: Option<chaos_clamp::AntigravityConversationStore>,
+    antigravity_resume: native_resume::NativeResume,
     /// Allowlisting CONNECT proxy that is the Antigravity subprocess's only
     /// route off the machine, held for the lifetime of its transport.
     pub(super) antigravity_egress: tokio::sync::Mutex<Option<chaos_clamp::EgressProxy>>,

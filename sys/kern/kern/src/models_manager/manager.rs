@@ -178,6 +178,7 @@ enum CatalogMode {
 pub struct ModelsManager {
     remote_models: RwLock<Vec<ModelInfo>>,
     catalog_mode: CatalogMode,
+    automatic_catalog_refresh: bool,
     collaboration_modes_config: CollaborationModesConfig,
     auth_manager: Arc<AuthManager>,
     etag: RwLock<Option<String>>,
@@ -252,6 +253,7 @@ impl ModelsManager {
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
+            automatic_catalog_refresh: true,
             collaboration_modes_config,
             auth_manager,
             etag: RwLock::new(None),
@@ -259,6 +261,14 @@ impl ModelsManager {
             provider_id,
             provider,
         }
+    }
+
+    /// Bridge-backed inference authenticates in its CLI, not in the native API
+    /// adapter. Automatic discovery uses the normal fresh cache without requiring
+    /// a second login; explicit Online refresh still uses native credentials.
+    pub(crate) fn with_automatic_catalog_refresh(mut self, enabled: bool) -> Self {
+        self.automatic_catalog_refresh = enabled;
+        self
     }
 
     /// Configured provider id this manager is bound to.
@@ -282,14 +292,17 @@ impl ModelsManager {
         if self.catalog_mode == CatalogMode::Custom {
             return None;
         }
-        Some(Self::new_with_provider_binding(
-            self.cache_manager.home().to_path_buf(),
-            self.auth_manager.for_provider(provider_id),
-            None,
-            self.collaboration_modes_config,
-            provider_id.to_string(),
-            provider,
-        ))
+        Some(
+            Self::new_with_provider_binding(
+                self.cache_manager.home().to_path_buf(),
+                self.auth_manager.for_provider(provider_id),
+                None,
+                self.collaboration_modes_config,
+                provider_id.to_string(),
+                provider,
+            )
+            .with_automatic_catalog_refresh(self.automatic_catalog_refresh),
+        )
     }
 
     /// Whether this manager has the exact configured provider/account binding.
@@ -655,6 +668,9 @@ impl ModelsManager {
     ///
     /// Uses `Online` strategy to fetch latest models when ETags differ.
     pub(crate) async fn refresh_if_new_etag(&self, etag: String) {
+        if !self.automatic_catalog_refresh {
+            return;
+        }
         let current_etag = self.get_etag().await;
         if current_etag.clone().is_some() && current_etag.as_deref() == Some(etag.as_str()) {
             if let Err(err) = self
@@ -680,6 +696,13 @@ impl ModelsManager {
         if matches!(self.catalog_mode, CatalogMode::Custom) {
             return Ok(());
         }
+
+        let refresh_strategy = match refresh_strategy {
+            RefreshStrategy::OnlineIfUncached if !self.automatic_catalog_refresh => {
+                RefreshStrategy::Offline
+            }
+            strategy => strategy,
+        };
 
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(refresh_strategy);

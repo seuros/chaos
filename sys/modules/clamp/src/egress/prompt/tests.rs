@@ -3,6 +3,7 @@
 use super::*;
 
 const CLOUD_CODE: &str = "cloudcode-pa.googleapis.com";
+const DAILY_CLOUD_CODE: &str = "daily-cloudcode-pa.googleapis.com";
 const GENERATE: &str = "/v1internal:streamGenerateContent?alt=sse";
 
 fn generation_request(path: &str, payload: Value) -> Request {
@@ -37,37 +38,45 @@ async fn payload(req: Request) -> Value {
 
 #[tokio::test]
 async fn cloud_code_replaces_only_the_system_prompt_and_repairs_framing() {
-    let text = "Canonical instructions.\nExact whitespace:  é\n";
-    let prompt = AntigravitySystemPrompt::new(text.to_string());
-    let original = cloud_request();
-    let mut req = generation_request(GENERATE, original.clone());
-    req.headers_mut()
-        .insert("digest", HeaderValue::from_static("old-body-digest"));
-    req.headers_mut()
-        .insert(TRANSFER_ENCODING, HeaderValue::from_static("chunked"));
+    for host in [
+        CLOUD_CODE,
+        DAILY_CLOUD_CODE,
+        "Daily-CloudCode-PA.googleapis.com.",
+    ] {
+        for path in ["/v1internal:generateContent", GENERATE] {
+            let text = "Canonical instructions.\nExact whitespace:  é\n";
+            let prompt = AntigravitySystemPrompt::new(text.to_string());
+            let original = cloud_request();
+            let mut req = generation_request(path, original.clone());
+            req.headers_mut()
+                .insert("digest", HeaderValue::from_static("old-body-digest"));
+            req.headers_mut()
+                .insert(TRANSFER_ENCODING, HeaderValue::from_static("chunked"));
 
-    let rewritten = prompt.rewrite(req, CLOUD_CODE).await.unwrap();
-    assert_eq!(rewritten.uri().request_target(), GENERATE);
-    assert_eq!(
-        rewritten.headers()["authorization"],
-        "Bearer transport-owned-token"
-    );
-    assert!(!rewritten.headers().contains_key("digest"));
-    assert!(!rewritten.headers().contains_key(TRANSFER_ENCODING));
-    let length: usize = rewritten.headers()[CONTENT_LENGTH]
-        .to_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let bytes = rewritten.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(length, bytes.len());
+            let rewritten = prompt.rewrite(req, host).await.unwrap();
+            assert_eq!(rewritten.uri().request_target(), path);
+            assert_eq!(
+                rewritten.headers()["authorization"],
+                "Bearer transport-owned-token"
+            );
+            assert!(!rewritten.headers().contains_key("digest"));
+            assert!(!rewritten.headers().contains_key(TRANSFER_ENCODING));
+            let length: usize = rewritten.headers()[CONTENT_LENGTH]
+                .to_str()
+                .unwrap()
+                .parse()
+                .unwrap();
+            let bytes = rewritten.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(length, bytes.len());
 
-    let actual: Value = serde_json::from_slice(&bytes).unwrap();
-    let mut expected = original;
-    expected["request"]["systemInstruction"] = json!({"parts": [{"text": text}]});
-    assert_eq!(actual, expected);
-    assert!(!actual.to_string().contains("CLI agent instructions"));
-    assert!(!actual["request"]["contents"].to_string().contains(text));
+            let actual: Value = serde_json::from_slice(&bytes).unwrap();
+            let mut expected = original;
+            expected["request"]["systemInstruction"] = json!({"parts": [{"text": text}]});
+            assert_eq!(actual, expected);
+            assert!(!actual.to_string().contains("CLI agent instructions"));
+            assert!(!actual["request"]["contents"].to_string().contains(text));
+        }
+    }
 }
 
 #[tokio::test]
@@ -171,6 +180,8 @@ async fn oauth_and_control_requests_are_byte_identical_and_do_not_receive_the_pr
         ("oauth2.googleapis.com", "/token"),
         (CLOUD_CODE, "/v1internal:loadCodeAssist"),
         (CLOUD_CODE, "/v1internal:fetchAvailableModels"),
+        (DAILY_CLOUD_CODE, "/v1internal:loadCodeAssist"),
+        (DAILY_CLOUD_CODE, "/v1internal:fetchAvailableModels"),
     ] {
         let body = "grant_type=refresh_token&refresh_token=example";
         let req = Request::builder()
@@ -198,6 +209,8 @@ async fn unsupported_generation_endpoints_and_formats_fail_closed() {
     let prompt = AntigravitySystemPrompt::new("canonical instructions".to_string());
     for (host, path) in [
         (CLOUD_CODE, "/v2internal:streamGenerateContent"),
+        (DAILY_CLOUD_CODE, "/v2internal:streamGenerateContent"),
+        ("daily-cloudcode-pa.googleapis.com.evil.test", GENERATE),
         (
             CLOUD_CODE,
             "/google.internal.cloud.code.v1internal.PredictionService/GenerateContent",

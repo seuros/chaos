@@ -194,6 +194,28 @@ enum ClampRequestKind {
     },
 }
 
+/// The native CLI's lazy tool catalogue is in its discarded system prompt.
+/// Render the current kernel-owned MCP projection beside canonical instructions.
+pub(crate) fn antigravity_system_prompt(prompt: &crate::client_common::Prompt) -> String {
+    let tools: Vec<McpTool> = prompt
+        .tools
+        .iter()
+        .cloned()
+        .filter_map(tool_spec_to_mcp_tool)
+        .collect();
+    let tools = serde_json::json!(tools);
+    let base = &prompt.base_instructions.text;
+    format!(
+        "{base}\n\n# Chaos MCP tool catalogue\n\n\
+         The following JSON declares the available Chaos tools and their inputSchema. \
+         Invoke them using call_mcp_tool with ServerName \"chaos\", ToolName equal to \
+         the exact declared name, and Arguments matching that tool's inputSchema. \
+         Do not guess tool names or use native CLI command/file tools instead. \
+         Tool availability is not permission: all calls remain subject to Chaos policy.\n\n\
+         {tools}"
+    )
+}
+
 fn tool_spec_to_mcp_tool(spec: ToolSpec) -> Option<McpTool> {
     match spec {
         ToolSpec::Function(tool) => Some(function_tool_to_mcp(tool)),
@@ -298,3 +320,6 @@ async fn dispatch_tool_call(
         .into_response();
     Ok(output)
 }
+
+#[cfg(test)]
+mod tests;

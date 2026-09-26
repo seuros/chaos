@@ -684,7 +684,7 @@ impl ModelClientSession {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let settings = clamp_settings.antigravity;
-        let system_prompt = prompt.base_instructions.text.clone();
+        let system_prompt = crate::clamp_bridge::antigravity_system_prompt(prompt);
         let full_prompt_state = render_clamp_full_prompt(prompt);
         let latest_user_content = render_latest_clamp_user_message(prompt);
         let model = settings

@@ -583,6 +583,14 @@ stream_idle_timeout_ms = 600000
 - [chaos-mcp.7](./chaos-mcp.7.md)
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md)
 
+### Antigravity tool catalogue
+
+The canonical Antigravity system prompt includes the current Chaos MCP tool
+catalogue. It uses the same function schemas and freeform `input` envelope as
+the session bridge; provider-native tool declarations are excluded. The catalogue
+is regenerated from each sampling turn's tools, so removed tools are not retained
+in the replacement system prompt. Tools remain subject to Chaos permissions.
+
 ### Model discovery with CLI clamp
 
 CLI-backed (`clamp = true`) sessions use fresh, version-compatible cached model

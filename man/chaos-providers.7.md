@@ -620,3 +620,9 @@ Explicit `refresh_models` / `models --refresh` requests still perform native
 discovery for the requested provider/account and report missing credentials or
 discovery failures. A CLI login alone is not a native API credential. Custom
 authoritative catalogs remain unchanged.
+
+Antigravity also uses the exact host `www.googleapis.com` for its pre-generation
+OAuth userinfo/eligibility check (`/oauth2/v2/userinfo`). The clamp permits that
+host and the exact `lh3.googleusercontent.com` profile-picture host: agy 1.1.22
+treats a failed picture fetch as an eligibility failure even in text-only print
+mode. Sibling Google API and image hosts remain denied.

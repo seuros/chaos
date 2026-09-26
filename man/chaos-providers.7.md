@@ -577,3 +577,16 @@ stream_idle_timeout_ms = 600000
 - [chaos-reflex.7](./chaos-reflex.7.md)
 - [chaos-mcp.7](./chaos-mcp.7.md)
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md)
+
+### Model discovery with CLI clamp
+
+CLI-backed (`clamp = true`) sessions use fresh, version-compatible cached model
+metadata instead of automatic native API discovery, including Anthropic metadata
+lookups and ETag-triggered refreshes. Cold or stale caches do not trigger native
+authentication; uncached model metadata falls back to the normal descriptor.
+An already loaded catalog remains available in memory.
+
+Explicit `refresh_models` / `models --refresh` requests still perform native
+discovery for the requested provider/account and report missing credentials or
+discovery failures. A CLI login alone is not a native API credential. Custom
+authoritative catalogs remain unchanged.

@@ -93,6 +93,9 @@ Both backends receive the same Chaos base instructions used by direct API
 requests. Claude Code receives them through `--system-prompt-file` at subprocess
 startup. AGY's TLS-inspecting egress proxy replaces the CLI-generated
 `systemInstruction` in supported Cloud Code and Gemini JSON generation requests.
+Both `cloudcode-pa.googleapis.com` and `daily-cloudcode-pa.googleapis.com` use
+this replacement for `v1internal:generateContent` and
+`v1internal:streamGenerateContent`. Allowing a host never bypasses prompt ownership.
 The canonical prompt is refreshed before every turn, including resumes; empty
 instructions remove the CLI's system instructions. No custom AGY agent or
 user-message prompt injection is used. Encoded, malformed, cached-content, and
@@ -104,7 +107,9 @@ and append only the new Chaos input, including new hook/developer messages.
 ### Antigravity setup
 
 Use a dedicated private home: Chaos replaces its MCP and permission configuration
-and denies native AGY tools. Authenticate through the official CLI using that home:
+and denies native AGY tools. Missing or empty (ASCII-whitespace-only) managed
+configuration files are initialized; malformed JSON and non-object values are
+rejected rather than overwritten. Authenticate through the official CLI using that home:
 
 ```bash
 export CHAOS_AGY_HOME=/private/antigravity-state
@@ -594,3 +599,24 @@ attempt starts fresh when there is no completed checkpoint. This is not a
 rollback of side effects and does not guarantee that a model will never choose
 to repeat an action; inspect the canonical transcript after an interrupted turn.
 Keep the configured conversation directory and native CLI history together.
+
+### Antigravity tool catalogue
+
+The canonical Antigravity system prompt includes the current Chaos MCP tool
+catalogue. It uses the same function schemas and freeform `input` envelope as
+the session bridge; provider-native tool declarations are excluded. The catalogue
+is regenerated from each sampling turn's tools, so removed tools are not retained
+in the replacement system prompt. Tools remain subject to Chaos permissions.
+
+### Model discovery with CLI clamp
+
+CLI-backed (`clamp = true`) sessions use fresh, version-compatible cached model
+metadata instead of automatic native API discovery, including Anthropic metadata
+lookups and ETag-triggered refreshes. Cold or stale caches do not trigger native
+authentication; uncached model metadata falls back to the normal descriptor.
+An already loaded catalog remains available in memory.
+
+Explicit `refresh_models` / `models --refresh` requests still perform native
+discovery for the requested provider/account and report missing credentials or
+discovery failures. A CLI login alone is not a native API credential. Custom
+authoritative catalogs remain unchanged.

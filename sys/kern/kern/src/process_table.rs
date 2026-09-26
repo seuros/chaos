@@ -165,13 +165,16 @@ impl ProcessTable {
         let chaos_home = config.chaos_home.clone();
         // Use the active model provider for discovery, not hardcoded OpenAI.
         let models_provider = config.model_provider.clone();
-        let models_manager = Arc::new(ModelsManager::new_with_provider(
-            chaos_home.clone(),
-            auth_manager.for_provider(&config.model_provider_id),
-            config.model_catalog.clone(),
-            collaboration_modes_config,
-            models_provider,
-        ));
+        let models_manager = Arc::new(
+            ModelsManager::new_with_provider(
+                chaos_home.clone(),
+                auth_manager.for_provider(&config.model_provider_id),
+                config.model_catalog.clone(),
+                collaboration_modes_config,
+                models_provider,
+            )
+            .with_automatic_catalog_refresh(!config.clamp),
+        );
         Self::assemble(models_manager, auth_manager, session_source, chaos_home)
     }
 

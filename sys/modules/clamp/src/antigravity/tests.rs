@@ -390,3 +390,34 @@ fn conversation_store_round_trips_only_for_matching_model_and_safe_ids() {
     assert_eq!(store.load("gemini-3.1-pro-low"), None);
     store.clear();
 }
+
+#[test]
+fn managed_config_initializes_placeholders_but_rejects_invalid_existing_data() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let path = directory.path().join("config.json");
+    assert_eq!(
+        read_json_object_or_empty(&path).unwrap(),
+        serde_json::json!({})
+    );
+    for placeholder in ["", " \t\r\n"] {
+        std::fs::write(&path, placeholder).unwrap();
+        assert_eq!(
+            read_json_object_or_empty(&path).unwrap(),
+            serde_json::json!({})
+        );
+    }
+    for invalid in ["{", "[]", "null", "42", "\u{00a0}"] {
+        std::fs::write(&path, invalid).unwrap();
+        assert!(matches!(
+            read_json_object_or_empty(&path),
+            Err(AntigravityError::Protocol(_))
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), invalid);
+    }
+    std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+    assert_eq!(
+        read_json_object_or_empty(&path).unwrap(),
+        serde_json::json!({"theme": "dark"})
+    );
+    assert!(read_json_object_or_empty(directory.path()).is_err());
+}

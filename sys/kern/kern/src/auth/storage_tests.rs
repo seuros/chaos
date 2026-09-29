@@ -337,7 +337,7 @@ fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
     let mock_keyring = MockKeyringStore::default();
     let storage = VaultAuthStorage::new(
         chaos_home.path().to_path_buf(),
-        Arc::new(mock_keyring.clone()),
+        Arc::new(mock_keyring),
     );
     let expected = AuthDotJson {
         providers: [(
@@ -417,7 +417,7 @@ fn keyring_auth_storage_delete_removes_keyring_and_file() -> anyhow::Result<()> 
     let mock_keyring = MockKeyringStore::default();
     let storage = VaultAuthStorage::new(
         chaos_home.path().to_path_buf(),
-        Arc::new(mock_keyring.clone()),
+        Arc::new(mock_keyring),
     );
     storage.save(&auth_with_prefix("delete"))?;
     let auth_file = get_auth_file(chaos_home.path());

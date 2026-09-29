@@ -1036,9 +1036,9 @@ pub enum AuthCredentialsStoreMode {
     #[default]
     /// Persist credentials in CHAOS_HOME/auth.json.
     File,
-    /// Persist credentials in the keyring. Fail if unavailable.
+    /// Persist in the encrypted vault, unlocked by the OS keyring. Fail if unavailable.
     Keyring,
-    /// Use keyring when available; otherwise, fall back to a file in CHAOS_HOME.
+    /// Use the encrypted vault. No plaintext fallback.
     Auto,
     /// Store credentials in memory only for the current process.
     Ephemeral,

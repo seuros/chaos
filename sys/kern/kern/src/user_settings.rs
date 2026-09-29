@@ -14,6 +14,22 @@ const BOOTSTRAP_KEYS: &[&str] = &["storage_url", "egress_url", "sqlite_home"];
 
 pub mod storage_setup;
 
+/// The only path allowed to read legacy per-credential Keychain items.
+/// Migrate bootstrap first so opening a credential-protected database uses the
+/// vault too. Each import is atomic and retryable; source records are retained.
+pub async fn migrate_secrets(home: &Path) -> anyhow::Result<()> {
+    let _lock = lock_bootstrap(home)?;
+    chaos_sysctl::secrets::migrate_references(home, &serde_json::to_value(read_toml(home)?)?)?;
+    let runtime = open(home).await?;
+    let snapshot = runtime.settings_snapshot().await?;
+    chaos_sysctl::secrets::migrate_references(home, &snapshot.settings)?;
+    for (_, config) in runtime.list_global_mcp_servers().await? {
+        chaos_sysctl::secrets::migrate_references(home, &serde_json::to_value(config)?)?;
+    }
+    crate::auth::migrate_keyring_auth(home)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -77,18 +93,18 @@ impl BootstrapConfig {
         }
     }
 
-    pub fn resolved_storage_url(&self) -> anyhow::Result<Option<String>> {
+    pub fn resolved_storage_url(&self, home: &Path) -> anyhow::Result<Option<String>> {
         self.storage_url
             .clone()
             .or_else(|| std::env::var("CHAOS_STORAGE_URL").ok())
             .as_deref()
-            .map(resolve_reference)
+            .map(|value| resolve_reference(home, value))
             .transpose()
     }
 
     pub fn effective_values(&self, home: &Path) -> anyhow::Result<Value> {
         let mut values = toml::map::Map::new();
-        let url = self.resolved_storage_url()?.unwrap_or_else(|| {
+        let url = self.resolved_storage_url(home)?.unwrap_or_else(|| {
             format!(
                 "sqlite://{}",
                 self.sqlite_home(home).join("chaos.sqlite").display()
@@ -96,7 +112,10 @@ impl BootstrapConfig {
         });
         values.insert("storage_url".into(), Value::String(url));
         if let Some(url) = &self.egress_url {
-            values.insert("egress_url".into(), Value::String(resolve_reference(url)?));
+            values.insert(
+                "egress_url".into(),
+                Value::String(resolve_reference(home, url)?),
+            );
         }
         values.insert(
             "sqlite_home".into(),
@@ -161,18 +180,18 @@ fn write_bootstrap(home: &Path, key: &str, value: &str) -> anyhow::Result<()> {
     )
 }
 
-fn resolve_reference(value: &str) -> anyhow::Result<String> {
+fn resolve_reference(home: &Path, value: &str) -> anyhow::Result<String> {
     if let Some(name) = value.strip_prefix("env:") {
         ensure!(!name.is_empty(), "empty environment reference");
         return std::env::var(name)
             .with_context(|| format!("missing bootstrap environment variable {name}"));
     }
-    chaos_sysctl::secrets::resolve(value)
+    chaos_sysctl::secrets::resolve(home, value)
 }
 
 pub async fn open(home: &Path) -> anyhow::Result<RuntimeDbHandle> {
     let bootstrap = BootstrapConfig::read(home)?;
-    let url = bootstrap.resolved_storage_url()?;
+    let url = bootstrap.resolved_storage_url(home)?;
     let sqlite_home = bootstrap.sqlite_home(home);
     let effective_url = url
         .clone()
@@ -642,12 +661,12 @@ pub async fn migrate(home: &Path, dry_run: bool) -> anyhow::Result<MigrationRepo
             Err(err) => return Err(err.into()),
         }
         let mut json = serde_json::to_value(&settings)?;
-        chaos_sysctl::secrets::transform(&mut json, true)?;
+        chaos_sysctl::secrets::transform(home, &mut json, true)?;
         settings = serde_json::from_value(json)?;
         validate(&settings, home)?;
         for (name, config) in runtime.list_global_mcp_servers().await? {
             crate::config::ensure_mcp_endpoint_has_no_credentials(&config)?;
-            let secure = chaos_sysctl::secrets::externalize_mcp(&config)?;
+            let secure = chaos_sysctl::secrets::externalize_mcp(home, &config)?;
             if secure != config {
                 runtime.upsert_global_mcp_server(&name, &secure).await?;
             }
@@ -699,10 +718,10 @@ pub async fn migrate(home: &Path, dry_run: bool) -> anyhow::Result<MigrationRepo
         .flatten()
     {
         if url::Url::parse(value).is_ok_and(|url| url.password().is_some()) {
-            *value = chaos_sysctl::secrets::externalize(value)?;
+            *value = chaos_sysctl::secrets::externalize(home, value)?;
         }
     }
-    if bootstrap.resolved_storage_url()?.is_none() {
+    if bootstrap.resolved_storage_url(home)?.is_none() {
         let sqlite_home = bootstrap.sqlite_home(home);
         if bootstrap.sqlite_home.is_some() || chaos_proc::sqlite_home_env_value().is_some() {
             bootstrap.storage_url = Some(format!(

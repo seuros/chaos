@@ -114,13 +114,35 @@ When PostgreSQL is selected, connection or migration failure stops startup.
 FreeChaOS never falls back to SQLite for an explicitly selected PostgreSQL
 backend.
 
-On FreeBSD, interactive onboarding uses the credential store when available.
-If the optional D-Bus Secret Service is unavailable, it saves the connection URL
-directly in `$CHAOS_HOME/config.toml`, atomically written with owner-only
-permissions (`0600`). The URL is not encrypted.
-The setup screen discloses this before submission. Use an `env:VARIABLE`
-reference instead to avoid saving the URL in TOML. Treat config backups as
-sensitive. Subsequent launches do not need D-Bus.
+Interactive onboarding saves credential-bearing URLs in the encrypted vault.
+The OS credential store holds its unlock key. If that store is unavailable,
+setup fails without writing plaintext; use an `env:VARIABLE` reference instead.
+This also applies to FreeBSD hosts without D-Bus Secret Service.
+
+### Shared credential vault
+
+`$CHAOS_HOME/secrets/local.age` holds settings credentials, provider accounts in
+`keyring`/`auto` mode, and named secrets. One OS-held key unlocks it once per
+process. Reads share the in-memory unlock key; file changes invalidate the
+decrypted snapshot. Writes are locked across processes and atomically replaced.
+`auto` no longer falls back to plaintext. The provider `file` mode (the existing
+default) and `ephemeral` mode are unchanged.
+
+After upgrading, stop other ChaOS processes and run:
+
+```sh
+chaos config migrate-secrets
+```
+
+This explicitly imports the old Keychain items and may prompt once for each.
+It preserves references and approval identities, retains source items for
+recovery, and never overwrites a live or deleted vault record on retry. Normal
+operation never consults those source items. Back up both the encrypted vault
+and its unlock key; older binaries cannot write vault schema v2.
+
+macOS may still authorize the initial unlock after restart or a binary change.
+Locking Keychain does not revoke a key already held in process memory; restart
+ChaOS to discard it.
 
 ### Provisioning
 
@@ -196,8 +218,9 @@ renewal.
 
 ## NOTES
 
-The credential sits in plain text in `config.toml`. Keep the file at mode
-`0600`; FreeChaOS does not read `.pgpass` or a keyring.
+Manually entered literal URLs sit in plaintext in `config.toml`; keep such files
+at mode `0600`. Prefer onboarding's encrypted-vault reference or `env:VARIABLE`.
+FreeChaOS does not read `.pgpass`.
 
 `chaos_journald` is only started for a mounted SQLite backend. PostgreSQL uses
 the mounted pool directly and does not create or write `chaos.sqlite`.

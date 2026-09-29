@@ -485,7 +485,7 @@ impl McpConnectionManager {
         tx_event: Sender<Event>,
         notification_tx: Option<Sender<McpServerNotification>>,
         initial_sandbox_state: SandboxState,
-        _codex_home: std::path::PathBuf,
+        chaos_home: std::path::PathBuf,
         catalog: Arc<dyn McpCatalogSink>,
     ) -> (Self, tokio_util::sync::CancellationToken) {
         let cancel_token = tokio_util::sync::CancellationToken::new();
@@ -527,6 +527,7 @@ impl McpConnectionManager {
                 elicitation_requests.clone(),
                 Arc::clone(&catalog),
                 initial_sandbox_state.clone(),
+                chaos_home.clone(),
             );
             clients.insert(server_name.clone(), async_managed_client.clone());
             let tx_event = tx_event.clone();

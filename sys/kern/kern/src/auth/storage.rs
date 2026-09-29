@@ -174,53 +174,44 @@ fn compute_store_key(chaos_home: &Path) -> String {
 }
 
 #[derive(Clone, Debug)]
-struct KeyringAuthStorage {
+struct VaultAuthStorage {
     chaos_home: PathBuf,
-    keyring_store: Arc<dyn KeyringStore>,
+    vault: chaos_vault::LocalSecretsBackend,
 }
 
-impl KeyringAuthStorage {
+impl VaultAuthStorage {
+    #[cfg(test)]
     fn new(chaos_home: PathBuf, keyring_store: Arc<dyn KeyringStore>) -> Self {
-        Self {
-            chaos_home,
-            keyring_store,
-        }
+        let vault = chaos_vault::LocalSecretsBackend::new(chaos_home.clone(), keyring_store);
+        Self { chaos_home, vault }
     }
 
-    fn load_from_keyring(&self, key: &str) -> std::io::Result<Option<AuthDotJson>> {
-        match self.keyring_store.load(KEYRING_SERVICE, key) {
-            Ok(Some(serialized)) => serde_json::from_str(&serialized).map(Some).map_err(|err| {
-                std::io::Error::other(format!(
-                    "failed to deserialize CLI auth from keyring: {err}"
-                ))
-            }),
+    fn load_from_vault(&self, key: &str) -> std::io::Result<Option<AuthDotJson>> {
+        match self
+            .vault
+            .load_credential(&format!("{KEYRING_SERVICE}/{key}"))
+        {
+            Ok(Some(serialized)) => serde_json::from_str(&serialized)
+                .map(Some)
+                .map_err(|_| std::io::Error::other("invalid provider credentials in vault")),
             Ok(None) => Ok(None),
             Err(error) => Err(std::io::Error::other(format!(
-                "failed to load CLI auth from keyring: {}",
-                error.message()
+                "failed to load CLI auth from vault: {error}"
             ))),
         }
     }
 
-    fn save_to_keyring(&self, key: &str, value: &str) -> std::io::Result<()> {
-        match self.keyring_store.save(KEYRING_SERVICE, key, value) {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                let message = format!(
-                    "failed to write OAuth tokens to keyring: {}",
-                    error.message()
-                );
-                warn!("{message}");
-                Err(std::io::Error::other(message))
-            }
-        }
+    fn save_to_vault(&self, key: &str, value: &str) -> std::io::Result<()> {
+        self.vault
+            .save_credential(&format!("{KEYRING_SERVICE}/{key}"), value)
+            .map_err(std::io::Error::other)
     }
 }
 
-impl AuthStorageBackend for KeyringAuthStorage {
+impl AuthStorageBackend for VaultAuthStorage {
     fn load(&self) -> std::io::Result<Option<AuthDotJson>> {
         let key = compute_store_key(&self.chaos_home);
-        let Some(auth) = self.load_from_keyring(&key)? else {
+        let Some(auth) = self.load_from_vault(&key)? else {
             return Ok(None);
         };
         let normalized = auth.normalized();
@@ -235,7 +226,7 @@ impl AuthStorageBackend for KeyringAuthStorage {
         // Simpler error mapping per style: prefer method reference over closure
         let normalized = auth.normalized();
         let serialized = serde_json::to_string(&normalized).map_err(std::io::Error::other)?;
-        self.save_to_keyring(&key, &serialized)?;
+        self.save_to_vault(&key, &serialized)?;
         if let Err(err) = delete_file_if_exists(&self.chaos_home) {
             warn!("failed to remove CLI auth fallback file: {err}");
         }
@@ -245,57 +236,43 @@ impl AuthStorageBackend for KeyringAuthStorage {
     fn delete(&self) -> std::io::Result<bool> {
         let key = compute_store_key(&self.chaos_home);
         let keyring_removed = self
-            .keyring_store
-            .delete(KEYRING_SERVICE, &key)
-            .map_err(|err| {
-                std::io::Error::other(format!("failed to delete auth from keyring: {err}"))
-            })?;
+            .vault
+            .delete_credential(&format!("{KEYRING_SERVICE}/{key}"))
+            .map_err(std::io::Error::other)?;
         let file_removed = delete_file_if_exists(&self.chaos_home)?;
         Ok(keyring_removed || file_removed)
     }
 }
 
-#[derive(Clone, Debug)]
-struct AutoAuthStorage {
-    keyring_storage: Arc<KeyringAuthStorage>,
-    file_storage: Arc<FileAuthStorage>,
+/// Import the old provider bundle only when explicitly requested by the operator.
+pub(crate) fn migrate_keyring_auth(home: &Path) -> anyhow::Result<()> {
+    import_keyring_auth(
+        home,
+        &chaos_vault::LocalSecretsBackend::shared(home.to_path_buf()),
+        &DefaultKeyringStore,
+    )
 }
 
-impl AutoAuthStorage {
-    fn new(chaos_home: PathBuf, keyring_store: Arc<dyn KeyringStore>) -> Self {
-        Self {
-            keyring_storage: Arc::new(KeyringAuthStorage::new(chaos_home.clone(), keyring_store)),
-            file_storage: Arc::new(FileAuthStorage::new(chaos_home)),
-        }
+fn import_keyring_auth(
+    home: &Path,
+    vault: &chaos_vault::LocalSecretsBackend,
+    keyring: &dyn KeyringStore,
+) -> anyhow::Result<()> {
+    let key = compute_store_key(home);
+    let credential = format!("{KEYRING_SERVICE}/{key}");
+    if !vault.has_credential_record(&credential)?
+        && let Some(serialized) = keyring.load(KEYRING_SERVICE, &key)?
+    {
+        let auth: AuthDotJson = serde_json::from_str(&serialized).map_err(|_| {
+            anyhow::anyhow!("invalid legacy provider credentials; migration aborted")
+        })?;
+        vault.import_credentials(
+            &[(credential, serde_json::to_string(&auth.normalized())?)]
+                .into_iter()
+                .collect(),
+        )?;
     }
-}
-
-impl AuthStorageBackend for AutoAuthStorage {
-    fn load(&self) -> std::io::Result<Option<AuthDotJson>> {
-        match self.keyring_storage.load() {
-            Ok(Some(auth)) => Ok(Some(auth)),
-            Ok(None) => self.file_storage.load(),
-            Err(err) => {
-                warn!("failed to load CLI auth from keyring, falling back to file storage: {err}");
-                self.file_storage.load()
-            }
-        }
-    }
-
-    fn save(&self, auth: &AuthDotJson) -> std::io::Result<()> {
-        match self.keyring_storage.save(auth) {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                warn!("failed to save auth to keyring, falling back to file storage: {err}");
-                self.file_storage.save(auth)
-            }
-        }
-    }
-
-    fn delete(&self) -> std::io::Result<bool> {
-        // Keyring storage will delete from disk as well
-        self.keyring_storage.delete()
-    }
+    Ok(())
 }
 
 // A global in-memory store for mapping chaos_home -> AuthDotJson.
@@ -354,10 +331,19 @@ pub(super) fn create_auth_storage(
     chaos_home: PathBuf,
     mode: AuthCredentialsStoreMode,
 ) -> Arc<dyn AuthStorageBackend> {
-    let keyring_store: Arc<dyn KeyringStore> = Arc::new(DefaultKeyringStore);
-    create_auth_storage_with_keyring_store(chaos_home, mode, keyring_store)
+    match mode {
+        AuthCredentialsStoreMode::File => Arc::new(FileAuthStorage::new(chaos_home)),
+        AuthCredentialsStoreMode::Keyring | AuthCredentialsStoreMode::Auto => {
+            Arc::new(VaultAuthStorage {
+                vault: chaos_vault::LocalSecretsBackend::shared(chaos_home.clone()),
+                chaos_home,
+            })
+        }
+        AuthCredentialsStoreMode::Ephemeral => Arc::new(EphemeralAuthStorage::new(chaos_home)),
+    }
 }
 
+#[cfg(test)]
 fn create_auth_storage_with_keyring_store(
     chaos_home: PathBuf,
     mode: AuthCredentialsStoreMode,
@@ -365,10 +351,9 @@ fn create_auth_storage_with_keyring_store(
 ) -> Arc<dyn AuthStorageBackend> {
     match mode {
         AuthCredentialsStoreMode::File => Arc::new(FileAuthStorage::new(chaos_home)),
-        AuthCredentialsStoreMode::Keyring => {
-            Arc::new(KeyringAuthStorage::new(chaos_home, keyring_store))
+        AuthCredentialsStoreMode::Keyring | AuthCredentialsStoreMode::Auto => {
+            Arc::new(VaultAuthStorage::new(chaos_home, keyring_store))
         }
-        AuthCredentialsStoreMode::Auto => Arc::new(AutoAuthStorage::new(chaos_home, keyring_store)),
         AuthCredentialsStoreMode::Ephemeral => Arc::new(EphemeralAuthStorage::new(chaos_home)),
     }
 }

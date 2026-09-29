@@ -1,55 +1,17 @@
 //! Opaque credential references in configuration. No plaintext fallback.
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::collections::BTreeMap;
+use std::path::Path;
 
-use anyhow::{Context, ensure};
+use anyhow::Context;
 use chaos_keyring::{DefaultKeyringStore, KeyringStore};
+use chaos_vault::LocalSecretsBackend;
 use serde_json::Value;
 
 const PREFIX: &str = "keyring:chaos-settings/";
 const SERVICE: &str = "chaos-settings";
 
-// Process-local cache of immutable references; rotation gets a new UUID.
-// No Debug or serialization. External Keychain edits require a restart.
-static CREDENTIALS: LazyLock<CredentialCache> = LazyLock::new(CredentialCache::default);
-
-#[derive(Default)]
-struct CredentialCache {
-    values: Mutex<HashMap<String, String>>,
-}
-
-impl CredentialCache {
-    fn resolve(
-        &self,
-        account: &str,
-        load: impl FnOnce() -> anyhow::Result<String>,
-    ) -> anyhow::Result<String> {
-        let mut values = self
-            .values
-            .lock()
-            .map_err(|_| anyhow::anyhow!("credential cache unavailable"))?;
-        if let Some(value) = values.get(account) {
-            return Ok(value.clone());
-        }
-        // Serialize lookups; cache successes only.
-        let value = load()?;
-        values.insert(account.to_owned(), value.clone());
-        Ok(value)
-    }
-
-    fn remove(
-        &self,
-        account: &str,
-        delete: impl FnOnce() -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
-        let mut values = self
-            .values
-            .lock()
-            .map_err(|_| anyhow::anyhow!("credential cache unavailable"))?;
-        // Evict even if deletion fails; exclude concurrent loads.
-        values.remove(account);
-        delete()
-    }
+fn credential_key(account: &str) -> String {
+    format!("{SERVICE}/{account}")
 }
 
 #[cfg(test)]
@@ -60,48 +22,100 @@ pub fn is_reference(value: &str) -> bool {
     value.starts_with(PREFIX)
 }
 
-/// Resolve a reference once per process; successful values stay in memory only.
-pub fn resolve(value: &str) -> anyhow::Result<String> {
+/// Resolve through the shared encrypted vault, never through legacy Keychain items.
+pub fn resolve(home: &Path, value: &str) -> anyhow::Result<String> {
     let Some(account) = value.strip_prefix(PREFIX) else {
         return Ok(value.into());
     };
     uuid::Uuid::parse_str(account).context("invalid credential reference")?;
-    CREDENTIALS.resolve(account, || {
-        DefaultKeyringStore
-            .load(SERVICE, account)?
-            .context("configuration credential is unavailable in the secure store")
-    })
+    LocalSecretsBackend::shared(home.to_path_buf())
+        .load_credential(&credential_key(account))?
+        .context("configuration credential is unavailable in the vault; for existing Keychain credentials run `chaos config migrate-secrets`")
 }
 
-pub fn externalize(value: &str) -> anyhow::Result<String> {
+pub fn externalize(home: &Path, value: &str) -> anyhow::Result<String> {
     if is_reference(value) {
         // Validate references offline; resolve them at execution.
         uuid::Uuid::parse_str(&value[PREFIX.len()..]).context("invalid credential reference")?;
         return Ok(value.into());
     }
     let id = uuid::Uuid::new_v4().to_string();
-    CREDENTIALS.resolve(&id, || {
-        DefaultKeyringStore.save(SERVICE, &id, value)?;
-        // Verification must read the actual store, not the cache.
-        ensure!(
-            DefaultKeyringStore.load(SERVICE, &id)?.as_deref() == Some(value),
-            "secure credential store failed read-back verification"
-        );
-        Ok(value.to_owned())
-    })?;
+    LocalSecretsBackend::shared(home.to_path_buf()).save_credential(&credential_key(&id), value)?;
     Ok(format!("{PREFIX}{id}"))
 }
 
 /// Delete an unused credential.
-pub fn remove(reference: &str) -> anyhow::Result<()> {
+pub fn remove(home: &Path, reference: &str) -> anyhow::Result<()> {
     let account = reference
         .strip_prefix(PREFIX)
         .context("expected a secure credential reference")?;
     uuid::Uuid::parse_str(account).context("invalid credential reference")?;
-    CREDENTIALS.remove(account, || {
-        DefaultKeyringStore.delete(SERVICE, account)?;
+    LocalSecretsBackend::shared(home.to_path_buf()).delete_credential(&credential_key(account))?;
+    Ok(())
+}
+
+/// Explicit migration only. References remain stable, preserving approval identity.
+/// Sources are retained for recovery; a retry never replaces a vault credential.
+pub fn migrate_references(home: &Path, value: &Value) -> anyhow::Result<()> {
+    fn reference(
+        value: &Value,
+        accounts: &mut std::collections::BTreeSet<String>,
+    ) -> anyhow::Result<()> {
+        if let Some(account) = value.as_str().and_then(|value| value.strip_prefix(PREFIX)) {
+            uuid::Uuid::parse_str(account).context("invalid credential reference")?;
+            accounts.insert(account.to_owned());
+        }
         Ok(())
-    })
+    }
+    fn collect(
+        value: &Value,
+        accounts: &mut std::collections::BTreeSet<String>,
+    ) -> anyhow::Result<()> {
+        if let Some(values) = value.as_array() {
+            for value in values {
+                collect(value, accounts)?;
+            }
+        } else if let Some(values) = value.as_object() {
+            for (key, value) in values {
+                if matches!(
+                    key.as_str(),
+                    "api_key"
+                        | "bearer_token"
+                        | "experimental_bearer_token"
+                        | "storage_url"
+                        | "egress_url"
+                ) {
+                    reference(value, accounts)?;
+                } else if matches!(key.as_str(), "env" | "http_headers" | "headers") {
+                    if let Some(values) = value.as_object() {
+                        for value in values.values() {
+                            reference(value, accounts)?;
+                        }
+                    }
+                } else {
+                    collect(value, accounts)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    let mut accounts = Default::default();
+    collect(value, &mut accounts)?;
+    let vault = LocalSecretsBackend::shared(home.to_path_buf());
+    let mut values = BTreeMap::new();
+    for account in accounts {
+        let key = credential_key(&account);
+        if !vault.has_credential_record(&key)? {
+            let value = DefaultKeyringStore
+                .load(SERVICE, &account)?
+                .context("legacy settings credential is missing; migration aborted")?;
+            values.insert(key, value);
+        }
+    }
+    if !values.is_empty() {
+        vault.import_credentials(&values)?;
+    }
+    Ok(())
 }
 
 pub fn has_literals(value: &Value) -> bool {
@@ -129,10 +143,10 @@ pub fn has_literals(value: &Value) -> bool {
 }
 
 /// Transform credential fields only, never instructions or tool arguments.
-pub fn transform(value: &mut Value, store: bool) -> anyhow::Result<()> {
+pub fn transform(home: &Path, value: &mut Value, store: bool) -> anyhow::Result<()> {
     if let Some(values) = value.as_array_mut() {
         for value in values {
-            transform(value, store)?;
+            transform(home, value, store)?;
         }
         return Ok(());
     }
@@ -146,9 +160,9 @@ pub fn transform(value: &mut Value, store: bool) -> anyhow::Result<()> {
         ) {
             if let Some(text) = value.as_str() {
                 *value = Value::String(if store {
-                    externalize(text)?
+                    externalize(home, text)?
                 } else {
-                    resolve(text)?
+                    resolve(home, text)?
                 });
             }
         } else if matches!(key.as_str(), "env" | "http_headers" | "headers") {
@@ -156,24 +170,25 @@ pub fn transform(value: &mut Value, store: bool) -> anyhow::Result<()> {
                 for value in map.values_mut() {
                     if let Some(text) = value.as_str() {
                         *value = Value::String(if store {
-                            externalize(text)?
+                            externalize(home, text)?
                         } else {
-                            resolve(text)?
+                            resolve(home, text)?
                         });
                     }
                 }
             }
         } else {
-            transform(value, store)?;
+            transform(home, value, store)?;
         }
     }
     Ok(())
 }
 
 pub fn externalize_mcp(
+    home: &Path,
     config: &crate::types::McpServerConfig,
 ) -> anyhow::Result<crate::types::McpServerConfig> {
     let mut value = serde_json::to_value(config)?;
-    transform(&mut value, true)?;
+    transform(home, &mut value, true)?;
     Ok(serde_json::from_value(value)?)
 }

@@ -106,6 +106,7 @@ fn malformed_bootstrap_is_not_treated_as_a_fresh_installation() -> anyhow::Resul
 
 #[test]
 fn postgres_validation_requires_the_selected_backend_and_database() {
+    let home = tempfile::tempdir().unwrap();
     for connection in [
         "",
         "not a url with secret-password",
@@ -114,19 +115,23 @@ fn postgres_validation_requires_the_selected_backend_and_database() {
         "postgresql://localhost",
         "env:",
     ] {
-        let error = postgres_url(connection).expect_err("invalid PostgreSQL connection");
+        let error =
+            postgres_url(home.path(), connection).expect_err("invalid PostgreSQL connection");
         assert!(!error.to_string().contains("secret-password"));
     }
     for connection in [
         "postgres://user:secret-password@localhost/chaos",
         "postgresql://localhost:5432/chaos?sslmode=require",
     ] {
-        assert_eq!(postgres_url(connection).expect("valid URL"), connection);
+        assert_eq!(
+            postgres_url(home.path(), connection).expect("valid URL"),
+            connection
+        );
     }
 }
 
 #[test]
-fn unavailable_keyring_obeys_platform_policy() -> anyhow::Result<()> {
+fn unavailable_keyring_never_writes_plaintext() -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     for existing in [false, true] {
@@ -148,29 +153,10 @@ fn unavailable_keyring_obeys_platform_policy() -> anyhow::Result<()> {
             Some(url.into()),
             |_| anyhow::bail!("keyring unavailable: private-driver-detail"),
         );
-        #[cfg(target_os = "freebsd")]
-        {
-            result?;
-            let bootstrap = BootstrapConfig::read(home.path())?;
-            assert_eq!(bootstrap.resolved_storage_url()?.as_deref(), Some(url));
-            assert_eq!(
-                std::fs::metadata(&config_path)?.permissions().mode() & 0o777,
-                0o600
-            );
-            assert!(!toml::to_string(&bootstrap.redacted())?.contains("private-password"));
-            assert!(!is_needed(home.path())?);
-            assert_eq!(std::fs::read_dir(home.path())?.count(), 2); // config + existing migration lock
-            if existing {
-                assert_eq!(read_toml(home.path())?["egress_url"], before["egress_url"]);
-            }
-        }
-        #[cfg(not(target_os = "freebsd"))]
-        {
-            let error = result.unwrap_err();
-            assert!(error.to_string().contains("env:VARIABLE"));
-            assert!(!format!("{error:#}").contains("private"));
-            assert_eq!(read_toml(home.path())?, before);
-        }
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("env:VARIABLE"));
+        assert!(!format!("{error:#}").contains("private"));
+        assert_eq!(read_toml(home.path())?, before);
         assert!(!home.path().join("chaos.sqlite").exists());
     }
     Ok(())

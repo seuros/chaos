@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
-use chaos_keyring::DefaultKeyringStore;
 use chaos_keyring::KeyringStore;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -100,10 +99,7 @@ pub struct SecretsManager {
 impl SecretsManager {
     pub fn new(chaos_home: PathBuf, backend_kind: SecretsBackendKind) -> Self {
         let backend: Arc<dyn SecretsBackend> = match backend_kind {
-            SecretsBackendKind::Local => {
-                let keyring_store: Arc<dyn KeyringStore> = Arc::new(DefaultKeyringStore);
-                Arc::new(LocalSecretsBackend::new(chaos_home, keyring_store))
-            }
+            SecretsBackendKind::Local => Arc::new(LocalSecretsBackend::shared(chaos_home)),
         };
         Self { backend }
     }

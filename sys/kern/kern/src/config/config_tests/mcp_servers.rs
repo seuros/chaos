@@ -309,7 +309,7 @@ async fn replace_mcp_servers_round_trips_stdio_env_and_cwd() -> anyhow::Result<(
     let loaded = load_global_mcp_servers(chaos_home.path()).await?;
     let mut value = serde_json::to_value(&loaded)?;
     assert!(!chaos_sysctl::secrets::has_literals(&value));
-    chaos_sysctl::secrets::transform(&mut value, false)?;
+    chaos_sysctl::secrets::transform(chaos_home.path(), &mut value, false)?;
     assert_eq!(value, serde_json::to_value(&servers)?);
 
     Ok(())
@@ -350,7 +350,7 @@ async fn replace_mcp_servers_round_trips_streamable_http_options() -> anyhow::Re
     let loaded = load_global_mcp_servers(chaos_home.path()).await?;
     let mut value = serde_json::to_value(&loaded)?;
     assert!(!chaos_sysctl::secrets::has_literals(&value));
-    chaos_sysctl::secrets::transform(&mut value, false)?;
+    chaos_sysctl::secrets::transform(chaos_home.path(), &mut value, false)?;
     assert_eq!(value, serde_json::to_value(&servers)?);
 
     Ok(())

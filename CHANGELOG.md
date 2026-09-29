@@ -21,6 +21,37 @@ should. There is no patch level; the build timestamp is the patch.
   worker-thread stack overflows. Keep integration-test homes and working
   directories alive for lifecycle hook resolution.
 
+## [47.8.0] - 2026-09-29
+
+Upgrading: stop older ChaOS processes and run `chaos config migrate-secrets`
+with the new binary before restarting. The one-time import may prompt for each
+legacy Keychain item. It preserves credential references and MCP approval
+identities; normal operation never falls back to those legacy items. Do not run
+older binaries against the upgraded vault. See
+[credential vault migration](docs/database-configuration.md#credential-vault-and-macos-prompts).
+
+### Added
+- Explicit, retryable `chaos config migrate-secrets` command. Source Keychain
+  items are retained for recovery; retries never overwrite live credentials or
+  resurrect deleted ones. This command will be removed in **47.9.0**; migrate
+  with **47.8.x** before upgrading further. See the
+  [upgrade guide](README.md#upgrading-to-4780).
+
+### Changed
+- Settings, MCP credentials, named secrets, and provider auth in `keyring`/`auto`
+  mode share one encrypted vault per ChaOS home, with one OS-held unlock key
+  cached per process.
+- Vault schema v2 uses process-shared snapshots, cross-process write locking,
+  atomic owner-only writes, and deletion records that preserve logout across
+  migration retries. Back up both the encrypted vault and its unlock key.
+
+### Removed
+- Plaintext fallback for provider `auto` auth. If it previously used
+  `auth.json`, explicitly select `file` mode or reconnect the account into the
+  vault. The existing default `file` mode and `ephemeral` mode are unchanged.
+- FreeBSD onboarding's plaintext connection-URL fallback. Use `env:VARIABLE`
+  when the OS credential store is unavailable.
+
 ## [47.7.1] - 2026-09-28
 
 ### Added
@@ -65,7 +96,8 @@ See the Drivers section of `man/chaos-install.7.md`.
   access for the model now comes from skipper.
 - `git://branches` resource template.
 
-[Unreleased]: https://github.com/seuros/chaos/compare/v47.7.1...HEAD
+[Unreleased]: https://github.com/seuros/chaos/compare/v47.8.0...HEAD
+[47.8.0]: https://github.com/seuros/chaos/compare/v47.7.1...v47.8.0
 [47.7.1]: https://github.com/seuros/chaos/compare/v47.7.0...v47.7.1
 [47.7.0]: https://github.com/seuros/chaos/compare/v47.6.0...v47.7.0
 [47.6.0]: https://github.com/seuros/chaos/releases/tag/v47.6.0

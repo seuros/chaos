@@ -18,18 +18,10 @@ console asks where to store data before loading database-backed settings:
 - **SQLite** creates `chaos.sqlite` in the ChaOS home, with no server required.
 
 Connection input is shown as entered. Literal PostgreSQL URLs use the secure
-credential store when available; environment references are saved unchanged.
-On FreeBSD, D-Bus Secret Service is optional and often absent in headless sessions.
-If the secure store is unavailable, onboarding saves the URL directly in the
-existing `$CHAOS_HOME/config.toml`, atomically replacing it with an owner-only
-file (`0600`). The screen discloses this before submission: the URL is **not
-encrypted** and is accessible to your account and root. No separate credential
-file or environment setup is required for subsequent launches.
-
-Use `env:VARIABLE` if you do not want the URL saved in TOML. Other platforms still
-require an environment reference when the secure store is unavailable. This
-fallback applies only to onboarding bootstrap connections, not other settings
-credentials or existing keyring references. Treat config backups as sensitive.
+vault; environment references are saved unchanged. The OS credential store holds
+only the vault's unlock key. If it is unavailable, onboarding fails without
+writing the connection to plaintext TOML, on every platform. Use `env:VARIABLE`
+when no OS credential store is available (including headless FreeBSD).
 
 Setup saves `storage_url` only after successful database initialization.
 Connection failures stay on the setup screen for retry or a different choice;
@@ -62,10 +54,11 @@ environment/default SQLite behavior.
   and administrator policy remain files.
 - Project configuration cannot redirect bootstrap or grant security authority.
   Project rules can restrict authority, not supply positive grants.
-- Migrated literal credentials use opaque keyring references. macOS uses the
-  native login Keychain. Existing login/OAuth storage options retain their own
-  behavior; this migration adds no plaintext fallback for settings credentials.
-  The disclosed FreeBSD onboarding bootstrap fallback is separate.
+- Credentials use opaque references backed by `$CHAOS_HOME/secrets/local.age`.
+  macOS keeps the vault's single unlock key in the native login Keychain.
+  Provider auth modes `keyring` and `auto` use this same vault with no plaintext
+  fallback. Provider `file` (the existing default) and `ephemeral` modes remain
+  unchanged.
 - The owner-only `installation-id` is local application state, not an export.
 
 Preference precedence remains system defaults, database user settings, trusted
@@ -88,7 +81,8 @@ lock. They do not resolve credential references merely to save an offline edit.
 ## Migration
 
 Stop older ChaOS processes before migrating. Do not run older binaries against
-the migrated installation.
+the migrated installation. If the installation already contains Keychain
+references, run `chaos config migrate-secrets` first (see below).
 
 ```sh
 chaos config migrate --dry-run
@@ -106,11 +100,52 @@ After migration, legacy user `rules/*.decrees` files are no longer live policy.
 Executable identity mappings must be defined in administrator policy.
 
 Explicit credential fields and environment/header values in global MCP
-registrations move to the keyring before references are persisted. Endpoint
+registrations move to the encrypted vault before references are persisted. Endpoint
 userinfo must instead be moved to bearer-token/header references. Arbitrary
 secrets in commands, arguments, or free text cannot be identified automatically.
 Backups and historical database pages may retain old credentials; rotate them
 when necessary.
+
+## Credential vault and macOS prompts
+
+Settings, bootstrap connection references, provider accounts in `keyring`/`auto`
+mode, and named secrets share one encrypted vault per ChaOS home. Its unlock key
+is loaded once per process and kept in memory, never written to plaintext disk.
+Concurrent callers share that lookup. The decrypted snapshot is reused only
+while the ciphertext is unchanged; writes and deletions by other processes are
+observed on subsequent vault reads. Provider auth still honors its explicit
+snapshot/reload semantics. Mutations are locked across processes and persisted
+atomically with owner-only permissions. Missing keys or corrupt ciphertext fail
+closed; an existing vault never gets a replacement unlock key.
+
+After upgrading, stop other ChaOS processes, then explicitly import existing
+per-item Keychain credentials:
+
+```sh
+chaos config migrate-secrets
+```
+
+Migration may prompt for each old Keychain item once. It imports bootstrap
+references before opening the database, then settings, MCP references and the
+provider bundle. It is retryable and never overwrites a live credential or
+resurrects a deleted one. Legacy Keychain items are retained for recovery, but
+normal runtime never reads them. Reference IDs and MCP approval identities do
+not change. Explicit `file` provider credentials are not imported. If `auto`
+previously fell back to `auth.json`, select `file` explicitly or reconnect the
+account into the vault; `auto` no longer reads plaintext.
+
+The existing `keyring:chaos-settings/UUID` reference syntax is retained, but now
+addresses records inside this home-local vault. References alone are not
+portable between homes. Back up the encrypted vault **and** its OS-held key.
+Vault schema v2 is not writable by older ChaOS versions.
+
+Normal operation reads an existing vault's unlock key once per home/process,
+not once per MCP environment value or credential. Creating a new vault also
+verifies its newly saved key.
+macOS can still ask for authorization after restart or binary-signature changes;
+bulk Keychain queries cannot bypass per-item access controls. Locking Keychain
+does not erase a running process's already unlocked key; restart ChaOS to discard
+it. External master-key changes likewise require a restart.
 
 ## Commands
 

@@ -383,6 +383,7 @@ impl AsyncManagedClient {
         elicitation_requests: ElicitationRequestManager,
         catalog: Arc<dyn chaos_traits::McpCatalogSink>,
         initial_sandbox_state: SandboxState,
+        chaos_home: PathBuf,
     ) -> Self {
         let tool_filter = ToolFilter::from_config(&config);
         let startup_tool_filter = tool_filter;
@@ -402,6 +403,7 @@ impl AsyncManagedClient {
                     config,
                     client_identity,
                     MakeClientParams {
+                        chaos_home,
                         tool_filter: startup_tool_filter,
                         tx_event,
                         notification_tx,
@@ -562,6 +564,7 @@ pub(super) async fn make_managed_client(
     params: MakeClientParams,
 ) -> Result<ManagedClient, StartupOutcomeError> {
     let MakeClientParams {
+        chaos_home,
         tool_filter,
         tx_event,
         notification_tx,
@@ -607,7 +610,7 @@ pub(super) async fn make_managed_client(
     // Build and connect session based on transport type
     let connect_fut = async {
         let mut transport = serde_json::to_value(&config.transport)?;
-        chaos_sysctl::secrets::transform(&mut transport, false)?;
+        chaos_sysctl::secrets::transform(&chaos_home, &mut transport, false)?;
         match serde_json::from_value::<McpServerTransportConfig>(transport)? {
             McpServerTransportConfig::Stdio {
                 command,

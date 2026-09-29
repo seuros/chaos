@@ -359,7 +359,10 @@ async fn bind_mcp_approval(
             let path = env
                 .as_ref()
                 .and_then(|env| env.get("PATH"))
-                .map(|value| chaos_sysctl::secrets::resolve(value).map(std::ffi::OsString::from))
+                .map(|value| {
+                    chaos_sysctl::secrets::resolve(&context.config.chaos_home, value)
+                        .map(std::ffi::OsString::from)
+                })
                 .transpose()?
                 .or_else(|| std::env::var_os("PATH"));
             which::which_in(command, path, base)?

@@ -13,7 +13,8 @@ async fn live_check_uses_saved_key_and_only_sends_the_synthetic_action() {
     config.reflex = jev_settings(&server);
     let settings = config.reflex.get_mut("jev").unwrap();
     settings.env_key = None;
-    settings.api_key = Some(chaos_sysctl::secrets::externalize("saved-test-key").unwrap());
+    settings.api_key =
+        Some(chaos_sysctl::secrets::externalize(&config.chaos_home, "saved-test-key").unwrap());
     settings.model = Some("test-route".into());
     settings.path = Some("/custom/decisions".into());
     Mock::given(method("POST"))
@@ -98,7 +99,8 @@ async fn missing_saved_key_is_an_error_not_a_skipped_backend() {
     settings.env_key = None;
     settings.api_key = Some("keyring:chaos-settings/7b795f3b-2586-45d4-ac42-dbd17e8f1ad7".into());
     let mut later = settings.clone();
-    later.api_key = Some(chaos_sysctl::secrets::externalize("later-key").unwrap());
+    later.api_key =
+        Some(chaos_sysctl::secrets::externalize(&config.chaos_home, "later-key").unwrap());
     config.reflex.insert("z-later".into(), later);
     let err = test(&config, None).await.unwrap_err();
     assert!(format!("{err:#}").contains("saved reflex credential is unavailable"));

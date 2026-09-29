@@ -305,7 +305,8 @@ async fn monitor_action_uses_reflex_verdict_before_remote_monitor() {
     config.reflex = jev_settings(&server);
     let settings = config.reflex.get_mut("jev").unwrap();
     settings.env_key = None;
-    settings.api_key = Some(chaos_sysctl::secrets::externalize("reflex-key").unwrap());
+    settings.api_key =
+        Some(chaos_sysctl::secrets::externalize(&config.chaos_home, "reflex-key").unwrap());
     settings.allow_remote_fallback = true;
     config.chatgpt_base_url = server.uri();
     turn_context.config = Arc::new(config);

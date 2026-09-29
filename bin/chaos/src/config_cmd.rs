@@ -11,6 +11,8 @@ pub struct ConfigCommand {
 
 #[derive(Debug, usage::Subcommands)]
 pub enum ConfigAction {
+    /// Import legacy Keychain credentials into the single encrypted vault.
+    MigrateSecrets,
     /// Inspect database settings (optional dotted key).
     Get { key: Option<String> },
     /// Set a user setting using a JSON value.
@@ -63,6 +65,12 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
     let home = chaos_pwd::find_chaos_home()?;
     user_settings::install_persistence();
     match command.action {
+        ConfigAction::MigrateSecrets => {
+            user_settings::migrate_secrets(&home).await?;
+            println!(
+                "Credentials migrated to the encrypted vault. Restart ChaOS; legacy Keychain items were retained for recovery."
+            );
+        }
         ConfigAction::Migrate { dry_run } => {
             println!(
                 "{}",

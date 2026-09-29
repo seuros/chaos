@@ -1353,7 +1353,7 @@ pub async fn upsert_global_mcp_server(
         "unknown",
     )
     .await?;
-    let config = chaos_sysctl::secrets::externalize_mcp(config)?;
+    let config = chaos_sysctl::secrets::externalize_mcp(chaos_home, config)?;
     runtime.upsert_global_mcp_server(name, &config).await
 }
 
@@ -1382,7 +1382,7 @@ pub fn replace_global_mcp_servers(
             ensure_mcp_endpoint_has_no_credentials(config)?;
             Ok((
                 name.clone(),
-                chaos_sysctl::secrets::externalize_mcp(config)?,
+                chaos_sysctl::secrets::externalize_mcp(chaos_home, config)?,
             ))
         })
         .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
@@ -1415,7 +1415,7 @@ struct RuntimeStorageConfig {
 fn runtime_storage_config(chaos_home: &std::path::Path) -> anyhow::Result<RuntimeStorageConfig> {
     let parsed = crate::user_settings::BootstrapConfig::read(chaos_home)?;
     Ok(RuntimeStorageConfig {
-        storage_url: normalize_storage_url(parsed.resolved_storage_url()?.as_deref())?,
+        storage_url: normalize_storage_url(parsed.resolved_storage_url(chaos_home)?.as_deref())?,
         sqlite_home: parsed.sqlite_home(chaos_home),
     })
 }

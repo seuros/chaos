@@ -73,7 +73,8 @@ Only action risk runs automatically; other judgments are library-only.
 | `minicheck` | OpenAI-compatible chat completions | grounding | optional API key | Experimental |
 | `shieldgemma` | OpenAI-compatible chat completions | policy violation | optional API key | Experimental |
 
-New keys use the OS keyring; settings store references. Saved provider accounts
+New keys use the shared encrypted vault; settings store references. Only the
+vault's unlock key uses the OS keyring. Saved provider accounts
 and explicit `env_key` sources are also supported; no environment key is assumed.
 See [chaos-reflex(7)](./chaos-reflex.7.md).
 

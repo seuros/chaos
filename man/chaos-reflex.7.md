@@ -22,15 +22,15 @@ preset or existing backend, then enter a masked key or reuse a saved account.
 Esc returns to the picker; Esc again closes it. Save to apply from the next turn;
 in-flight turns keep their snapshot. No file edits or exported keys are needed.
 
-- **Storage:** settings go to the database; new keys go to the OS keyring.
+- **Storage:** settings go to the database; new keys go to the encrypted vault.
   Database credentials are references, with no plaintext fallback.
-- **Keychain prompts:** successfully resolved saved keys are cached in host
-  memory for the process lifetime, shared by MCP safety checks and goal checks.
-  Concurrent reads share one lookup; failures are not cached. Saving a replacement
-  creates a new reference; deleting a reference through ChaOS evicts its cached
-  value. After editing or deleting a key directly in the OS keyring (or from
-  another process), restart the harness to discard cached values. First access
-  after a restart may still require OS authorization.
+- **Keychain prompts:** the vault's single unlock key stays in host memory for
+  the process lifetime, shared by provider auth, MCP safety and goal checks.
+  Concurrent reads share one lookup; failed unlocks can be retried. Saving a
+  replacement creates a new reference; changes and deletions in the vault are
+  observed on subsequent reads. External changes to the OS-held unlock key
+  require a restart. First access after restart may require OS authorization.
+  Import old per-item keys explicitly with `chaos config migrate-secrets`.
 - **Key entry:** never put keys after a slash command or in an endpoint URL.
   Leave the key blank to preserve it; enter a replacement to rotate it.
 - **Account reuse:** an API-key account from `/accounts` must share the endpoint's
@@ -98,7 +98,7 @@ Settings live under `reflex.<name>`. Use `/reflex` for normal setup.
 | `base_url` | Required for local kinds; Jev defaults to TypeSafe |
 | `path` | Jev decisions path; default `/v1/systemone` |
 | `model` | Model route or tag; defaults above |
-| `api_key` | Generated OS-keyring reference; literal keys rejected |
+| `api_key` | Generated vault reference; literal keys rejected |
 | `auth_provider` | Saved API-key account ID; same endpoint origin required |
 | `env_key` | Explicit environment credential source for headless use |
 | `timeout_ms` | Per-attempt timeout including response body; default `10000` |
@@ -181,7 +181,7 @@ These crate tests use explicit environment variables, not saved settings:
 
 ## FILES
 
-- Settings database - `reflex.<name>` settings with OS-keyring references
+- Settings database - `reflex.<name>` settings with opaque vault references
 - `sys/kern/reflex` - judgments, router, and backends
 - `sys/kern/kern/src/reflex.rs` - reflex arc thresholds and outcome mapping
 

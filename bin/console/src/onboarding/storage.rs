@@ -199,9 +199,6 @@ impl Widget for &StorageScreen {
                     Paragraph::new(format!("> {}_", self.connection)).wrap(Wrap { trim: false }),
                 );
                 column.push("");
-                #[cfg(target_os = "freebsd")]
-                let storage_notice = "URLs use the credential store, or plaintext config.toml.";
-                #[cfg(not(target_os = "freebsd"))]
                 let storage_notice = "URLs use the secure credential store.";
                 column.push(Paragraph::new(storage_notice).wrap(Wrap { trim: false }));
                 column.push("");

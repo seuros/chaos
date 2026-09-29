@@ -15,6 +15,7 @@ use super::filter::StartupOutcomeError;
 use super::filter::ToolFilter;
 
 pub(super) struct MakeClientParams {
+    pub(super) chaos_home: PathBuf,
     pub(super) tool_filter: ToolFilter,
     pub(super) tx_event: Sender<Event>,
     pub(super) notification_tx: Option<Sender<McpServerNotification>>,

@@ -24,8 +24,8 @@ fn has_storage_url(file: &toml::Value) -> anyhow::Result<bool> {
     }
 }
 
-fn postgres_url(connection: &str) -> anyhow::Result<String> {
-    let resolved = resolve_reference(connection)
+fn postgres_url(home: &Path, connection: &str) -> anyhow::Result<String> {
+    let resolved = resolve_reference(home, connection)
         .map_err(|_| anyhow!("Cannot read the connection reference. Check the environment or secure credential store."))?;
     let resolved = resolved.trim();
     let url = url::Url::parse(resolved)
@@ -55,7 +55,7 @@ pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()>
     let (url, reference) = match choice {
         StorageChoice::Postgres(connection) => {
             let connection = connection.trim();
-            let url = postgres_url(connection)?;
+            let url = postgres_url(home, connection)?;
             (url, Some(connection.to_owned()))
         }
         StorageChoice::Sqlite => {
@@ -75,13 +75,9 @@ pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()>
     .map_err(|_| anyhow!("Database connection timed out. Check the server and network, then retry."))?
     .map_err(|_| anyhow!("Cannot initialize the database. Check the connection, credentials, and database permissions, then retry."))?;
 
-    persist_choice(
-        home,
-        before,
-        url,
-        reference,
-        chaos_sysctl::secrets::externalize,
-    )
+    persist_choice(home, before, url, reference, |value| {
+        chaos_sysctl::secrets::externalize(home, value)
+    })
 }
 
 fn persist_choice(
@@ -108,10 +104,6 @@ fn persist_choice(
                 new_secret = true;
                 reference
             }
-            // FreeBSD fallback: config.toml, written atomically with mode 0600.
-            #[cfg(target_os = "freebsd")]
-            Err(_) => url,
-            #[cfg(not(target_os = "freebsd"))]
             Err(_) => {
                 return Err(anyhow!(
                     "Cannot save the connection in the secure credential store. Use an env:VARIABLE reference instead."
@@ -122,7 +114,7 @@ fn persist_choice(
     };
     if write_bootstrap(home, "storage_url", &stored).is_err() {
         if new_secret {
-            let _ = chaos_sysctl::secrets::remove(&stored);
+            let _ = chaos_sysctl::secrets::remove(home, &stored);
         }
         return Err(anyhow!(
             "Cannot save storage configuration. Check permissions on ChaOS home and retry."

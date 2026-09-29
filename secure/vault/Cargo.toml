@@ -20,8 +20,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tracing = { workspace = true }
+tempfile = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 keyring-core = { workspace = true }
 pretty_assertions = { workspace = true }
-tempfile = { workspace = true }

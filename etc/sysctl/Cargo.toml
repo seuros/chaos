@@ -16,6 +16,7 @@ chaos-ipc = { workspace = true }
 chaos-chassis = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-keyring = { workspace = true }
+chaos-vault = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 multimap = { workspace = true }
 schemars = { workspace = true }

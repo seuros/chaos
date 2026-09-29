@@ -142,7 +142,8 @@ AGY requires a dedicated authenticated `CHAOS_AGY_HOME`. See
 ## Reflex
 
 Reflex provides typed judgments through model-specific backends. Configure them
-with `/reflex`; settings live in the database and new keys go to the OS keyring.
+with `/reflex`; settings live in the database and keys go to the encrypted vault.
+The OS keyring holds only the vault's unlock key.
 Run `/reflex test` or `chaos reflex test` for a synthetic action-risk check with
 verdict and latency—no chat history or file contents sent.
 
@@ -175,6 +176,38 @@ the binary into `~/.cargo/bin/chaos`. For a one-shot debug run without
 installing, use `just chaos`. For a local release run, use
 `just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
 for system requirements and logging controls.
+
+### Upgrading to 47.8.0
+
+Settings, MCP credentials, named secrets, and provider auth in `keyring`/`auto`
+mode now share one encrypted vault per ChaOS home. Normal operation loads its
+OS-held unlock key once per home/process, rather than accessing Keychain for
+each credential.
+
+Stop older ChaOS processes, install the new binary, then import existing
+Keychain credentials before restarting:
+
+```sh
+chaos config migrate-secrets
+```
+
+`chaos config migrate-secrets` will be removed in **47.9.0**. Migrate existing
+Keychain credentials with **47.8.x** before upgrading to 47.9.0 or later.
+
+This one-time import may prompt for each legacy item. It is safe to retry:
+existing credentials and deletions are preserved, as are credential references
+and MCP approval identities. Legacy items remain for recovery, but normal
+operation never falls back to them.
+
+Provider `auto` mode no longer falls back to plaintext `auth.json`. If you relied
+on that behavior, explicitly select `file` mode or reconnect into the vault.
+The existing default `file` mode and `ephemeral` mode are unchanged.
+
+Do not run older binaries against the upgraded vault. Back up both
+`$CHAOS_HOME/secrets/local.age` **and** its OS-held unlock key. macOS may still
+prompt after a restart or binary-signature change. See
+[credential vault migration](docs/database-configuration.md#credential-vault-and-macos-prompts)
+for details.
 
 ### Drivers
 

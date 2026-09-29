@@ -46,15 +46,8 @@ fn postgres_discloses_platform_credential_storage() {
     press(&mut screen, KeyCode::Enter);
     let text = rendered(&screen, 80);
     assert!(text.contains("Or: env:CHAOS_DATABASE_URL"));
-    #[cfg(target_os = "freebsd")]
-    {
-        assert!(text.contains("URLs use the credential store, or plaintext config.toml."));
-    }
-    #[cfg(not(target_os = "freebsd"))]
-    {
-        assert!(text.contains("URLs use the secure credential store."));
-        assert!(!text.contains("plaintext config.toml"));
-    }
+    assert!(text.contains("URLs use the secure credential store."));
+    assert!(!text.contains("plaintext config.toml"));
 }
 
 #[test]

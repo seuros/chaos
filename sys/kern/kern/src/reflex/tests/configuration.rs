@@ -21,7 +21,7 @@ async fn goal_and_safety_clients_share_settings_but_keep_distinct_retry_budgets(
     let (_, context) = make_session_and_context().await;
     let mut config = (*context.config).clone();
     config.reflex = jev_settings(&server);
-    let reference = secrets::externalize("shared-test-key").unwrap();
+    let reference = secrets::externalize(&config.chaos_home, "shared-test-key").unwrap();
     let settings = config.reflex.get_mut("jev").unwrap();
     settings.env_key = None;
     settings.api_key = Some(reference.clone());
@@ -67,7 +67,7 @@ async fn goal_and_safety_clients_share_settings_but_keep_distinct_retry_budgets(
         }
         server.verify().await;
     }
-    secrets::remove(&reference).unwrap();
+    secrets::remove(&config.chaos_home, &reference).unwrap();
 }
 
 #[tokio::test]
@@ -79,24 +79,26 @@ async fn mcp_safety_and_goal_clients_share_the_saved_credential_cache() {
     let (_, context) = make_session_and_context().await;
     let mut config = (*context.config).clone();
     let (_, mut settings) = presets().into_iter().next().unwrap();
-    let reference = secrets::externalize("test-shared-jev-key").unwrap();
+    let reference = secrets::externalize(&config.chaos_home, "test-shared-jev-key").unwrap();
     settings.api_key = Some(reference.clone());
     config.reflex.insert("jev".into(), settings);
 
-    // Remove the mock-store entry without evicting the cache.
-    // Both clients must reuse it without OS or network access.
-    DefaultKeyringStore
-        .delete(
-            "chaos-settings",
-            reference.strip_prefix("keyring:chaos-settings/").unwrap(),
-        )
-        .unwrap();
+    // No legacy per-credential Keychain item is created.
+    assert!(
+        DefaultKeyringStore
+            .load(
+                "chaos-settings",
+                reference.strip_prefix("keyring:chaos-settings/").unwrap(),
+            )
+            .unwrap()
+            .is_none()
+    );
     for _ in 0..3 {
         assert!(from_config(&config, None).unwrap().is_some());
         assert!(goal_client(&config, None).is_ok());
     }
 
-    secrets::remove(&reference).unwrap();
+    secrets::remove(&config.chaos_home, &reference).unwrap();
     assert!(from_config(&config, None).is_err());
     assert!(goal_client(&config, None).is_err());
 }
@@ -171,7 +173,7 @@ async fn setup_stores_only_a_reference_and_resolves_without_environment() {
         resolve_api_key(config, &rotated, None).unwrap().as_deref(),
         Some("rotated-secret")
     );
-    secrets::remove(rotated.api_key.as_deref().unwrap()).unwrap();
+    secrets::remove(&config.chaos_home, rotated.api_key.as_deref().unwrap()).unwrap();
     assert!(resolve_api_key(config, &rotated, Some(&auth)).is_err());
 }
 

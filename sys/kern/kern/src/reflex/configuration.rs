@@ -100,7 +100,7 @@ pub fn validate(config: &Config, settings: &ReflexBackendSettings) -> anyhow::Re
             secrets::is_reference(reference),
             "literal API keys are not valid settings"
         );
-        secrets::externalize(reference)?;
+        secrets::externalize(&config.chaos_home, reference)?;
     }
     if sources.iter().any(Option::is_some) {
         require_secure_transport(&endpoint)?;
@@ -148,25 +148,26 @@ pub(super) fn resolve_api_key(
     auth: Option<&AuthManager>,
 ) -> anyhow::Result<Option<String>> {
     validate(config, settings)?;
-    let key =
-        if let Some(reference) = &settings.api_key {
-            Some(secrets::resolve(reference).map_err(|_| {
+    let key = if let Some(reference) = &settings.api_key {
+        Some(
+            secrets::resolve(&config.chaos_home, reference).map_err(|_| {
                 anyhow::anyhow!("saved reflex credential is unavailable; open /reflex")
-            })?)
-        } else if let Some(provider) = &settings.auth_provider {
-            Some(
-                auth.and_then(|auth| auth.auth_for_provider(provider))
-                    .and_then(|auth| auth.api_key().map(str::to_owned))
-                    .context("provider has no saved API key; connect it using /accounts")?,
-            )
-        } else if let Some(env_key) = &settings.env_key {
-            Some(
-                read_non_empty_env_var(env_key)
-                    .context("configured reflex environment key is unset")?,
-            )
-        } else {
-            None
-        };
+            })?,
+        )
+    } else if let Some(provider) = &settings.auth_provider {
+        Some(
+            auth.and_then(|auth| auth.auth_for_provider(provider))
+                .and_then(|auth| auth.api_key().map(str::to_owned))
+                .context("provider has no saved API key; connect it using /accounts")?,
+        )
+    } else if let Some(env_key) = &settings.env_key {
+        Some(
+            read_non_empty_env_var(env_key)
+                .context("configured reflex environment key is unset")?,
+        )
+    } else {
+        None
+    };
     ensure!(
         key.as_ref().is_none_or(|key| !key.trim().is_empty()),
         "reflex credential is empty"
@@ -221,7 +222,9 @@ pub async fn save_backend(
         }
     }
     validate(config, &settings)?;
-    let new_reference = new_key.map(secrets::externalize).transpose()?;
+    let new_reference = new_key
+        .map(|key| secrets::externalize(&config.chaos_home, key))
+        .transpose()?;
     if let Some(reference) = &new_reference {
         settings.api_key = Some(reference.clone());
     }
@@ -240,7 +243,7 @@ pub async fn save_backend(
     .await;
     if result.is_err()
         && let Some(reference) = new_reference
-        && secrets::remove(&reference).is_err()
+        && secrets::remove(&config.chaos_home, &reference).is_err()
     {
         tracing::warn!("could not clean up an unused reflex credential");
     }

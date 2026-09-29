@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::LazyLock;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::compiler_fence;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use age::decrypt;
 use age::encrypt;
@@ -19,12 +20,15 @@ use anyhow::Context;
 use anyhow::Result;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use chaos_keyring::DefaultKeyringStore;
 use chaos_keyring::KeyringStore;
 use rand::TryRng;
 use rand::rngs::SysRng;
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::warn;
+use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::SecretListEntry;
 use super::SecretName;
@@ -33,13 +37,17 @@ use super::SecretsBackend;
 use super::compute_keyring_account;
 use super::keyring_service;
 
-const SECRETS_VERSION: u8 = 1;
+const SECRETS_VERSION: u8 = 2;
 const LOCAL_SECRETS_FILENAME: &str = "local.age";
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 struct SecretsFile {
     version: u8,
     secrets: BTreeMap<String, String>,
+    #[serde(default)]
+    // A null record is a deletion tombstone: retrying migration must not
+    // resurrect credentials removed by logout or key rotation.
+    credentials: BTreeMap<String, Option<String>>,
 }
 
 impl SecretsFile {
@@ -47,30 +55,91 @@ impl SecretsFile {
         Self {
             version: SECRETS_VERSION,
             secrets: BTreeMap::new(),
+            credentials: BTreeMap::new(),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+impl Drop for SecretsFile {
+    fn drop(&mut self) {
+        for value in self
+            .secrets
+            .values_mut()
+            .chain(self.credentials.values_mut().flatten())
+        {
+            value.zeroize();
+        }
+    }
+}
+
+impl std::fmt::Debug for SecretsFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretsFile")
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Default)]
+struct VaultState {
+    passphrase: Option<SecretString>,
+    snapshot: Option<(Vec<u8>, SecretsFile)>,
+}
+
+// The unlock key belongs to the process, not a particular caller. A snapshot is
+// reused only while the encrypted bytes on disk are unchanged, so other
+// processes' rotations and deletions are observed without another Keychain read.
+static VAULTS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<VaultState>>>>> =
+    LazyLock::new(Mutex::default);
+
+#[derive(Clone)]
 pub struct LocalSecretsBackend {
     chaos_home: PathBuf,
     keyring_store: Arc<dyn KeyringStore>,
+    state: Arc<Mutex<VaultState>>,
+}
+
+impl std::fmt::Debug for LocalSecretsBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalSecretsBackend")
+            .field("chaos_home", &self.chaos_home)
+            .finish_non_exhaustive()
+    }
 }
 
 impl LocalSecretsBackend {
+    /// Open the process-shared vault. No Keychain access until a value is used.
+    pub fn shared(chaos_home: PathBuf) -> Self {
+        let home = chaos_home.canonicalize().unwrap_or(chaos_home);
+        let state = VAULTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(home.clone())
+            .or_default()
+            .clone();
+        Self {
+            chaos_home: home,
+            keyring_store: Arc::new(DefaultKeyringStore),
+            state,
+        }
+    }
+
     pub fn new(chaos_home: PathBuf, keyring_store: Arc<dyn KeyringStore>) -> Self {
         Self {
             chaos_home,
             keyring_store,
+            state: Arc::new(Mutex::new(VaultState::default())),
         }
     }
 
     pub fn set(&self, scope: &SecretScope, name: &SecretName, value: &str) -> Result<()> {
         anyhow::ensure!(!value.is_empty(), "secret value must not be empty");
         let canonical_key = scope.canonical_key(name);
-        let mut file = self.load_file()?;
-        file.secrets.insert(canonical_key, value.to_string());
-        self.save_file(&file)
+        self.update(|file| {
+            file.secrets
+                .insert(canonical_key, value.to_string())
+                .zeroize();
+        })
     }
 
     pub fn get(&self, scope: &SecretScope, name: &SecretName) -> Result<Option<String>> {
@@ -81,12 +150,50 @@ impl LocalSecretsBackend {
 
     pub fn delete(&self, scope: &SecretScope, name: &SecretName) -> Result<bool> {
         let canonical_key = scope.canonical_key(name);
-        let mut file = self.load_file()?;
-        let removed = file.secrets.remove(&canonical_key).is_some();
-        if removed {
-            self.save_file(&file)?;
-        }
-        Ok(removed)
+        self.update(|file| {
+            let mut removed = file.secrets.remove(&canonical_key);
+            let existed = removed.is_some();
+            removed.zeroize();
+            existed
+        })
+    }
+
+    /// Internal credentials are separate from operator-managed named secrets.
+    pub fn load_credential(&self, key: &str) -> Result<Option<String>> {
+        Ok(self.load_file()?.credentials.get(key).cloned().flatten())
+    }
+
+    /// Includes deletion tombstones, which must not be imported again.
+    pub fn has_credential_record(&self, key: &str) -> Result<bool> {
+        Ok(self.load_file()?.credentials.contains_key(key))
+    }
+
+    pub fn save_credential(&self, key: &str, value: &str) -> Result<()> {
+        self.update(|file| {
+            file.credentials
+                .insert(key.to_owned(), Some(value.to_owned()))
+                .zeroize();
+        })
+    }
+
+    pub fn delete_credential(&self, key: &str) -> Result<bool> {
+        self.update(|file| {
+            let mut removed = file.credentials.insert(key.to_owned(), None).flatten();
+            let existed = removed.is_some();
+            removed.zeroize();
+            existed
+        })
+    }
+
+    /// Explicit, retryable migration. Never overwrite a live vault credential.
+    pub fn import_credentials(&self, values: &BTreeMap<String, String>) -> Result<()> {
+        self.update(|file| {
+            for (key, value) in values {
+                file.credentials
+                    .entry(key.clone())
+                    .or_insert_with(|| Some(value.clone()));
+            }
+        })
     }
 
     pub fn list(&self, scope_filter: Option<&SecretScope>) -> Result<Vec<SecretListEntry>> {
@@ -116,21 +223,68 @@ impl LocalSecretsBackend {
     }
 
     fn load_file(&self) -> Result<SecretsFile> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("vault lock poisoned"))?;
+        if !self.secrets_path().exists() {
+            state.snapshot = None;
+            return Ok(SecretsFile::new_empty());
+        }
+        let _lock = self.lock_file()?;
+        self.read_locked(&mut state)
+    }
+
+    fn lock_file(&self) -> Result<fs::File> {
+        use std::os::unix::fs::DirBuilderExt;
+        use std::os::unix::fs::OpenOptionsExt;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(self.secrets_dir())?;
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .mode(0o600)
+            .open(self.secrets_dir().join(".lock"))?;
+        lock.lock().context("failed to lock credential vault")?;
+        Ok(lock)
+    }
+
+    fn update<T>(&self, edit: impl FnOnce(&mut SecretsFile) -> T) -> Result<T> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("vault lock poisoned"))?;
+        let _lock = self.lock_file()?;
+        let mut file = self.read_locked(&mut state)?;
+        let before = file.clone();
+        let result = edit(&mut file);
+        if file != before {
+            self.write_locked(&mut state, file)?;
+        }
+        Ok(result)
+    }
+
+    fn read_locked(&self, state: &mut VaultState) -> Result<SecretsFile> {
         let path = self.secrets_path();
         if !path.exists() {
+            state.snapshot = None;
             return Ok(SecretsFile::new_empty());
         }
 
         let ciphertext = fs::read(&path)
             .with_context(|| format!("failed to read secrets file at {}", path.display()))?;
-        let passphrase = self.load_or_create_passphrase()?;
-        let plaintext = decrypt_with_passphrase(&ciphertext, &passphrase)?;
-        let mut parsed: SecretsFile = serde_json::from_slice(&plaintext).with_context(|| {
-            format!(
-                "failed to deserialize decrypted secrets file at {}",
-                path.display()
-            )
-        })?;
+        if let Some((previous, file)) = &state.snapshot
+            && previous == &ciphertext
+        {
+            return Ok(file.clone());
+        }
+        let passphrase = self.passphrase(state, false)?;
+        let plaintext = Zeroizing::new(decrypt_with_passphrase(&ciphertext, &passphrase)?);
+        let mut parsed: SecretsFile = serde_json::from_slice(&plaintext)
+            .map_err(|_| anyhow::anyhow!("invalid decrypted credential vault contents"))?;
         if parsed.version == 0 {
             parsed.version = SECRETS_VERSION;
         }
@@ -140,32 +294,49 @@ impl LocalSecretsBackend {
             parsed.version,
             SECRETS_VERSION
         );
+        state.snapshot = Some((ciphertext, parsed.clone()));
         Ok(parsed)
     }
 
+    #[cfg(test)]
     fn save_file(&self, file: &SecretsFile) -> Result<()> {
-        let dir = self.secrets_dir();
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("failed to create secrets dir {}", dir.display()))?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("vault lock poisoned"))?;
+        let _lock = self.lock_file()?;
+        self.write_locked(&mut state, file.clone())
+    }
 
-        let passphrase = self.load_or_create_passphrase()?;
-        let plaintext = serde_json::to_vec(file).context("failed to serialize secrets file")?;
+    fn write_locked(&self, state: &mut VaultState, mut file: SecretsFile) -> Result<()> {
+        let passphrase = self.passphrase(state, !self.secrets_path().exists())?;
+        file.version = file.version.max(SECRETS_VERSION);
+        let plaintext =
+            Zeroizing::new(serde_json::to_vec(&file).context("failed to serialize secrets file")?);
         let ciphertext = encrypt_with_passphrase(&plaintext, &passphrase)?;
         let path = self.secrets_path();
         write_file_atomically(&path, &ciphertext)?;
+        state.snapshot = Some((ciphertext, file));
         Ok(())
     }
 
-    fn load_or_create_passphrase(&self) -> Result<SecretString> {
+    fn passphrase(&self, state: &mut VaultState, create: bool) -> Result<SecretString> {
+        if let Some(key) = &state.passphrase {
+            return Ok(key.clone());
+        }
         let account = compute_keyring_account(&self.chaos_home);
         let loaded = self
             .keyring_store
             .load(keyring_service(), &account)
             .map_err(|err| anyhow::anyhow!(err.message()))
             .with_context(|| format!("failed to load secrets key from keyring for {account}"))?;
-        match loaded {
-            Some(existing) => Ok(SecretString::from(existing)),
+        let key = match loaded {
+            Some(existing) => SecretString::from(existing),
             None => {
+                anyhow::ensure!(
+                    create,
+                    "credential vault unlock key is missing; restore it from backup"
+                );
                 // Generate a high-entropy key and persist it in the OS keyring.
                 // This keeps secrets out of plaintext config while remaining
                 // fully local/offline for the MVP.
@@ -174,9 +345,22 @@ impl LocalSecretsBackend {
                     .save(keyring_service(), &account, generated.expose_secret())
                     .map_err(|err| anyhow::anyhow!(err.message()))
                     .context("failed to persist secrets key in keyring")?;
-                Ok(generated)
+                let verified = self
+                    .keyring_store
+                    .load(keyring_service(), &account)
+                    .map_err(|err| anyhow::anyhow!(err.message()))?
+                    .map(SecretString::from);
+                anyhow::ensure!(
+                    verified
+                        .as_ref()
+                        .is_some_and(|key| key.expose_secret() == generated.expose_secret()),
+                    "credential vault unlock key failed read-back verification"
+                );
+                generated
             }
-        }
+        };
+        state.passphrase = Some(key.clone());
+        Ok(key)
     }
 }
 
@@ -205,49 +389,13 @@ fn write_file_atomically(path: &Path, contents: &[u8]) -> Result<()> {
             path.display()
         )
     })?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    let tmp_path = dir.join(format!(
-        ".{LOCAL_SECRETS_FILENAME}.tmp-{}-{nonce}",
-        std::process::id()
-    ));
-
-    {
-        let mut tmp_file = fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&tmp_path)
-            .with_context(|| {
-                format!(
-                    "failed to create temp secrets file at {}",
-                    tmp_path.display()
-                )
-            })?;
-        tmp_file.write_all(contents).with_context(|| {
-            format!(
-                "failed to write temp secrets file at {}",
-                tmp_path.display()
-            )
-        })?;
-        tmp_file.sync_all().with_context(|| {
-            format!("failed to sync temp secrets file at {}", tmp_path.display())
-        })?;
-    }
-
-    match fs::rename(&tmp_path, path) {
-        Ok(()) => Ok(()),
-        Err(initial_error) => {
-            let _ = fs::remove_file(&tmp_path);
-            Err(initial_error).with_context(|| {
-                format!(
-                    "failed to atomically replace secrets file at {} with {}",
-                    path.display(),
-                    tmp_path.display()
-                )
-            })
-        }
-    }
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    tmp.write_all(contents)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path)
+        .context("failed to replace encrypted credential vault")?;
+    fs::File::open(dir)?.sync_all()?;
+    Ok(())
 }
 
 fn generate_passphrase() -> Result<SecretString> {

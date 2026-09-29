@@ -335,10 +335,7 @@ fn auth_with_prefix(prefix: &str) -> AuthDotJson {
 fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
     let mock_keyring = MockKeyringStore::default();
-    let storage = VaultAuthStorage::new(
-        chaos_home.path().to_path_buf(),
-        Arc::new(mock_keyring),
-    );
+    let storage = VaultAuthStorage::new(chaos_home.path().to_path_buf(), Arc::new(mock_keyring));
     let expected = AuthDotJson {
         providers: [(
             "openai".to_string(),
@@ -415,10 +412,7 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
 fn keyring_auth_storage_delete_removes_keyring_and_file() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
     let mock_keyring = MockKeyringStore::default();
-    let storage = VaultAuthStorage::new(
-        chaos_home.path().to_path_buf(),
-        Arc::new(mock_keyring),
-    );
+    let storage = VaultAuthStorage::new(chaos_home.path().to_path_buf(), Arc::new(mock_keyring));
     storage.save(&auth_with_prefix("delete"))?;
     let auth_file = get_auth_file(chaos_home.path());
     std::fs::write(&auth_file, "stale")?;

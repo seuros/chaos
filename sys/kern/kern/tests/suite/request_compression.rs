@@ -35,7 +35,7 @@ async fn request_body_is_zstd_compressed_for_codex_backend_when_enabled() -> any
             config.model_provider.base_url = Some(base_url);
         });
     let fixture = builder.build(&server).await?;
-    let chaos = &fixture.process;
+    let chaos = std::sync::Arc::clone(&fixture.process);
 
     chaos
         .submit(Op::UserInput {
@@ -83,7 +83,7 @@ async fn request_body_is_not_compressed_for_api_key_auth_even_when_enabled() -> 
         config.model_provider.base_url = Some(base_url);
     });
     let fixture = builder.build(&server).await?;
-    let chaos = &fixture.process;
+    let chaos = std::sync::Arc::clone(&fixture.process);
 
     chaos
         .submit(Op::UserInput {

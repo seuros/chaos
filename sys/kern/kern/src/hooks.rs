@@ -293,7 +293,7 @@ impl PreparedHookChange {
                     .content
                     .as_ref()
                     .and_then(|v| v.get("approve"))
-                    .and_then(|v| v.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     == Some(true),
             "hook change declined; no change made"
         );
@@ -314,9 +314,10 @@ fn confirm_terminal(message: &str, yes: bool) -> anyhow::Result<()> {
         std::io::stdin().is_terminal(),
         "hook changes require an interactive terminal, explicit --yes, or authorized hooks_* tools"
     );
-    println!("{message}");
-    print!("Type yes to approve: ");
-    std::io::stdout().flush()?;
+    let mut stdout = std::io::stdout().lock();
+    writeln!(stdout, "{message}")?;
+    write!(stdout, "Type yes to approve: ")?;
+    stdout.flush()?;
     let mut answer = String::new();
     std::io::stdin().lock().read_line(&mut answer)?;
     ensure!(answer.trim() == "yes", "hook change cancelled");

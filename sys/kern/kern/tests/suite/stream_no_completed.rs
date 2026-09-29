@@ -70,7 +70,12 @@ async fn retries_on_early_close() {
         egress: None,
     };
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos()
         .with_config(move |config| {
             config.model_provider = model_provider;
         })

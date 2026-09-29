@@ -126,7 +126,7 @@ async fn elicitation_requires_explicit_human_accept_and_rechecks_revision() -> a
             }
         };
         let (result, response) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::join!(change.elicit(&session, &turn), respond)
+            tokio::join!(change.authorize(&session, &turn), respond)
         })
         .await?;
         response?;
@@ -171,10 +171,128 @@ async fn elicitation_requires_explicit_human_accept_and_rechecks_revision() -> a
     assert!(
         prepare(home.path(), &turn.cwd, create("headless", None))
             .await?
-            .elicit(&session, &turn)
+            .authorize(&session, &turn)
             .await
             .is_err()
     );
     assert_eq!(list(home.path(), &turn.cwd).await?.len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn automatic_policy_manages_hooks_without_elicitation() -> anyhow::Result<()> {
+    use crate::tools::context::{ToolInvocation, ToolPayload};
+    use crate::tools::handlers::HooksHandler;
+    use crate::tools::registry::ToolHandler;
+
+    let home = tempfile::tempdir()?;
+    let (session, mut turn, events) = crate::chaos::make_session_and_context_with_rx().await;
+    let context = Arc::make_mut(&mut turn);
+    let config = Arc::make_mut(&mut context.config);
+    config.chaos_home = home.path().into();
+    config.hook_approval_policy = crate::config::HookApprovalPolicy::Automatic;
+    context.approval_policy = chaos_sysctl::Constrained::allow_any(ApprovalPolicy::Headless);
+    session.permission_actor.register_turn(&turn).await?;
+    let invoke = |name: &str, arguments: serde_json::Value| {
+        HooksHandler.handle(ToolInvocation {
+            session: Arc::clone(&session),
+            turn: Arc::clone(&turn),
+            tracker: Default::default(),
+            call_id: "hook-test".into(),
+            tool_name: name.into(),
+            tool_namespace: None,
+            payload: ToolPayload::Function {
+                arguments: arguments.to_string(),
+            },
+        })
+    };
+    let definition = json!({"event":"before_turn", "command":"printf hello"});
+    // Preview is side-effect-free even when changes have standing authorization.
+    invoke(
+        "hooks_preview",
+        json!({"action":"create", "id":"resident", "definition":definition}),
+    )
+    .await?;
+    assert!(list(home.path(), &turn.cwd).await?.is_empty());
+    invoke(
+        "hooks_create",
+        json!({"id":"resident", "definition":definition}),
+    )
+    .await?;
+    let created = list(home.path(), &turn.cwd).await?.remove(0);
+    assert!(!created.hook.enabled && !created.hook.approved);
+    let revision = created.hook.revision;
+    invoke(
+        "hooks_set_enabled",
+        json!({"id":"resident", "expected_revision":revision, "enabled":true}),
+    )
+    .await?;
+    let enabled = list(home.path(), &turn.cwd).await?.remove(0);
+    assert!(enabled.hook.enabled && enabled.hook.approved);
+    assert!(
+        invoke(
+            "hooks_delete",
+            json!({"id":"resident", "expected_revision":revision})
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        invoke(
+            "hooks_update",
+            json!({"id":"resident", "expected_revision":enabled.hook.revision,
+        "definition":{"event":"before_turn", "command":""}})
+        )
+        .await
+        .is_err()
+    );
+    let other = tempfile::tempdir()?;
+    assert!(
+        invoke(
+            "hooks_update",
+            json!({"id":"resident", "expected_revision":enabled.hook.revision,
+        "definition":{"event":"before_turn", "command":"printf escape", "project":other.path()}})
+        )
+        .await
+        .is_err()
+    );
+    invoke(
+        "hooks_update",
+        json!({"id":"resident", "expected_revision":enabled.hook.revision,
+        "definition":{"event":"stop", "command":"printf updated"}}),
+    )
+    .await?;
+    let updated = list(home.path(), &turn.cwd).await?.remove(0);
+    assert!(updated.hook.approved && updated.hook.enabled);
+    assert_eq!(updated.hook.definition.command, "printf updated");
+    assert!(updated.hook.revision > enabled.hook.revision);
+    // The policy does not reactivate revoked grants merely by reading hooks.
+    crate::user_settings::open(home.path())
+        .await?
+        .revoke_approvals(&crate::user_settings::installation_id(home.path())?, None)
+        .await?;
+    assert_eq!(
+        list(home.path(), &turn.cwd).await?[0]
+            .inactive_reason
+            .as_deref(),
+        Some("awaiting approval on this installation")
+    );
+    invoke(
+        "hooks_set_enabled",
+        json!({"id":"resident", "expected_revision":updated.hook.revision, "enabled":false}),
+    )
+    .await?;
+    let disabled = list(home.path(), &turn.cwd).await?.remove(0);
+    assert!(!disabled.hook.enabled && !disabled.hook.approved);
+    invoke(
+        "hooks_delete",
+        json!({"id":"resident", "expected_revision":disabled.hook.revision}),
+    )
+    .await?;
+    assert!(list(home.path(), &turn.cwd).await?.is_empty());
+    // No human endpoint or active turn was installed. No operation should solicit one.
+    while let Ok(event) = events.try_recv() {
+        assert!(!matches!(event.msg, EventMsg::ElicitationRequest(_)));
+    }
     Ok(())
 }

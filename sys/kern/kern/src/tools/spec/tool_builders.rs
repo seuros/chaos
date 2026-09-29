@@ -159,7 +159,7 @@ pub(crate) fn create_hook_tool(name: &str) -> ToolSpec {
         description: if name == "hooks_preview" {
             "Validate and preview a database hook change without executing, saving, or approving it. Read chaos://hooks for current definitions."
         } else {
-            "Propose a database hook change. ALWAYS requires human form elicitation, including disable/delete. No change on decline, cancellation, timeout, or unavailable elicitation. Read chaos://hooks first; never bypass approval using shell/SQL. Commands run under the session sandbox at the next hook event."
+            "Manage a database hook. Requires human form elicitation by default, including disable/delete; the operator may explicitly permit unattended changes with hook_approval_policy=automatic. Under on-request policy, decline, cancellation, timeout, or unavailable elicitation makes no change. Read chaos://hooks first; never bypass approval using shell/SQL. Commands run under the session sandbox at the next hook event."
         }.into(),
         strict: false, defer_loading: None,
         parameters: JsonSchema::Object { properties, required: Some(required), additional_properties: Some(false.into()) },

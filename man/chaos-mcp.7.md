@@ -266,12 +266,16 @@ unchanged.
 Hook definitions live in SQLite/PostgreSQL, never runtime `hooks.json` files.
 Enable the `session` tool group to use `hooks_create`, `hooks_update`,
 `hooks_set_enabled`, `hooks_delete`, and read-only `hooks_preview`. Every mutation,
-including disabling or deleting a hook, requires human form elicitation.
+including disabling or deleting a hook, requires human form elicitation by default.
 Acceptance must include `approve: true`; cancellation, timeout, missing client
-support, or headless mode leaves hooks unchanged. Existing hooks require
+support, or headless mode leaves hooks unchanged under `hook_approval_policy = "on-request"`.
+An operator can explicitly set `hook_approval_policy = "automatic"` to permit
+unattended native hook management without elicitation. Existing hooks require
 `expected_revision` from the resource. Enabling authorizes recurring execution
 only on the approving installation, under the session sandbox; project hooks
-also require project trust. `chaos hooks` provides interactive CLI management.
+also require project trust. `chaos hooks --yes` provides explicit noninteractive
+operator provisioning; agent shells must use the native tools. See
+[chaos-hooks(7)](./chaos-hooks.7.md) for migration and authority boundaries.
 
 These built-in resources are read-on-demand snapshots. The standalone
 `chaos mcp serve` endpoint does not support subscriptions to them; read them

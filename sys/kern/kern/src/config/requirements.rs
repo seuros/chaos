@@ -615,6 +615,7 @@ impl Config {
                 .model_auto_compact_token_limit_scope
                 .unwrap_or_default(),
             agent_compaction_control: cfg.agent_compaction_control.unwrap_or_default(),
+            hook_approval_policy: cfg.hook_approval_policy.unwrap_or_default(),
             terminal_title: cfg.terminal_title.unwrap_or_default(),
             model_provider_id,
             model_provider,

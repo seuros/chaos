@@ -68,7 +68,7 @@ impl ToolHandler for HooksHandler {
             serde_json::to_value(change).map_err(|e| FunctionCallError::Fatal(e.to_string()))?
         } else {
             let revision = change
-                .elicit(&invocation.session, &invocation.turn)
+                .authorize(&invocation.session, &invocation.turn)
                 .await
                 .map_err(|e| FunctionCallError::RespondToModel(e.to_string()))?;
             serde_json::json!({"revision": revision, "resource": "chaos://hooks", "applies": "next hook event"})

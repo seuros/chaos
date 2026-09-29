@@ -9,6 +9,18 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- Explicit `chaos hooks --yes` operator provisioning without a terminal prompt,
+  including disabled legacy import followed by deliberate enabling.
+- Opt-in `hook_approval_policy = "automatic"` for unattended native hook-tool
+  management. Human elicitation remains the default; revision checks,
+  installation-local grants, project trust, and execution sandboxing are unchanged.
+
+### Fixed
+- Bound the turn task's inline future size when loading database hooks, avoiding
+  worker-thread stack overflows. Keep integration-test homes and working
+  directories alive for lifecycle hook resolution.
+
 ## [47.7.1] - 2026-09-28
 
 ### Added

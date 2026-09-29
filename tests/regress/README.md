@@ -87,3 +87,19 @@ Shared checkpoint unit tests own history/context compatibility, consume-before-
 dispatch, backend identity, old-format rejection, private storage and all-unsent
 hook/system-message deltas. The obsolete last-user/MCP-only selector is removed;
 its non-text and instruction-separation coverage now tests rendered native input.
+
+### Headless lifecycle hooks
+
+`hooks` provisions legacy hooks through the actual CLI, then runs two isolated
+`chaos exec` processes against a scripted local Responses provider. It checks
+SessionStart/BeforeTurn/Stop dispatch, native resident hook creation without a
+human endpoint, durable grants, and revocation. The separate CLI policy case
+checks explicit operator authorization and the agent-shell guard. It uses no
+resident homes, real provider credentials, or paid model calls.
+
+Build the fixture binaries before focused runs (the full CI gate already does):
+
+```sh
+cargo build --bin chaos --bin chaos_journald
+cargo test -p chaos-regress --test hooks
+```

@@ -3,6 +3,10 @@ use chaos_kern::hooks::{self, HookAction, HookChangeRequest};
 
 #[derive(Debug, usage::Args)]
 pub struct HooksCommand {
+    /// Authorize this exact operator mutation without a terminal prompt.
+    /// Not available from agent shells; agents use hooks_* tools.
+    #[usage(long)]
+    pub yes: bool,
     #[usage(subcommand)]
     pub action: Action,
 }
@@ -21,7 +25,7 @@ pub enum Action {
     Show {
         id: String,
     },
-    /// Register a disabled hook. Every change requires terminal confirmation.
+    /// Register a disabled hook; --enabled also authorizes recurring execution.
     Add {
         id: String,
         #[usage(long)]
@@ -60,7 +64,7 @@ pub async fn run(command: HooksCommand) -> anyhow::Result<()> {
             prefix,
             project,
         } => {
-            hooks::import_terminal(&home, &cwd, &file, &prefix, project).await?;
+            hooks::import_terminal(&home, &cwd, &file, &prefix, project, command.yes).await?;
             println!("Imported disabled hooks. Enable each hook to authorize execution.");
             return Ok(());
         }
@@ -126,7 +130,7 @@ pub async fn run(command: HooksCommand) -> anyhow::Result<()> {
         },
     )
     .await?;
-    let revision = change.confirm_terminal().await?;
+    let revision = change.confirm_terminal(command.yes).await?;
     println!("Hooks updated (revision {revision}); effective at the next hook event.");
     Ok(())
 }

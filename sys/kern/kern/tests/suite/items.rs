@@ -40,7 +40,14 @@ async fn user_message_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    // Lifecycle hooks resolve the working directory and database on every turn.
+    // Keep their temporary directories alive alongside the process.
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
 
     let first_response = sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]);
     mount_sse_once(&server, first_response).await;
@@ -90,7 +97,12 @@ async fn assistant_message_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
 
     let first_response = sse(vec![
         ev_response_created("resp-1"),
@@ -142,7 +154,12 @@ async fn reasoning_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
 
     let reasoning_item = ev_reasoning_item(
         "reasoning-1",
@@ -203,7 +220,12 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
 
     let web_search_added = ev_web_search_call_added_partial("web-search-1", "in_progress");
     let web_search_done = ev_web_search_call_done("web-search-1", "completed", "weather seattle");
@@ -262,7 +284,12 @@ async fn image_generation_call_event_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
     let call_id = "ig_image_saved_to_temp_dir_default";
     let expected_saved_path = std::env::temp_dir().join(format!("{call_id}.png"));
     let _ = std::fs::remove_file(&expected_saved_path);
@@ -325,7 +352,12 @@ async fn image_generation_call_event_is_emitted_when_image_save_fails() -> anyho
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
     let expected_saved_path = std::env::temp_dir().join("ig_invalid.png");
     let _ = std::fs::remove_file(&expected_saved_path);
 
@@ -381,6 +413,8 @@ async fn agent_message_content_delta_has_item_metadata() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         session_configured,
         ..
@@ -446,6 +480,8 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
     let server = start_mock_server().await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         session_configured,
         ..
@@ -522,6 +558,8 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         session_configured,
         ..
@@ -621,6 +659,8 @@ async fn plan_mode_streaming_citations_are_stripped_across_added_deltas_and_done
     let server = start_mock_server().await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         session_configured,
         ..
@@ -812,6 +852,8 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
     let server = start_mock_server().await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         session_configured,
         ..
@@ -930,6 +972,8 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         session_configured,
         ..
@@ -1020,7 +1064,12 @@ async fn reasoning_content_delta_has_item_metadata() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
 
     let stream = sse(vec![
         ev_response_created("resp-1"),
@@ -1067,7 +1116,12 @@ async fn reasoning_raw_content_delta_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await?;
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos().build(&server).await?;
 
     let stream = sse(vec![
         ev_response_created("resp-1"),

@@ -237,12 +237,12 @@ impl PreparedHookChange {
             .await
     }
 
-    pub async fn confirm_terminal(self) -> anyhow::Result<i64> {
-        confirm_terminal(&self.approval_message()?)?;
+    pub async fn confirm_terminal(self, yes: bool) -> anyhow::Result<i64> {
+        confirm_terminal(&self.approval_message()?, yes)?;
         self.commit().await
     }
 
-    pub(crate) async fn elicit(
+    pub(crate) async fn authorize(
         self,
         session: &crate::chaos::Session,
         turn: &crate::chaos::TurnContext,
@@ -250,6 +250,9 @@ impl PreparedHookChange {
         use chaos_ipc::api::{McpServerElicitationRequest, McpServerElicitationRequestParams};
         use chaos_ipc::protocol::ApprovalPolicy;
         use chaos_mcp_runtime::{ElicitationAction, McpRequestId};
+        if turn.config.hook_approval_policy == crate::config::HookApprovalPolicy::Automatic {
+            return self.commit().await;
+        }
         let policy = session.permission_snapshot(turn).await.approval_policy;
         ensure!(
             match policy {
@@ -298,15 +301,18 @@ impl PreparedHookChange {
     }
 }
 
-fn confirm_terminal(message: &str) -> anyhow::Result<()> {
+fn confirm_terminal(message: &str, yes: bool) -> anyhow::Result<()> {
     use std::io::{BufRead, IsTerminal, Write};
     ensure!(
         std::env::var_os(crate::exec_env::CHAOS_THREAD_ID_ENV_VAR).is_none(),
-        "agent shell commands must use hooks_* tools and human elicitation"
+        "agent shell commands must use hooks_* tools and the configured hook approval policy"
     );
+    if yes {
+        return Ok(());
+    }
     ensure!(
         std::io::stdin().is_terminal(),
-        "hook changes require an interactive terminal or MCP human elicitation"
+        "hook changes require an interactive terminal, explicit --yes, or authorized hooks_* tools"
     );
     println!("{message}");
     print!("Type yes to approve: ");
@@ -323,6 +329,7 @@ pub async fn import_terminal(
     file: &Path,
     prefix: &str,
     project: bool,
+    yes: bool,
 ) -> anyhow::Result<()> {
     ensure!(
         !prefix.is_empty()
@@ -346,10 +353,13 @@ pub async fn import_terminal(
         validate_definition(&definition)?;
         hooks.push((format!("{prefix}-{}", index + 1), definition));
     }
-    confirm_terminal(&format!(
-        "Import these hooks DISABLED? No files are deleted and nothing executes.\n{}",
-        serde_json::to_string_pretty(&hooks)?
-    ))?;
+    confirm_terminal(
+        &format!(
+            "Import these hooks DISABLED? No files are deleted and nothing executes.\n{}",
+            serde_json::to_string_pretty(&hooks)?
+        ),
+        yes,
+    )?;
     crate::user_settings::open(home)
         .await?
         .import_hooks(&hooks)

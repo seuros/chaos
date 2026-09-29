@@ -54,7 +54,7 @@ environment/default SQLite behavior.
 - Preferences, profiles, providers, notices, trust decisions, MCP registrations,
   and remembered approvals are database-backed.
 - Global and project lifecycle hooks are database-backed, managed with
-  `chaos hooks` or human-approved `hooks_*` tools. `hooks.json` files are never
+  `chaos hooks` or policy-authorized `hooks_*` tools (human-approved by default). `hooks.json` files are never
   loaded at runtime. Project hooks also require project trust.
   See [chaos-hooks(7)](../man/chaos-hooks.7.md) for explicit legacy import and
   approval semantics.

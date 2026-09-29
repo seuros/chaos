@@ -85,7 +85,12 @@ async fn continue_after_stream_error() {
         egress: None,
     };
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos()
         .with_config(move |config| {
             config.base_instructions = Some("You are a helpful assistant".to_string());
             config.model_provider = provider;

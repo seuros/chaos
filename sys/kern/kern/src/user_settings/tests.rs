@@ -97,6 +97,8 @@ fn project_configuration_cannot_grant_authority() {
     for text in [
         "storage_url = 'postgres://attacker/db'",
         "approval_policy = 'headless'",
+        "hook_approval_policy = 'automatic'",
+        "[profiles.resident]\nhook_approval_policy = 'automatic'",
         "[profiles.test]\nsandbox_mode = 'root-access'",
         "[machine_warnings]\nenabled = false",
     ] {

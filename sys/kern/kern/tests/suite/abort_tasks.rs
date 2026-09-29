@@ -37,12 +37,12 @@ async fn interrupt_long_running_tool_emits_turn_aborted() {
     let server = start_mock_server().await;
     mount_sse_once(&server, body).await;
 
-    let chaos = test_chaos()
+    let fixture = test_chaos()
         .with_model(TEST_MODEL)
         .build(&server)
         .await
-        .unwrap()
-        .process;
+        .unwrap();
+    let chaos = Arc::clone(&fixture.process);
 
     // Kick off a turn that triggers the function call.
     chaos

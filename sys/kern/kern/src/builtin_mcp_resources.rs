@@ -131,7 +131,7 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 9] = [
         kind: ChaosBuiltinResourceKind::Hooks,
         uri: CHAOS_HOOKS_URI,
         name: "hooks",
-        description: "Database lifecycle hooks in caller scope, revisions and activation status. Use hooks_* tools to propose changes; human elicitation is required.",
+        description: "Database lifecycle hooks in caller scope, revisions and activation status. Use hooks_* tools to manage changes under the configured hook approval policy (human elicitation by default).",
         mime_type: JSON_MIME_TYPE,
     },
 ];

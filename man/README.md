@@ -56,7 +56,7 @@ installed manpage paths such as:
 - [chaos-reflex.7](./chaos-reflex.7.md) — reflex setup, credentials, and live checks
 - [chaos-support.7](./chaos-support.7.md) — support matrix (providers, OS, CI)
 - [chaos-mcp.7](./chaos-mcp.7.md) — MCP client and server usage
-- [chaos-hooks.7](./chaos-hooks.7.md) — database lifecycle hooks and human approval
+- [chaos-hooks.7](./chaos-hooks.7.md) — database lifecycle hooks and authorization
 - [chaos-modes.7](./chaos-modes.7.md) — collaboration mode discovery and switching
 - [chaos-agents.7](./chaos-agents.7.md) — standalone agent role definitions
 - [chaos-synopsis.7](./chaos-synopsis.7.md) — FreeChaOS sub-agent orchestration gate

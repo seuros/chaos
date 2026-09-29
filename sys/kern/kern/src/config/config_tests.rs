@@ -1052,6 +1052,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         model_auto_compact_token_limit: None,
         model_auto_compact_token_limit_scope: Default::default(),
         agent_compaction_control: Default::default(),
+        hook_approval_policy: Default::default(),
         terminal_title: Default::default(),
         service_tier: None,
         model_provider_id: "openai".to_string(),
@@ -1418,4 +1419,29 @@ fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() -> any
     );
 
     Ok(())
+}
+
+#[test]
+fn hook_approval_policy_requires_explicit_opt_in() {
+    for (text, expected) in [
+        ("", HookApprovalPolicy::OnRequest),
+        (
+            "approval_policy = 'headless'",
+            HookApprovalPolicy::OnRequest,
+        ),
+        (
+            "hook_approval_policy = 'automatic'",
+            HookApprovalPolicy::Automatic,
+        ),
+    ] {
+        let home = tempdir().unwrap();
+        let config = Config::load_from_base_config_with_overrides(
+            toml::from_str(text).unwrap(),
+            ConfigOverrides::default(),
+            home.path().into(),
+        )
+        .unwrap();
+        assert_eq!(config.hook_approval_policy, expected);
+    }
+    assert!(toml::from_str::<ConfigToml>("hook_approval_policy = 'typo'").is_err());
 }

@@ -761,6 +761,7 @@ pub(crate) fn validate_project(value: &Value) -> anyhow::Result<()> {
                         | "mcp_tool_approvals"
                         | "apps"
                         | "approval_policy"
+                        | "hook_approval_policy"
                         | "sandbox_mode"
                         | "sandbox_workspace_write"
                         | "permissions"

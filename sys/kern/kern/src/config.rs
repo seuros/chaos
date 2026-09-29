@@ -146,6 +146,15 @@ pub enum AgentCompactionControl {
     Bounded,
 }
 
+/// Standing operator policy for database-backed hook tool mutations.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum HookApprovalPolicy {
+    #[default]
+    OnRequest,
+    Automatic,
+}
+
 /// Controls whether Chaos mirrors durable process names into the terminal title
 /// and whether the current agent may manage that name.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -382,6 +391,9 @@ pub struct Config {
     /// Whether the model may compact early or defer once within a
     /// harness-computed safety band.
     pub agent_compaction_control: AgentCompactionControl,
+
+    /// Whether hook tools require human elicitation or standing authorization.
+    pub hook_approval_policy: HookApprovalPolicy,
 
     /// Terminal title behavior for interactive sessions.
     pub terminal_title: TerminalTitleMode,
@@ -732,6 +744,11 @@ pub struct ConfigToml {
     /// harness-bounded deferral per pressure window.
     #[serde(default)]
     pub agent_compaction_control: Option<AgentCompactionControl>,
+
+    /// Hook-tool mutation authorization. `on-request` requires human elicitation;
+    /// `automatic` explicitly permits unattended management, not sandbox escalation.
+    #[serde(default)]
+    pub hook_approval_policy: Option<HookApprovalPolicy>,
 
     /// Terminal title behavior. `process-name` mirrors `/rename`; `agent` also
     /// lets the current model name the session.

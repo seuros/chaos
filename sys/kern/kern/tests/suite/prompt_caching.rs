@@ -92,6 +92,8 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
     .await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         config,
         ..
@@ -182,7 +184,12 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -287,7 +294,12 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos()
+    let TestChaos {
+        process: chaos,
+        home: _home,
+        cwd: _cwd,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -410,6 +422,8 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
     .await;
 
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         config,
         session_configured,
@@ -527,6 +541,8 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
     )
     .await;
     let TestChaos {
+        home: _home,
+        cwd: _cwd,
         process: chaos,
         config,
         session_configured,

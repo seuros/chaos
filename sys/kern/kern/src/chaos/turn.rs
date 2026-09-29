@@ -382,7 +382,9 @@ pub(crate) async fn run_turn(
         let hooks = if pending_session_start.is_none() && before_turn_request.is_none() {
             chaos_dtrace::Hooks::default()
         } else {
-            match crate::hooks::for_turn(&sess, &turn_context).await {
+            // Database-backed hook resolution is a large future; keep it out of
+            // the turn task's inline state to fit normal worker-thread stacks.
+            match Box::pin(crate::hooks::for_turn(&sess, &turn_context)).await {
                 Ok(hooks) => hooks,
                 Err(error) => {
                     sess.send_event(
@@ -598,7 +600,7 @@ pub(crate) async fn run_turn(
                         last_assistant_message: last_agent_message.clone(),
                         agent_context: agent_context.clone(),
                     };
-                    let hooks = match crate::hooks::for_turn(&sess, &turn_context).await {
+                    let hooks = match Box::pin(crate::hooks::for_turn(&sess, &turn_context)).await {
                         Ok(hooks) => hooks,
                         Err(error) => {
                             sess.send_event(

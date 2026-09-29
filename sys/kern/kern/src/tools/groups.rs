@@ -47,7 +47,7 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         ),
         (
             SESSION,
-            "Session history, planning, title, compaction, effort, and human-approved hooks",
+            "Session history, planning, title, compaction, effort, and policy-authorized hooks",
         ),
         (WEB, "Web retrieval and image generation"),
         (CRON, "Recurring job controls"),

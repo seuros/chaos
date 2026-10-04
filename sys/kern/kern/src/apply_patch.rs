@@ -57,7 +57,7 @@ pub(crate) async fn apply_patch(
         }),
         SafetyCheck::AskUser => {
             // Delegate the approval prompt (including cached approvals) to the
-            // tool runtime, consistent with how shell/unified_exec approvals
+            // tool runtime, consistent with how exec approvals
             // are orchestrator-driven.
             InternalApplyPatchInvocation::DelegateToExec(ApplyPatchExec {
                 action,

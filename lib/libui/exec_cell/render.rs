@@ -60,7 +60,7 @@ pub fn new_active_exec_command(
     )
 }
 
-fn format_unified_exec_interaction(command: &[String], input: Option<&str>) -> String {
+fn format_exec_interaction(command: &[String], input: Option<&str>) -> String {
     let command_display = if let Some((_, script)) = extract_bash_command(command) {
         script.to_string()
     } else {
@@ -217,7 +217,7 @@ impl HistoryCell for ExecCell {
             lines.extend(cmd_display);
 
             if let Some(output) = call.output.as_ref() {
-                if !call.is_unified_exec_interaction() {
+                if !call.is_exec_interaction() {
                     let wrap_width = width.max(1) as usize;
                     let wrap_opts = RtOptions::new(wrap_width);
                     for unwrapped in output.formatted_output.lines().map(ansi_escape_line) {
@@ -361,7 +361,7 @@ impl ExecCell {
             Some(false) => "•".fg(crate::theme::error_color()).bold(),
             None => spinner(call.start_time, self.animations_enabled()),
         };
-        let is_interaction = call.is_unified_exec_interaction();
+        let is_interaction = call.is_exec_interaction();
         let title = if is_interaction {
             ""
         } else if self.is_active() {
@@ -379,8 +379,8 @@ impl ExecCell {
         };
         let header_prefix_width = header_line.width();
 
-        let cmd_display = if call.is_unified_exec_interaction() {
-            format_unified_exec_interaction(&call.command, call.interaction_input.as_deref())
+        let cmd_display = if call.is_exec_interaction() {
+            format_exec_interaction(&call.command, call.interaction_input.as_deref())
         } else {
             strip_bash_lc_and_escape(&call.command)
         };
@@ -449,7 +449,7 @@ impl ExecCell {
             };
 
             if raw_output.lines.is_empty() {
-                if !call.is_unified_exec_interaction() {
+                if !call.is_exec_interaction() {
                     lines.extend(prefix_lines(
                         vec![Line::from("(no output)".dim())],
                         Span::from(layout.output_block.initial_prefix).dim(),

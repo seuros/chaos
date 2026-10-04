@@ -1,4 +1,4 @@
-use crate::unified_exec::UNIFIED_EXEC_OUTPUT_MAX_BYTES;
+use crate::exec::EXEC_OUTPUT_MAX_BYTES;
 use std::collections::VecDeque;
 
 /// A capped buffer that preserves a stable prefix ("head") and suffix ("tail"),
@@ -19,7 +19,7 @@ pub(crate) struct HeadTailBuffer {
 
 impl Default for HeadTailBuffer {
     fn default() -> Self {
-        Self::new(UNIFIED_EXEC_OUTPUT_MAX_BYTES)
+        Self::new(EXEC_OUTPUT_MAX_BYTES)
     }
 }
 

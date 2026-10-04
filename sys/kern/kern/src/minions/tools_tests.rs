@@ -663,7 +663,6 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
             minion_jobs_allowed: false,
             web_search_mode: None,
             session_source,
-            vfs_policy: &VfsPolicy::unrestricted(),
             collab_enabled,
         });
         build_specs(&tools_config, None, None, &[])

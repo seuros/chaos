@@ -106,8 +106,8 @@ fn resource_link_block(
 
 pub(crate) async fn history_cell_suite() {
     mcp_images::run();
-    unified_exec_interaction_cell_renders_input();
-    unified_exec_interaction_cell_renders_wait();
+    exec_interaction_cell_renders_input();
+    exec_interaction_cell_renders_wait();
     final_message_separator_hides_short_worked_label_and_includes_runtime_metrics();
     final_message_separator_includes_worked_label_after_one_minute();
     ps_output_empty_snapshot();
@@ -120,9 +120,9 @@ pub(crate) async fn history_cell_suite() {
     empty_agent_message_cell_transcript();
     prefixed_wrapped_history_cell_indents_wrapped_lines();
     prefixed_wrapped_history_cell_does_not_split_url_like_token();
-    unified_exec_interaction_cell_does_not_split_url_like_stdin_token();
+    exec_interaction_cell_does_not_split_url_like_stdin_token();
     prefixed_wrapped_history_cell_height_matches_wrapped_rendering();
-    unified_exec_interaction_cell_height_matches_wrapped_rendering();
+    exec_interaction_cell_height_matches_wrapped_rendering();
     web_search_history_cell_snapshot();
     web_search_history_cell_wraps_with_indented_continuation();
     web_search_history_cell_short_query_does_not_wrap();
@@ -167,8 +167,8 @@ pub(crate) async fn history_cell_suite() {
     deprecation_notice_renders_summary_with_details();
 }
 
-fn unified_exec_interaction_cell_renders_input() {
-    let cell = new_unified_exec_interaction(Some("echo hello".to_string()), "ls\npwd".to_string());
+fn exec_interaction_cell_renders_input() {
+    let cell = new_exec_interaction(Some("echo hello".to_string()), "ls\npwd".to_string());
     let lines = render_transcript(&cell);
     assert_eq!(
         lines,
@@ -180,8 +180,8 @@ fn unified_exec_interaction_cell_renders_input() {
     );
 }
 
-fn unified_exec_interaction_cell_renders_wait() {
-    let cell = new_unified_exec_interaction(None, String::new());
+fn exec_interaction_cell_renders_wait() {
+    let cell = new_exec_interaction(None, String::new());
     let lines = render_transcript(&cell);
     assert_eq!(lines, vec!["• Waited for background terminal"]);
 }
@@ -232,18 +232,18 @@ fn final_message_separator_includes_worked_label_after_one_minute() {
 }
 
 fn ps_output_empty_snapshot() {
-    let cell = new_unified_exec_processes_output(Vec::new());
+    let cell = new_exec_processes_output(Vec::new());
     let rendered = render_lines(&cell.display_lines(60)).join("\n");
     assert_snapshot!(rendered);
 }
 
 fn ps_output_multiline_snapshot() {
-    let cell = new_unified_exec_processes_output(vec![
-        UnifiedExecProcessDetails {
+    let cell = new_exec_processes_output(vec![
+        ExecProcessDetails {
             command_display: "echo hello\nand then some extra text".to_string(),
             recent_chunks: vec!["hello".to_string(), "done".to_string()],
         },
-        UnifiedExecProcessDetails {
+        ExecProcessDetails {
             command_display: "rg \"foo\" src".to_string(),
             recent_chunks: vec!["src/main.rs:12:foo".to_string()],
         },
@@ -253,7 +253,7 @@ fn ps_output_multiline_snapshot() {
 }
 
 fn ps_output_long_command_snapshot() {
-    let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
+    let cell = new_exec_processes_output(vec![ExecProcessDetails {
         command_display: String::from(
             "rg \"foo\" src --glob '**/*.rs' --max-count 1000 --no-ignore --hidden --follow --glob '!target/**'",
         ),
@@ -264,9 +264,9 @@ fn ps_output_long_command_snapshot() {
 }
 
 fn ps_output_many_sessions_snapshot() {
-    let cell = new_unified_exec_processes_output(
+    let cell = new_exec_processes_output(
         (0..20)
-            .map(|idx| UnifiedExecProcessDetails {
+            .map(|idx| ExecProcessDetails {
                 command_display: format!("command {idx}"),
                 recent_chunks: Vec::new(),
             })
@@ -277,7 +277,7 @@ fn ps_output_many_sessions_snapshot() {
 }
 
 fn ps_output_chunk_leading_whitespace_snapshot() {
-    let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
+    let cell = new_exec_processes_output(vec![ExecProcessDetails {
         command_display: "just fix".to_string(),
         recent_chunks: vec![
             "  indented first".to_string(),
@@ -447,9 +447,9 @@ fn prefixed_wrapped_history_cell_does_not_split_url_like_token() {
     );
 }
 
-fn unified_exec_interaction_cell_does_not_split_url_like_stdin_token() {
+fn exec_interaction_cell_does_not_split_url_like_stdin_token() {
     let url_like = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890";
-    let cell = UnifiedExecInteractionCell::new(Some("true".to_string()), url_like.to_string());
+    let cell = ExecInteractionCell::new(Some("true".to_string()), url_like.to_string());
     let rendered = render_lines(&cell.display_lines(24));
 
     assert_eq!(
@@ -498,9 +498,9 @@ fn prefixed_wrapped_history_cell_height_matches_wrapped_rendering() {
     );
 }
 
-fn unified_exec_interaction_cell_height_matches_wrapped_rendering() {
+fn exec_interaction_cell_height_matches_wrapped_rendering() {
     let url_like = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path";
-    let cell: Box<dyn HistoryCell> = Box::new(UnifiedExecInteractionCell::new(
+    let cell: Box<dyn HistoryCell> = Box::new(ExecInteractionCell::new(
         Some("true".to_string()),
         url_like.to_string(),
     ));

@@ -1,5 +1,5 @@
 //! Command execution event handlers: begin, output delta, end, terminal
-//! interaction, patch apply, and unified-exec process tracking.
+//! interaction, patch apply, and exec process tracking.
 
 use chaos_ipc::protocol::ExecCommandBeginEvent;
 use chaos_ipc::protocol::ExecCommandEndEvent;
@@ -14,18 +14,18 @@ use crate::history_cell;
 use crate::status_indicator_widget::StatusDetailsCapitalization;
 
 use super::super::super::ChatWidget;
-use super::super::super::core::UnifiedExecProcessSummary;
-use super::super::super::core::UnifiedExecWaitStreak;
+use super::super::super::core::ExecProcessSummary;
+use super::super::super::core::ExecWaitStreak;
+use super::super::super::core::is_exec_source;
 use super::super::super::core::is_standard_tool_call;
-use super::super::super::core::is_unified_exec_source;
 
 impl ChatWidget {
     // ── Exec events ───────────────────────────────────────────────────────────
 
     pub(crate) fn on_exec_command_begin(&mut self, ev: ExecCommandBeginEvent) {
         self.flush_answer_stream_with_separator();
-        if is_unified_exec_source(ev.source) {
-            self.track_unified_exec_process_begin(&ev);
+        if is_exec_source(ev.source) {
+            self.track_exec_process_begin(&ev);
             if !self.bottom_pane.is_task_running() {
                 return;
             }
@@ -39,7 +39,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn on_exec_command_output_delta(&mut self, ev: ExecCommandOutputDeltaEvent) {
-        self.track_unified_exec_output_chunk(&ev.call_id, &ev.chunk);
+        self.track_exec_output_chunk(&ev.call_id, &ev.chunk);
         if !self.bottom_pane.is_task_running() {
             return;
         }
@@ -64,7 +64,7 @@ impl ChatWidget {
         }
         self.flush_answer_stream_with_separator();
         let command_display = self
-            .unified_exec_processes
+            .exec_processes
             .iter()
             .find(|process| process.key == ev.process_id)
             .map(|process| process.command_display.clone());
@@ -78,30 +78,30 @@ impl ChatWidget {
                 StatusDetailsCapitalization::Preserve,
                 /*details_max_lines*/ 1,
             );
-            match &mut self.unified_exec_wait_streak {
+            match &mut self.exec_wait_streak {
                 Some(wait) if wait.process_id == ev.process_id => {
                     wait.update_command_display(command_display);
                 }
                 Some(_) => {
-                    self.flush_unified_exec_wait_streak();
-                    self.unified_exec_wait_streak =
-                        Some(UnifiedExecWaitStreak::new(ev.process_id, command_display));
+                    self.flush_exec_wait_streak();
+                    self.exec_wait_streak =
+                        Some(ExecWaitStreak::new(ev.process_id, command_display));
                 }
                 None => {
-                    self.unified_exec_wait_streak =
-                        Some(UnifiedExecWaitStreak::new(ev.process_id, command_display));
+                    self.exec_wait_streak =
+                        Some(ExecWaitStreak::new(ev.process_id, command_display));
                 }
             }
             self.request_redraw();
         } else {
             if self
-                .unified_exec_wait_streak
+                .exec_wait_streak
                 .as_ref()
                 .is_some_and(|wait| wait.process_id == ev.process_id)
             {
-                self.flush_unified_exec_wait_streak();
+                self.flush_exec_wait_streak();
             }
-            self.add_to_history(history_cell::new_unified_exec_interaction(
+            self.add_to_history(history_cell::new_exec_interaction(
                 command_display,
                 ev.stdin,
             ));
@@ -124,16 +124,16 @@ impl ChatWidget {
     }
 
     pub(crate) fn on_exec_command_end(&mut self, ev: ExecCommandEndEvent) {
-        if is_unified_exec_source(ev.source) {
+        if is_exec_source(ev.source) {
             if let Some(process_id) = ev.process_id.as_deref()
                 && self
-                    .unified_exec_wait_streak
+                    .exec_wait_streak
                     .as_ref()
                     .is_some_and(|wait| wait.process_id == process_id)
             {
-                self.flush_unified_exec_wait_streak();
+                self.flush_exec_wait_streak();
             }
-            self.track_unified_exec_process_end(&ev);
+            self.track_exec_process_end(&ev);
             if !self.bottom_pane.is_task_running() {
                 return;
             }
@@ -142,14 +142,14 @@ impl ChatWidget {
         self.defer_or_handle(|q| q.push_exec_end(ev), |s| s.handle_exec_end_now(ev2));
     }
 
-    pub(crate) fn track_unified_exec_process_begin(&mut self, ev: &ExecCommandBeginEvent) {
-        if ev.source != ExecCommandSource::UnifiedExecStartup {
+    pub(crate) fn track_exec_process_begin(&mut self, ev: &ExecCommandBeginEvent) {
+        if ev.source != ExecCommandSource::ExecStartup {
             return;
         }
         let key = ev.process_id.clone().unwrap_or(ev.call_id.to_string());
         let command_display = strip_bash_lc_and_escape(&ev.command);
         if let Some(existing) = self
-            .unified_exec_processes
+            .exec_processes
             .iter_mut()
             .find(|process| process.key == key)
         {
@@ -157,38 +157,37 @@ impl ChatWidget {
             existing.command_display = command_display;
             existing.recent_chunks.clear();
         } else {
-            self.unified_exec_processes.push(UnifiedExecProcessSummary {
+            self.exec_processes.push(ExecProcessSummary {
                 key,
                 call_id: ev.call_id.clone(),
                 command_display,
                 recent_chunks: Vec::new(),
             });
         }
-        self.sync_unified_exec_footer();
+        self.sync_exec_footer();
     }
 
-    pub(crate) fn track_unified_exec_process_end(&mut self, ev: &ExecCommandEndEvent) {
+    pub(crate) fn track_exec_process_end(&mut self, ev: &ExecCommandEndEvent) {
         let key = ev.process_id.clone().unwrap_or(ev.call_id.to_string());
-        let before = self.unified_exec_processes.len();
-        self.unified_exec_processes
-            .retain(|process| process.key != key);
-        if self.unified_exec_processes.len() != before {
-            self.sync_unified_exec_footer();
+        let before = self.exec_processes.len();
+        self.exec_processes.retain(|process| process.key != key);
+        if self.exec_processes.len() != before {
+            self.sync_exec_footer();
         }
     }
 
-    pub(crate) fn sync_unified_exec_footer(&mut self) {
+    pub(crate) fn sync_exec_footer(&mut self) {
         let processes = self
-            .unified_exec_processes
+            .exec_processes
             .iter()
             .map(|process| process.command_display.clone())
             .collect();
-        self.bottom_pane.set_unified_exec_processes(processes);
+        self.bottom_pane.set_exec_processes(processes);
     }
 
-    pub(crate) fn track_unified_exec_output_chunk(&mut self, call_id: &str, chunk: &[u8]) {
+    pub(crate) fn track_exec_output_chunk(&mut self, call_id: &str, chunk: &[u8]) {
         let Some(process) = self
-            .unified_exec_processes
+            .exec_processes
             .iter_mut()
             .find(|process| process.call_id == call_id)
         else {

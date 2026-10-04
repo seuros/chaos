@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn exec_shell_type_uses_canonical_wire_name() {
+    let value = serde_json::to_value(ConfigShellToolType::Exec).unwrap();
+    assert_eq!(value, "exec");
+    assert_eq!(
+        serde_json::from_value::<ConfigShellToolType>(value).unwrap(),
+        ConfigShellToolType::Exec
+    );
+    assert_eq!(ConfigShellToolType::Exec.to_string(), "exec");
+
+    let schema = serde_json::to_value(schemars::schema_for!(ConfigShellToolType)).unwrap();
+    assert_eq!(
+        schema["enum"],
+        serde_json::json!(["default", "local", "exec", "disabled", "shell_command"])
+    );
+}
+
+#[test]
 fn reasoning_effort_accepts_current_catalog_levels() {
     assert_eq!(
         serde_json::from_str::<ReasoningEffort>("\"max\"").expect("deserialize max"),

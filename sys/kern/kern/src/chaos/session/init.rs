@@ -494,7 +494,7 @@ impl Session {
             ),
             mcp_refresh: crate::mcp_registry::McpRefreshActor::spawn(),
             internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
-            unified_exec_manager: crate::unified_exec::UnifiedExecProcessManager::new(
+            exec_manager: crate::exec::ExecProcessManager::new(
                 config.background_terminal_max_timeout,
             ),
             hooks,

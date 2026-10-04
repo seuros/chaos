@@ -185,7 +185,7 @@ pub enum ModelVisibility {
 pub enum ConfigShellToolType {
     Default,
     Local,
-    UnifiedExec,
+    Exec,
     Disabled,
     ShellCommand,
 }

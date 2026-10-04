@@ -1,3 +1,7 @@
+use crate::exec::ExecCommandRequest;
+use crate::exec::ExecContext;
+use crate::exec::ExecProcessManager;
+use crate::exec::WriteStdinRequest;
 use crate::function_tool::FunctionCallError;
 use crate::internal_tasks;
 use crate::is_safe_command::is_known_safe_command;
@@ -16,17 +20,13 @@ use crate::tools::handlers::prepare_effective_exec_permissions;
 use crate::tools::handlers::resolve_workdir_base_path;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use crate::unified_exec::ExecCommandRequest;
-use crate::unified_exec::UnifiedExecContext;
-use crate::unified_exec::UnifiedExecProcessManager;
-use crate::unified_exec::WriteStdinRequest;
 use chaos_ipc::models::PermissionProfile;
 use serde::Deserialize;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub struct UnifiedExecHandler;
+pub struct ExecHandler;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ExecCommandArgs {
@@ -77,7 +77,7 @@ fn default_tty() -> bool {
     false
 }
 
-impl ToolHandler for UnifiedExecHandler {
+impl ToolHandler for ExecHandler {
     type Output = ExecCommandToolOutput;
 
     fn kind(&self) -> ToolKind {
@@ -126,13 +126,13 @@ impl ToolHandler for UnifiedExecHandler {
             ToolPayload::Function { arguments } => arguments,
             _ => {
                 return Err(FunctionCallError::RespondToModel(
-                    "unified_exec handler received unsupported payload".to_string(),
+                    "exec handler received unsupported payload".to_string(),
                 ));
             }
         };
 
-        let manager: &UnifiedExecProcessManager = &session.services.unified_exec_manager;
-        let context = UnifiedExecContext::new(session.clone(), turn.clone(), call_id.clone());
+        let manager: &ExecProcessManager = &session.services.exec_manager;
+        let context = ExecContext::new(session.clone(), turn.clone(), call_id.clone());
 
         let response = match tool_name.as_str() {
             "exec_command" => {
@@ -302,7 +302,7 @@ impl ToolHandler for UnifiedExecHandler {
             }
             other => {
                 return Err(FunctionCallError::RespondToModel(format!(
-                    "unsupported unified exec function {other}"
+                    "unsupported exec function {other}"
                 )));
             }
         };
@@ -336,5 +336,5 @@ pub(crate) fn get_command(
 }
 
 #[cfg(test)]
-#[path = "unified_exec_tests.rs"]
+#[path = "exec_tests.rs"]
 mod tests;

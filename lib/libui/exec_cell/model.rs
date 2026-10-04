@@ -170,7 +170,7 @@ impl ExecCall {
         matches!(self.source, ExecCommandSource::UserShell)
     }
 
-    pub fn is_unified_exec_interaction(&self) -> bool {
-        matches!(self.source, ExecCommandSource::UnifiedExecInteraction)
+    pub fn is_exec_interaction(&self) -> bool {
+        matches!(self.source, ExecCommandSource::ExecInteraction)
     }
 }

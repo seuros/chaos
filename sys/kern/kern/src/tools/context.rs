@@ -1,13 +1,13 @@
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::client_common::tools::ToolSearchOutputTool;
+use crate::exec::resolve_max_tokens;
 use crate::tools::TELEMETRY_PREVIEW_MAX_BYTES;
 use crate::tools::TELEMETRY_PREVIEW_MAX_LINES;
 use crate::tools::TELEMETRY_PREVIEW_TRUNCATION_NOTICE;
 use crate::truncate::TruncationPolicy;
 use crate::truncate::formatted_truncate_text;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use crate::unified_exec::resolve_max_tokens;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::FunctionCallOutputContentItem;
@@ -228,7 +228,7 @@ pub struct ExecCommandToolOutput {
     pub event_call_id: String,
     pub chunk_id: String,
     pub wall_time: Duration,
-    /// Raw bytes returned for this unified exec call before any truncation.
+    /// Raw bytes returned for this exec call before any truncation.
     pub raw_output: Vec<u8>,
     pub max_output_tokens: Option<usize>,
     pub process_id: Option<i32>,

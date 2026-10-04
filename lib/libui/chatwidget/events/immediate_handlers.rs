@@ -14,8 +14,8 @@ use crate::history_cell;
 use crate::history_cell::McpToolCallCell;
 
 use super::super::ChatWidget;
+use super::super::core::ExecWaitState;
 use super::super::core::RunningCommand;
-use super::super::core::UnifiedExecWaitState;
 
 impl ChatWidget {
     pub fn handle_exec_end_now(&mut self, ev: ExecCommandEndEvent) {
@@ -33,8 +33,7 @@ impl ChatWidget {
             Some(rc) => (rc.command, rc.parsed_cmd, rc.source),
             None => (ev.command.clone(), ev.parsed_cmd.clone(), ev.source),
         };
-        let is_unified_exec_interaction =
-            matches!(source, ExecCommandSource::UnifiedExecInteraction);
+        let is_exec_interaction = matches!(source, ExecCommandSource::ExecInteraction);
         let end_target = match self.active_cell.as_ref() {
             Some(cell) => match cell.as_any().downcast_ref::<ExecCell>() {
                 Some(exec_cell)
@@ -52,7 +51,7 @@ impl ChatWidget {
             None => ExecEndTarget::NewCell,
         };
 
-        let output = if is_unified_exec_interaction {
+        let output = if is_exec_interaction {
             CommandOutput {
                 exit_code: ev.exit_code,
                 formatted_output: String::new(),
@@ -144,24 +143,24 @@ impl ChatWidget {
                 source: ev.source,
             },
         );
-        let is_wait_interaction = matches!(ev.source, ExecCommandSource::UnifiedExecInteraction)
+        let is_wait_interaction = matches!(ev.source, ExecCommandSource::ExecInteraction)
             && ev
                 .interaction_input
                 .as_deref()
                 .map(str::is_empty)
                 .unwrap_or(true);
         let command_display = ev.command.join(" ");
-        let should_suppress_unified_wait = is_wait_interaction
+        let should_suppress_exec_wait = is_wait_interaction
             && self
-                .last_unified_wait
+                .last_exec_wait
                 .as_ref()
                 .is_some_and(|wait| wait.is_duplicate(&command_display));
         if is_wait_interaction {
-            self.last_unified_wait = Some(UnifiedExecWaitState::new(command_display));
+            self.last_exec_wait = Some(ExecWaitState::new(command_display));
         } else {
-            self.last_unified_wait = None;
+            self.last_exec_wait = None;
         }
-        if should_suppress_unified_wait {
+        if should_suppress_exec_wait {
             self.suppressed_exec_calls.insert(ev.call_id);
             return;
         }

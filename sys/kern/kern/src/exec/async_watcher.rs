@@ -5,13 +5,15 @@ use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tokio::time::Instant;
 
-use super::UnifiedExecContext;
-use super::process::UnifiedExecProcess;
+use super::ExecContext;
+use super::process::ExecProcess;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::exec::ExecToolCallOutput;
 use crate::exec::MAX_EXEC_OUTPUT_DELTAS_PER_CALL;
 use crate::exec::StreamOutput;
+use crate::exec::head_tail_buffer::HeadTailBuffer;
+use crate::exec::output_lifecycle::{Stream, StreamData};
 use crate::protocol::EventMsg;
 use crate::protocol::ExecCommandOutputDeltaEvent;
 use crate::protocol::ExecCommandSource;
@@ -19,25 +21,23 @@ use crate::protocol::ExecOutputStream;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::events::ToolEventStage;
-use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
-use crate::unified_exec::output_lifecycle::{Stream, StreamData};
 
 pub(crate) const TRAILING_OUTPUT_GRACE: Duration = Duration::from_millis(100);
 
-/// Upper bound for a single ExecCommandOutputDelta chunk emitted by unified exec.
+/// Upper bound for a single ExecCommandOutputDelta chunk emitted by managed exec.
 ///
-/// The unified exec output buffer already caps *retained* output (see
-/// `UNIFIED_EXEC_OUTPUT_MAX_BYTES`), but we also cap per-event payload size so
+/// The exec output buffer already caps *retained* output (see
+/// `EXEC_OUTPUT_MAX_BYTES`), but we also cap per-event payload size so
 /// downstream event consumers (especially app-server JSON-RPC) don't have to
 /// process arbitrarily large delta payloads.
-const UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES: usize = 8192;
+const EXEC_OUTPUT_DELTA_MAX_BYTES: usize = 8192;
 
 /// Spawn a background task that continuously reads from the PTY, appends to the
 /// shared transcript, and emits ExecCommandOutputDelta events on UTF‑8
 /// boundaries.
 pub(crate) fn start_streaming_output(
-    process: &UnifiedExecProcess,
-    context: &UnifiedExecContext,
+    process: &ExecProcess,
+    context: &ExecContext,
     transcript: Arc<Mutex<HeadTailBuffer>>,
 ) {
     let receiver = process.output_receiver();
@@ -117,7 +117,7 @@ pub(crate) fn start_streaming_output(
 /// single ExecCommandEnd event with the aggregated transcript.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_exit_watcher(
-    process: Arc<UnifiedExecProcess>,
+    process: Arc<ExecProcess>,
     session_ref: Arc<Session>,
     turn_ref: Arc<TurnContext>,
     call_id: String,
@@ -143,7 +143,7 @@ pub(crate) fn spawn_exit_watcher(
             output: transcript.lock().await.to_bytes(),
             wall_time: duration,
         });
-        emit_exec_end_for_unified_exec(
+        emit_exec_end(
             session_ref,
             turn_ref,
             call_id,
@@ -191,11 +191,11 @@ async fn process_chunk(
     }
 }
 
-/// Emit an ExecCommandEnd event for a unified exec session, using the transcript
+/// Emit an ExecCommandEnd event for a managed exec session, using the transcript
 /// as the primary source of aggregated_output and falling back to the provided
 /// text when the transcript is empty.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn emit_exec_end_for_unified_exec(
+pub(crate) async fn emit_exec_end(
     session_ref: Arc<Session>,
     turn_ref: Arc<TurnContext>,
     call_id: String,
@@ -222,19 +222,14 @@ pub(crate) async fn emit_exec_end_for_unified_exec(
         &call_id,
         /*turn_diff_tracker*/ None,
     );
-    let emitter = ToolEmitter::unified_exec(
-        &command,
-        cwd,
-        ExecCommandSource::UnifiedExecStartup,
-        process_id,
-    );
+    let emitter = ToolEmitter::exec(&command, cwd, ExecCommandSource::ExecStartup, process_id);
     emitter
         .emit(event_ctx, ToolEventStage::Success(output))
         .await;
 }
 
 fn split_valid_utf8_prefix(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
-    split_valid_utf8_prefix_with_max(buffer, UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES)
+    split_valid_utf8_prefix_with_max(buffer, EXEC_OUTPUT_DELTA_MAX_BYTES)
 }
 
 fn split_valid_utf8_prefix_with_max(buffer: &mut Vec<u8>, max_bytes: usize) -> Option<Vec<u8>> {

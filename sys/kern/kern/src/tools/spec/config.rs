@@ -7,7 +7,6 @@ use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::WebSearchToolType;
-use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
@@ -16,18 +15,12 @@ use crate::config::AgentRoleConfig;
 use crate::modes::ModeCapabilities;
 use crate::original_image_detail::can_request_original_image_detail;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum UnifiedExecShellMode {
-    Direct,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ToolsConfig {
     pub model_tools_disabled: bool,
     pub machine_recovery: bool,
     pub available_models: Vec<ModelPreset>,
     pub shell_type: ConfigShellToolType,
-    pub unified_exec_shell_mode: UnifiedExecShellMode,
     pub allow_login_shell: bool,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
     pub web_search_mode: Option<WebSearchMode>,
@@ -62,12 +55,7 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) minion_jobs_allowed: bool,
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
-    pub(crate) vfs_policy: &'a VfsPolicy,
     pub(crate) collab_enabled: bool,
-}
-
-fn unified_exec_allowed_in_environment(_vfs_policy: &VfsPolicy) -> bool {
-    true
 }
 
 impl ToolsConfig {
@@ -79,7 +67,6 @@ impl ToolsConfig {
             minion_jobs_allowed,
             web_search_mode,
             session_source,
-            vfs_policy,
             collab_enabled,
         } = params;
         let include_collab_tools = *collab_enabled;
@@ -101,14 +88,9 @@ impl ToolsConfig {
         let exec_permission_approvals_enabled = approval_policy.allows_escalation();
         let request_permissions_tool_enabled =
             approval_policy.advertises_request_permissions_tool();
-        let unified_exec_allowed = unified_exec_allowed_in_environment(vfs_policy);
-        let shell_type = if unified_exec_allowed {
-            ConfigShellToolType::UnifiedExec
-        } else if model_info.shell_type == ConfigShellToolType::UnifiedExec {
-            ConfigShellToolType::ShellCommand
-        } else {
-            model_info.shell_type
-        };
+        // Managed exec is available on every supported platform. Sandbox policy
+        // is enforced at invocation time, not by selecting another backend.
+        let shell_type = ConfigShellToolType::Exec;
 
         let apply_patch_tool_type = model_info.apply_patch_tool_type.clone();
 
@@ -124,7 +106,6 @@ impl ToolsConfig {
             machine_recovery: false,
             available_models: available_models_ref.to_vec(),
             shell_type,
-            unified_exec_shell_mode: UnifiedExecShellMode::Direct,
             allow_login_shell: true,
             apply_patch_tool_type,
             web_search_mode: *web_search_mode,
@@ -173,14 +154,6 @@ impl ToolsConfig {
 
     pub fn with_allow_login_shell(mut self, allow_login_shell: bool) -> Self {
         self.allow_login_shell = allow_login_shell;
-        self
-    }
-
-    pub fn with_unified_exec_shell_mode(
-        mut self,
-        unified_exec_shell_mode: UnifiedExecShellMode,
-    ) -> Self {
-        self.unified_exec_shell_mode = unified_exec_shell_mode;
         self
     }
 

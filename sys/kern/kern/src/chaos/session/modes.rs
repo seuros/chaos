@@ -175,7 +175,6 @@ impl Session {
             minion_jobs_allowed: config.minion_jobs_allowed,
             web_search_mode: base.tools_config.web_search_mode,
             session_source: base.session_source.clone(),
-            vfs_policy: &effective_vfs_policy,
             collab_enabled: config.collab_enabled,
         })
         .with_agent_compaction_control(matches!(
@@ -187,7 +186,6 @@ impl Session {
             &base.session_source,
         )
         .with_dynamic_parent_effort(config.dynamic_parent_effort, &base.session_source)
-        .with_unified_exec_shell_mode(base.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(base.tools_config.web_search_config.clone())
         .with_allow_login_shell(base.tools_config.allow_login_shell)
         .with_agent_roles(config.agent_roles.clone())

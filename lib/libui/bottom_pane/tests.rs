@@ -98,7 +98,7 @@ pub(crate) fn bottom_pane_suite() {
     super::selection_popup_common::tests::one_cell_width_falls_back_without_panic_for_wrapped_two_column_rows();
     super::slash_commands::tests::slash_commands_suite();
     super::textarea::tests::textarea_suite();
-    super::unified_exec_footer::tests::unified_exec_footer_suite();
+    super::exec_footer::tests::exec_footer_suite();
 
     ctrl_c_on_modal_consumes_without_showing_quit_hint();
     overlay_not_shown_above_approval_modal();
@@ -106,7 +106,7 @@ pub(crate) fn bottom_pane_suite() {
     status_indicator_visible_during_command_execution();
     status_and_composer_fill_height_without_bottom_padding();
     status_only_snapshot();
-    unified_exec_summary_does_not_increase_height_when_status_visible();
+    exec_summary_does_not_increase_height_when_status_visible();
     status_with_details_and_queued_messages_snapshot();
     queued_messages_visible_when_status_hidden_snapshot();
     status_and_queued_messages_snapshot();
@@ -281,14 +281,14 @@ fn status_only_snapshot() {
     );
 }
 
-fn unified_exec_summary_does_not_increase_height_when_status_visible() {
+fn exec_summary_does_not_increase_height_when_status_visible() {
     let mut pane = make_test_pane();
 
     pane.set_task_running(true);
     let width = 120;
     let before = pane.desired_height(width);
 
-    pane.set_unified_exec_processes(vec!["sleep 5".to_string()]);
+    pane.set_exec_processes(vec!["sleep 5".to_string()]);
     let after = pane.desired_height(width);
 
     assert_eq!(after, before);

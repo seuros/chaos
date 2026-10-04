@@ -16,13 +16,13 @@
 
 use super::{
     ApprovalPolicy, Arc, BottomPane, BottomPaneParams, Buffer, ChatWidget, ChatWidgetInit,
-    ErrorEvent, ExternalEditorState, HashMap, InterruptManager, NUDGE_MODEL_SLUG, Notification,
-    Notifications, PLAN_IMPLEMENTATION_CODING_MESSAGE, PLAN_IMPLEMENTATION_TITLE,
-    PLAN_MODE_REASONING_SCOPE_TITLE, PendingSteer, PendingSteerCompareKey, ProcessInputState,
-    RateLimitSwitchPromptState, RateLimitWarningState, ReasoningEffortConfig, Rect, SandboxPolicy,
-    SessionHeader, SlashCommand, SleepInhibitor, StatusIndicatorState, TurnAbortReason,
-    UnifiedExecProcessSummary, UserMessage, UserMessageEvent, VecDeque, collaboration_modes,
-    queued_message_edit_binding_for_terminal, remap_placeholders_for_message,
+    ErrorEvent, ExecProcessSummary, ExternalEditorState, HashMap, InterruptManager,
+    NUDGE_MODEL_SLUG, Notification, Notifications, PLAN_IMPLEMENTATION_CODING_MESSAGE,
+    PLAN_IMPLEMENTATION_TITLE, PLAN_MODE_REASONING_SCOPE_TITLE, PendingSteer,
+    PendingSteerCompareKey, ProcessInputState, RateLimitSwitchPromptState, RateLimitWarningState,
+    ReasoningEffortConfig, Rect, SandboxPolicy, SessionHeader, SlashCommand, SleepInhibitor,
+    StatusIndicatorState, TurnAbortReason, UserMessage, UserMessageEvent, VecDeque,
+    collaboration_modes, queued_message_edit_binding_for_terminal, remap_placeholders_for_message,
 };
 
 use crate::app_event::AppEvent;
@@ -314,8 +314,8 @@ pub(crate) async fn chatwidget_suite() {
     Box::pin(commentary_completion_restores_status_indicator_before_exec_begin()).await;
     Box::pin(plan_completion_restores_status_indicator_after_streaming_plan_output()).await;
     Box::pin(preamble_keeps_working_status_snapshot()).await;
-    Box::pin(unified_exec_begin_restores_status_indicator_after_preamble()).await;
-    Box::pin(unified_exec_begin_restores_working_status_snapshot()).await;
+    Box::pin(exec_begin_restores_status_indicator_after_preamble()).await;
+    Box::pin(exec_begin_restores_working_status_snapshot()).await;
     Box::pin(steer_enter_queues_while_plan_stream_is_active()).await;
     Box::pin(steer_enter_uses_pending_steers_while_turn_is_running_without_streaming()).await;
     Box::pin(steer_enter_uses_pending_steers_while_final_answer_stream_is_active()).await;
@@ -341,18 +341,18 @@ pub(crate) async fn chatwidget_suite() {
     Box::pin(exec_end_without_begin_does_not_flush_unrelated_running_exploring_cell()).await;
     Box::pin(exec_end_without_begin_flushes_completed_unrelated_exploring_cell()).await;
     Box::pin(overlapping_exploring_exec_end_is_not_misclassified_as_orphan()).await;
-    Box::pin(exec_history_shows_unified_exec_startup_commands()).await;
-    Box::pin(exec_history_shows_unified_exec_tool_calls()).await;
-    Box::pin(unified_exec_unknown_end_with_active_exploring_cell_snapshot()).await;
-    Box::pin(unified_exec_end_after_task_complete_is_suppressed()).await;
-    Box::pin(unified_exec_interaction_after_task_complete_is_suppressed()).await;
-    Box::pin(unified_exec_wait_after_final_agent_message_snapshot()).await;
-    Box::pin(unified_exec_wait_before_streamed_agent_message_snapshot()).await;
-    Box::pin(unified_exec_wait_status_header_updates_on_late_command_display()).await;
-    Box::pin(unified_exec_waiting_multiple_empty_snapshots()).await;
-    Box::pin(unified_exec_wait_status_renders_command_in_single_details_row_snapshot()).await;
-    Box::pin(unified_exec_empty_then_non_empty_snapshot()).await;
-    Box::pin(unified_exec_non_empty_then_empty_snapshots()).await;
+    Box::pin(exec_history_shows_exec_startup_commands()).await;
+    Box::pin(exec_history_shows_exec_tool_calls()).await;
+    Box::pin(exec_unknown_end_with_active_exploring_cell_snapshot()).await;
+    Box::pin(exec_end_after_task_complete_is_suppressed()).await;
+    Box::pin(exec_interaction_after_task_complete_is_suppressed()).await;
+    Box::pin(exec_wait_after_final_agent_message_snapshot()).await;
+    Box::pin(exec_wait_before_streamed_agent_message_snapshot()).await;
+    Box::pin(exec_wait_status_header_updates_on_late_command_display()).await;
+    Box::pin(exec_waiting_multiple_empty_snapshots()).await;
+    Box::pin(exec_wait_status_renders_command_in_single_details_row_snapshot()).await;
+    Box::pin(exec_empty_then_non_empty_snapshot()).await;
+    Box::pin(exec_non_empty_then_empty_snapshots()).await;
     Box::pin(review_popup_custom_prompt_action_sends_event()).await;
     Box::pin(collab_mode_shift_tab_cycles_only_when_idle()).await;
     Box::pin(mode_switch_does_not_emit_model_change_notification()).await;
@@ -414,10 +414,10 @@ pub(crate) async fn chatwidget_suite() {
     Box::pin(permissions_full_access_history_cell_emitted_only_after_confirmation()).await;
     Box::pin(interrupt_restores_queued_messages_into_composer()).await;
     Box::pin(interrupt_prepends_queued_messages_before_existing_composer_text()).await;
-    Box::pin(interrupt_keeps_unified_exec_processes()).await;
-    Box::pin(review_ended_keeps_unified_exec_processes()).await;
-    Box::pin(interrupt_preserves_unified_exec_wait_streak_snapshot()).await;
-    Box::pin(turn_complete_keeps_unified_exec_processes()).await;
+    Box::pin(interrupt_keeps_exec_processes()).await;
+    Box::pin(review_ended_keeps_exec_processes()).await;
+    Box::pin(interrupt_preserves_exec_wait_streak_snapshot()).await;
+    Box::pin(turn_complete_keeps_exec_processes()).await;
     Box::pin(ui_snapshots_small_heights_idle()).await;
     Box::pin(ui_snapshots_small_heights_task_running()).await;
     Box::pin(status_widget_and_approval_modal_snapshot()).await;
@@ -2239,11 +2239,11 @@ pub(super) async fn make_chatwidget_manual(
         running_commands: HashMap::new(),
         pending_collab_spawn_requests: HashMap::new(),
         suppressed_exec_calls: HashSet::new(),
-        last_unified_wait: None,
-        unified_exec_wait_streak: None,
+        last_exec_wait: None,
+        exec_wait_streak: None,
         turn_sleep_inhibitor: SleepInhibitor::new(prevent_idle_sleep),
         task_complete_pending: false,
-        unified_exec_processes: Vec::new(),
+        exec_processes: Vec::new(),
         agent_turn_running: false,
         mcp_startup_status: None,
         interrupts: InterruptManager::new(),
@@ -3750,7 +3750,7 @@ fn begin_exec_with_source(
     event
 }
 
-fn begin_unified_exec_startup(
+fn begin_exec_startup(
     chat: &mut ChatWidget,
     call_id: &str,
     process_id: &str,
@@ -3765,7 +3765,7 @@ fn begin_unified_exec_startup(
         command,
         cwd,
         parsed_cmd: Vec::new(),
-        source: ExecCommandSource::UnifiedExecStartup,
+        source: ExecCommandSource::ExecStartup,
         interaction_input: None,
     };
     chat.handle_codex_event(Event {
@@ -4123,8 +4123,8 @@ async fn streaming_final_answer_ctrl_c_interrupt_preserves_background_shells() {
     );
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 
-    begin_unified_exec_startup(&mut chat, "call-1", "process-1", "npm run dev");
-    assert_eq!(chat.unified_exec_processes.len(), 1);
+    begin_exec_startup(&mut chat, "call-1", "process-1", "npm run dev");
+    assert_eq!(chat.exec_processes.len(), 1);
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
     match op_rx.try_recv() {
@@ -4132,7 +4132,7 @@ async fn streaming_final_answer_ctrl_c_interrupt_preserves_background_shells() {
         other => panic!("expected Op::Interrupt, got {other:?}"),
     }
     assert!(!chat.bottom_pane.quit_shortcut_hint_visible());
-    assert_eq!(chat.unified_exec_processes.len(), 1);
+    assert_eq!(chat.exec_processes.len(), 1);
 }
 
 #[cfg(test)]
@@ -4265,7 +4265,7 @@ async fn preamble_keeps_working_status_snapshot() {
 }
 
 #[cfg(test)]
-async fn unified_exec_begin_restores_status_indicator_after_preamble() {
+async fn exec_begin_restores_status_indicator_after_preamble() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
     chat.on_task_started();
@@ -4276,13 +4276,13 @@ async fn unified_exec_begin_restores_status_indicator_after_preamble() {
     assert_eq!(chat.bottom_pane.status_indicator_visible(), false);
     assert_eq!(chat.bottom_pane.is_task_running(), true);
 
-    begin_unified_exec_startup(&mut chat, "call-1", "proc-1", "sleep 2");
+    begin_exec_startup(&mut chat, "call-1", "proc-1", "sleep 2");
 
     assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
 }
 
 #[cfg(test)]
-async fn unified_exec_begin_restores_working_status_snapshot() {
+async fn exec_begin_restores_working_status_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
     chat.on_task_started();
@@ -4290,7 +4290,7 @@ async fn unified_exec_begin_restores_working_status_snapshot() {
     chat.on_commit_tick();
     drain_insert_history(&mut rx);
 
-    begin_unified_exec_startup(&mut chat, "call-1", "proc-1", "sleep 2");
+    begin_exec_startup(&mut chat, "call-1", "proc-1", "sleep 2");
 
     let width: u16 = 80;
     let height = chat.desired_height(width);
@@ -4299,10 +4299,7 @@ async fn unified_exec_begin_restores_working_status_snapshot() {
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw chatwidget");
-    assert_snapshot!(
-        "unified_exec_begin_restores_working_status",
-        terminal.backend()
-    );
+    assert_snapshot!("exec_begin_restores_working_status", terminal.backend());
 }
 
 #[cfg(test)]
@@ -5112,8 +5109,7 @@ async fn exec_end_without_begin_does_not_flush_unrelated_running_exploring_cell(
     assert!(drain_insert_history(&mut rx).is_empty());
     assert!(active_blob(&chat).contains("Read null"));
 
-    let orphan =
-        begin_unified_exec_startup(&mut chat, "call-orphan", "proc-1", "echo repro-marker");
+    let orphan = begin_exec_startup(&mut chat, "call-orphan", "proc-1", "echo repro-marker");
     assert!(drain_insert_history(&mut rx).is_empty());
 
     end_exec(&mut chat, orphan, "repro-marker\n", "", 0);
@@ -5150,7 +5146,7 @@ async fn exec_end_without_begin_flushes_completed_unrelated_exploring_cell() {
     assert!(drain_insert_history(&mut rx).is_empty());
     assert!(active_blob(&chat).contains("ls -la"));
 
-    let orphan = begin_unified_exec_startup(&mut chat, "call-after", "proc-1", "echo after");
+    let orphan = begin_exec_startup(&mut chat, "call-after", "proc-1", "echo after");
     end_exec(&mut chat, orphan, "after\n", "", 0);
 
     let cells = drain_insert_history(&mut rx);
@@ -5212,34 +5208,34 @@ async fn overlapping_exploring_exec_end_is_not_misclassified_as_orphan() {
 }
 
 #[cfg(test)]
-async fn exec_history_shows_unified_exec_startup_commands() {
+async fn exec_history_shows_exec_startup_commands() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
 
     let begin = begin_exec_with_source(
         &mut chat,
         "call-startup",
-        "echo unified exec startup",
-        ExecCommandSource::UnifiedExecStartup,
+        "echo exec startup",
+        ExecCommandSource::ExecStartup,
     );
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "exec begin should not flush until completion"
     );
 
-    end_exec(&mut chat, begin, "echo unified exec startup\n", "", 0);
+    end_exec(&mut chat, begin, "echo exec startup\n", "", 0);
 
     let cells = drain_insert_history(&mut rx);
     assert_eq!(cells.len(), 1, "expected finalized exec cell to flush");
     let blob = lines_to_single_string(&cells[0]);
     assert!(
-        blob.contains("• Ran echo unified exec startup"),
+        blob.contains("• Ran echo exec startup"),
         "expected startup command to render: {blob:?}"
     );
 }
 
 #[cfg(test)]
-async fn exec_history_shows_unified_exec_tool_calls() {
+async fn exec_history_shows_exec_tool_calls() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
 
@@ -5247,7 +5243,7 @@ async fn exec_history_shows_unified_exec_tool_calls() {
         &mut chat,
         "call-startup",
         "ls",
-        ExecCommandSource::UnifiedExecStartup,
+        ExecCommandSource::ExecStartup,
     );
     end_exec(&mut chat, begin, "", "", 0);
 
@@ -5256,13 +5252,12 @@ async fn exec_history_shows_unified_exec_tool_calls() {
 }
 
 #[cfg(test)]
-async fn unified_exec_unknown_end_with_active_exploring_cell_snapshot() {
+async fn exec_unknown_end_with_active_exploring_cell_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
 
     begin_exec(&mut chat, "call-exploring", "cat /dev/null");
-    let orphan =
-        begin_unified_exec_startup(&mut chat, "call-orphan", "proc-1", "echo repro-marker");
+    let orphan = begin_exec_startup(&mut chat, "call-orphan", "proc-1", "echo repro-marker");
     end_exec(&mut chat, orphan, "repro-marker\n", "", 0);
 
     let cells = drain_insert_history(&mut rx);
@@ -5272,22 +5267,19 @@ async fn unified_exec_unknown_end_with_active_exploring_cell_snapshot() {
         .collect::<String>();
     let active = active_blob(&chat);
     let snapshot = format!("History:\n{history}\nActive:\n{active}");
-    assert_snapshot!(
-        "unified_exec_unknown_end_with_active_exploring_cell",
-        snapshot
-    );
+    assert_snapshot!("exec_unknown_end_with_active_exploring_cell", snapshot);
 }
 
 #[cfg(test)]
-async fn unified_exec_end_after_task_complete_is_suppressed() {
+async fn exec_end_after_task_complete_is_suppressed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
 
     let begin = begin_exec_with_source(
         &mut chat,
         "call-startup",
-        "echo unified exec startup",
-        ExecCommandSource::UnifiedExecStartup,
+        "echo exec startup",
+        ExecCommandSource::ExecStartup,
     );
     drain_insert_history(&mut rx);
 
@@ -5297,12 +5289,12 @@ async fn unified_exec_end_after_task_complete_is_suppressed() {
     let cells = drain_insert_history(&mut rx);
     assert!(
         cells.is_empty(),
-        "expected unified exec end after task complete to be suppressed"
+        "expected exec end after task complete to be suppressed"
     );
 }
 
 #[cfg(test)]
-async fn unified_exec_interaction_after_task_complete_is_suppressed() {
+async fn exec_interaction_after_task_complete_is_suppressed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
     chat.on_task_complete(None, false);
@@ -5319,12 +5311,12 @@ async fn unified_exec_interaction_after_task_complete_is_suppressed() {
     let cells = drain_insert_history(&mut rx);
     assert!(
         cells.is_empty(),
-        "expected unified exec interaction after task complete to be suppressed"
+        "expected exec interaction after task complete to be suppressed"
     );
 }
 
 #[cfg(test)]
-async fn unified_exec_wait_after_final_agent_message_snapshot() {
+async fn exec_wait_after_final_agent_message_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {
         id: "turn-1".into(),
@@ -5335,7 +5327,7 @@ async fn unified_exec_wait_after_final_agent_message_snapshot() {
         }),
     });
 
-    begin_unified_exec_startup(&mut chat, "call-wait", "proc-1", "cargo test -p chaos-kern");
+    begin_exec_startup(&mut chat, "call-wait", "proc-1", "cargo test -p chaos-kern");
     terminal_interaction(&mut chat, "call-wait-stdin", "proc-1", "");
 
     complete_assistant_message(&mut chat, "msg-1", "Final response.", None);
@@ -5352,11 +5344,11 @@ async fn unified_exec_wait_after_final_agent_message_snapshot() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_snapshot!("unified_exec_wait_after_final_agent_message", combined);
+    assert_snapshot!("exec_wait_after_final_agent_message", combined);
 }
 
 #[cfg(test)]
-async fn unified_exec_wait_before_streamed_agent_message_snapshot() {
+async fn exec_wait_before_streamed_agent_message_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.handle_codex_event(Event {
         id: "turn-1".into(),
@@ -5367,7 +5359,7 @@ async fn unified_exec_wait_before_streamed_agent_message_snapshot() {
         }),
     });
 
-    begin_unified_exec_startup(
+    begin_exec_startup(
         &mut chat,
         "call-wait-stream",
         "proc-1",
@@ -5397,14 +5389,14 @@ async fn unified_exec_wait_before_streamed_agent_message_snapshot() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_snapshot!("unified_exec_wait_before_streamed_agent_message", combined);
+    assert_snapshot!("exec_wait_before_streamed_agent_message", combined);
 }
 
 #[cfg(test)]
-async fn unified_exec_wait_status_header_updates_on_late_command_display() {
+async fn exec_wait_status_header_updates_on_late_command_display() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
-    chat.unified_exec_processes.push(UnifiedExecProcessSummary {
+    chat.exec_processes.push(ExecProcessSummary {
         key: "proc-1".to_string(),
         call_id: "call-1".to_string(),
         command_display: "sleep 5".to_string(),
@@ -5431,10 +5423,10 @@ async fn unified_exec_wait_status_header_updates_on_late_command_display() {
 }
 
 #[cfg(test)]
-async fn unified_exec_waiting_multiple_empty_snapshots() {
+async fn exec_waiting_multiple_empty_snapshots() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
-    begin_unified_exec_startup(&mut chat, "call-wait-1", "proc-1", "just fix");
+    begin_exec_startup(&mut chat, "call-wait-1", "proc-1", "just fix");
 
     terminal_interaction(&mut chat, "call-wait-1a", "proc-1", "");
     terminal_interaction(&mut chat, "call-wait-1b", "proc-1", "");
@@ -5462,14 +5454,14 @@ async fn unified_exec_waiting_multiple_empty_snapshots() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_snapshot!("unified_exec_waiting_multiple_empty_after", combined);
+    assert_snapshot!("exec_waiting_multiple_empty_after", combined);
 }
 
 #[cfg(test)]
-async fn unified_exec_wait_status_renders_command_in_single_details_row_snapshot() {
+async fn exec_wait_status_renders_command_in_single_details_row_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
-    begin_unified_exec_startup(
+    begin_exec_startup(
         &mut chat,
         "call-wait-ui",
         "proc-ui",
@@ -5480,16 +5472,16 @@ async fn unified_exec_wait_status_renders_command_in_single_details_row_snapshot
 
     let rendered = render_bottom_popup(&chat, 48);
     assert_snapshot!(
-        "unified_exec_wait_status_renders_command_in_single_details_row",
+        "exec_wait_status_renders_command_in_single_details_row",
         rendered
     );
 }
 
 #[cfg(test)]
-async fn unified_exec_empty_then_non_empty_snapshot() {
+async fn exec_empty_then_non_empty_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
-    begin_unified_exec_startup(&mut chat, "call-wait-2", "proc-2", "just fix");
+    begin_exec_startup(&mut chat, "call-wait-2", "proc-2", "just fix");
 
     terminal_interaction(&mut chat, "call-wait-2a", "proc-2", "");
     terminal_interaction(&mut chat, "call-wait-2b", "proc-2", "ls\n");
@@ -5499,14 +5491,14 @@ async fn unified_exec_empty_then_non_empty_snapshot() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_snapshot!("unified_exec_empty_then_non_empty_after", combined);
+    assert_snapshot!("exec_empty_then_non_empty_after", combined);
 }
 
 #[cfg(test)]
-async fn unified_exec_non_empty_then_empty_snapshots() {
+async fn exec_non_empty_then_empty_snapshots() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.on_task_started();
-    begin_unified_exec_startup(&mut chat, "call-wait-3", "proc-3", "just fix");
+    begin_exec_startup(&mut chat, "call-wait-3", "proc-3", "just fix");
 
     terminal_interaction(&mut chat, "call-wait-3a", "proc-3", "pwd\n");
     terminal_interaction(&mut chat, "call-wait-3b", "proc-3", "");
@@ -5525,7 +5517,7 @@ async fn unified_exec_non_empty_then_empty_snapshots() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_snapshot!("unified_exec_non_empty_then_empty_active", active_combined);
+    assert_snapshot!("exec_non_empty_then_empty_active", active_combined);
 
     chat.handle_codex_event(Event {
         id: "turn-wait-3".into(),
@@ -5548,7 +5540,7 @@ async fn unified_exec_non_empty_then_empty_snapshots() {
         combined.push('\n');
     }
     combined.push_str(&post);
-    assert_snapshot!("unified_exec_non_empty_then_empty_after", combined);
+    assert_snapshot!("exec_non_empty_then_empty_after", combined);
 }
 
 /// Selecting the custom prompt option from the review popup sends
@@ -7449,12 +7441,12 @@ async fn interrupt_prepends_queued_messages_before_existing_composer_text() {
 }
 
 #[cfg(test)]
-async fn interrupt_keeps_unified_exec_processes() {
+async fn interrupt_keeps_exec_processes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
-    begin_unified_exec_startup(&mut chat, "call-1", "process-1", "sleep 5");
-    begin_unified_exec_startup(&mut chat, "call-2", "process-2", "sleep 6");
-    assert_eq!(chat.unified_exec_processes.len(), 2);
+    begin_exec_startup(&mut chat, "call-1", "process-1", "sleep 5");
+    begin_exec_startup(&mut chat, "call-2", "process-2", "sleep 6");
+    assert_eq!(chat.exec_processes.len(), 2);
 
     chat.handle_codex_event(Event {
         id: "turn-1".into(),
@@ -7464,18 +7456,18 @@ async fn interrupt_keeps_unified_exec_processes() {
         }),
     });
 
-    assert_eq!(chat.unified_exec_processes.len(), 2);
+    assert_eq!(chat.exec_processes.len(), 2);
 
     let _ = drain_insert_history(&mut rx);
 }
 
 #[cfg(test)]
-async fn review_ended_keeps_unified_exec_processes() {
+async fn review_ended_keeps_exec_processes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
-    begin_unified_exec_startup(&mut chat, "call-1", "process-1", "sleep 5");
-    begin_unified_exec_startup(&mut chat, "call-2", "process-2", "sleep 6");
-    assert_eq!(chat.unified_exec_processes.len(), 2);
+    begin_exec_startup(&mut chat, "call-1", "process-1", "sleep 5");
+    begin_exec_startup(&mut chat, "call-2", "process-2", "sleep 6");
+    assert_eq!(chat.exec_processes.len(), 2);
 
     chat.handle_codex_event(Event {
         id: "turn-1".into(),
@@ -7485,7 +7477,7 @@ async fn review_ended_keeps_unified_exec_processes() {
         }),
     });
 
-    assert_eq!(chat.unified_exec_processes.len(), 2);
+    assert_eq!(chat.exec_processes.len(), 2);
 
     chat.add_ps_output();
     let cells = drain_insert_history(&mut rx);
@@ -7500,14 +7492,14 @@ async fn review_ended_keeps_unified_exec_processes() {
     );
     assert!(
         combined.contains("sleep 5") && combined.contains("sleep 6"),
-        "expected /ps to list running unified exec processes; got {combined:?}"
+        "expected /ps to list running exec processes; got {combined:?}"
     );
 
     let _ = drain_insert_history(&mut rx);
 }
 
 #[cfg(test)]
-async fn interrupt_preserves_unified_exec_wait_streak_snapshot() {
+async fn interrupt_preserves_exec_wait_streak_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
     chat.handle_codex_event(Event {
@@ -7519,7 +7511,7 @@ async fn interrupt_preserves_unified_exec_wait_streak_snapshot() {
         }),
     });
 
-    let begin = begin_unified_exec_startup(&mut chat, "call-1", "process-1", "just fix");
+    let begin = begin_exec_startup(&mut chat, "call-1", "process-1", "just fix");
     terminal_interaction(&mut chat, "call-1a", "process-1", "");
 
     chat.handle_codex_event(Event {
@@ -7538,16 +7530,16 @@ async fn interrupt_preserves_unified_exec_wait_streak_snapshot() {
         .collect::<Vec<_>>()
         .join("\n");
     let snapshot = format!("cells={}\n{combined}", cells.len());
-    assert_snapshot!("interrupt_preserves_unified_exec_wait_streak", snapshot);
+    assert_snapshot!("interrupt_preserves_exec_wait_streak", snapshot);
 }
 
 #[cfg(test)]
-async fn turn_complete_keeps_unified_exec_processes() {
+async fn turn_complete_keeps_exec_processes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
-    begin_unified_exec_startup(&mut chat, "call-1", "process-1", "sleep 5");
-    begin_unified_exec_startup(&mut chat, "call-2", "process-2", "sleep 6");
-    assert_eq!(chat.unified_exec_processes.len(), 2);
+    begin_exec_startup(&mut chat, "call-1", "process-1", "sleep 5");
+    begin_exec_startup(&mut chat, "call-2", "process-2", "sleep 6");
+    assert_eq!(chat.exec_processes.len(), 2);
 
     chat.handle_codex_event(Event {
         id: "turn-1".into(),
@@ -7557,7 +7549,7 @@ async fn turn_complete_keeps_unified_exec_processes() {
         }),
     });
 
-    assert_eq!(chat.unified_exec_processes.len(), 2);
+    assert_eq!(chat.exec_processes.len(), 2);
 
     chat.add_ps_output();
     let cells = drain_insert_history(&mut rx);
@@ -7572,7 +7564,7 @@ async fn turn_complete_keeps_unified_exec_processes() {
     );
     assert!(
         combined.contains("sleep 5") && combined.contains("sleep 6"),
-        "expected /ps to list running unified exec processes; got {combined:?}"
+        "expected /ps to list running exec processes; got {combined:?}"
     );
 
     let _ = drain_insert_history(&mut rx);

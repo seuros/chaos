@@ -24,13 +24,13 @@ use super::core::has_websocket_timing_metrics;
 use super::interrupts::InterruptManager;
 
 impl ChatWidget {
-    /// Flush any accumulated unified-exec wait streak into a history cell.
-    pub(super) fn flush_unified_exec_wait_streak(&mut self) {
-        let Some(wait) = self.unified_exec_wait_streak.take() else {
+    /// Flush any accumulated exec wait streak into a history cell.
+    pub(super) fn flush_exec_wait_streak(&mut self) {
+        let Some(wait) = self.exec_wait_streak.take() else {
             return;
         };
         self.needs_final_message_separator = true;
-        let cell = history_cell::new_unified_exec_interaction(wait.command_display, String::new());
+        let cell = history_cell::new_exec_interaction(wait.command_display, String::new());
         self.app_event_tx
             .send(AppEvent::InsertHistoryCell(Box::new(cell)));
         self.restore_reasoning_status_header();
@@ -122,7 +122,7 @@ impl ChatWidget {
             self.plan_delta_buffer.clear();
         }
         self.plan_delta_buffer.push_str(&delta);
-        self.flush_unified_exec_wait_streak();
+        self.flush_exec_wait_streak();
         self.flush_active_cell();
 
         if self.plan_stream_controller.is_none() {
@@ -175,7 +175,7 @@ impl ChatWidget {
     pub(super) fn on_agent_reasoning_delta(&mut self, delta: String) {
         self.reasoning_buffer.push_str(&delta);
 
-        if self.unified_exec_wait_streak.is_some() {
+        if self.exec_wait_streak.is_some() {
             self.request_redraw();
             return;
         }
@@ -304,7 +304,7 @@ impl ChatWidget {
 
     #[inline]
     pub(super) fn handle_streaming_delta(&mut self, delta: String) {
-        self.flush_unified_exec_wait_streak();
+        self.flush_exec_wait_streak();
         self.flush_active_cell();
 
         if self.stream_controller.is_none() {

@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn exec_command_abort_retains_execution_output_format() {
+    let call = ToolCall {
+        tool_name: "exec_command".to_string(),
+        tool_namespace: None,
+        call_id: "exec-abort".to_string(),
+        payload: crate::tools::context::ToolPayload::Function {
+            arguments: r#"{"cmd":"sleep 30"}"#.to_string(),
+        },
+    };
+
+    assert_eq!(
+        ToolCallRuntime::abort_message(&call, 1.25),
+        "Wall time: 1.2 seconds\naborted by user"
+    );
+}
+
+#[test]
 fn exclusive_waits_for_active_parallel_calls() {
     let mut schedule = ToolSchedule::default();
     schedule

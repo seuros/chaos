@@ -1,5 +1,5 @@
 #![allow(clippy::expect_used)]
-// unified exec is not supported on Windows OS
+// Exec is supported on the Unix platforms targeted by Chaos.
 
 use anyhow::Result;
 use chaos_ipc::config_types::ReasoningSummary;
@@ -199,7 +199,7 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
+async fn remote_models_remote_model_uses_exec() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -211,7 +211,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     let mut remote_model = test_remote_model(REMOTE_MODEL_SLUG, ModelVisibility::List, 1);
     remote_model.display_name = "Remote Test".to_string();
     remote_model.description = Some("A remote model that requires the test shell".to_string());
-    remote_model.shell_type = ConfigShellToolType::UnifiedExec;
+    remote_model.shell_type = ConfigShellToolType::Exec;
 
     let models_mock = mount_models_once(
         &server,
@@ -250,7 +250,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     let model_info = models_manager
         .get_model_info(REMOTE_MODEL_SLUG, &config)
         .await;
-    assert_eq!(model_info.shell_type, ConfigShellToolType::UnifiedExec);
+    assert_eq!(model_info.shell_type, ConfigShellToolType::Exec);
 
     chaos
         .submit(Op::OverrideTurnContext {
@@ -313,7 +313,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     })
     .await;
 
-    assert_eq!(begin_event.source, ExecCommandSource::UnifiedExecStartup);
+    assert_eq!(begin_event.source, ExecCommandSource::ExecStartup);
 
     wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 

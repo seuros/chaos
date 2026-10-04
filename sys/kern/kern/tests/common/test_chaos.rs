@@ -53,7 +53,7 @@ pub enum ShellModelOutput {
     Shell,
     ShellCommand,
     LocalShell,
-    // UnifiedExec has its own set of tests
+    // Managed exec has its own set of tests.
 }
 
 pub struct TestChaosBuilder {

@@ -17,8 +17,8 @@ use mcp_host::prelude::ToolGroupCatalog;
 use super::ToolsConfig;
 use super::schemas::{
     close_agent_output_schema, create_approval_parameters, create_request_permissions_schema,
-    resume_agent_output_schema, send_input_output_schema, spawn_agent_output_schema,
-    unified_exec_output_schema, wait_output_schema,
+    exec_output_schema, resume_agent_output_schema, send_input_output_schema,
+    spawn_agent_output_schema, wait_output_schema,
 };
 
 pub(crate) fn create_tool_group_control_tool(name: &str, catalog: &ToolGroupCatalog) -> ToolSpec {
@@ -432,7 +432,7 @@ pub(crate) fn create_exec_command_tool(
     ToolSpec::Function(ResponsesApiTool {
         name: "exec_command".to_string(),
         description:
-            "Runs a command in a PTY, returning output plus a task ID for lifecycle tracking and, when still running, a session ID for ongoing interaction."
+            "Runs a command with pipes or an optional PTY, returning output plus a task ID for lifecycle tracking and, when still running, a session ID for ongoing interaction."
                 .to_string(),
         strict: false,
         defer_loading: None,
@@ -441,7 +441,7 @@ pub(crate) fn create_exec_command_tool(
             required: Some(vec!["cmd".to_string()]),
             additional_properties: Some(false.into()),
         },
-        output_schema: Some(unified_exec_output_schema()),
+        output_schema: Some(exec_output_schema()),
     })
 }
 
@@ -450,7 +450,7 @@ pub(crate) fn create_write_stdin_tool() -> ToolSpec {
         (
             "session_id".to_string(),
             JsonSchema::Integer {
-                description: Some("Identifier of the running unified exec session.".to_string()),
+                description: Some("Identifier of the running exec session.".to_string()),
             },
         ),
         (
@@ -480,9 +480,8 @@ pub(crate) fn create_write_stdin_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "write_stdin".to_string(),
-        description:
-            "Writes characters to an existing unified exec session and returns recent output."
-                .to_string(),
+        description: "Writes characters to an existing exec session and returns recent output."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -490,7 +489,7 @@ pub(crate) fn create_write_stdin_tool() -> ToolSpec {
             required: Some(vec!["session_id".to_string()]),
             additional_properties: Some(false.into()),
         },
-        output_schema: Some(unified_exec_output_schema()),
+        output_schema: Some(exec_output_schema()),
     })
 }
 

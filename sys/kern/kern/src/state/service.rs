@@ -5,6 +5,7 @@ use crate::RolloutRecorder;
 use crate::catalog::CatalogSink;
 use crate::client::ModelClient;
 use crate::config::StartedNetworkProxy;
+use crate::exec::ExecProcessManager;
 use crate::exec_policy::ExecPolicyManager;
 use crate::file_watcher::FileWatcher;
 use crate::internal_tasks::InternalTaskStore;
@@ -17,7 +18,6 @@ use crate::runtime_db::RuntimeDbHandle;
 use crate::shell_environment::ShellEnvironmentActor;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::sandboxing::ApprovalStore;
-use crate::unified_exec::UnifiedExecProcessManager;
 use chaos_dtrace::Hooks;
 use chaos_snitch::SessionTelemetry;
 use mcp_host::prelude::{ToolGroupCatalog, ToolGroupState};
@@ -30,7 +30,7 @@ pub(crate) struct SessionServices {
     pub(crate) mcp_registry: McpRegistryActor,
     pub(crate) mcp_refresh: McpRefreshActor,
     pub(crate) internal_task_store: InternalTaskStore,
-    pub(crate) unified_exec_manager: UnifiedExecProcessManager,
+    pub(crate) exec_manager: ExecProcessManager,
     pub(crate) hooks: Hooks,
     pub(crate) rollout: Mutex<Option<RolloutRecorder>>,
     pub(crate) user_shell: Arc<crate::shell::Shell>,

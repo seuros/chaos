@@ -1,7 +1,7 @@
 //! A live task status row rendered above the composer while the agent is busy.
 //!
 //! The row owns spinner timing, the optional interrupt hint, and short inline
-//! context (for example, the unified-exec background-process summary). Keeping
+//! context (for example, the exec background-process summary). Keeping
 //! these pieces on one line avoids vertical layout churn in the bottom pane.
 
 use std::time::Duration;

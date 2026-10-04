@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-pub(crate) fn unified_exec_output_schema() -> JsonValue {
+pub(crate) fn exec_output_schema() -> JsonValue {
     json!({
         "type": "object",
         "properties": {

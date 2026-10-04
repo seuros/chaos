@@ -17,10 +17,10 @@ use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
 use crate::chaos::Session;
+use crate::exec::ExecTaskSnapshot;
 use crate::minions::status::is_final as is_final_agent_status;
 use crate::tools::context::ExecCommandToolOutput;
 use crate::truncate::approx_token_count;
-use crate::unified_exec::ExecTaskSnapshot;
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 250;
 
@@ -403,7 +403,7 @@ pub(crate) async fn attach_exec_task(
     let task_id = task.task_id.clone();
     let mut completion = session
         .services
-        .unified_exec_manager
+        .exec_manager
         .subscribe_completion(process_id)
         .await
         .map_err(|error| anyhow!(error.to_string()))?;
@@ -529,7 +529,7 @@ impl Session {
             }
             InternalTaskHandle::Exec { process_id } => {
                 self.services
-                    .unified_exec_manager
+                    .exec_manager
                     .terminate_process(process_id)
                     .await
                     .map_err(|err| anyhow!(err.to_string()))?;

@@ -112,7 +112,7 @@ enum ActionKind {
     RunCommand {
         command: &'static str,
     },
-    RunUnifiedExecCommand {
+    RunExecCommand {
         command: &'static str,
         justification: Option<&'static str>,
     },
@@ -122,7 +122,7 @@ enum ActionKind {
     },
 }
 
-const DEFAULT_UNIFIED_EXEC_JUSTIFICATION: &str =
+const DEFAULT_EXEC_JUSTIFICATION: &str =
     "Requires escalated permissions to bypass the sandbox in tests.";
 
 impl ActionKind {
@@ -187,7 +187,7 @@ impl ActionKind {
                 let event = shell_event(call_id, command, 1_000, sandbox_permissions)?;
                 Ok((event, Some(command.to_string())))
             }
-            ActionKind::RunUnifiedExecCommand {
+            ActionKind::RunExecCommand {
                 command,
                 justification,
             } => {
@@ -267,7 +267,7 @@ fn exec_command_event(
     }
     if sandbox_permissions.requests_sandbox_override() {
         args["sandbox_permissions"] = json!(sandbox_permissions);
-        let reason = justification.unwrap_or(DEFAULT_UNIFIED_EXEC_JUSTIFICATION);
+        let reason = justification.unwrap_or(DEFAULT_EXEC_JUSTIFICATION);
         args["justification"] = json!(reason);
     }
     let args_str = serde_json::to_string(&args)?;
@@ -1125,45 +1125,45 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "unified exec on request no approval for safe command",
+            name: "exec on request no approval for safe command",
             approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
-            action: ActionKind::RunUnifiedExecCommand {
-                command: "echo \"hello unified exec\"",
+            action: ActionKind::RunExecCommand {
+                command: "echo \"hello exec\"",
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccess {
-                stdout_contains: "hello unified exec",
+                stdout_contains: "hello exec",
             },
         },
         #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
         // Linux sandbox arg0 test workaround doesn't work on ARM
         ScenarioSpec {
-            name: "unified exec on request escalated requires approval",
+            name: "exec on request escalated requires approval",
             approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            action: ActionKind::RunUnifiedExecCommand {
-                command: "printf '%s\\n' 'escalated unified exec'",
-                justification: Some(DEFAULT_UNIFIED_EXEC_JUSTIFICATION),
+            action: ActionKind::RunExecCommand {
+                command: "printf '%s\\n' 'escalated exec'",
+                justification: Some(DEFAULT_EXEC_JUSTIFICATION),
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
-                expected_reason: Some(DEFAULT_UNIFIED_EXEC_JUSTIFICATION),
+                expected_reason: Some(DEFAULT_EXEC_JUSTIFICATION),
             },
             expectation: Expectation::CommandSuccess {
-                stdout_contains: "escalated unified exec",
+                stdout_contains: "escalated exec",
             },
         },
         ScenarioSpec {
-            name: "unified exec on request requires approval unless trusted",
+            name: "exec on request requires approval unless trusted",
             approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: SandboxPolicy::RootAccess,
-            action: ActionKind::RunUnifiedExecCommand {
+            action: ActionKind::RunExecCommand {
                 command: "git reset --hard",
                 justification: None,
             },
@@ -1181,7 +1181,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
             name: "safe command with heredoc and redirect still requires approval",
             approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: workspace_write(false),
-            action: ActionKind::RunUnifiedExecCommand {
+            action: ActionKind::RunExecCommand {
                 command: "cat <<'EOF' > /tmp/out.txt \nhello\nEOF",
                 justification: None,
             },
@@ -1199,7 +1199,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
             name: "compound command with one safe command still requires approval",
             approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: workspace_write(false),
-            action: ActionKind::RunUnifiedExecCommand {
+            action: ActionKind::RunExecCommand {
                 command: "cat ./one.txt && touch ./two.txt",
                 justification: None,
             },

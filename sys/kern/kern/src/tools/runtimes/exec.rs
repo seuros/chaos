@@ -1,13 +1,17 @@
 /*
-Runtime: unified exec
+Runtime: exec
 
-Handles approval + sandbox orchestration for unified exec requests, delegating to
+Handles approval + sandbox orchestration for managed exec requests, delegating to
 the process manager to spawn PTYs once an ExecRequest is prepared.
 */
 use crate::command_canonicalization::canonicalize_command_for_approval;
 use crate::error::ChaosErr;
 use crate::error::SandboxErr;
+use crate::exec::ExecError;
 use crate::exec::ExecExpiration;
+use crate::exec::ExecProcess;
+use crate::exec::ExecProcessManager;
+use crate::exec::NoopSpawnLifecycle;
 use crate::sandboxing::SandboxPermissions;
 use crate::tools::network_approval::NetworkApprovalMode;
 use crate::tools::network_approval::NetworkApprovalSpec;
@@ -25,10 +29,6 @@ use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::sandbox_override_for_first_attempt;
 use crate::tools::sandboxing::with_cached_approval;
-use crate::unified_exec::NoopSpawnLifecycle;
-use crate::unified_exec::UnifiedExecError;
-use crate::unified_exec::UnifiedExecProcess;
-use crate::unified_exec::UnifiedExecProcessManager;
 use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_pf::NetworkProxy;
@@ -37,7 +37,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
-pub struct UnifiedExecRequest {
+pub struct ExecRequest {
     pub command: Vec<String>,
     pub cwd: PathBuf,
     pub env: HashMap<String, String>,
@@ -51,7 +51,7 @@ pub struct UnifiedExecRequest {
 }
 
 #[derive(serde::Serialize, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct UnifiedExecApprovalKey {
+pub struct ExecApprovalKey {
     pub command: Vec<String>,
     pub cwd: PathBuf,
     pub tty: bool,
@@ -59,17 +59,17 @@ pub struct UnifiedExecApprovalKey {
     pub additional_permissions: Option<PermissionProfile>,
 }
 
-pub struct UnifiedExecRuntime<'a> {
-    manager: &'a UnifiedExecProcessManager,
+pub struct ExecRuntime<'a> {
+    manager: &'a ExecProcessManager,
 }
 
-impl<'a> UnifiedExecRuntime<'a> {
-    pub fn new(manager: &'a UnifiedExecProcessManager) -> Self {
+impl<'a> ExecRuntime<'a> {
+    pub fn new(manager: &'a ExecProcessManager) -> Self {
         Self { manager }
     }
 }
 
-impl Sandboxable for UnifiedExecRuntime<'_> {
+impl Sandboxable for ExecRuntime<'_> {
     fn sandbox_preference(&self) -> SandboxablePreference {
         SandboxablePreference::Auto
     }
@@ -79,11 +79,11 @@ impl Sandboxable for UnifiedExecRuntime<'_> {
     }
 }
 
-impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
-    type ApprovalKey = UnifiedExecApprovalKey;
+impl Approvable<ExecRequest> for ExecRuntime<'_> {
+    type ApprovalKey = ExecApprovalKey;
 
-    fn approval_keys(&self, req: &UnifiedExecRequest) -> Vec<Self::ApprovalKey> {
-        vec![UnifiedExecApprovalKey {
+    fn approval_keys(&self, req: &ExecRequest) -> Vec<Self::ApprovalKey> {
+        vec![ExecApprovalKey {
             command: canonicalize_command_for_approval(&req.command),
             cwd: req.cwd.clone(),
             tty: req.tty,
@@ -94,7 +94,7 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
 
     fn start_approval_async<'b>(
         &'b mut self,
-        req: &'b UnifiedExecRequest,
+        req: &'b ExecRequest,
         ctx: ApprovalCtx<'b>,
     ) -> BoxFuture<'b, ReviewDecision> {
         let keys = self.approval_keys(req);
@@ -106,7 +106,7 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
         let retry_reason = ctx.retry_reason.clone();
         let reason = retry_reason.or_else(|| req.justification.clone());
         Box::pin(async move {
-            with_cached_approval(&session.services, "unified_exec", keys, || async move {
+            with_cached_approval(&session.services, "exec", keys, || async move {
                 let available_decisions = None;
                 session
                     .request_command_approval(
@@ -129,26 +129,23 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
         })
     }
 
-    fn exec_approval_requirement(
-        &self,
-        req: &UnifiedExecRequest,
-    ) -> Option<ExecApprovalRequirement> {
+    fn exec_approval_requirement(&self, req: &ExecRequest) -> Option<ExecApprovalRequirement> {
         Some(req.exec_approval_requirement.clone())
     }
 
-    fn sandbox_mode_for_first_attempt(&self, req: &UnifiedExecRequest) -> SandboxOverride {
+    fn sandbox_mode_for_first_attempt(&self, req: &ExecRequest) -> SandboxOverride {
         sandbox_override_for_first_attempt(req.sandbox_permissions, &req.exec_approval_requirement)
     }
 }
 
-impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRuntime<'a> {
-    fn allows_no_sandbox_retry(&self, req: &UnifiedExecRequest) -> bool {
+impl<'a> ToolRuntime<ExecRequest, ExecProcess> for ExecRuntime<'a> {
+    fn allows_no_sandbox_retry(&self, req: &ExecRequest) -> bool {
         !req.sandbox_permissions.uses_additional_permissions()
     }
 
     fn network_approval_spec(
         &self,
-        req: &UnifiedExecRequest,
+        req: &ExecRequest,
         _ctx: &ToolCtx,
     ) -> Option<NetworkApprovalSpec> {
         req.network.as_ref()?;
@@ -160,10 +157,10 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
 
     async fn run(
         &mut self,
-        req: &UnifiedExecRequest,
+        req: &ExecRequest,
         attempt: &SandboxAttempt<'_>,
         ctx: &ToolCtx,
-    ) -> Result<UnifiedExecProcess, ToolError> {
+    ) -> Result<ExecProcess, ToolError> {
         let base_command = &req.command;
         let session_shell = ctx.session.user_shell();
         let (command, mut env) = maybe_apply_shell_environment(
@@ -196,7 +193,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
             .open_session_with_exec_env(&exec_env, req.tty, Box::new(NoopSpawnLifecycle))
             .await
             .map_err(|err| match err {
-                UnifiedExecError::SandboxDenied { output, .. } => {
+                ExecError::SandboxDenied { output, .. } => {
                     ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                         output: Box::new(output),
                         network_policy_decision: None,

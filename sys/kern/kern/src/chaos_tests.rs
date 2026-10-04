@@ -486,9 +486,7 @@ fn make_test_session_services(
         ),
         mcp_refresh: crate::mcp_registry::McpRefreshActor::spawn(),
         internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
-        unified_exec_manager: UnifiedExecProcessManager::new(
-            config.background_terminal_max_timeout,
-        ),
+        exec_manager: ExecProcessManager::new(config.background_terminal_max_timeout),
         hooks: Hooks::new(HooksConfig::default()),
         rollout: Mutex::new(None),
         user_shell: Arc::new(user_shell),

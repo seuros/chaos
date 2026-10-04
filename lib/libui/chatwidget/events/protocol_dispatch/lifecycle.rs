@@ -194,7 +194,7 @@ impl ChatWidget {
         {
             self.add_boxed_history(cell);
         }
-        self.flush_unified_exec_wait_streak();
+        self.flush_exec_wait_streak();
         if !from_replay {
             self.collect_runtime_metrics_delta();
             let runtime_metrics =
@@ -226,8 +226,8 @@ impl ChatWidget {
         self.update_task_running_state();
         self.running_commands.clear();
         self.suppressed_exec_calls.clear();
-        self.last_unified_wait = None;
-        self.unified_exec_wait_streak = None;
+        self.last_exec_wait = None;
+        self.exec_wait_streak = None;
         self.request_redraw();
 
         let had_pending_steers = !self.pending_steers.is_empty();
@@ -255,8 +255,8 @@ impl ChatWidget {
         self.update_task_running_state();
         self.running_commands.clear();
         self.suppressed_exec_calls.clear();
-        self.last_unified_wait = None;
-        self.unified_exec_wait_streak = None;
+        self.last_exec_wait = None;
+        self.exec_wait_streak = None;
         self.adaptive_chunking.reset();
         self.stream_controller = None;
         self.plan_stream_controller = None;

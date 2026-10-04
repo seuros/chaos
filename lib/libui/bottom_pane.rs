@@ -16,9 +16,9 @@
 use std::path::PathBuf;
 
 use crate::app_event_sender::AppEventSender;
+use crate::bottom_pane::exec_footer::ExecFooter;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
 use crate::bottom_pane::pending_process_approvals::PendingProcessApprovals;
-use crate::bottom_pane::unified_exec_footer::UnifiedExecFooter;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::render::renderable::FlexRenderable;
@@ -90,6 +90,7 @@ pub use list_selection_view::SelectionViewParams;
 pub use list_selection_view::SideContentWidth;
 pub use list_selection_view::popup_content_width;
 pub use list_selection_view::side_by_side_layout_widths;
+mod exec_footer;
 mod paste_burst;
 mod pending_input_preview;
 mod pending_process_approvals;
@@ -97,7 +98,6 @@ pub mod popup_consts;
 mod scroll_state;
 mod selection_popup_common;
 mod textarea;
-mod unified_exec_footer;
 
 /// How long the "press again to quit" hint stays visible.
 ///
@@ -165,11 +165,11 @@ pub struct BottomPane {
 
     /// Inline status indicator shown above the composer while a task is running.
     status: Option<StatusIndicatorWidget>,
-    /// Unified exec session summary source.
+    /// Exec session summary source.
     ///
     /// When a status row exists, this summary is mirrored inline in that row;
     /// when no status row exists, it renders as its own footer row.
-    unified_exec_footer: UnifiedExecFooter,
+    exec_footer: ExecFooter,
     /// Preview of pending steers and queued drafts shown above the composer.
     pending_input_preview: PendingInputPreview,
     /// Inactive threads with pending approval requests.

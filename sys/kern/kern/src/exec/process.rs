@@ -21,8 +21,8 @@ use crate::truncate::formatted_truncate_text;
 use chaos_pty::ProcessHandle;
 use chaos_pty::SpawnedProcess;
 
-use super::UNIFIED_EXEC_OUTPUT_MAX_TOKENS;
-use super::UnifiedExecError;
+use super::EXEC_OUTPUT_MAX_TOKENS;
+use super::ExecError;
 use super::head_tail_buffer::HeadTailBuffer;
 
 pub(crate) trait SpawnLifecycle: std::fmt::Debug + Send + Sync {
@@ -55,7 +55,7 @@ pub(crate) struct OutputHandles {
 }
 
 #[derive(Debug)]
-pub(crate) struct UnifiedExecProcess {
+pub(crate) struct ExecProcess {
     process_handle: ProcessHandle,
     output_rx: broadcast::Receiver<Vec<u8>>,
     output_buffer: OutputBuffer,
@@ -69,7 +69,7 @@ pub(crate) struct UnifiedExecProcess {
     _spawn_lifecycle: SpawnLifecycleHandle,
 }
 
-impl UnifiedExecProcess {
+impl ExecProcess {
     pub(super) fn new(
         process_handle: ProcessHandle,
         initial_output_rx: tokio::sync::broadcast::Receiver<Vec<u8>>,
@@ -173,7 +173,7 @@ impl UnifiedExecProcess {
         self.sandbox_type
     }
 
-    pub(super) async fn check_for_sandbox_denial(&self) -> Result<(), UnifiedExecError> {
+    pub(super) async fn check_for_sandbox_denial(&self) -> Result<(), ExecError> {
         let _ =
             tokio::time::timeout(Duration::from_millis(20), self.output_notify.notified()).await;
 
@@ -192,7 +192,7 @@ impl UnifiedExecProcess {
     pub(super) async fn check_for_sandbox_denial_with_text(
         &self,
         text: &str,
-    ) -> Result<(), UnifiedExecError> {
+    ) -> Result<(), ExecError> {
         let sandbox_type = self.sandbox_type();
         if sandbox_type == SandboxType::None || !self.has_exited() {
             return Ok(());
@@ -206,16 +206,14 @@ impl UnifiedExecProcess {
             ..Default::default()
         };
         if is_likely_sandbox_denied(sandbox_type, &exec_output) {
-            let snippet = formatted_truncate_text(
-                text,
-                TruncationPolicy::Tokens(UNIFIED_EXEC_OUTPUT_MAX_TOKENS),
-            );
+            let snippet =
+                formatted_truncate_text(text, TruncationPolicy::Tokens(EXEC_OUTPUT_MAX_TOKENS));
             let message = if snippet.is_empty() {
                 format!("Process exited with code {exit_code}")
             } else {
                 snippet
             };
-            return Err(UnifiedExecError::sandbox_denied(message, exec_output));
+            return Err(ExecError::sandbox_denied(message, exec_output));
         }
         Ok(())
     }
@@ -224,7 +222,7 @@ impl UnifiedExecProcess {
         spawned: SpawnedProcess,
         sandbox_type: SandboxType,
         spawn_lifecycle: SpawnLifecycleHandle,
-    ) -> Result<Self, UnifiedExecError> {
+    ) -> Result<Self, ExecError> {
         let SpawnedProcess {
             session: process_handle,
             stdout_rx,
@@ -267,7 +265,7 @@ impl UnifiedExecProcess {
     }
 }
 
-impl Drop for UnifiedExecProcess {
+impl Drop for ExecProcess {
     fn drop(&mut self) {
         self.terminate();
     }

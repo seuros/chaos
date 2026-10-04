@@ -212,7 +212,7 @@ async fn collect_tools() -> Result<Vec<String>> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_tools_always_present() -> Result<()> {
+async fn exec_tools_always_present() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let tools = collect_tools().await?;

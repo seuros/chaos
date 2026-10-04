@@ -105,6 +105,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::CatalogModuleHandler;
     use crate::tools::handlers::CompactionControlHandler;
     use crate::tools::handlers::DynamicToolHandler;
+    use crate::tools::handlers::ExecHandler;
     use crate::tools::handlers::HalluacinateHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
@@ -123,7 +124,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::SwitchModeHandler;
     use crate::tools::handlers::TestSyncHandler;
     use crate::tools::handlers::ToolGroupsHandler;
-    use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
     use chaos_parrot::sanitize::parse_tool_input_schema;
     use chaos_traits::catalog::CatalogRegistration;
@@ -139,7 +139,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     }
 
     let shell_handler = Arc::new(ShellHandler);
-    let unified_exec_handler = Arc::new(UnifiedExecHandler);
+    let exec_handler = Arc::new(ExecHandler);
     let plan_handler = Arc::new(PlanHandler);
     let parent_effort_handler = Arc::new(ParentEffortHandler);
     let apply_patch_handler = Arc::new(ApplyPatchHandler);
@@ -193,7 +193,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 /*supports_parallel_tool_calls*/ true,
             );
         }
-        ConfigShellToolType::UnifiedExec => {
+        ConfigShellToolType::Exec => {
             push_tool_spec(
                 &mut builder,
                 create_exec_command_tool(
@@ -207,8 +207,8 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 create_write_stdin_tool(),
                 /*supports_parallel_tool_calls*/ false,
             );
-            builder.register_handler("exec_command", unified_exec_handler.clone());
-            builder.register_handler("write_stdin", unified_exec_handler);
+            builder.register_handler("exec_command", exec_handler.clone());
+            builder.register_handler("write_stdin", exec_handler);
         }
         ConfigShellToolType::Disabled => {
             // Do nothing.

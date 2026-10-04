@@ -43,18 +43,18 @@ pub(super) struct RunningCommand {
     pub(super) source: ExecCommandSource,
 }
 
-pub(super) struct UnifiedExecProcessSummary {
+pub(super) struct ExecProcessSummary {
     pub(super) key: String,
     pub(super) call_id: String,
     pub(super) command_display: String,
     pub(super) recent_chunks: Vec<String>,
 }
 
-pub(super) struct UnifiedExecWaitState {
+pub(super) struct ExecWaitState {
     pub(super) command_display: String,
 }
 
-impl UnifiedExecWaitState {
+impl ExecWaitState {
     pub(super) fn new(command_display: String) -> Self {
         Self { command_display }
     }
@@ -65,12 +65,12 @@ impl UnifiedExecWaitState {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct UnifiedExecWaitStreak {
+pub(super) struct ExecWaitStreak {
     pub(super) process_id: String,
     pub(super) command_display: Option<String>,
 }
 
-impl UnifiedExecWaitStreak {
+impl ExecWaitStreak {
     pub(super) fn new(process_id: String, command_display: Option<String>) -> Self {
         Self {
             process_id,
@@ -86,10 +86,10 @@ impl UnifiedExecWaitStreak {
     }
 }
 
-pub(super) fn is_unified_exec_source(source: ExecCommandSource) -> bool {
+pub(super) fn is_exec_source(source: ExecCommandSource) -> bool {
     matches!(
         source,
-        ExecCommandSource::UnifiedExecStartup | ExecCommandSource::UnifiedExecInteraction
+        ExecCommandSource::ExecStartup | ExecCommandSource::ExecInteraction
     )
 }
 

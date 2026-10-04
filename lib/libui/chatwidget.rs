@@ -147,6 +147,9 @@ mod core;
 mod external_editor;
 mod status_script;
 pub use self::core::ActiveCellTranscriptKey;
+use self::core::ExecProcessSummary;
+use self::core::ExecWaitState;
+use self::core::ExecWaitStreak;
 pub use self::core::ExternalEditorState;
 use self::core::NUDGE_MODEL_SLUG;
 use self::core::Notification;
@@ -159,9 +162,6 @@ use self::core::RateLimitWarningState;
 use self::core::RenderedUserMessageEvent;
 use self::core::RunningCommand;
 use self::core::StatusIndicatorState;
-use self::core::UnifiedExecProcessSummary;
-use self::core::UnifiedExecWaitState;
-use self::core::UnifiedExecWaitStreak;
 pub use self::core::UserMessage;
 pub use self::core::create_initial_user_message;
 pub use self::core::get_limits_duration;
@@ -288,11 +288,11 @@ pub struct ChatWidget {
     running_commands: HashMap<String, RunningCommand>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
     suppressed_exec_calls: HashSet<String>,
-    last_unified_wait: Option<UnifiedExecWaitState>,
-    unified_exec_wait_streak: Option<UnifiedExecWaitStreak>,
+    last_exec_wait: Option<ExecWaitState>,
+    exec_wait_streak: Option<ExecWaitStreak>,
     turn_sleep_inhibitor: SleepInhibitor,
     task_complete_pending: bool,
-    unified_exec_processes: Vec<UnifiedExecProcessSummary>,
+    exec_processes: Vec<ExecProcessSummary>,
     /// Tracks whether chaos-kern currently considers an agent turn to be in progress.
     ///
     /// This is kept separate from `mcp_startup_status` so that MCP startup progress (or completion)
@@ -467,11 +467,11 @@ impl ChatWidget {
             running_commands: HashMap::new(),
             pending_collab_spawn_requests: HashMap::new(),
             suppressed_exec_calls: HashSet::new(),
-            last_unified_wait: None,
-            unified_exec_wait_streak: None,
+            last_exec_wait: None,
+            exec_wait_streak: None,
             turn_sleep_inhibitor: SleepInhibitor::new(true),
             task_complete_pending: false,
-            unified_exec_processes: Vec::new(),
+            exec_processes: Vec::new(),
             agent_turn_running: false,
             mcp_startup_status: None,
             interrupts: InterruptManager::new(),

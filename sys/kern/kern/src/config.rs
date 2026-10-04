@@ -74,11 +74,11 @@ pub(crate) use crate::config_loader::McpServerRequirement;
 #[cfg(test)]
 pub(crate) use crate::config_loader::Sourced;
 #[cfg(test)]
+pub(crate) use crate::exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
+#[cfg(test)]
 pub(crate) use crate::model_provider_info::built_in_model_providers;
 #[cfg(test)]
 pub(crate) use crate::protocol::ReadOnlyAccess;
-#[cfg(test)]
-pub(crate) use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
 pub use chaos_pf::NetworkProxyAuditMetadata;
 pub use chaos_sysctl::Constrained;
 pub use chaos_sysctl::ConstraintError;
@@ -327,7 +327,7 @@ pub(crate) fn test_config() -> Config {
 pub struct Permissions {
     /// Approval policy for executing commands.
     pub approval_policy: Constrained<ApprovalPolicy>,
-    /// Effective sandbox policy used for shell/unified exec.
+    /// Effective sandbox policy used for exec.
     pub sandbox_policy: Constrained<SandboxPolicy>,
     /// Effective filesystem sandbox policy, including entries that cannot yet
     /// be fully represented by the legacy [`SandboxPolicy`] projection.
@@ -346,7 +346,7 @@ pub struct Permissions {
     /// requests are rejected, and omitting `login` defaults to a non-login
     /// shell.
     pub allow_login_shell: bool,
-    /// Policy used to build process environments for shell/unified exec.
+    /// Policy used to build process environments for exec.
     pub shell_environment_policy: ShellEnvironmentPolicy,
     /// Optional macOS seatbelt extension profile used to extend default
     /// seatbelt permissions when running under seatbelt.

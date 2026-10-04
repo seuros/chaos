@@ -11,7 +11,6 @@ use crate::tools::spec::tool_builders::create_run_synopsis_tool;
 use crate::tools::spec::tool_builders::create_search_session_history_tool;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::ModelInfo;
-use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_parrot::sanitize::AdditionalProperties;
 use chaos_parrot::sanitize::JsonSchema;
@@ -54,7 +53,7 @@ fn internal_resource_and_task_schemas_allow_omitted_server() {
             .contains(&json!("server"))
     );
     for schema in [
-        schemas::unified_exec_output_schema(),
+        schemas::exec_output_schema(),
         schemas::spawn_agent_output_schema(),
     ] {
         assert!(schema["properties"].get("task_server").is_none());
@@ -108,7 +107,6 @@ fn capability_group_test_config() -> ToolsConfig {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     })
 }
@@ -461,7 +459,6 @@ fn plan_mode_hides_destructive_mcp_tools_using_spec_defaults() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -531,7 +528,6 @@ fn non_mutating_mode_hides_mutating_tools_but_keeps_mode_switching() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     })
     .with_mode_policy(
@@ -774,7 +770,7 @@ fn shell_tool_name(config: &ToolsConfig) -> Option<&'static str> {
     match config.shell_type {
         ConfigShellToolType::Default => Some("shell"),
         ConfigShellToolType::Local => Some("local_shell"),
-        ConfigShellToolType::UnifiedExec => None,
+        ConfigShellToolType::Exec => None,
         ConfigShellToolType::Disabled => None,
         ConfigShellToolType::ShellCommand => Some("shell_command"),
     }
@@ -849,9 +845,9 @@ fn model_info_from_models_json(slug: &str) -> ModelInfo {
 }
 
 #[test]
-fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
+fn test_full_toolset_specs_for_codex_style_exec_web_search_model() {
     // Use gpt-5-codex as a representative codex-style model profile; this test is about the
-    // tool capability mix (unified exec + apply_patch + live web search), not OpenAI branding.
+    // tool capability mix (exec + apply_patch + live web search), not OpenAI branding.
     let model_info = model_info_from_models_json(REPRESENTATIVE_CODE_EDIT_MODEL_SLUG);
 
     let available_models = Vec::new();
@@ -862,7 +858,6 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&config, None, None, &[]).build();
@@ -999,7 +994,6 @@ fn dynamic_parent_effort_tool_is_opt_in() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Disabled),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1024,7 +1018,6 @@ fn subagents_cannot_receive_dynamic_parent_effort_tool() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Disabled),
         session_source: source.clone(),
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     })
     .with_dynamic_parent_effort(true, &source);
@@ -1045,7 +1038,6 @@ fn arsenal_tools_keep_closed_object_schemas() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1082,7 +1074,6 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1127,7 +1118,6 @@ fn test_build_specs_collab_tools_enabled() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1159,7 +1149,6 @@ fn attested_review_tools_follow_verdict_capability_and_mode() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let verdict_tools = HashMap::from([(
@@ -1210,7 +1199,6 @@ fn test_build_specs_minion_jobs_allowed_enables_minion_jobs_and_collab_tools() {
         minion_jobs_allowed: true,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1240,7 +1228,6 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1277,7 +1264,6 @@ fn test_build_specs_minion_job_worker_tools_enabled() {
         session_source: SessionSource::SubAgent(SubAgentSource::Other(
             "minion_job:test".to_string(),
         )),
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1309,7 +1295,6 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1334,7 +1319,6 @@ fn request_permissions_requires_advertised_approval_policy() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1348,7 +1332,6 @@ fn request_permissions_requires_advertised_approval_policy() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1376,7 +1359,6 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1399,7 +1381,6 @@ fn assert_model_tools(
         minion_jobs_allowed: false,
         web_search_mode,
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let router = ToolRouter::from_config(
@@ -1528,7 +1509,7 @@ fn assert_default_model_tool_cases(cases: &[ModelToolCase]) {
     }
 }
 
-fn assert_unified_exec_web_search_model_tool_cases(cases: &[ModelToolCase]) {
+fn assert_exec_web_search_model_tool_cases(cases: &[ModelToolCase]) {
     for case in cases {
         assert_model_tools(
             case.model_slug,
@@ -1551,7 +1532,6 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1582,7 +1562,6 @@ fn web_search_mode_live_sets_external_web_access_true() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1626,7 +1605,6 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     })
     .with_web_search_config(Some(web_search_config.clone()));
@@ -1663,7 +1641,6 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1698,7 +1675,6 @@ fn internal_resource_tools_are_available_without_mcp_servers() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1725,7 +1701,6 @@ fn compaction_control_tool_is_opt_in() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (disabled, _) = build_specs(&base, None, None, &[]).build();
@@ -1756,7 +1731,6 @@ fn session_title_tool_is_opt_in() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (disabled, _) = build_specs(&base, None, None, &[]).build();
@@ -1809,7 +1783,6 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
@@ -1839,7 +1812,6 @@ fn spawn_agent_tool_description_uses_current_role_names() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1877,7 +1849,6 @@ fn run_synopsis_tool_exposes_agent_jobs_and_control_flow_modes() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -1953,8 +1924,8 @@ fn test_build_specs_default_toolsets_for_model_profiles() {
 }
 
 #[test]
-fn test_build_specs_unified_exec_web_search_toolsets_for_code_edit_profiles() {
-    assert_unified_exec_web_search_model_tool_cases(&[
+fn test_build_specs_exec_web_search_toolsets_for_code_edit_profiles() {
+    assert_exec_web_search_model_tool_cases(&[
         ModelToolCase {
             model_slug: "gpt-5-codex",
             expected_tail: ModelToolTail::CodeEdit,
@@ -1983,7 +1954,6 @@ fn test_build_specs_default_shell_present() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
@@ -2009,7 +1979,6 @@ fn test_parallel_support_flags() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -2041,7 +2010,6 @@ fn test_test_model_info_includes_sync_tool() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -2077,7 +2045,6 @@ fn test_build_specs_mcp_tools_converted() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(
@@ -2169,7 +2136,6 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -2217,7 +2183,6 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -2323,7 +2288,6 @@ fn test_mcp_tool_integer_preserved() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -2411,7 +2375,7 @@ fn kernel_integer_tool_fields_are_advertised_as_integer() {
     };
     assert_integer(&tool.parameters, "wait_ms");
 
-    let output = super::schemas::unified_exec_output_schema();
+    let output = super::schemas::exec_output_schema();
     assert_eq!(output["properties"]["wall_time_seconds"]["type"], "number");
     assert_eq!(output["properties"]["exit_code"]["type"], "integer");
     assert_eq!(output["properties"]["session_id"]["type"], "integer");
@@ -2433,7 +2397,6 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -2491,7 +2454,6 @@ fn test_mcp_tool_anyof_defaults_to_string() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
 
@@ -2661,7 +2623,6 @@ fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
         minion_jobs_allowed: false,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        vfs_policy: &VfsPolicy::unrestricted(),
         collab_enabled: true,
     });
     let (tools, _) = build_specs(

@@ -450,8 +450,8 @@ impl Config {
         }
         let background_terminal_max_timeout = cfg
             .background_terminal_max_timeout
-            .unwrap_or(crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS)
-            .max(crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS);
+            .unwrap_or(crate::exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS)
+            .max(crate::exec::MIN_EMPTY_YIELD_TIME_MS);
 
         let forced_chatgpt_workspace_id =
             cfg.forced_chatgpt_workspace_id.as_ref().and_then(|value| {

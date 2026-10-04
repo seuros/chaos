@@ -12,21 +12,21 @@ mod cells_plan;
 mod trait_def;
 
 pub use cells_basic::AgentMessageCell;
+pub use cells_basic::ExecInteractionCell;
 pub use cells_basic::PlainHistoryCell;
 pub use cells_basic::PrefixedWrappedHistoryCell;
 pub use cells_basic::ReasoningSummaryCell;
-pub use cells_basic::UnifiedExecInteractionCell;
 pub use cells_basic::UserHistoryCell;
+pub use cells_basic::new_exec_interaction;
 pub use cells_basic::new_reasoning_summary_block;
-pub use cells_basic::new_unified_exec_interaction;
 pub use cells_basic::new_user_prompt;
 
 pub use cells_composite::ApprovalDecisionActor;
 pub use cells_composite::CompositeHistoryCell;
+pub use cells_composite::ExecProcessDetails;
 pub use cells_composite::SessionInfoCell;
-pub use cells_composite::UnifiedExecProcessDetails;
+pub use cells_composite::new_exec_processes_output;
 pub use cells_composite::new_session_info;
-pub use cells_composite::new_unified_exec_processes_output;
 
 pub(super) use cells_image::CompletedMcpToolCallWithImageOutput;
 

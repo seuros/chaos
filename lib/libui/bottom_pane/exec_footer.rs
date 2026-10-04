@@ -1,4 +1,4 @@
-//! Renders and formats unified-exec background session summary text.
+//! Renders and formats exec background session summary text.
 //!
 //! This module provides one canonical summary string so the bottom pane can
 //! either render a dedicated footer row or reuse the same text inline in the
@@ -13,12 +13,12 @@ use ratatui::widgets::Paragraph;
 use crate::live_wrap::take_prefix_by_width;
 use crate::render::renderable::Renderable;
 
-/// Tracks active unified-exec processes and renders a compact summary.
-pub struct UnifiedExecFooter {
+/// Tracks active exec processes and renders a compact summary.
+pub struct ExecFooter {
     processes: Vec<String>,
 }
 
-impl UnifiedExecFooter {
+impl ExecFooter {
     pub fn new() -> Self {
         Self {
             processes: Vec::new(),
@@ -67,7 +67,7 @@ impl UnifiedExecFooter {
     }
 }
 
-impl Renderable for UnifiedExecFooter {
+impl Renderable for ExecFooter {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;

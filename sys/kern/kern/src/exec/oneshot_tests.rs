@@ -4,6 +4,80 @@ use pretty_assertions::assert_eq;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
+#[tokio::test]
+async fn direct_argv_preserves_argument_boundaries_and_shell_metacharacters() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let arguments = [
+        "two words",
+        "$HOME",
+        "$(printf expanded)",
+        "semi;colon",
+        "'\"",
+    ];
+    let output = process_exec_tool_call(
+        ExecParams {
+            command: ["/usr/bin/printf", "%s\n"]
+                .into_iter()
+                .chain(arguments)
+                .map(str::to_owned)
+                .collect(),
+            cwd: cwd.clone(),
+            expiration: 2_000.into(),
+            env: HashMap::new(),
+            network: None,
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            justification: None,
+            arg0: None,
+        },
+        &VfsPolicy::from(&SandboxPolicy::RootAccess),
+        SocketPolicy::Enabled,
+        &cwd,
+        Path::new("/alcatraz"),
+        None,
+    )
+    .await?;
+
+    assert_eq!(output.stdout.text, format!("{}\n", arguments.join("\n")));
+    assert!(output.stderr.text.is_empty());
+    assert_eq!(output.exit_code, 0);
+    assert!(!output.timed_out);
+    Ok(())
+}
+
+#[tokio::test]
+async fn oneshot_preserves_environment_separate_streams_and_nonzero_exit() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let output = process_exec_tool_call(
+        ExecParams {
+            command: vec![
+                "/bin/sh".to_string(),
+                "-c".to_string(),
+                "printf '%s' \"$EXEC_TEST_VALUE\"; printf '%s' error-stream >&2; exit 7"
+                    .to_string(),
+            ],
+            cwd: cwd.clone(),
+            expiration: 2_000.into(),
+            env: HashMap::from([("EXEC_TEST_VALUE".to_string(), "literal $value".to_string())]),
+            network: None,
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            justification: None,
+            arg0: None,
+        },
+        &VfsPolicy::from(&SandboxPolicy::RootAccess),
+        SocketPolicy::Enabled,
+        &cwd,
+        Path::new("/alcatraz"),
+        None,
+    )
+    .await?;
+
+    assert_eq!(output.stdout.text, "literal $value");
+    assert_eq!(output.stderr.text, "error-stream");
+    assert_eq!(output.exit_code, 7);
+    assert!(!output.timed_out);
+    Ok(())
+}
+
 fn make_exec_output(
     exit_code: i32,
     stdout: &str,

@@ -3,11 +3,11 @@ use super::*;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::chaos::make_session_and_context;
+use crate::exec::ExecCommandRequest;
+use crate::exec::WriteStdinRequest;
 use crate::protocol::ApprovalPolicy;
 use crate::protocol::SandboxPolicy;
 use crate::tools::context::ExecCommandToolOutput;
-use crate::unified_exec::ExecCommandRequest;
-use crate::unified_exec::WriteStdinRequest;
 use core_test_support::skip_if_sandbox;
 use std::sync::Arc;
 use tokio::time::Duration;
@@ -28,18 +28,13 @@ async fn exec_command(
     turn: &Arc<TurnContext>,
     cmd: &str,
     yield_time_ms: u64,
-) -> Result<ExecCommandToolOutput, UnifiedExecError> {
-    let context =
-        UnifiedExecContext::new(Arc::clone(session), Arc::clone(turn), "call".to_string());
-    let process_id = session
-        .services
-        .unified_exec_manager
-        .allocate_process_id()
-        .await;
+) -> Result<ExecCommandToolOutput, ExecError> {
+    let context = ExecContext::new(Arc::clone(session), Arc::clone(turn), "call".to_string());
+    let process_id = session.services.exec_manager.allocate_process_id().await;
 
     session
         .services
-        .unified_exec_manager
+        .exec_manager
         .exec_command(
             ExecCommandRequest {
                 command: vec!["bash".to_string(), "-lc".to_string(), cmd.to_string()],
@@ -65,10 +60,10 @@ async fn write_stdin(
     process_id: i32,
     input: &str,
     yield_time_ms: u64,
-) -> Result<ExecCommandToolOutput, UnifiedExecError> {
+) -> Result<ExecCommandToolOutput, ExecError> {
     session
         .services
-        .unified_exec_manager
+        .exec_manager
         .write_stdin(WriteStdinRequest {
             process_id,
             input,
@@ -81,11 +76,11 @@ async fn write_stdin(
 #[test]
 fn push_chunk_preserves_prefix_and_suffix() {
     let mut buffer = HeadTailBuffer::default();
-    buffer.push_chunk(vec![b'a'; UNIFIED_EXEC_OUTPUT_MAX_BYTES]);
+    buffer.push_chunk(vec![b'a'; EXEC_OUTPUT_MAX_BYTES]);
     buffer.push_chunk(vec![b'b']);
     buffer.push_chunk(vec![b'c']);
 
-    assert_eq!(buffer.retained_bytes(), UNIFIED_EXEC_OUTPUT_MAX_BYTES);
+    assert_eq!(buffer.retained_bytes(), EXEC_OUTPUT_MAX_BYTES);
     let snapshot = buffer.snapshot_chunks();
 
     let first = snapshot.first().expect("expected at least one chunk");
@@ -103,7 +98,7 @@ fn push_chunk_preserves_prefix_and_suffix() {
 #[test]
 fn head_tail_buffer_default_preserves_prefix_and_suffix() {
     let mut buffer = HeadTailBuffer::default();
-    buffer.push_chunk(vec![b'a'; UNIFIED_EXEC_OUTPUT_MAX_BYTES]);
+    buffer.push_chunk(vec![b'a'; EXEC_OUTPUT_MAX_BYTES]);
     buffer.push_chunk(b"bc".to_vec());
 
     let rendered = buffer.to_bytes();
@@ -112,7 +107,7 @@ fn head_tail_buffer_default_preserves_prefix_and_suffix() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_persists_across_requests() -> anyhow::Result<()> {
+async fn exec_persists_across_requests() -> anyhow::Result<()> {
     skip_if_sandbox!(Ok(()));
 
     let (session, turn) = test_session_and_turn().await;
@@ -144,7 +139,7 @@ async fn unified_exec_persists_across_requests() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
+async fn multi_exec_sessions() -> anyhow::Result<()> {
     skip_if_sandbox!(Ok(()));
 
     let (session, turn) = test_session_and_turn().await;
@@ -187,10 +182,10 @@ async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn unified_exec_timeouts() -> anyhow::Result<()> {
+async fn exec_yield_timeouts_preserve_the_process() -> anyhow::Result<()> {
     skip_if_sandbox!(Ok(()));
 
-    const TEST_VAR_VALUE: &str = "unified_exec_var_123";
+    const TEST_VAR_VALUE: &str = "exec_var_123";
 
     let (session, turn) = test_session_and_turn().await;
 
@@ -230,7 +225,7 @@ async fn unified_exec_timeouts() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
+async fn exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
     let buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
     let output = Arc::new(tokio::sync::Notify::new());
     let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -255,7 +250,7 @@ async fn unified_exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
             drop(pause);
         })
     };
-    let tail = UnifiedExecProcessManager::collect_output_until_deadline(
+    let tail = ExecProcessManager::collect_output_until_deadline(
         &buffer,
         &output,
         &closed,
@@ -271,7 +266,7 @@ async fn unified_exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
     closed.store(false, std::sync::atomic::Ordering::Release);
     let tail = tokio::time::timeout(
         Duration::from_secs(1),
-        UnifiedExecProcessManager::collect_output_until_deadline(
+        ExecProcessManager::collect_output_until_deadline(
             &buffer,
             &output,
             &closed,
@@ -296,14 +291,14 @@ async fn unified_exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
     });
 
     let started = tokio::time::Instant::now();
-    let response = exec_command(&session, &turn, "sleep 1 && echo unified-exec-done", 250).await?;
+    let response = exec_command(&session, &turn, "sleep 1 && echo exec-done", 250).await?;
 
     assert!(
         started.elapsed() >= Duration::from_secs(2),
-        "pause should block the unified exec yield timeout"
+        "pause should block the exec yield timeout"
     );
     assert!(
-        response.truncated_output().contains("unified-exec-done"),
+        response.truncated_output().contains("exec-done"),
         "exec_command should wait for output after the pause lifts"
     );
     assert!(
@@ -342,7 +337,7 @@ async fn completed_commands_do_not_persist_sessions() -> anyhow::Result<()> {
     assert!(
         session
             .services
-            .unified_exec_manager
+            .exec_manager
             .process_store
             .lock()
             .await
@@ -371,7 +366,7 @@ async fn reusing_completed_process_returns_unknown_process() -> anyhow::Result<(
         .expect_err("expected unknown process error");
 
     match err {
-        UnifiedExecError::UnknownProcessId { process_id: err_id } => {
+        ExecError::UnknownProcessId { process_id: err_id } => {
             assert_eq!(err_id, process_id, "process id should match request");
         }
         other => panic!("expected UnknownProcessId, got {other:?}"),
@@ -380,7 +375,7 @@ async fn reusing_completed_process_returns_unknown_process() -> anyhow::Result<(
     assert!(
         session
             .services
-            .unified_exec_manager
+            .exec_manager
             .process_store
             .lock()
             .await

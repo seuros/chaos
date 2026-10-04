@@ -44,7 +44,7 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
     // An authoritative catalog prevents even background provider discovery in CI.
     let catalog_path = home.join("models.json");
     let mut model = chaos_kern::test_support::test_model_info("claude-haiku-4-5");
-    model.shell_type = chaos_ipc::openai_models::ConfigShellToolType::UnifiedExec;
+    model.shell_type = chaos_ipc::openai_models::ConfigShellToolType::Exec;
     model.experimental_supported_tools = vec!["read_file".to_string()];
     std::fs::write(
         &catalog_path,

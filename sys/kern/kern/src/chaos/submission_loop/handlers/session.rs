@@ -21,7 +21,7 @@ pub async fn interrupt(sess: &Arc<Session>) {
 }
 
 pub async fn clean_background_terminals(sess: &Arc<Session>) {
-    sess.close_unified_exec_processes().await;
+    sess.close_exec_processes().await;
 }
 
 pub async fn override_turn_context(sess: &Session, sub_id: String, updates: SessionSettingsUpdate) {
@@ -122,10 +122,7 @@ pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
     }
     sess.services.internal_task_store.observer_cancel.cancel();
     sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
-    sess.services
-        .unified_exec_manager
-        .terminate_all_processes()
-        .await;
+    sess.services.exec_manager.terminate_all_processes().await;
     if let Err(error) = sess.services.mcp_refresh.shutdown().await {
         warn!(%error, "failed to stop MCP refresh actor during session shutdown");
     }

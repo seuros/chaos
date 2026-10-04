@@ -36,7 +36,7 @@ impl BottomPane {
             disable_paste_burst,
             is_task_running: false,
             status: None,
-            unified_exec_footer: UnifiedExecFooter::new(),
+            exec_footer: ExecFooter::new(),
             pending_input_preview: PendingInputPreview::new(),
             pending_process_approvals: PendingProcessApprovals::new(),
             esc_backtrack_hint: false,
@@ -581,12 +581,12 @@ impl BottomPane {
         self.pending_process_approvals.processes()
     }
 
-    /// Update the unified-exec process set and refresh whichever summary surface is active.
+    /// Update the exec process set and refresh whichever summary surface is active.
     ///
     /// The summary may be displayed inline in the status row or as a dedicated
     /// footer row depending on whether a status indicator is currently visible.
-    pub fn set_unified_exec_processes(&mut self, processes: Vec<String>) {
-        if self.unified_exec_footer.set_processes(processes) {
+    pub fn set_exec_processes(&mut self, processes: Vec<String>) {
+        if self.exec_footer.set_processes(processes) {
             self.sync_status_inline_message();
             self.request_redraw();
         }
@@ -603,17 +603,17 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    /// Copy unified-exec summary text into the active status row, if any.
+    /// Copy exec summary text into the active status row, if any.
     ///
     /// This keeps status-line inline text synchronized without forcing the
-    /// standalone unified-exec footer row to be visible.
+    /// standalone exec footer row to be visible.
     fn sync_status_inline_message(&mut self) {
         if let Some(status) = self.status.as_mut() {
             let mut parts = Vec::new();
             if let Some(progress) = self.turn_progress_message.as_ref() {
                 parts.push(progress.clone());
             }
-            if let Some(exec_summary) = self.unified_exec_footer.summary_text() {
+            if let Some(exec_summary) = self.exec_footer.summary_text() {
                 parts.push(exec_summary);
             }
             status.update_inline_message((!parts.is_empty()).then(|| parts.join(" · ")));
@@ -900,17 +900,13 @@ impl BottomPane {
             }
             // Avoid double-surfacing the same summary and avoid adding an extra
             // row while the status line is already visible.
-            if self.status.is_none() && !self.unified_exec_footer.is_empty() {
-                flex.push(
-                    /*flex*/ 0,
-                    RenderableItem::Borrowed(&self.unified_exec_footer),
-                );
+            if self.status.is_none() && !self.exec_footer.is_empty() {
+                flex.push(/*flex*/ 0, RenderableItem::Borrowed(&self.exec_footer));
             }
             let has_pending_process_approvals = !self.pending_process_approvals.is_empty();
             let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty();
-            let has_status_or_footer =
-                self.status.is_some() || !self.unified_exec_footer.is_empty();
+            let has_status_or_footer = self.status.is_some() || !self.exec_footer.is_empty();
             let has_inline_previews = has_pending_process_approvals || has_pending_input;
             if has_inline_previews && has_status_or_footer {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));

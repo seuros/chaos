@@ -209,11 +209,11 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
+async fn exec_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
-    let call_id = "unified-exec-empty-script-collab";
+    let call_id = "exec-empty-script-collab";
     let args = json!({
         "cmd": "",
         "yield_time_ms": 1_000,
@@ -222,17 +222,17 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
     mount_sse_once(
         &server,
         sse(vec![
-            ev_response_created("resp-empty-unified-1"),
+            ev_response_created("resp-empty-exec-1"),
             ev_function_call(call_id, "exec_command", &serde_json::to_string(&args)?),
-            ev_completed("resp-empty-unified-1"),
+            ev_completed("resp-empty-exec-1"),
         ]),
     )
     .await;
     let results_mock = mount_sse_once(
         &server,
         sse(vec![
-            ev_assistant_message("msg-empty-unified-1", "done"),
-            ev_completed("resp-empty-unified-2"),
+            ev_assistant_message("msg-empty-exec-1", "done"),
+            ev_completed("resp-empty-exec-2"),
         ]),
     )
     .await;
@@ -240,7 +240,7 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
     let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
     submit_user_turn(
         &test,
-        "run empty unified exec command",
+        "run empty exec command",
         ApprovalPolicy::Interactive,
         SandboxPolicy::RootAccess,
         Some(collaboration_mode),
@@ -309,11 +309,11 @@ async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
+async fn exec_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
-    let call_id = "unified-exec-whitespace-script-collab";
+    let call_id = "exec-whitespace-script-collab";
     let args = json!({
         "cmd": " \n \t",
         "yield_time_ms": 1_000,
@@ -322,17 +322,17 @@ async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic()
     mount_sse_once(
         &server,
         sse(vec![
-            ev_response_created("resp-whitespace-unified-1"),
+            ev_response_created("resp-whitespace-exec-1"),
             ev_function_call(call_id, "exec_command", &serde_json::to_string(&args)?),
-            ev_completed("resp-whitespace-unified-1"),
+            ev_completed("resp-whitespace-exec-1"),
         ]),
     )
     .await;
     let results_mock = mount_sse_once(
         &server,
         sse(vec![
-            ev_assistant_message("msg-whitespace-unified-1", "done"),
-            ev_completed("resp-whitespace-unified-2"),
+            ev_assistant_message("msg-whitespace-exec-1", "done"),
+            ev_completed("resp-whitespace-exec-2"),
         ]),
     )
     .await;
@@ -340,7 +340,7 @@ async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic()
     let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
     submit_user_turn(
         &test,
-        "run whitespace unified exec command",
+        "run whitespace exec command",
         ApprovalPolicy::Interactive,
         SandboxPolicy::RootAccess,
         Some(collaboration_mode),

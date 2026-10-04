@@ -27,6 +27,11 @@ should. There is no patch level; the build timestamp is the patch.
   or mismatched mTLS identities now fail exporter initialization.
 
 ### Changed
+- Consolidate managed sessions and one-shot process execution under `exec`, retaining
+  PTYs, pipes, stdin, background tracking, direct argv, hard timeouts, and cancellation.
+  Shell model metadata now uses `exec`; execution-source tags are `exec_startup` and
+  `exec_interaction`, without compatibility aliases. Tool names `exec_command` and
+  `write_stdin` are unchanged.
 - Replace FFF-backed file-search sessions with a single root-scoped walker and
   local fuzzy ranking. Content grep uses byte regexes and ignore-aware traversal
   without a Git backend or external binary.

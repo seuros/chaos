@@ -76,7 +76,7 @@ async fn shell_command_uses_configured_environment_without_snapshot_files() -> R
 
 #[cfg_attr(not(target_os = "linux"), ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_uses_configured_environment_without_snapshot_files() -> Result<()> {
+async fn exec_uses_configured_environment_without_snapshot_files() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness =
         TestChaosHarness::with_builder(test_chaos().with_model(TEST_MODEL).with_config(|config| {
@@ -90,7 +90,7 @@ async fn unified_exec_uses_configured_environment_without_snapshot_files() -> Re
 
     let output = run_tool_turn(
         &harness,
-        "unified-shell-environment",
+        "exec-shell-environment",
         "exec_command",
         json!({
             "cmd": "printf '%s' \"$CHAOS_ENVIRONMENT_TEST\"",

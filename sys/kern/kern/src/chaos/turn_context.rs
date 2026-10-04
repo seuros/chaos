@@ -152,7 +152,6 @@ impl TurnContext {
             minion_jobs_allowed: config.minion_jobs_allowed,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
-            vfs_policy: &self.vfs_policy,
             collab_enabled: config.collab_enabled,
         })
         .with_agent_compaction_control(matches!(
@@ -167,7 +166,6 @@ impl TurnContext {
             &self.session_source,
         )
         .with_dynamic_parent_effort(config.dynamic_parent_effort, &self.session_source)
-        .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
         .with_agent_roles(config.agent_roles.clone())
@@ -515,7 +513,6 @@ pub(super) fn make_turn_context(
         minion_jobs_allowed: per_turn_config.minion_jobs_allowed,
         web_search_mode: Some(per_turn_config.web_search_mode.value()),
         session_source: session_source.clone(),
-        vfs_policy: &session_configuration.vfs_policy,
         collab_enabled: per_turn_config.collab_enabled,
     })
     .with_agent_compaction_control(matches!(

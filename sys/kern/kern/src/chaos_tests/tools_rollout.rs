@@ -80,7 +80,7 @@ async fn record_model_warning_appends_user_message() {
     let (session, turn_context) = make_session_and_context().await;
 
     session
-        .record_model_warning("too many unified exec processes", &turn_context)
+        .record_model_warning("too many exec processes", &turn_context)
         .await;
 
     let history = session.clone_history().await;
@@ -93,7 +93,7 @@ async fn record_model_warning_appends_user_message() {
             assert_eq!(
                 content,
                 &vec![ContentItem::InputText {
-                    text: "Warning: too many unified exec processes".to_string(),
+                    text: "Warning: too many exec processes".to_string(),
                 }]
             );
         }

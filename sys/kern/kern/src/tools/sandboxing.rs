@@ -227,7 +227,7 @@ pub(crate) fn sandbox_override_for_first_attempt(
 pub(crate) trait Approvable<Req> {
     type ApprovalKey: Hash + Eq + Clone + Debug + Serialize;
 
-    // In most cases (shell, unified_exec), a request will have a single approval key.
+    // In most cases (one-shot or managed exec), a request will have a single approval key.
     //
     // However, apply_patch needs session "Allow, don't ask again" semantics that
     // apply to multiple atomic targets (e.g., apply_patch approves per file path). Returning

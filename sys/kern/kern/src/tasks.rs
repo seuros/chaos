@@ -53,7 +53,7 @@ pub(crate) use user_shell::UserShellCommandTask;
 pub(crate) use user_shell::execute_user_shell_command;
 
 const GRACEFULL_INTERRUPTION_TIMEOUT_MS: u64 = 100;
-const TURN_ABORTED_INTERRUPTED_GUIDANCE: &str = "The user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed; verify current state before retrying.";
+const TURN_ABORTED_INTERRUPTED_GUIDANCE: &str = "The user interrupted the previous turn on purpose. Any running exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed; verify current state before retrying.";
 
 fn emit_turn_network_proxy_metric(
     session_telemetry: &SessionTelemetry,
@@ -462,11 +462,8 @@ impl Session {
         active.take()
     }
 
-    pub(crate) async fn close_unified_exec_processes(&self) {
-        self.services
-            .unified_exec_manager
-            .terminate_all_processes()
-            .await;
+    pub(crate) async fn close_exec_processes(&self) {
+        self.services.exec_manager.terminate_all_processes().await;
     }
 
     pub(crate) async fn cleanup_after_interrupt(&self, _turn_context: &Arc<TurnContext>) {}

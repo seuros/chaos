@@ -570,7 +570,6 @@ pub(super) async fn spawn_review_thread(
         minion_jobs_allowed: config.minion_jobs_allowed,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
-        vfs_policy: &parent_turn_context.vfs_policy,
         collab_enabled: config.collab_enabled,
     })
     .with_agent_compaction_control(matches!(

@@ -13,6 +13,30 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
+use crate::exec::ExecCommandRequest;
+use crate::exec::ExecContext;
+use crate::exec::ExecError;
+use crate::exec::ExecProcessManager;
+use crate::exec::ExecTaskSnapshot;
+use crate::exec::MAX_EXEC_PROCESSES;
+use crate::exec::MAX_YIELD_TIME_MS;
+use crate::exec::MIN_EMPTY_YIELD_TIME_MS;
+use crate::exec::MIN_YIELD_TIME_MS;
+use crate::exec::ProcessEntry;
+use crate::exec::ProcessStore;
+use crate::exec::WARNING_EXEC_PROCESSES;
+use crate::exec::WriteStdinRequest;
+use crate::exec::async_watcher::emit_exec_end;
+use crate::exec::async_watcher::spawn_exit_watcher;
+use crate::exec::async_watcher::start_streaming_output;
+use crate::exec::clamp_yield_time;
+use crate::exec::generate_chunk_id;
+use crate::exec::head_tail_buffer::HeadTailBuffer;
+use crate::exec::output_lifecycle::Collection;
+use crate::exec::process::ExecProcess;
+use crate::exec::process::OutputBuffer;
+use crate::exec::process::OutputHandles;
+use crate::exec::process::SpawnLifecycleHandle;
 use crate::exec_env::create_env;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::protocol::ExecCommandSource;
@@ -24,36 +48,12 @@ use crate::tools::events::ToolEventStage;
 use crate::tools::network_approval::DeferredNetworkApproval;
 use crate::tools::network_approval::finish_deferred_network_approval;
 use crate::tools::orchestrator::ToolOrchestrator;
-use crate::tools::runtimes::unified_exec::UnifiedExecRequest as UnifiedExecToolRequest;
-use crate::tools::runtimes::unified_exec::UnifiedExecRuntime;
+use crate::tools::runtimes::exec::ExecRequest as ExecToolRequest;
+use crate::tools::runtimes::exec::ExecRuntime;
 use crate::tools::sandboxing::ToolCtx;
 use crate::truncate::approx_token_count;
-use crate::unified_exec::ExecCommandRequest;
-use crate::unified_exec::ExecTaskSnapshot;
-use crate::unified_exec::MAX_UNIFIED_EXEC_PROCESSES;
-use crate::unified_exec::MAX_YIELD_TIME_MS;
-use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
-use crate::unified_exec::MIN_YIELD_TIME_MS;
-use crate::unified_exec::ProcessEntry;
-use crate::unified_exec::ProcessStore;
-use crate::unified_exec::UnifiedExecContext;
-use crate::unified_exec::UnifiedExecError;
-use crate::unified_exec::UnifiedExecProcessManager;
-use crate::unified_exec::WARNING_UNIFIED_EXEC_PROCESSES;
-use crate::unified_exec::WriteStdinRequest;
-use crate::unified_exec::async_watcher::emit_exec_end_for_unified_exec;
-use crate::unified_exec::async_watcher::spawn_exit_watcher;
-use crate::unified_exec::async_watcher::start_streaming_output;
-use crate::unified_exec::clamp_yield_time;
-use crate::unified_exec::generate_chunk_id;
-use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
-use crate::unified_exec::output_lifecycle::Collection;
-use crate::unified_exec::process::OutputBuffer;
-use crate::unified_exec::process::OutputHandles;
-use crate::unified_exec::process::SpawnLifecycleHandle;
-use crate::unified_exec::process::UnifiedExecProcess;
 
-const UNIFIED_EXEC_ENV: [(&str, &str); 10] = [
+const EXEC_ENV: [(&str, &str); 10] = [
     ("NO_COLOR", "1"),
     ("TERM", "dumb"),
     ("LANG", "C.UTF-8"),
@@ -66,7 +66,7 @@ const UNIFIED_EXEC_ENV: [(&str, &str); 10] = [
     ("CHAOS_CI", "1"),
 ];
 
-/// Test-only override for deterministic unified exec process IDs.
+/// Test-only override for deterministic exec process IDs.
 ///
 /// In production builds this value should remain at its default (`false`) and
 /// must not be toggled.
@@ -84,15 +84,15 @@ fn should_use_deterministic_process_ids() -> bool {
     cfg!(test) || deterministic_process_ids_forced_for_tests()
 }
 
-fn apply_unified_exec_env(mut env: HashMap<String, String>) -> HashMap<String, String> {
-    for (key, value) in UNIFIED_EXEC_ENV {
+fn apply_exec_env(mut env: HashMap<String, String>) -> HashMap<String, String> {
+    for (key, value) in EXEC_ENV {
         env.insert(key.to_string(), value.to_string());
     }
     env
 }
 
 struct PreparedProcessHandles {
-    process: Arc<UnifiedExecProcess>,
+    process: Arc<ExecProcess>,
     writer_tx: mpsc::Sender<Vec<u8>>,
     output_buffer: OutputBuffer,
     output_notify: Arc<Notify>,
@@ -106,7 +106,7 @@ struct PreparedProcessHandles {
     tty: bool,
 }
 
-impl UnifiedExecProcessManager {
+impl ExecProcessManager {
     pub(crate) async fn allocate_process_id(&self) -> i32 {
         loop {
             let mut store = self.process_store.lock().await;
@@ -159,8 +159,8 @@ impl UnifiedExecProcessManager {
     pub(crate) async fn exec_command(
         &self,
         request: ExecCommandRequest,
-        context: &UnifiedExecContext,
-    ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
+        context: &ExecContext,
+    ) -> Result<ExecCommandToolOutput, ExecError> {
         let cwd = request
             .workdir
             .clone()
@@ -186,10 +186,10 @@ impl UnifiedExecProcessManager {
             &context.call_id,
             /*turn_diff_tracker*/ None,
         );
-        let emitter = ToolEmitter::unified_exec(
+        let emitter = ToolEmitter::exec(
             &request.command,
             cwd.clone(),
-            ExecCommandSource::UnifiedExecStartup,
+            ExecCommandSource::ExecStartup,
             Some(request.process_id.to_string()),
         );
         emitter.emit(event_ctx, ToolEventStage::Begin).await;
@@ -260,7 +260,7 @@ impl UnifiedExecProcessManager {
                     (None, exit_code)
                 }
                 ProcessStatus::Unknown => {
-                    return Err(UnifiedExecError::UnknownProcessId { process_id });
+                    return Err(ExecError::UnknownProcessId { process_id });
                 }
             }
         } else {
@@ -269,7 +269,7 @@ impl UnifiedExecProcessManager {
             // one implementation.
             let exit_code = process.exit_code();
             let exit = exit_code.unwrap_or(-1);
-            emit_exec_end_for_unified_exec(
+            emit_exec_end(
                 Arc::clone(&context.session),
                 Arc::clone(&context.turn),
                 context.call_id.clone(),
@@ -313,7 +313,7 @@ impl UnifiedExecProcessManager {
     pub(crate) async fn write_stdin(
         &self,
         request: WriteStdinRequest<'_>,
-    ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
+    ) -> Result<ExecCommandToolOutput, ExecError> {
         let process_id = request.process_id;
 
         let PreparedProcessHandles {
@@ -334,7 +334,7 @@ impl UnifiedExecProcessManager {
 
         if !request.input.is_empty() {
             if !tty {
-                return Err(UnifiedExecError::StdinClosed);
+                return Err(ExecError::StdinClosed);
             }
             Self::send_input(&writer_tx, request.input.as_bytes()).await?;
             // Give the remote process a brief window to react so that we are
@@ -389,7 +389,7 @@ impl UnifiedExecProcessManager {
                 if process.has_exited() {
                     (None, process.exit_code(), call_id)
                 } else {
-                    return Err(UnifiedExecError::UnknownProcessId {
+                    return Err(ExecError::UnknownProcessId {
                         process_id: request.process_id,
                     });
                 }
@@ -412,12 +412,12 @@ impl UnifiedExecProcessManager {
         Ok(response)
     }
 
-    pub(crate) async fn terminate_process(&self, process_id: i32) -> Result<(), UnifiedExecError> {
+    pub(crate) async fn terminate_process(&self, process_id: i32) -> Result<(), ExecError> {
         let removed = {
             let mut store = self.process_store.lock().await;
             store
                 .remove(process_id)
-                .ok_or(UnifiedExecError::UnknownProcessId { process_id })?
+                .ok_or(ExecError::UnknownProcessId { process_id })?
         };
         Self::unregister_network_approval_for_entry(&removed).await;
         removed.process.terminate();
@@ -427,14 +427,14 @@ impl UnifiedExecProcessManager {
     pub(crate) async fn subscribe_completion(
         &self,
         process_id: i32,
-    ) -> Result<watch::Receiver<ExecTaskSnapshot>, UnifiedExecError> {
+    ) -> Result<watch::Receiver<ExecTaskSnapshot>, ExecError> {
         self.process_store
             .lock()
             .await
             .processes
             .get(&process_id)
             .map(|entry| entry.completion.clone())
-            .ok_or(UnifiedExecError::UnknownProcessId { process_id })
+            .ok_or(ExecError::UnknownProcessId { process_id })
     }
 
     async fn refresh_process_state(&self, process_id: i32) -> ProcessStatus {
@@ -472,12 +472,12 @@ impl UnifiedExecProcessManager {
     async fn prepare_process_handles(
         &self,
         process_id: i32,
-    ) -> Result<PreparedProcessHandles, UnifiedExecError> {
+    ) -> Result<PreparedProcessHandles, ExecError> {
         let mut store = self.process_store.lock().await;
         let entry = store
             .processes
             .get_mut(&process_id)
-            .ok_or(UnifiedExecError::UnknownProcessId { process_id })?;
+            .ok_or(ExecError::UnknownProcessId { process_id })?;
         entry.last_used = Instant::now();
         let OutputHandles {
             output_buffer,
@@ -507,21 +507,18 @@ impl UnifiedExecProcessManager {
         })
     }
 
-    async fn send_input(
-        writer_tx: &mpsc::Sender<Vec<u8>>,
-        data: &[u8],
-    ) -> Result<(), UnifiedExecError> {
+    async fn send_input(writer_tx: &mpsc::Sender<Vec<u8>>, data: &[u8]) -> Result<(), ExecError> {
         writer_tx
             .send(data.to_vec())
             .await
-            .map_err(|_| UnifiedExecError::WriteToStdin)
+            .map_err(|_| ExecError::WriteToStdin)
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn store_process(
         &self,
-        process: Arc<UnifiedExecProcess>,
-        context: &UnifiedExecContext,
+        process: Arc<ExecProcess>,
+        context: &ExecContext,
         command: &[String],
         cwd: PathBuf,
         started_at: Instant,
@@ -555,11 +552,11 @@ impl UnifiedExecProcessManager {
             pruned_entry.process.terminate();
         }
 
-        if number_processes >= WARNING_UNIFIED_EXEC_PROCESSES {
+        if number_processes >= WARNING_EXEC_PROCESSES {
             context
                 .session
                 .record_model_warning(
-                    format!("The maximum number of unified exec processes you can keep open is {WARNING_UNIFIED_EXEC_PROCESSES} and you currently have {number_processes} processes open. Reuse older processes or close them to prevent automatic pruning of old processes"),
+                    format!("The maximum number of exec processes you can keep open is {WARNING_EXEC_PROCESSES} and you currently have {number_processes} processes open. Reuse older processes or close them to prevent automatic pruning of old processes"),
                     &context.turn
                 )
                 .await;
@@ -584,11 +581,11 @@ impl UnifiedExecProcessManager {
         env: &ExecRequest,
         tty: bool,
         mut spawn_lifecycle: SpawnLifecycleHandle,
-    ) -> Result<UnifiedExecProcess, UnifiedExecError> {
+    ) -> Result<ExecProcess, ExecError> {
         let (program, args) = env
             .command
             .split_first()
-            .ok_or(UnifiedExecError::MissingCommandLine)?;
+            .ok_or(ExecError::MissingCommandLine)?;
         let inherited_fds = spawn_lifecycle.inherited_fds();
 
         let spawn_result = if tty {
@@ -613,24 +610,23 @@ impl UnifiedExecProcessManager {
             )
             .await
         };
-        let spawned =
-            spawn_result.map_err(|err| UnifiedExecError::create_process(err.to_string()))?;
+        let spawned = spawn_result.map_err(|err| ExecError::create_process(err.to_string()))?;
         spawn_lifecycle.after_spawn();
-        UnifiedExecProcess::from_spawned(spawned, env.sandbox, spawn_lifecycle).await
+        ExecProcess::from_spawned(spawned, env.sandbox, spawn_lifecycle).await
     }
 
     pub(super) async fn open_session_with_sandbox(
         &self,
         request: &ExecCommandRequest,
         cwd: PathBuf,
-        context: &UnifiedExecContext,
-    ) -> Result<(UnifiedExecProcess, Option<DeferredNetworkApproval>), UnifiedExecError> {
-        let env = apply_unified_exec_env(create_env(
+        context: &ExecContext,
+    ) -> Result<(ExecProcess, Option<DeferredNetworkApproval>), ExecError> {
+        let env = apply_exec_env(create_env(
             &context.turn.shell_environment_policy,
             Some(context.session.conversation_id),
         ));
         let mut orchestrator = ToolOrchestrator::new();
-        let mut runtime = UnifiedExecRuntime::new(self);
+        let mut runtime = ExecRuntime::new(self);
         let permission_snapshot = context.session.permission_snapshot(&context.turn).await;
         let exec_approval_requirement = context
             .session
@@ -651,11 +647,11 @@ impl UnifiedExecProcessManager {
                 &cwd,
             )
             .await;
-        let req = UnifiedExecToolRequest {
+        let req = ExecToolRequest {
             command: request.command.clone(),
             cwd,
             env,
-            explicit_env_overrides: apply_unified_exec_env(
+            explicit_env_overrides: apply_exec_env(
                 context.turn.shell_environment_policy.r#set.clone(),
             ),
             network: request.network.clone(),
@@ -675,7 +671,7 @@ impl UnifiedExecProcessManager {
             .run(&mut runtime, &req, &tool_ctx, &context.turn)
             .await
             .map(|result| (result.output, result.deferred_network_approval))
-            .map_err(|e| UnifiedExecError::create_process(format!("{e:?}")))
+            .map_err(|e| ExecError::create_process(format!("{e:?}")))
     }
 
     pub(super) async fn collect_output_until_deadline(
@@ -765,7 +761,7 @@ impl UnifiedExecProcessManager {
     }
 
     fn prune_processes_if_needed(store: &mut ProcessStore) -> Option<ProcessEntry> {
-        if store.processes.len() < MAX_UNIFIED_EXEC_PROCESSES {
+        if store.processes.len() < MAX_EXEC_PROCESSES {
             return None;
         }
 

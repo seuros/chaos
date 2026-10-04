@@ -35,10 +35,10 @@ use crate::ModelProviderInfo;
 use crate::ProcessTable;
 use crate::collaboration_modes as collaboration_mode_presets;
 use crate::config::Config;
+use crate::exec;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::process_table;
-use crate::unified_exec;
 
 static ENABLE_ALL_TOOL_GROUPS_FOR_TESTS: AtomicBool = AtomicBool::new(false);
 
@@ -192,7 +192,7 @@ pub(crate) fn all_tool_groups_enabled_for_tests() -> bool {
 }
 
 pub fn set_deterministic_process_ids(enabled: bool) {
-    unified_exec::set_deterministic_process_ids_for_tests(enabled);
+    exec::set_deterministic_process_ids_for_tests(enabled);
 }
 
 pub fn auth_manager_from_auth(auth: ChaosAuth) -> Arc<AuthManager> {

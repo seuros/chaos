@@ -324,16 +324,16 @@ impl HistoryCell for PrefixedWrappedHistoryCell {
 }
 
 // ---------------------------------------------------------------------------
-// UnifiedExecInteractionCell
+// ExecInteractionCell
 // ---------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub struct UnifiedExecInteractionCell {
+pub struct ExecInteractionCell {
     command_display: Option<String>,
     stdin: String,
 }
 
-impl UnifiedExecInteractionCell {
+impl ExecInteractionCell {
     pub fn new(command_display: Option<String>, stdin: String) -> Self {
         Self {
             command_display,
@@ -342,7 +342,7 @@ impl UnifiedExecInteractionCell {
     }
 }
 
-impl HistoryCell for UnifiedExecInteractionCell {
+impl HistoryCell for ExecInteractionCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         if width == 0 {
             return Vec::new();
@@ -388,9 +388,6 @@ impl HistoryCell for UnifiedExecInteractionCell {
     }
 }
 
-pub fn new_unified_exec_interaction(
-    command_display: Option<String>,
-    stdin: String,
-) -> UnifiedExecInteractionCell {
-    UnifiedExecInteractionCell::new(command_display, stdin)
+pub fn new_exec_interaction(command_display: Option<String>, stdin: String) -> ExecInteractionCell {
+    ExecInteractionCell::new(command_display, stdin)
 }

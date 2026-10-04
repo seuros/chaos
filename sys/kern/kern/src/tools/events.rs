@@ -99,7 +99,7 @@ pub(crate) enum ToolEmitter {
         changes: HashMap<PathBuf, FileChange>,
         auto_approved: bool,
     },
-    UnifiedExec {
+    Exec {
         command: Vec<String>,
         cwd: PathBuf,
         source: ExecCommandSource,
@@ -132,14 +132,14 @@ impl ToolEmitter {
         }
     }
 
-    pub fn unified_exec(
+    pub fn exec(
         command: &[String],
         cwd: PathBuf,
         source: ExecCommandSource,
         process_id: Option<String>,
     ) -> Self {
         let parsed_cmd = parse_command(command);
-        Self::UnifiedExec {
+        Self::Exec {
             command: command.to_vec(),
             cwd,
             source,
@@ -260,7 +260,7 @@ impl ToolEmitter {
                 .await;
             }
             (
-                Self::UnifiedExec {
+                Self::Exec {
                     command,
                     cwd,
                     source,
@@ -345,7 +345,7 @@ impl ToolEmitter {
                 // TODO: We should add a new ToolError variant for user-declined approvals.
                 let normalized = if msg == "rejected by user" {
                     match self {
-                        Self::Shell { .. } | Self::UnifiedExec { .. } => {
+                        Self::Shell { .. } | Self::Exec { .. } => {
                             "exec command rejected by user".to_string()
                         }
                         Self::ApplyPatch { .. } => "patch rejected by user".to_string(),

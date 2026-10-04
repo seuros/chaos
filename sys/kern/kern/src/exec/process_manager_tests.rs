@@ -4,8 +4,8 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 
 #[test]
-fn unified_exec_env_injects_defaults() {
-    let env = apply_unified_exec_env(HashMap::new());
+fn exec_env_injects_defaults() {
+    let env = apply_exec_env(HashMap::new());
     let expected = HashMap::from([
         ("NO_COLOR".to_string(), "1".to_string()),
         ("TERM".to_string(), "dumb".to_string()),
@@ -23,12 +23,12 @@ fn unified_exec_env_injects_defaults() {
 }
 
 #[test]
-fn unified_exec_env_overrides_existing_values() {
+fn exec_env_overrides_existing_values() {
     let mut base = HashMap::new();
     base.insert("NO_COLOR".to_string(), "0".to_string());
     base.insert("PATH".to_string(), "/usr/bin".to_string());
 
-    let env = apply_unified_exec_env(base);
+    let env = apply_exec_env(base);
 
     assert_eq!(env.get("NO_COLOR"), Some(&"1".to_string()));
     assert_eq!(env.get("PATH"), Some(&"/usr/bin".to_string()));
@@ -50,7 +50,7 @@ fn pruning_prefers_exited_processes_outside_recently_used() {
         (10, now - Duration::from_secs(13), false),
     ];
 
-    let candidate = UnifiedExecProcessManager::process_id_to_prune_from_meta(&meta);
+    let candidate = ExecProcessManager::process_id_to_prune_from_meta(&meta);
 
     assert_eq!(candidate, Some(2));
 }
@@ -71,7 +71,7 @@ fn pruning_falls_back_to_lru_when_no_exited() {
         (10, now - Duration::from_secs(13), false),
     ];
 
-    let candidate = UnifiedExecProcessManager::process_id_to_prune_from_meta(&meta);
+    let candidate = ExecProcessManager::process_id_to_prune_from_meta(&meta);
 
     assert_eq!(candidate, Some(1));
 }
@@ -92,7 +92,7 @@ fn pruning_protects_recent_processes_even_if_exited() {
         (10, now - Duration::from_secs(13), true),
     ];
 
-    let candidate = UnifiedExecProcessManager::process_id_to_prune_from_meta(&meta);
+    let candidate = ExecProcessManager::process_id_to_prune_from_meta(&meta);
 
     // (10) is exited but among the last 8; we should drop the LRU outside that set.
     assert_eq!(candidate, Some(1));

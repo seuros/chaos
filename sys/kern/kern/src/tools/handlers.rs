@@ -3,6 +3,7 @@ pub(crate) mod cancel_attested_review;
 mod catalog_module;
 mod compaction_control;
 mod dynamic;
+pub(crate) mod exec;
 mod halluacinate;
 mod hooks;
 pub(crate) mod machine_recovery;
@@ -23,7 +24,6 @@ pub(crate) mod start_attested_review;
 mod switch_mode;
 mod test_sync;
 mod tool_groups;
-pub(crate) mod unified_exec;
 mod view_image;
 
 use chaos_realpath::AbsolutePathBufGuard;
@@ -47,6 +47,7 @@ use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::protocol::ApprovalPolicy;
 pub use compaction_control::CompactionControlHandler;
 pub use dynamic::DynamicToolHandler;
+pub use exec::ExecHandler;
 pub use halluacinate::HalluacinateHandler;
 pub use hooks::HooksHandler;
 pub use mcp::McpHandler;
@@ -68,7 +69,6 @@ pub use start_attested_review::StartAttestedReviewHandler;
 pub use switch_mode::SwitchModeHandler;
 pub use test_sync::TestSyncHandler;
 pub use tool_groups::ToolGroupsHandler;
-pub use unified_exec::UnifiedExecHandler;
 pub use view_image::ViewImageHandler;
 
 /// Recursively sanitize a JSON value produced by a model that double-encodes

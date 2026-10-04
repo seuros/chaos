@@ -17,8 +17,8 @@ pub enum ExecCommandSource {
     #[default]
     Agent,
     UserShell,
-    UnifiedExecStartup,
-    UnifiedExecInteraction,
+    ExecStartup,
+    ExecInteraction,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
@@ -46,7 +46,7 @@ pub struct ExecCommandBeginEvent {
     /// Where the command originated. Defaults to Agent for backward compatibility.
     #[serde(default)]
     pub source: ExecCommandSource,
-    /// Raw input sent to a unified exec session (if this is an interaction event).
+    /// Raw input sent to an exec session (if this is an interaction event).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_input: Option<String>,
 }
@@ -68,7 +68,7 @@ pub struct ExecCommandEndEvent {
     /// Where the command originated. Defaults to Agent for backward compatibility.
     #[serde(default)]
     pub source: ExecCommandSource,
-    /// Raw input sent to a unified exec session (if this is an interaction event).
+    /// Raw input sent to an exec session (if this is an interaction event).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_input: Option<String>,
 

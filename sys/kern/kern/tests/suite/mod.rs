@@ -66,6 +66,8 @@ mod auth_refresh;
 mod chaos_delegate;
 #[path = "exec.rs"]
 mod exec;
+#[path = "exec_oneshot.rs"]
+mod exec_oneshot;
 #[path = "exec_policy.rs"]
 mod exec_policy;
 #[path = "grep_files.rs"]
@@ -146,8 +148,6 @@ mod tools;
 mod truncation;
 #[path = "turn_state.rs"]
 mod turn_state;
-#[path = "unified_exec.rs"]
-mod unified_exec;
 
 #[path = "user_shell_cmd.rs"]
 mod user_shell_cmd;

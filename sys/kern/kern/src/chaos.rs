@@ -97,6 +97,8 @@ pub(crate) use crate::distill;
 #[cfg(test)]
 pub(crate) use crate::distill::collect_user_messages;
 #[cfg(test)]
+pub(crate) use crate::exec::ExecProcessManager;
+#[cfg(test)]
 pub(crate) use crate::exec::StreamOutput;
 #[cfg(test)]
 pub(crate) use crate::exec_policy::ExecPolicyManager;
@@ -128,8 +130,6 @@ pub(crate) use crate::tools::network_approval::NetworkApprovalService;
 pub(crate) use crate::tools::parallel::ToolCallRuntime;
 #[cfg(test)]
 pub(crate) use crate::tools::sandboxing::ApprovalStore;
-#[cfg(test)]
-pub(crate) use crate::unified_exec::UnifiedExecProcessManager;
 #[cfg(test)]
 pub(crate) use chaos_dtrace::Hooks;
 #[cfg(test)]

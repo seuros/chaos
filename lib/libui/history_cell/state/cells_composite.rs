@@ -10,27 +10,27 @@ use super::cells_basic::PlainHistoryCell;
 use super::trait_def::HistoryCell;
 
 // ---------------------------------------------------------------------------
-// UnifiedExecProcessDetails + UnifiedExecProcessesCell
+// ExecProcessDetails + ExecProcessesCell
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub struct UnifiedExecProcessDetails {
+pub struct ExecProcessDetails {
     pub command_display: String,
     pub recent_chunks: Vec<String>,
 }
 
 #[derive(Debug)]
-struct UnifiedExecProcessesCell {
-    processes: Vec<UnifiedExecProcessDetails>,
+struct ExecProcessesCell {
+    processes: Vec<ExecProcessDetails>,
 }
 
-impl UnifiedExecProcessesCell {
-    fn new(processes: Vec<UnifiedExecProcessDetails>) -> Self {
+impl ExecProcessesCell {
+    fn new(processes: Vec<ExecProcessDetails>) -> Self {
         Self { processes }
     }
 }
 
-impl HistoryCell for UnifiedExecProcessesCell {
+impl HistoryCell for ExecProcessesCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         if width == 0 {
             return Vec::new();
@@ -147,11 +147,9 @@ impl HistoryCell for UnifiedExecProcessesCell {
     }
 }
 
-pub fn new_unified_exec_processes_output(
-    processes: Vec<UnifiedExecProcessDetails>,
-) -> CompositeHistoryCell {
+pub fn new_exec_processes_output(processes: Vec<ExecProcessDetails>) -> CompositeHistoryCell {
     let command = PlainHistoryCell::new(vec!["/ps".fg(crate::theme::annotation_color()).into()]);
-    let summary = UnifiedExecProcessesCell::new(processes);
+    let summary = ExecProcessesCell::new(processes);
     CompositeHistoryCell::new(vec![Box::new(command), Box::new(summary)])
 }
 

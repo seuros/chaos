@@ -19,6 +19,7 @@ alcatraz-base = { workspace = true }
 alcatraz-linux = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+chaos-test-process = { workspace = true }
 chaos-clamp = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-kern = { workspace = true }

@@ -36,7 +36,6 @@ use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
 use tokio::time::Duration;
-use which::which;
 
 fn extract_output_text(item: &Value) -> Option<&str> {
     item.get("output").and_then(|value| match value {
@@ -1301,14 +1300,6 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
-    let python = match which("python").or_else(|_| which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping tty default test.");
-            return Ok(());
-        }
-    };
-
     let server = start_mock_server().await;
 
     let mut builder = test_chaos();
@@ -1321,7 +1312,7 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
 
     let call_id = "uexec-default-pipe";
     let args = serde_json::json!({
-        "cmd": format!("{} -c \"import sys; print(sys.stdin.isatty())\"", python.display()),
+        "cmd": chaos_test_process::shell_command("print(fixture.stdin_isatty())")?,
         "yield_time_ms": 1500,
     });
 
@@ -1377,7 +1368,7 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
     let normalized = output.output.replace("\r\n", "\n");
 
     assert!(
-        normalized.contains("False"),
+        normalized.contains("false"),
         "stdin should not be a tty by default: {normalized:?}"
     );
     assert_eq!(output.exit_code, Some(0));
@@ -1388,14 +1379,6 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
 async fn unified_exec_can_enable_tty() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-
-    let python = match which("python").or_else(|_| which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping tty enable test.");
-            return Ok(());
-        }
-    };
 
     let server = start_mock_server().await;
 
@@ -1409,7 +1392,7 @@ async fn unified_exec_can_enable_tty() -> Result<()> {
 
     let call_id = "uexec-tty-enabled";
     let args = serde_json::json!({
-        "cmd": format!("{} -c \"import sys; print(sys.stdin.isatty())\"", python.display()),
+        "cmd": chaos_test_process::shell_command("print(fixture.stdin_isatty())")?,
         "yield_time_ms": 1500,
         "tty": true,
     });
@@ -1466,7 +1449,7 @@ async fn unified_exec_can_enable_tty() -> Result<()> {
     let normalized = output.output.replace("\r\n", "\n");
 
     assert!(
-        normalized.contains("True"),
+        normalized.contains("true"),
         "stdin should be a tty when tty=true: {normalized:?}"
     );
     assert_eq!(output.exit_code, Some(0));
@@ -2142,24 +2125,20 @@ async fn unified_exec_streams_after_lagged_output() -> Result<()> {
         ..
     } = builder.build(&server).await?;
 
-    let script = r#"python3 - <<'PY'
-import sys
-import time
-
-chunk = b'long content here to trigger truncation' * (1 << 10)
-for _ in range(4):
-    sys.stdout.buffer.write(chunk)
-    sys.stdout.flush()
-
-time.sleep(0.2)
-for _ in range(5):
-    sys.stdout.write("TAIL-MARKER\n")
-    sys.stdout.flush()
-    time.sleep(0.05)
-
-time.sleep(0.2)
-PY
-"#;
+    let script = chaos_test_process::shell_command(
+        r#"local chunk = string.rep('long content here to trigger truncation', 1024)
+for _ = 1, 4 do
+    io.write(chunk)
+    io.flush()
+end
+fixture.sleep(0.2)
+for _ = 1, 5 do
+    print("TAIL-MARKER")
+    fixture.sleep(0.05)
+end
+fixture.sleep(0.2)
+"#,
+    )?;
 
     let first_call_id = "uexec-lag-start";
     let first_args = serde_json::json!({
@@ -2277,11 +2256,8 @@ async fn unified_exec_formats_large_output_summary() -> Result<()> {
         ..
     } = builder.build(&server).await?;
 
-    let script = r#"python3 - <<'PY'
-import sys
-sys.stdout.write("token token \n" * 5000)
-PY
-"#;
+    let script =
+        chaos_test_process::shell_command(r#"io.write(string.rep("token token \n", 5000))"#)?;
 
     let call_id = "uexec-large-output";
     let args = serde_json::json!({
@@ -2439,16 +2415,8 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
 
 #[cfg(target_os = "macos")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
+async fn unified_exec_repl_prompt_under_seatbelt() -> Result<()> {
     skip_if_no_network!(Ok(()));
-
-    let python = match which::which("python").or_else(|_| which::which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping test.");
-            return Ok(());
-        }
-    };
 
     let server = start_mock_server().await;
 
@@ -2460,14 +2428,14 @@ async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
         ..
     } = builder.build(&server).await?;
 
-    let startup_call_id = "uexec-python-seatbelt";
+    let startup_call_id = "uexec-repl-seatbelt";
     let startup_args = serde_json::json!({
-        "cmd": format!("{} -i", python.display()),
+        "cmd": chaos_test_process::interactive_shell_command("")?,
         "yield_time_ms": 1_500,
         "tty": true,
     });
 
-    let exit_call_id = "uexec-python-exit";
+    let exit_call_id = "uexec-repl-exit";
     let exit_args = serde_json::json!({
         "chars": "exit()\n",
         "session_id": 1000,
@@ -2506,7 +2474,7 @@ async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
     chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "start python under seatbelt".into(),
+                text: "start repl under seatbelt".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -2535,29 +2503,27 @@ async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
     let outputs = collect_tool_outputs(&bodies)?;
     let startup_output = outputs
         .get(startup_call_id)
-        .expect("missing python startup output");
+        .expect("missing repl startup output");
 
     let output_text = startup_output.output.replace("\r\n", "\n");
     // This assert that we are in a TTY.
     assert!(
-        output_text.contains(">>>"),
-        "python prompt missing from seatbelt output: {output_text:?}"
+        output_text.contains("> "),
+        "repl prompt missing from seatbelt output: {output_text:?}"
     );
 
     assert_eq!(
         startup_output.process_id.as_deref(),
         Some("1000"),
-        "python session should stay alive for follow-up input"
+        "repl session should stay alive for follow-up input"
     );
 
-    let exit_output = outputs
-        .get(exit_call_id)
-        .expect("missing python exit output");
+    let exit_output = outputs.get(exit_call_id).expect("missing repl exit output");
 
     assert_eq!(
         exit_output.exit_code,
         Some(0),
-        "python should exit cleanly after exit()"
+        "repl should exit cleanly after exit()"
     );
 
     Ok(())

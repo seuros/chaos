@@ -156,6 +156,7 @@ chaos-doas = { workspace = true }
 [dev-dependencies]
 chaos-keyring = { workspace = true }
 chaos-test-fixtures = { workspace = true }
+chaos-test-process = { workspace = true }
 assert_cmd = { workspace = true }
 chaos-model-catalog = { workspace = true, features = ["test-support"] }
 keyring-core = { workspace = true }

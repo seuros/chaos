@@ -211,28 +211,16 @@ async fn managed_proxy_mode_allows_af_unix_for_user_command() {
     // login-shell RC files) can initialize their tokio signal-delivery pipes.
     // Network restrictions are enforced via Landlock ConnectTcp rules, which
     // already restrict TCP connections to the proxy port only.
-    let python_available = Command::new("bash")
-        .arg("-c")
-        .arg("command -v python3 >/dev/null")
-        .status()
-        .await
-        .expect("python3 probe should execute")
-        .success();
-    if !python_available {
-        eprintln!("skipping managed proxy AF_UNIX test: python3 is unavailable");
-        return;
-    }
-
     let mut env = create_env_from_core_vars();
     strip_proxy_env(&mut env);
     env.insert("HTTP_PROXY".to_string(), "http://127.0.0.1:9".to_string());
 
+    let command = chaos_test_process::command(
+        "assert(fixture.socket(fixture.AF_UNIX, fixture.SOCK_STREAM, 0))",
+    )
+    .expect("should locate shared process fixture");
     let output = run_linux_sandbox_direct(
-        &[
-            "python3",
-            "-c",
-            "import socket,sys\ntry:\n    socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\nexcept PermissionError:\n    sys.exit(1)\nexcept OSError:\n    sys.exit(2)\nsys.exit(0)\n",
-        ],
+        &command.iter().map(String::as_str).collect::<Vec<_>>(),
         &SandboxPolicy::RootAccess,
         true,
         env,
@@ -255,18 +243,6 @@ async fn managed_proxy_mode_denies_exotic_socket_families() {
     // Exotic socket families (AF_PACKET, AF_NETLINK, etc.) are blocked by
     // seccomp in proxy-routed mode. Only AF_INET, AF_INET6, and AF_UNIX are
     // allowed.
-    let python_available = Command::new("bash")
-        .arg("-c")
-        .arg("command -v python3 >/dev/null")
-        .status()
-        .await
-        .expect("python3 probe should execute")
-        .success();
-    if !python_available {
-        eprintln!("skipping exotic socket family test: python3 is unavailable");
-        return;
-    }
-
     let mut env = create_env_from_core_vars();
     strip_proxy_env(&mut env);
     env.insert("HTTP_PROXY".to_string(), "http://127.0.0.1:9".to_string());
@@ -274,12 +250,12 @@ async fn managed_proxy_mode_denies_exotic_socket_families() {
     // AF_PACKET = 17 — requires CAP_NET_RAW but also blocked by our seccomp.
     // Even if the kernel would also deny it for capability reasons, the seccomp
     // layer returns EPERM first so the behaviour is consistent.
+    let command = chaos_test_process::command(
+        "local ok, errno = fixture.socket(fixture.AF_PACKET, fixture.SOCK_RAW, fixture.IPPROTO_RAW); assert(not ok and (errno == fixture.EPERM or errno == fixture.EACCES))",
+    )
+    .expect("should locate shared process fixture");
     let output = run_linux_sandbox_direct(
-        &[
-            "python3",
-            "-c",
-            "import socket,sys\ntry:\n    socket.socket(17, socket.SOCK_RAW, socket.IPPROTO_RAW)\nexcept PermissionError:\n    sys.exit(0)\nexcept OSError:\n    sys.exit(0)\nsys.exit(1)\n",
-        ],
+        &command.iter().map(String::as_str).collect::<Vec<_>>(),
         &SandboxPolicy::RootAccess,
         true,
         env,

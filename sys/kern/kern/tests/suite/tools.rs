@@ -324,22 +324,14 @@ async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
 
     let call_id = "shell-grandchild-timeout";
     let pid_path = test.cwd.path().join("grandchild_pid.txt");
-    let script_path = test.cwd.path().join("spawn_detached.py");
-    let script = format!(
-        r#"import subprocess
-import time
-from pathlib import Path
-
-# Spawn a detached grandchild that inherits stdout/stderr so the pipe stays open.
-proc = subprocess.Popen(["/bin/sh", "-c", "sleep 60"], start_new_session=True)
-Path({pid_path:?}).write_text(str(proc.pid))
-time.sleep(60)
-"#
-    );
-    fs::write(&script_path, script)?;
+    // Spawn a detached grandchild that inherits stdout/stderr so the pipe stays open.
+    let command = chaos_test_process::command(&format!(
+        "fixture.spawn_detached_sleep(60, {:?}); fixture.sleep(60)",
+        pid_path.to_string_lossy(),
+    ))?;
 
     let args = json!({
-        "command": ["python3", script_path.to_string_lossy()],
+        "command": command,
         "timeout_ms": 200,
     });
 

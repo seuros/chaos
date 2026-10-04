@@ -148,6 +148,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-kern",
  "chaos-realpath",
+ "chaos-test-process",
  "landlock",
  "pretty_assertions",
  "serde_json",
@@ -220,6 +221,7 @@ dependencies = [
  "chaos-parole",
  "chaos-pf",
  "chaos-realpath",
+ "chaos-test-process",
  "dirs",
  "keyring-core",
  "libc",
@@ -1402,6 +1404,7 @@ dependencies = [
  "chaos-session",
  "chaos-snitch",
  "chaos-test-fixtures",
+ "chaos-test-process",
  "chaos-uptime",
  "chaos-which",
  "core_test_support",
@@ -1587,6 +1590,7 @@ dependencies = [
  "chaos-sysctl",
  "chaos-sysinfo",
  "chaos-test-fixtures",
+ "chaos-test-process",
  "chaos-tmpfs",
  "chaos-traits",
  "chaos-vault",
@@ -1940,6 +1944,7 @@ name = "chaos-pty"
 version = "47.10.2"
 dependencies = [
  "anyhow",
+ "chaos-test-process",
  "libc",
  "portable-pty",
  "pretty_assertions",
@@ -2215,6 +2220,19 @@ dependencies = [
 [[package]]
 name = "chaos-test-fixtures"
 version = "47.10.2"
+
+[[package]]
+name = "chaos-test-process"
+version = "47.10.2"
+dependencies = [
+ "chaos-which",
+ "libc",
+ "mlua",
+ "rama",
+ "shlex 2.0.1",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "chaos-tmpfs"

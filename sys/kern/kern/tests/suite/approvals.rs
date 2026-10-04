@@ -154,12 +154,11 @@ impl ActionKind {
                     .await;
 
                 let url = format!("{}{}", server.uri(), endpoint);
-                let escaped_url = url.replace('\'', "\\'");
                 let script = format!(
-                    "import sys\nimport urllib.request\nurl = '{escaped_url}'\ntry:\n    data = urllib.request.urlopen(url, timeout=2).read().decode()\n    print('OK:' + data.strip())\nexcept Exception as exc:\n    print('ERR:' + exc.__class__.__name__)\n    sys.exit(1)",
+                    "local ok, data = pcall(fixture.http_get, {url:?}, true, 2); if ok then print('OK:' .. data) else print('ERR:' .. tostring(data)); os.exit(1) end",
                 );
 
-                let command = format!("python3 -c \"{script}\"");
+                let command = chaos_test_process::shell_command(&script)?;
                 let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
                 Ok((event, Some(command)))
             }
@@ -176,12 +175,11 @@ impl ActionKind {
                     .await;
 
                 let url = format!("{}{}", server.uri(), endpoint);
-                let escaped_url = url.replace('\'', "\\'");
                 let script = format!(
-                    "import sys\nimport urllib.request\nurl = '{escaped_url}'\nopener = urllib.request.build_opener(urllib.request.ProxyHandler({{}}))\ntry:\n    data = opener.open(url, timeout=2).read().decode()\n    print('OK:' + data.strip())\nexcept Exception as exc:\n    print('ERR:' + exc.__class__.__name__)\n    sys.exit(1)",
+                    "local ok, data = pcall(fixture.http_get, {url:?}, false, 2); if ok then print('OK:' .. data) else print('ERR:' .. tostring(data)); os.exit(1) end",
                 );
 
-                let command = format!("python3 -c \"{script}\"");
+                let command = chaos_test_process::shell_command(&script)?;
                 let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
                 Ok((event, Some(command)))
             }
@@ -1148,7 +1146,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
             approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::RunUnifiedExecCommand {
-                command: "python3 -c 'print('\"'\"'escalated unified exec'\"'\"')'",
+                command: "printf '%s\\n' 'escalated unified exec'",
                 justification: Some(DEFAULT_UNIFIED_EXEC_JUSTIFICATION),
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
@@ -1742,10 +1740,11 @@ allow_local_binding = true
         .expect("expected runtime managed network proxy addresses");
 
     let call_id_first = "allow-network-first";
-    // Use urllib without overriding proxy settings so managed-network sessions
+    // Use the internal client without overriding proxy settings so managed-network sessions
     // continue to exercise the env-based proxy routing path under bubblewrap.
-    let fetch_command = r#"python3 -c "import urllib.request; opener = urllib.request.build_opener(urllib.request.ProxyHandler()); print('OK:' + opener.open('http://chaos-network-test.invalid', timeout=30).read().decode(errors='replace'))""#
-        .to_string();
+    let fetch_command = chaos_test_process::shell_command(
+        "print('OK:' .. fixture.http_get('http://chaos-network-test.invalid', true, 30))",
+    )?;
     let first_event = shell_event(
         call_id_first,
         &fetch_command,

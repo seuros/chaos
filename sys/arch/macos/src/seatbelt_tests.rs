@@ -249,19 +249,8 @@ fn bundle_id_automation_keeps_lsopen_denied() {
     fs::create_dir_all(&cwd).expect("create cwd");
 
     let args = create_seatbelt_command_args_with_extensions(
-        vec![
-            "/usr/bin/python3".to_string(),
-            "-c".to_string(),
-            r#"import ctypes
-import os
-import sys
-lib = ctypes.CDLL("/usr/lib/libsandbox.1.dylib")
-lib.sandbox_check.restype = ctypes.c_int
-allowed = lib.sandbox_check(os.getpid(), b"lsopen", 0) == 0
-sys.exit(0 if allowed else 13)
-"#
-            .to_string(),
-        ],
+        chaos_test_process::command("os.exit(fixture.lsopen_allowed() and 0 or 13)")
+            .expect("should locate shared process fixture"),
         &SandboxPolicy::new_read_only_policy(),
         cwd.as_path(),
         false,

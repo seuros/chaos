@@ -163,7 +163,7 @@ async fn freebsd_sandbox_test_env() -> Option<HashMap<String, String>> {
     }
 
     // confstr(_CS_PATH) omits /usr/local/bin, where ports/pkg installs
-    // python3, so hand sandboxed children the parent's PATH.
+    // shell utilities, so hand sandboxed children the parent's PATH.
     Some(HashMap::from([(
         "PATH".to_string(),
         std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".to_string()),
@@ -171,7 +171,7 @@ async fn freebsd_sandbox_test_env() -> Option<HashMap<String, String>> {
 }
 
 #[tokio::test]
-async fn python_multiprocessing_lock_works_under_sandbox() {
+async fn multiprocessing_lock_works_under_sandbox() {
     core_test_support::skip_if_sandbox!();
     #[cfg(target_os = "linux")]
     let sandbox_env = match linux_sandbox_test_env().await {
@@ -203,28 +203,13 @@ async fn python_multiprocessing_lock_works_under_sandbox() {
         exclude_slash_tmp: false,
     };
 
-    let python_code = r#"import multiprocessing
-
-def f(lock):
-    with lock:
-        print("Lock acquired in child process")
-
-if __name__ == '__main__':
-    ctx = multiprocessing.get_context("fork")
-    lock = ctx.Lock()
-    p = ctx.Process(target=f, args=(lock,))
-    p.start()
-    p.join()
-"#;
+    let command = chaos_test_process::command("fixture.fork_semaphore()")
+        .expect("should locate shared process fixture");
 
     let command_cwd = std::env::current_dir().expect("should be able to get current dir");
     let sandbox_cwd = command_cwd.clone();
     let mut child = spawn_command_under_sandbox(
-        vec![
-            "python3".to_string(),
-            "-c".to_string(),
-            python_code.to_string(),
-        ],
+        command,
         command_cwd,
         &policy,
         sandbox_cwd.as_path(),
@@ -232,16 +217,16 @@ if __name__ == '__main__':
         sandbox_env,
     )
     .await
-    .expect("should be able to spawn python under sandbox");
+    .expect("should be able to spawn fixture under sandbox");
 
     let status = wait_for_child(&mut child)
         .await
         .expect("should wait for child process");
-    assert!(status.success(), "python exited with {status:?}");
+    assert!(status.success(), "fixture exited with {status:?}");
 }
 
 #[tokio::test]
-async fn python_getpwuid_works_under_sandbox() {
+async fn getpwuid_works_under_sandbox() {
     core_test_support::skip_if_sandbox!();
     #[cfg(target_os = "linux")]
     let sandbox_env = match linux_sandbox_test_env().await {
@@ -256,25 +241,13 @@ async fn python_getpwuid_works_under_sandbox() {
     #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     let sandbox_env = HashMap::new();
 
-    if std::process::Command::new("python3")
-        .arg("--version")
-        .status()
-        .is_err()
-    {
-        eprintln!("python3 not found in PATH, skipping test.");
-        return;
-    }
-
     let policy = SandboxPolicy::new_read_only_policy();
     let command_cwd = std::env::current_dir().expect("should be able to get current dir");
     let sandbox_cwd = command_cwd.clone();
 
     let mut child = spawn_command_under_sandbox(
-        vec![
-            "python3".to_string(),
-            "-c".to_string(),
-            "import pwd, os; print(pwd.getpwuid(os.getuid()))".to_string(),
-        ],
+        chaos_test_process::command("print(fixture.getpwuid())")
+            .expect("should locate shared process fixture"),
         command_cwd,
         &policy,
         sandbox_cwd.as_path(),
@@ -282,12 +255,12 @@ async fn python_getpwuid_works_under_sandbox() {
         sandbox_env,
     )
     .await
-    .expect("should be able to spawn python under sandbox");
+    .expect("should be able to spawn fixture under sandbox");
 
     let status = wait_for_child(&mut child)
         .await
         .expect("should be able to wait for child process");
-    assert!(status.success(), "python exited with {status:?}");
+    assert!(status.success(), "fixture exited with {status:?}");
 }
 
 #[tokio::test]

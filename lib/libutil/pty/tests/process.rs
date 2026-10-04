@@ -14,18 +14,10 @@ use chaos_pty::spawn_pty_process;
 use chaos_pty::SpawnedProcess;
 use chaos_pty::TerminalSize;
 
-fn find_python() -> Option<String> {
-    for candidate in ["python3", "python"] {
-        if let Ok(output) = std::process::Command::new(candidate)
-            .arg("--version")
-            .output()
-        {
-            if output.status.success() {
-                return Some(candidate.to_string());
-            }
-        }
-    }
-    None
+fn fixture_executable() -> anyhow::Result<String> {
+    Ok(chaos_test_process::executable()?
+        .to_string_lossy()
+        .into_owned())
 }
 
 fn setsid_available() -> bool {
@@ -224,22 +216,18 @@ async fn wait_for_process_exit(pid: i32, timeout_ms: u64) -> anyhow::Result<bool
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pty_python_repl_emits_output_and_exits() -> anyhow::Result<()> {
-    let Some(python) = find_python() else {
-        eprintln!("python not found; skipping pty_python_repl_emits_output_and_exits");
-        return Ok(());
-    };
+async fn pty_repl_emits_output_and_exits() -> anyhow::Result<()> {
+    let fixture = fixture_executable()?;
 
     let ready_marker = "__chaos_pty_ready__";
     let args = vec![
-        "-i".to_string(),
-        "-q".to_string(),
-        "-c".to_string(),
+        "--interactive".to_string(),
+        "--eval".to_string(),
         format!("print('{ready_marker}')"),
     ];
     let env_map: HashMap<String, String> = std::env::vars().collect();
     let spawned = spawn_pty_process(
-        &python,
+        &fixture,
         &args,
         Path::new("."),
         &env_map,
@@ -266,26 +254,18 @@ async fn pty_python_repl_emits_output_and_exits() -> anyhow::Result<()> {
 
     assert!(
         text.contains("hello from pty"),
-        "expected python output in PTY: {text:?}"
+        "expected fixture output in PTY: {text:?}"
     );
-    assert_eq!(code, 0, "expected python to exit cleanly");
+    assert_eq!(code, 0, "expected fixture to exit cleanly");
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_process_round_trips_stdin() -> anyhow::Result<()> {
-    let Some(python) = find_python() else {
-        eprintln!("python not found; skipping pipe_process_round_trips_stdin");
-        return Ok(());
-    };
     let (program, args) = (
-        python,
-        vec![
-            "-u".to_string(),
-            "-c".to_string(),
-            "import sys; print(sys.stdin.readline().strip());".to_string(),
-        ],
+        fixture_executable()?,
+        vec!["--eval".to_string(), "print(io.read('*l'))".to_string()],
     );
     let env_map: HashMap<String, String> = std::env::vars().collect();
     let spawned = spawn_pipe_process(&program, &args, Path::new("."), &env_map, &None).await?;
@@ -305,7 +285,7 @@ async fn pipe_process_round_trips_stdin() -> anyhow::Result<()> {
         text.contains("roundtrip"),
         "expected pipe process to echo stdin: {text:?}"
     );
-    assert_eq!(code, 0, "expected python -c to exit cleanly");
+    assert_eq!(code, 0, "expected fixture to exit cleanly");
 
     Ok(())
 }
@@ -390,15 +370,11 @@ async fn pipe_and_pty_share_interface() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_drains_stderr_without_stdout_activity() -> anyhow::Result<()> {
-    let Some(python) = find_python() else {
-        eprintln!("python not found; skipping pipe_drains_stderr_without_stdout_activity");
-        return Ok(());
-    };
-
-    let script = "import sys\nchunk = 'E' * 65536\nfor _ in range(64):\n    sys.stderr.write(chunk)\n    sys.stderr.flush()\n";
-    let args = vec!["-c".to_string(), script.to_string()];
+    let fixture = fixture_executable()?;
+    let script = "local chunk = string.rep('E', 65536); for _ = 1, 64 do io.stderr:write(chunk); io.stderr:flush() end";
+    let args = vec!["--eval".to_string(), script.to_string()];
     let env_map: HashMap<String, String> = std::env::vars().collect();
-    let spawned = spawn_pipe_process(&python, &args, Path::new("."), &env_map, &None).await?;
+    let spawned = spawn_pipe_process(&fixture, &args, Path::new("."), &env_map, &None).await?;
     let SpawnedProcess {
         session: _session,
         stdout_rx,
@@ -415,7 +391,7 @@ async fn pipe_drains_stderr_without_stdout_activity() -> anyhow::Result<()> {
         })
         .await?;
 
-    assert_eq!(code?, 0, "expected python to exit cleanly");
+    assert_eq!(code?, 0, "expected fixture to exit cleanly");
     assert!(stdout.is_empty(), "child only writes stderr");
     assert_eq!(stderr, vec![b'E'; 64 * 65_536]);
 
@@ -601,16 +577,11 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Result<()> {
+async fn pty_preserving_inherited_fds_keeps_repl_running() -> anyhow::Result<()> {
     use std::os::fd::AsRawFd;
     use std::os::fd::FromRawFd;
 
-    let Some(python) = find_python() else {
-        eprintln!(
-            "python not found; skipping pty_preserving_inherited_fds_keeps_python_repl_running"
-        );
-        return Ok(());
-    };
+    let fixture = fixture_executable()?;
 
     let mut fds = [0; 2];
     let result = unsafe { libc::pipe(fds.as_mut_ptr()) };
@@ -628,8 +599,8 @@ async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Res
     );
 
     let spawned = spawn_process_with_inherited_fds(
-        &python,
-        &[],
+        &fixture,
+        &["--interactive".to_string()],
         Path::new("."),
         &env_map,
         &None,
@@ -643,13 +614,13 @@ async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Res
     let (session, mut output_rx, exit_rx) = combine_spawned_output(spawned);
     let writer = session.writer_sender();
     let newline = "\n";
-    let mut output = wait_for_output_contains(&mut output_rx, ">>> ", 5_000).await?;
-    let marker = "__codex_preserved_py_pid:";
+    let mut output = wait_for_output_contains(&mut output_rx, "> ", 5_000).await?;
+    let marker = "__codex_preserved_pid:";
     writer
-        .send(format!("import os; print('{marker}' + str(os.getpid())){newline}").into_bytes())
+        .send(format!("print('{marker}' .. fixture.pid()){newline}").into_bytes())
         .await?;
 
-    let python_pid = match wait_for_marker_pid(&mut output_rx, marker, 2_000).await {
+    let fixture_pid = match wait_for_marker_pid(&mut output_rx, marker, 2_000).await {
         Ok(pid) => pid,
         Err(err) => {
             session.terminate();
@@ -657,15 +628,15 @@ async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Res
         }
     };
     assert!(
-        process_exists(python_pid)?,
-        "expected python pid {python_pid} to stay alive after prompt output"
+        process_exists(fixture_pid)?,
+        "expected fixture pid {fixture_pid} to stay alive after prompt output"
     );
 
     writer.send(format!("exit(){newline}").into_bytes()).await?;
     let (remaining_output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await?;
     output.extend_from_slice(&remaining_output);
 
-    assert_eq!(code, 0, "expected python to exit cleanly");
+    assert_eq!(code, 0, "expected fixture to exit cleanly");
 
     Ok(())
 }

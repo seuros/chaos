@@ -3,7 +3,7 @@
 //! Receiving runtime traffic is not evidence of model progress. Only observed work
 //! renews `last_activity`; no timer, status poll, or other agent can renew it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use chaos_ipc::ProcessId;
@@ -11,6 +11,8 @@ use chaos_ipc::protocol::{AgentStatus, Event, EventMsg, Op};
 
 pub(crate) mod captions;
 mod events;
+mod lifecycle;
+use lifecycle::ProcessActivity;
 
 pub const QUIET_AFTER: Duration = Duration::from_secs(30);
 
@@ -121,37 +123,6 @@ pub struct Snapshot {
 }
 
 #[derive(Default)]
-struct ProcessActivity {
-    activity: Activity,
-    turn: Option<String>,
-    tools: HashSet<(&'static str, String)>,
-    waits: HashSet<String>,
-    inputs: HashSet<String>,
-}
-
-impl ProcessActivity {
-    fn refresh_phase(&mut self) {
-        self.activity.phase = if !self.inputs.is_empty() {
-            Phase::NeedsInput
-        } else if !self.waits.is_empty() {
-            Phase::WaitingAgents
-        } else if !self.tools.is_empty() {
-            Phase::Tools
-        } else {
-            Phase::Working
-        };
-    }
-
-    fn finish(&mut self, phase: Phase) {
-        self.turn = None;
-        self.tools.clear();
-        self.waits.clear();
-        self.inputs.clear();
-        self.activity.phase = phase;
-    }
-}
-
-#[derive(Default)]
 pub struct Tracker {
     processes: HashMap<ProcessId, ProcessActivity>,
 }
@@ -164,7 +135,7 @@ impl Tracker {
     pub fn get(&self, process_id: ProcessId) -> Activity {
         self.processes
             .get(&process_id)
-            .map(|state| state.activity.clone())
+            .map(ProcessActivity::snapshot)
             .unwrap_or_default()
     }
 
@@ -173,7 +144,7 @@ impl Tracker {
             .processes
             .iter()
             .filter(|(id, _)| Some(**id) != selected)
-            .map(|(id, state)| (*id, state.activity.clone()))
+            .map(|(id, state)| (*id, state.snapshot()))
             .collect();
         others.sort_by_cached_key(|(id, _)| id.to_string());
         Snapshot {
@@ -186,7 +157,7 @@ impl Tracker {
     pub fn disconnected(&mut self, process_id: ProcessId) {
         let state = self.processes.entry(process_id).or_default();
         // A normal shutdown followed by EOF must remain "Closed".
-        if state.activity.phase != Phase::Closed {
+        if state.phase() != Phase::Closed {
             state.finish(Phase::Disconnected);
         }
     }
@@ -202,7 +173,7 @@ impl Tracker {
     /// "Running" reports must not make a silent child look busy.
     fn reported_status(&mut self, process_id: ProcessId, status: &AgentStatus, now: Instant) {
         let state = self.processes.entry(process_id).or_default();
-        if state.activity.last_runtime_event.is_some() {
+        if state.data().last_runtime_event.is_some() {
             return;
         }
         match status {
@@ -212,12 +183,12 @@ impl Tracker {
             AgentStatus::Shutdown => state.finish(Phase::Closed),
             AgentStatus::NotFound => state.finish(Phase::Disconnected),
             AgentStatus::PendingInit | AgentStatus::Running => {
-                state.activity.phase = if *status == AgentStatus::PendingInit {
+                state.set_phase(if *status == AgentStatus::PendingInit {
                     Phase::Starting
                 } else {
                     Phase::Working
-                };
-                state.activity.expecting_since.get_or_insert(now);
+                });
+                state.data_mut().expecting_since.get_or_insert(now);
             }
         }
     }
@@ -251,15 +222,16 @@ impl Tracker {
             if let Some(state) = self.processes.get_mut(&process_id) {
                 let prefix = format!("input:{id}:");
                 let key = state
+                    .data()
                     .inputs
                     .iter()
                     .find(|key| key.starts_with(&prefix))
                     .cloned();
                 if let Some(key) = key {
-                    state.inputs.remove(&key);
-                    if state.turn.is_some() {
+                    state.data_mut().inputs.remove(&key);
+                    if state.data().turn.is_some() {
                         state.refresh_phase();
-                        state.activity.expecting_since = Some(now);
+                        state.data_mut().expecting_since = Some(now);
                     }
                 }
             }
@@ -279,11 +251,11 @@ impl Tracker {
             _ => return,
         };
         if let Some(state) = self.processes.get_mut(&process_id)
-            && state.inputs.remove(&key)
-            && state.turn.is_some()
+            && state.data_mut().inputs.remove(&key)
+            && state.data().turn.is_some()
         {
             state.refresh_phase();
-            state.activity.expecting_since = Some(now);
+            state.data_mut().expecting_since = Some(now);
         }
     }
 }

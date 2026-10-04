@@ -37,6 +37,9 @@ use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
 use super::TuiEvent;
 
+mod lifecycle;
+use lifecycle::EventBrokerState;
+
 /// Trailing-edge debounce for terminal resize events; only the settled size draws.
 const RESIZE_DEBOUNCE: Duration = Duration::from_millis(17);
 
@@ -58,35 +61,11 @@ pub struct EventBroker<S: EventSource = CrosstermEventSource> {
     resume_events_tx: watch::Sender<()>,
 }
 
-/// Tracks state of underlying [`EventSource`].
-enum EventBrokerState<S: EventSource> {
-    Paused,     // Underlying event source (i.e., crossterm EventStream) dropped
-    Start,      // A new event source will be created on next poll
-    Running(S), // Event source is currently running
-}
-
-impl<S: EventSource + Default> EventBrokerState<S> {
-    /// Return the running event source, starting it if needed; None when paused.
-    fn active_event_source_mut(&mut self) -> Option<&mut S> {
-        match self {
-            EventBrokerState::Paused => None,
-            EventBrokerState::Start => {
-                *self = EventBrokerState::Running(S::default());
-                match self {
-                    EventBrokerState::Running(events) => Some(events),
-                    EventBrokerState::Paused | EventBrokerState::Start => unreachable!(),
-                }
-            }
-            EventBrokerState::Running(events) => Some(events),
-        }
-    }
-}
-
 impl<S: EventSource + Default> EventBroker<S> {
     pub fn new() -> Self {
         let (resume_events_tx, _resume_events_rx) = watch::channel(());
         Self {
-            state: Mutex::new(EventBrokerState::Start),
+            state: Mutex::new(EventBrokerState::new()),
             resume_events_tx,
         }
     }
@@ -97,7 +76,7 @@ impl<S: EventSource + Default> EventBroker<S> {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *state = EventBrokerState::Paused;
+        state.pause();
     }
 
     /// Create a new instance of the underlying event source
@@ -106,7 +85,7 @@ impl<S: EventSource + Default> EventBroker<S> {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *state = EventBrokerState::Start;
+        state.reset();
         let _ = self.resume_events_tx.send(());
     }
 
@@ -220,7 +199,7 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
                 match Pin::new(events).poll_next(cx) {
                     Poll::Ready(Some(Ok(event))) => Some(event),
                     Poll::Ready(Some(Err(_))) | Poll::Ready(None) => {
-                        *state = EventBrokerState::Start;
+                        state.reset();
                         return Poll::Ready(None);
                     }
                     Poll::Pending => {

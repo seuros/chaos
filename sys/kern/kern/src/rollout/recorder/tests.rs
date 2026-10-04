@@ -75,7 +75,7 @@ async fn background_confirm_does_not_report_a_deferred_writer_as_durable() {
         "test".into(),
         false,
         sink,
-        Arc::new(Mutex::new(None)),
+        watch::channel(None).0,
         watch::channel(JournalWriterStatus::Ready).0,
     ));
     let (ack, done) = oneshot::channel();
@@ -100,7 +100,6 @@ async fn background_fenced_writer_cannot_reacquire_a_lease() {
         owner_id: "owner".into(),
         lease_token: "lease".into(),
         next_seq: 0,
-        last_lease_refresh: Instant::now(),
         pending_items: Vec::new(),
         lease: {
             let mut lease = Lease::default();
@@ -108,6 +107,7 @@ async fn background_fenced_writer_cannot_reacquire_a_lease() {
             lease
         },
     };
+    assert!(writer.lease.warning_deadline().is_none());
     assert!(writer.ensure_lease().await.unwrap_err().contains("fenced"));
 }
 

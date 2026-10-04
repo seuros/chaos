@@ -185,6 +185,63 @@ async fn refresh_models_forces_network_and_propagates_failure() {
         .unwrap_err();
         assert!(error.contains("failed to refresh models"));
         assert_eq!(manager.try_list_models().unwrap()[0].model, "new-model");
+
+        server.reset().await;
+        let requested = Arc::new(tokio::sync::Notify::new());
+        let notify_requested = requested.clone();
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(move |_: &wiremock::Request| {
+                notify_requested.notify_one();
+                ResponseTemplate::new(200)
+                    .set_body_json(ModelsResponse {
+                        models: vec![remote_model("cancelled", "Cancelled", 0)],
+                    })
+                    .set_delay(Duration::from_millis(250))
+            })
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut refresh = Box::pin(manager.refresh_models(RefreshStrategy::Online));
+        tokio::select! {
+            biased;
+            result = tokio::time::timeout(Duration::from_secs(5), requested.notified()) => {
+                result.expect("catalog fetch started");
+            }
+            result = &mut refresh => panic!("delayed fetch completed before cancellation: {result:?}"),
+        }
+        drop(refresh);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(manager.try_list_models().unwrap()[0].model, "new-model");
+        assert!(
+            manager
+                .cache_manager
+                .load_all()
+                .await
+                .unwrap()
+                .iter()
+                .flat_map(|entry| &entry.models)
+                .all(|model| model.slug != "cancelled")
+        );
+        server.verify().await;
+
+        server.reset().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(ModelsResponse {
+                models: vec![remote_model("concurrent", "Concurrent", 0)],
+            }))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let (first, second) = tokio::join!(
+            manager.refresh_models(RefreshStrategy::Online),
+            manager.refresh_models(RefreshStrategy::Online),
+        );
+        first.expect("first concurrent refresh");
+        second.expect("second concurrent refresh");
+        server.verify().await;
+        assert_eq!(manager.try_list_models().unwrap()[0].model, "concurrent");
     }
 }
 

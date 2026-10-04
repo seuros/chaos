@@ -19,13 +19,34 @@ pub(crate) fn tui_suite() {
 async fn test_constructor_uses_fixed_capabilities() {
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let terminal = super::Terminal::new_for_test(backend, 100, 30);
-    let tui = super::Tui::new_for_test(terminal);
+    let mut tui = super::Tui::new_for_test(terminal);
 
     assert!(!tui.enhanced_keys_supported);
     assert!(tui.notification_backend.is_none());
     assert_eq!(
         tui.terminal.last_known_screen_size,
         ratatui::layout::Size::new(100, 30)
+    );
+
+    let mut resumed = tui.event_broker.resume_events_rx();
+    let result = tui
+        .with_restored(super::RestoreMode::KeepRaw, || async {
+            Err::<(), _>("editor failed")
+        })
+        .await;
+    assert_eq!(result, Err("editor failed"));
+    assert!(resumed.has_changed().unwrap());
+    resumed.borrow_and_update();
+
+    let mut operation =
+        Box::pin(tui.with_restored(super::RestoreMode::KeepRaw, std::future::pending::<()>));
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(operation.as_mut().poll(&mut cx).is_pending());
+    assert!(!resumed.has_changed().unwrap());
+    drop(operation);
+    assert!(
+        resumed.has_changed().unwrap(),
+        "cancellation must resume input"
     );
 }
 

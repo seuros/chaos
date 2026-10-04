@@ -5,6 +5,7 @@ use std::process::Stdio;
 use std::sync::LazyLock;
 
 use chaos_ipc::product::OS_NAME;
+use state_machines::state_machine;
 use tracing::warn;
 
 static ASSERTION_REASON: LazyLock<String> =
@@ -14,23 +15,77 @@ const APP_ID: &str = "chaos";
 // This is `i32::MAX` seconds, which is accepted by common `sleep` implementations.
 const BLOCKER_SLEEP_SECONDS: &str = "2147483647";
 
-#[derive(Debug, Default)]
 pub(crate) struct LinuxSleepInhibitor {
-    state: InhibitState,
+    machine: DynamicInhibitorLifecycle<()>,
     preferred_backend: Option<LinuxBackend>,
     missing_backend_logged: bool,
 }
 
 pub(crate) use LinuxSleepInhibitor as SleepInhibitor;
 
-#[derive(Debug, Default)]
-enum InhibitState {
-    #[default]
-    Inactive,
-    Active {
-        backend: LinuxBackend,
-        child: Child,
-    },
+#[derive(Debug)]
+pub(crate) struct BackendProcess {
+    backend: LinuxBackend,
+    child: Child,
+}
+
+impl Drop for BackendProcess {
+    fn drop(&mut self) {
+        if let Err(error) = self.child.kill()
+            && !child_exited(&error)
+        {
+            warn!(backend = ?self.backend, reason = %error, "Failed to stop Linux sleep inhibitor backend");
+        }
+        if let Err(error) = self.child.wait()
+            && !child_exited(&error)
+        {
+            warn!(backend = ?self.backend, reason = %error, "Failed to reap Linux sleep inhibitor backend");
+        }
+    }
+}
+
+state_machine! {
+    name: InhibitorLifecycle,
+    dynamic: true,
+    initial: Inactive,
+    states: [Inactive, Active(BackendProcess)],
+    events {
+        acquire {
+            payload: Option<BackendProcess>,
+            transition: { from: Inactive, to: Active, data: own_process }
+        }
+        release {
+            transition: { from: Active, to: Inactive }
+            transition: { from: Inactive, internal: true }
+        }
+    }
+}
+
+impl<C, S> InhibitorLifecycle<C, S> {
+    fn own_process(&self, process: &mut Option<BackendProcess>) -> BackendProcess {
+        process
+            .take()
+            .unwrap_or_else(|| unreachable!("acquire owns inhibitor process"))
+    }
+}
+
+impl Default for LinuxSleepInhibitor {
+    fn default() -> Self {
+        Self {
+            machine: InhibitorLifecycle::new(()).into_dynamic(),
+            preferred_backend: None,
+            missing_backend_logged: false,
+        }
+    }
+}
+
+impl std::fmt::Debug for LinuxSleepInhibitor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LinuxSleepInhibitor")
+            .field("state", &self.machine.current_state())
+            .field("preferred_backend", &self.preferred_backend)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -45,8 +100,9 @@ impl LinuxSleepInhibitor {
     }
 
     pub(crate) fn acquire(&mut self) {
-        if let InhibitState::Active { backend, child } = &mut self.state {
-            match child.try_wait() {
+        if let Some(process) = self.machine.active_data_mut() {
+            let backend = process.backend;
+            match process.child.try_wait() {
                 Ok(None) => return,
                 Ok(Some(status)) => {
                     warn!(
@@ -65,7 +121,7 @@ impl LinuxSleepInhibitor {
             }
         }
 
-        self.state = InhibitState::Inactive;
+        self.release();
         let should_log_backend_failures = !self.missing_backend_logged;
         let backends = match self.preferred_backend {
             Some(LinuxBackend::SystemdInhibit) => [
@@ -84,50 +140,39 @@ impl LinuxSleepInhibitor {
 
         for backend in backends {
             match spawn_backend(backend) {
-                Ok(mut child) => match child.try_wait() {
-                    Ok(None) => {
-                        self.state = InhibitState::Active { backend, child };
-                        self.preferred_backend = Some(backend);
-                        self.missing_backend_logged = false;
-                        return;
-                    }
-                    Ok(Some(status)) => {
-                        if should_log_backend_failures {
-                            warn!(
-                                ?backend,
-                                ?status,
-                                "Linux sleep inhibitor backend exited immediately"
+                Ok(child) => {
+                    let mut process = BackendProcess { backend, child };
+                    match process.child.try_wait() {
+                        Ok(None) => {
+                            assert!(
+                                self.machine
+                                    .handle(InhibitorLifecycleEvent::Acquire(Some(process)))
+                                    .is_ok()
                             );
+                            self.preferred_backend = Some(backend);
+                            self.missing_backend_logged = false;
+                            return;
+                        }
+                        Ok(Some(status)) => {
+                            if should_log_backend_failures {
+                                warn!(
+                                    ?backend,
+                                    ?status,
+                                    "Linux sleep inhibitor backend exited immediately"
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            if should_log_backend_failures {
+                                warn!(
+                                    ?backend,
+                                    reason = %error,
+                                    "Failed to query Linux sleep inhibitor backend status after spawn"
+                                );
+                            }
                         }
                     }
-                    Err(error) => {
-                        if should_log_backend_failures {
-                            warn!(
-                                ?backend,
-                                reason = %error,
-                                "Failed to query Linux sleep inhibitor backend status after spawn"
-                            );
-                        }
-                        if let Err(kill_error) = child.kill()
-                            && !child_exited(&kill_error)
-                        {
-                            warn!(
-                                ?backend,
-                                reason = %kill_error,
-                                "Failed to stop Linux sleep inhibitor backend after status probe failure"
-                            );
-                        }
-                        if let Err(wait_error) = child.wait()
-                            && !child_exited(&wait_error)
-                        {
-                            warn!(
-                                ?backend,
-                                reason = %wait_error,
-                                "Failed to reap Linux sleep inhibitor backend after status probe failure"
-                            );
-                        }
-                    }
-                },
+                }
                 Err(error) => {
                     if should_log_backend_failures && error.kind() != std::io::ErrorKind::NotFound {
                         warn!(
@@ -147,27 +192,11 @@ impl LinuxSleepInhibitor {
     }
 
     pub(crate) fn release(&mut self) {
-        match std::mem::take(&mut self.state) {
-            InhibitState::Inactive => {}
-            InhibitState::Active { backend, mut child } => {
-                if let Err(error) = child.kill()
-                    && !child_exited(&error)
-                {
-                    warn!(?backend, reason = %error, "Failed to stop Linux sleep inhibitor backend");
-                }
-                if let Err(error) = child.wait()
-                    && !child_exited(&error)
-                {
-                    warn!(?backend, reason = %error, "Failed to reap Linux sleep inhibitor backend");
-                }
-            }
-        }
-    }
-}
-
-impl Drop for LinuxSleepInhibitor {
-    fn drop(&mut self) {
-        self.release();
+        assert!(
+            self.machine
+                .handle(InhibitorLifecycleEvent::Release)
+                .is_ok()
+        );
     }
 }
 

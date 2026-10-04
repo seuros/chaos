@@ -673,34 +673,6 @@ pub fn render_rows(
     )
 }
 
-/// Render a list of rows using the provided ScrollState, with shared styling
-/// and behavior for selection popups.
-/// This mode keeps column placement stable while scrolling by sizing the
-/// description column against the full dataset.
-///
-/// This function should be paired with
-/// [`measure_rows_height_stable_col_widths`] so reserved and rendered heights
-/// stay in sync.
-/// Returns the number of terminal lines actually rendered.
-pub fn render_rows_stable_col_widths(
-    area: Rect,
-    buf: &mut Buffer,
-    rows_all: &[GenericDisplayRow],
-    state: &ScrollState,
-    max_results: usize,
-    empty_message: &str,
-) -> u16 {
-    render_rows_inner(
-        area,
-        buf,
-        rows_all,
-        state,
-        max_results,
-        empty_message,
-        ColumnWidthMode::AutoAllRows,
-    )
-}
-
 /// Render a list of rows using the provided ScrollState and explicit
 /// [`ColumnWidthMode`] behavior.
 ///
@@ -747,24 +719,6 @@ pub fn measure_rows_height(
         max_results,
         width,
         ColumnWidthMode::AutoVisible,
-    )
-}
-
-/// Measures selection-row height while using full-dataset column alignment.
-/// This should be paired with [`render_rows_stable_col_widths`] so layout
-/// reservation matches rendering behavior.
-pub fn measure_rows_height_stable_col_widths(
-    rows_all: &[GenericDisplayRow],
-    state: &ScrollState,
-    max_results: usize,
-    width: u16,
-) -> u16 {
-    measure_rows_height_inner(
-        rows_all,
-        state,
-        max_results,
-        width,
-        ColumnWidthMode::AutoAllRows,
     )
 }
 

@@ -31,7 +31,6 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
 
 use chaos_amphetamine::SleepInhibitor;
 use chaos_ipc::ProcessId;
@@ -145,6 +144,8 @@ use self::agent::spawn_agent;
 use self::agent::spawn_agent_from_existing;
 pub use self::agent::spawn_op_forwarder;
 mod core;
+mod external_editor;
+mod status_script;
 pub use self::core::ActiveCellTranscriptKey;
 pub use self::core::ExternalEditorState;
 use self::core::NUDGE_MODEL_SLUG;
@@ -349,14 +350,6 @@ pub struct ChatWidget {
     queued_message_edit_binding: KeyBinding,
     // Pending notification to show when unfocused on next Draw
     pending_notification: Option<Notification>,
-    /// When `Some`, the user has pressed a quit shortcut and the second press
-    /// must occur before `quit_shortcut_expires_at`.
-    quit_shortcut_expires_at: Option<Instant>,
-    /// Tracks which quit shortcut key was pressed first.
-    ///
-    /// We require the second press to match this key so `Ctrl+C` followed by
-    /// `Ctrl+D` (or vice versa) doesn't quit accidentally.
-    quit_shortcut_key: Option<KeyBinding>,
     // Simple review mode flag; used to adjust layout and banners.
     is_review_mode: bool,
     // Snapshot of token usage to restore after review mode exits.
@@ -402,8 +395,8 @@ pub struct ChatWidget {
     status_line_branch_pending: bool,
     // True once we've attempted a branch lookup for the current CWD.
     status_line_branch_lookup_complete: bool,
-    status_line_script_render_generation: u64,
-    external_editor_state: ExternalEditorState,
+    status_line_script: status_script::StatusScriptRender,
+    external_editor: external_editor::ExternalEditor,
     last_rendered_user_message_event: Option<RenderedUserMessageEvent>,
     halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
 }
@@ -501,8 +494,6 @@ impl ChatWidget {
             show_welcome_banner: p.show_welcome_banner,
             suppress_session_configured_redraw: p.suppress_session_configured_redraw,
             pending_notification: None,
-            quit_shortcut_expires_at: None,
-            quit_shortcut_key: None,
             is_review_mode: false,
             pre_review_token_info: None,
             needs_final_message_separator: false,
@@ -520,8 +511,8 @@ impl ChatWidget {
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
-            status_line_script_render_generation: 0,
-            external_editor_state: ExternalEditorState::Closed,
+            status_line_script: status_script::StatusScriptRender::default(),
+            external_editor: external_editor::ExternalEditor::default(),
             last_rendered_user_message_event: None,
             halluacinate: p.halluacinate,
         };

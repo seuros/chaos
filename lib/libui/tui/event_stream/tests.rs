@@ -83,9 +83,15 @@ type SetupState = (
 );
 
 fn setup() -> SetupState {
-    let source = FakeEventSource::new();
     let broker = Arc::new(EventBroker::new());
-    *broker.state.lock().unwrap() = EventBrokerState::Running(source);
+    assert!(
+        broker
+            .state
+            .lock()
+            .unwrap()
+            .active_event_source_mut()
+            .is_some()
+    );
     let handle = FakeEventSourceHandle::new(broker.clone());
 
     let (draw_tx, draw_rx) = broadcast::channel(1);
@@ -180,24 +186,62 @@ async fn lagged_draw_maps_to_draw() {
 
 async fn error_or_eof_ends_stream() {
     let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
+    let source_tx = broker
+        .state
+        .lock()
+        .unwrap()
+        .active_event_source_mut()
+        .unwrap()
+        .tx
+        .clone();
     let mut stream = make_stream(broker, draw_rx, terminal_focused);
 
     handle.send(Err(std::io::Error::other("boom")));
 
     let next = stream.next().await;
     assert!(next.is_none());
+    assert!(source_tx.is_closed());
+
+    let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+    handle.send(Ok(Event::Key(key)));
+    std::assert_matches!(stream.next().await, Some(TuiEvent::Key(k)) if k == key);
 }
 
 async fn resume_wakes_paused_stream() {
     let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
     let mut stream = make_stream(broker.clone(), draw_rx, terminal_focused);
+    let source_tx = broker
+        .state
+        .lock()
+        .unwrap()
+        .active_event_source_mut()
+        .unwrap()
+        .tx
+        .clone();
 
     broker.pause_events();
+    assert!(
+        source_tx.is_closed(),
+        "pause must relinquish the input source"
+    );
+    broker.pause_events();
+    handle.send(Ok(Event::Paste("discarded while paused".into())));
 
     let task = tokio::spawn(async move { stream.next().await });
     tokio::task::yield_now().await;
 
     broker.resume_events();
+    let source_tx = broker
+        .state
+        .lock()
+        .unwrap()
+        .active_event_source_mut()
+        .unwrap()
+        .tx
+        .clone();
+    handle.send(Ok(Event::Paste("discarded on repeated resume".into())));
+    broker.resume_events();
+    assert!(source_tx.is_closed(), "resume replaces an existing source");
     let expected_key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
     handle.send(Ok(Event::Key(expected_key)));
 

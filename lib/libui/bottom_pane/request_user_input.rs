@@ -49,11 +49,7 @@ const UNANSWERED_CONFIRM_SUBMIT: &str = "Proceed";
 const UNANSWERED_CONFIRM_SUBMIT_DESC_SINGULAR: &str = "question";
 const UNANSWERED_CONFIRM_SUBMIT_DESC_PLURAL: &str = "questions";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Focus {
-    Options,
-    Notes,
-}
+use lifecycle::Focus;
 
 struct AnswerState {
     // Scrollable cursor state for option navigation/highlight.
@@ -74,13 +70,7 @@ pub struct RequestUserInputOverlay {
     // Reuse the shared chat composer so notes/freeform answers match the
     // primary input styling and behavior.
     composer: ChatComposer,
-    // One entry per question: selection state plus a stored notes draft.
-    answers: Vec<AnswerState>,
-    current_idx: usize,
-    focus: Focus,
     lifecycle: RequestLifecycle,
-    pending_submission_draft: Option<ComposerDraft>,
-    confirm_unanswered: Option<ScrollState>,
 }
 
 impl RequestUserInputOverlay {
@@ -108,12 +98,7 @@ impl RequestUserInputOverlay {
             request,
             queue: VecDeque::new(),
             composer,
-            answers: Vec::new(),
-            current_idx: 0,
-            focus: Focus::Options,
             lifecycle: RequestLifecycle::default(),
-            pending_submission_draft: None,
-            confirm_unanswered: None,
         };
         overlay.reset_for_request();
         overlay.ensure_focus_available();
@@ -122,7 +107,39 @@ impl RequestUserInputOverlay {
     }
 
     fn current_index(&self) -> usize {
-        self.current_idx
+        self.lifecycle.data().map_or(0, |data| data.current_idx)
+    }
+
+    fn answers(&self) -> &[AnswerState] {
+        self.lifecycle
+            .data()
+            .map_or(&[], |data| data.answers.as_slice())
+    }
+
+    fn focus(&self) -> Focus {
+        self.lifecycle
+            .data()
+            .map_or(Focus::Options, |data| data.focus.state())
+    }
+
+    fn focus_options(&mut self) {
+        if let Some(data) = self.lifecycle.data_mut() {
+            data.focus.options();
+        }
+    }
+
+    fn focus_notes(&mut self) {
+        if let Some(data) = self.lifecycle.data_mut() {
+            data.focus.notes();
+        }
+    }
+
+    fn pending_submission_draft(&mut self) -> &mut Option<ComposerDraft> {
+        &mut self
+            .lifecycle
+            .data_mut()
+            .unwrap_or_else(|| unreachable!("editing owns pending draft"))
+            .pending_submission_draft
     }
 
     fn current_question(&self) -> Option<&chaos_ipc::request_user_input::RequestUserInputQuestion> {
@@ -131,12 +148,12 @@ impl RequestUserInputOverlay {
 
     fn current_answer_mut(&mut self) -> Option<&mut AnswerState> {
         let idx = self.current_index();
-        self.answers.get_mut(idx)
+        self.lifecycle.data_mut()?.answers.get_mut(idx)
     }
 
     fn current_answer(&self) -> Option<&AnswerState> {
         let idx = self.current_index();
-        self.answers.get(idx)
+        self.answers().get(idx)
     }
 
     fn question_count(&self) -> usize {
@@ -174,7 +191,9 @@ impl RequestUserInputOverlay {
         if idx == self.current_index() {
             !self.composer.current_text_with_pending().trim().is_empty()
         } else {
-            !self.answers[idx].draft.text.trim().is_empty()
+            self.answers()
+                .get(idx)
+                .is_some_and(|answer| !answer.draft.text.trim().is_empty())
         }
     }
 
@@ -199,7 +218,7 @@ impl RequestUserInputOverlay {
     }
 
     fn focus_is_notes(&self) -> bool {
-        matches!(self.focus, Focus::Notes)
+        matches!(self.focus(), Focus::Notes)
     }
 
     fn confirm_unanswered_active(&self) -> bool {
@@ -212,6 +231,10 @@ impl RequestUserInputOverlay {
 
     fn finish(&mut self) {
         self.lifecycle.apply(InputRequestEvent::Finish);
+        self.composer
+            .set_text_content(String::new(), Vec::new(), Vec::new());
+        self.composer.set_pending_pastes(Vec::new());
+        self.queue.clear();
     }
 
     pub(super) fn option_rows(&self) -> Vec<GenericDisplayRow> {
@@ -335,7 +358,7 @@ impl RequestUserInputOverlay {
             answer.answer_committed = false;
             answer.notes_visible = true;
         }
-        self.pending_submission_draft = None;
+        *self.pending_submission_draft() = None;
         self.composer
             .set_text_content(String::new(), Vec::new(), Vec::new());
         self.composer.move_cursor_to_end();

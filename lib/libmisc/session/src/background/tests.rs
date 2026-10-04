@@ -13,6 +13,12 @@ fn quiescence_requires_a_completed_turn_and_no_pending_work() {
     activity.pending_completions = 0;
     activity.active_turn = true;
     assert!(disposition(&activity, true).is_none());
+    activity.active_turn = false;
+    let (sender, receiver) = watch::channel(activity.clone());
+    let mut wait = BackgroundWait::from_activity(receiver, true, DEFAULT_BACKGROUND_TIMEOUT);
+    let outcome = disposition(&activity, true).unwrap();
+    std::assert_matches!(wait.finish(outcome), WaitEvent::Complete);
+    assert!(sender.is_closed());
 }
 
 #[test]
@@ -25,4 +31,10 @@ fn interrupted_or_blocked_is_not_success() {
     activity.wake_policy = WakePolicy::Enabled;
     activity.blocked = Some("storage".into());
     std::assert_matches!(disposition(&activity, false), Some(WaitEvent::Stopped(_)));
+    let (sender, receiver) = watch::channel(activity.clone());
+    let mut wait = BackgroundWait::from_activity(receiver, true, DEFAULT_BACKGROUND_TIMEOUT);
+    let outcome = disposition(&activity, false).unwrap();
+    std::assert_matches!(wait.finish(outcome), WaitEvent::Stopped(reason) if reason == "storage");
+    assert!(wait.is_enabled());
+    assert!(sender.is_closed());
 }

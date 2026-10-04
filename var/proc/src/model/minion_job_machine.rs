@@ -9,6 +9,7 @@ pub(crate) mod job {
         dynamic: true,
         initial: Pending,
         states: [Pending, Running, Completed, Failed, Cancelled],
+        final_states: [Completed, Failed, Cancelled],
         events {
             start {
                 transition: { from: Pending, to: Running }
@@ -92,6 +93,7 @@ pub(crate) mod item {
         dynamic: true,
         initial: Pending,
         states: [Pending, Running, Completed, Failed],
+        final_states: [Completed, Failed],
         events {
             start {
                 transition: { from: Pending, to: Running }

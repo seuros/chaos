@@ -122,7 +122,9 @@ pub struct ShutdownHandle {
 impl ShutdownHandle {
     /// Signals the login loop to terminate.
     pub fn shutdown(&self) {
-        self.shutdown_notify.notify_waiters();
+        // There is one server-loop waiter. Retain a permit when shutdown
+        // arrives before that task registers its first wait.
+        self.shutdown_notify.notify_one();
     }
 }
 

@@ -88,35 +88,32 @@ pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 
 impl Chaos {
     /// Spawn a new [`Chaos`] and initialize the session.
-    pub(crate) async fn spawn(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {
-        let parent_trace = match args.parent_trace {
-            Some(trace) => {
-                if chaos_snitch::context_from_w3c_trace_context(&trace).is_some() {
-                    Some(trace)
-                } else {
-                    warn!("ignoring invalid thread spawn trace carrier");
-                    None
+    pub(crate) fn spawn(
+        args: ChaosSpawnArgs,
+    ) -> std::pin::Pin<Box<dyn Future<Output = ChaosResult<ChaosSpawnOk>> + Send>> {
+        Box::pin(async move {
+            let parent_trace = match args.parent_trace {
+                Some(trace) => {
+                    if chaos_snitch::context_from_w3c_trace_context(&trace).is_some() {
+                        Some(trace)
+                    } else {
+                        warn!("ignoring invalid thread spawn trace carrier");
+                        None
+                    }
                 }
+                None => None,
+            };
+            let process_spawn_span = info_span!("process_spawn", otel.name = "process_spawn");
+            if let Some(trace) = parent_trace.as_ref() {
+                let _ = set_parent_from_w3c_trace_context(&process_spawn_span, trace);
             }
-            None => None,
-        };
-        let process_spawn_span = info_span!("process_spawn", otel.name = "process_spawn");
-        if let Some(trace) = parent_trace.as_ref() {
-            let _ = set_parent_from_w3c_trace_context(&process_spawn_span, trace);
-        }
-        // Box the spawn future at its source. `spawn_internal` is a large
-        // async fn; embedding its state machine inline forces every caller's
-        // future layout to nest through it, overflowing the type-layout
-        // recursion limit in downstream crates. Heap-allocating here caps the
-        // layout depth once for all callers.
-        Box::pin(
             Self::spawn_internal(ChaosSpawnArgs {
                 parent_trace,
                 ..args
             })
-            .instrument(process_spawn_span),
-        )
-        .await
+            .instrument(process_spawn_span)
+            .await
+        })
     }
 
     async fn spawn_internal(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {

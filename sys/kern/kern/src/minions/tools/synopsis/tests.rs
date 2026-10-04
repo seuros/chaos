@@ -151,7 +151,7 @@ async fn run_fake(
     let runner = Runner::new(Synopsis::new(root), executor).expect("valid synopsis");
     let outcome = runner.run(cancellation.clone()).await.expect("runner");
     cancellation.cancel();
-    state.shutdown_remaining(backend_dyn).await;
+    state.shutdown_remaining().await;
     (outcome, state)
 }
 
@@ -342,6 +342,8 @@ async fn race_cancels_and_closes_the_loser() {
     let results = state.snapshot(&["winner".to_string(), "loser".to_string()]);
     assert_eq!(results[0].state, SynopsisJobState::Completed);
     assert_eq!(results[1].state, SynopsisJobState::Cancelled);
+    state.shutdown_remaining().await;
+    assert_eq!(backend.shutdown_count(), 2);
 }
 
 #[tokio::test(start_paused = true)]

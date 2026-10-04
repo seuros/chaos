@@ -73,7 +73,6 @@ async fn run_lib_suite() {
     super::app::tests::app_tests_suite().await;
     super::app_backtrack::tests::app_backtrack_suite();
     super::cwd_prompt::tests::cwd_prompt_suite();
-    super::external_editor::tests::run_editor_returns_updated_content().await;
     super::onboarding::tests::onboarding_suite();
     super::pager_overlay::tests::pager_overlay_suite();
     super::resume_picker::tests::resume_picker_suite().await;

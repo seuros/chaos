@@ -1,10 +1,12 @@
 use super::*;
 use crate::app_event::AppEvent;
 use crate::bottom_pane::footer::footer_height;
+use crate::key_hint;
 use crate::test_support::buffer_row_string;
 use crate::test_support::make_app_event_sender;
 use crate::test_support::make_app_event_sender_with_rx;
 use crate::test_support::renderable_buffer;
+use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use image::ImageBuffer;
@@ -611,12 +613,81 @@ fn base_footer_mode_tracks_empty_state_after_quit_hint_expires() {
 
     type_chars_humanlike(&mut composer, &['d']);
     composer.show_quit_shortcut_hint(key_hint::ctrl(KeyCode::Char('c')), true);
-    composer.quit_shortcut_expires_at = Some(Instant::now() - std::time::Duration::from_secs(1));
+    let expires_at = Instant::now() - std::time::Duration::from_secs(1);
+    let ctrl_c = key_hint::ctrl(KeyCode::Char('c'));
+    let ctrl_d = key_hint::ctrl(KeyCode::Char('d'));
+    composer.quit_shortcut.arm(ctrl_c, expires_at, None);
+    assert!(
+        composer
+            .quit_shortcut
+            .visible_at(expires_at - std::time::Duration::from_nanos(1))
+    );
+    assert!(!composer.quit_shortcut.visible_at(expires_at));
+    assert!(
+        !composer
+            .quit_shortcut
+            .active_for(ctrl_d, expires_at - std::time::Duration::from_nanos(1))
+    );
+    assert!(
+        composer
+            .quit_shortcut
+            .active_for(ctrl_c, expires_at - std::time::Duration::from_nanos(1))
+    );
+    assert!(!composer.quit_shortcut.active_for(ctrl_c, expires_at));
 
     assert_eq!(composer.footer_mode(), FooterMode::ComposerHasDraft);
 
+    composer.show_quit_shortcut_hint(ctrl_d, true);
+    assert!(composer.quit_shortcut_active_for(ctrl_d));
+    assert!(!composer.quit_shortcut_active_for(ctrl_c));
+    assert_eq!(composer.footer_props().quit_shortcut_key, ctrl_d);
+    composer.clear_quit_shortcut_hint(true);
+    assert!(!composer.quit_shortcut_hint_visible());
+    assert!(!composer.quit_shortcut_active_for(ctrl_d));
+
     composer.set_text_content(String::new(), Vec::new(), Vec::new());
     assert_eq!(composer.footer_mode(), FooterMode::ComposerEmpty);
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(8);
+            let frames = FrameRequester::new(draw_tx);
+            composer.quit_shortcut.arm(
+                ctrl_c,
+                Instant::now() + std::time::Duration::from_millis(20),
+                Some(frames.clone()),
+            );
+            composer.quit_shortcut.clear();
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(40), draw_rx.recv())
+                    .await
+                    .is_err()
+            );
+
+            composer.quit_shortcut.arm(
+                ctrl_c,
+                Instant::now() + std::time::Duration::from_millis(20),
+                Some(frames.clone()),
+            );
+            composer.quit_shortcut.arm(
+                ctrl_d,
+                Instant::now() + std::time::Duration::from_millis(100),
+                Some(frames.clone()),
+            );
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(40), draw_rx.recv())
+                    .await
+                    .is_err()
+            );
+            tokio::time::timeout(std::time::Duration::from_millis(200), draw_rx.recv())
+                .await
+                .expect("replacement quit hint did not expire")
+                .unwrap();
+            assert!(!composer.quit_shortcut_hint_visible());
+        });
 }
 
 fn clear_for_ctrl_c_records_cleared_draft() {

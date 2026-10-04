@@ -84,4 +84,9 @@ async fn list_tools_rejects_a_server_that_repeats_cursors() {
     assert!(session.tools().await.is_none());
 
     session.disconnect().await.unwrap();
+    session.disconnect().await.unwrap();
+    assert!(matches!(
+        session.request_value("tools/list", None).await,
+        Err(GuestError::Disconnected)
+    ));
 }

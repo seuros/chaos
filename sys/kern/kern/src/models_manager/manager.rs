@@ -19,7 +19,6 @@ use chaos_ipc::openai_models::ModelFamily;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ModelsResponse;
-use chaos_model_catalog::ModelDiscoveryWorkflow;
 use chaos_model_catalog::ModelsCache;
 use chaos_model_catalog::ModelsCacheManager;
 use chaos_model_catalog::ModelsCacheScope;
@@ -174,14 +173,14 @@ enum CatalogMode {
 }
 
 /// Coordinates remote model discovery plus cached metadata on disk.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelsManager {
-    remote_models: RwLock<Vec<ModelInfo>>,
+    remote_models: Arc<RwLock<Vec<ModelInfo>>>,
     catalog_mode: CatalogMode,
     automatic_catalog_refresh: bool,
     collaboration_modes_config: CollaborationModesConfig,
     auth_manager: Arc<AuthManager>,
-    etag: RwLock<Option<String>>,
+    etag: Arc<RwLock<Option<String>>>,
     cache_manager: ModelsCacheManager,
     provider_id: String,
     provider: ModelProviderInfo,
@@ -251,12 +250,12 @@ impl ModelsManager {
             .map(|catalog| catalog.models)
             .unwrap_or_default();
         Self {
-            remote_models: RwLock::new(remote_models),
+            remote_models: Arc::new(RwLock::new(remote_models)),
             catalog_mode,
             automatic_catalog_refresh: true,
             collaboration_modes_config,
             auth_manager,
-            etag: RwLock::new(None),
+            etag: Arc::new(RwLock::new(None)),
             cache_manager,
             provider_id,
             provider,
@@ -704,39 +703,10 @@ impl ModelsManager {
             strategy => strategy,
         };
 
-        let mut workflow = ModelDiscoveryWorkflow::new();
-        workflow.begin(refresh_strategy);
-
-        match refresh_strategy {
-            RefreshStrategy::Offline => {
-                if let Some(cache) = self.load_fresh_cache().await {
-                    workflow.record_cache_hit();
-                    self.apply_cache_entry(cache).await;
-                } else {
-                    workflow.record_cache_miss();
-                }
-                Ok(())
-            }
-            RefreshStrategy::OnlineIfUncached => {
-                if let Some(cache) = self.load_fresh_cache().await {
-                    workflow.record_cache_hit();
-                    self.apply_cache_entry(cache).await;
-                    info!("models cache: using cached models");
-                    return Ok(());
-                }
-                workflow.record_cache_miss();
-                info!("models cache: cache miss, fetching from provider");
-                workflow.record_fetch_started();
-                self.fetch_and_update_models(&mut workflow).await
-            }
-            RefreshStrategy::Online => self.fetch_and_update_models(&mut workflow).await,
-        }
+        super::discovery::refresh(self.clone(), refresh_strategy).await
     }
 
-    async fn fetch_and_update_models(
-        &self,
-        workflow: &mut ModelDiscoveryWorkflow,
-    ) -> CoreResult<()> {
+    pub(super) async fn fetch_and_update_models(&self) -> CoreResult<bool> {
         let _timer =
             chaos_snitch::start_global_timer("chaos.remote_models.fetch_update.duration_ms", &[]);
 
@@ -765,19 +735,14 @@ impl ModelsManager {
 
         match result {
             Ok(FetchedCatalog::Live { models, etag }) => {
-                workflow.record_live_catalog();
                 self.apply_live_catalog(models, etag).await;
-                Ok(())
+                Ok(true)
             }
             Ok(FetchedCatalog::Unsupported) => {
-                workflow.record_unsupported_catalog();
                 self.apply_unsupported_catalog().await;
-                Ok(())
+                Ok(false)
             }
-            Err(err) => {
-                workflow.record_failed();
-                Err(err)
-            }
+            Err(err) => Err(err),
         }
     }
 
@@ -972,7 +937,7 @@ impl ModelsManager {
         *self.remote_models.write().await = models;
     }
 
-    async fn apply_cache_entry(&self, cache: ModelsCache) {
+    pub(super) async fn apply_cache_entry(&self, cache: ModelsCache) {
         let ModelsCache { models, etag, .. } = cache;
         *self.etag.write().await = etag.clone();
         self.apply_remote_models(models.clone()).await;
@@ -984,7 +949,7 @@ impl ModelsManager {
     }
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
-    async fn load_fresh_cache(&self) -> Option<ModelsCache> {
+    pub(super) async fn load_fresh_cache(&self) -> Option<ModelsCache> {
         let _timer =
             chaos_snitch::start_global_timer("chaos.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::models_manager::client_version_to_whole();

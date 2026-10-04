@@ -1,6 +1,40 @@
-//! Runtime transitions are serialized by the transport's short-lived state
-//! mutex. Network I/O never runs while it is held; atomics still gate admission.
 use state_machines::state_machine;
+use std::time::Duration;
+use tokio::task::{JoinHandle, JoinSet};
+
+#[derive(Debug, Default)]
+pub(super) struct SessionData {
+    pub cached_initialize: Option<super::JsonRpcMessage>,
+    pub session_id: Option<String>,
+    pub negotiated_version: Option<String>,
+    pub last_event_id: Option<String>,
+    pub recovered_generation: Option<u64>,
+    pub streams: JoinSet<()>,
+}
+
+impl SessionData {
+    pub fn clear(&mut self) {
+        self.session_id = None;
+        self.negotiated_version = None;
+        self.last_event_id = None;
+        self.recovered_generation = None;
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct StreamData {
+    pub task: Option<JoinHandle<()>>,
+    pub reconnect_delay: Duration,
+    pub reconnect_attempt: u32,
+}
+
+impl Drop for StreamData {
+    fn drop(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
 
 mod session {
     use super::*;
@@ -9,14 +43,14 @@ mod session {
         dynamic: true,
         initial: Fresh,
         states: [
-            superstate Open {
+            superstate Open(SessionData) {
                 state Fresh, state Initializing, state Negotiated, state Ready,
                 state RecoveringFresh, state RecoveringReady,
             },
             Closed,
         ],
         events {
-            initialize {
+            begin_initialization {
                 transition: { from: Fresh, to: Initializing }
                 transition: { from: Initializing, to: Initializing }
                 transition: { from: Negotiated, to: Initializing }
@@ -67,7 +101,7 @@ mod sse {
         dynamic: true,
         initial: Idle,
         states: [
-            superstate Enabled { state Idle, state Connecting, state Streaming, state Backoff },
+            superstate Enabled(StreamData) { state Idle, state Connecting, state Streaming, state Backoff },
             Disabled, Stopped,
         ],
         events {
@@ -99,14 +133,35 @@ pub(super) struct Lifecycle {
 
 impl Default for Lifecycle {
     fn default() -> Self {
-        Self {
-            session: session::DynamicHttpSession::new(()),
-            sse: sse::DynamicHttpSse::new(()),
-        }
+        Self::new(Duration::from_millis(500))
     }
 }
 
 impl Lifecycle {
+    pub(super) fn new(reconnect_delay: Duration) -> Self {
+        Self {
+            session: session::HttpSession::new(())
+                .with_open_data(SessionData::default())
+                .into_dynamic(),
+            sse: sse::HttpSse::new(())
+                .with_enabled_data(StreamData {
+                    task: None,
+                    reconnect_delay,
+                    reconnect_attempt: 0,
+                })
+                .into_dynamic(),
+        }
+    }
+
+    pub(super) fn data(&self) -> Option<&SessionData> {
+        self.session.open_data()
+    }
+    pub(super) fn data_mut(&mut self) -> Option<&mut SessionData> {
+        self.session.open_data_mut()
+    }
+    pub(super) fn stream(&mut self) -> Option<&mut StreamData> {
+        self.sse.enabled_data_mut()
+    }
     pub(super) fn session(&mut self, event: HttpSessionEvent) -> bool {
         self.session.handle(event).is_ok()
     }

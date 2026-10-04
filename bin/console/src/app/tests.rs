@@ -1,6 +1,7 @@
 use super::*;
 use crate::app_backtrack::BacktrackSelection;
 use crate::app_backtrack::BacktrackState;
+use crate::app_backtrack::PendingBacktrackRollback;
 use crate::app_backtrack::user_count;
 use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
 use crate::file_search::FileSearchManager;
@@ -128,7 +129,6 @@ pub(crate) async fn app_tests_suite() {
         .await
         .expect("rebuild_config_for_resume_or_fallback_errors_when_cwd_changes");
     sync_tui_theme_selection_updates_chat_widget_config_copy().await;
-    backtrack_selection_with_duplicate_history_targets_unique_turn().await;
     backtrack_remote_image_only_selection_clears_existing_composer_draft().await;
     backtrack_resubmit_preserves_data_image_urls_in_user_turn().await;
     replayed_initial_messages_apply_rollback_in_queue_order().await;
@@ -2080,6 +2080,7 @@ async fn sync_tui_theme_selection_updates_chat_widget_config_copy() {
     );
 }
 
+#[tokio::test]
 async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
@@ -2202,7 +2203,7 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
         vec!["https://example.com/backtrack.png".to_string()]
     );
 
-    app.apply_backtrack_rollback(selection);
+    app.apply_backtrack_rollback(selection.clone());
     assert_eq!(
         app.chat_widget.remote_image_urls(),
         vec!["https://example.com/backtrack.png".to_string()]
@@ -2216,6 +2217,26 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
     }
 
     assert_eq!(rollback_turns, Some(1));
+    assert!(app.backtrack.rollback_pending());
+    app.backtrack.unprime();
+    app.backtrack.close_preview();
+    assert_eq!(user_count(&app.transcript_cells), 2);
+    app.handle_backtrack_event(&EventMsg::ProcessRolledBack(ProcessRolledBackEvent {
+        num_turns: 1,
+    }));
+    assert!(!app.backtrack.rollback_pending());
+    assert_eq!(user_count(&app.transcript_cells), 1);
+    let mut selection = selection;
+    selection.nth_user_message = 0;
+    assert!(app.backtrack.request_rollback(PendingBacktrackRollback {
+        selection,
+        process_id: Some(ProcessId::new()),
+    }));
+    app.handle_backtrack_event(&EventMsg::ProcessRolledBack(ProcessRolledBackEvent {
+        num_turns: 1,
+    }));
+    assert!(!app.backtrack.rollback_pending());
+    assert_eq!(user_count(&app.transcript_cells), 1);
 }
 
 async fn backtrack_remote_image_only_selection_clears_existing_composer_draft() {
@@ -2715,7 +2736,7 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
     assert!(!app.has_emitted_history_lines);
     assert!(!app.backtrack.primed());
     assert!(!app.backtrack.preview_active());
-    assert!(app.backtrack.pending_rollback.is_none());
+    assert!(!app.backtrack.rollback_pending());
     assert!(!app.backtrack_render_pending);
     assert_eq!(app.chat_widget.process_id(), Some(process_id));
     assert_eq!(app.chat_widget.composer_text_with_pending(), "draft prompt");

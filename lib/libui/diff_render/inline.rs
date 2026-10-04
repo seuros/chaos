@@ -38,69 +38,27 @@ pub(super) fn render_change(
 ) {
     let style_context = current_diff_render_style_context();
     match change {
-        FileChange::Add { content } => {
-            // Pre-highlight the entire file content as a whole.
+        FileChange::Add { content } | FileChange::Delete { content } => {
+            let kind = if matches!(change, FileChange::Add { .. }) {
+                DiffLineType::Insert
+            } else {
+                DiffLineType::Delete
+            };
             let syntax_lines = lang.and_then(|l| highlight_code_to_styled_spans(content, l));
             let line_number_width = line_number_width(content.lines().count());
             for (i, raw) in content.lines().enumerate() {
                 let syn = syntax_lines.as_ref().and_then(|sl| sl.get(i));
-                if let Some(spans) = syn {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
-                        i + 1,
-                        DiffLineType::Insert,
-                        raw,
-                        width,
-                        line_number_width,
-                        Some(spans),
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
-                    ));
-                } else {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
-                        i + 1,
-                        DiffLineType::Insert,
-                        raw,
-                        width,
-                        line_number_width,
-                        /*syntax_spans*/ None,
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
-                    ));
-                }
-            }
-        }
-        FileChange::Delete { content } => {
-            let syntax_lines = lang.and_then(|l| highlight_code_to_styled_spans(content, l));
-            let line_number_width = line_number_width(content.lines().count());
-            for (i, raw) in content.lines().enumerate() {
-                let syn = syntax_lines.as_ref().and_then(|sl| sl.get(i));
-                if let Some(spans) = syn {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
-                        i + 1,
-                        DiffLineType::Delete,
-                        raw,
-                        width,
-                        line_number_width,
-                        Some(spans),
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
-                    ));
-                } else {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
-                        i + 1,
-                        DiffLineType::Delete,
-                        raw,
-                        width,
-                        line_number_width,
-                        /*syntax_spans*/ None,
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
-                    ));
-                }
+                out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
+                    i + 1,
+                    kind,
+                    raw,
+                    width,
+                    line_number_width,
+                    syn.map(Vec::as_slice),
+                    style_context.theme,
+                    style_context.color_level,
+                    style_context.diff_backgrounds,
+                ));
             }
         }
         FileChange::Update { unified_diff, .. } => {
@@ -185,108 +143,35 @@ pub(super) fn render_change(
                         let syntax_spans = hunk_syntax_lines
                             .as_ref()
                             .and_then(|syntax_lines| syntax_lines.get(line_idx));
-                        match l {
+                        let (line_number, kind, text) = match l {
                             diffy::Line::Insert(text) => {
-                                let s = text.trim_end_matches('\n');
-                                if let Some(syn) = syntax_spans {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Insert,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            Some(syn),
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
-                                } else {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Insert,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            /*syntax_spans*/ None,
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
-                                }
+                                let line_number = new_ln;
                                 new_ln += 1;
+                                (line_number, DiffLineType::Insert, text)
                             }
                             diffy::Line::Delete(text) => {
-                                let s = text.trim_end_matches('\n');
-                                if let Some(syn) = syntax_spans {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            old_ln,
-                                            DiffLineType::Delete,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            Some(syn),
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
-                                } else {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            old_ln,
-                                            DiffLineType::Delete,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            /*syntax_spans*/ None,
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
-                                }
+                                let line_number = old_ln;
                                 old_ln += 1;
+                                (line_number, DiffLineType::Delete, text)
                             }
                             diffy::Line::Context(text) => {
-                                let s = text.trim_end_matches('\n');
-                                if let Some(syn) = syntax_spans {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Context,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            Some(syn),
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
-                                } else {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Context,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            /*syntax_spans*/ None,
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
-                                }
+                                let line_number = new_ln;
                                 old_ln += 1;
                                 new_ln += 1;
+                                (line_number, DiffLineType::Context, text)
                             }
-                        }
+                        };
+                        out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
+                            line_number,
+                            kind,
+                            text.trim_end_matches('\n'),
+                            width,
+                            line_number_width,
+                            syntax_spans.map(Vec::as_slice),
+                            style_context.theme,
+                            style_context.color_level,
+                            style_context.diff_backgrounds,
+                        ));
                     }
                 }
             }
@@ -389,10 +274,8 @@ pub(super) fn push_wrapped_diff_line_inner_with_theme_and_color_level(
     // When we have syntax spans, compose them with the diff style for a richer
     // view. The sign character keeps the diff color; content gets syntax colors
     // with an overlay modifier for delete lines (dim).
-    if let Some(syn_spans) = syntax_spans {
-        let gutter = format!("{ln_str:>gutter_width$} ");
-        let sign = format!("{sign_char}");
-        let styled: Vec<RtSpan<'static>> = syn_spans
+    let styled: Vec<RtSpan<'static>> = if let Some(syn_spans) = syntax_spans {
+        syn_spans
             .iter()
             .map(|sp| {
                 let style = if matches!(kind, DiffLineType::Delete) {
@@ -402,36 +285,12 @@ pub(super) fn push_wrapped_diff_line_inner_with_theme_and_color_level(
                 };
                 RtSpan::styled(sp.content.clone().into_owned(), style)
             })
-            .collect();
-
-        // Determine how many display columns remain for content after the
-        // gutter and sign character.
-        let available_content_cols = width.saturating_sub(prefix_cols + 1).max(1);
-
-        // Wrap the styled content spans to fit within the available columns.
-        let wrapped_chunks = wrap_styled_spans(&styled, available_content_cols);
-
-        let mut lines: Vec<RtLine<'static>> = Vec::new();
-        for (i, chunk) in wrapped_chunks.into_iter().enumerate() {
-            let mut row_spans: Vec<RtSpan<'static>> = Vec::new();
-            if i == 0 {
-                // First line: gutter + sign + content
-                row_spans.push(RtSpan::styled(gutter.clone(), gutter_style));
-                row_spans.push(RtSpan::styled(sign.clone(), sign_style));
-            } else {
-                // Continuation: empty gutter + two-space indent (matches
-                // the plain-text wrapping continuation style).
-                let cont_gutter = format!("{:gutter_width$}  ", "");
-                row_spans.push(RtSpan::styled(cont_gutter, gutter_style));
-            }
-            row_spans.extend(chunk);
-            lines.push(RtLine::from(row_spans).style(line_bg));
-        }
-        return lines;
-    }
+            .collect()
+    } else {
+        vec![RtSpan::styled(text.to_string(), content_style)]
+    };
 
     let available_content_cols = width.saturating_sub(prefix_cols + 1).max(1);
-    let styled = vec![RtSpan::styled(text.to_string(), content_style)];
     let wrapped_chunks = wrap_styled_spans(&styled, available_content_cols);
 
     let mut lines: Vec<RtLine<'static>> = Vec::new();

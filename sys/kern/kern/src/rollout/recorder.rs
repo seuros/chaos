@@ -453,31 +453,48 @@ impl RolloutRecorder {
         let (tx, rx) = mpsc::unbounded_channel::<RolloutCmd>();
         let (status, writer_status) = watch::channel(JournalWriterStatus::Ready);
         let writer_done = tokio_util::sync::CancellationToken::new();
-        let lease_clock = Arc::new(Mutex::new(
+        let (lease_deadline, mut deadline) = watch::channel(
             journal_sink
                 .active()
-                .map(|writer| writer.last_lease_refresh),
-        ));
-        let clock = Arc::clone(&lease_clock);
+                .and_then(|writer| writer.lease.warning_deadline()),
+        );
         let done = writer_done.clone();
         let expiry_status = status.clone();
         tokio::spawn(async move {
-            let mut ticks = tokio::time::interval(Duration::from_secs(1));
             loop {
+                let warning_at = *deadline.borrow_and_update();
                 tokio::select! {
+                    biased;
                     _ = done.cancelled() => break,
-                    _ = ticks.tick() => {
-                        let refreshed = *clock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                        if refreshed.is_some_and(|time| time.elapsed() >= JOURNAL_LEASE_TTL - Duration::from_secs(5)) {
-                            expiry_status.send_if_modified(|status| {
-                                if *status == JournalWriterStatus::Ready {
-                                    *status = JournalWriterStatus::Recovering;
-                                    true
-                                } else {
-                                    false
+                    changed = deadline.changed() => {
+                        if changed.is_err() {
+                            break;
+                        }
+                    }
+                    _ = async {
+                        if let Some(at) = warning_at {
+                            tokio::time::sleep_until(tokio::time::Instant::from_std(at)).await;
+                        } else {
+                            std::future::pending::<()>().await;
+                        }
+                    } => {
+                        expiry_status.send_if_modified(|status| {
+                            if *status == JournalWriterStatus::Ready {
+                                *status = JournalWriterStatus::Recovering;
+                                true
+                            } else {
+                                false
+                            }
+                        });
+                        health::set_persistence_health(PersistenceHealth::Failed);
+                        tokio::select! {
+                            biased;
+                            _ = done.cancelled() => break,
+                            changed = deadline.changed() => {
+                                if changed.is_err() {
+                                    break;
                                 }
-                            });
-                            health::set_persistence_health(PersistenceHealth::Failed);
+                            }
                         }
                     }
                 }
@@ -493,7 +510,7 @@ impl RolloutRecorder {
             config.model_provider_id().to_string(),
             config.generate_memories(),
             journal_sink,
-            lease_clock,
+            lease_deadline,
             status.clone(),
         );
         tokio::task::spawn(async move {
@@ -780,7 +797,6 @@ struct ActiveJournalWriter {
     owner_id: String,
     lease_token: String,
     next_seq: i64,
-    last_lease_refresh: Instant,
     pending_items: Vec<RolloutItem>,
     lease: Lease,
 }
@@ -797,16 +813,12 @@ impl std::fmt::Debug for ActiveJournalWriter {
 impl JournalSink {
     fn pending(config: PendingJournalConfig) -> Self {
         let process_id = config.process_id;
-        let mut machine = sink_machine::DynamicJournalStorage::new(());
-        assert!(
-            machine
-                .set_pending_data(Some(PendingBatch {
-                    config,
-                    items: Vec::new(),
-                }))
-                .is_ok(),
-            "new journal storage is pending"
-        );
+        let machine = sink_machine::JournalStorage::new(())
+            .with_pending_data(PendingBatch {
+                config,
+                items: Vec::new(),
+            })
+            .into_dynamic();
         Self {
             last_error: None,
             machine,
@@ -821,21 +833,19 @@ impl JournalSink {
     }
 
     fn active(&self) -> Option<&ActiveJournalWriter> {
-        self.machine.active_data().and_then(Option::as_ref)
+        self.machine.active_data()
     }
 
     fn active_mut(&mut self) -> Option<&mut ActiveJournalWriter> {
-        self.machine.active_data_mut().and_then(Option::as_mut)
+        self.machine.active_data_mut()
     }
 
     fn activate(&mut self, writer: ActiveJournalWriter) {
         assert!(
-            self.machine.handle(JournalStorageEvent::Connect).is_ok(),
+            self.machine
+                .handle(JournalStorageEvent::Connect(Some(writer)))
+                .is_ok(),
             "only pending journal storage can connect"
-        );
-        assert!(
-            self.machine.set_active_data(Some(writer)).is_ok(),
-            "connected journal storage owns its writer"
         );
     }
 
@@ -859,7 +869,6 @@ impl JournalSink {
             JournalStorageState::Pending => self
                 .machine
                 .pending_data()
-                .and_then(Option::as_ref)
                 .is_some_and(|batch| !batch.items.is_empty()),
             JournalStorageState::Active => self
                 .active()
@@ -873,7 +882,6 @@ impl JournalSink {
             JournalStorageState::Pending => self
                 .machine
                 .pending_data()
-                .and_then(Option::as_ref)
                 .map_or_else(Vec::new, |batch| batch.items.clone()),
             JournalStorageState::Active => self
                 .active()
@@ -903,7 +911,6 @@ impl JournalSink {
             && !self
                 .machine
                 .pending_data()
-                .and_then(Option::as_ref)
                 .is_some_and(|batch| batch.config.mode == JournalSinkMode::Resume)
         {
             return JournalAppendOutcome::Persisted;
@@ -912,29 +919,26 @@ impl JournalSink {
         match self.machine.current_state() {
             JournalStorageState::Disabled => JournalAppendOutcome::Deferred,
             JournalStorageState::Pending => {
-                let Some(PendingBatch {
-                    config,
-                    items: mut pending_items,
-                }) = self.machine.pending_data_mut().and_then(Option::take)
-                else {
-                    unreachable!("pending journal storage owns its batch");
-                };
-                pending_items.extend(items.iter().cloned());
-                let config_for_call = config.clone();
+                let batch = self
+                    .machine
+                    .pending_data_mut()
+                    .unwrap_or_else(|| unreachable!("pending journal storage owns its batch"));
+                batch.items.extend(items.iter().cloned());
+                let config_for_call = batch.config.clone();
                 let connect_result = self
                     .breaker
                     .call(|| async {
                         match config_for_call.mode {
                             JournalSinkMode::Create => ActiveJournalWriter::initialize(
                                 config_for_call,
-                                pending_items.as_slice(),
+                                batch.items.as_slice(),
                             )
                             .await
                             .map_err(anyhow::Error::msg),
                             JournalSinkMode::Resume => {
                                 ActiveJournalWriter::attach_resumed(
                                     config_for_call,
-                                    pending_items.as_slice(),
+                                    batch.items.as_slice(),
                                 )
                                 .await
                             }
@@ -948,65 +952,34 @@ impl JournalSink {
                         self.activate(writer);
                         JournalAppendOutcome::Persisted
                     }
-                    Err(BreakerError::Open) => {
-                        assert!(
-                            self.machine
-                                .set_pending_data(Some(PendingBatch {
-                                    config,
-                                    items: pending_items,
-                                }))
-                                .is_ok(),
-                            "deferred storage remains pending"
-                        );
-                        JournalAppendOutcome::Deferred
-                    }
+                    Err(BreakerError::Open) => JournalAppendOutcome::Deferred,
                     Err(BreakerError::Operation(err)) => {
                         warn!("failed to initialize journal sink: {err:#}");
                         self.last_error = Some(err);
                         health::set_persistence_health(PersistenceHealth::Failed);
-                        assert!(
-                            self.machine
-                                .set_pending_data(Some(PendingBatch {
-                                    config,
-                                    items: pending_items,
-                                }))
-                                .is_ok(),
-                            "failed storage retains its pending batch"
-                        );
                         JournalAppendOutcome::Deferred
                     }
                 }
             }
             JournalStorageState::Active => {
-                let Some(mut writer) = self.machine.active_data_mut().and_then(Option::take) else {
-                    unreachable!("active journal storage owns its writer");
-                };
+                let writer = self
+                    .machine
+                    .active_data_mut()
+                    .unwrap_or_else(|| unreachable!("active journal storage owns its writer"));
                 match self.breaker.call(|| writer.append_items(items)).await {
                     Ok(()) => {
                         self.last_error = None;
                         health::set_persistence_health(PersistenceHealth::Healthy);
-                        assert!(
-                            self.machine.set_active_data(Some(writer)).is_ok(),
-                            "storage remains active"
-                        );
                         JournalAppendOutcome::Persisted
                     }
                     Err(BreakerError::Open) => {
                         writer.defer_items(items);
-                        assert!(
-                            self.machine.set_active_data(Some(writer)).is_ok(),
-                            "storage remains active"
-                        );
                         JournalAppendOutcome::Deferred
                     }
                     Err(BreakerError::Operation(err)) => {
                         warn!("journal append deferred after failure: {err}");
                         self.last_error = Some(anyhow::Error::msg(err));
                         health::set_persistence_health(PersistenceHealth::Failed);
-                        assert!(
-                            self.machine.set_active_data(Some(writer)).is_ok(),
-                            "storage remains active"
-                        );
                         JournalAppendOutcome::Deferred
                     }
                 }
@@ -1015,12 +988,8 @@ impl JournalSink {
     }
 
     async fn shutdown(&mut self) -> std::io::Result<()> {
-        let writer = self.machine.active_data_mut().and_then(Option::take);
-        assert!(
-            self.machine.handle(JournalStorageEvent::Disable).is_ok(),
-            "journal storage can always shut down"
-        );
-        if let Some(mut writer) = writer {
+        let mut result = Ok(());
+        if let Some(writer) = self.machine.active_data_mut() {
             match tokio::time::timeout(JOURNAL_REQUEST_TIMEOUT, writer.flush_pending_items()).await
             {
                 Ok(Ok(())) => {}
@@ -1036,10 +1005,14 @@ impl JournalSink {
             // mounted database, and await release before acknowledging shutdown.
             if let Err(error) = writer.release_lease().await {
                 warn!(%error, "failed to release journal lease during shutdown");
-                return Err(IoError::other(error));
+                result = Err(IoError::other(error));
             }
         }
-        Ok(())
+        assert!(
+            self.machine.handle(JournalStorageEvent::Disable).is_ok(),
+            "journal storage can always shut down"
+        );
+        result
     }
 }
 
@@ -1098,7 +1071,6 @@ impl ActiveJournalWriter {
                 owner_id: config.owner_id,
                 lease_token: result.lease.lease_token,
                 next_seq: result.next_seq,
-                last_lease_refresh: Instant::now(),
                 pending_items: Vec::new(),
                 lease: Lease::default(),
             }),
@@ -1187,7 +1159,6 @@ impl ActiveJournalWriter {
             owner_id: config.owner_id.clone(),
             lease_token: lease.lease_token,
             next_seq: 0,
-            last_lease_refresh: Instant::now(),
             pending_items: Vec::new(),
             lease: Lease::default(),
         };
@@ -1339,9 +1310,7 @@ impl ActiveJournalWriter {
         if self.lease.fenced() {
             return Err("journal writer is fenced".into());
         }
-        if self.lease.confirmed()
-            && self.last_lease_refresh.elapsed() < JOURNAL_LEASE_REFRESH_INTERVAL
-        {
+        if !self.lease.renewal_due(Instant::now()) {
             return Ok(());
         }
 
@@ -1350,8 +1319,7 @@ impl ActiveJournalWriter {
             .await
             .unwrap_or_else(|_| Err("journal lease refresh timed out; will retry".into()));
         if result.is_ok() {
-            self.lease.apply(WriterLeaseEvent::Confirm);
-            self.last_lease_refresh = Instant::now();
+            self.lease.apply(WriterLeaseEvent::Confirm(Instant::now()));
         }
         result
     }
@@ -1426,11 +1394,14 @@ impl ActiveJournalWriter {
         Ok(())
     }
 
-    async fn release_lease(self) -> Result<(), String> {
+    async fn release_lease(&self) -> Result<(), String> {
         match tokio::time::timeout(
             JOURNAL_REQUEST_TIMEOUT,
-            self.client
-                .release_lease(self.process_id, self.owner_id, self.lease_token),
+            self.client.release_lease(
+                self.process_id,
+                self.owner_id.clone(),
+                self.lease_token.clone(),
+            ),
         )
         .await
         {
@@ -1628,7 +1599,7 @@ async fn rollout_writer(
     default_provider: String,
     generate_memories: bool,
     mut journal_sink: JournalSink,
-    lease_clock: Arc<Mutex<Option<Instant>>>,
+    lease_deadline: watch::Sender<Option<Instant>>,
     status: watch::Sender<JournalWriterStatus>,
 ) -> std::io::Result<()> {
     let mut buffered_items = Vec::<RolloutItem>::new();
@@ -1643,16 +1614,20 @@ async fn rollout_writer(
     let mut heartbeat = tokio::time::interval(JOURNAL_LEASE_REFRESH_INTERVAL);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
+        let warning_at = journal_sink
+            .active()
+            .and_then(|writer| writer.lease.warning_deadline());
+        lease_deadline.send_if_modified(|current| {
+            if *current == warning_at {
+                return false;
+            }
+            *current = warning_at;
+            true
+        });
         if let Some(writer) = journal_sink.active() {
-            *lease_clock
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                Some(writer.last_lease_refresh);
             let current = if writer.lease.fenced() {
                 JournalWriterStatus::Fenced
-            } else if !writer.lease.confirmed()
-                || writer.last_lease_refresh.elapsed() >= JOURNAL_LEASE_TTL - Duration::from_secs(5)
-            {
+            } else if writer.lease.at_risk(Instant::now()) {
                 JournalWriterStatus::Recovering
             } else {
                 JournalWriterStatus::Ready

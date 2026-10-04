@@ -113,6 +113,7 @@ jobs:
           PKGS="-p chaos_journald -p chaos-cli -p alcatraz"
           mbx build --target ${{ matrix.target }} --profile ci-test $PKGS
           TARGET_DIR="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/ci-test"
+          echo "$TARGET_DIR" >> "$GITHUB_PATH"
           {
             echo "CARGO_BIN_EXE_chaos_journald=${TARGET_DIR}/chaos_journald"
             echo "CARGO_BIN_EXE_chaos=${TARGET_DIR}/chaos"

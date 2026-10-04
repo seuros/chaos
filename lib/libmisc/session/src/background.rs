@@ -8,6 +8,12 @@ use chaos_kern::Process;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
+mod lifecycle;
+use lifecycle::{
+    BackgroundWaitLifecycle, BackgroundWaitLifecycleEvent, BackgroundWaitLifecycleState,
+    DynamicBackgroundWaitLifecycle, WaitData,
+};
+
 pub const DEFAULT_BACKGROUND_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug)]
@@ -20,44 +26,99 @@ pub enum WaitEvent {
 /// Reduces the kernel activity subscription and ordinary event stream. It
 /// forwards every turn event, including intermediate completion turns.
 pub struct BackgroundWait {
-    activity: watch::Receiver<ProcessActivity>,
-    deadline: Instant,
-    enabled: bool,
-    completed_turn: bool,
-    blocked: Option<String>,
+    lifecycle: DynamicBackgroundWaitLifecycle<()>,
 }
 
 impl BackgroundWait {
     pub fn is_enabled(&self) -> bool {
-        self.enabled
+        !matches!(
+            self.lifecycle.current_state(),
+            BackgroundWaitLifecycleState::Forwarding
+                | BackgroundWaitLifecycleState::ForwardingStopped
+        )
     }
 
     pub fn for_recovery(process: &Process, timeout: Duration) -> Self {
         let mut wait = Self::new(process, true, timeout);
-        wait.completed_turn = true;
+        wait.lifecycle
+            .waiting_data_mut()
+            .unwrap_or_else(|| unreachable!("recovery owns its wait"))
+            .completed_turn = true;
         wait
     }
     pub fn new(process: &Process, enabled: bool, timeout: Duration) -> Self {
-        Self {
-            activity: process.subscribe_activity(),
-            deadline: Instant::now()
-                + timeout.clamp(Duration::from_secs(1), Duration::from_secs(86_400)),
-            enabled,
-            completed_turn: false,
-            blocked: None,
+        Self::from_activity(process.subscribe_activity(), enabled, timeout)
+    }
+
+    fn from_activity(
+        activity: watch::Receiver<ProcessActivity>,
+        enabled: bool,
+        timeout: Duration,
+    ) -> Self {
+        let lifecycle = if enabled {
+            BackgroundWaitLifecycle::new(())
+                .with_waiting_data(WaitData {
+                    activity,
+                    deadline: Instant::now()
+                        + timeout.clamp(Duration::from_secs(1), Duration::from_secs(86_400)),
+                    completed_turn: false,
+                })
+                .into_dynamic()
+        } else {
+            DynamicBackgroundWaitLifecycle::new_init_state(
+                (),
+                BackgroundWaitLifecycleState::Forwarding,
+            )
+        };
+        Self { lifecycle }
+    }
+
+    fn terminal(&self) -> Option<WaitEvent> {
+        match self.lifecycle.current_state() {
+            BackgroundWaitLifecycleState::Complete => Some(WaitEvent::Complete),
+            BackgroundWaitLifecycleState::Stopped => self
+                .lifecycle
+                .stopped_data()
+                .cloned()
+                .map(WaitEvent::Stopped),
+            BackgroundWaitLifecycleState::ForwardingStopped => self
+                .lifecycle
+                .forwarding_stopped_data()
+                .cloned()
+                .map(WaitEvent::Stopped),
+            _ => None,
         }
+    }
+
+    fn finish(&mut self, outcome: WaitEvent) -> WaitEvent {
+        let event = match outcome {
+            WaitEvent::Complete => BackgroundWaitLifecycleEvent::Finish,
+            WaitEvent::Stopped(reason) => BackgroundWaitLifecycleEvent::Stop(Some(reason)),
+            WaitEvent::Event(_) => unreachable!("events do not finish a wait"),
+        };
+        assert!(
+            self.lifecycle.handle(event).is_ok(),
+            "wait outcome is valid"
+        );
+        self.terminal()
+            .unwrap_or_else(|| unreachable!("wait finished"))
     }
 
     pub async fn next(&mut self, process: &Process) -> WaitEvent {
         loop {
-            let outcome = if self.enabled {
-                if let Some(reason) = self.blocked.take() {
-                    return WaitEvent::Stopped(reason);
+            if let Some(outcome) = self.terminal() {
+                return outcome;
+            }
+            let waiting = self.lifecycle.waiting_data();
+            let enabled = waiting.is_some();
+            let deadline = waiting
+                .map(|data| data.deadline)
+                .unwrap_or_else(Instant::now);
+            let outcome = if let Some(waiting) = waiting {
+                if Instant::now() >= deadline {
+                    return self.finish(WaitEvent::Stopped("background wait timed out".into()));
                 }
-                if Instant::now() >= self.deadline {
-                    return WaitEvent::Stopped("background wait timed out".into());
-                }
-                disposition(&self.activity.borrow(), self.completed_turn)
+                disposition(&waiting.activity.borrow(), waiting.completed_turn)
             } else {
                 None
             };
@@ -66,30 +127,37 @@ impl BackgroundWait {
                 event = process.next_event() => {
                     return match event {
                         Ok(event) => {
-                            self.completed_turn |= matches!(event.msg, EventMsg::TurnComplete(_));
-                            if matches!(event.msg, EventMsg::ExecApprovalRequest(_)
+                            if let Some(waiting) = self.lifecycle.waiting_data_mut() {
+                                waiting.completed_turn |= matches!(event.msg, EventMsg::TurnComplete(_));
+                            }
+                            if enabled && matches!(event.msg, EventMsg::ExecApprovalRequest(_)
                                 | EventMsg::ApplyPatchApprovalRequest(_) | EventMsg::RequestUserInput(_)
                                 | EventMsg::RequestPermissions(_) | EventMsg::ElicitationRequest(_)
                                 | EventMsg::DynamicToolCallRequest(_))
                             {
-                                self.blocked = Some("background work requires interactive input".into());
+                                self.finish(WaitEvent::Stopped("background work requires interactive input".into()));
                             }
                             WaitEvent::Event(Box::new(event))
                         }
-                        Err(error) => WaitEvent::Stopped(error.to_string()),
+                        Err(error) => self.finish(WaitEvent::Stopped(error.to_string())),
                     };
                 }
                 _ = std::future::ready(()), if outcome.is_some() => {
                     if let Some(outcome) = outcome {
-                        return outcome;
+                        return self.finish(outcome);
                     }
                 }
-                _ = tokio::time::sleep_until(self.deadline), if self.enabled => {
-                    return WaitEvent::Stopped("background wait timed out".into());
+                _ = tokio::time::sleep_until(deadline), if enabled => {
+                    return self.finish(WaitEvent::Stopped("background wait timed out".into()));
                 }
-                changed = self.activity.changed(), if self.enabled => {
+                changed = async {
+                    match self.lifecycle.waiting_data_mut() {
+                        Some(waiting) => waiting.activity.changed().await,
+                        None => std::future::pending().await,
+                    }
+                }, if enabled => {
                     if changed.is_err() {
-                        return WaitEvent::Stopped("kernel activity subscription closed".into());
+                        return self.finish(WaitEvent::Stopped("kernel activity subscription closed".into()));
                     }
                 }
             }

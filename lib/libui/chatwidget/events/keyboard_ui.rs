@@ -9,12 +9,10 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::path::PathBuf;
-use std::time::Instant;
 
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
 use crate::bottom_pane::InputResult;
-use crate::bottom_pane::QUIT_SHORTCUT_TIMEOUT;
 use crate::bottom_pane::SelectionViewParams;
 use crate::clipboard_paste::paste_image_to_temp_png;
 use crate::history_cell;
@@ -60,8 +58,6 @@ impl ChatWidget {
                     return;
                 }
                 self.bottom_pane.clear_quit_shortcut_hint();
-                self.quit_shortcut_expires_at = None;
-                self.quit_shortcut_key = None;
             }
             KeyEvent {
                 code: KeyCode::Char(c),
@@ -92,8 +88,6 @@ impl ChatWidget {
             }
             other if other.kind == KeyEventKind::Press => {
                 self.bottom_pane.clear_quit_shortcut_hint();
-                self.quit_shortcut_expires_at = None;
-                self.quit_shortcut_key = None;
             }
             _ => {}
         }
@@ -247,11 +241,24 @@ impl ChatWidget {
     }
 
     pub fn external_editor_state(&self) -> super::super::ExternalEditorState {
-        self.external_editor_state
+        self.external_editor.state()
     }
 
-    pub fn set_external_editor_state(&mut self, state: super::super::ExternalEditorState) {
-        self.external_editor_state = state;
+    pub fn request_external_editor(&mut self) -> bool {
+        self.external_editor.request()
+    }
+
+    pub fn activate_external_editor(&mut self) -> bool {
+        self.external_editor.activate()
+    }
+
+    pub fn finish_external_editor(&mut self) {
+        self.external_editor.finish();
+    }
+
+    pub async fn with_external_editor<F: std::future::Future>(&mut self, future: F) -> F::Output {
+        let _session = super::super::external_editor::EditorSession::new(self);
+        future.await
     }
 
     pub fn set_footer_hint_override(&mut self, items: Option<Vec<(String, String)>>) {
@@ -321,8 +328,6 @@ impl ChatWidget {
         if self.bottom_pane.on_ctrl_c() == CancellationEvent::Handled {
             if DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED {
                 if modal_or_popup_active {
-                    self.quit_shortcut_expires_at = None;
-                    self.quit_shortcut_key = None;
                     self.bottom_pane.clear_quit_shortcut_hint();
                 } else {
                     self.arm_quit_shortcut(key);
@@ -341,8 +346,7 @@ impl ChatWidget {
         }
 
         if self.quit_shortcut_active_for(key) {
-            self.quit_shortcut_expires_at = None;
-            self.quit_shortcut_key = None;
+            self.bottom_pane.clear_quit_shortcut_hint();
             self.request_quit_without_confirmation();
             return;
         }
@@ -371,8 +375,7 @@ impl ChatWidget {
         }
 
         if self.quit_shortcut_active_for(key) {
-            self.quit_shortcut_expires_at = None;
-            self.quit_shortcut_key = None;
+            self.bottom_pane.clear_quit_shortcut_hint();
             self.request_quit_without_confirmation();
             return true;
         }
@@ -386,23 +389,12 @@ impl ChatWidget {
     }
 
     /// True if `key` matches the armed quit shortcut and the window has not expired.
-    fn quit_shortcut_active_for(&self, key: KeyBinding) -> bool {
-        self.quit_shortcut_key == Some(key)
-            && self
-                .quit_shortcut_expires_at
-                .is_some_and(|expires_at| Instant::now() < expires_at)
+    fn quit_shortcut_active_for(&mut self, key: KeyBinding) -> bool {
+        self.bottom_pane.quit_shortcut_active_for(key)
     }
 
     /// Arm the double-press quit shortcut and show the footer hint.
-    ///
-    /// This keeps the state machine (`quit_shortcut_*`) in `ChatWidget`, since
-    /// it is the component that interprets Ctrl+C vs Ctrl+D and decides whether
-    /// quitting is currently allowed, while delegating rendering to `BottomPane`.
     fn arm_quit_shortcut(&mut self, key: KeyBinding) {
-        self.quit_shortcut_expires_at = Instant::now()
-            .checked_add(QUIT_SHORTCUT_TIMEOUT)
-            .or_else(|| Some(Instant::now()));
-        self.quit_shortcut_key = Some(key);
         self.bottom_pane.show_quit_shortcut_hint(key);
     }
 

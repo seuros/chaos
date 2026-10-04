@@ -1,5 +1,5 @@
-//! Transition validation over persisted records; restoring does not replay events.
-use chaos_ipc::background_tasks::{BackgroundTask, TaskSource, TaskState, WakePolicy};
+use super::task::TaskData;
+use chaos_ipc::background_tasks::WakePolicy;
 use state_machines::state_machine;
 
 state_machine! {
@@ -7,9 +7,12 @@ state_machine! {
     dynamic: true,
     initial: Submitting,
     states: [
-        superstate Live { state Submitting, state Running, state InputRequired },
-        Succeeded, Failed, Cancelled, Lost, SubmissionUnknown,
+        superstate Record(TaskData) {
+            superstate Live { state Submitting, state Running, state InputRequired },
+            state Succeeded, state Failed, state Cancelled, state Lost, state SubmissionUnknown,
+        },
     ],
+    final_states: [Failed, Cancelled, Lost, SubmissionUnknown],
     events {
         run { transition: { from: Live, to: Running } }
         input { transition: { from: Live, to: InputRequired } }
@@ -41,47 +44,6 @@ impl<C, S> TaskExecution<C, S> {
     }
 }
 
-pub(super) fn transition(task: &mut BackgroundTask, next: TaskState) -> bool {
-    if task.state == next {
-        return true;
-    }
-    let state = match task.state {
-        TaskState::Submitting => TaskExecutionState::Submitting,
-        TaskState::Running => TaskExecutionState::Running,
-        TaskState::InputRequired => TaskExecutionState::InputRequired,
-        TaskState::Succeeded => TaskExecutionState::Succeeded,
-        TaskState::Failed => TaskExecutionState::Failed,
-        TaskState::Cancelled => TaskExecutionState::Cancelled,
-        TaskState::Lost => TaskExecutionState::Lost,
-        TaskState::SubmissionUnknown => TaskExecutionState::SubmissionUnknown,
-    };
-    let recovery = task.source == Some(TaskSource::MachineRecovery);
-    let event = match next {
-        TaskState::Running if task.state == TaskState::Succeeded => {
-            TaskExecutionEvent::WithdrawRecovery(recovery && !task.delivered)
-        }
-        TaskState::Cancelled if task.state == TaskState::Succeeded => {
-            TaskExecutionEvent::RevokeRecovery(recovery)
-        }
-        TaskState::Running => TaskExecutionEvent::Run,
-        TaskState::InputRequired => TaskExecutionEvent::Input,
-        TaskState::Succeeded => TaskExecutionEvent::Succeed,
-        TaskState::Failed => TaskExecutionEvent::Fail,
-        TaskState::Cancelled => TaskExecutionEvent::Cancel,
-        TaskState::Lost => TaskExecutionEvent::Lost,
-        TaskState::SubmissionUnknown => TaskExecutionEvent::Unknown,
-        TaskState::Submitting => return false,
-    };
-    if DynamicTaskExecution::new_init_state((), state)
-        .handle(event)
-        .is_err()
-    {
-        return false;
-    }
-    task.state = next;
-    true
-}
-
 state_machine! {
     name: WakeAdmission,
     dynamic: true,
@@ -89,38 +51,43 @@ state_machine! {
     states: [Enabled, Interrupted, Closed],
     events {
         enable {
-            transition: { from: Enabled, to: Enabled }
+            transition: { from: Enabled, internal: true }
             transition: { from: Interrupted, to: Enabled }
         }
         interrupt {
             transition: { from: Enabled, to: Interrupted }
-            transition: { from: Interrupted, to: Interrupted }
+            transition: { from: Interrupted, internal: true }
         }
         close {
             transition: { from: Enabled, to: Closed }
             transition: { from: Interrupted, to: Closed }
-            transition: { from: Closed, to: Closed }
+            transition: { from: Closed, internal: true }
         }
     }
 }
 
-pub(super) fn set_policy(policy: &mut WakePolicy, next: WakePolicy) -> bool {
+pub(super) fn restore_policy(policy: WakePolicy) -> DynamicWakeAdmission<()> {
     let state = match policy {
         WakePolicy::Enabled => WakeAdmissionState::Enabled,
         WakePolicy::Interrupted => WakeAdmissionState::Interrupted,
         WakePolicy::Closed => WakeAdmissionState::Closed,
     };
+    DynamicWakeAdmission::new_init_state((), state)
+}
+
+pub(super) fn policy(machine: &DynamicWakeAdmission<()>) -> WakePolicy {
+    match machine.current_state() {
+        WakeAdmissionState::Enabled => WakePolicy::Enabled,
+        WakeAdmissionState::Interrupted => WakePolicy::Interrupted,
+        WakeAdmissionState::Closed => WakePolicy::Closed,
+    }
+}
+
+pub(super) fn set_policy(machine: &mut DynamicWakeAdmission<()>, next: WakePolicy) -> bool {
     let event = match next {
         WakePolicy::Enabled => WakeAdmissionEvent::Enable,
         WakePolicy::Interrupted => WakeAdmissionEvent::Interrupt,
         WakePolicy::Closed => WakeAdmissionEvent::Close,
     };
-    if DynamicWakeAdmission::new_init_state((), state)
-        .handle(event)
-        .is_err()
-    {
-        return false;
-    }
-    *policy = next;
-    true
+    machine.handle(event).is_ok()
 }

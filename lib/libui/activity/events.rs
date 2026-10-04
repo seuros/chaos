@@ -6,13 +6,13 @@ impl Tracker {
         let msg = &event.msg;
 
         if let EventMsg::TurnStarted(ev) = msg {
-            if state.turn.as_ref() != Some(&ev.turn_id) {
+            if state.data().turn.as_ref() != Some(&ev.turn_id) {
                 *state = ProcessActivity::default();
-                state.turn = Some(ev.turn_id.clone());
-                state.activity.phase = Phase::Working;
-                state.activity.last_activity = Some(now);
+                state.data_mut().turn = Some(ev.turn_id.clone());
+                state.set_phase(Phase::Working);
+                state.data_mut().last_activity = Some(now);
             }
-            state.activity.last_runtime_event = Some(now);
+            state.data_mut().last_runtime_event = Some(now);
             return;
         }
 
@@ -41,18 +41,18 @@ impl Tracker {
         };
         // Empty IDs are emitted by older producers and cannot be correlated.
         if let Some(turn) = turn.filter(|turn| !turn.is_empty())
-            && state.turn.as_deref() != Some(turn)
+            && state.data().turn.as_deref() != Some(turn)
         {
             return;
         }
-        state.activity.last_runtime_event = Some(now);
+        state.data_mut().last_runtime_event = Some(now);
         match msg {
             EventMsg::ShutdownComplete => {
                 state.finish(Phase::Closed);
                 return;
             }
             EventMsg::TurnComplete(_) => {
-                let phase = if state.activity.phase == Phase::Failed {
+                let phase = if state.phase() == Phase::Failed {
                     Phase::Failed
                 } else {
                     Phase::Idle
@@ -64,17 +64,17 @@ impl Tracker {
                 state.finish(Phase::Interrupted);
                 return;
             }
-            EventMsg::Error(_) if state.turn.is_some() => {
-                state.activity.phase = Phase::Failed;
+            EventMsg::Error(_) if state.data().turn.is_some() => {
+                state.set_phase(Phase::Failed);
                 return;
             }
-            EventMsg::StreamError(_) if state.turn.is_some() => {
-                state.activity.phase = Phase::Reconnecting;
+            EventMsg::StreamError(_) if state.data().turn.is_some() => {
+                state.set_phase(Phase::Reconnecting);
                 return;
             }
             _ => {}
         }
-        if state.turn.is_none() {
+        if state.data().turn.is_none() {
             return;
         }
 
@@ -98,36 +98,45 @@ impl Tracker {
         if let Some((kind, id, begin)) = tool_change {
             let key = (kind, id.clone());
             if begin {
-                state.tools.insert(key);
+                state.data_mut().tools.insert(key);
             } else {
-                state.tools.remove(&key);
+                state.data_mut().tools.remove(&key);
             }
         } else {
             match msg {
                 EventMsg::CollabWaitingBegin(ev) => {
-                    state.waits.insert(ev.call_id.clone());
+                    state.data_mut().waits.insert(ev.call_id.clone());
                 }
                 EventMsg::CollabWaitingEnd(ev) => {
-                    state.waits.remove(&ev.call_id);
+                    state.data_mut().waits.remove(&ev.call_id);
                 }
                 EventMsg::ExecApprovalRequest(ev) => {
                     state
+                        .data_mut()
                         .inputs
                         .insert(format!("exec:{}", ev.effective_approval_id()));
                 }
                 EventMsg::ApplyPatchApprovalRequest(ev) => {
-                    state.inputs.insert(format!("patch:{}", ev.call_id));
+                    state
+                        .data_mut()
+                        .inputs
+                        .insert(format!("patch:{}", ev.call_id));
                 }
                 EventMsg::RequestUserInput(ev) => {
                     state
+                        .data_mut()
                         .inputs
                         .insert(format!("input:{}:{}", ev.turn_id, ev.call_id));
                 }
                 EventMsg::RequestPermissions(ev) => {
-                    state.inputs.insert(format!("permissions:{}", ev.call_id));
+                    state
+                        .data_mut()
+                        .inputs
+                        .insert(format!("permissions:{}", ev.call_id));
                 }
                 EventMsg::ElicitationRequest(ev) => {
                     state
+                        .data_mut()
                         .inputs
                         .insert(format!("elicitation:{}:{}", ev.server_name, ev.id));
                 }
@@ -158,7 +167,7 @@ impl Tracker {
                 _ => return,
             }
         }
-        state.activity.last_activity = Some(now);
+        state.data_mut().last_activity = Some(now);
         state.refresh_phase();
     }
 }

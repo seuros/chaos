@@ -1,4 +1,5 @@
 mod formatting;
+mod lifecycle;
 mod rendering;
 mod row;
 mod state;
@@ -173,7 +174,10 @@ pub(crate) async fn run_session_picker(
             // No provider filter: show sessions from all providers so that
             // switching between profiles (e.g. openai ↔ xai) doesn't hide
             // sessions started with a different provider.
-            let page = RolloutRecorder::list_processes(
+            let page = tokio::select! {
+                biased;
+                _ = request.cancellation.cancelled() => return,
+                page = RolloutRecorder::list_processes(
                 &config,
                 state::PAGE_SIZE,
                 request.cursor.as_ref(),
@@ -181,8 +185,8 @@ pub(crate) async fn run_session_picker(
                 INTERACTIVE_SESSION_SOURCES,
                 request.default_provider.as_str(),
                 /*search_term*/ None,
-            )
-            .await;
+                ) => page,
+            };
             let _ = tx.send(BackgroundEvent::PageLoaded {
                 request_token: request.request_token,
                 search_token: request.search_token,
@@ -205,6 +209,7 @@ pub(crate) async fn run_session_picker(
     let mut tui_events = alt.tui.event_stream().fuse();
     let mut background_events = UnboundedReceiverStream::new(bg_rx).fuse();
     let mut requested_selections = std::collections::HashSet::new();
+    let mut selection_loads = tokio::task::JoinSet::new();
 
     loop {
         // Load only highlighted histories, never every journal in a page.
@@ -213,7 +218,7 @@ pub(crate) async fn run_session_picker(
         {
             let process_id = row.process_id;
             let tx = bg_tx.clone();
-            tokio::spawn(async move {
+            selection_loads.spawn(async move {
                 let selection = chaos_kern::saved_selection::load_saved_selection(process_id)
                     .await
                     .map_err(|err| err.to_string());
@@ -248,6 +253,7 @@ pub(crate) async fn run_session_picker(
             Some(event) = background_events.next() => {
                 state.handle_background_event(event).await?;
             }
+            _ = selection_loads.join_next(), if !selection_loads.is_empty() => {}
             else => break,
         }
     }

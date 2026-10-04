@@ -18,6 +18,7 @@ state_machine! {
     dynamic: true,
     initial: Queued,
     states: [Queued, InProgress, Completed, Failed, Expired, Cancelled],
+    final_states: [Completed, Failed, Expired, Cancelled],
     events {
         submit {
             transition: { from: Queued, to: InProgress }
@@ -26,7 +27,7 @@ state_machine! {
             transition: { from: Queued, to: Failed }
         }
         poll {
-            transition: { from: InProgress, to: InProgress }
+            transition: { from: InProgress, internal: true }
         }
         finish {
             transition: { from: InProgress, to: Completed }

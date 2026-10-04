@@ -46,6 +46,9 @@ struct UnansweredConfirmationLayout {
 
 impl Renderable for RequestUserInputOverlay {
     fn desired_height(&self, width: u16) -> u16 {
+        if self.done() {
+            return 0;
+        }
         if self.confirm_unanswered_active() {
             return self.unanswered_confirmation_height(width);
         }
@@ -91,6 +94,9 @@ impl Renderable for RequestUserInputOverlay {
     }
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
+        if self.done() {
+            return;
+        }
         self.render_ui(area, buf);
     }
 
@@ -111,7 +117,7 @@ impl RequestUserInputOverlay {
             subtitle_line: Line::from(subtitle.dim()),
             hint_line: standard_popup_hint_line(),
             rows: self.unanswered_confirmation_rows(),
-            state: self.confirm_unanswered.unwrap_or_default(),
+            state: self.lifecycle.confirmation().copied().unwrap_or_default(),
         }
     }
 
@@ -232,7 +238,7 @@ impl RequestUserInputOverlay {
 
     /// Render the full request-user-input overlay.
     pub(super) fn render_ui(&self, area: Rect, buf: &mut Buffer) {
-        if area.is_empty() {
+        if self.done() || area.is_empty() {
             return;
         }
         if self.confirm_unanswered_active() {

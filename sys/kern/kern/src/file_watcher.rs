@@ -23,6 +23,9 @@ use tracing::warn;
 
 use crate::config::Config;
 
+mod lifecycle;
+use lifecycle::{DynamicPathThrottle, PathThrottle, PathThrottleEvent, ThrottleClock};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileWatcherEvent {
     ConfigChanged { paths: Vec<PathBuf> },
@@ -41,44 +44,82 @@ const WATCHER_THROTTLE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Coalesces bursts of paths and emits at most once per interval.
 struct ThrottledPaths {
-    pending: HashSet<PathBuf>,
-    next_allowed_at: Instant,
+    lifecycle: DynamicPathThrottle<()>,
 }
 
 impl ThrottledPaths {
     fn new(now: Instant) -> Self {
         Self {
-            pending: HashSet::new(),
-            next_allowed_at: now,
+            lifecycle: PathThrottle::new(())
+                .with_observing_data(ThrottleClock {
+                    next_allowed_at: now,
+                })
+                .into_dynamic(),
         }
     }
 
     fn add(&mut self, paths: Vec<PathBuf>) {
-        self.pending.extend(paths);
+        if paths.is_empty() || self.lifecycle.is_finished() {
+            return;
+        }
+        if let Some(pending) = self.lifecycle.pending_data_mut() {
+            pending.extend(paths);
+        } else {
+            assert!(
+                self.lifecycle
+                    .handle(PathThrottleEvent::Begin(Some(paths.into_iter().collect())))
+                    .is_ok(),
+                "watcher starts a path batch"
+            );
+        }
     }
 
-    fn next_deadline(&self, now: Instant) -> Option<Instant> {
-        (!self.pending.is_empty() && now < self.next_allowed_at).then_some(self.next_allowed_at)
+    fn next_deadline(&self) -> Option<Instant> {
+        self.lifecycle.pending_data()?;
+        self.lifecycle
+            .observing_data()
+            .map(|clock| clock.next_allowed_at)
     }
 
     fn take_ready(&mut self, now: Instant) -> Option<Vec<PathBuf>> {
-        if self.pending.is_empty() || now < self.next_allowed_at {
+        if now < self.next_deadline()? {
             return None;
         }
         Some(self.take_with_next_allowed(now))
     }
 
-    fn take_pending(&mut self, now: Instant) -> Option<Vec<PathBuf>> {
-        if self.pending.is_empty() {
+    fn shutdown(&mut self, now: Instant) -> Option<Vec<PathBuf>> {
+        if self.lifecycle.is_finished() {
             return None;
         }
-        Some(self.take_with_next_allowed(now))
+        let pending = self
+            .lifecycle
+            .pending_data()
+            .is_some()
+            .then(|| self.take_with_next_allowed(now));
+        assert!(
+            self.lifecycle.handle(PathThrottleEvent::Close).is_ok(),
+            "watcher closes after flushing"
+        );
+        pending
     }
 
     fn take_with_next_allowed(&mut self, now: Instant) -> Vec<PathBuf> {
-        let mut paths: Vec<PathBuf> = self.pending.drain().collect();
+        let mut paths: Vec<PathBuf> = self
+            .lifecycle
+            .pending_data_mut()
+            .unwrap_or_else(|| unreachable!("watcher owns pending paths"))
+            .drain()
+            .collect();
         paths.sort_unstable_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
-        self.next_allowed_at = now + WATCHER_THROTTLE_INTERVAL;
+        self.lifecycle
+            .observing_data_mut()
+            .unwrap_or_else(|| unreachable!("watcher owns its throttle clock"))
+            .next_allowed_at = now + WATCHER_THROTTLE_INTERVAL;
+        assert!(
+            self.lifecycle.handle(PathThrottleEvent::Flush).is_ok(),
+            "watcher flushes its path batch"
+        );
         paths
     }
 }
@@ -162,12 +203,7 @@ impl FileWatcher {
                 let mut pending = ThrottledPaths::new(now);
 
                 loop {
-                    let now = Instant::now();
-                    let next_deadline = pending.next_deadline(now);
-                    let timer_deadline = next_deadline
-                        .unwrap_or_else(|| now + Duration::from_secs(60 * 60 * 24 * 365));
-                    let timer = sleep_until(timer_deadline);
-                    tokio::pin!(timer);
+                    let next_deadline = pending.next_deadline();
 
                     tokio::select! {
                         res = raw_rx.recv() => {
@@ -188,14 +224,19 @@ impl FileWatcher {
                                     // Flush any pending changes before shutdown so subscribers
                                     // see the latest state.
                                     let now = Instant::now();
-                                    if let Some(paths) = pending.take_pending(now) {
+                                    if let Some(paths) = pending.shutdown(now) {
                                         let _ = tx.send(FileWatcherEvent::ConfigChanged { paths });
                                     }
                                     break;
                                 }
                             }
                         }
-                        _ = &mut timer => {
+                        _ = async {
+                            match next_deadline {
+                                Some(deadline) => sleep_until(deadline).await,
+                                None => std::future::pending().await,
+                            }
+                        } => {
                             let now = Instant::now();
                             if let Some(paths) = pending.take_ready(now) {
                                 let _ = tx.send(FileWatcherEvent::ConfigChanged { paths });

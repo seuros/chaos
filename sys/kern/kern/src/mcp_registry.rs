@@ -8,7 +8,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -30,11 +29,13 @@ use chaos_traits::router::DEFAULT_ADAPTER_CAPACITY;
 use futures::future::join_all;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use crate::catalog::McpCatalogGate;
+
+mod lifecycle;
+use lifecycle::ActorLifecycle;
 
 type ErasedResult = anyhow::Result<Box<dyn Any + Send>>;
 type ServerFuture = Pin<Box<dyn Future<Output = ErasedResult> + Send>>;
@@ -75,15 +76,13 @@ enum McpServerOp {
 struct McpServerActor {
     name: Arc<str>,
     mailbox: Adapter<McpServerOp>,
-    accepting: Arc<AtomicBool>,
-    task: Arc<StdMutex<Option<JoinHandle<()>>>>,
+    lifecycle: Arc<ActorLifecycle>,
 }
 
 impl McpServerActor {
     fn spawn(name: String, manager: Arc<McpConnectionManager>) -> Self {
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
         let actor_name: Arc<str> = Arc::from(name.clone());
-        let accepting = Arc::new(AtomicBool::new(true));
         let task = tokio::spawn(async move {
             while let Some(packet) = receiver.recv().await {
                 match packet.op {
@@ -111,8 +110,7 @@ impl McpServerActor {
         Self {
             name: actor_name,
             mailbox,
-            accepting,
-            task: Arc::new(StdMutex::new(Some(task))),
+            lifecycle: Arc::new(ActorLifecycle::new(task)),
         }
     }
 
@@ -121,7 +119,7 @@ impl McpServerActor {
         job: ServerJob,
         reply: oneshot::Sender<ErasedResult>,
     ) -> Result<(), AdapterError> {
-        if !self.accepting.load(Ordering::Acquire) {
+        if !self.lifecycle.accepting() {
             return Err(AdapterError::Closed);
         }
         tokio::time::timeout(
@@ -133,7 +131,7 @@ impl McpServerActor {
     }
 
     async fn apply_sandbox_state(&self, sandbox_state: SandboxState) -> Result<(), AdapterError> {
-        if !self.accepting.load(Ordering::Acquire) {
+        if !self.lifecycle.accepting() {
             return Err(AdapterError::Closed);
         }
         tokio::time::timeout(
@@ -146,73 +144,27 @@ impl McpServerActor {
     }
 
     async fn shutdown(&self) -> anyhow::Result<()> {
-        self.accepting.store(false, Ordering::Release);
-        let (reply, response) = oneshot::channel();
-        let graceful = tokio::time::timeout(MCP_SERVER_DRAIN_TIMEOUT, async {
-            tokio::time::timeout(
-                MCP_MAILBOX_TIMEOUT,
-                self.mailbox.send(McpServerOp::Shutdown { reply }),
+        self.lifecycle
+            .shutdown(
+                &format!("MCP server actor {}", self.name),
+                MCP_SERVER_DRAIN_TIMEOUT,
+                async {
+                    let (reply, response) = oneshot::channel();
+                    tokio::time::timeout(
+                        MCP_MAILBOX_TIMEOUT,
+                        self.mailbox.send(McpServerOp::Shutdown { reply }),
+                    )
+                    .await
+                    .map_err(|_| {
+                        anyhow::anyhow!("server actor shutdown mailbox admission timed out")
+                    })?
+                    .map_err(adapter_error)?;
+                    response
+                        .await
+                        .context("server actor dropped shutdown acknowledgement")
+                },
             )
             .await
-            .map_err(|_| anyhow::anyhow!("server actor shutdown mailbox admission timed out"))?
-            .map_err(adapter_error)?;
-            response
-                .await
-                .context("server actor dropped shutdown acknowledgement")
-        })
-        .await;
-
-        let task = self
-            .task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        let Some(mut task) = task else {
-            return Ok(());
-        };
-
-        match graceful {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                warn!(
-                    server = %self.name,
-                    %error,
-                    "MCP server actor could not drain; aborting its in-flight operation"
-                );
-                task.abort();
-                let _ = task.await;
-                return Ok(());
-            }
-            Err(error) => {
-                warn!(
-                    server = %self.name,
-                    timeout = ?MCP_SERVER_DRAIN_TIMEOUT,
-                    %error,
-                    "MCP server actor did not drain; aborting its in-flight operation"
-                );
-                task.abort();
-                let _ = task.await;
-                return Ok(());
-            }
-        }
-
-        match tokio::time::timeout(MCP_SERVER_TASK_JOIN_TIMEOUT, &mut task).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(anyhow::anyhow!(
-                "MCP server actor {} failed during shutdown: {error}",
-                self.name
-            )),
-            Err(_) => {
-                warn!(
-                    server = %self.name,
-                    timeout = ?MCP_SERVER_TASK_JOIN_TIMEOUT,
-                    "MCP server actor acknowledged shutdown but did not exit; aborting it"
-                );
-                task.abort();
-                let _ = task.await;
-                Ok(())
-            }
-        }
     }
 }
 
@@ -741,6 +693,8 @@ impl McpRegistryActor {
         tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, async {
             loop {
                 let stopped = self.lifecycle.stopped.notified();
+                tokio::pin!(stopped);
+                stopped.as_mut().enable();
                 if self.lifecycle.state.load(Ordering::Acquire) == REGISTRY_STOPPED {
                     return;
                 }
@@ -897,15 +851,12 @@ enum McpRefreshCommand {
 #[derive(Clone)]
 pub(crate) struct McpRefreshActor {
     mailbox: Adapter<McpRefreshCommand>,
-    accepting: Arc<AtomicBool>,
-    task: Arc<StdMutex<Option<JoinHandle<()>>>>,
-    shutdown_lock: Arc<tokio::sync::Mutex<()>>,
+    lifecycle: Arc<ActorLifecycle>,
 }
 
 impl McpRefreshActor {
     pub(crate) fn spawn() -> Self {
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
-        let accepting = Arc::new(AtomicBool::new(true));
         let task = tokio::spawn(async move {
             while let Some(packet) = receiver.recv().await {
                 match packet.op {
@@ -923,9 +874,7 @@ impl McpRefreshActor {
         });
         Self {
             mailbox,
-            accepting,
-            task: Arc::new(StdMutex::new(Some(task))),
-            shutdown_lock: Arc::new(tokio::sync::Mutex::new(())),
+            lifecycle: Arc::new(ActorLifecycle::new(task)),
         }
     }
 
@@ -933,7 +882,7 @@ impl McpRefreshActor {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        if !self.accepting.load(Ordering::Acquire) {
+        if !self.lifecycle.accepting() {
             return Err(AdapterError::Closed);
         }
         tokio::time::timeout(
@@ -949,7 +898,7 @@ impl McpRefreshActor {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        if !self.accepting.load(Ordering::Acquire) {
+        if !self.lifecycle.accepting() {
             anyhow::bail!("MCP refresh actor is shutting down");
         }
         let (reply, response) = oneshot::channel();
@@ -970,76 +919,21 @@ impl McpRefreshActor {
     }
 
     pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
-        let _shutdown_guard = self.shutdown_lock.lock().await;
-        if self
-            .task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_none()
-        {
-            return Ok(());
-        }
-        self.accepting.store(false, Ordering::Release);
-
-        let (reply, response) = oneshot::channel();
-        let graceful = tokio::time::timeout(MCP_REFRESH_DRAIN_TIMEOUT, async {
-            tokio::time::timeout(
-                MCP_MAILBOX_TIMEOUT,
-                self.mailbox.send(McpRefreshCommand::Shutdown { reply }),
-            )
-            .await
-            .context("timed out admitting MCP refresh shutdown")?
-            .context("MCP refresh actor is unavailable during shutdown")?;
-            response
+        self.lifecycle
+            .shutdown("MCP refresh actor", MCP_REFRESH_DRAIN_TIMEOUT, async {
+                let (reply, response) = oneshot::channel();
+                tokio::time::timeout(
+                    MCP_MAILBOX_TIMEOUT,
+                    self.mailbox.send(McpRefreshCommand::Shutdown { reply }),
+                )
                 .await
-                .context("MCP refresh actor dropped shutdown acknowledgement")
-        })
-        .await;
-
-        let task = self
-            .task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        let Some(mut task) = task else {
-            return Ok(());
-        };
-
-        match graceful {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                warn!(%error, "MCP refresh actor could not drain; aborting it");
-                task.abort();
-                let _ = task.await;
-                return Ok(());
-            }
-            Err(error) => {
-                warn!(
-                    timeout = ?MCP_REFRESH_DRAIN_TIMEOUT,
-                    %error,
-                    "MCP refresh actor did not drain; aborting it"
-                );
-                task.abort();
-                let _ = task.await;
-                return Ok(());
-            }
-        }
-
-        match tokio::time::timeout(MCP_SERVER_TASK_JOIN_TIMEOUT, &mut task).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(anyhow::anyhow!(
-                "MCP refresh actor failed during shutdown: {error}"
-            )),
-            Err(_) => {
-                warn!(
-                    timeout = ?MCP_SERVER_TASK_JOIN_TIMEOUT,
-                    "MCP refresh actor acknowledged shutdown but did not exit; aborting it"
-                );
-                task.abort();
-                let _ = task.await;
-                Ok(())
-            }
-        }
+                .context("timed out admitting MCP refresh shutdown")?
+                .context("MCP refresh actor is unavailable during shutdown")?;
+                response
+                    .await
+                    .context("MCP refresh actor dropped shutdown acknowledgement")
+            })
+            .await
     }
 }
 

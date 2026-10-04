@@ -269,6 +269,19 @@ fn queued_requests_are_fifo() {
 
     overlay.submit_answers();
     assert_eq!(overlay.request.turn_id, "turn-3");
+    overlay.submit_answers();
+    assert!(overlay.is_complete());
+    assert!(overlay.lifecycle.data().is_none());
+    assert!(overlay.answers().is_empty());
+    assert!(overlay.composer.current_text_with_pending().is_empty());
+    let late = request_event("turn-4", vec![question_with_options("q4", "Fourth")]);
+    assert_eq!(
+        overlay
+            .try_consume_user_input_request(late)
+            .unwrap()
+            .turn_id,
+        "turn-4"
+    );
 }
 
 fn interrupt_discards_queued_requests_and_emits_interrupt() {
@@ -356,7 +369,7 @@ fn enter_commits_default_selection_on_non_last_option_question() {
 
     overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
     assert_eq!(overlay.current_index(), 1);
-    let first_answer = &overlay.answers[0];
+    let first_answer = &overlay.answers()[0];
     assert!(first_answer.answer_committed);
     assert_eq!(first_answer.options_state.selected_idx, Some(0));
     assert!(
@@ -447,7 +460,7 @@ fn typing_in_options_does_not_open_notes() {
     overlay.handle_key_event(KeyEvent::from(KeyCode::Char('x')));
     assert_eq!(overlay.current_index(), 0);
     assert_eq!(overlay.notes_ui_visible(), false);
-    std::assert_matches!(overlay.focus, Focus::Options);
+    std::assert_matches!(overlay.focus(), Focus::Options);
     assert_eq!(overlay.composer.current_text_with_pending(), "");
 }
 
@@ -577,7 +590,7 @@ fn tab_opens_notes_when_option_selected() {
     assert_eq!(overlay.notes_ui_visible(), false);
     overlay.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert_eq!(overlay.notes_ui_visible(), true);
-    std::assert_matches!(overlay.focus, Focus::Notes);
+    std::assert_matches!(overlay.focus(), Focus::Notes);
 }
 
 fn switching_to_options_resets_notes_focus_when_notes_hidden() {
@@ -596,10 +609,10 @@ fn switching_to_options_resets_notes_focus_when_notes_hidden() {
         false,
     );
 
-    std::assert_matches!(overlay.focus, Focus::Notes);
+    std::assert_matches!(overlay.focus(), Focus::Notes);
     overlay.move_question(true);
 
-    std::assert_matches!(overlay.focus, Focus::Options);
+    std::assert_matches!(overlay.focus(), Focus::Options);
     assert_eq!(overlay.notes_ui_visible(), false);
 }
 
@@ -626,7 +639,7 @@ fn switching_from_freeform_with_text_resets_focus_and_keeps_last_option_empty() 
 
     overlay.move_question(true);
 
-    std::assert_matches!(overlay.focus, Focus::Options);
+    std::assert_matches!(overlay.focus(), Focus::Options);
     assert_eq!(overlay.notes_ui_visible(), false);
 
     overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -698,7 +711,7 @@ fn esc_in_notes_mode_clears_notes_and_hides_ui() {
 
     let answer = overlay.current_answer().expect("answer missing");
     assert_eq!(overlay.done(), false);
-    std::assert_matches!(overlay.focus, Focus::Options);
+    std::assert_matches!(overlay.focus(), Focus::Options);
     assert_eq!(overlay.notes_ui_visible(), false);
     assert_eq!(overlay.composer.current_text_with_pending(), "");
     assert_eq!(answer.draft.text, "");
@@ -726,7 +739,7 @@ fn esc_in_notes_mode_with_text_clears_notes_and_hides_ui() {
 
     let answer = overlay.current_answer().expect("answer missing");
     assert_eq!(overlay.done(), false);
-    std::assert_matches!(overlay.focus, Focus::Options);
+    std::assert_matches!(overlay.focus(), Focus::Options);
     assert_eq!(overlay.notes_ui_visible(), false);
     assert_eq!(overlay.composer.current_text_with_pending(), "");
     assert_eq!(answer.draft.text, "");
@@ -795,13 +808,13 @@ fn backspace_on_empty_notes_closes_notes_ui() {
     answer.options_state.selected_idx = Some(0);
 
     overlay.handle_key_event(KeyEvent::from(KeyCode::Tab));
-    std::assert_matches!(overlay.focus, Focus::Notes);
+    std::assert_matches!(overlay.focus(), Focus::Notes);
     assert_eq!(overlay.notes_ui_visible(), true);
 
     overlay.handle_key_event(KeyEvent::from(KeyCode::Backspace));
 
     let answer = overlay.current_answer().expect("answer missing");
-    std::assert_matches!(overlay.focus, Focus::Options);
+    std::assert_matches!(overlay.focus(), Focus::Options);
     assert_eq!(overlay.notes_ui_visible(), false);
     assert_eq!(answer.options_state.selected_idx, Some(0));
     assert!(rx.try_recv().is_err());
@@ -827,7 +840,7 @@ fn tab_in_notes_clears_notes_and_hides_ui() {
     overlay.handle_key_event(KeyEvent::from(KeyCode::Tab));
 
     let answer = overlay.current_answer().expect("answer missing");
-    std::assert_matches!(overlay.focus, Focus::Options);
+    std::assert_matches!(overlay.focus(), Focus::Options);
     assert_eq!(overlay.notes_ui_visible(), false);
     assert_eq!(overlay.composer.current_text_with_pending(), "");
     assert_eq!(answer.draft.text, "");
@@ -887,7 +900,7 @@ fn freeform_requires_enter_with_text_to_mark_answered() {
 
     overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
-    assert_eq!(overlay.answers[0].answer_committed, true);
+    assert_eq!(overlay.answers()[0].answer_committed, true);
     assert_eq!(overlay.unanswered_count(), 1);
 }
 
@@ -909,7 +922,7 @@ fn freeform_enter_with_empty_text_is_unanswered() {
 
     overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
-    assert_eq!(overlay.answers[0].answer_committed, false);
+    assert_eq!(overlay.answers()[0].answer_committed, false);
     assert_eq!(overlay.unanswered_count(), 2);
 }
 
@@ -978,7 +991,7 @@ fn freeform_commit_resets_when_draft_changes() {
         .set_text_content("Committed".to_string(), Vec::new(), Vec::new());
     overlay.composer.move_cursor_to_end();
     overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    assert_eq!(overlay.answers[0].answer_committed, true);
+    assert_eq!(overlay.answers()[0].answer_committed, true);
     let _ = rx.try_recv();
 
     overlay.move_question(false);
@@ -987,7 +1000,7 @@ fn freeform_commit_resets_when_draft_changes() {
         .set_text_content("Edited".to_string(), Vec::new(), Vec::new());
     overlay.composer.move_cursor_to_end();
     overlay.move_question(true);
-    assert_eq!(overlay.answers[0].answer_committed, false);
+    assert_eq!(overlay.answers()[0].answer_committed, false);
 
     overlay.submit_answers();
 
@@ -1066,7 +1079,7 @@ fn notes_submission_commits_selected_option() {
     overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     assert_eq!(overlay.current_index(), 1);
-    let answer = overlay.answers.first().expect("answer missing");
+    let answer = overlay.answers().first().expect("answer missing");
     assert_eq!(answer.options_state.selected_idx, Some(1));
     assert!(answer.answer_committed);
 }
@@ -1143,7 +1156,7 @@ fn large_paste_is_preserved_when_switching_questions() {
     overlay.composer.handle_paste(large.clone());
     overlay.move_question(true);
 
-    let draft = &overlay.answers[0].draft;
+    let draft = &overlay.answers()[0].draft;
     assert_eq!(draft.pending_pastes.len(), 1);
     assert_eq!(draft.pending_pastes[0].1, large);
     assert!(draft.text.contains(&draft.pending_pastes[0].0));
@@ -1167,14 +1180,14 @@ fn pending_paste_placeholder_survives_submission_and_back_navigation() {
     );
 
     let large = "x".repeat(1_200);
-    overlay.focus = Focus::Notes;
+    overlay.focus_notes();
     overlay.ensure_selected_for_notes();
     overlay.composer.handle_paste(large.clone());
 
     overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
     overlay.handle_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
 
-    let draft = &overlay.answers[0].draft;
+    let draft = &overlay.answers()[0].draft;
     assert_eq!(draft.pending_pastes.len(), 1);
     assert!(draft.text.contains(&draft.pending_pastes[0].0));
     assert_eq!(draft.text_with_pending(), large);
@@ -1611,7 +1624,7 @@ fn options_scroll_while_editing_notes() {
         false,
     );
     overlay.select_current_option(false);
-    overlay.focus = Focus::Notes;
+    overlay.focus_notes();
     overlay
         .composer
         .set_text_content("Notes".to_string(), Vec::new(), Vec::new());

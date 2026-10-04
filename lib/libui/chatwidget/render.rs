@@ -157,8 +157,7 @@ impl ChatWidget {
         rendered: bool,
         line: Option<Line<'static>>,
     ) {
-        if self.process_id != process_id || self.status_line_script_render_generation != generation
-        {
+        if self.process_id != process_id || !self.status_line_script.complete(generation) {
             return;
         }
         let enabled = rendered && line.is_some();
@@ -170,8 +169,7 @@ impl ChatWidget {
         &mut self,
         halluacinate: Option<chaos_halluacinate::HalluacinateHandle>,
     ) {
-        self.status_line_script_render_generation =
-            self.status_line_script_render_generation.wrapping_add(1);
+        self.status_line_script.invalidate();
         self.halluacinate = halluacinate;
         // Do not render eagerly on attach: callers can attach the handle before
         // the session/state event that should define the statusline context.
@@ -199,19 +197,18 @@ impl ChatWidget {
     /// to Halluacinate.
     pub fn refresh_status_line(&mut self) {
         let Some(handle) = self.halluacinate.clone() else {
+            self.status_line_script.invalidate();
             self.bottom_pane.set_status_line_enabled(false);
             self.set_status_line(None);
             return;
         };
 
         self.prepare_status_line_context();
-        self.status_line_script_render_generation =
-            self.status_line_script_render_generation.wrapping_add(1);
-        let generation = self.status_line_script_render_generation;
+        let generation = self.status_line_script.invalidate();
         let process_id = self.process_id;
         let ctx = self.build_statusline_ctx();
         let tx = self.app_event_tx.clone();
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let spans = handle.render_statusline(ctx).await;
             let rendered = spans.is_some();
             let line = spans.and_then(spans_to_line);
@@ -222,6 +219,7 @@ impl ChatWidget {
                 line,
             });
         });
+        self.status_line_script.launch(task);
     }
 
     fn prepare_status_line_context(&mut self) {

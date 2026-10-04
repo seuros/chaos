@@ -131,6 +131,28 @@ fn parallel_tools_and_waits_keep_their_reason_until_all_finish() {
     observe(
         &mut tracker,
         id,
+        EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+            call_id: "priority".into(),
+            turn_id: "turn".into(),
+            questions: vec![],
+        }),
+        later,
+    );
+    assert_eq!(tracker.get(id).phase, Phase::NeedsInput);
+    tracker.note_op(
+        id,
+        &Op::UserInputAnswer {
+            id: "turn".into(),
+            response: chaos_ipc::request_user_input::RequestUserInputResponse {
+                answers: HashMap::new(),
+            },
+        },
+        later,
+    );
+    assert_eq!(tracker.get(id).phase, Phase::WaitingAgents);
+    observe(
+        &mut tracker,
+        id,
         EventMsg::CollabWaitingEnd(CollabWaitingEndEvent {
             sender_process_id: id,
             call_id: "wait".into(),
@@ -140,6 +162,17 @@ fn parallel_tools_and_waits_keep_their_reason_until_all_finish() {
         later,
     );
     assert_eq!(tracker.get(id).phase, Phase::Tools);
+    observe(
+        &mut tracker,
+        id,
+        EventMsg::WebSearchEnd(WebSearchEndEvent {
+            call_id: "two".into(),
+            query: String::new(),
+            action: chaos_ipc::models::WebSearchAction::Other,
+        }),
+        later,
+    );
+    assert_eq!(tracker.get(id).phase, Phase::Working);
 }
 
 #[test]

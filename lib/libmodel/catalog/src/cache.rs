@@ -16,7 +16,7 @@ use tracing::info;
 const RAW_CATALOG_V1_FORMAT: &str = "raw_catalog_v1";
 
 /// Manages loading and saving of model catalogs in the shared runtime store.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelsCacheManager {
     sqlite_home: PathBuf,
     cache_ttl: Duration,

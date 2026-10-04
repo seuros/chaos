@@ -1,6 +1,6 @@
 //! Retained rows for scrolling the chat pane without opening a pager.
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use crate::chatwidget::ActiveCellTranscriptKey;
 use crate::history_cell::HistoryCell;
@@ -26,7 +26,8 @@ pub struct ChatScrollback {
     /// An absolute row, rather than distance from the bottom: incoming output
     /// must not move what the operator is reading. None follows live output.
     top: Option<usize>,
-    history_key: Option<(u16, usize, usize)>,
+    history_key: Option<(u16, usize)>,
+    history_tail: Option<Weak<dyn HistoryCell>>,
     history: Vec<Line<'static>>,
     live_key: Option<(u16, Option<ActiveCellTranscriptKey>)>,
     live: Vec<Line<'static>>,
@@ -50,11 +51,14 @@ impl ChatScrollback {
         live_lines: impl FnOnce(u16) -> Vec<Line<'static>>,
     ) {
         let width = width.max(1);
-        let last_cell = cells
-            .last()
-            .map_or(0, |cell| Arc::as_ptr(cell) as *const () as usize);
-        let history_key = (width, cells.len(), last_cell);
-        if self.history_key != Some(history_key) {
+        let tail = cells.last().map(Arc::downgrade);
+        let same_tail = match (&self.history_tail, &tail) {
+            (Some(previous), Some(current)) => Weak::ptr_eq(previous, current),
+            (None, None) => true,
+            _ => false,
+        };
+        let history_key = (width, cells.len());
+        if self.history_key != Some(history_key) || !same_tail {
             // Use the main view's compact display lines, not the transcript
             // viewer's expanded tool output. Wrap before counting screen rows.
             self.history = word_wrap_lines(
@@ -62,6 +66,7 @@ impl ChatScrollback {
                 usize::from(width),
             );
             self.history_key = Some(history_key);
+            self.history_tail = tail;
         }
         let live_key = (width, active_key);
         if self.live_key != Some(live_key) {

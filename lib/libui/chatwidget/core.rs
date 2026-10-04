@@ -129,41 +129,37 @@ impl RateLimitWarningState {
 
         let mut warnings = Vec::new();
 
-        if let Some(secondary_used_percent) = secondary_used_percent {
-            let mut highest_secondary: Option<f64> = None;
-            while self.secondary_index < RATE_LIMIT_WARNING_THRESHOLDS.len()
-                && secondary_used_percent >= RATE_LIMIT_WARNING_THRESHOLDS[self.secondary_index]
-            {
-                highest_secondary = Some(RATE_LIMIT_WARNING_THRESHOLDS[self.secondary_index]);
-                self.secondary_index += 1;
-            }
-            if let Some(threshold) = highest_secondary {
-                let limit_label = secondary_window_minutes
-                    .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
-                let remaining_percent = 100.0 - threshold;
-                warnings.push(format!(
+        for (used, window, index, fallback) in [
+            (
+                secondary_used_percent,
+                secondary_window_minutes,
+                &mut self.secondary_index,
+                "weekly",
+            ),
+            (
+                primary_used_percent,
+                primary_window_minutes,
+                &mut self.primary_index,
+                "5h",
+            ),
+        ] {
+            if let Some(used) = used {
+                let mut highest = None;
+                while *index < RATE_LIMIT_WARNING_THRESHOLDS.len()
+                    && used >= RATE_LIMIT_WARNING_THRESHOLDS[*index]
+                {
+                    highest = Some(RATE_LIMIT_WARNING_THRESHOLDS[*index]);
+                    *index += 1;
+                }
+                if let Some(threshold) = highest {
+                    let limit_label = window
+                        .map(get_limits_duration)
+                        .unwrap_or_else(|| fallback.to_string());
+                    let remaining_percent = 100.0 - threshold;
+                    warnings.push(format!(
                     "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
                 ));
-            }
-        }
-
-        if let Some(primary_used_percent) = primary_used_percent {
-            let mut highest_primary: Option<f64> = None;
-            while self.primary_index < RATE_LIMIT_WARNING_THRESHOLDS.len()
-                && primary_used_percent >= RATE_LIMIT_WARNING_THRESHOLDS[self.primary_index]
-            {
-                highest_primary = Some(RATE_LIMIT_WARNING_THRESHOLDS[self.primary_index]);
-                self.primary_index += 1;
-            }
-            if let Some(threshold) = highest_primary {
-                let limit_label = primary_window_minutes
-                    .map(get_limits_duration)
-                    .unwrap_or_else(|| "5h".to_string());
-                let remaining_percent = 100.0 - threshold;
-                warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
-                ));
+                }
             }
         }
 

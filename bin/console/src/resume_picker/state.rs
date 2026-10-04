@@ -20,6 +20,8 @@ use super::row::rows_from_items;
 
 use super::SessionPickerAction;
 use super::SessionSelection;
+use super::lifecycle::{LoadingState, SearchState};
+use tokio_util::sync::CancellationToken;
 
 pub(super) const PAGE_SIZE: usize = 25;
 pub(super) const LOAD_NEAR_THRESHOLD: usize = 5;
@@ -31,6 +33,7 @@ pub(super) struct PageLoadRequest {
     pub(super) search_token: Option<usize>,
     pub(super) default_provider: String,
     pub(super) sort_key: ProcessSortKey,
+    pub(super) cancellation: CancellationToken,
 }
 
 pub(super) type PageLoader = Arc<dyn Fn(PageLoadRequest) + Send + Sync>;
@@ -55,45 +58,14 @@ pub(super) struct PaginationState {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum LoadingState {
-    Idle,
-    Pending(PendingLoad),
-}
-
-#[derive(Clone, Copy, Debug)]
 pub(super) struct PendingLoad {
     pub(super) request_token: usize,
     pub(super) search_token: Option<usize>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(super) enum SearchState {
-    Idle,
-    Active { token: usize },
-}
-
 pub(super) enum LoadTrigger {
     Scroll,
     Search { token: usize },
-}
-
-impl LoadingState {
-    pub(super) fn is_pending(&self) -> bool {
-        matches!(self, LoadingState::Pending(_))
-    }
-}
-
-impl SearchState {
-    pub(super) fn active_token(&self) -> Option<usize> {
-        match self {
-            SearchState::Idle => None,
-            SearchState::Active { token } => Some(*token),
-        }
-    }
-
-    pub(super) fn is_active(&self) -> bool {
-        self.active_token().is_some()
-    }
 }
 
 pub(super) struct PickerState {
@@ -137,7 +109,7 @@ impl PickerState {
                 next_cursor: None,
                 num_scanned_records: 0,
                 reached_scan_limit: false,
-                loading: LoadingState::Idle,
+                loading: LoadingState::default(),
             },
             all_rows: Vec::new(),
             filtered_rows: Vec::new(),
@@ -145,7 +117,7 @@ impl PickerState {
             selected: 0,
             scroll_top: 0,
             query: String::new(),
-            search_state: SearchState::Idle,
+            search_state: SearchState::default(),
             next_request_token: 0,
             next_search_token: 0,
             page_loader,
@@ -254,16 +226,16 @@ impl PickerState {
         self.selected = 0;
 
         let search_token = if self.query.is_empty() {
-            self.search_state = SearchState::Idle;
+            self.search_state.clear();
             None
         } else {
             let token = self.allocate_search_token();
-            self.search_state = SearchState::Active { token };
+            self.search_state.start(token);
             Some(token)
         };
 
         let request_token = self.allocate_request_token();
-        self.pagination.loading = LoadingState::Pending(PendingLoad {
+        let cancellation = self.pagination.loading.begin(PendingLoad {
             request_token,
             search_token,
         });
@@ -275,6 +247,7 @@ impl PickerState {
             search_token,
             default_provider: self.default_provider.clone(),
             sort_key: self.sort_key,
+            cancellation,
         });
     }
 
@@ -292,14 +265,9 @@ impl PickerState {
                 search_token,
                 page,
             } => {
-                let pending = match self.pagination.loading {
-                    LoadingState::Pending(pending) => pending,
-                    LoadingState::Idle => return Ok(()),
-                };
-                if pending.request_token != request_token {
+                let Some(pending) = self.pagination.loading.complete(request_token) else {
                     return Ok(());
-                }
-                self.pagination.loading = LoadingState::Idle;
+                };
                 let page = page.map_err(color_eyre::Report::from)?;
                 self.ingest_page(page);
                 self.update_process_names().await;
@@ -314,7 +282,7 @@ impl PickerState {
         self.pagination.next_cursor = None;
         self.pagination.num_scanned_records = 0;
         self.pagination.reached_scan_limit = false;
-        self.pagination.loading = LoadingState::Idle;
+        self.pagination.loading.clear();
     }
 
     pub(super) fn ingest_page(&mut self, page: ProcessesPage) {
@@ -421,19 +389,19 @@ impl PickerState {
         self.selected = 0;
         self.apply_filter();
         if self.query.is_empty() {
-            self.search_state = SearchState::Idle;
+            self.search_state.clear();
             return;
         }
         if !self.filtered_rows.is_empty() {
-            self.search_state = SearchState::Idle;
+            self.search_state.clear();
             return;
         }
         if self.pagination.reached_scan_limit || self.pagination.next_cursor.is_none() {
-            self.search_state = SearchState::Idle;
+            self.search_state.clear();
             return;
         }
         let token = self.allocate_search_token();
-        self.search_state = SearchState::Active { token };
+        self.search_state.start(token);
         self.load_more_if_needed(LoadTrigger::Search { token });
     }
 
@@ -442,11 +410,11 @@ impl PickerState {
             return;
         };
         if !self.filtered_rows.is_empty() {
-            self.search_state = SearchState::Idle;
+            self.search_state.clear();
             return;
         }
         if self.pagination.reached_scan_limit || self.pagination.next_cursor.is_none() {
-            self.search_state = SearchState::Idle;
+            self.search_state.clear();
             return;
         }
         self.load_more_if_needed(LoadTrigger::Search { token });
@@ -536,7 +504,7 @@ impl PickerState {
             LoadTrigger::Scroll => None,
             LoadTrigger::Search { token } => Some(token),
         };
-        self.pagination.loading = LoadingState::Pending(PendingLoad {
+        let cancellation = self.pagination.loading.begin(PendingLoad {
             request_token,
             search_token,
         });
@@ -548,6 +516,7 @@ impl PickerState {
             search_token,
             default_provider: self.default_provider.clone(),
             sort_key: self.sort_key,
+            cancellation,
         });
     }
 

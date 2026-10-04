@@ -7,6 +7,7 @@ state_machine! {
     dynamic: true,
     initial: Pending,
     states: [Pending, Running, Complete],
+    final_states: [Complete],
     events {
         start {
             transition: { from: Pending, to: Running }

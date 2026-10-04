@@ -1,7 +1,5 @@
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 use std::sync::Weak;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -137,12 +135,8 @@ struct McpSessionInner {
     lifecycle: RuntimeLifecycle,
 }
 
-struct RuntimeLifecycle {
-    transport: Arc<dyn MessageTransport>,
-    runtime_task: StdMutex<Option<JoinHandle<()>>>,
-    shutdown_lock: tokio::sync::Mutex<()>,
-    closed: AtomicBool,
-}
+mod lifecycle;
+use lifecycle::RuntimeLifecycle;
 
 #[derive(Clone)]
 pub struct WeakMcpSession {
@@ -167,12 +161,7 @@ impl McpSession {
                 command_tx,
                 shared,
                 next_id: AtomicU64::new(2),
-                lifecycle: RuntimeLifecycle {
-                    transport,
-                    runtime_task: StdMutex::new(Some(runtime_task)),
-                    shutdown_lock: tokio::sync::Mutex::new(()),
-                    closed: AtomicBool::new(false),
-                },
+                lifecycle: RuntimeLifecycle::new(transport, runtime_task),
             }),
         }
     }
@@ -209,7 +198,7 @@ impl McpSession {
         params: Option<Value>,
         timeout_override: Option<Duration>,
     ) -> Result<Value, GuestError> {
-        if self.inner.lifecycle.closed.load(Ordering::Acquire) {
+        if !self.inner.lifecycle.accepting() {
             return Err(GuestError::Disconnected);
         }
         let timeout = timeout_override.unwrap_or(self.inner.shared.default_timeout);
@@ -281,7 +270,7 @@ impl McpSession {
         method: impl Into<String>,
         params: Option<Value>,
     ) -> Result<(), GuestError> {
-        if self.inner.lifecycle.closed.load(Ordering::Acquire) {
+        if !self.inner.lifecycle.accepting() {
             return Err(GuestError::Disconnected);
         }
         let timeout = self.inner.shared.default_timeout;
@@ -621,17 +610,9 @@ impl McpSession {
 
     pub async fn disconnect(&self) -> Result<(), GuestError> {
         let _shutdown_guard = self.inner.lifecycle.shutdown_lock.lock().await;
-        if self
-            .inner
-            .lifecycle
-            .runtime_task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_none()
-        {
+        let Some(resources) = self.inner.lifecycle.begin_close() else {
             return Ok(());
-        }
-        self.inner.lifecycle.closed.store(true, Ordering::Release);
+        };
 
         let (response_tx, response_rx) = oneshot::channel();
         let graceful = tokio::time::timeout(GRACEFUL_DISCONNECT_TIMEOUT, async {
@@ -664,7 +645,7 @@ impl McpSession {
             }
             shutdown_error = match tokio::time::timeout(
                 FORCE_DISCONNECT_TIMEOUT,
-                self.inner.lifecycle.transport.force_shutdown(),
+                resources.transport.force_shutdown(),
             )
             .await
             {
@@ -674,15 +655,9 @@ impl McpSession {
             };
         }
 
-        let runtime_task = self
-            .inner
-            .lifecycle
-            .runtime_task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(mut runtime_task) = runtime_task {
-            match tokio::time::timeout(RUNTIME_JOIN_TIMEOUT, &mut runtime_task).await {
+        {
+            let mut runtime_task = resources.task.lock().await;
+            match tokio::time::timeout(RUNTIME_JOIN_TIMEOUT, &mut *runtime_task).await {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     shutdown_error = Some(GuestError::Protocol(format!(
@@ -695,10 +670,11 @@ impl McpSession {
                         "MCP runtime task did not exit after transport shutdown; aborting it"
                     );
                     runtime_task.abort();
-                    let _ = runtime_task.await;
+                    let _ = (&mut *runtime_task).await;
                 }
             }
         }
+        self.inner.lifecycle.finish();
 
         match shutdown_error {
             Some(error) => Err(error),

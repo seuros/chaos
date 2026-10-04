@@ -1,6 +1,5 @@
 //! Renderer-agnostic frontend reduction of kernel events.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chaos_ipc::protocol::ChaosErrorInfo;
@@ -10,20 +9,7 @@ use chaos_ipc::protocol::TokenUsage;
 
 mod lifecycle;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SessionStatus {
-    #[default]
-    Booting,
-    Ready,
-    Shutdown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TurnStatus {
-    #[default]
-    Idle,
-    InFlight,
-}
+pub use lifecycle::{SessionStatus, TurnStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoticeLevel {
@@ -63,11 +49,8 @@ pub enum TranscriptEntry {
 #[derive(Debug, Clone, Default)]
 pub struct FrontendState {
     pub transcript: Vec<TranscriptEntry>,
-    pub status: SessionStatus,
-    pub turn: TurnStatus,
     pub token_usage: Option<TokenUsage>,
-    pending_streams: HashMap<String, usize>,
-    pending_calls: HashMap<String, usize>,
+    lifecycle: lifecycle::Lifecycle,
 }
 
 impl FrontendState {
@@ -76,29 +59,35 @@ impl FrontendState {
     }
 
     pub fn can_submit(&self) -> bool {
-        self.status == SessionStatus::Ready && self.turn == TurnStatus::Idle
+        self.status() == SessionStatus::Ready && self.turn() == TurnStatus::Idle
+    }
+
+    pub fn status(&self) -> SessionStatus {
+        self.lifecycle.status()
+    }
+
+    pub fn turn(&self) -> TurnStatus {
+        self.lifecycle.turn()
     }
 
     pub fn pending_stream_count(&self) -> usize {
-        self.pending_streams.len()
+        self.lifecycle.pending().streams.len()
     }
 
     pub fn pending_call_count(&self) -> usize {
-        self.pending_calls.len()
+        self.lifecycle.pending().calls.len()
     }
 
     pub fn record_user_submission(&mut self, text: String) {
-        if self.status == SessionStatus::Shutdown {
+        if self.status() == SessionStatus::Shutdown {
             return;
         }
         self.transcript.push(TranscriptEntry::User { text });
-        self.turn.submit();
+        self.lifecycle.submit();
     }
 
     pub fn mark_kernel_gone(&mut self) {
-        self.status.shutdown();
-        self.turn.finish();
-        self.clear_pending_bookkeeping();
+        self.lifecycle.shutdown();
         self.transcript.push(TranscriptEntry::Notice {
             level: NoticeLevel::Error,
             text: "op_tx closed — kernel is gone".to_string(),
@@ -112,16 +101,13 @@ impl FrontendState {
     pub fn apply_event_msg(&mut self, msg: EventMsg) {
         match msg {
             EventMsg::SessionConfigured(_) => {
-                self.status.configure();
+                self.lifecycle.configure();
             }
             EventMsg::ShutdownComplete => {
-                self.status.shutdown();
-                self.turn.finish();
-                self.clear_pending_bookkeeping();
+                self.lifecycle.shutdown();
             }
             EventMsg::TurnComplete(_) | EventMsg::TurnAborted(_) => {
-                self.turn.finish();
-                self.clear_pending_bookkeeping();
+                self.lifecycle.finish();
             }
             EventMsg::AgentMessageContentDelta(delta) => {
                 self.push_stream_entry(StreamKind::Agent, delta.item_id, &delta.delta);
@@ -143,7 +129,10 @@ impl FrontendState {
                     exit_code: None,
                     output: String::new(),
                 });
-                self.pending_calls.insert(begin.call_id, idx);
+                self.lifecycle
+                    .pending_mut()
+                    .calls
+                    .insert(begin.call_id, idx);
             }
             EventMsg::ExecCommandEnd(end) => {
                 let preview = if !end.aggregated_output.is_empty() {
@@ -153,7 +142,7 @@ impl FrontendState {
                 } else {
                     end.stderr
                 };
-                if let Some(idx) = self.pending_calls.remove(&end.call_id)
+                if let Some(idx) = self.lifecycle.pending_mut().calls.remove(&end.call_id)
                     && let Some(TranscriptEntry::Exec {
                         exit_code, output, ..
                     }) = self.transcript.get_mut(idx)
@@ -176,14 +165,17 @@ impl FrontendState {
                     tool: begin.invocation.tool,
                     result: None,
                 });
-                self.pending_calls.insert(begin.call_id, idx);
+                self.lifecycle
+                    .pending_mut()
+                    .calls
+                    .insert(begin.call_id, idx);
             }
             EventMsg::McpToolCallEnd(end) => {
                 let outcome = match &end.result {
                     Ok(_) => Ok(format!("ok in {:?}", end.duration)),
                     Err(err) => Err(err.clone()),
                 };
-                if let Some(idx) = self.pending_calls.remove(&end.call_id)
+                if let Some(idx) = self.lifecycle.pending_mut().calls.remove(&end.call_id)
                     && let Some(TranscriptEntry::Tool { result, .. }) = self.transcript.get_mut(idx)
                 {
                     *result = Some(outcome);
@@ -200,8 +192,7 @@ impl FrontendState {
                     level: NoticeLevel::Error,
                     text: format_error(&err.message, err.chaos_error_info.as_ref()),
                 });
-                self.turn.finish();
-                self.clear_pending_bookkeeping();
+                self.lifecycle.finish();
             }
             EventMsg::StreamError(err) => {
                 self.transcript.push(TranscriptEntry::Notice {
@@ -239,13 +230,8 @@ impl FrontendState {
         }
     }
 
-    fn clear_pending_bookkeeping(&mut self) {
-        self.pending_streams.clear();
-        self.pending_calls.clear();
-    }
-
     fn push_stream_entry(&mut self, kind: StreamKind, item_id: String, delta: &str) {
-        if let Some(idx) = self.pending_streams.get(&item_id).copied() {
+        if let Some(idx) = self.lifecycle.pending().streams.get(&item_id).copied() {
             match (kind, self.transcript.get_mut(idx)) {
                 (StreamKind::Agent, Some(TranscriptEntry::Agent { content }))
                 | (StreamKind::Reasoning, Some(TranscriptEntry::Reasoning { content })) => {
@@ -253,7 +239,7 @@ impl FrontendState {
                     return;
                 }
                 _ => {
-                    self.pending_streams.remove(&item_id);
+                    self.lifecycle.pending_mut().streams.remove(&item_id);
                 }
             }
         }
@@ -268,7 +254,7 @@ impl FrontendState {
             },
         };
         self.transcript.push(entry);
-        self.pending_streams.insert(item_id, idx);
+        self.lifecycle.pending_mut().streams.insert(item_id, idx);
     }
 
     fn finalize_stream_entry(&mut self, kind: StreamKind, full: &str) {
@@ -279,14 +265,20 @@ impl FrontendState {
                     self.transcript[idx] = TranscriptEntry::Agent {
                         content: full.to_string(),
                     };
-                    self.pending_streams.retain(|_, value| *value != idx);
+                    self.lifecycle
+                        .pending_mut()
+                        .streams
+                        .retain(|_, value| *value != idx);
                     return;
                 }
                 TranscriptEntry::Reasoning { .. } if kind == StreamKind::Reasoning => {
                     self.transcript[idx] = TranscriptEntry::Reasoning {
                         content: full.to_string(),
                     };
-                    self.pending_streams.retain(|_, value| *value != idx);
+                    self.lifecycle
+                        .pending_mut()
+                        .streams
+                        .retain(|_, value| *value != idx);
                     return;
                 }
                 _ => {}

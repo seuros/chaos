@@ -449,20 +449,43 @@ async fn toggle_sort_key_reloads_with_new_sort() {
     let mut state = test_picker_state(loader);
 
     state.start_initial_load();
-    {
+    let original = {
         let guard = recorded_requests.lock().unwrap();
         assert_eq!(guard.len(), 1);
         assert_eq!(guard[0].sort_key, ProcessSortKey::UpdatedAt);
-    }
+        guard[0].clone()
+    };
 
     state
         .handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
         .await
         .unwrap();
 
-    let guard = recorded_requests.lock().unwrap();
-    assert_eq!(guard.len(), 2);
-    assert_eq!(guard[1].sort_key, ProcessSortKey::CreatedAt);
+    let replacement = {
+        let guard = recorded_requests.lock().unwrap();
+        assert_eq!(guard.len(), 2);
+        assert_eq!(guard[1].sort_key, ProcessSortKey::CreatedAt);
+        guard[1].clone()
+    };
+    assert!(original.cancellation.is_cancelled());
+    assert!(!replacement.cancellation.is_cancelled());
+    state
+        .handle_background_event(BackgroundEvent::PageLoaded {
+            request_token: original.request_token,
+            search_token: original.search_token,
+            page: Ok(page(
+                vec![make_item("2025-01-01T00:00:00Z", "obsolete")],
+                None,
+                1,
+                false,
+            )),
+        })
+        .await
+        .unwrap();
+    assert!(state.all_rows.is_empty());
+    assert!(state.pagination.loading.is_pending());
+    drop(state);
+    assert!(replacement.cancellation.is_cancelled());
 }
 
 async fn page_navigation_uses_view_rows() {
@@ -716,6 +739,8 @@ async fn set_query_loads_until_match_and_respects_scan_cap() {
         assert_eq!(guard.len(), 2);
         guard[1].clone()
     };
+    assert!(first_request.cancellation.is_cancelled());
+    assert!(!second_request.cancellation.is_cancelled());
     assert!(state.search_state.is_active());
     assert!(state.filtered_rows.is_empty());
 

@@ -43,6 +43,7 @@ static RUNTIME_STORAGE_BREAKER: LazyLock<AsyncCircuitBreaker> = LazyLock::new(||
 
 pub(crate) async fn with_runtime_storage_breaker<T, E, F, Fut>(op: F) -> Result<T, BreakerError<E>>
 where
+    E: 'static,
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
 {

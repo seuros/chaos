@@ -55,6 +55,7 @@ mod event_stream;
 mod frame_rate_limiter;
 mod frame_requester;
 mod job_control;
+mod restoration;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -393,39 +394,8 @@ impl Tui {
         F: FnOnce() -> Fut,
         Fut: Future<Output = R>,
     {
-        // Pause crossterm events to avoid stdin conflicts with external program `f`.
-        self.pause_events();
-
-        // Leave alt screen if active to avoid conflicts with external program `f`.
-        let was_alt_screen = self.is_alt_screen_active();
-        let was_mouse_capture = self.mouse_capture_active.load(Ordering::Relaxed);
-        if was_alt_screen {
-            let _ = self.leave_alt_screen();
-        } else if was_mouse_capture {
-            self.disable_mouse_capture();
-        }
-
-        if let Err(err) = mode.restore() {
-            tracing::warn!("failed to restore terminal modes before external program: {err}");
-        }
-
-        let output = f().await;
-
-        if let Err(err) = set_modes() {
-            tracing::warn!("failed to re-enable terminal modes after external program: {err}");
-        }
-        // After the external program `f` finishes, reset terminal state and flush any buffered keypresses.
-        flush_terminal_input_buffer();
-
-        if was_alt_screen {
-            let _ = self.enter_alt_screen();
-        }
-        if was_mouse_capture {
-            self.enable_mouse_capture();
-        }
-
-        self.resume_events();
-        output
+        let _restoration = restoration::RestoredTerminal::new(self, mode);
+        f().await
     }
 
     /// Emit a desktop notification now if the terminal is unfocused.

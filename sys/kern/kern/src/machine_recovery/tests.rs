@@ -83,7 +83,7 @@ fn recovery_needs_all_headroom_and_five_minutes_not_a_single_good_reading() {
         start,
         0,
     );
-    assert_eq!(recovery.phase, Phase::Warning);
+    assert_eq!(recovery.phase(), Phase::Warning);
     let id = recovery.request_wait("turn").unwrap();
     assert_eq!(recovery.request_wait("turn").unwrap(), id);
     // A few MB and a tiny temperature drop clear raw warnings, not the episode.
@@ -94,7 +94,7 @@ fn recovery_needs_all_headroom_and_five_minutes_not_a_single_good_reading() {
         start,
         30,
     );
-    assert_eq!(recovery.phase, Phase::Warning);
+    assert_eq!(recovery.phase(), Phase::Warning);
     for seconds in (60..360).step_by(30) {
         sample(
             &mut recovery,
@@ -103,7 +103,7 @@ fn recovery_needs_all_headroom_and_five_minutes_not_a_single_good_reading() {
             start,
             seconds,
         );
-        assert_eq!(recovery.phase, Phase::Stabilizing);
+        assert_eq!(recovery.phase(), Phase::Stabilizing);
     }
     sample(
         &mut recovery,
@@ -112,19 +112,16 @@ fn recovery_needs_all_headroom_and_five_minutes_not_a_single_good_reading() {
         start,
         360,
     );
-    assert_eq!(recovery.phase, Phase::Recovered);
+    assert_eq!(recovery.phase(), Phase::Recovered);
     assert_eq!(
         recovery
             .status(&config, start + Duration::from_secs(360))
             .stable_seconds,
         300
     );
-    assert!(
-        !recovery
-            .instruction(&config, start)
-            .unwrap()
-            .contains("UNTRUSTED")
-    );
+    let instruction = recovery.instruction(&config, start).unwrap();
+    assert!(!instruction.is_empty());
+    assert!(!instruction.contains("UNTRUSTED"));
 }
 
 #[test]
@@ -176,7 +173,7 @@ fn renewed_warnings_probe_failures_missing_readings_and_suspend_reset_stability(
                 SystemTime::UNIX_EPOCH + Duration::from_secs(900),
             ),
         }
-        assert_ne!(recovery.phase, Phase::Recovered, "case {failure}");
+        assert_ne!(recovery.phase(), Phase::Recovered, "case {failure}");
         assert_eq!(
             recovery
                 .status(&config, start + Duration::from_secs(900))
@@ -187,7 +184,7 @@ fn renewed_warnings_probe_failures_missing_readings_and_suspend_reset_stability(
 }
 
 #[test]
-fn power_requires_positive_external_power_not_battery_disappearance() {
+fn power_recovers_on_external_power_or_observed_battery_headroom() {
     let config = MachineWarningsConfig::default();
     let mut status = snapshot(&config, 70.0, 20 << 30);
     let warning = MachineWarning::LowBattery {
@@ -199,10 +196,68 @@ fn power_requires_positive_external_power_not_battery_disappearance() {
     assert!(recovered(&warning, &status, &config).is_err());
     status.machine.power.source = PowerSource::Ups;
     status.machine.power.external_power = Some(false);
+    assert!(recovered(&warning, &status, &config).is_err());
+    status.machine.power.batteries = Some(vec![BatteryInfo {
+        name: "UPS".into(),
+        kind: BatteryKind::Ups,
+        present: Some(true),
+        charge_percent: Some(9),
+        state: BatteryState::Discharging,
+    }]);
     assert_eq!(recovered(&warning, &status, &config), Ok(false));
+    for charge in [10, 100] {
+        status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(charge);
+        assert_eq!(recovered(&warning, &status, &config), Ok(true));
+    }
+    let zero_margin = MachineWarningsConfig {
+        recovery_battery_margin_percent: 0,
+        ..config
+    };
+    status.machine.power.batteries.as_mut().unwrap()[0].charge_percent =
+        Some(config.battery_percent);
+    assert_eq!(recovered(&warning, &status, &zero_margin), Ok(true));
+    status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = None;
+    assert!(recovered(&warning, &status, &config).is_err());
+    status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(100);
+    status.machine.power.batteries.as_mut().unwrap()[0].name = "replacement".into();
+    assert!(recovered(&warning, &status, &config).is_err());
+    status.machine.power.batteries.as_mut().unwrap()[0].name = "UPS".into();
+    status.machine.power.batteries.as_mut().unwrap()[0].present = Some(false);
+    assert!(recovered(&warning, &status, &config).is_err());
     status.machine.power.source = PowerSource::External;
     status.machine.power.external_power = Some(true);
     assert_eq!(recovered(&warning, &status, &config), Ok(true));
+
+    let start = Instant::now();
+    let mut recovery = Recovery::default();
+    status.machine.power = PowerInfo {
+        source: PowerSource::Battery,
+        external_power: Some(false),
+        batteries: Some(vec![BatteryInfo {
+            name: "InternalBattery-0".into(),
+            kind: BatteryKind::System,
+            present: Some(true),
+            charge_percent: Some(5),
+            state: BatteryState::Discharging,
+        }]),
+    };
+    status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
+    sample(&mut recovery, &config, status.clone(), start, 0);
+    assert_eq!(recovery.phase(), Phase::Warning);
+    status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(100);
+    status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
+    for seconds in (30..330).step_by(30) {
+        sample(&mut recovery, &config, status.clone(), start, seconds);
+        assert_eq!(recovery.phase(), Phase::Stabilizing);
+    }
+    sample(&mut recovery, &config, status.clone(), start, 330);
+    assert_eq!(recovery.phase(), Phase::Recovered);
+    assert!(!recovery.unresolved());
+    status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(5);
+    status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
+    sample(&mut recovery, &config, status, start, 360);
+    assert_eq!(recovery.phase(), Phase::Warning);
+    assert_eq!(recovery.generation, 2);
 }
 
 #[test]
@@ -268,9 +323,9 @@ fn episodes_not_samples_are_counted_and_no_wait_is_implicit() {
                 offset + seconds,
             );
         }
-        assert_eq!(recovery.phase, Phase::Recovered);
-        assert!(recovery.wait_id.is_none());
-        assert!(!recovery.parked);
+        assert_eq!(recovery.phase(), Phase::Recovered);
+        assert!(recovery.wait_id().is_none());
+        assert!(!recovery.parked());
         // Margin loss before a renewed alarm must not hide the next episode.
         sample(
             &mut recovery,
@@ -291,7 +346,7 @@ fn episodes_not_samples_are_counted_and_no_wait_is_implicit() {
     );
     recovery.request_wait("new turn").unwrap();
     assert!(recovery.cancel_wait().is_some());
-    assert!(recovery.wait_id.is_none());
+    assert!(recovery.wait_id().is_none());
 }
 
 #[test]
@@ -320,8 +375,8 @@ fn a_new_warning_joins_the_outstanding_set_and_restarts_the_timer() {
         start,
         60,
     );
-    assert_eq!(recovery.phase, Phase::Warning);
-    assert_eq!(recovery.outstanding.len(), 2);
+    assert_eq!(recovery.phase(), Phase::Warning);
+    assert_eq!(recovery.status(&config, start).outstanding.len(), 2);
     assert_eq!(recovery.status(&config, start).stable_seconds, 0);
 }
 

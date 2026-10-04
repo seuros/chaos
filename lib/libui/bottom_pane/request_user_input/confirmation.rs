@@ -1,4 +1,3 @@
-use crate::bottom_pane::scroll_state::ScrollState;
 use crate::bottom_pane::selection_popup_common::GenericDisplayRow;
 
 use super::RequestUserInputOverlay;
@@ -10,17 +9,11 @@ use super::UNANSWERED_CONFIRM_SUBMIT_DESC_SINGULAR;
 
 impl RequestUserInputOverlay {
     pub(super) fn open_unanswered_confirmation(&mut self) {
-        if !self.lifecycle.apply(super::InputRequestEvent::Confirm) {
-            return;
-        }
-        let mut state = ScrollState::new();
-        state.selected_idx = Some(0);
-        self.confirm_unanswered = Some(state);
+        self.lifecycle.apply(super::InputRequestEvent::Confirm);
     }
 
     pub(super) fn close_unanswered_confirmation(&mut self) {
         self.lifecycle.apply(super::InputRequestEvent::Back);
-        self.confirm_unanswered = None;
     }
 
     pub(super) fn unanswered_question_count(&self) -> usize {
@@ -49,8 +42,8 @@ impl RequestUserInputOverlay {
 
     pub(super) fn unanswered_confirmation_rows(&self) -> Vec<GenericDisplayRow> {
         let selected = self
-            .confirm_unanswered
-            .as_ref()
+            .lifecycle
+            .confirmation()
             .and_then(|state| state.selected_idx)
             .unwrap_or(0);
         let entries = [
@@ -82,7 +75,7 @@ impl RequestUserInputOverlay {
         let Some(question) = self.request.questions.get(idx) else {
             return false;
         };
-        let Some(answer) = self.answers.get(idx) else {
+        let Some(answer) = self.answers().get(idx) else {
             return false;
         };
         let has_options = question

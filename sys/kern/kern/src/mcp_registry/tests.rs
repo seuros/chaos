@@ -203,10 +203,17 @@ async fn refresh_actor_preserves_order_without_blocking_enqueue() {
             .is_err(),
         "the second refresh must remain queued while the first is running"
     );
+    assert!(
+        timeout(Duration::from_millis(20), actor.shutdown())
+            .await
+            .is_err()
+    );
+    assert!(actor.enqueue(async {}).await.is_err());
     release_tx.send(()).expect("release first refresh");
     assert_eq!(order_rx.recv().await, Some(1));
     assert_eq!(order_rx.recv().await, Some(2));
     actor.shutdown().await.expect("shutdown refresh actor");
+    actor.shutdown().await.expect("repeated shutdown");
 }
 
 #[tokio::test]

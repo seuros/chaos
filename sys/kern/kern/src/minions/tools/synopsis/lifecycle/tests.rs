@@ -7,14 +7,29 @@ fn terminal_results_cannot_be_reopened_or_overwritten() {
         ResultState::Failed,
         ResultState::Cancelled,
     ] {
-        let mut state = terminal;
-        assert!(!state.apply(SynopsisJobEvent::Start));
-        assert!(!state.apply(SynopsisJobEvent::Complete));
-        assert!(!state.apply(SynopsisJobEvent::Fail));
-        assert!(!state.apply(SynopsisJobEvent::Cancel));
-        assert_eq!(state, terminal);
+        let mut job = Job::new(&NormalizedJob {
+            id: "job".to_string(),
+            message: "work".to_string(),
+            agent_type: None,
+        });
+        assert!(job.apply(SynopsisJobEvent::Start));
+        assert!(job.apply(match terminal {
+            ResultState::Completed => SynopsisJobEvent::Complete,
+            ResultState::Failed => SynopsisJobEvent::Fail,
+            ResultState::Cancelled => SynopsisJobEvent::Cancel,
+            _ => unreachable!(),
+        }));
+        assert!(!job.apply(SynopsisJobEvent::Start));
+        assert!(!job.apply(SynopsisJobEvent::Complete));
+        assert!(!job.apply(SynopsisJobEvent::Fail));
+        assert!(!job.apply(SynopsisJobEvent::Cancel));
+        assert_eq!(job.snapshot().state, terminal);
     }
-    let mut state = ResultState::Pending;
-    assert!(state.apply(SynopsisJobEvent::Fail)); // Spawn failures precede Running.
-    assert_eq!(state, ResultState::Failed);
+    let mut job = Job::new(&NormalizedJob {
+        id: "job".to_string(),
+        message: "work".to_string(),
+        agent_type: None,
+    });
+    assert!(job.apply(SynopsisJobEvent::Fail));
+    assert_eq!(job.snapshot().state, ResultState::Failed);
 }

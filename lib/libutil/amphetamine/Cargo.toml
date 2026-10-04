@@ -17,4 +17,4 @@ core-foundation = "0.10"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { workspace = true }
-
+state-machines = { workspace = true }

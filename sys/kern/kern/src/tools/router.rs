@@ -215,7 +215,7 @@ impl ToolRouter {
         let payload_outputs_tool_search = matches!(payload, ToolPayload::ToolSearch { .. });
         let wait_requested = {
             let state = session.state.lock().await;
-            state.machine_recovery.parked || state.machine_recovery.requested_turn.is_some()
+            state.machine_recovery.parked() || state.machine_recovery.requested_turn().is_some()
         };
         if wait_requested && tool_name != crate::tools::handlers::machine_recovery::NAME {
             return Ok(Self::failure_result(

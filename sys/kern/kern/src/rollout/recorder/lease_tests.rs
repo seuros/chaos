@@ -118,13 +118,28 @@ async fn goal_checkpoint_round_trips_through_durable_sqlite_journal() {
 async fn expired_idle_lease_is_reacquired_without_fencing() {
     let journal = TestJournal::new().await;
     let mut writer = journal.writer().await;
+    let warning_at = writer.lease.warning_deadline().unwrap();
+    let confirmed_at = warning_at - JOURNAL_LEASE_TTL + Duration::from_secs(5);
+    let renewal_at = confirmed_at + JOURNAL_LEASE_REFRESH_INTERVAL;
+    assert!(
+        !writer
+            .lease
+            .renewal_due(renewal_at - Duration::from_nanos(1))
+    );
+    assert!(writer.lease.renewal_due(renewal_at));
+    assert!(!writer.lease.at_risk(warning_at - Duration::from_nanos(1)));
+    assert!(writer.lease.at_risk(warning_at));
     let old_token = writer.lease_token.clone();
     journal.expire(writer.process_id).await;
-    writer.last_lease_refresh = Instant::now() - JOURNAL_LEASE_TTL;
+    writer
+        .lease
+        .set_confirmed_at(Instant::now() - JOURNAL_LEASE_TTL);
 
     writer.ensure_lease().await.unwrap();
     assert!(!writer.lease.fenced());
     assert!(writer.lease.confirmed());
+    assert!(!writer.lease.renewal_due(Instant::now()));
+    assert!(writer.lease.warning_deadline().unwrap() > Instant::now());
     assert_ne!(writer.lease_token, old_token);
     writer
         .append_items(&[item("after recovery")])
@@ -178,7 +193,9 @@ async fn recovery_reconciles_a_lost_response_before_appending_new_items() {
         .unwrap();
     writer.defer_items(&[committed.clone(), item("newly queued")]);
     journal.expire(writer.process_id).await;
-    writer.last_lease_refresh = Instant::now() - JOURNAL_LEASE_TTL;
+    writer
+        .lease
+        .set_confirmed_at(Instant::now() - JOURNAL_LEASE_TTL);
 
     writer.flush_pending_items().await.unwrap();
     let loaded = journal
@@ -238,7 +255,9 @@ async fn recovery_never_steals_a_live_lease_or_skips_foreign_history() {
         .await
         .unwrap();
     journal.expire(stale.process_id).await;
-    stale.last_lease_refresh = Instant::now() - JOURNAL_LEASE_TTL;
+    stale
+        .lease
+        .set_confirmed_at(Instant::now() - JOURNAL_LEASE_TTL);
     assert!(stale.ensure_lease().await.unwrap_err().contains("changed"));
     assert!(stale.lease.fenced());
     assert_eq!(stale.next_seq, 0);
@@ -249,7 +268,9 @@ async fn writer_actor_survives_outage_and_conflict() {
     let journal = TestJournal::new().await;
     let mut active = journal.writer().await;
     let process_id = active.process_id;
-    active.last_lease_refresh = Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL;
+    active
+        .lease
+        .set_confirmed_at(Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL);
     let offline_socket = journal.socket.with_extension("offline");
     tokio::fs::rename(&journal.socket, &offline_socket)
         .await
@@ -275,7 +296,7 @@ async fn writer_actor_survives_outage_and_conflict() {
         "test".into(),
         false,
         sink,
-        Arc::new(Mutex::new(None)),
+        watch::channel(None).0,
         status,
     )));
     tx.send(RolloutCmd::AddItems(vec![item("during outage")]))
@@ -380,10 +401,10 @@ async fn heartbeat_timeout_keeps_writer_retryable() {
         owner_id: "owner".into(),
         lease_token: "lease".into(),
         next_seq: 0,
-        last_lease_refresh: Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL,
         pending_items: vec![item("pending")],
-        lease: Lease::default(),
+        lease: Lease::new(Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL),
     };
+    let warning_at = writer.lease.warning_deadline();
     assert!(
         writer
             .ensure_lease()
@@ -393,6 +414,8 @@ async fn heartbeat_timeout_keeps_writer_retryable() {
     );
     assert!(!writer.lease.fenced());
     assert!(!writer.lease.confirmed());
+    assert_eq!(writer.lease.warning_deadline(), warning_at);
+    assert!(writer.lease.renewal_due(Instant::now()));
     assert_eq!(writer.pending_items.len(), 1);
 }
 
@@ -437,7 +460,7 @@ async fn assert_shutdown_releases_lease(client: JournalClient, config: PendingJo
             "test".into(),
             false,
             sink,
-            Arc::new(Mutex::new(None)),
+            watch::channel(None).0,
             watch::channel(JournalWriterStatus::Ready).0,
         )));
         let recorder = recorder(tx);
@@ -665,7 +688,6 @@ async fn release_timeout_is_bounded_and_reported() {
         owner_id: "owner".into(),
         lease_token: "lease".into(),
         next_seq: 0,
-        last_lease_refresh: Instant::now(),
         pending_items: Vec::new(),
         lease: Lease::default(),
     };

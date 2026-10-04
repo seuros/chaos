@@ -54,6 +54,18 @@ async fn timeout_allows_a_probe_that_closes_the_breaker() {
 
     tokio::time::advance(Duration::from_millis(1)).await;
     assert_eq!(breaker.retry_after(), Some(Duration::ZERO));
+    let mut cancelled_probe = Box::pin(breaker.call(std::future::pending::<Result<(), &str>>));
+    std::future::poll_fn(|cx| {
+        assert!(cancelled_probe.as_mut().poll(cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    let competing: Result<(), BreakerError<&str>> = breaker
+        .call(|| async { panic!("an active recovery probe owns admission") })
+        .await;
+    std::assert_matches!(competing, Err(BreakerError::Open));
+    drop(cancelled_probe);
+
     let recovered = breaker.call(|| async { Ok::<_, &str>("up") }).await;
 
     std::assert_matches!(recovered, Ok("up"));

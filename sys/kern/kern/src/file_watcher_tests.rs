@@ -28,8 +28,13 @@ fn throttles_and_coalesces_within_interval() {
     throttled.add(vec![path("a")]);
     let first = throttled.take_ready(start).expect("first emit");
     assert_eq!(first, vec![path("a")]);
+    assert_eq!(throttled.next_deadline(), None);
 
-    throttled.add(vec![path("b"), path("c")]);
+    throttled.add(vec![path("b"), path("c"), path("c")]);
+    assert_eq!(
+        throttled.next_deadline(),
+        Some(start + WATCHER_THROTTLE_INTERVAL)
+    );
     assert_eq!(throttled.take_ready(start), None);
 
     let second = throttled
@@ -50,9 +55,11 @@ fn flushes_pending_on_shutdown() {
     assert_eq!(throttled.take_ready(start), None);
 
     let flushed = throttled
-        .take_pending(start)
+        .shutdown(start)
         .expect("shutdown flush emits pending paths");
     assert_eq!(flushed, vec![path("b")]);
+    assert_eq!(throttled.next_deadline(), None);
+    assert_eq!(throttled.shutdown(start), None);
 }
 
 #[test]

@@ -24,8 +24,8 @@ fn late_configuration_and_submission_cannot_reopen_a_shutdown_frontend() {
     state.apply_event_msg(EventMsg::ShutdownComplete);
     state.apply_event_msg(EventMsg::SessionConfigured(session_configured()));
     state.record_user_submission("late".into());
-    assert_eq!(state.status, SessionStatus::Shutdown);
-    assert_eq!(state.turn, TurnStatus::Idle);
+    assert_eq!(state.status(), SessionStatus::Shutdown);
+    assert_eq!(state.turn(), TurnStatus::Idle);
     assert!(!state.can_submit());
     assert!(state.transcript.is_empty());
 }
@@ -57,10 +57,10 @@ fn session_configured() -> SessionConfiguredEvent {
 fn full_turn_lifecycle_reduces_to_transcript_state() {
     let mut state = FrontendState::new();
     state.apply_event_msg(EventMsg::SessionConfigured(session_configured()));
-    assert_eq!(SessionStatus::Ready, state.status);
+    assert_eq!(SessionStatus::Ready, state.status());
 
     state.record_user_submission("hello".to_string());
-    assert_eq!(TurnStatus::InFlight, state.turn);
+    assert_eq!(TurnStatus::InFlight, state.turn());
     std::assert_matches!(
         state.transcript.last(),
         Some(TranscriptEntry::User { text }) if text == "hello"
@@ -78,6 +78,13 @@ fn full_turn_lifecycle_reduces_to_transcript_state() {
         state.transcript.last(),
         Some(TranscriptEntry::Agent { content }) if content == "hi"
     );
+    let mut copy = state.clone();
+    assert_eq!(copy.turn(), TurnStatus::InFlight);
+    assert_eq!(copy.pending_stream_count(), 1);
+    copy.apply_event_msg(EventMsg::ShutdownComplete);
+    assert_eq!(copy.pending_stream_count(), 0);
+    assert_eq!(state.pending_stream_count(), 1);
+    assert_eq!(state.status(), SessionStatus::Ready);
 
     state.apply_event_msg(EventMsg::AgentMessage(AgentMessageEvent {
         message: "hi there".to_string(),
@@ -92,7 +99,7 @@ fn full_turn_lifecycle_reduces_to_transcript_state() {
         turn_id: "t1".to_string(),
         last_agent_message: Some("hi there".to_string()),
     }));
-    assert_eq!(TurnStatus::Idle, state.turn);
+    assert_eq!(TurnStatus::Idle, state.turn());
     assert_eq!(0, state.pending_stream_count());
     assert_eq!(0, state.pending_call_count());
 }
@@ -129,7 +136,7 @@ fn errors_and_token_usage_update_state() {
         chaos_error_info: Some(ChaosErrorInfo::ContextWindowExceeded),
     }));
 
-    assert_eq!(TurnStatus::Idle, state.turn);
+    assert_eq!(TurnStatus::Idle, state.turn());
     std::assert_matches!(
         state.transcript.last(),
         Some(TranscriptEntry::Notice {

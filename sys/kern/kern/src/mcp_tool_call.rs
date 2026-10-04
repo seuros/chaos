@@ -468,7 +468,11 @@ async fn maybe_request_mcp_tool_approval(
             }
             other => other,
         };
-        match monitor_approval(outcome, turn_context.approval_policy.value()) {
+        match monitor_approval(
+            outcome,
+            turn_context.approval_policy.value(),
+            tui_safety_elicitation_available(turn_context),
+        ) {
             Ok(reason) => monitor_reason = reason,
             Err(decision) => return Some(decision),
         }
@@ -547,7 +551,11 @@ async fn maybe_request_mcp_tool_approval(
                 return Some(McpToolApprovalDecision::Accept);
             }
             let outcome = monitor_mcp_tool_call(sess, turn_context, invocation, metadata).await;
-            match monitor_approval(outcome, turn_context.approval_policy.value()) {
+            match monitor_approval(
+                outcome,
+                turn_context.approval_policy.value(),
+                tui_safety_elicitation_available(turn_context),
+            ) {
                 Ok(None) => return Some(McpToolApprovalDecision::Accept),
                 Ok(reason) => monitor_reason = reason,
                 Err(decision) => return Some(decision),
@@ -614,11 +622,26 @@ async fn maybe_request_mcp_tool_approval(
             prompt_options,
         },
     );
-    let decision = parse_mcp_tool_approval_elicitation_response(
-        sess.request_mcp_server_elicitation(turn_context.as_ref(), request_id, params)
-            .await,
-        &question_id,
-    );
+    let response =
+        sess.request_mcp_server_elicitation(turn_context.as_ref(), request_id.clone(), params);
+    let response = if monitor_reason.is_some() {
+        match tokio::time::timeout(Duration::from_secs(300), response).await {
+            Ok(response) => response,
+            Err(_) => {
+                if let Some(active) = sess.active_turn.lock().await.as_mut() {
+                    active
+                        .turn_state
+                        .lock()
+                        .await
+                        .remove_pending_elicitation(server, &request_id);
+                }
+                None
+            }
+        }
+    } else {
+        response.await
+    };
+    let decision = parse_mcp_tool_approval_elicitation_response(response, &question_id);
     let decision = normalize_approval_decision_for_mode(
         decision,
         if monitor_reason.is_some() {
@@ -646,9 +669,18 @@ async fn maybe_request_mcp_tool_approval(
     Some(decision)
 }
 
+fn tui_safety_elicitation_available(context: &TurnContext) -> bool {
+    context.app_server_client_name.as_deref() == Some("chaos-console")
+        && !matches!(
+            context.session_source,
+            chaos_ipc::protocol::SessionSource::SubAgent(_)
+        )
+}
+
 fn monitor_approval(
     outcome: ArcMonitorOutcome,
     policy: ApprovalPolicy,
+    tui_attached: bool,
 ) -> Result<Option<String>, McpToolApprovalDecision> {
     let reason = match outcome {
         ArcMonitorOutcome::Ok | ArcMonitorOutcome::Disabled => return Ok(None),
@@ -663,7 +695,7 @@ fn monitor_approval(
         ),
     };
     let prompts_allowed = match policy {
-        ApprovalPolicy::Headless => false,
+        ApprovalPolicy::Headless => tui_attached,
         ApprovalPolicy::Granular(config) => config.mcp_elicitations,
         ApprovalPolicy::Supervised | ApprovalPolicy::Interactive => true,
     };

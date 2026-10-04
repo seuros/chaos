@@ -1046,22 +1046,26 @@ fn monitor_outcomes_respect_prompt_policy() {
         request_permissions: true,
         mcp_elicitations: false,
     });
-    for policy in [ApprovalPolicy::Headless, no_mcp_prompts] {
+    for (policy, tui, prompts) in [
+        (ApprovalPolicy::Headless, false, false),
+        (ApprovalPolicy::Headless, true, true),
+        (no_mcp_prompts, false, false),
+        (no_mcp_prompts, true, false),
+    ] {
         for outcome in [
             ArcMonitorOutcome::Unavailable("deadline"),
             ArcMonitorOutcome::AskUser("review this action".into()),
             ArcMonitorOutcome::SteerModel("unsafe".into()),
         ] {
-            std::assert_matches!(
-                monitor_approval(outcome, policy),
-                Err(McpToolApprovalDecision::BlockedBySafetyMonitor(_))
-            );
+            let allowed = prompts && !matches!(outcome, ArcMonitorOutcome::SteerModel(_));
+            assert_eq!(monitor_approval(outcome, policy, tui).is_ok(), allowed);
         }
     }
     std::assert_matches!(
         monitor_approval(
             ArcMonitorOutcome::Unavailable("remote_http"),
-            ApprovalPolicy::Interactive
+            ApprovalPolicy::Interactive,
+            false,
         ),
         Ok(Some(reason)) if reason.contains("One-time approval")
     );
@@ -1197,11 +1201,26 @@ async fn required_monitor_precedes_headless_annotation_and_approval_shortcuts() 
 #[serial]
 async fn unavailable_monitor_approval_is_one_shot_even_with_forged_persistence() {
     use crate::chaos::make_session_and_context_with_rx;
+    use chaos_ipc::protocol::{SessionSource, SubAgentSource};
     let (session, mut context, events) = make_session_and_context_with_rx().await;
     require_unavailable_monitor(
         Arc::get_mut(&mut context).unwrap(),
-        ApprovalPolicy::Interactive,
+        ApprovalPolicy::Headless,
     );
+    let turn = Arc::get_mut(&mut context).unwrap();
+    assert!(!tui_safety_elicitation_available(turn));
+    turn.app_server_client_name = Some("chaos-console".into());
+    for (source, expected) in [
+        (SessionSource::Cli, true),
+        (
+            SessionSource::SubAgent(SubAgentSource::Other("test".into())),
+            false,
+        ),
+        (SessionSource::Exec, true),
+    ] {
+        turn.session_source = source;
+        assert_eq!(tui_safety_elicitation_available(turn), expected);
+    }
     *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
     let invocation = McpInvocation {
         server: Some("test".into()),

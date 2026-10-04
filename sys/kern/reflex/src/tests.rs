@@ -452,6 +452,12 @@ async fn jev_action_risk_asks_four_questions_and_normalizes_score() {
     let server = MockServer::start().await;
     let expected_questions =
         serde_json::to_value(JevBackend::action_risk_questions()).unwrap_or_default();
+    assert!(
+        expected_questions["irreversible"]["criteria"]["false"]
+            .as_str()
+            .unwrap()
+            .contains("regardless of the tool name")
+    );
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
         .and(body_partial_json(json!({

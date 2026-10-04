@@ -38,6 +38,23 @@ pub(crate) struct OrchestratorRunResult<Out> {
     pub deferred_network_approval: Option<DeferredNetworkApproval>,
 }
 
+fn require_approved(decision: ReviewDecision) -> Result<(), ToolError> {
+    let approved = match decision {
+        ReviewDecision::Denied | ReviewDecision::Abort => false,
+        ReviewDecision::Approved
+        | ReviewDecision::ApprovedExecpolicyAmendment { .. }
+        | ReviewDecision::ApprovedForSession => true,
+        ReviewDecision::NetworkPolicyAmendment {
+            network_policy_amendment,
+        } => network_policy_amendment.action == NetworkPolicyRuleAction::Allow,
+    };
+    if approved {
+        Ok(())
+    } else {
+        Err(ToolError::Rejected("rejected by user".to_string()))
+    }
+}
+
 impl ToolOrchestrator {
     pub fn new() -> Self {
         Self {
@@ -139,23 +156,7 @@ impl ToolOrchestrator {
 
                 otel.tool_decision(otel_tn, otel_ci, &decision, otel_user.clone());
 
-                match decision {
-                    ReviewDecision::Denied | ReviewDecision::Abort => {
-                        let reason = "rejected by user".to_string();
-                        return Err(ToolError::Rejected(reason));
-                    }
-                    ReviewDecision::Approved
-                    | ReviewDecision::ApprovedExecpolicyAmendment { .. }
-                    | ReviewDecision::ApprovedForSession => {}
-                    ReviewDecision::NetworkPolicyAmendment {
-                        network_policy_amendment,
-                    } => match network_policy_amendment.action {
-                        NetworkPolicyRuleAction::Allow => {}
-                        NetworkPolicyRuleAction::Deny => {
-                            return Err(ToolError::Rejected("rejected by user".to_string()));
-                        }
-                    },
-                }
+                require_approved(decision)?;
                 already_approved = true;
             }
         }
@@ -285,23 +286,7 @@ impl ToolOrchestrator {
                     let decision = tool.start_approval_async(req, approval_ctx).await;
                     otel.tool_decision(otel_tn, otel_ci, &decision, otel_user);
 
-                    match decision {
-                        ReviewDecision::Denied | ReviewDecision::Abort => {
-                            let reason = "rejected by user".to_string();
-                            return Err(ToolError::Rejected(reason));
-                        }
-                        ReviewDecision::Approved
-                        | ReviewDecision::ApprovedExecpolicyAmendment { .. }
-                        | ReviewDecision::ApprovedForSession => {}
-                        ReviewDecision::NetworkPolicyAmendment {
-                            network_policy_amendment,
-                        } => match network_policy_amendment.action {
-                            NetworkPolicyRuleAction::Allow => {}
-                            NetworkPolicyRuleAction::Deny => {
-                                return Err(ToolError::Rejected("rejected by user".to_string()));
-                            }
-                        },
-                    }
+                    require_approved(decision)?;
                 }
 
                 let escalated_attempt = SandboxAttempt {

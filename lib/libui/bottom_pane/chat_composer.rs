@@ -120,6 +120,7 @@ mod history_integration;
 mod mentions;
 mod paste_handling;
 mod popup_sync;
+mod quit_shortcut;
 mod render;
 mod submission;
 mod types;
@@ -133,10 +134,8 @@ use types::PromptSelectionAction;
 use types::PromptSelectionMode;
 use types::user_input_too_large_message;
 
-use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::has_ctrl_or_alt;
-use crossterm::event::KeyCode;
 use ratatui::text::Line;
 
 use super::chat_composer_history::ChatComposerHistory;
@@ -197,8 +196,7 @@ pub struct ChatComposer {
     pub(super) active_popup: ActivePopup,
     pub(super) app_event_tx: AppEventSender,
     pub(super) history: ChatComposerHistory,
-    pub(super) quit_shortcut_expires_at: Option<Instant>,
-    pub(super) quit_shortcut_key: KeyBinding,
+    quit_shortcut: quit_shortcut::QuitShortcut,
     pub(super) esc_backtrack_hint: bool,
     pub(super) use_shift_enter_hint: bool,
     pub(super) dismissed_file_popup_token: Option<String>,
@@ -308,8 +306,7 @@ impl ChatComposer {
             active_popup: ActivePopup::None,
             app_event_tx,
             history: ChatComposerHistory::new(),
-            quit_shortcut_expires_at: None,
-            quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
+            quit_shortcut: quit_shortcut::QuitShortcut::default(),
             esc_backtrack_hint: false,
             use_shift_enter_hint,
             dismissed_file_popup_token: None,
@@ -603,21 +600,19 @@ impl ChatComposer {
 
     /// Show the transient "press again to quit" hint for `key`.
     ///
-    /// The owner (`BottomPane`/`ChatWidget`) is responsible for scheduling a
-    /// redraw after [`super::QUIT_SHORTCUT_TIMEOUT`] so the hint can disappear
-    /// even when the UI is otherwise idle.
+    /// The armed scope schedules its expiry redraw when a requester is available.
     pub fn show_quit_shortcut_hint(&mut self, key: KeyBinding, has_focus: bool) {
-        self.quit_shortcut_expires_at = Instant::now()
-            .checked_add(super::QUIT_SHORTCUT_TIMEOUT)
-            .or_else(|| Some(Instant::now()));
-        self.quit_shortcut_key = key;
+        let now = Instant::now();
+        let expires_at = now.checked_add(super::QUIT_SHORTCUT_TIMEOUT).unwrap_or(now);
+        self.quit_shortcut
+            .arm(key, expires_at, self.frame_requester.clone());
         self.footer_mode = FooterMode::QuitShortcutReminder;
         self.set_has_focus(has_focus);
     }
 
     /// Clear the "press again to quit" hint immediately.
     pub fn clear_quit_shortcut_hint(&mut self, has_focus: bool) {
-        self.quit_shortcut_expires_at = None;
+        self.quit_shortcut.clear();
         self.footer_mode = reset_mode_after_activity(self.footer_mode);
         self.set_has_focus(has_focus);
     }
@@ -628,8 +623,11 @@ impl ChatComposer {
     /// any additional user input, so the UI schedules a redraw when the hint
     /// expires.
     pub fn quit_shortcut_hint_visible(&self) -> bool {
-        self.quit_shortcut_expires_at
-            .is_some_and(|expires_at| Instant::now() < expires_at)
+        self.quit_shortcut.visible_at(Instant::now())
+    }
+
+    pub fn quit_shortcut_active_for(&mut self, key: KeyBinding) -> bool {
+        self.quit_shortcut.active_for(key, Instant::now())
     }
 
     pub fn insert_str(&mut self, text: &str) {

@@ -29,7 +29,7 @@ impl RequestUserInputOverlay {
                 text_elements,
             } => {
                 if self.has_options()
-                    && matches!(self.focus, Focus::Notes)
+                    && matches!(self.focus(), Focus::Notes)
                     && !text.trim().is_empty()
                 {
                     let options_len = self.options_len();
@@ -44,7 +44,7 @@ impl RequestUserInputOverlay {
                 } else if let Some(answer) = self.current_answer_mut() {
                     answer.answer_committed = !text.trim().is_empty();
                 }
-                let draft_override = self.pending_submission_draft.take();
+                let draft_override = self.pending_submission_draft().take();
                 if let Some(draft) = draft_override {
                     self.apply_submission_draft(draft);
                 } else {
@@ -58,7 +58,7 @@ impl RequestUserInputOverlay {
     }
 
     pub(super) fn handle_confirm_unanswered_key_event(&mut self, key_event: KeyEvent) {
-        let Some(state) = self.confirm_unanswered.as_mut() else {
+        let Some(state) = self.lifecycle.confirmation_mut() else {
             return;
         };
 
@@ -191,7 +191,7 @@ impl BottomPaneView for RequestUserInputOverlay {
                 code: KeyCode::Char('h'),
                 modifiers: KeyModifiers::NONE,
                 ..
-            } if self.has_options() && matches!(self.focus, Focus::Options) => {
+            } if self.has_options() && matches!(self.focus(), Focus::Options) => {
                 self.move_question(/*next*/ false);
                 return;
             }
@@ -199,7 +199,7 @@ impl BottomPaneView for RequestUserInputOverlay {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::NONE,
                 ..
-            } if self.has_options() && matches!(self.focus, Focus::Options) => {
+            } if self.has_options() && matches!(self.focus(), Focus::Options) => {
                 self.move_question(/*next*/ false);
                 return;
             }
@@ -207,7 +207,7 @@ impl BottomPaneView for RequestUserInputOverlay {
                 code: KeyCode::Char('l'),
                 modifiers: KeyModifiers::NONE,
                 ..
-            } if self.has_options() && matches!(self.focus, Focus::Options) => {
+            } if self.has_options() && matches!(self.focus(), Focus::Options) => {
                 self.move_question(/*next*/ true);
                 return;
             }
@@ -215,14 +215,14 @@ impl BottomPaneView for RequestUserInputOverlay {
                 code: KeyCode::Right,
                 modifiers: KeyModifiers::NONE,
                 ..
-            } if self.has_options() && matches!(self.focus, Focus::Options) => {
+            } if self.has_options() && matches!(self.focus(), Focus::Options) => {
                 self.move_question(/*next*/ true);
                 return;
             }
             _ => {}
         }
 
-        match self.focus {
+        match self.focus() {
             Focus::Options => {
                 let options_len = self.options_len();
                 // Keep selection synchronized as the user moves.
@@ -258,7 +258,7 @@ impl BottomPaneView for RequestUserInputOverlay {
                         self.clear_selection();
                     }
                     KeyCode::Tab if self.selected_option_index().is_some() => {
-                        self.focus.notes();
+                        self.focus_notes();
                         self.ensure_selected_for_notes();
                     }
                     KeyCode::Tab => {}
@@ -293,16 +293,16 @@ impl BottomPaneView for RequestUserInputOverlay {
                     if let Some(answer) = self.current_answer_mut() {
                         answer.notes_visible = false;
                     }
-                    self.focus.options();
+                    self.focus_options();
                     self.sync_composer_placeholder();
                     return;
                 }
                 if matches!(key_event.code, KeyCode::Enter) {
                     self.ensure_selected_for_notes();
-                    self.pending_submission_draft = Some(self.capture_composer_draft());
+                    *self.pending_submission_draft() = Some(self.capture_composer_draft());
                     let (result, _) = self.composer.handle_key_event(key_event);
                     if !self.handle_composer_input_result(result) {
-                        self.pending_submission_draft = None;
+                        *self.pending_submission_draft() = None;
                         if self.has_options() {
                             self.select_current_option(/*committed*/ true);
                         }
@@ -400,9 +400,9 @@ impl BottomPaneView for RequestUserInputOverlay {
         if self.done() || self.confirm_unanswered_active() || pasted.is_empty() {
             return false;
         }
-        if matches!(self.focus, Focus::Options) {
+        if matches!(self.focus(), Focus::Options) {
             // Treat pastes the same as typing: switch into notes.
-            self.focus.notes();
+            self.focus_notes();
         }
         self.ensure_selected_for_notes();
         if let Some(answer) = self.current_answer_mut() {
@@ -423,6 +423,9 @@ impl BottomPaneView for RequestUserInputOverlay {
         &mut self,
         request: chaos_ipc::request_user_input::RequestUserInputEvent,
     ) -> Option<chaos_ipc::request_user_input::RequestUserInputEvent> {
+        if self.done() {
+            return Some(request);
+        }
         self.queue.push_back(request);
         None
     }

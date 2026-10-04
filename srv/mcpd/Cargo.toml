@@ -27,7 +27,6 @@ mcp-host = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-state-machines = { workspace = true }
 shlex = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",
@@ -52,4 +51,4 @@ tempfile = { workspace = true }
 wiremock = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["state-machines", "os_info"]
+ignored = ["os_info"]

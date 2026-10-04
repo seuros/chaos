@@ -44,6 +44,12 @@ pub fn runtime_socket_dir() -> std::io::Result<PathBuf> {
     Ok(crate::default_socket_runtime_dir(chaos_home.as_path()))
 }
 
+/// Start the installed journald when no compatible SQLite server is running.
+///
+/// An explicit `binary_path` takes precedence over the installed sibling and
+/// `PATH`. Integration tests needing bootstrap should pass Cargo's compile-time
+/// `env!("CARGO_BIN_EXE_chaos_journald")` path here; production does not consult
+/// Cargo environment variables or guess build-directory layouts.
 pub async fn ensure_sqlite_journald_running(binary_path: Option<&Path>) -> Result<BootstrapPaths> {
     let paths = BootstrapPaths::discover()?;
     tokio::fs::create_dir_all(&paths.runtime_dir)
@@ -102,34 +108,19 @@ fn resolve_journald_executable(binary_path: Option<&Path>) -> Result<PathBuf> {
         return Ok(path.to_path_buf());
     }
 
-    // Check CARGO_BIN_EXE_* env vars set by cargo test / nextest.
-    for key in ["CARGO_BIN_EXE_chaos_journald"] {
-        if let Some(value) = std::env::var_os(key) {
-            let path = PathBuf::from(value);
-            if path.exists() {
-                return Ok(path);
-            }
-        }
-    }
-
     let current_exe = std::env::current_exe().context("resolve current executable")?;
+    Ok(installed_journald_executable(&current_exe))
+}
+
+fn installed_journald_executable(current_exe: &Path) -> PathBuf {
     if let Some(parent) = current_exe.parent() {
         let sibling = parent.join("chaos_journald");
-        if sibling.exists() {
-            return Ok(sibling);
-        }
-        // cargo test / nextest place test binaries in target/<profile>/deps/
-        // while standalone binaries live in target/<profile>/. Walk one more
-        // level up so we find chaos_journald next to the deps directory.
-        if let Some(grandparent) = parent.parent() {
-            let ancestor_sibling = grandparent.join("chaos_journald");
-            if ancestor_sibling.exists() {
-                return Ok(ancestor_sibling);
-            }
+        if sibling.is_file() {
+            return sibling;
         }
     }
 
-    Ok(PathBuf::from("chaos_journald"))
+    PathBuf::from("chaos_journald")
 }
 
 fn spawn_detached_journald(binary_path: &Path, paths: &BootstrapPaths) -> Result<()> {

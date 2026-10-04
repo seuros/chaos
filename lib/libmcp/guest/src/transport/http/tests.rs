@@ -125,11 +125,23 @@ async fn transport_posts_initialize_response() {
     assert_eq!(result["protocolVersion"], json!("2025-11-25"));
     assert_eq!(result["serverInfo"]["name"], json!("test-server"));
     assert_eq!(
-        transport.inner.session_id.lock().await.as_deref(),
+        transport
+            .inner
+            .lifecycle()
+            .data()
+            .unwrap()
+            .session_id
+            .as_deref(),
         Some("session-123")
     );
     assert_eq!(
-        transport.inner.negotiated_version.lock().await.as_deref(),
+        transport
+            .inner
+            .lifecycle()
+            .data()
+            .unwrap()
+            .negotiated_version
+            .as_deref(),
         Some("2025-11-25")
     );
 }
@@ -235,21 +247,81 @@ async fn transport_reads_get_sse_notifications() {
     };
     assert_eq!(notification.method, "notifications/resources/list_changed");
     assert!(notification.params.is_none());
+    let inner = Arc::downgrade(&transport.inner);
+    transport.force_shutdown().await.unwrap();
+    transport.force_shutdown().await.unwrap();
+    assert!(matches!(
+        transport.recv().await,
+        Err(GuestError::Disconnected)
+    ));
+    drop(transport);
+    assert!(inner.upgrade().is_none());
 }
 
 #[tokio::test]
 async fn transport_recovers_session_on_404_and_retries_request() {
     let seen_requests = Arc::new(AsyncMutex::new(Vec::<SeenRequest>::new()));
     let call_count = Arc::new(AtomicUsize::new(0));
+    let late_count = Arc::new(AtomicUsize::new(0));
+    let slow_count = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(tokio::sync::Barrier::new(3));
+    let release = Arc::new(tokio::sync::Barrier::new(3));
 
     let client = {
         let seen_requests = Arc::clone(&seen_requests);
         let call_count = Arc::clone(&call_count);
+        let late_count = Arc::clone(&late_count);
+        let slow_count = Arc::clone(&slow_count);
+        let started = Arc::clone(&started);
+        let release = Arc::clone(&release);
         service_fn(move |req: Request| {
             let seen_requests = Arc::clone(&seen_requests);
             let call_count = Arc::clone(&call_count);
+            let late_count = Arc::clone(&late_count);
+            let slow_count = Arc::clone(&slow_count);
+            let started = Arc::clone(&started);
+            let release = Arc::clone(&release);
             async move {
                 let seen = record_request(req).await;
+                if matches!(seen.rpc_method.as_deref(), Some("late" | "slow")) {
+                    let late = seen.rpc_method.as_deref() == Some("late");
+                    if late {
+                        late_count.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        slow_count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    if seen.session_id.as_deref() == Some("session-1") {
+                        started.wait().await;
+                        release.wait().await;
+                        if late {
+                            return Ok::<_, OpaqueError>(
+                                Response::builder()
+                                    .status(StatusCode::NOT_FOUND)
+                                    .header(HEADER_SESSION_ID, "session-1")
+                                    .body(Body::empty())
+                                    .unwrap(),
+                            );
+                        }
+                    } else {
+                        assert_eq!(seen.session_id.as_deref(), Some("session-2"));
+                    }
+                    return Ok::<_, OpaqueError>(
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header(CONTENT_TYPE, MIME_APPLICATION_JSON)
+                            .header(HEADER_SESSION_ID, seen.session_id.unwrap())
+                            .body(Body::from(
+                                serde_json::to_vec(&JsonRpcMessage::Response(
+                                    JsonRpcResponse::success(
+                                        json!(if late { 3 } else { 4 }),
+                                        json!({}),
+                                    ),
+                                ))
+                                .unwrap(),
+                            ))
+                            .unwrap(),
+                    );
+                }
                 seen_requests.lock().await.push(seen);
 
                 let response = match call_count.fetch_add(1, Ordering::Relaxed) {
@@ -326,6 +398,34 @@ async fn transport_recovers_session_on_404_and_retries_request() {
         .await
         .unwrap();
 
+    let late = {
+        let transport = Arc::clone(&transport);
+        tokio::spawn(async move {
+            transport
+                .send(JsonRpcMessage::Request(JsonRpcRequest::new(
+                    json!(3),
+                    "late",
+                    None,
+                )))
+                .await
+        })
+    };
+    let slow = {
+        let transport = Arc::clone(&transport);
+        tokio::spawn(async move {
+            transport
+                .send(JsonRpcMessage::Request(JsonRpcRequest::new(
+                    json!(4),
+                    "slow",
+                    None,
+                )))
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(1), started.wait())
+        .await
+        .unwrap();
+
     transport
         .send(JsonRpcMessage::Request(JsonRpcRequest::new(
             json!(2),
@@ -341,6 +441,27 @@ async fn transport_recovers_session_on_404_and_retries_request() {
     };
     assert_eq!(response.id, Some(json!(2)));
     assert!(response.error.is_none());
+    tokio::time::timeout(Duration::from_secs(1), release.wait())
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        late.await.unwrap().unwrap();
+        slow.await.unwrap().unwrap();
+    })
+    .await
+    .unwrap();
+    assert_eq!(late_count.load(Ordering::Relaxed), 2);
+    assert_eq!(slow_count.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        transport
+            .inner
+            .lifecycle()
+            .data()
+            .unwrap()
+            .session_id
+            .as_deref(),
+        Some("session-2"),
+    );
 
     let seen = seen_requests.lock().await.clone();
     assert_eq!(
@@ -487,7 +608,10 @@ async fn transport_recovers_missing_session_without_double_executing_tool_call()
 
     // Mirror the SSE restart race: the background GET observes the dead
     // session and clears local state before the foreground request starts.
-    transport.inner.clear_session_state().await;
+    transport
+        .inner
+        .clear_session_state(transport.inner.session_generation.load(Ordering::Acquire))
+        .unwrap();
 
     transport
         .send(JsonRpcMessage::Request(JsonRpcRequest::new(
@@ -590,9 +714,13 @@ async fn transport_applies_custom_headers_and_merges_accept() {
     assert!(post_accept.contains("application/vnd.example+json"));
     assert!(post_request.headers().get(HEADER_SESSION_ID).is_none());
 
-    *transport.inner.session_id.lock().await = Some("session-123".to_string());
-    *transport.inner.negotiated_version.lock().await = Some("2025-11-25".to_string());
-    *transport.inner.last_event_id.lock().await = Some("event-42".to_string());
+    {
+        let mut lifecycle = transport.inner.lifecycle();
+        let data = lifecycle.data_mut().unwrap();
+        data.session_id = Some("session-123".to_string());
+        data.negotiated_version = Some("2025-11-25".to_string());
+        data.last_event_id = Some("event-42".to_string());
+    }
 
     let get_request = transport.inner.build_get_request().await.unwrap();
     assert_eq!(

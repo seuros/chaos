@@ -411,10 +411,7 @@ impl BottomPane {
 
     /// Show the transient "press again to quit" hint for `key`.
     ///
-    /// `ChatWidget` owns the quit shortcut state machine (it decides when quit is
-    /// allowed), while the bottom pane owns rendering. We also schedule a redraw
-    /// after [`QUIT_SHORTCUT_TIMEOUT`] so the hint disappears even if the user
-    /// stops typing and no other events trigger a draw.
+    /// The composer owns the shared admission window and its expiry redraw.
     pub fn show_quit_shortcut_hint(&mut self, key: KeyBinding) {
         if !DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED {
             return;
@@ -422,21 +419,11 @@ impl BottomPane {
 
         self.composer
             .show_quit_shortcut_hint(key, self.has_input_focus);
-        let frame_requester = self.frame_requester.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                tokio::time::sleep(QUIT_SHORTCUT_TIMEOUT).await;
-                frame_requester.schedule_frame();
-            });
-        } else {
-            // In tests (and other non-Tokio contexts), fall back to a thread so
-            // the hint can still expire without requiring an explicit draw.
-            std::thread::spawn(move || {
-                std::thread::sleep(QUIT_SHORTCUT_TIMEOUT);
-                frame_requester.schedule_frame();
-            });
-        }
         self.request_redraw();
+    }
+
+    pub fn quit_shortcut_active_for(&mut self, key: KeyBinding) -> bool {
+        self.composer.quit_shortcut_active_for(key)
     }
 
     /// Clear the "press again to quit" hint immediately.

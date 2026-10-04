@@ -113,7 +113,7 @@ impl ToolHandler for Handler {
         };
 
         run_cancellation.cancel();
-        state.shutdown_remaining(Arc::clone(&backend)).await;
+        state.shutdown_remaining().await;
         cancellation_guard.disarm();
 
         Ok(RunSynopsisResult {
@@ -347,13 +347,8 @@ impl ActionExecutor<AgentAction> for AgentExecutor {
                         return SpawnTaskResult::Failed;
                     }
                 };
-                spawn_state.mark_spawned(&spawn_id, process_id);
-                let lease = AgentLease::new(
-                    spawn_id.clone(),
-                    process_id,
-                    Arc::clone(&spawn_backend),
-                    Arc::clone(&spawn_state),
-                );
+                spawn_state.mark_spawned(&spawn_id, process_id, Arc::clone(&spawn_backend));
+                let lease = AgentLease::new(spawn_id.clone(), process_id, Arc::clone(&spawn_state));
 
                 if spawn_cancellation.is_cancelled() || spawn_run_cancellation.is_cancelled() {
                     spawn_state.mark_cancelled(&spawn_id);
@@ -428,30 +423,22 @@ async fn wait_for_final_status(backend: &dyn AgentBackend, process_id: ProcessId
 struct AgentLease {
     id: ActionId,
     process_id: ProcessId,
-    backend: Arc<dyn AgentBackend>,
     state: Arc<ExecutionState>,
     armed: bool,
 }
 
 impl AgentLease {
-    fn new(
-        id: ActionId,
-        process_id: ProcessId,
-        backend: Arc<dyn AgentBackend>,
-        state: Arc<ExecutionState>,
-    ) -> Self {
+    fn new(id: ActionId, process_id: ProcessId, state: Arc<ExecutionState>) -> Self {
         Self {
             id,
             process_id,
-            backend,
             state,
             armed: true,
         }
     }
 
     async fn close(mut self) {
-        let _ = self.backend.shutdown(self.process_id).await;
-        self.state.remove_active(&self.id);
+        self.state.close_agent(&self.id).await;
         self.armed = false;
     }
 }
@@ -462,14 +449,46 @@ impl Drop for AgentLease {
             return;
         }
         self.state.mark_cancelled(&self.id);
-        let id = self.id.clone();
-        let process_id = self.process_id;
-        let backend = Arc::clone(&self.backend);
         let state = Arc::clone(&self.state);
+        let id = self.id.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                state.close_agent(&id).await;
+            });
+        }
+    }
+}
+
+struct AgentResource {
+    process_id: tokio::sync::Mutex<Option<ProcessId>>,
+    backend: Arc<dyn AgentBackend>,
+}
+
+impl std::fmt::Debug for AgentResource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentResource").finish_non_exhaustive()
+    }
+}
+
+impl AgentResource {
+    async fn close(&self) {
+        let mut process = self.process_id.lock().await;
+        if let Some(process_id) = *process {
+            let _ = self.backend.shutdown(process_id).await;
+            *process = None;
+        }
+    }
+}
+
+impl Drop for AgentResource {
+    fn drop(&mut self) {
+        let Some(process_id) = self.process_id.get_mut().take() else {
+            return;
+        };
+        let backend = Arc::clone(&self.backend);
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
                 let _ = backend.shutdown(process_id).await;
-                state.remove_active(&id);
             });
         }
     }
@@ -520,8 +539,7 @@ impl Drop for RunCancellationGuard {
 mod lifecycle;
 
 struct ExecutionState {
-    jobs: Mutex<HashMap<String, SynopsisJobResult>>,
-    active: Mutex<HashMap<ActionId, ProcessId>>,
+    jobs: Mutex<HashMap<String, lifecycle::Job>>,
     in_flight_spawns: AtomicUsize,
     spawns_finished: Notify,
 }
@@ -530,35 +548,17 @@ impl ExecutionState {
     fn new(jobs: &[NormalizedJob]) -> Self {
         let jobs = jobs
             .iter()
-            .map(|job| {
-                (
-                    job.id.clone(),
-                    SynopsisJobResult {
-                        id: job.id.clone(),
-                        state: SynopsisJobState::Pending,
-                        agent_id: None,
-                        nickname: None,
-                        agent_type: job.agent_type.clone(),
-                        status: None,
-                        error: None,
-                    },
-                )
-            })
+            .map(|job| (job.id.clone(), lifecycle::Job::new(job)))
             .collect();
         Self {
             jobs: Mutex::new(jobs),
-            active: Mutex::new(HashMap::new()),
             in_flight_spawns: AtomicUsize::new(0),
             spawns_finished: Notify::new(),
         }
     }
 
-    fn lock_jobs(&self) -> MutexGuard<'_, HashMap<String, SynopsisJobResult>> {
+    fn lock_jobs(&self) -> MutexGuard<'_, HashMap<String, lifecycle::Job>> {
         self.jobs.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn lock_active(&self) -> MutexGuard<'_, HashMap<ActionId, ProcessId>> {
-        self.active.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn begin_spawn(&self) {
@@ -573,28 +573,32 @@ impl ExecutionState {
 
     fn mark_running(&self, id: &ActionId) {
         if let Some(job) = self.lock_jobs().get_mut(id.as_str()) {
-            job.state.apply(lifecycle::SynopsisJobEvent::Start);
+            job.apply(lifecycle::SynopsisJobEvent::Start);
         }
     }
 
-    fn mark_spawned(&self, id: &ActionId, process_id: ProcessId) {
-        self.lock_active().insert(id.clone(), process_id);
+    fn mark_spawned(&self, id: &ActionId, process_id: ProcessId, backend: Arc<dyn AgentBackend>) {
         if let Some(job) = self.lock_jobs().get_mut(id.as_str()) {
-            job.agent_id = Some(process_id.to_string());
+            let data = job.data_mut();
+            data.agent_id = Some(process_id.to_string());
+            data.agent = Some(Arc::new(AgentResource {
+                process_id: tokio::sync::Mutex::new(Some(process_id)),
+                backend,
+            }));
         }
     }
 
     fn mark_failed(&self, id: &ActionId, error: String) {
         if let Some(job) = self.lock_jobs().get_mut(id.as_str())
-            && job.state.apply(lifecycle::SynopsisJobEvent::Fail)
+            && job.apply(lifecycle::SynopsisJobEvent::Fail)
         {
-            job.error = Some(error);
+            job.data_mut().error = Some(error);
         }
     }
 
     fn mark_cancelled(&self, id: &ActionId) {
         if let Some(job) = self.lock_jobs().get_mut(id.as_str()) {
-            job.state.apply(lifecycle::SynopsisJobEvent::Cancel);
+            job.apply(lifecycle::SynopsisJobEvent::Cancel);
         }
     }
 
@@ -611,24 +615,36 @@ impl ExecutionState {
                 ActionOutcome::Success => lifecycle::SynopsisJobEvent::Complete,
                 ActionOutcome::Failure => lifecycle::SynopsisJobEvent::Fail,
             };
-            if !job.state.apply(event) {
+            if !job.apply(event) {
                 return;
             }
-            job.status = Some(status);
-            job.nickname = nickname;
+            let data = job.data_mut();
+            data.status = Some(status);
+            data.nickname = nickname;
             if agent_type.is_some() {
-                job.agent_type = agent_type;
+                data.agent_type = agent_type;
             }
         }
     }
 
-    fn remove_active(&self, id: &ActionId) {
-        self.lock_active().remove(id);
+    async fn close_agent(&self, id: &ActionId) {
+        let agent = self
+            .lock_jobs()
+            .get_mut(id.as_str())
+            .and_then(|job| job.data_mut().agent.clone());
+        if let Some(agent) = agent {
+            agent.close().await;
+            if let Some(job) = self.lock_jobs().get_mut(id.as_str()) {
+                job.data_mut().agent = None;
+            }
+        }
     }
 
     async fn wait_for_spawns(&self) {
         loop {
             let notified = self.spawns_finished.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             if self.in_flight_spawns.load(Ordering::Acquire) == 0 {
                 return;
             }
@@ -636,12 +652,22 @@ impl ExecutionState {
         }
     }
 
-    async fn shutdown_remaining(&self, backend: Arc<dyn AgentBackend>) {
+    async fn shutdown_remaining(&self) {
         self.wait_for_spawns().await;
-        let active = self.lock_active().drain().collect::<Vec<_>>();
-        for (id, process_id) in active {
-            self.mark_cancelled(&id);
-            let _ = backend.shutdown(process_id).await;
+        let active = self
+            .lock_jobs()
+            .iter_mut()
+            .filter_map(|(id, job)| {
+                let agent = job.data_mut().agent.clone()?;
+                job.apply(lifecycle::SynopsisJobEvent::Cancel);
+                Some((id.clone(), agent))
+            })
+            .collect::<Vec<_>>();
+        for (id, agent) in active {
+            agent.close().await;
+            if let Some(job) = self.lock_jobs().get_mut(&id) {
+                job.data_mut().agent = None;
+            }
         }
     }
 
@@ -649,7 +675,7 @@ impl ExecutionState {
         let jobs = self.lock_jobs();
         order
             .iter()
-            .filter_map(|id| jobs.get(id).cloned())
+            .filter_map(|id| jobs.get(id).map(lifecycle::Job::snapshot))
             .collect()
     }
 }

@@ -62,14 +62,8 @@ impl ChatComposer {
         if self.handle_shortcut_overlay_key(&key_event) {
             return (InputResult::None, true);
         }
-        if key_event.code == KeyCode::Esc {
-            let next_mode = esc_hint_mode(self.footer_mode, self.is_task_running);
-            if next_mode != self.footer_mode {
-                self.footer_mode = next_mode;
-                return (InputResult::None, true);
-            }
-        } else {
-            self.footer_mode = reset_mode_after_activity(self.footer_mode);
+        if self.update_footer_for_key(&key_event, true) {
+            return (InputResult::None, true);
         }
         let ActivePopup::Command(popup) = &mut self.active_popup else {
             unreachable!();
@@ -237,14 +231,8 @@ impl ChatComposer {
         if self.handle_shortcut_overlay_key(&key_event) {
             return (InputResult::None, true);
         }
-        if key_event.code == KeyCode::Esc {
-            let next_mode = esc_hint_mode(self.footer_mode, self.is_task_running);
-            if next_mode != self.footer_mode {
-                self.footer_mode = next_mode;
-                return (InputResult::None, true);
-            }
-        } else {
-            self.footer_mode = reset_mode_after_activity(self.footer_mode);
+        if self.update_footer_for_key(&key_event, true) {
+            return (InputResult::None, true);
         }
         let ActivePopup::File(popup) = &mut self.active_popup else {
             unreachable!();
@@ -357,16 +345,8 @@ impl ChatComposer {
         if self.handle_shortcut_overlay_key(&key_event) {
             return (InputResult::None, true);
         }
-        if key_event.code == KeyCode::Esc {
-            if self.is_empty() {
-                let next_mode = esc_hint_mode(self.footer_mode, self.is_task_running);
-                if next_mode != self.footer_mode {
-                    self.footer_mode = next_mode;
-                    return (InputResult::None, true);
-                }
-            }
-        } else {
-            self.footer_mode = reset_mode_after_activity(self.footer_mode);
+        if self.update_footer_for_key(&key_event, self.is_empty()) {
+            return (InputResult::None, true);
         }
         match key_event {
             KeyEvent {
@@ -565,18 +545,7 @@ impl ChatComposer {
                         return (InputResult::None, true);
                     }
                     CharDecision::BeginBuffer { retro_chars } => {
-                        let cur = self.textarea.cursor();
-                        let txt = self.textarea.text();
-                        let safe_cur = Self::clamp_to_char_boundary(txt, cur);
-                        let before = &txt[..safe_cur];
-                        if let Some(grab) =
-                            self.paste_burst
-                                .decide_begin_buffer(now, before, retro_chars as usize)
-                        {
-                            if !grab.grabbed.is_empty() {
-                                self.textarea.replace_range(grab.start_byte..safe_cur, "");
-                            }
-                            self.paste_burst.append_char_to_buffer(ch, now);
+                        if self.begin_paste_buffer(ch, now, retro_chars as usize) {
                             return (InputResult::None, true);
                         }
                         // If decide_begin_buffer opted not to start buffering,
@@ -702,22 +671,7 @@ impl ChatComposer {
                         return (InputResult::None, true);
                     }
                     CharDecision::BeginBuffer { retro_chars } => {
-                        // For non-ASCII we inserted prior chars immediately, so if this turns out
-                        // to be paste-like we need to retroactively grab & remove the already-
-                        // inserted prefix from the textarea before buffering the burst.
-                        let cur = self.textarea.cursor();
-                        let txt = self.textarea.text();
-                        let safe_cur = Self::clamp_to_char_boundary(txt, cur);
-                        let before = &txt[..safe_cur];
-                        if let Some(grab) =
-                            self.paste_burst
-                                .decide_begin_buffer(now, before, retro_chars as usize)
-                        {
-                            if !grab.grabbed.is_empty() {
-                                self.textarea.replace_range(grab.start_byte..safe_cur, "");
-                            }
-                            // seed the paste burst buffer with everything (grabbed + new)
-                            self.paste_burst.append_char_to_buffer(ch, now);
+                        if self.begin_paste_buffer(ch, now, retro_chars as usize) {
                             return (InputResult::None, true);
                         }
                         // If decide_begin_buffer opted not to start buffering,
@@ -736,6 +690,35 @@ impl ChatComposer {
         self.pending_pastes
             .retain(|(placeholder, _)| text_after.contains(placeholder));
         (InputResult::None, true)
+    }
+
+    fn update_footer_for_key(&mut self, key: &KeyEvent, allow_escape_hint: bool) -> bool {
+        if key.code != KeyCode::Esc {
+            self.footer_mode = reset_mode_after_activity(self.footer_mode);
+        } else if allow_escape_hint {
+            let next_mode = esc_hint_mode(self.footer_mode, self.is_task_running);
+            if next_mode != self.footer_mode {
+                self.footer_mode = next_mode;
+                return true;
+            }
+        }
+        false
+    }
+
+    fn begin_paste_buffer(&mut self, ch: char, now: Instant, retro_chars: usize) -> bool {
+        let text = self.textarea.text();
+        let cursor = Self::clamp_to_char_boundary(text, self.textarea.cursor());
+        let Some(grab) = self
+            .paste_burst
+            .decide_begin_buffer(now, &text[..cursor], retro_chars)
+        else {
+            return false;
+        };
+        if !grab.grabbed.is_empty() {
+            self.textarea.replace_range(grab.start_byte..cursor, "");
+        }
+        self.paste_burst.append_char_to_buffer(ch, now);
+        true
     }
 
     /// Applies any due `PasteBurst` flush at time `now`.

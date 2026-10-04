@@ -132,7 +132,7 @@ version = "47.10.2"
 # crates created with `cargo new -w ...` automatically inherit the 2024
 # edition.
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99"
 license = "Apache-2.0"
 publish = false
 
@@ -247,7 +247,7 @@ chaos-check = { path = "tests/check" }
 chaos-test-fixtures = { path = "tests/fixtures" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.6.0", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.7.0", default-features = false, features = ["stdio", "macros"] }
 
 # External
 age = "0.12.1"
@@ -347,8 +347,8 @@ semver = "1.0"
 serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
-state-machines = { version = "0.21", features = ["dynamic", "async"] }
-breaker-machines = { version = "0.17.1", features = [] }
+state-machines = { version = "0.30.0", features = ["dynamic", "async", "runtime-send"] }
+breaker-machines = { version = "0.17.1", features = ["async"] }
 chrono-machines = { version = "0.8", features = ["std"] }
 throttle-machines = { version = "0.2" }
 serial_test = "4.0.1"

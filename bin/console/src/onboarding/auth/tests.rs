@@ -90,9 +90,48 @@ pub(crate) fn auth_suite() {
     escape_from_single_option_provider_returns_to_provider_picker();
     provider_picker_renders_highlighted_zai_provider_when_scrolled();
     xai_provider_offers_account_connection();
+    xai_poll_is_cancelled_on_escape_or_widget_drop();
     continue_in_browser_renders_osc8_hyperlink();
     mark_url_hyperlink_wraps_cyan_underlined_cells();
     mark_url_hyperlink_sanitizes_control_chars();
+}
+
+fn xai_poll_is_cancelled_on_escape_or_widget_drop() {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            for escape in [true, false] {
+                let (mut widget, _tmp) = widget_forced_chatgpt();
+                *widget.selected_provider_id.write().unwrap() = Some("openai".into());
+                let poll = tokio::spawn(std::future::pending::<()>());
+                let cancelled = Arc::new(AtomicBool::new(false));
+                widget
+                    .sign_in_state
+                    .write()
+                    .unwrap()
+                    .transition(SignInState::XaiDeviceCode(XaiDeviceCodeLoginState {
+                        device_code: None,
+                        cancel: Some(XaiLoginCancel {
+                            cancelled: Arc::clone(&cancelled),
+                            abort: poll.abort_handle(),
+                        }),
+                    }));
+                let projection = widget.sign_in_state();
+                let owner = Arc::downgrade(&widget.sign_in_state);
+                if escape {
+                    widget.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+                    assert!(cancelled.load(Ordering::SeqCst));
+                    assert!(matches!(widget.sign_in_state(), SignInState::PickMode));
+                }
+                drop(widget);
+                assert!(owner.upgrade().is_none());
+                assert!(cancelled.load(Ordering::SeqCst));
+                assert!(poll.await.unwrap_err().is_cancelled());
+                drop(projection);
+            }
+        });
 }
 
 fn api_key_flow_disabled_when_chatgpt_forced() {
@@ -104,10 +143,7 @@ fn api_key_flow_disabled_when_chatgpt_forced() {
         widget.error.read().unwrap().as_deref(),
         Some(API_KEY_DISABLED_MESSAGE)
     );
-    std::assert_matches!(
-        &*widget.sign_in_state.read().unwrap(),
-        SignInState::PickMode
-    );
+    std::assert_matches!(widget.sign_in_state(), SignInState::PickMode);
 }
 
 fn saving_api_key_is_blocked_when_chatgpt_forced() {
@@ -119,10 +155,7 @@ fn saving_api_key_is_blocked_when_chatgpt_forced() {
         widget.error.read().unwrap().as_deref(),
         Some(API_KEY_DISABLED_MESSAGE)
     );
-    std::assert_matches!(
-        &*widget.sign_in_state.read().unwrap(),
-        SignInState::PickMode
-    );
+    std::assert_matches!(widget.sign_in_state(), SignInState::PickMode);
 }
 
 fn escape_from_provider_mode_returns_to_provider_picker() {
@@ -242,11 +275,16 @@ fn xai_provider_offers_account_connection() {
 fn continue_in_browser_renders_osc8_hyperlink() {
     let (widget, _tmp) = widget_forced_chatgpt();
     let url = "https://auth.example.com/login?state=abc123";
-    *widget.sign_in_state.write().unwrap() =
-        SignInState::ChatGptContinueInBrowser(ContinueInBrowserState {
-            auth_url: url.to_string(),
-            cancel: None,
-        });
+    widget
+        .sign_in_state
+        .write()
+        .unwrap()
+        .transition(SignInState::ChatGptContinueInBrowser(
+            ContinueInBrowserState {
+                auth_url: url.to_string(),
+                cancel: None,
+            },
+        ));
 
     // Render into a narrow buffer so the URL wraps across multiple rows.
     let area = Rect::new(0, 0, 30, 20);

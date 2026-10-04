@@ -229,9 +229,7 @@ impl App {
                             .runtime
                             .render_palette(main_area, frame.buffer);
                     })?;
-                    if self.chat_widget.external_editor_state() == ExternalEditorState::Requested {
-                        self.chat_widget
-                            .set_external_editor_state(ExternalEditorState::Active);
+                    if self.chat_widget.activate_external_editor() {
                         self.app_event_tx.send(AppEvent::LaunchExternalEditor);
                     }
                 }

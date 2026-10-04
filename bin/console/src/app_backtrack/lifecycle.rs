@@ -1,136 +1,190 @@
 use super::{BacktrackState, PendingBacktrackRollback};
-use state_machines::state_machine;
+use state_machines::{runtime::Parallel, state_machine};
 
-state_machine! {
-    name: BacktrackNavigation,
-    dynamic: true,
-    initial: Idle,
-    states: [
-        superstate Navigation {
-            state Idle, state Primed, state Preview, state UnprimedPreview,
-        }
-    ],
-    events {
-        prime {
-            transition: { from: Idle, to: Primed }
-            transition: { from: Primed, to: Primed }
-            transition: { from: Preview, to: Preview }
-            transition: { from: UnprimedPreview, to: Preview }
-        }
-        preview {
-            transition: { from: Idle, to: UnprimedPreview }
-            transition: { from: Primed, to: Preview }
-            transition: { from: Preview, to: Preview }
-            transition: { from: UnprimedPreview, to: UnprimedPreview }
-        }
-        unprime {
-            transition: { from: Idle, to: Idle }
-            transition: { from: Primed, to: Idle }
-            transition: { from: Preview, to: UnprimedPreview }
-            transition: { from: UnprimedPreview, to: UnprimedPreview }
-        }
-        close_preview {
-            transition: { from: Idle, to: Idle }
-            transition: { from: Primed, to: Primed }
-            transition: { from: Preview, to: Primed }
-            transition: { from: UnprimedPreview, to: Idle }
+mod priming {
+    use super::*;
+
+    state_machine! {
+        name: BacktrackPriming,
+        dynamic: true,
+        initial: Idle,
+        states: [Idle, Primed],
+        events {
+            prime {
+                transition: { from: Idle, to: Primed }
+                transition: { from: Primed, internal: true }
+            }
+            clear {
+                transition: { from: Primed, to: Idle }
+                transition: { from: Idle, internal: true }
+            }
         }
     }
 }
 
-pub(super) struct NavigationWorkflow {
-    machine: DynamicBacktrackNavigation<()>,
-}
+mod preview {
+    use super::*;
 
-impl Default for NavigationWorkflow {
-    fn default() -> Self {
-        Self {
-            machine: DynamicBacktrackNavigation::new(()),
+    state_machine! {
+        name: BacktrackPreview,
+        dynamic: true,
+        initial: Closed,
+        states: [Closed, Open],
+        events {
+            open {
+                transition: { from: Closed, to: Open }
+                transition: { from: Open, internal: true }
+            }
+            close {
+                transition: { from: Open, to: Closed }
+                transition: { from: Closed, internal: true }
+            }
         }
     }
 }
 
-impl NavigationWorkflow {
-    pub(super) fn primed(&self) -> bool {
-        matches!(
-            self.machine.current_state(),
-            BacktrackNavigationState::Primed | BacktrackNavigationState::Preview
-        )
-    }
-    pub(super) fn preview_active(&self) -> bool {
-        matches!(
-            self.machine.current_state(),
-            BacktrackNavigationState::Preview | BacktrackNavigationState::UnprimedPreview
-        )
-    }
-    pub(super) fn apply(&mut self, event: BacktrackNavigationEvent) {
-        assert!(
-            self.machine.handle(event).is_ok(),
-            "backtrack navigation event is valid"
-        );
+struct RollbackData {
+    request: Option<PendingBacktrackRollback>,
+}
+
+impl std::fmt::Debug for RollbackData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RollbackData(..)")
     }
 }
 
 mod rollback {
     use super::*;
+
     state_machine! {
         name: RollbackAcknowledgement,
         dynamic: true,
         initial: Idle,
-        states: [Idle, Pending],
+        states: [Idle, Pending(RollbackData)],
         events {
-            request { transition: { from: Idle, to: Pending } }
-            resolve {
-                transition: { from: Pending, to: Idle }
-                transition: { from: Idle, to: Idle }
+            request {
+                payload: Option<RollbackData>,
+                transition: { from: Idle, to: Pending, data: own_request }
             }
+            resolve { transition: { from: Pending, to: Idle } }
         }
     }
 
-    impl BacktrackState {
-        pub(super) fn rollback_event(&mut self, event: RollbackAcknowledgementEvent) -> bool {
-            let state = if self.pending_rollback.is_some() {
-                RollbackAcknowledgementState::Pending
-            } else {
-                RollbackAcknowledgementState::Idle
-            };
-            DynamicRollbackAcknowledgement::new_init_state((), state)
-                .handle(event)
-                .is_ok()
+    impl<C, S> RollbackAcknowledgement<C, S> {
+        fn own_request(&self, data: &mut Option<RollbackData>) -> RollbackData {
+            data.take()
+                .unwrap_or_else(|| unreachable!("pending rollback owns request"))
+        }
+    }
+}
+
+type Navigation =
+    Parallel<priming::DynamicBacktrackPriming<()>, preview::DynamicBacktrackPreview<()>>;
+
+pub(super) struct Workflow {
+    regions: Parallel<Navigation, rollback::DynamicRollbackAcknowledgement<()>>,
+}
+
+impl Default for Workflow {
+    fn default() -> Self {
+        Self {
+            regions: Parallel::new(
+                Parallel::new(
+                    priming::DynamicBacktrackPriming::new(()),
+                    preview::DynamicBacktrackPreview::new(()),
+                ),
+                rollback::DynamicRollbackAcknowledgement::new(()),
+            ),
         }
     }
 }
 
 impl BacktrackState {
     pub(crate) fn primed(&self) -> bool {
-        self.navigation.primed()
+        self.workflow.regions.left().left().current_state()
+            == priming::BacktrackPrimingState::Primed
     }
+
     pub(crate) fn preview_active(&self) -> bool {
-        self.navigation.preview_active()
+        self.workflow.regions.left().right().current_state() == preview::BacktrackPreviewState::Open
     }
+
     pub(crate) fn prime(&mut self) {
-        self.navigation.apply(BacktrackNavigationEvent::Prime);
+        assert!(
+            self.workflow
+                .regions
+                .left_mut()
+                .left_mut()
+                .handle(priming::BacktrackPrimingEvent::Prime)
+                .is_ok()
+        );
     }
+
     pub(crate) fn preview(&mut self) {
-        self.navigation.apply(BacktrackNavigationEvent::Preview);
+        assert!(
+            self.workflow
+                .regions
+                .left_mut()
+                .right_mut()
+                .handle(preview::BacktrackPreviewEvent::Open)
+                .is_ok()
+        );
     }
+
     pub(crate) fn unprime(&mut self) {
-        self.navigation.apply(BacktrackNavigationEvent::Unprime);
+        assert!(
+            self.workflow
+                .regions
+                .left_mut()
+                .left_mut()
+                .handle(priming::BacktrackPrimingEvent::Clear)
+                .is_ok()
+        );
     }
+
     pub(crate) fn close_preview(&mut self) {
-        self.navigation
-            .apply(BacktrackNavigationEvent::ClosePreview);
+        assert!(
+            self.workflow
+                .regions
+                .left_mut()
+                .right_mut()
+                .handle(preview::BacktrackPreviewEvent::Close)
+                .is_ok()
+        );
     }
+
+    pub(crate) fn rollback_pending(&self) -> bool {
+        self.workflow.regions.right().pending_data().is_some()
+    }
+
     pub(crate) fn request_rollback(&mut self, pending: PendingBacktrackRollback) -> bool {
-        if !self.rollback_event(rollback::RollbackAcknowledgementEvent::Request) {
-            return false;
-        }
-        self.pending_rollback = Some(pending);
-        true
+        self.workflow
+            .regions
+            .right_mut()
+            .handle(rollback::RollbackAcknowledgementEvent::Request(Some(
+                RollbackData {
+                    request: Some(pending),
+                },
+            )))
+            .is_ok()
     }
+
     pub(crate) fn take_rollback(&mut self) -> Option<PendingBacktrackRollback> {
-        self.rollback_event(rollback::RollbackAcknowledgementEvent::Resolve);
-        self.pending_rollback.take()
+        let request = self
+            .workflow
+            .regions
+            .right_mut()
+            .pending_data_mut()?
+            .request
+            .take();
+        assert!(
+            self.workflow
+                .regions
+                .right_mut()
+                .handle(rollback::RollbackAcknowledgementEvent::Resolve)
+                .is_ok()
+        );
+        request
     }
 }
 

@@ -8,6 +8,9 @@ use tempfile::Builder;
 use thiserror::Error;
 use tokio::process::Command;
 
+mod lifecycle;
+use lifecycle::{EditorInvocation, EditorInvocationEvent, EditorProcess, EditorResources};
+
 #[derive(Debug, Error)]
 pub(crate) enum EditorError {
     #[error("neither VISUAL nor EDITOR is set")]
@@ -45,20 +48,40 @@ pub(crate) async fn run_editor(seed: &str, editor_cmd: &[String]) -> Result<Stri
     if editor_cmd.len() > 1 {
         cmd.args(&editor_cmd[1..]);
     }
-    let status = cmd
+    let child = cmd
         .arg(&temp_path)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .status()
-        .await?;
+        .kill_on_drop(true)
+        .spawn()?;
+    let mut invocation = EditorInvocation::new(()).into_dynamic();
+    assert!(
+        invocation
+            .handle(EditorInvocationEvent::Launch(Some(EditorProcess::new(
+                EditorResources {
+                    path: temp_path,
+                    child,
+                }
+            ))))
+            .is_ok()
+    );
 
-    if !status.success() {
-        return Err(Report::msg(format!("editor exited with status {status}")));
+    let resources = invocation
+        .running_data_mut()
+        .unwrap_or_else(|| unreachable!("launched editor owns resources"))
+        .resources_mut();
+    let result = async {
+        let status = resources.child.wait().await?;
+        if !status.success() {
+            return Err(Report::msg(format!("editor exited with status {status}")));
+        }
+        Ok(fs::read_to_string(&resources.path)?)
     }
+    .await;
 
-    let contents = fs::read_to_string(&temp_path)?;
-    Ok(contents)
+    assert!(invocation.handle(EditorInvocationEvent::Finish).is_ok());
+    result
 }
 
 #[cfg(test)]

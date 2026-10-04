@@ -16,6 +16,9 @@ use jiff::ToSpan;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tempfile::TempDir;
 use wiremock::Mock;
 use wiremock::MockServer;
@@ -547,13 +550,22 @@ async fn unauthorized_recovery_reloads_then_refreshes_tokens() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = MockServer::start().await;
+    let requested = Arc::new(tokio::sync::Notify::new());
+    let notify_requested = requested.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted_calls = calls.clone();
     Mock::given(method("POST"))
         .and(path("/oauth/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "access_token": "recovered-access-token",
-            "refresh_token": "recovered-refresh-token"
-        })))
-        .expect(1)
+        .respond_with(move |_: &wiremock::Request| {
+            counted_calls.fetch_add(1, Ordering::SeqCst);
+            notify_requested.notify_one();
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "access_token": "recovered-access-token",
+                    "refresh_token": "recovered-refresh-token"
+                }))
+                .set_delay(Duration::from_millis(100))
+        })
         .mount(&server)
         .await;
 
@@ -607,7 +619,28 @@ async fn unauthorized_recovery_reloads_then_refreshes_tokens() -> Result<()> {
     let requests = server.received_requests().await.unwrap_or_default();
     assert!(requests.is_empty(), "expected no refresh token requests");
 
-    recovery.next().await?;
+    let mut pending = Box::pin(recovery.next());
+    tokio::select! {
+        biased;
+        result = tokio::time::timeout(Duration::from_secs(5), requested.notified()) => {
+            result.context("refresh invocation did not start")?;
+        }
+        result = &mut pending => panic!("refresh completed before cancellation: {result:?}"),
+    }
+    drop(pending);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(recovery.has_next());
+    assert_eq!(recovery.step_name(), "refresh_token");
+    assert_eq!(
+        ctx.auth_manager.auth_cached().unwrap().get_token_data()?,
+        disk_tokens
+    );
+    if let Err(error) = recovery.next().await {
+        assert!(matches!(error, RefreshTokenError::Transient(_)));
+        assert!(recovery.has_next());
+        recovery.next().await?;
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
 
     let refreshed_tokens = TokenData {
         access_token: "recovered-access-token".to_string(),

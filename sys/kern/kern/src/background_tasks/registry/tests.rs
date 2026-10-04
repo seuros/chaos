@@ -105,11 +105,16 @@ async fn completion_is_gated_deduplicated_and_resume_stable() {
         .await;
     assert!(registry.pending().await.is_empty());
     registry.response_recorded("call").await;
+    let mut late_registration = registry.get("task").await.unwrap();
+    late_registration.ready = false;
+    registry.register(late_registration).await;
     assert_eq!(registry.pending().await.len(), 1);
     registry.set_policy(WakePolicy::Interrupted).await;
     assert!(registry.pending().await.is_empty());
     registry.set_policy(WakePolicy::Enabled).await;
+    let late_registration = registry.get("task").await.unwrap();
     registry.acknowledge(&["task".into()], "turn").await;
+    registry.register(late_registration).await;
     registry
         .complete("task", TaskState::Failed, None, None)
         .await;

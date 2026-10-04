@@ -41,8 +41,13 @@ use crate::sandboxing::SandboxPermissions;
 mod async_watcher;
 mod errors;
 mod head_tail_buffer;
+mod output_lifecycle;
 mod process;
 mod process_manager;
+
+#[cfg(test)]
+#[path = "unified_exec/mod_tests.rs"]
+mod tests;
 
 pub(crate) fn set_deterministic_process_ids_for_tests(enabled: bool) {
     process_manager::set_deterministic_process_ids_for_tests(enabled);

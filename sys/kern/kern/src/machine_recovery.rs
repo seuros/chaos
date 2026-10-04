@@ -2,7 +2,7 @@
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
 
-use chaos_machine::{PowerSource, ThermalState};
+use chaos_machine::{BatteryKind, PowerSource, ThermalState};
 use serde::Serialize;
 use tokio::time::Instant;
 
@@ -14,7 +14,7 @@ pub(crate) const POLL_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_GAP: Duration = Duration::from_secs(60);
 
 mod lifecycle;
-use lifecycle::RecoveryObservationEvent;
+use lifecycle::{Observation, RecoveryObservationEvent, Wait};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,30 +52,40 @@ pub(crate) struct Recovery {
     pub owner_revision: u64,
     pub sample_revision: u64,
     pub context: Option<ObservationRequest>,
-    pub phase: Phase,
+    observation: Observation,
     pub generation: u64,
-    pub wait_id: Option<String>,
-    /// A tool request is only activated after the entire sample's tool batch ends.
-    pub requested_turn: Option<String>,
-    pub parked: bool,
-    outstanding: Vec<MachineWarning>,
-    healthy_since: Option<Instant>,
-    last_sample: Option<(Instant, SystemTime)>,
+    wait: Wait,
     interruptions: VecDeque<(Instant, Vec<&'static str>)>,
-    blocked_reason: Option<String>,
-    recovered_episode: bool,
 }
 
 impl Recovery {
+    pub fn phase(&self) -> Phase {
+        self.observation.phase()
+    }
+
+    pub fn wait_id(&self) -> Option<&str> {
+        self.wait.id()
+    }
+
+    pub fn requested_turn(&self) -> Option<&str> {
+        self.wait.requested_turn()
+    }
+
+    pub fn parked(&self) -> bool {
+        self.wait.parked()
+    }
+
+    pub fn park_wait(&mut self, turn: &str) -> Option<String> {
+        self.wait.park(turn)
+    }
+
     pub fn unresolved(&self) -> bool {
-        !self.outstanding.is_empty() && self.phase != Phase::Recovered
+        !self.observation.data().outstanding.is_empty() && self.phase() != Phase::Recovered
     }
 
     pub fn cancel_wait(&mut self) -> Option<String> {
         self.owner_revision = self.owner_revision.wrapping_add(1);
-        self.requested_turn = None;
-        self.parked = false;
-        self.wait_id.take()
+        self.wait.cancel()
     }
 
     pub fn request_wait(&mut self, turn_id: &str) -> Result<String, String> {
@@ -85,15 +95,14 @@ impl Recovery {
                     .into(),
             );
         }
-        if let Some(id) = &self.wait_id {
-            return Ok(id.clone());
+        if let Some(id) = self.wait_id() {
+            return Ok(id.to_owned());
         }
         if !self.unresolved() {
             return Err("No unresolved machine warning is being monitored.".into());
         }
         let id = format!("machine-recovery:{}", uuid::Uuid::new_v4());
-        self.wait_id = Some(id.clone());
-        self.requested_turn = Some(turn_id.into());
+        self.wait.request(id.clone(), turn_id.into());
         Ok(id)
     }
 
@@ -110,29 +119,35 @@ impl Recovery {
     ) {
         self.interruptions
             .retain(|(at, _)| now.duration_since(*at) < Duration::from_secs(3600));
-        let gap = self.last_sample.is_some_and(|(last, last_wall)| {
-            now.duration_since(last) > MAX_GAP
-                || wall
-                    .duration_since(last_wall)
-                    .map_or(true, |elapsed| elapsed > MAX_GAP)
-        });
-        self.last_sample = Some((now, wall));
+        let gap = self
+            .observation
+            .data()
+            .last_sample
+            .is_some_and(|(last, last_wall)| {
+                now.duration_since(last) > MAX_GAP
+                    || wall
+                        .duration_since(last_wall)
+                        .map_or(true, |elapsed| elapsed > MAX_GAP)
+            });
+        self.observation.data_mut().last_sample = Some((now, wall));
         if gap {
-            self.healthy_since = None;
+            self.observation.reset_stability();
         }
-        self.blocked_reason = None;
+        self.observation.data_mut().blocked_reason = None;
         let Ok(status) = observation else {
-            self.healthy_since = None;
-            if !self.outstanding.is_empty() {
-                self.phase.observe(RecoveryObservationEvent::Unavailable);
+            if !self.observation.data().outstanding.is_empty() {
+                self.observation
+                    .observe(RecoveryObservationEvent::Unavailable);
             }
             return;
         };
         if !status.warnings.is_empty() {
-            if self.outstanding.is_empty() || self.recovered_episode {
+            if self.observation.data().outstanding.is_empty()
+                || self.observation.data().recovered_episode
+            {
                 self.generation += 1;
-                self.recovered_episode = false;
-                self.outstanding.clear();
+                self.observation.data_mut().recovered_episode = false;
+                self.observation.data_mut().outstanding.clear();
                 self.interruptions.push_back((now, Vec::new()));
                 // Bounded even for pathological warning flapping.
                 while self.interruptions.len() > 256 {
@@ -141,11 +156,16 @@ impl Recovery {
             }
             for warning in &status.warnings {
                 if !self
+                    .observation
+                    .data()
                     .outstanding
                     .iter()
                     .any(|old| same_condition(old, warning))
                 {
-                    self.outstanding.push(warning.clone());
+                    self.observation
+                        .data_mut()
+                        .outstanding
+                        .push(warning.clone());
                 }
                 if let Some((_, causes)) = self.interruptions.back_mut()
                     && !causes.contains(&cause(warning))
@@ -153,42 +173,48 @@ impl Recovery {
                     causes.push(cause(warning));
                 }
             }
-            self.healthy_since = None;
-            self.phase.observe(RecoveryObservationEvent::Warn);
+            self.observation.observe(RecoveryObservationEvent::Warn);
             return;
         }
-        if self.outstanding.is_empty() {
-            self.phase.observe(RecoveryObservationEvent::Healthy);
+        if self.observation.data().outstanding.is_empty() {
+            self.observation.observe(RecoveryObservationEvent::Healthy);
             return;
         }
-        let evidence = self.outstanding.iter().try_fold(true, |healthy, warning| {
-            recovered(warning, status, config).map(|next| healthy && next)
-        });
+        let evidence = self
+            .observation
+            .data()
+            .outstanding
+            .iter()
+            .try_fold(true, |healthy, warning| {
+                recovered(warning, status, config).map(|next| healthy && next)
+            });
         match evidence {
             Err(reason) => {
-                let event = if reason == "recovery target exceeds filesystem capacity" {
+                let event = if matches!(
+                    reason,
+                    "recovery target exceeds filesystem capacity"
+                        | "recovery target exceeds battery capacity"
+                ) {
                     RecoveryObservationEvent::Blocked
                 } else {
                     RecoveryObservationEvent::Unavailable
                 };
-                self.phase.observe(event);
-                self.blocked_reason = Some(reason.into());
-                self.healthy_since = None;
+                self.observation.observe(event);
+                self.observation.data_mut().blocked_reason = Some(reason.into());
             }
             Ok(false) => {
-                self.phase.observe(RecoveryObservationEvent::Warn);
-                self.healthy_since = None;
+                self.observation.observe(RecoveryObservationEvent::Warn);
             }
             Ok(true) => {
-                let since = self.healthy_since.get_or_insert(now);
-                self.phase.observe(
-                    if now.duration_since(*since).as_secs() >= config.recovery_stable_seconds {
-                        RecoveryObservationEvent::Stable
+                let since = self.observation.healthy_since().unwrap_or(now);
+                self.observation.observe(
+                    if now.duration_since(since).as_secs() >= config.recovery_stable_seconds {
+                        RecoveryObservationEvent::Stable(since)
                     } else {
-                        RecoveryObservationEvent::Headroom
+                        RecoveryObservationEvent::Headroom(since)
                     },
                 );
-                self.recovered_episode |= self.phase == Phase::Recovered;
+                self.observation.data_mut().recovered_episode |= self.phase() == Phase::Recovered;
             }
         }
     }
@@ -209,29 +235,30 @@ impl Recovery {
             })
             .collect();
         RecoveryStatus {
-            phase: self.phase,
+            phase: self.phase(),
             generation: self.generation,
             stable_seconds: self
-                .healthy_since
-                .zip(self.last_sample)
+                .observation
+                .healthy_since()
+                .zip(self.observation.data().last_sample)
                 .map_or(0, |(since, (sample, _))| {
                     sample.duration_since(since).as_secs()
                 }),
             required_seconds: config.recovery_stable_seconds,
-            wait_id: self.wait_id.clone(),
-            outstanding: self.outstanding.clone(),
+            wait_id: self.wait_id().map(str::to_owned),
+            outstanding: self.observation.data().outstanding.clone(),
             interruptions_last_hour,
-            blocked_reason: self.blocked_reason.clone(),
+            blocked_reason: self.observation.data().blocked_reason.clone(),
         }
     }
 
     /// Fixed vocabulary only: OS names/paths must never become instructions.
     pub fn instruction(&self, config: &MachineWarningsConfig, now: Instant) -> Option<String> {
-        if self.outstanding.is_empty() {
+        if self.observation.data().outstanding.is_empty() {
             return None;
         }
         let status = self.status(config, now);
-        let state = match self.phase {
+        let state = match self.phase() {
             Phase::Recovered => {
                 "Recovery confirmed by stable observations. Reassess before resuming; recovery does not prove the previous workload is sustainable. You may reduce workload or stop rather than retry."
             }
@@ -242,14 +269,14 @@ impl Recovery {
                 "Recovery measurements unavailable; missing observations are not safety clearance."
             }
             Phase::Blocked => {
-                "Recovery target exceeds filesystem capacity; operator configuration or storage changes are required."
+                "Recovery target exceeds resource capacity; operator configuration or resource changes are required."
             }
             _ => {
                 "Machine warning remains unresolved; keep interruption-sensitive/heavy work paused."
             }
         };
         Some(format!(
-            "Machine recovery (harness host): {state}\nRequired stable observation: {} seconds. Recent warning episodes (last hour): power {}, thermal {}, disk {}. Repeated thermal interruptions warrant reducing workload or stopping, not blindly restarting. Expected heat below configured/OS warning thresholds is not itself a warning. Avoid repeating unchanged notices. To opt into one recovery wake, checkpoint essential work and stop/check your heavy background processes, then call wait_for_machine_recovery alone if available. Waiting never stops existing processes automatically.",
+            "Machine recovery (harness host): {state}\n🩺 Kernel health checks and notifications are automatic. Required stable observation: {} seconds. Recent warning episodes (last hour): power {}, thermal {}, disk {}. Repeated thermal interruptions warrant reducing workload or stopping, not blindly restarting. Expected heat below configured/OS warning thresholds is not itself a warning. Avoid repeating unchanged notices. To opt into one recovery wake, checkpoint essential work and stop/check your heavy background processes, then call wait_for_machine_recovery alone if available. Waiting never stops existing processes automatically.",
             status.required_seconds,
             status.interruptions_last_hour[0].count,
             status.interruptions_last_hour[1].count,
@@ -307,11 +334,40 @@ fn recovered(
     config: &MachineWarningsConfig,
 ) -> Result<bool, &'static str> {
     match warning {
-        MachineWarning::LowBattery { .. } => match status.machine.power.external_power {
-            Some(true) if status.machine.power.source == PowerSource::External => Ok(true),
-            Some(false) => Ok(false),
-            _ => Err("external power is not confirmed"),
-        },
+        MachineWarning::LowBattery {
+            name, battery_kind, ..
+        } => {
+            let power = &status.machine.power;
+            if power.external_power == Some(true) && power.source == PowerSource::External {
+                return Ok(true);
+            }
+            let supplying_kind = match power.source {
+                PowerSource::Battery => BatteryKind::System,
+                PowerSource::Ups => BatteryKind::Ups,
+                _ => return Err("power source is not confirmed"),
+            };
+            if supplying_kind != *battery_kind || power.external_power == Some(true) {
+                return Err("triggering battery supply is not confirmed");
+            }
+            let charge = power
+                .batteries
+                .iter()
+                .flatten()
+                .find(|battery| {
+                    battery.name == *name
+                        && battery.kind == *battery_kind
+                        && battery.present != Some(false)
+                })
+                .and_then(|battery| battery.charge_percent)
+                .filter(|charge| *charge <= 100)
+                .ok_or("triggering battery charge unavailable")?;
+            let target = u16::from(config.battery_percent)
+                + u16::from(config.recovery_battery_margin_percent.max(1));
+            if target > 100 {
+                return Err("recovery target exceeds battery capacity");
+            }
+            Ok(u16::from(charge) >= target)
+        }
         MachineWarning::Thermal { .. } => match status.machine.thermal.state {
             ThermalState::Normal => Ok(true),
             ThermalState::Unknown => Err("OS thermal state unavailable"),

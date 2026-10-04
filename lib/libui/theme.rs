@@ -175,62 +175,47 @@ pub(crate) fn activity_eye_style(base: Style, color: Color, level: u8) -> Style 
 }
 
 fn execution_palette(clamped: bool) -> Palette {
+    let base = Palette {
+        bg: Color::Black,
+        fg: Color::White,
+        dim: Color::Gray,
+        highlight: Color::Cyan,
+        top_bar_bg: Color::DarkGray,
+        top_bar_fg: Color::White,
+        top_bar_dim: Color::Gray,
+        user_msg_bg: Color::Black,
+        border: Color::Blue,
+        warning: Color::Yellow,
+        error: Color::LightRed,
+        success: Color::Green,
+        accent: Color::Cyan,
+        secondary_accent: Color::Blue,
+        tertiary_accent: Color::Gray,
+    };
     if clamped {
         Palette {
-            bg: Color::Black,
-            fg: Color::White,
-            dim: Color::Gray,
             highlight: Color::LightYellow,
-            top_bar_bg: Color::DarkGray,
-            top_bar_fg: Color::White,
-            top_bar_dim: Color::Gray,
-            user_msg_bg: Color::Black,
             border: Color::Yellow,
-            warning: Color::Yellow,
-            error: Color::LightRed,
             success: Color::LightYellow,
             accent: Color::Yellow,
             secondary_accent: Color::Magenta,
-            tertiary_accent: Color::Gray,
+            ..base
         }
     } else {
-        Palette {
-            bg: Color::Black,
-            fg: Color::White,
-            dim: Color::Gray,
-            highlight: Color::Cyan,
-            top_bar_bg: Color::DarkGray,
-            top_bar_fg: Color::White,
-            top_bar_dim: Color::Gray,
-            user_msg_bg: Color::Black,
-            border: Color::Blue,
-            warning: Color::Yellow,
-            error: Color::LightRed,
-            success: Color::Green,
-            accent: Color::Cyan,
-            secondary_accent: Color::Blue,
-            tertiary_accent: Color::Gray,
-        }
+        base
     }
 }
 
 fn plan_palette() -> Palette {
     Palette {
-        bg: Color::Black,
         fg: Color::LightGreen,
         dim: Color::Green,
         highlight: Color::LightGreen,
         top_bar_bg: Color::Green,
-        top_bar_fg: Color::White,
-        top_bar_dim: Color::Gray,
-        user_msg_bg: Color::Black,
         border: Color::LightGreen,
-        warning: Color::Yellow,
-        error: Color::LightRed,
-        success: Color::Green,
-        accent: Color::Cyan,
         secondary_accent: Color::Magenta,
         tertiary_accent: Color::Blue,
+        ..execution_palette(false)
     }
 }
 

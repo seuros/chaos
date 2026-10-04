@@ -32,6 +32,7 @@ state_machine! {
     name: PlanItemMachine,
     initial: Idle,
     states: [Idle, Started, Completed],
+    final_states: [Completed],
     events {
         start {
             transition: { from: Idle, to: Started }
@@ -67,7 +68,7 @@ impl ProposedPlanItemState {
     }
 
     pub(super) fn completed(&self) -> bool {
-        self.machine.current_state() == PlanItemMachineState::Completed
+        self.machine.is_finished()
     }
 
     pub(super) async fn start(&mut self, sess: &Session, turn_context: &TurnContext) {

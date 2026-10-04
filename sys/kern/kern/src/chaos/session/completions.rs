@@ -326,8 +326,8 @@ impl Session {
         // is not clearance, and other background completions cannot bypass it.
         let still_ready = {
             let mut state = self.state.lock().await;
-            if state.machine_recovery.parked {
-                if state.machine_recovery.phase != crate::machine_recovery::Phase::Recovered {
+            if state.machine_recovery.parked() {
+                if state.machine_recovery.phase() != crate::machine_recovery::Phase::Recovered {
                     false
                 } else {
                     state.machine_recovery.cancel_wait();

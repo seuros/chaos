@@ -1,58 +1,76 @@
-//! Delivery is orthogonal to execution: a result can be read before the exit
-//! observer reports completion, and origin history must precede notifications.
-use chaos_ipc::background_tasks::BackgroundTask;
-use state_machines::state_machine;
+use state_machines::{runtime::Parallel, state_machine};
 
 state_machine! {
-    name: TaskDelivery,
+    name: TaskOrigin,
     dynamic: true,
     initial: OriginPending,
-    states: [OriginPending, Ready, OriginPendingDelivered, Delivered],
+    states: [OriginPending, OriginCommitted],
     events {
-        bind_origin {
-            transition: { from: OriginPending, to: OriginPending }
-            transition: { from: Ready, to: OriginPending }
-            transition: { from: OriginPendingDelivered, to: OriginPendingDelivered }
-            transition: { from: Delivered, to: OriginPendingDelivered }
+        bind {
+            transition: { from: OriginPending, internal: true }
+            transition: { from: OriginCommitted, to: OriginPending }
         }
-        commit_origin {
-            transition: { from: OriginPending, to: Ready }
-            transition: { from: Ready, to: Ready }
-            transition: { from: OriginPendingDelivered, to: Delivered }
-            transition: { from: Delivered, to: Delivered }
-        }
-        deliver {
-            transition: { from: OriginPending, to: OriginPendingDelivered }
-            transition: { from: Ready, to: Delivered }
-            transition: { from: OriginPendingDelivered, to: OriginPendingDelivered }
-            transition: { from: Delivered, to: Delivered }
+        commit {
+            transition: { from: OriginPending, to: OriginCommitted }
+            transition: { from: OriginCommitted, internal: true }
         }
     }
 }
 
-fn state(task: &BackgroundTask) -> TaskDeliveryState {
-    match (task.ready, task.delivered) {
-        (false, false) => TaskDeliveryState::OriginPending,
-        (true, false) => TaskDeliveryState::Ready,
-        (false, true) => TaskDeliveryState::OriginPendingDelivered,
-        (true, true) => TaskDeliveryState::Delivered,
+state_machine! {
+    name: TaskReceipt,
+    dynamic: true,
+    initial: UnreadResult,
+    states: [UnreadResult, ReadResult],
+    final_states: [ReadResult],
+    events {
+        deliver { transition: { from: UnreadResult, to: ReadResult } }
     }
 }
 
-pub(super) fn apply(task: &mut BackgroundTask, event: TaskDeliveryEvent) {
-    let mut machine = DynamicTaskDelivery::new_init_state((), state(task));
-    assert!(
-        machine.handle(event).is_ok(),
-        "task delivery transition is valid"
-    );
-    (task.ready, task.delivered) = match machine.current_state() {
-        TaskDeliveryState::OriginPending => (false, false),
-        TaskDeliveryState::Ready => (true, false),
-        TaskDeliveryState::OriginPendingDelivered => (false, true),
-        TaskDeliveryState::Delivered => (true, true),
+pub(super) type TaskDelivery = Parallel<DynamicTaskOrigin<()>, DynamicTaskReceipt<()>>;
+
+pub(super) enum TaskDeliveryEvent {
+    BindOrigin,
+    CommitOrigin,
+    Deliver,
+}
+
+pub(super) fn restore(ready: bool, delivered: bool) -> TaskDelivery {
+    Parallel::new(
+        DynamicTaskOrigin::new_init_state(
+            (),
+            if ready {
+                TaskOriginState::OriginCommitted
+            } else {
+                TaskOriginState::OriginPending
+            },
+        ),
+        DynamicTaskReceipt::new_init_state(
+            (),
+            if delivered {
+                TaskReceiptState::ReadResult
+            } else {
+                TaskReceiptState::UnreadResult
+            },
+        ),
+    )
+}
+
+pub(super) fn ready(machine: &TaskDelivery) -> bool {
+    machine.left().current_state() == TaskOriginState::OriginCommitted
+}
+
+pub(super) fn delivered(machine: &TaskDelivery) -> bool {
+    machine.right().is_finished()
+}
+
+pub(super) fn apply(machine: &mut TaskDelivery, event: TaskDeliveryEvent) {
+    let result = match event {
+        TaskDeliveryEvent::BindOrigin => machine.left_mut().handle(TaskOriginEvent::Bind),
+        TaskDeliveryEvent::CommitOrigin => machine.left_mut().handle(TaskOriginEvent::Commit),
+        TaskDeliveryEvent::Deliver if delivered(machine) => return,
+        TaskDeliveryEvent::Deliver => machine.right_mut().handle(TaskReceiptEvent::Deliver),
     };
-}
-
-pub(super) fn pending(task: &BackgroundTask) -> bool {
-    task.state.is_terminal() && task.notify && state(task) == TaskDeliveryState::Ready
+    assert!(result.is_ok(), "task delivery transition is valid");
 }

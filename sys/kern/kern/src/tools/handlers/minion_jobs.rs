@@ -20,7 +20,6 @@ use chaos_ipc::user_input::UserInput;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -28,6 +27,9 @@ use std::sync::Arc;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use uuid::Uuid;
+
+mod worker_lifecycle;
+use worker_lifecycle::{Worker, WorkerPool};
 
 pub struct BatchJobHandler;
 
@@ -96,12 +98,6 @@ struct ReportMinionJobResultToolResult {
 struct JobRunnerOptions {
     max_concurrency: usize,
     spawn_config: Config,
-}
-
-#[derive(Debug, Clone)]
-struct ActiveJobItem {
-    item_id: String,
-    started_at: Instant,
 }
 
 struct JobProgressEmitter {
@@ -593,13 +589,13 @@ async fn run_minion_job_loop(
         .await?
         .ok_or_else(|| anyhow::anyhow!("minion job {job_id} was not found"))?;
     let runtime_timeout = job_runtime_timeout(&job);
-    let mut active_items: HashMap<ProcessId, ActiveJobItem> = HashMap::new();
+    let mut workers = WorkerPool::new();
     let mut progress_emitter = JobProgressEmitter::new();
     recover_running_items(
         session.clone(),
         db.clone(),
         job_id.as_str(),
-        &mut active_items,
+        &mut workers,
         runtime_timeout,
     )
     .await?;
@@ -614,12 +610,14 @@ async fn run_minion_job_loop(
         )
         .await?;
 
-    let mut cancel_requested = db.minion_jobs().is_cancelled(job_id.as_str()).await?;
+    if db.minion_jobs().is_cancelled(job_id.as_str()).await? {
+        workers.drain();
+    }
     loop {
         let mut progressed = false;
 
-        if !cancel_requested && db.minion_jobs().is_cancelled(job_id.as_str()).await? {
-            cancel_requested = true;
+        if !workers.cancelled() && db.minion_jobs().is_cancelled(job_id.as_str()).await? {
+            workers.drain();
             let _ = session
                 .notify_background_event(
                     &turn,
@@ -628,8 +626,8 @@ async fn run_minion_job_loop(
                 .await;
         }
 
-        if !cancel_requested && active_items.len() < options.max_concurrency {
-            let slots = options.max_concurrency - active_items.len();
+        if !workers.cancelled() && workers.items().len() < options.max_concurrency {
+            let slots = options.max_concurrency - workers.items().len();
             let pending_items = db
                 .minion_jobs()
                 .list_items(
@@ -644,19 +642,16 @@ async fn run_minion_job_loop(
                     text: prompt,
                     text_elements: Vec::new(),
                 }];
-                let process_id = match session
-                    .services
-                    .agent_control
-                    .spawn_agent(
-                        options.spawn_config.clone(),
-                        items,
-                        Some(SessionSource::SubAgent(SubAgentSource::Other(format!(
-                            "minion_job:{job_id}"
-                        )))),
-                    )
-                    .await
+                let worker = match Worker::spawn(
+                    session.services.agent_control.clone(),
+                    options.spawn_config.clone(),
+                    items,
+                    SessionSource::SubAgent(SubAgentSource::Other(format!("minion_job:{job_id}"))),
+                    item.item_id.clone(),
+                )
+                .await
                 {
-                    Ok(process_id) => process_id,
+                    Ok(worker) => worker,
                     Err(ChaosErr::AgentLimitReached { .. }) => {
                         db.minion_jobs()
                             .mark_item_pending(
@@ -680,6 +675,8 @@ async fn run_minion_job_loop(
                         continue;
                     }
                 };
+                let process_id = worker.process_id();
+                workers.adopt(worker);
                 let assigned = db
                     .minion_jobs()
                     .mark_item_running_with_thread(
@@ -689,46 +686,30 @@ async fn run_minion_job_loop(
                     )
                     .await?;
                 if !assigned {
-                    let _ = session
-                        .services
-                        .agent_control
-                        .shutdown_agent(process_id)
-                        .await;
+                    workers.close(process_id).await;
                     continue;
                 }
-                active_items.insert(
-                    process_id,
-                    ActiveJobItem {
-                        item_id: item.item_id.clone(),
-                        started_at: Instant::now(),
-                    },
-                );
+                workers.assigned(process_id);
                 progressed = true;
             }
         }
 
-        if reap_stale_active_items(
-            session.clone(),
-            db.clone(),
-            job_id.as_str(),
-            &mut active_items,
-            runtime_timeout,
-        )
-        .await?
+        if reap_stale_active_items(db.clone(), job_id.as_str(), &mut workers, runtime_timeout)
+            .await?
         {
             progressed = true;
         }
 
-        let finished = find_finished_threads(session.clone(), &active_items).await;
+        let finished = find_finished_threads(session.clone(), &workers).await;
         if finished.is_empty() {
             let progress = db.minion_jobs().progress(job_id.as_str()).await?;
-            if cancel_requested {
-                if progress.running_items == 0 && active_items.is_empty() {
+            if workers.cancelled() {
+                if progress.running_items == 0 && workers.items().is_empty() {
                     break;
                 }
             } else if progress.pending_items == 0
                 && progress.running_items == 0
-                && active_items.is_empty()
+                && workers.items().is_empty()
             {
                 break;
             }
@@ -739,15 +720,8 @@ async fn run_minion_job_loop(
         }
 
         for (process_id, item_id) in finished {
-            finalize_finished_item(
-                session.clone(),
-                db.clone(),
-                job_id.as_str(),
-                item_id.as_str(),
-                process_id,
-            )
-            .await?;
-            active_items.remove(&process_id);
+            finalize_finished_item(db.clone(), job_id.as_str(), item_id.as_str()).await?;
+            workers.close(process_id).await;
             let progress = db.minion_jobs().progress(job_id.as_str()).await?;
             progress_emitter
                 .maybe_emit(
@@ -760,6 +734,7 @@ async fn run_minion_job_loop(
                 .await?;
         }
     }
+    workers.finish();
 
     let progress = db.minion_jobs().progress(job_id.as_str()).await?;
     if let Err(err) = export_job_csv_snapshot(db.clone(), &job).await {
@@ -769,7 +744,7 @@ async fn run_minion_job_loop(
             .await?;
         return Ok(());
     }
-    let cancelled = cancel_requested || db.minion_jobs().is_cancelled(job_id.as_str()).await?;
+    let cancelled = workers.cancelled() || db.minion_jobs().is_cancelled(job_id.as_str()).await?;
     if cancelled {
         let pending_items = progress.pending_items;
         let message =
@@ -827,7 +802,7 @@ async fn recover_running_items(
     session: Arc<Session>,
     db: crate::runtime_db::RuntimeDbHandle,
     job_id: &str,
-    active_items: &mut HashMap<ProcessId, ActiveJobItem>,
+    workers: &mut WorkerPool,
     runtime_timeout: Duration,
 ) -> anyhow::Result<()> {
     let running_items = db
@@ -840,18 +815,24 @@ async fn recover_running_items(
         .await?;
     for item in running_items {
         if is_item_stale(&item, runtime_timeout) {
+            let process_id = item
+                .assigned_process_id
+                .as_deref()
+                .and_then(|id| ProcessId::from_string(id).ok());
+            if let Some(process_id) = process_id {
+                workers.adopt(Worker::recover(
+                    session.services.agent_control.clone(),
+                    process_id,
+                    item.item_id.clone(),
+                    started_at_from_item(&item),
+                ));
+            }
             let error_message = format!("task exceeded max runtime of {runtime_timeout:?}");
             db.minion_jobs()
                 .mark_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
                 .await?;
-            if let Some(assigned_process_id) = item.assigned_process_id.as_ref()
-                && let Ok(process_id) = ProcessId::from_string(assigned_process_id.as_str())
-            {
-                let _ = session
-                    .services
-                    .agent_control
-                    .shutdown_agent(process_id)
-                    .await;
+            if let Some(process_id) = process_id {
+                workers.close(process_id).await;
             }
             continue;
         }
@@ -875,23 +856,15 @@ async fn recover_running_items(
                 continue;
             }
         };
+        workers.adopt(Worker::recover(
+            session.services.agent_control.clone(),
+            process_id,
+            item.item_id.clone(),
+            started_at_from_item(&item),
+        ));
         if is_final(&session.services.agent_control.get_status(process_id).await) {
-            finalize_finished_item(
-                session.clone(),
-                db.clone(),
-                job_id,
-                item.item_id.as_str(),
-                process_id,
-            )
-            .await?;
-        } else {
-            active_items.insert(
-                process_id,
-                ActiveJobItem {
-                    item_id: item.item_id.clone(),
-                    started_at: started_at_from_item(&item),
-                },
-            );
+            finalize_finished_item(db.clone(), job_id, item.item_id.as_str()).await?;
+            workers.close(process_id).await;
         }
     }
     Ok(())
@@ -899,10 +872,10 @@ async fn recover_running_items(
 
 async fn find_finished_threads(
     session: Arc<Session>,
-    active_items: &HashMap<ProcessId, ActiveJobItem>,
+    workers: &WorkerPool,
 ) -> Vec<(ProcessId, String)> {
     let mut finished = Vec::new();
-    for (process_id, item) in active_items {
+    for (process_id, item) in workers.items() {
         if is_final(&session.services.agent_control.get_status(*process_id).await) {
             finished.push((*process_id, item.item_id.clone()));
         }
@@ -911,14 +884,13 @@ async fn find_finished_threads(
 }
 
 async fn reap_stale_active_items(
-    session: Arc<Session>,
     db: crate::runtime_db::RuntimeDbHandle,
     job_id: &str,
-    active_items: &mut HashMap<ProcessId, ActiveJobItem>,
+    workers: &mut WorkerPool,
     runtime_timeout: Duration,
 ) -> anyhow::Result<bool> {
     let mut stale = Vec::new();
-    for (process_id, item) in active_items.iter() {
+    for (process_id, item) in workers.items() {
         if item.started_at.elapsed() >= runtime_timeout {
             stale.push((*process_id, item.item_id.clone()));
         }
@@ -931,22 +903,15 @@ async fn reap_stale_active_items(
         db.minion_jobs()
             .mark_item_failed(job_id, item_id.as_str(), error_message.as_str())
             .await?;
-        let _ = session
-            .services
-            .agent_control
-            .shutdown_agent(process_id)
-            .await;
-        active_items.remove(&process_id);
+        workers.close(process_id).await;
     }
     Ok(true)
 }
 
 async fn finalize_finished_item(
-    session: Arc<Session>,
     db: crate::runtime_db::RuntimeDbHandle,
     job_id: &str,
     item_id: &str,
-    process_id: ProcessId,
 ) -> anyhow::Result<()> {
     let mut item = db
         .minion_jobs()
@@ -988,11 +953,6 @@ async fn finalize_finished_item(
             )
             .await?;
     }
-    let _ = session
-        .services
-        .agent_control
-        .shutdown_agent(process_id)
-        .await;
     Ok(())
 }
 

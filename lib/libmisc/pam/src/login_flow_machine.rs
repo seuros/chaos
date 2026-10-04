@@ -1,138 +1,175 @@
-use crate::DeviceCode;
-use crate::ServerOptions;
-use crate::complete_device_code_login;
-use crate::request_device_code;
-use crate::run_login_server;
+//! One owner drives login state and its scoped work. The update stream is a
+//! projection of committed entry hooks, not a second procedural lifecycle.
+use crate::{
+    DeviceCode, ServerOptions, ShutdownHandle, complete_device_code_login, request_device_code,
+    run_login_server,
+};
 use chaos_ipc::api::AuthMode;
-use state_machines::state_machine;
-use std::io;
-use std::sync::Arc;
-use tokio::sync::Notify;
+use state_machines::{
+    runtime::{Clock, Runner},
+    state_machine,
+};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+#[derive(Debug)]
+struct LoginContext {
+    opts: ServerOptions,
+    updates: mpsc::UnboundedSender<LoginFlowUpdate>,
+    allow_browser_fallback: bool,
+}
 
 state_machine! {
     name: LoginFlowLifecycle,
     dynamic: true,
+    context: LoginContext,
     initial: Idle,
     states: [
-        Idle,
-        StartingBrowser,
-        WaitingForBrowser,
-        RequestingDeviceCode,
-        WaitingForDeviceCode,
-        Succeeded,
-        Failed,
-        Cancelled
+        superstate Live {
+            state Idle,
+            state WaitingForBrowser,
+            state RequestingDeviceCode,
+            state WaitingForDeviceCode(DeviceCode),
+        },
+        Succeeded, Failed(String), Cancelled,
     ],
+    final_states: [Succeeded, Failed, Cancelled],
+    lifecycle: {
+        RequestingDeviceCode { enter: [device_pending] }
+        WaitingForDeviceCode { enter: [device_ready] }
+        Succeeded { enter: [succeeded] }
+        Failed { enter: [failed] }
+        Cancelled { enter: [cancelled] }
+    },
+    runtime: {
+        WaitingForBrowser { invoke: [browser_work] }
+        RequestingDeviceCode { invoke: [request_work] }
+        WaitingForDeviceCode { invoke: [device_work] }
+    },
     events {
-        start_browser {
-            transition: { from: Idle, to: StartingBrowser }
-            transition: { from: Failed, to: StartingBrowser }
-            transition: { from: RequestingDeviceCode, to: StartingBrowser }
-        }
-        browser_ready {
-            transition: { from: StartingBrowser, to: WaitingForBrowser }
-        }
-        start_device_code {
-            transition: { from: Idle, to: RequestingDeviceCode }
-            transition: { from: Failed, to: RequestingDeviceCode }
-        }
+        start_browser { transition: { from: Idle, to: WaitingForBrowser } }
+        start_device_code { transition: { from: Idle, to: RequestingDeviceCode } }
         device_code_ready {
-            transition: { from: RequestingDeviceCode, to: WaitingForDeviceCode }
+            payload: Option<DeviceCode>,
+            transition: { from: RequestingDeviceCode, to: WaitingForDeviceCode, data: own_code }
         }
         device_code_unsupported {
-            transition: { from: RequestingDeviceCode, to: StartingBrowser }
+            transition: { from: RequestingDeviceCode, to: WaitingForBrowser, before: [unsupported] }
         }
         succeed {
             transition: { from: WaitingForBrowser, to: Succeeded }
             transition: { from: WaitingForDeviceCode, to: Succeeded }
         }
         fail {
-            transition: { from: StartingBrowser, to: Failed }
-            transition: { from: WaitingForBrowser, to: Failed }
-            transition: { from: RequestingDeviceCode, to: Failed }
-            transition: { from: WaitingForDeviceCode, to: Failed }
+            payload: Option<String>,
+            transition: { from: Live, to: Failed, data: own_error }
         }
-        cancel {
-            transition: { from: StartingBrowser, to: Cancelled }
-            transition: { from: WaitingForBrowser, to: Cancelled }
-            transition: { from: RequestingDeviceCode, to: Cancelled }
-            transition: { from: WaitingForDeviceCode, to: Cancelled }
-        }
+        cancel { transition: { from: Live, to: Cancelled } }
     }
 }
 
-#[derive(Debug)]
-struct LoginFlowWorkflow {
-    machine: DynamicLoginFlowLifecycle<()>,
+/// Dropping a scoped future must also stop the detached callback server.
+/// Dropping a Tokio JoinHandle alone would leave that server running.
+struct BrowserShutdown(ShutdownHandle);
+impl Drop for BrowserShutdown {
+    fn drop(&mut self) {
+        self.0.shutdown();
+    }
 }
 
-impl LoginFlowWorkflow {
-    fn new() -> Self {
-        Self {
-            machine: DynamicLoginFlowLifecycle::new(()),
+impl<S> LoginFlowLifecycle<S> {
+    fn emit(&self, update: LoginFlowUpdate) {
+        let _ = self.ctx.updates.send(update);
+    }
+    fn device_pending(&self) {
+        self.emit(LoginFlowUpdate::DeviceCodePending);
+    }
+    fn device_ready(&self) {
+        let device_code = self
+            .state_data_waiting_for_device_code()
+            .unwrap_or_else(|| unreachable!("device entry owns its code"))
+            .clone();
+        self.emit(LoginFlowUpdate::DeviceCodeReady { device_code });
+    }
+    fn unsupported(&self) {
+        self.emit(LoginFlowUpdate::DeviceCodeUnsupported);
+    }
+    fn succeeded(&self) {
+        self.emit(LoginFlowUpdate::Succeeded {
+            auth_mode: AuthMode::Chatgpt,
+        });
+    }
+    fn failed(&self) {
+        let message = self
+            .state_data_failed()
+            .unwrap_or_else(|| unreachable!("failed entry owns its error"))
+            .clone();
+        self.emit(LoginFlowUpdate::Failed { message });
+    }
+    fn cancelled(&self) {
+        self.emit(LoginFlowUpdate::Cancelled);
+    }
+    fn own_code(&self, code: &mut Option<DeviceCode>) -> DeviceCode {
+        code.take()
+            .unwrap_or_else(|| unreachable!("device completion carries its code"))
+    }
+    fn own_error(&self, message: &mut Option<String>) -> String {
+        message
+            .take()
+            .unwrap_or_else(|| unreachable!("failure carries its message"))
+    }
+    fn browser_work(
+        &self,
+    ) -> impl std::future::Future<Output = LoginFlowLifecycleEvent> + Send + 'static {
+        let opts = self.ctx.opts.clone();
+        let updates = self.ctx.updates.clone();
+        async move {
+            let server = match run_login_server(opts) {
+                Ok(server) => server,
+                Err(error) => return LoginFlowLifecycleEvent::Fail(Some(error.to_string())),
+            };
+            let _shutdown = BrowserShutdown(server.cancel_handle());
+            let _ = updates.send(LoginFlowUpdate::BrowserOpened {
+                actual_port: server.actual_port,
+                auth_url: server.auth_url.clone(),
+            });
+            match server.block_until_done().await {
+                Ok(()) => LoginFlowLifecycleEvent::Succeed,
+                Err(error) => LoginFlowLifecycleEvent::Fail(Some(error.to_string())),
+            }
         }
     }
-
-    /// Apply a transition that the runner sequences and that must always be
-    /// legal from the current state. A rejected transition means the runner and
-    /// the emitted `LoginFlowUpdate` stream have drifted, so fail loudly in
-    /// debug/test builds rather than silently no-op while the matching update
-    /// still goes out.
-    fn apply(&mut self, event: LoginFlowLifecycleEvent, label: &str) {
-        if self.machine.handle(event).is_err() {
-            debug_assert!(
-                false,
-                "illegal LoginFlow transition: {label} from {:?}",
-                self.machine.current_state()
-            );
+    fn request_work(
+        &self,
+    ) -> impl std::future::Future<Output = LoginFlowLifecycleEvent> + Send + 'static {
+        let opts = self.ctx.opts.clone();
+        let allow_browser_fallback = self.ctx.allow_browser_fallback;
+        async move {
+            match request_device_code(&opts).await {
+                Ok(code) => LoginFlowLifecycleEvent::DeviceCodeReady(Some(code)),
+                Err(error)
+                    if allow_browser_fallback && error.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    LoginFlowLifecycleEvent::DeviceCodeUnsupported
+                }
+                Err(error) => LoginFlowLifecycleEvent::Fail(Some(error.to_string())),
+            }
         }
     }
-
-    fn start_browser(&mut self) {
-        self.apply(LoginFlowLifecycleEvent::StartBrowser, "start_browser");
-    }
-
-    fn browser_ready(&mut self) {
-        self.apply(LoginFlowLifecycleEvent::BrowserReady, "browser_ready");
-    }
-
-    fn start_device_code(&mut self) {
-        self.apply(
-            LoginFlowLifecycleEvent::StartDeviceCode,
-            "start_device_code",
-        );
-    }
-
-    fn device_code_ready(&mut self) {
-        self.apply(
-            LoginFlowLifecycleEvent::DeviceCodeReady,
-            "device_code_ready",
-        );
-    }
-
-    fn device_code_unsupported(&mut self) {
-        self.apply(
-            LoginFlowLifecycleEvent::DeviceCodeUnsupported,
-            "device_code_unsupported",
-        );
-    }
-
-    fn succeed(&mut self) {
-        self.apply(LoginFlowLifecycleEvent::Succeed, "succeed");
-    }
-
-    fn fail(&mut self) {
-        self.apply(LoginFlowLifecycleEvent::Fail, "fail");
-    }
-
-    fn cancel(&mut self) {
-        self.apply(LoginFlowLifecycleEvent::Cancel, "cancel");
-    }
-
-    #[cfg(test)]
-    fn current_state(&self) -> LoginFlowLifecycleState {
-        self.machine.current_state()
+    fn device_work(
+        &self,
+    ) -> impl std::future::Future<Output = LoginFlowLifecycleEvent> + Send + 'static {
+        let opts = self.ctx.opts.clone();
+        let code = self
+            .state_data_waiting_for_device_code()
+            .unwrap_or_else(|| unreachable!("device activity owns its code"))
+            .clone();
+        async move {
+            match complete_device_code_login(opts, code).await {
+                Ok(()) => LoginFlowLifecycleEvent::Succeed,
+                Err(error) => LoginFlowLifecycleEvent::Fail(Some(error.to_string())),
+            }
+        }
     }
 }
 
@@ -142,18 +179,14 @@ pub enum LoginFlowMode {
     DeviceCode { allow_browser_fallback: bool },
 }
 
+/// Cancellation is remembered even when requested before the driver is polled.
 #[derive(Debug, Clone)]
 pub struct LoginFlowCancel {
-    notify: Arc<Notify>,
+    token: CancellationToken,
 }
-
 impl LoginFlowCancel {
     pub fn cancel(&self) {
-        self.notify.notify_waiters();
-    }
-
-    async fn notified(&self) {
-        self.notify.notified().await;
+        self.token.cancel();
     }
 }
 
@@ -173,168 +206,98 @@ pub struct LoginFlowHandle {
     cancel: LoginFlowCancel,
     updates: mpsc::UnboundedReceiver<LoginFlowUpdate>,
 }
-
 impl LoginFlowHandle {
     pub fn cancel_handle(&self) -> LoginFlowCancel {
         self.cancel.clone()
     }
-
     pub fn cancel(&self) {
         self.cancel.cancel();
     }
-
     pub async fn recv(&mut self) -> Option<LoginFlowUpdate> {
         self.updates.recv().await
     }
 }
 
-pub fn spawn_login_flow(opts: ServerOptions, mode: LoginFlowMode) -> LoginFlowHandle {
-    let cancel = LoginFlowCancel {
-        notify: Arc::new(Notify::new()),
-    };
-    let (tx, rx) = mpsc::unbounded_channel();
-    let flow_cancel = cancel.clone();
+// No deadlines are declared by this flow. Entry setup still needs an explicit clock.
+struct LoginClock;
+impl Clock for LoginClock {
+    fn now(&self) -> u64 {
+        0
+    }
+}
 
-    tokio::spawn(async move {
-        let mut runner = LoginFlowRunner::new(opts, flow_cancel, tx);
-        match mode {
-            LoginFlowMode::Browser => runner.run_browser_flow().await,
-            LoginFlowMode::DeviceCode {
-                allow_browser_fallback,
-            } => runner.run_device_code_flow(allow_browser_fallback).await,
+pub fn spawn_login_flow(opts: ServerOptions, mode: LoginFlowMode) -> LoginFlowHandle {
+    start_login_flow(opts, mode).0
+}
+
+fn start_login_flow(
+    opts: ServerOptions,
+    mode: LoginFlowMode,
+) -> (LoginFlowHandle, tokio::task::JoinHandle<()>) {
+    let cancel = LoginFlowCancel {
+        token: CancellationToken::new(),
+    };
+    let (updates, rx) = mpsc::unbounded_channel();
+    let token = cancel.token.clone();
+    let driver = tokio::spawn(async move {
+        let context = LoginContext {
+            opts,
+            updates,
+            allow_browser_fallback: matches!(
+                mode,
+                LoginFlowMode::DeviceCode {
+                    allow_browser_fallback: true
+                }
+            ),
+        };
+        let mut machine = DynamicLoginFlowLifecycle::new(context);
+        let start = match mode {
+            LoginFlowMode::Browser => LoginFlowLifecycleEvent::StartBrowser,
+            LoginFlowMode::DeviceCode { .. } => LoginFlowLifecycleEvent::StartDeviceCode,
+        };
+        // Commit start without leaving a queued event behind cancellation.
+        if !token.is_cancelled() {
+            machine
+                .handle(start)
+                .unwrap_or_else(|error| panic!("login start: {error:?}"));
+        }
+        let mut runner = Runner::new(machine, 8);
+        runner
+            .start(&LoginClock)
+            .unwrap_or_else(|error| panic!("login entry setup: {error:?}"));
+        loop {
+            // Cancellation discards unconsumed completions before committing
+            // the terminal edge. Extraction closes sinks and drops owned work.
+            if token.is_cancelled() {
+                let mut machine = runner.into_machine();
+                machine
+                    .handle(LoginFlowLifecycleEvent::Cancel)
+                    .unwrap_or_else(|error| panic!("login cancellation: {error:?}"));
+                break;
+            }
+            runner
+                .drain(16)
+                .await
+                .unwrap_or_else(|error| panic!("login dispatch: {error:?}"));
+            if runner.machine().is_finished() {
+                break;
+            }
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => {}
+                result = runner.wait_for_work() => {
+                    result.unwrap_or_else(|error| panic!("login wait: {error:?}"));
+                }
+            }
         }
     });
-
-    LoginFlowHandle {
-        cancel,
-        updates: rx,
-    }
-}
-
-struct LoginFlowRunner {
-    opts: ServerOptions,
-    cancel: LoginFlowCancel,
-    tx: mpsc::UnboundedSender<LoginFlowUpdate>,
-    workflow: LoginFlowWorkflow,
-}
-
-impl LoginFlowRunner {
-    fn new(
-        opts: ServerOptions,
-        cancel: LoginFlowCancel,
-        tx: mpsc::UnboundedSender<LoginFlowUpdate>,
-    ) -> Self {
-        Self {
-            opts,
+    (
+        LoginFlowHandle {
             cancel,
-            tx,
-            workflow: LoginFlowWorkflow::new(),
-        }
-    }
-
-    fn emit(&self, update: LoginFlowUpdate) {
-        let _ = self.tx.send(update);
-    }
-
-    async fn run_browser_flow(&mut self) {
-        self.workflow.start_browser();
-        if let Err(err) = self.begin_browser_flow().await {
-            self.workflow.fail();
-            self.emit(LoginFlowUpdate::Failed {
-                message: err.to_string(),
-            });
-        }
-    }
-
-    async fn begin_browser_flow(&mut self) -> io::Result<()> {
-        let server = run_login_server(self.opts.clone())?;
-        let auth_url = server.auth_url.clone();
-        let actual_port = server.actual_port;
-        self.workflow.browser_ready();
-        self.emit(LoginFlowUpdate::BrowserOpened {
-            actual_port,
-            auth_url,
-        });
-        let cancel = self.cancel.clone();
-        let shutdown = server.cancel_handle();
-
-        tokio::select! {
-            _ = cancel.notified() => {
-                shutdown.shutdown();
-                self.workflow.cancel();
-                self.emit(LoginFlowUpdate::Cancelled);
-                Ok(())
-            }
-            result = server.block_until_done() => {
-                result?;
-                self.workflow.succeed();
-                self.emit(LoginFlowUpdate::Succeeded { auth_mode: AuthMode::Chatgpt });
-                Ok(())
-            }
-        }
-    }
-
-    async fn run_device_code_flow(&mut self, allow_browser_fallback: bool) {
-        self.workflow.start_device_code();
-        self.emit(LoginFlowUpdate::DeviceCodePending);
-        let cancel = self.cancel.clone();
-        let request_result = tokio::select! {
-            _ = cancel.notified() => {
-                self.workflow.cancel();
-                self.emit(LoginFlowUpdate::Cancelled);
-                return;
-            }
-            result = request_device_code(&self.opts) => result,
-        };
-
-        match request_result {
-            Ok(device_code) => {
-                self.workflow.device_code_ready();
-                self.emit(LoginFlowUpdate::DeviceCodeReady {
-                    device_code: device_code.clone(),
-                });
-                let cancel = self.cancel.clone();
-                let result = tokio::select! {
-                    _ = cancel.notified() => {
-                        self.workflow.cancel();
-                        self.emit(LoginFlowUpdate::Cancelled);
-                        return;
-                    }
-                    result = complete_device_code_login(self.opts.clone(), device_code) => result,
-                };
-                match result {
-                    Ok(()) => {
-                        self.workflow.succeed();
-                        self.emit(LoginFlowUpdate::Succeeded {
-                            auth_mode: AuthMode::Chatgpt,
-                        });
-                    }
-                    Err(err) => {
-                        self.workflow.fail();
-                        self.emit(LoginFlowUpdate::Failed {
-                            message: err.to_string(),
-                        });
-                    }
-                }
-            }
-            Err(err) if allow_browser_fallback && err.kind() == io::ErrorKind::NotFound => {
-                self.workflow.device_code_unsupported();
-                self.emit(LoginFlowUpdate::DeviceCodeUnsupported);
-                if let Err(err) = self.begin_browser_flow().await {
-                    self.workflow.fail();
-                    self.emit(LoginFlowUpdate::Failed {
-                        message: err.to_string(),
-                    });
-                }
-            }
-            Err(err) => {
-                self.workflow.fail();
-                self.emit(LoginFlowUpdate::Failed {
-                    message: err.to_string(),
-                });
-            }
-        }
-    }
+            updates: rx,
+        },
+        driver,
+    )
 }
 
 #[cfg(test)]

@@ -521,54 +521,57 @@ pub fn new_mcp_tools_output(
             }
         }
 
-        let server_resources: Vec<Resource> =
-            resources.get(server.as_str()).cloned().unwrap_or_default();
-        if server_resources.is_empty() {
-            lines.push("    • Resources: (none)".into());
-        } else {
-            let mut spans: Vec<Span<'static>> = vec!["    • Resources: ".into()];
-
-            for (idx, resource) in server_resources.iter().enumerate() {
-                if idx > 0 {
-                    spans.push(", ".into());
-                }
-
-                let label = resource.title.as_ref().unwrap_or(&resource.name);
-                spans.push(label.clone().into());
-                spans.push(" ".into());
-                spans.push(format!("({})", resource.uri).dim());
-            }
-
-            lines.push(spans.into());
-        }
-
-        let server_templates: Vec<ResourceTemplate> = resource_templates
-            .get(server.as_str())
-            .cloned()
-            .unwrap_or_default();
-        if server_templates.is_empty() {
-            lines.push("    • Resource templates: (none)".into());
-        } else {
-            let mut spans: Vec<Span<'static>> = vec!["    • Resource templates: ".into()];
-
-            for (idx, template) in server_templates.iter().enumerate() {
-                if idx > 0 {
-                    spans.push(", ".into());
-                }
-
-                let label = template.title.as_ref().unwrap_or(&template.name);
-                spans.push(label.clone().into());
-                spans.push(" ".into());
-                spans.push(format!("({})", template.uri_template).dim());
-            }
-
-            lines.push(spans.into());
-        }
+        lines.push(resource_listing(
+            "Resources",
+            resources
+                .get(server.as_str())
+                .into_iter()
+                .flatten()
+                .map(|resource| {
+                    (
+                        resource.title.as_deref().unwrap_or(&resource.name),
+                        resource.uri.as_str(),
+                    )
+                }),
+        ));
+        lines.push(resource_listing(
+            "Resource templates",
+            resource_templates
+                .get(server.as_str())
+                .into_iter()
+                .flatten()
+                .map(|template| {
+                    (
+                        template.title.as_deref().unwrap_or(&template.name),
+                        template.uri_template.as_str(),
+                    )
+                }),
+        ));
 
         lines.push(Line::from(""));
     }
 
     PlainHistoryCell::new(lines)
+}
+
+fn resource_listing<'a>(
+    heading: &str,
+    entries: impl Iterator<Item = (&'a str, &'a str)>,
+) -> Line<'static> {
+    let mut entries = entries.peekable();
+    if entries.peek().is_none() {
+        return format!("    • {heading}: (none)").into();
+    }
+    let mut spans = vec![Span::raw(format!("    • {heading}: "))];
+    for (index, (label, uri)) in entries.enumerate() {
+        if index > 0 {
+            spans.push(", ".into());
+        }
+        spans.push(label.to_owned().into());
+        spans.push(" ".into());
+        spans.push(format!("({uri})").dim());
+    }
+    spans.into()
 }
 
 // ---------------------------------------------------------------------------

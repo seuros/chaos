@@ -489,7 +489,7 @@ impl Session {
             .await
             .is_some_and(|task| task.source == Some(TaskSource::MachineRecovery))
         {
-            if self.state.lock().await.machine_recovery.wait_id.as_deref() == Some(task_id) {
+            if self.state.lock().await.machine_recovery.wait_id() == Some(task_id) {
                 self.cancel_machine_recovery_wait().await;
             } else {
                 self.services

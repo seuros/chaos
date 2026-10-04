@@ -1,10 +1,12 @@
 use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::time::Duration;
 
-use breaker_machines::CircuitBreaker;
+use breaker_machines::CircuitError;
+use breaker_machines::MemoryStorage;
 use tokio::time::Instant;
 
 /// Error returned by an async operation guarded by [`AsyncCircuitBreaker`].
@@ -23,32 +25,25 @@ impl<E: fmt::Display> fmt::Display for BreakerError<E> {
     }
 }
 
-struct BreakerState {
-    breaker: CircuitBreaker,
-    opened_at: Option<Instant>,
+#[derive(Debug)]
+struct BreakerClock(Instant);
+
+impl breaker_machines::time::Clock for BreakerClock {
+    fn now_secs(&self) -> f64 {
+        self.0.elapsed().as_secs_f64()
+    }
 }
 
-/// Async-friendly adapter around `breaker-machines`.
-///
-/// `breaker-machines` only drives half-open transitions through its synchronous
-/// `call` API. Async users therefore track the open timestamp and reset after
-/// the configured timeout to admit a probe without holding a mutex across an
-/// await.
 pub(crate) struct AsyncCircuitBreaker {
-    half_open_timeout: Duration,
-    state: Mutex<BreakerState>,
+    breaker: breaker_machines::AsyncCircuitBreaker,
+    retry_at: Arc<Mutex<Option<Instant>>>,
 }
 
 impl fmt::Debug for AsyncCircuitBreaker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let open = self
-            .state
-            .lock()
-            .map(|state| state.breaker.is_open())
-            .unwrap_or(false);
         f.debug_struct("AsyncCircuitBreaker")
-            .field("open", &open)
-            .field("half_open_timeout", &self.half_open_timeout)
+            .field("state", &self.breaker.state_name())
+            .field("retry_after", &self.retry_after())
             .finish()
     }
 }
@@ -61,18 +56,30 @@ impl AsyncCircuitBreaker {
         half_open_timeout: Duration,
         success_threshold: usize,
     ) -> Self {
-        Self {
-            half_open_timeout,
-            state: Mutex::new(BreakerState {
-                breaker: CircuitBreaker::builder(name.into())
-                    .failure_threshold(failure_threshold)
-                    .failure_window_secs(failure_window.as_secs_f64())
-                    .half_open_timeout_secs(half_open_timeout.as_secs_f64())
-                    .success_threshold(success_threshold)
-                    .build(),
-                opened_at: None,
-            }),
-        }
+        let retry_at = Arc::new(Mutex::new(None));
+        let opened = retry_at.clone();
+        let closed = retry_at.clone();
+        let probing = retry_at.clone();
+        let breaker = breaker_machines::AsyncCircuitBreaker::builder(name)
+            .failure_threshold(failure_threshold)
+            .failure_window_secs(failure_window.as_secs_f64())
+            .half_open_timeout_secs(half_open_timeout.as_secs_f64())
+            .success_threshold(success_threshold)
+            .storage(Arc::new(MemoryStorage::with_clock(Box::new(BreakerClock(
+                Instant::now(),
+            )))))
+            .on_open(move |_| {
+                *opened.lock().unwrap_or_else(PoisonError::into_inner) =
+                    Some(Instant::now() + half_open_timeout);
+            })
+            .on_close(move |_| {
+                *closed.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            })
+            .on_half_open(move |_| {
+                *probing.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            })
+            .build_async();
+        Self { breaker, retry_at }
     }
 
     /// Return the delay before the next half-open probe may run.
@@ -80,57 +87,29 @@ impl AsyncCircuitBreaker {
     /// Callers that own a background actor can sleep for this duration and
     /// invoke [`Self::call`] when it elapses instead of waiting for new traffic.
     pub(crate) fn retry_after(&self) -> Option<Duration> {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if !state.breaker.is_open() {
-            return None;
-        }
-
-        Some(
-            state
-                .opened_at
-                .map(|opened_at| self.half_open_timeout.saturating_sub(opened_at.elapsed()))
-                .unwrap_or(Duration::ZERO),
-        )
+        self.retry_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
     }
 
     pub(crate) async fn call<T, E, F, Fut>(&self, op: F) -> Result<T, BreakerError<E>>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, E>>,
+        E: 'static,
     {
-        {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if state.breaker.is_open() {
-                if state
-                    .opened_at
-                    .is_some_and(|opened_at| opened_at.elapsed() < self.half_open_timeout)
-                {
-                    return Err(BreakerError::Open);
-                }
-                state.breaker.reset();
-                state.opened_at = None;
-            }
-        }
-
-        let started_at = Instant::now();
-        let result = op().await;
-        let duration = started_at.elapsed().as_secs_f64();
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        match result {
-            Ok(value) => {
-                state.breaker.record_success_and_maybe_close(duration);
-                if !state.breaker.is_open() {
-                    state.opened_at = None;
-                }
-                Ok(value)
-            }
-            Err(err) => {
-                let was_open = state.breaker.is_open();
-                state.breaker.record_failure_and_maybe_trip(duration);
-                if !was_open && state.breaker.is_open() {
-                    state.opened_at = Some(Instant::now());
-                }
-                Err(BreakerError::Operation(err))
+        match self.breaker.call(op).await {
+            Ok(value) => Ok(value),
+            Err(CircuitError::Execution(error)) => Err(BreakerError::Operation(error)),
+            Err(
+                CircuitError::Open { .. }
+                | CircuitError::HalfOpenLimitReached { .. }
+                | CircuitError::BulkheadFull { .. },
+            ) => Err(BreakerError::Open),
+            Err(CircuitError::Storage(error)) => {
+                tracing::error!("circuit breaker storage failed: {error}");
+                Err(BreakerError::Open)
             }
         }
     }

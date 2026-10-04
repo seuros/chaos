@@ -1,67 +1,145 @@
+//! Application update ordering and resource cleanup, not generic FSM semantics.
 use super::*;
+use chaos_kern::auth::AuthCredentialsStoreMode;
+use std::time::Duration;
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
+};
 
-#[test]
-fn workflow_covers_browser_device_fallback_and_cancel_paths() {
-    let mut wf = LoginFlowWorkflow::new();
-    assert_eq!(wf.current_state(), LoginFlowLifecycleState::Idle);
-
-    wf.start_browser();
-    assert_eq!(wf.current_state(), LoginFlowLifecycleState::StartingBrowser);
-
-    wf.browser_ready();
-    assert_eq!(
-        wf.current_state(),
-        LoginFlowLifecycleState::WaitingForBrowser
+fn options(home: &tempfile::TempDir) -> ServerOptions {
+    let mut opts = ServerOptions::new(
+        home.path().to_path_buf(),
+        "login-flow-test".into(),
+        None,
+        AuthCredentialsStoreMode::File,
     );
-
-    wf.succeed();
-    assert_eq!(wf.current_state(), LoginFlowLifecycleState::Succeeded);
-
-    let mut wf = LoginFlowWorkflow::new();
-    wf.start_device_code();
-    assert_eq!(
-        wf.current_state(),
-        LoginFlowLifecycleState::RequestingDeviceCode
-    );
-
-    wf.device_code_unsupported();
-    assert_eq!(wf.current_state(), LoginFlowLifecycleState::StartingBrowser);
-
-    wf.browser_ready();
-    assert_eq!(
-        wf.current_state(),
-        LoginFlowLifecycleState::WaitingForBrowser
-    );
-
-    let mut wf = LoginFlowWorkflow::new();
-    wf.start_device_code();
-    wf.device_code_ready();
-    assert_eq!(
-        wf.current_state(),
-        LoginFlowLifecycleState::WaitingForDeviceCode
-    );
-
-    wf.cancel();
-    assert_eq!(wf.current_state(), LoginFlowLifecycleState::Cancelled);
+    opts.open_browser = false;
+    opts.port = 0;
+    opts
+}
+async fn next(handle: &mut LoginFlowHandle) -> LoginFlowUpdate {
+    tokio::time::timeout(Duration::from_secs(5), handle.recv())
+        .await
+        .unwrap_or_else(|_| panic!("login update timed out"))
+        .unwrap_or_else(|| panic!("login update stream closed early"))
 }
 
-#[test]
-fn illegal_transition_is_rejected_and_state_unchanged() {
-    // Drive the raw machine so the wrapper's debug_assert does not fire:
-    // succeeding from Idle is not a declared transition.
-    let mut machine = DynamicLoginFlowLifecycle::new(());
-    assert_eq!(machine.current_state(), LoginFlowLifecycleState::Idle);
-
-    assert!(machine.handle(LoginFlowLifecycleEvent::Succeed).is_err());
-    assert_eq!(machine.current_state(), LoginFlowLifecycleState::Idle);
+#[tokio::test]
+async fn cancellation_before_first_poll_is_not_lost_and_emits_only_cancelled() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut handle, driver) = start_login_flow(options(&home), LoginFlowMode::Browser);
+    handle.cancel();
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::Cancelled
+    ));
+    assert!(handle.recv().await.is_none());
+    driver.await.unwrap();
 }
 
-#[cfg(debug_assertions)]
-#[test]
-#[should_panic(expected = "illegal LoginFlow transition: succeed")]
-fn wrapper_panics_when_transition_drifts() {
-    // The runner must never emit a Succeeded update without a legal
-    // transition; the wrapper guards that invariant in debug builds.
-    let mut wf = LoginFlowWorkflow::new();
-    wf.succeed();
+#[tokio::test]
+async fn callback_server_remembers_shutdown_before_its_first_poll() {
+    let home = tempfile::tempdir().unwrap();
+    let server = run_login_server(options(&home)).unwrap();
+    server.cancel();
+    let result = tokio::time::timeout(Duration::from_secs(5), server.block_until_done())
+        .await
+        .unwrap();
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn browser_cancellation_stops_the_listener_and_closes_the_update_stream() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut handle, driver) = start_login_flow(options(&home), LoginFlowMode::Browser);
+    let LoginFlowUpdate::BrowserOpened { actual_port, .. } = next(&mut handle).await else {
+        panic!("expected browser listener");
+    };
+    handle.cancel();
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::Cancelled
+    ));
+    assert!(handle.recv().await.is_none());
+    driver.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if std::net::TcpListener::bind(("127.0.0.1", actual_port)).is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn unsupported_device_flow_fails_without_browser_when_not_permitted() {
+    let home = tempfile::tempdir().unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/accounts/deviceauth/usercode"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut opts = options(&home);
+    opts.issuer = server.uri();
+    let (mut handle, driver) = start_login_flow(
+        opts,
+        LoginFlowMode::DeviceCode {
+            allow_browser_fallback: false,
+        },
+    );
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::DeviceCodePending
+    ));
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::Failed { .. }
+    ));
+    assert!(handle.recv().await.is_none());
+    driver.await.unwrap();
+}
+
+#[tokio::test]
+async fn permitted_device_fallback_emits_unsupported_before_browser() {
+    let home = tempfile::tempdir().unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/accounts/deviceauth/usercode"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut opts = options(&home);
+    opts.issuer = server.uri();
+    let (mut handle, driver) = start_login_flow(
+        opts,
+        LoginFlowMode::DeviceCode {
+            allow_browser_fallback: true,
+        },
+    );
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::DeviceCodePending
+    ));
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::DeviceCodeUnsupported
+    ));
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::BrowserOpened { .. }
+    ));
+    handle.cancel();
+    assert!(matches!(
+        next(&mut handle).await,
+        LoginFlowUpdate::Cancelled
+    ));
+    assert!(handle.recv().await.is_none());
+    driver.await.unwrap();
 }

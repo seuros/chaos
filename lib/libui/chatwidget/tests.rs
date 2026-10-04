@@ -2267,8 +2267,6 @@ pub(super) async fn make_chatwidget_manual(
         queued_message_edit_binding: crate::key_hint::alt(KeyCode::Up),
         suppress_session_configured_redraw: false,
         pending_notification: None,
-        quit_shortcut_expires_at: None,
-        quit_shortcut_key: None,
         is_review_mode: false,
         pre_review_token_info: None,
         needs_final_message_separator: false,
@@ -2286,8 +2284,8 @@ pub(super) async fn make_chatwidget_manual(
         status_line_branch_cwd: None,
         status_line_branch_pending: false,
         status_line_branch_lookup_complete: false,
-        status_line_script_render_generation: 0,
-        external_editor_state: ExternalEditorState::Closed,
+        status_line_script: super::status_script::StatusScriptRender::default(),
+        external_editor: super::external_editor::ExternalEditor::default(),
         last_rendered_user_message_event: None,
         halluacinate: None,
     };
@@ -3974,6 +3972,28 @@ async fn alt_up_edits_most_recent_queued_message() {
         chat.queued_user_messages.front().unwrap().text,
         "first queued"
     );
+
+    assert!(!chat.activate_external_editor());
+    assert!(chat.request_external_editor());
+    assert!(!chat.request_external_editor());
+    assert!(chat.activate_external_editor());
+    assert!(!chat.activate_external_editor());
+    let result = chat
+        .with_external_editor(async { Err::<(), _>("editor failed") })
+        .await;
+    assert_eq!(result, Err("editor failed"));
+    assert_eq!(chat.external_editor_state(), ExternalEditorState::Closed);
+    assert_eq!(chat.composer_text_with_pending(), "second queued");
+
+    assert!(chat.request_external_editor());
+    assert!(chat.activate_external_editor());
+    let mut operation = Box::pin(chat.with_external_editor(std::future::pending::<()>()));
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(std::future::Future::poll(operation.as_mut(), &mut cx).is_pending());
+    drop(operation);
+    assert_eq!(chat.external_editor_state(), ExternalEditorState::Closed);
+    assert_eq!(chat.composer_text_with_pending(), "second queued");
+    assert_eq!(chat.queued_user_messages.len(), 1);
 }
 
 async fn assert_shift_left_edits_most_recent_queued_message_for_terminal(
@@ -8520,7 +8540,7 @@ async fn default_halluacinate_status_line_renderer_renders_default_line() {
 
     chat.set_status_line_script_rendered(
         None,
-        chat.status_line_script_render_generation,
+        chat.status_line_script.generation(),
         true,
         Some(ratatui::text::Line::from(text)),
     );
@@ -8539,13 +8559,20 @@ async fn status_line_script_render_ignores_stale_generation_or_process() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
     let process_id = ProcessId::new();
     chat.process_id = Some(process_id);
-    chat.status_line_script_render_generation = 7;
+    let stale_generation = chat.status_line_script.invalidate();
+    let (released, cancelled) = tokio::sync::oneshot::channel::<()>();
+    chat.status_line_script.launch(tokio::spawn(async move {
+        let _released = released;
+        std::future::pending::<()>().await;
+    }));
+    let generation = chat.status_line_script.invalidate();
+    assert!(cancelled.await.is_err());
     chat.bottom_pane.set_status_line_enabled(true);
     chat.set_status_line(Some(ratatui::text::Line::from("existing")));
 
     chat.set_status_line_script_rendered(
         Some(process_id),
-        6,
+        stale_generation,
         true,
         Some(ratatui::text::Line::from("stale generation")),
     );
@@ -8553,7 +8580,7 @@ async fn status_line_script_render_ignores_stale_generation_or_process() {
 
     chat.set_status_line_script_rendered(
         Some(ProcessId::new()),
-        7,
+        generation,
         true,
         Some(ratatui::text::Line::from("stale process")),
     );
@@ -8561,11 +8588,19 @@ async fn status_line_script_render_ignores_stale_generation_or_process() {
 
     chat.set_status_line_script_rendered(
         Some(process_id),
-        7,
+        generation,
         true,
         Some(ratatui::text::Line::from("fresh")),
     );
     assert_eq!(chat.status_line_text(), Some("fresh".to_string()));
+
+    let (released, cancelled) = tokio::sync::oneshot::channel::<()>();
+    chat.status_line_script.launch(tokio::spawn(async move {
+        let _released = released;
+        std::future::pending::<()>().await;
+    }));
+    drop(chat);
+    assert!(cancelled.await.is_err());
 }
 
 #[cfg(test)]
@@ -8573,11 +8608,11 @@ async fn missing_status_line_script_renderer_clears_line_without_rust_fallback()
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-test")).await;
     let process_id = ProcessId::new();
     chat.process_id = Some(process_id);
-    chat.status_line_script_render_generation = 7;
+    let generation = chat.status_line_script.invalidate();
     chat.bottom_pane.set_status_line_enabled(true);
     chat.set_status_line(Some(ratatui::text::Line::from("script")));
 
-    chat.set_status_line_script_rendered(Some(process_id), 7, false, None);
+    chat.set_status_line_script_rendered(Some(process_id), generation, false, None);
 
     assert_eq!(chat.status_line_text(), None);
 }

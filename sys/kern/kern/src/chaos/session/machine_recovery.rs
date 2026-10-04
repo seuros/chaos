@@ -61,18 +61,12 @@ impl Session {
     }
 
     pub(crate) async fn machine_recovery_parked(&self) -> bool {
-        self.state.lock().await.machine_recovery.parked
+        self.state.lock().await.machine_recovery.parked()
     }
 
     pub(crate) async fn discard_machine_wait_request(&self, turn: &TurnContext) {
-        let requested = self
-            .state
-            .lock()
-            .await
-            .machine_recovery
-            .requested_turn
-            .as_deref()
-            == Some(&turn.sub_id);
+        let requested =
+            self.state.lock().await.machine_recovery.requested_turn() == Some(&turn.sub_id);
         if requested {
             self.cancel_machine_recovery_wait().await;
         }
@@ -123,14 +117,14 @@ impl Session {
                 let error = "machine observations unavailable: probe timed out".to_string();
                 let changed = {
                     let mut state = self.state.lock().await;
-                    let previous = state.machine_recovery.phase;
+                    let previous = state.machine_recovery.phase();
                     state.machine_recovery.observe(
                         &Err(error.clone()),
                         &config.machine_warnings,
                         Instant::now(),
                         SystemTime::now(),
                     );
-                    previous != state.machine_recovery.phase
+                    previous != state.machine_recovery.phase()
                 };
                 if changed {
                     self.send_event_raw(Event {
@@ -163,7 +157,7 @@ impl Session {
             let mut state = self.state.lock().await;
             let recovery = &mut state.machine_recovery;
             if recovery.context.as_ref() != Some(&request) {
-                let old = if recovery.wait_id.is_some() {
+                let old = if recovery.wait_id().is_some() {
                     recovery.cancel_wait()
                 } else {
                     None
@@ -200,14 +194,14 @@ impl Session {
                 return Err("machine observation context changed".into());
             }
             let recovery = &mut state.machine_recovery;
-            let previous = recovery.phase;
+            let previous = recovery.phase();
             recovery.observe(
                 &observation,
                 &config.machine_warnings,
                 Instant::now(),
                 SystemTime::now(),
             );
-            let notice = (previous != recovery.phase).then_some(match recovery.phase {
+            let notice = (previous != recovery.phase()).then_some(match recovery.phase() {
                 Phase::Recovered => "Machine recovery confirmed. A registered wait can wake the model to reassess; commands are not restarted.",
                 Phase::Stabilizing => "Machine conditions improving; observing the recovery stability window.",
                 Phase::Unavailable => "Machine recovery monitoring unavailable; stability window reset.",
@@ -215,7 +209,10 @@ impl Session {
                 Phase::Warning => "Machine warning active. Recovery is not confirmed.",
                 Phase::Healthy => "Machine monitoring active.",
             });
-            let wake = recovery.parked.then(|| recovery.wait_id.clone()).flatten();
+            let wake = recovery
+                .parked()
+                .then(|| recovery.wait_id().map(str::to_owned))
+                .flatten();
             (notice, wake)
         };
         if let Some(message) = notice {
@@ -230,8 +227,8 @@ impl Session {
         if let Some(id) = wake {
             // Recheck under the state lock to serialize cancellation with publication.
             let state = self.state.lock().await;
-            if state.machine_recovery.wait_id.as_ref() == Some(&id) {
-                if state.machine_recovery.phase == Phase::Recovered {
+            if state.machine_recovery.wait_id() == Some(id.as_str()) {
+                if state.machine_recovery.phase() == Phase::Recovered {
                     self.services.internal_task_store.complete(
                         &id,
                         TaskState::Succeeded,
@@ -261,14 +258,8 @@ impl Session {
 
     /// Invoked after all tool results in one sample have entered the journal.
     pub(crate) async fn finish_machine_wait_request(&self, turn: &TurnContext, tool_count: usize) {
-        let requested = self
-            .state
-            .lock()
-            .await
-            .machine_recovery
-            .requested_turn
-            .as_deref()
-            == Some(&turn.sub_id);
+        let requested =
+            self.state.lock().await.machine_recovery.requested_turn() == Some(&turn.sub_id);
         if !requested {
             return;
         }
@@ -281,12 +272,7 @@ impl Session {
             return;
         }
         let mut state = self.state.lock().await;
-        if state.machine_recovery.requested_turn.as_deref() == Some(&turn.sub_id) {
-            state.machine_recovery.requested_turn = None;
-            let Some(id) = state.machine_recovery.wait_id.clone() else {
-                return;
-            };
-            state.machine_recovery.parked = true;
+        if let Some(id) = state.machine_recovery.park_wait(&turn.sub_id) {
             let now = jiff::Timestamp::now().to_string();
             // Outstanding work keeps non-interactive clients from declaring the
             // parked session quiescent before the monitor has a result.
@@ -322,10 +308,10 @@ impl Session {
     pub(crate) async fn machine_recovery_allows_wake(&self) -> bool {
         {
             let state = self.state.lock().await;
-            if !state.machine_recovery.parked {
+            if !state.machine_recovery.parked() {
                 return true;
             }
-            if state.machine_recovery.phase != Phase::Recovered {
+            if state.machine_recovery.phase() != Phase::Recovered {
                 return false;
             }
         }
@@ -333,7 +319,7 @@ impl Session {
             return false;
         }
         let state = self.state.lock().await;
-        state.machine_recovery.parked && state.machine_recovery.phase == Phase::Recovered
+        state.machine_recovery.parked() && state.machine_recovery.phase() == Phase::Recovered
     }
 }
 

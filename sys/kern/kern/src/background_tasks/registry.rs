@@ -9,12 +9,14 @@ use tokio::sync::{Mutex, Notify, watch};
 
 mod delivery;
 mod lifecycle;
+mod task;
 use delivery::TaskDeliveryEvent;
+use task::TaskRecord;
 
 #[derive(Default)]
 struct RegistryState {
-    tasks: BTreeMap<String, BackgroundTask>,
-    policy: WakePolicy,
+    tasks: BTreeMap<String, TaskRecord>,
+    policy: lifecycle::DynamicWakeAdmission<()>,
     journal: Vec<TaskJournalEvent>,
     active_turn: bool,
     blocked: Option<String>,
@@ -22,6 +24,12 @@ struct RegistryState {
     continuation: Option<String>,
     output_schema: Option<Value>,
     recovery_context: Option<chaos_ipc::background_tasks::TaskRecoveryContext>,
+}
+
+impl RegistryState {
+    fn policy(&self) -> WakePolicy {
+        lifecycle::policy(&self.policy)
+    }
 }
 
 pub(crate) struct TaskRegistry {
@@ -72,15 +80,15 @@ impl TaskRegistry {
             outstanding_tasks: state
                 .tasks
                 .values()
-                .filter(|t| !t.state.is_terminal())
+                .filter(|t| !t.state().is_terminal())
                 .count(),
-            pending_completions: state.tasks.values().filter(|t| is_pending(t)).count(),
-            wake_policy: state.policy,
+            pending_completions: state.tasks.values().filter(|t| t.pending()).count(),
+            wake_policy: state.policy(),
             blocked: state.blocked.clone().or_else(|| {
                 state
                     .tasks
                     .values()
-                    .any(|task| task.state == TaskState::InputRequired)
+                    .any(|task| task.state() == TaskState::InputRequired)
                     .then(|| "background task requires input".into())
             }),
         });
@@ -94,56 +102,69 @@ impl TaskRegistry {
     pub(crate) async fn register(&self, mut task: BackgroundTask) {
         task.result = task.result.map(bound_result);
         let mut state = self.state.lock().await;
-        if let Some(previous) = state.tasks.get(&task.id) {
-            let mut validated = previous.clone();
-            if !lifecycle::transition(&mut validated, task.state) {
+        let id = task.id.clone();
+        let task = if let Some(previous) = state.tasks.get_mut(&id) {
+            if !previous.replace(task) {
                 return;
             }
-            task.origin_turn_id = task
-                .origin_turn_id
-                .or_else(|| previous.origin_turn_id.clone());
-            task.execution_id = task.execution_id.or_else(|| previous.execution_id.clone());
-            task.created_at = previous.created_at.clone();
-        }
+            previous.snapshot()
+        } else {
+            let record = TaskRecord::restore(task);
+            let task = record.snapshot();
+            state.tasks.insert(id, record);
+            task
+        };
         state.journal.push(TaskJournalEvent::Upsert {
-            task: Box::new(task.clone()),
+            task: Box::new(task),
         });
-        state.tasks.insert(task.id.clone(), task);
         self.publish(&state);
     }
 
     pub(crate) async fn get(&self, id: &str) -> Option<BackgroundTask> {
-        self.state.lock().await.tasks.get(id).cloned()
+        self.state
+            .lock()
+            .await
+            .tasks
+            .get(id)
+            .map(TaskRecord::snapshot)
     }
 
     /// Revoke a session-local wake, including a success already queued for admission.
     pub(crate) async fn cancel_machine_wake(&self, id: &str) {
-        let Some(mut task) = self.get(id).await else {
+        let mut state = self.state.lock().await;
+        let Some(task) = state.tasks.get_mut(id) else {
             return;
         };
-        if task.source != Some(TaskSource::MachineRecovery) {
+        if task.data().source != Some(TaskSource::MachineRecovery) {
             return;
         }
-        if !lifecycle::transition(&mut task, TaskState::Cancelled) {
+        if !task.transition(TaskState::Cancelled) {
             return;
         }
-        task.notify = false;
-        delivery::apply(&mut task, TaskDeliveryEvent::Deliver);
-        self.register(task).await;
+        task.data_mut().notify = false;
+        task.delivery(TaskDeliveryEvent::Deliver);
+        let task = task.snapshot();
+        state.journal.push(TaskJournalEvent::Upsert {
+            task: Box::new(task),
+        });
+        self.publish(&state);
     }
 
     /// Atomically coalesce wake retries without reopening delivered records.
     pub(crate) async fn register_wakes_if_absent(&self, tasks: Vec<BackgroundTask>) {
         let mut state = self.state.lock().await;
         let mut changed = false;
-        for task in tasks {
+        for mut task in tasks {
             if state.tasks.contains_key(&task.id) {
                 continue;
             }
+            task.result = task.result.map(bound_result);
             state.journal.push(TaskJournalEvent::Upsert {
                 task: Box::new(task.clone()),
             });
-            state.tasks.insert(task.id.clone(), task);
+            state
+                .tasks
+                .insert(task.id.clone(), TaskRecord::restore(task));
             changed = true;
         }
         if changed {
@@ -152,7 +173,13 @@ impl TaskRegistry {
     }
 
     pub(crate) async fn list(&self) -> Vec<BackgroundTask> {
-        self.state.lock().await.tasks.values().cloned().collect()
+        self.state
+            .lock()
+            .await
+            .tasks
+            .values()
+            .map(TaskRecord::snapshot)
+            .collect()
     }
 
     pub(crate) async fn find_source(&self, source: &TaskSource) -> Option<BackgroundTask> {
@@ -161,9 +188,9 @@ impl TaskRegistry {
             .await
             .tasks
             .values()
-            .filter(|task| task.source.as_ref() == Some(source))
-            .max_by_key(|task| &task.created_at)
-            .cloned()
+            .filter(|task| task.data().source.as_ref() == Some(source))
+            .max_by_key(|task| &task.data().created_at)
+            .map(TaskRecord::snapshot)
     }
 
     pub(crate) async fn complete(
@@ -175,18 +202,18 @@ impl TaskRegistry {
     ) -> Option<BackgroundTask> {
         let mut state = self.state.lock().await;
         let task = state.tasks.get_mut(id)?;
-        if task.state.is_terminal() {
-            return Some(task.clone());
+        if task.state().is_terminal() {
+            return Some(task.snapshot());
         }
-        if !lifecycle::transition(task, task_state) {
-            return Some(task.clone());
+        if !task.transition(task_state) {
+            return Some(task.snapshot());
         }
-        task.status_message = message;
-        task.updated_at = jiff::Timestamp::now().to_string();
+        task.data_mut().status_message = message;
+        task.data_mut().updated_at = jiff::Timestamp::now().to_string();
         if result.is_some() {
-            task.result = result.map(bound_result);
+            task.data_mut().result = result.map(bound_result);
         }
-        let task = task.clone();
+        let task = task.snapshot();
         state.journal.push(TaskJournalEvent::Upsert {
             task: Box::new(task.clone()),
         });
@@ -197,9 +224,9 @@ impl TaskRegistry {
     pub(crate) async fn set_origin(&self, id: &str, call_id: &str) {
         let mut state = self.state.lock().await;
         if let Some(task) = state.tasks.get_mut(id) {
-            task.origin_call_id = Some(call_id.to_owned());
-            delivery::apply(task, TaskDeliveryEvent::BindOrigin);
-            let task = task.clone();
+            task.data_mut().origin_call_id = Some(call_id.to_owned());
+            task.delivery(TaskDeliveryEvent::BindOrigin);
+            let task = task.snapshot();
             state.journal.push(TaskJournalEvent::Upsert {
                 task: Box::new(task),
             });
@@ -216,12 +243,12 @@ impl TaskRegistry {
         let mut state = self.state.lock().await;
         if let Some(task) = state.tasks.get_mut(id) {
             if origin_turn.is_some() {
-                task.origin_turn_id = origin_turn;
+                task.data_mut().origin_turn_id = origin_turn;
             }
             if execution.is_some() {
-                task.execution_id = execution;
+                task.data_mut().execution_id = execution;
             }
-            let task = task.clone();
+            let task = task.snapshot();
             state.journal.push(TaskJournalEvent::Upsert {
                 task: Box::new(task),
             });
@@ -234,16 +261,16 @@ impl TaskRegistry {
         let mut state = self.state.lock().await;
         let mut updates = Vec::new();
         for task in state.tasks.values_mut() {
-            if task.origin_call_id.as_deref() == Some(call_id) && !task.ready {
-                if task.state == TaskState::Submitting {
+            if task.data().origin_call_id.as_deref() == Some(call_id) && !task.ready() {
+                if task.state() == TaskState::Submitting {
                     // An error response does not establish whether a remote
                     // server accepted the submission. Never retry it implicitly.
-                    lifecycle::transition(task, TaskState::SubmissionUnknown);
-                    task.notify = false;
+                    task.transition(TaskState::SubmissionUnknown);
+                    task.data_mut().notify = false;
                 }
-                delivery::apply(task, TaskDeliveryEvent::CommitOrigin);
+                task.delivery(TaskDeliveryEvent::CommitOrigin);
                 updates.push(TaskJournalEvent::Upsert {
-                    task: Box::new(task.clone()),
+                    task: Box::new(task.snapshot()),
                 });
             }
         }
@@ -251,9 +278,9 @@ impl TaskRegistry {
             let mut delivered = Vec::new();
             for id in ids {
                 if let Some(task) = state.tasks.get_mut(&id)
-                    && !task.delivered
+                    && !task.delivered()
                 {
-                    delivery::apply(task, TaskDeliveryEvent::Deliver);
+                    task.delivery(TaskDeliveryEvent::Deliver);
                     delivered.push(id);
                 }
             }
@@ -282,20 +309,20 @@ impl TaskRegistry {
 
     pub(crate) async fn pending(&self) -> Vec<BackgroundTask> {
         let state = self.state.lock().await;
-        if state.policy != WakePolicy::Enabled
+        if state.policy() != WakePolicy::Enabled
             || state.blocked.is_some()
             || state
                 .tasks
                 .values()
-                .any(|task| task.state == TaskState::InputRequired)
+                .any(|task| task.state() == TaskState::InputRequired)
         {
             return Vec::new();
         }
         state
             .tasks
             .values()
-            .filter(|task| is_pending(task))
-            .cloned()
+            .filter(|task| task.pending())
+            .map(TaskRecord::snapshot)
             .collect()
     }
 
@@ -304,10 +331,10 @@ impl TaskRegistry {
         let mut delivered = Vec::new();
         for id in ids {
             if let Some(task) = state.tasks.get_mut(id)
-                && task.state.is_terminal()
-                && !task.delivered
+                && task.state().is_terminal()
+                && !task.delivered()
             {
-                delivery::apply(task, TaskDeliveryEvent::Deliver);
+                task.delivery(TaskDeliveryEvent::Deliver);
                 delivered.push(id.clone());
             }
         }
@@ -325,7 +352,7 @@ impl TaskRegistry {
             self.observer_cancel.cancel();
         }
         let mut state = self.state.lock().await;
-        if state.policy != policy && lifecycle::set_policy(&mut state.policy, policy) {
+        if state.policy() != policy && lifecycle::set_policy(&mut state.policy, policy) {
             state.journal.push(TaskJournalEvent::WakePolicy { policy });
             self.publish(&state);
         }
@@ -420,16 +447,20 @@ impl TaskRegistry {
             };
             match event {
                 TaskJournalEvent::Upsert { task } => {
-                    state.tasks.insert(task.id.clone(), task.as_ref().clone());
+                    state
+                        .tasks
+                        .insert(task.id.clone(), TaskRecord::restore(task.as_ref().clone()));
                 }
                 TaskJournalEvent::Delivered { task_ids, .. } => {
                     for id in task_ids {
                         if let Some(task) = state.tasks.get_mut(id) {
-                            task.delivered = true;
+                            task.delivery(TaskDeliveryEvent::Deliver);
                         }
                     }
                 }
-                TaskJournalEvent::WakePolicy { policy } => state.policy = *policy,
+                TaskJournalEvent::WakePolicy { policy } => {
+                    state.policy = lifecycle::restore_policy(*policy)
+                }
                 TaskJournalEvent::ContinuationStarted { turn_id } => {
                     state.continuation = Some(turn_id.clone())
                 }
@@ -446,28 +477,26 @@ impl TaskRegistry {
         }
         // Host observations and opt-in waits belong only to the live session.
         for task in state.tasks.values_mut() {
-            if task.source == Some(TaskSource::MachineRecovery) {
-                task.state = TaskState::Cancelled;
-                task.notify = false;
-                task.delivered = true;
+            if task.data().source == Some(TaskSource::MachineRecovery) {
+                let mut record = task.snapshot();
+                record.state = TaskState::Cancelled;
+                record.notify = false;
+                record.delivered = true;
+                *task = TaskRecord::restore(record);
             }
         }
         // Never blindly replay a model continuation which may already have
         // performed side effects before its owner crashed.
-        if state.continuation.is_some() && state.policy == WakePolicy::Enabled {
+        if state.continuation.is_some() && state.policy() == WakePolicy::Enabled {
             lifecycle::set_policy(&mut state.policy, WakePolicy::Interrupted);
         }
         // A saved handle without a committed tool response needs owner
         // reconciliation, not an out-of-order automatic notification.
-        if state.tasks.values().any(|task| !task.ready) && state.policy == WakePolicy::Enabled {
+        if state.tasks.values().any(|task| !task.ready()) && state.policy() == WakePolicy::Enabled {
             lifecycle::set_policy(&mut state.policy, WakePolicy::Interrupted);
         }
         self.publish(&state);
     }
-}
-
-fn is_pending(task: &BackgroundTask) -> bool {
-    delivery::pending(task)
 }
 
 /// Keep a bounded diagnostic result, not an unbounded copy of producer output.

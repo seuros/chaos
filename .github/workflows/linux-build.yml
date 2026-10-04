@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    container: rust:1.98-bookworm
+    container: rust:1.99-bookworm
     timeout-minutes: 60
     defaults:
       run:
@@ -39,9 +39,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.1
         with:
           key: linux-bookworm-release
-      - name: Test clamp and build portable runtime binaries
+      - name: Test clamp and Linux inhibitor, then build runtime binaries
         run: |
           cargo test --locked --release -p chaos-clamp --lib
+          cargo test --locked --release -p chaos-amphetamine --lib
           cargo build --locked --release --bin chaos --bin chaos_journald --bin alcatraz --bin chaos-forkve-wrapper
       - name: Package and smoke-test
         run: |

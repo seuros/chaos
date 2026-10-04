@@ -29,6 +29,7 @@ tokio = { workspace = true, features = [
     "signal",
 ] }
 state-machines = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 urlencoding = { workspace = true }

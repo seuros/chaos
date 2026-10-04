@@ -162,7 +162,11 @@ fn moonshotai_accounts_save_reload_and_disconnect_credentials_independently() {
         ("moonshotai-coding", "sk-kimi-coding-test"),
         ("moonshotai", "sk-meteredreplaced"),
     ] {
-        *widget.sign_in_state.write().unwrap() = SignInState::PickProvider;
+        widget
+            .sign_in_state
+            .write()
+            .unwrap()
+            .transition(SignInState::PickProvider);
         widget.highlighted_provider = provider_index(&widget, id);
         widget.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         std::assert_matches!(widget.sign_in_state(), SignInState::ApiKeyEntry(_));

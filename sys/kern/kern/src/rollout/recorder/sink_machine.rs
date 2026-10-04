@@ -13,15 +13,26 @@ state_machine! {
     initial: Pending,
     states: [
         Disabled,
-        Pending(Option<PendingBatch>),
-        Active(Option<ActiveJournalWriter>),
+        Pending(PendingBatch),
+        Active(ActiveJournalWriter),
     ],
     events {
-        connect { transition: { from: Pending, to: Active } }
+        connect {
+            payload: Option<ActiveJournalWriter>,
+            transition: { from: Pending, to: Active, data: own_writer }
+        }
         disable {
             transition: { from: Pending, to: Disabled }
             transition: { from: Active, to: Disabled }
             transition: { from: Disabled, to: Disabled }
         }
+    }
+}
+
+impl<C, S> JournalStorage<C, S> {
+    fn own_writer(&self, writer: &mut Option<ActiveJournalWriter>) -> ActiveJournalWriter {
+        writer
+            .take()
+            .unwrap_or_else(|| unreachable!("connect carries an owned journal writer"))
     }
 }

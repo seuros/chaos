@@ -7,10 +7,10 @@ fn resetting_selection_does_not_end_preview_or_acknowledge_rollback() {
     state.preview();
     assert!(state.primed());
     assert!(state.preview_active());
-    let pending = PendingBacktrackRollback {
+    let mut pending = PendingBacktrackRollback {
         selection: super::super::BacktrackSelection {
             nth_user_message: 0,
-            prefill: String::new(),
+            prefill: "original draft".into(),
             text_elements: Vec::new(),
             local_image_paths: Vec::new(),
             remote_image_urls: Vec::new(),
@@ -23,8 +23,20 @@ fn resetting_selection_does_not_end_preview_or_acknowledge_rollback() {
     assert!(state.preview_active());
     state.close_preview();
     assert!(!state.preview_active());
-    assert!(state.pending_rollback.is_some());
+    assert!(state.rollback_pending());
+    pending.selection.prefill = "replacement".into();
     assert!(!state.request_rollback(pending));
-    assert!(state.take_rollback().is_some());
+    assert_eq!(
+        state.take_rollback().unwrap().selection.prefill,
+        "original draft"
+    );
     assert!(state.take_rollback().is_none());
+    assert!(!state.rollback_pending());
+    state.preview();
+    assert!(state.preview_active());
+    assert!(!state.primed());
+    state.prime();
+    state.close_preview();
+    assert!(state.primed());
+    assert!(!state.preview_active());
 }

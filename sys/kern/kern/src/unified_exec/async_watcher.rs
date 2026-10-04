@@ -1,11 +1,9 @@
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tokio::time::Instant;
-use tokio::time::Sleep;
 
 use super::UnifiedExecContext;
 use super::process::UnifiedExecProcess;
@@ -22,6 +20,7 @@ use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::events::ToolEventStage;
 use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
+use crate::unified_exec::output_lifecycle::{Stream, StreamData};
 
 pub(crate) const TRAILING_OUTPUT_GRACE: Duration = Duration::from_millis(100);
 
@@ -41,7 +40,7 @@ pub(crate) fn start_streaming_output(
     context: &UnifiedExecContext,
     transcript: Arc<Mutex<HeadTailBuffer>>,
 ) {
-    let mut receiver = process.output_receiver();
+    let receiver = process.output_receiver();
     let output_drained = process.output_drained_notify();
     let exit_token = process.cancellation_token();
 
@@ -52,51 +51,65 @@ pub(crate) fn start_streaming_output(
     tokio::spawn(async move {
         use tokio::sync::broadcast::error::RecvError;
 
-        let mut pending = Vec::<u8>::new();
-        let mut emitted_deltas: usize = 0;
+        let mut stream = Stream::new(StreamData {
+            receiver,
+            pending: Vec::new(),
+            emitted_deltas: 0,
+            transcript,
+            session: session_ref,
+            turn: turn_ref,
+            call_id,
+        });
 
-        let mut grace_sleep: Option<Pin<Box<Sleep>>> = None;
+        enum StreamEvent {
+            Exit,
+            Deadline,
+            Received(Result<Vec<u8>, RecvError>),
+        }
 
         loop {
-            tokio::select! {
-                _ = exit_token.cancelled(), if grace_sleep.is_none() => {
-                    let deadline = Instant::now() + TRAILING_OUTPUT_GRACE;
-                    grace_sleep.replace(Box::pin(tokio::time::sleep_until(deadline)));
-                }
-
+            let deadline = stream.trailing_deadline();
+            let event = tokio::select! {
+                _ = exit_token.cancelled(), if deadline.is_none() => StreamEvent::Exit,
                 _ = async {
-                    if let Some(sleep) = grace_sleep.as_mut() {
-                        sleep.as_mut().await;
+                    if let Some(at) = deadline {
+                        tokio::time::sleep_until(at).await;
+                    } else {
+                        std::future::pending::<()>().await;
                     }
-                }, if grace_sleep.is_some() => {
-                    output_drained.notify_one();
-                    break;
-                }
-
-                received = receiver.recv() => {
+                } => StreamEvent::Deadline,
+                received = stream.data_mut().receiver.recv() => StreamEvent::Received(received),
+            };
+            match event {
+                StreamEvent::Exit => stream.observe_exit(Instant::now() + TRAILING_OUTPUT_GRACE),
+                StreamEvent::Deadline => break,
+                StreamEvent::Received(received) => {
                     let chunk = match received {
                         Ok(chunk) => chunk,
                         Err(RecvError::Lagged(_)) => {
                             continue;
-                        },
+                        }
                         Err(RecvError::Closed) => {
-                            output_drained.notify_one();
                             break;
                         }
                     };
 
+                    let data = stream.data_mut();
                     process_chunk(
-                        &mut pending,
-                        &transcript,
-                        &call_id,
-                        &session_ref,
-                        &turn_ref,
-                        &mut emitted_deltas,
+                        &mut data.pending,
+                        &data.transcript,
+                        &data.call_id,
+                        &data.session,
+                        &data.turn,
+                        &mut data.emitted_deltas,
                         chunk,
-                    ).await;
+                    )
+                    .await;
                 }
             }
         }
+        stream.finish();
+        output_drained.notify_one();
     });
 }
 

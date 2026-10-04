@@ -1,5 +1,9 @@
-use super::{SessionStatus, TurnStatus};
+use state_machines::runtime::Parallel;
 use state_machines::state_machine;
+use std::collections::HashMap;
+
+pub use session::FrontendSessionState as SessionStatus;
+pub use turn::FrontendTurnState as TurnStatus;
 
 mod session {
     use super::*;
@@ -8,37 +12,24 @@ mod session {
         dynamic: true,
         initial: Booting,
         states: [Booting, Ready, Shutdown],
+        final_states: [Shutdown],
         events {
             configure {
                 transition: { from: Booting, to: Ready }
-                transition: { from: Ready, to: Ready }
+                transition: { from: Ready, internal: true }
             }
             shutdown {
                 transition: { from: Booting, to: Shutdown }
                 transition: { from: Ready, to: Shutdown }
-                transition: { from: Shutdown, to: Shutdown }
             }
         }
     }
+}
 
-    impl SessionStatus {
-        pub(super) fn apply(&mut self, event: FrontendSessionEvent) {
-            let state = match self {
-                Self::Booting => FrontendSessionState::Booting,
-                Self::Ready => FrontendSessionState::Ready,
-                Self::Shutdown => FrontendSessionState::Shutdown,
-            };
-            let mut machine = DynamicFrontendSession::new_init_state((), state);
-            // Late configuration cannot resurrect a shutdown frontend.
-            if machine.handle(event).is_ok() {
-                *self = match machine.current_state() {
-                    FrontendSessionState::Booting => Self::Booting,
-                    FrontendSessionState::Ready => Self::Ready,
-                    FrontendSessionState::Shutdown => Self::Shutdown,
-                };
-            }
-        }
-    }
+#[derive(Debug, Clone, Default)]
+pub(super) struct PendingWork {
+    pub streams: HashMap<String, usize>,
+    pub calls: HashMap<String, usize>,
 }
 
 mod turn {
@@ -47,46 +38,105 @@ mod turn {
         name: FrontendTurn,
         dynamic: true,
         initial: Idle,
-        states: [superstate Turn { state Idle, state InFlight }],
+        states: [superstate Turn(PendingWork) { state Idle, state InFlight }],
         events {
             submit { transition: { from: Turn, to: InFlight } }
             finish { transition: { from: Turn, to: Idle } }
         }
     }
+}
 
-    impl TurnStatus {
-        pub(super) fn apply(&mut self, event: FrontendTurnEvent) {
-            let state = match self {
-                Self::Idle => FrontendTurnState::Idle,
-                Self::InFlight => FrontendTurnState::InFlight,
-            };
-            let mut machine = DynamicFrontendTurn::new_init_state((), state);
-            assert!(
-                machine.handle(event).is_ok(),
-                "frontend turn event is valid"
-            );
-            *self = match machine.current_state() {
-                FrontendTurnState::Idle => Self::Idle,
-                FrontendTurnState::InFlight => Self::InFlight,
-            };
+pub(super) struct Lifecycle {
+    regions: Parallel<session::DynamicFrontendSession<()>, turn::DynamicFrontendTurn<()>>,
+}
+
+impl Default for Lifecycle {
+    fn default() -> Self {
+        Self {
+            regions: Parallel::new(
+                session::DynamicFrontendSession::new(()),
+                turn::FrontendTurn::new(())
+                    .with_turn_data(PendingWork::default())
+                    .into_dynamic(),
+            ),
         }
     }
 }
 
-impl SessionStatus {
-    pub(super) fn configure(&mut self) {
-        self.apply(session::FrontendSessionEvent::Configure);
-    }
-    pub(super) fn shutdown(&mut self) {
-        self.apply(session::FrontendSessionEvent::Shutdown);
+impl Clone for Lifecycle {
+    fn clone(&self) -> Self {
+        let mut turn = turn::DynamicFrontendTurn::new_init_state((), self.turn());
+        assert!(turn.set_turn_data(self.pending().clone()).is_ok());
+        Self {
+            regions: Parallel::new(
+                session::DynamicFrontendSession::new_init_state((), self.status()),
+                turn,
+            ),
+        }
     }
 }
 
-impl TurnStatus {
+impl std::fmt::Debug for Lifecycle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Lifecycle")
+            .field("status", &self.status())
+            .field("turn", &self.turn())
+            .field("pending", self.pending())
+            .finish()
+    }
+}
+
+impl Lifecycle {
+    pub(super) fn status(&self) -> SessionStatus {
+        self.regions.left().current_state()
+    }
+    pub(super) fn turn(&self) -> TurnStatus {
+        self.regions.right().current_state()
+    }
+    pub(super) fn pending(&self) -> &PendingWork {
+        self.regions
+            .right()
+            .turn_data()
+            .unwrap_or_else(|| unreachable!("turn owns bookkeeping"))
+    }
+    pub(super) fn pending_mut(&mut self) -> &mut PendingWork {
+        self.regions
+            .right_mut()
+            .turn_data_mut()
+            .unwrap_or_else(|| unreachable!("turn owns bookkeeping"))
+    }
+    pub(super) fn configure(&mut self) {
+        let _ = self
+            .regions
+            .left_mut()
+            .handle(session::FrontendSessionEvent::Configure);
+    }
+    pub(super) fn shutdown(&mut self) {
+        if !self.regions.left().is_finished() {
+            assert!(
+                self.regions
+                    .left_mut()
+                    .handle(session::FrontendSessionEvent::Shutdown)
+                    .is_ok()
+            );
+        }
+        self.finish();
+    }
     pub(super) fn submit(&mut self) {
-        self.apply(turn::FrontendTurnEvent::Submit);
+        assert!(
+            self.regions
+                .right_mut()
+                .handle(turn::FrontendTurnEvent::Submit)
+                .is_ok()
+        );
     }
     pub(super) fn finish(&mut self) {
-        self.apply(turn::FrontendTurnEvent::Finish);
+        assert!(
+            self.regions
+                .right_mut()
+                .handle(turn::FrontendTurnEvent::Finish)
+                .is_ok()
+        );
+        *self.pending_mut() = PendingWork::default();
     }
 }

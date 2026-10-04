@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU32;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -21,7 +20,6 @@ use rama::service::BoxService;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use url::Url;
 
@@ -73,18 +71,11 @@ struct HttpTransportInner {
     endpoint: Url,
     open_sse_stream: bool,
     recovery_lock: Mutex<()>,
-    reconnect_delay: Mutex<Duration>,
     default_headers: Vec<(String, String)>,
     inbound_tx: mpsc::Sender<JsonRpcMessage>,
     inbound_rx: Mutex<mpsc::Receiver<JsonRpcMessage>>,
-    cached_initialize: Mutex<Option<JsonRpcMessage>>,
-    session_id: Mutex<Option<String>>,
-    negotiated_version: Mutex<Option<String>>,
-    last_event_id: Mutex<Option<String>>,
-    sse_task: Mutex<Option<JoinHandle<()>>>,
     lifecycle: std::sync::Mutex<Lifecycle>,
     closed: AtomicBool,
-    reconnect_attempt: AtomicU32,
     session_generation: AtomicU64,
     initialize_ready: Notify,
     shutdown_notify: Notify,
@@ -103,18 +94,11 @@ impl HttpTransport {
                 endpoint: config.endpoint,
                 open_sse_stream: config.open_sse_stream,
                 recovery_lock: Mutex::new(()),
-                reconnect_delay: Mutex::new(config.reconnect_delay),
                 default_headers: config.default_headers,
                 inbound_tx,
                 inbound_rx: Mutex::new(inbound_rx),
-                cached_initialize: Mutex::new(None),
-                session_id: Mutex::new(None),
-                negotiated_version: Mutex::new(None),
-                last_event_id: Mutex::new(None),
-                sse_task: Mutex::new(None),
-                lifecycle: std::sync::Mutex::new(Lifecycle::default()),
+                lifecycle: std::sync::Mutex::new(Lifecycle::new(config.reconnect_delay)),
                 closed: AtomicBool::new(false),
-                reconnect_attempt: AtomicU32::new(0),
                 session_generation: AtomicU64::new(0),
                 initialize_ready: Notify::new(),
                 shutdown_notify: Notify::new(),
@@ -123,11 +107,34 @@ impl HttpTransport {
     }
 }
 
+impl Drop for HttpTransport {
+    fn drop(&mut self) {
+        self.inner.closed.store(true, Ordering::SeqCst);
+        self.inner.lifecycle().close();
+        self.inner.shutdown_notify.notify_waiters();
+        self.inner.initialize_ready.notify_waiters();
+    }
+}
+
 impl HttpTransportInner {
     fn lifecycle(&self) -> std::sync::MutexGuard<'_, Lifecycle> {
         self.lifecycle
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn current_lifecycle(
+        &self,
+        generation: u64,
+    ) -> Result<std::sync::MutexGuard<'_, Lifecycle>, GuestError> {
+        let lifecycle = self.lifecycle();
+        if self.closed.load(Ordering::Acquire) {
+            return Err(GuestError::Disconnected);
+        }
+        if self.session_generation.load(Ordering::Acquire) != generation {
+            return Err(GuestError::SessionExpired);
+        }
+        Ok(lifecycle)
     }
 
     async fn send_message(self: Arc<Self>, message: JsonRpcMessage) -> Result<(), GuestError> {
@@ -175,16 +182,21 @@ impl HttpTransportInner {
         }
         let initialize_request = is_initialize_request(message);
         if initialize_request {
-            if !self.lifecycle().session(HttpSessionEvent::Initialize) {
+            let mut lifecycle = self.lifecycle();
+            if !lifecycle.session(HttpSessionEvent::BeginInitialization) {
                 return Err(GuestError::Disconnected);
             }
-            *self.cached_initialize.lock().await = Some(message.clone());
+            lifecycle
+                .data_mut()
+                .ok_or(GuestError::Disconnected)?
+                .cached_initialize = Some(message.clone());
         }
 
+        let generation = self.session_generation.load(Ordering::Acquire);
         let request = self.build_post_request(message, initialize_request).await?;
         let response = self.client.serve(request).await.map_err(http_error)?;
 
-        self.handle_post_response(response, initialize_request, deliver_inbound)
+        self.handle_post_response(response, initialize_request, deliver_inbound, generation)
             .await
     }
 
@@ -200,10 +212,12 @@ impl HttpTransportInner {
             .header(CONTENT_TYPE, MIME_APPLICATION_JSON);
 
         if !initialize_request {
-            if let Some(session_id) = self.session_id.lock().await.clone() {
+            let lifecycle = self.lifecycle();
+            let data = lifecycle.data().ok_or(GuestError::Disconnected)?;
+            if let Some(session_id) = &data.session_id {
                 builder = builder.header(HEADER_SESSION_ID, session_id);
             }
-            if let Some(version) = self.negotiated_version.lock().await.clone() {
+            if let Some(version) = &data.negotiated_version {
                 builder = builder.header(HEADER_PROTOCOL_VERSION, version);
             }
         }
@@ -227,20 +241,24 @@ impl HttpTransportInner {
         response: Response,
         initialize_request: bool,
         deliver_inbound: bool,
+        generation: u64,
     ) -> Result<(), GuestError> {
-        self.capture_session_id(response.headers()).await;
+        match self.capture_session_id(response.headers(), generation) {
+            Err(GuestError::SessionExpired) if !initialize_request => {}
+            result => result?,
+        }
 
         match response.status() {
             StatusCode::OK => {}
             StatusCode::ACCEPTED | StatusCode::NO_CONTENT => return Ok(()),
             StatusCode::NOT_FOUND => {
-                self.clear_session_state().await;
+                self.clear_session_state(generation)?;
                 return Err(GuestError::SessionExpired);
             }
             status => {
                 let body = collect_body_string(response).await;
                 if is_stale_session_rejection(status, body.as_deref()) {
-                    self.clear_session_state().await;
+                    self.clear_session_state(generation)?;
                     return Err(GuestError::SessionExpired);
                 }
                 return Err(GuestError::Http(format!(
@@ -260,7 +278,7 @@ impl HttpTransportInner {
             }
 
             let message: JsonRpcMessage = serde_json::from_slice(&bytes)?;
-            self.inspect_inbound_message(&message, initialize_request)
+            self.inspect_inbound_message(&message, initialize_request, generation)
                 .await?;
             if deliver_inbound {
                 self.enqueue_message(message).await?;
@@ -268,9 +286,18 @@ impl HttpTransportInner {
             Ok(())
         } else if content_type.starts_with(MIME_TEXT_EVENT_STREAM) {
             let this = Arc::clone(self);
-            tokio::spawn(async move {
+            let mut lifecycle = self.lifecycle();
+            let data = lifecycle.data_mut().ok_or(GuestError::Disconnected)?;
+            while data.streams.try_join_next().is_some() {}
+            data.streams.spawn(async move {
                 if let Err(error) = this
-                    .consume_sse_response(response, false, initialize_request, deliver_inbound)
+                    .consume_sse_response(
+                        response,
+                        false,
+                        initialize_request,
+                        deliver_inbound,
+                        generation,
+                    )
                     .await
                 {
                     tracing::warn!(error = %error, "post sse stream failed");
@@ -289,6 +316,7 @@ impl HttpTransportInner {
         self: &Arc<Self>,
         message: &JsonRpcMessage,
         initialize_request: bool,
+        generation: u64,
     ) -> Result<(), GuestError> {
         if !initialize_request {
             return Ok(());
@@ -309,38 +337,46 @@ impl HttpTransportInner {
         }
 
         let initialize: InitializeResult = serde_json::from_value(result.clone())?;
-        if !self.lifecycle().session(HttpSessionEvent::Negotiated) {
+        let mut lifecycle = self.current_lifecycle(generation)?;
+        if !lifecycle.session(HttpSessionEvent::Negotiated) {
             return Err(GuestError::Disconnected);
         }
-        *self.negotiated_version.lock().await = Some(initialize.protocol_version);
+        lifecycle
+            .data_mut()
+            .ok_or(GuestError::Disconnected)?
+            .negotiated_version = Some(initialize.protocol_version);
         self.initialize_ready.notify_waiters();
         Ok(())
     }
 
     async fn ensure_sse_task(self: &Arc<Self>) {
-        if !self.open_sse_stream
-            || !self.lifecycle().sse_enabled()
-            || self.closed.load(Ordering::Relaxed)
+        let mut lifecycle = self.lifecycle();
+        if !self.open_sse_stream || !lifecycle.sse_enabled() || self.closed.load(Ordering::Relaxed)
         {
             return;
         }
 
-        if self.session_id.lock().await.is_none() {
+        if lifecycle
+            .data()
+            .is_none_or(|data| data.session_id.is_none())
+        {
             return;
         }
 
-        let mut guard = self.sse_task.lock().await;
-        if let Some(handle) = guard.as_ref()
+        if let Some(handle) = lifecycle.stream().and_then(|stream| stream.task.as_ref())
             && !handle.is_finished()
         {
             return;
         }
-        if !self.lifecycle().sse(HttpSseEvent::Connect) {
+        if !lifecycle.sse(HttpSseEvent::Connect) {
             return;
         }
 
         let this = Arc::clone(self);
-        *guard = Some(tokio::spawn(async move {
+        let Some(stream) = lifecycle.stream() else {
+            return;
+        };
+        stream.task = Some(tokio::spawn(async move {
             this.run_sse_loop().await;
         }));
     }
@@ -354,6 +390,7 @@ impl HttpTransportInner {
                 break;
             }
 
+            let generation = self.session_generation.load(Ordering::Acquire);
             let request = match self.build_get_request().await {
                 Ok(request) => request,
                 Err(error) => {
@@ -373,7 +410,12 @@ impl HttpTransportInner {
                 }
             };
 
-            self.capture_session_id(response.headers()).await;
+            if self
+                .capture_session_id(response.headers(), generation)
+                .is_err()
+            {
+                break;
+            }
 
             match response.status() {
                 StatusCode::OK => {
@@ -387,8 +429,12 @@ impl HttpTransportInner {
                         break;
                     }
 
-                    self.reconnect_attempt.store(0, Ordering::Relaxed);
-                    if let Err(error) = self.consume_sse_response(response, true, false, true).await
+                    if let Some(stream) = self.lifecycle().stream() {
+                        stream.reconnect_attempt = 0;
+                    }
+                    if let Err(error) = self
+                        .consume_sse_response(response, true, false, true, generation)
+                        .await
                     {
                         tracing::warn!(error = %error, "sse stream ended with error");
                     }
@@ -398,7 +444,7 @@ impl HttpTransportInner {
                     break;
                 }
                 StatusCode::NOT_FOUND => {
-                    self.clear_session_state().await;
+                    let _ = self.clear_session_state(generation);
                     break;
                 }
                 status => {
@@ -418,11 +464,11 @@ impl HttpTransportInner {
     }
 
     async fn build_get_request(&self) -> Result<Request, GuestError> {
-        let session_id = self
+        let lifecycle = self.lifecycle();
+        let data = lifecycle.data().ok_or(GuestError::Disconnected)?;
+        let session_id = data
             .session_id
-            .lock()
-            .await
-            .clone()
+            .as_ref()
             .ok_or_else(|| GuestError::Protocol("http session not initialized".to_string()))?;
 
         let mut builder = Request::builder()
@@ -430,11 +476,11 @@ impl HttpTransportInner {
             .uri(self.endpoint.as_str())
             .header(HEADER_SESSION_ID, session_id);
 
-        if let Some(version) = self.negotiated_version.lock().await.clone() {
+        if let Some(version) = &data.negotiated_version {
             builder = builder.header(HEADER_PROTOCOL_VERSION, version);
         }
 
-        if let Some(last_event_id) = self.last_event_id.lock().await.clone() {
+        if let Some(last_event_id) = &data.last_event_id {
             builder = builder.header(HEADER_LAST_EVENT_ID, last_event_id);
         }
 
@@ -457,16 +503,28 @@ impl HttpTransportInner {
         track_last_event_id: bool,
         initialize_request_context: bool,
         deliver_inbound: bool,
+        generation: u64,
     ) -> Result<(), GuestError> {
         let mut stream = response.into_body().into_string_data_event_stream();
 
         while let Some(event) = stream.next().await {
             let event = event.map_err(http_error)?;
-            if let Some(retry) = event.retry() {
-                *self.reconnect_delay.lock().await = retry;
-            }
-            if track_last_event_id {
-                *self.last_event_id.lock().await = event.id().map(ToOwned::to_owned);
+            {
+                match self.current_lifecycle(generation) {
+                    Ok(mut lifecycle) => {
+                        if let Some(retry) = event.retry()
+                            && let Some(stream) = lifecycle.stream()
+                        {
+                            stream.reconnect_delay = retry;
+                        }
+                        if track_last_event_id && let Some(data) = lifecycle.data_mut() {
+                            data.last_event_id = event.id().map(ToOwned::to_owned);
+                        }
+                    }
+                    Err(GuestError::SessionExpired)
+                        if !track_last_event_id && !initialize_request_context => {}
+                    Err(error) => return Err(error),
+                }
             }
             let Some(data) = event.into_data() else {
                 continue;
@@ -475,7 +533,7 @@ impl HttpTransportInner {
                 continue;
             }
             let message: JsonRpcMessage = serde_json::from_str(&data)?;
-            self.inspect_inbound_message(&message, initialize_request_context)
+            self.inspect_inbound_message(&message, initialize_request_context, generation)
                 .await?;
             if deliver_inbound {
                 self.enqueue_message(message).await?;
@@ -493,15 +551,23 @@ impl HttpTransportInner {
     }
 
     async fn wait_for_retry(&self) -> bool {
-        if !self.lifecycle().sse(HttpSseEvent::Retry) {
-            return false;
-        }
-        let attempt = self
-            .reconnect_attempt
-            .fetch_add(1, Ordering::Relaxed)
-            .saturating_add(1)
-            .min(u32::from(u8::MAX)) as u8;
-        let base_delay = *self.reconnect_delay.lock().await;
+        let shutdown = self.shutdown_notify.notified();
+        tokio::pin!(shutdown);
+        shutdown.as_mut().enable();
+        let (attempt, base_delay) = {
+            let mut lifecycle = self.lifecycle();
+            if !lifecycle.sse(HttpSseEvent::Retry) {
+                return false;
+            }
+            let Some(stream) = lifecycle.stream() else {
+                return false;
+            };
+            stream.reconnect_attempt = stream.reconnect_attempt.saturating_add(1);
+            (
+                stream.reconnect_attempt.min(u32::from(u8::MAX)) as u8,
+                stream.reconnect_delay,
+            )
+        };
         let backoff = ExponentialBackoff::new()
             .max_attempts(u8::MAX)
             .base_delay_ms(base_delay.as_millis() as u64)
@@ -514,20 +580,29 @@ impl HttpTransportInner {
         let delay = Duration::from_millis(delay_ms);
         tokio::select! {
             _ = tokio::time::sleep(delay) => true,
-            _ = self.shutdown_notify.notified() => false,
+            _ = shutdown => false,
         }
     }
 
-    async fn capture_session_id(&self, headers: &rama::http::HeaderMap) {
-        if let Some(session_id) = header_value(headers, HEADER_SESSION_ID) {
-            *self.session_id.lock().await = Some(session_id.to_string());
+    fn capture_session_id(
+        &self,
+        headers: &rama::http::HeaderMap,
+        generation: u64,
+    ) -> Result<(), GuestError> {
+        let mut lifecycle = self.current_lifecycle(generation)?;
+        if let Some(session_id) = header_value(headers, HEADER_SESSION_ID)
+            && let Some(data) = lifecycle.data_mut()
+        {
+            data.session_id = Some(session_id.to_string());
         }
+        Ok(())
     }
 
-    async fn clear_session_state(&self) {
-        *self.session_id.lock().await = None;
-        *self.negotiated_version.lock().await = None;
-        *self.last_event_id.lock().await = None;
+    fn clear_session_state(&self, generation: u64) -> Result<(), GuestError> {
+        if let Some(data) = self.current_lifecycle(generation)?.data_mut() {
+            data.clear();
+        }
+        Ok(())
     }
 
     async fn recover_session(self: &Arc<Self>, observed_generation: u64) -> Result<(), GuestError> {
@@ -542,21 +617,27 @@ impl HttpTransportInner {
         }
 
         let initialize_message = self
-            .cached_initialize
-            .lock()
-            .await
-            .clone()
+            .lifecycle()
+            .data()
+            .and_then(|data| data.cached_initialize.clone())
             .ok_or(GuestError::SessionExpired)?;
         let initialized_sent = {
             let mut lifecycle = self.lifecycle();
+            if self.closed.load(Ordering::Acquire) {
+                return Err(GuestError::Disconnected);
+            }
             if !lifecycle.session(HttpSessionEvent::Recover) {
                 return Err(GuestError::Disconnected);
             }
+            self.session_generation.fetch_add(1, Ordering::AcqRel);
+            lifecycle
+                .data_mut()
+                .ok_or(GuestError::Disconnected)?
+                .clear();
             lifecycle.initialized()
         };
 
         self.stop_sse_task().await;
-        self.clear_session_state().await;
 
         self.send_message_once(&initialize_message, false).await?;
         self.wait_for_session_ready(Duration::from_secs(10)).await?;
@@ -570,58 +651,96 @@ impl HttpTransportInner {
             if !self.lifecycle().session(HttpSessionEvent::Initialized) {
                 return Err(GuestError::Disconnected);
             }
-            self.ensure_sse_task().await;
         }
 
-        if !self.lifecycle().session(HttpSessionEvent::Restored) {
-            return Err(GuestError::Disconnected);
+        {
+            let mut lifecycle = self.lifecycle();
+            if !lifecycle.session(HttpSessionEvent::Restored) {
+                return Err(GuestError::Disconnected);
+            }
+            self.session_generation.fetch_add(1, Ordering::AcqRel);
         }
-        self.session_generation.fetch_add(1, Ordering::AcqRel);
+        if initialized_sent {
+            self.ensure_sse_task().await;
+        }
         Ok(())
     }
 
     async fn wait_for_session_ready(&self, timeout: Duration) -> Result<(), GuestError> {
-        if self.has_active_session().await {
-            return Ok(());
-        }
-
         tokio::time::timeout(timeout, async {
             loop {
-                self.initialize_ready.notified().await;
+                let ready = self.initialize_ready.notified();
+                tokio::pin!(ready);
+                ready.as_mut().enable();
                 if self.has_active_session().await {
                     break;
                 }
+                if self.closed.load(Ordering::Acquire) {
+                    return Err(GuestError::Disconnected);
+                }
+                ready.await;
             }
+            Ok(())
         })
         .await
-        .map_err(|_| GuestError::Timeout(timeout))?;
+        .map_err(|_| GuestError::Timeout(timeout))??;
 
         Ok(())
     }
 
     async fn has_active_session(&self) -> bool {
-        self.session_id.lock().await.is_some() && self.negotiated_version.lock().await.is_some()
+        self.lifecycle()
+            .data()
+            .is_some_and(|data| data.session_id.is_some() && data.negotiated_version.is_some())
     }
 
     async fn stop_sse_task(&self) {
-        if let Some(handle) = self.sse_task.lock().await.take() {
+        let handle = {
+            let mut lifecycle = self.lifecycle();
+            let handle = lifecycle.stream().and_then(|stream| stream.task.take());
+            lifecycle.sse(HttpSseEvent::Stop);
+            handle
+        };
+        if let Some(handle) = handle {
             handle.abort();
+            let _ = handle.await;
         }
-        self.lifecycle().sse(HttpSseEvent::Stop);
+    }
+
+    async fn close_tasks(&self) {
+        let (task, mut streams) = {
+            let mut lifecycle = self.lifecycle();
+            let task = lifecycle.stream().and_then(|stream| stream.task.take());
+            let streams = lifecycle
+                .data_mut()
+                .map(|data| std::mem::take(&mut data.streams));
+            lifecycle.close();
+            (task, streams)
+        };
+        self.shutdown_notify.notify_waiters();
+        self.initialize_ready.notify_waiters();
+        if let Some(task) = task {
+            task.abort();
+            let _ = task.await;
+        }
+        if let Some(streams) = streams.as_mut() {
+            streams.shutdown().await;
+        }
     }
 
     async fn shutdown_inner(self: Arc<Self>) -> Result<(), GuestError> {
         if self.closed.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
-        self.lifecycle().close();
+        let (session_id, protocol_version) = {
+            let lifecycle = self.lifecycle();
+            lifecycle
+                .data()
+                .map(|data| (data.session_id.clone(), data.negotiated_version.clone()))
+                .unwrap_or_default()
+        };
 
-        self.shutdown_notify.notify_waiters();
-
-        self.stop_sse_task().await;
-
-        let session_id = self.session_id.lock().await.clone();
-        let protocol_version = self.negotiated_version.lock().await.clone();
+        self.close_tasks().await;
 
         if let Some(session_id) = session_id {
             let mut builder = Request::builder()
@@ -653,9 +772,7 @@ impl HttpTransportInner {
 
     async fn force_shutdown_inner(&self) -> Result<(), GuestError> {
         self.closed.store(true, Ordering::SeqCst);
-        self.lifecycle().close();
-        self.shutdown_notify.notify_waiters();
-        self.stop_sse_task().await;
+        self.close_tasks().await;
         Ok(())
     }
 
@@ -711,6 +828,9 @@ impl MessageTransport for HttpTransport {
     fn recv<'a>(&'a self) -> TransportFuture<'a, JsonRpcMessage> {
         let inner = Arc::clone(&self.inner);
         Box::pin(async move {
+            let shutdown = inner.shutdown_notify.notified();
+            tokio::pin!(shutdown);
+            shutdown.as_mut().enable();
             if inner.closed.load(Ordering::Relaxed) {
                 return Err(GuestError::Disconnected);
             }
@@ -720,7 +840,7 @@ impl MessageTransport for HttpTransport {
                 message = receiver.recv() => {
                     message.ok_or(GuestError::Disconnected)
                 }
-                _ = inner.shutdown_notify.notified() => Err(GuestError::Disconnected),
+                _ = shutdown => Err(GuestError::Disconnected),
             }
         })
     }

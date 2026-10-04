@@ -15,6 +15,7 @@ state_machine! {
         Cancelled,
         TerminalFailure
     ],
+    final_states: [Acknowledged, Cancelled, TerminalFailure],
     events {
         select {
             transition: { from: Selection, to: Spawn }

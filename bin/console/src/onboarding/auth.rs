@@ -98,6 +98,7 @@ use super::onboarding_screen::StepState;
 
 mod headless_chatgpt_login;
 mod lifecycle;
+use lifecycle::SignIn;
 
 #[derive(Clone)]
 pub(crate) enum SignInState {
@@ -143,30 +144,6 @@ fn push_error_line(lines: &mut Vec<Line<'static>>, error: Option<String>) {
     if let Some(error) = error {
         lines.push("".into());
         lines.push(error.red().into());
-    }
-}
-
-impl SignInState {
-    /// Stops whatever login attempt this state represents, if any.
-    fn cancel_pending_login(&self) {
-        match self {
-            SignInState::ChatGptContinueInBrowser(state) => {
-                if let Some(cancel) = &state.cancel {
-                    cancel.cancel();
-                }
-            }
-            SignInState::ChatGptDeviceCode(state) => {
-                if let Some(cancel) = &state.cancel {
-                    cancel.cancel();
-                }
-            }
-            SignInState::XaiDeviceCode(state) => {
-                if let Some(cancel) = &state.cancel {
-                    cancel.cancel();
-                }
-            }
-            _ => {}
-        }
     }
 }
 
@@ -267,7 +244,7 @@ impl KeyboardHandler for AccountsWidget {
                 }
             }
             KeyCode::Enter => {
-                let sign_in_state = { (*self.sign_in_state.read().unwrap()).clone() };
+                let sign_in_state = self.sign_in_state();
                 match sign_in_state {
                     SignInState::PickProvider => {
                         self.open_selected_provider();
@@ -287,12 +264,11 @@ impl KeyboardHandler for AccountsWidget {
             KeyCode::Esc => {
                 tracing::info!("Esc pressed");
                 let mut sign_in_state = self.sign_in_state.write().unwrap();
-                match &*sign_in_state {
+                match sign_in_state.snapshot() {
                     SignInState::ChatGptContinueInBrowser(_)
                     | SignInState::ChatGptDeviceCode(_)
                     | SignInState::XaiDeviceCode(_)
                     | SignInState::ApiKeyEntry(_) => {
-                        sign_in_state.cancel_pending_login();
                         self.login_generation.fetch_add(1, Ordering::SeqCst);
                         sign_in_state.transition(self.back_destination_for_selected_provider());
                         drop(sign_in_state);
@@ -321,7 +297,7 @@ pub(crate) struct AccountsWidget {
     pub highlighted_provider: usize,
     pub highlighted_mode: SignInOption,
     pub error: Arc<RwLock<Option<String>>>,
-    pub sign_in_state: Arc<RwLock<SignInState>>,
+    pub sign_in_state: Arc<RwLock<SignIn>>,
     login_generation: Arc<AtomicU64>,
     pub chaos_home: PathBuf,
     pub cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
@@ -350,7 +326,7 @@ impl AccountsWidget {
             highlighted_provider: 0,
             highlighted_mode: SignInOption::ChatGpt,
             error: Arc::new(RwLock::new(None)),
-            sign_in_state: Arc::new(RwLock::new(SignInState::PickProvider)),
+            sign_in_state: Arc::new(RwLock::new(SignIn::default())),
             login_generation: Arc::new(AtomicU64::new(0)),
             chaos_home,
             cli_auth_credentials_store_mode,
@@ -363,7 +339,7 @@ impl AccountsWidget {
     }
 
     pub(crate) fn sign_in_state(&self) -> SignInState {
-        self.sign_in_state.read().unwrap().clone()
+        self.sign_in_state.read().unwrap().snapshot()
     }
 
     pub(crate) fn completion(&self) -> Option<AccountsCompletion> {
@@ -796,8 +772,8 @@ impl AccountsWidget {
         }
         let mut lines = vec![spans.into(), "".into()];
 
-        let sign_in_state = self.sign_in_state.read().unwrap();
-        let auth_url = if let SignInState::ChatGptContinueInBrowser(state) = &*sign_in_state
+        let sign_in_state = self.sign_in_state();
+        let auth_url = if let SignInState::ChatGptContinueInBrowser(state) = &sign_in_state
             && !state.auth_url.is_empty()
         {
             lines.push("  If the link doesn't open automatically, open the following link to authenticate:".into());
@@ -976,10 +952,10 @@ impl AccountsWidget {
 
         {
             let mut guard = self.sign_in_state.write().unwrap();
-            if let SignInState::ApiKeyEntry(state) = &mut *guard {
+            if let Some(state) = guard.key_mut() {
                 match key_event.code {
                     KeyCode::Esc => {
-                        *guard = api_key_escape_destination;
+                        guard.transition(api_key_escape_destination);
                         self.set_error(None);
                         should_request_frame = true;
                     }
@@ -1039,7 +1015,7 @@ impl AccountsWidget {
         }
 
         let mut guard = self.sign_in_state.write().unwrap();
-        if let SignInState::ApiKeyEntry(state) = &mut *guard {
+        if let Some(state) = guard.key_mut() {
             if state.prepopulated_from_env {
                 state.value = trimmed.to_string();
                 state.prepopulated_from_env = false;
@@ -1093,8 +1069,8 @@ impl AccountsWidget {
                     .flatten()
             });
         let mut guard = self.sign_in_state.write().unwrap();
-        match &mut *guard {
-            SignInState::ApiKeyEntry(state) => {
+        match guard.key_mut() {
+            Some(state) => {
                 state.provider = Some(provider);
                 if state.value.is_empty() {
                     if let Some(prefill) = prefill_from_env {
@@ -1105,7 +1081,7 @@ impl AccountsWidget {
                     }
                 }
             }
-            _ => {
+            None => {
                 guard.transition(SignInState::ApiKeyEntry(ApiKeyInputState {
                     provider: Some(provider),
                     value: prefill_from_env.clone().unwrap_or_default(),
@@ -1138,7 +1114,7 @@ impl AccountsWidget {
             Err(err) => {
                 self.set_error(Some(format!("Failed to save API key: {err}")));
                 let mut guard = self.sign_in_state.write().unwrap();
-                if let SignInState::ApiKeyEntry(existing) = &mut *guard {
+                if let Some(existing) = guard.key_mut() {
                     existing.provider = Some(provider.clone());
                     if existing.value.is_empty() {
                         existing.value.push_str(&api_key);
@@ -1267,7 +1243,7 @@ impl AccountsWidget {
             self.cli_auth_credentials_store_mode,
         );
         let cancelled = Arc::new(AtomicBool::new(false));
-        let sign_in_state = self.sign_in_state.clone();
+        let sign_in_state = Arc::downgrade(&self.sign_in_state);
         let error = self.error.clone();
         let request_frame = self.request_frame.clone();
         let auth_manager = self.auth_manager.clone();
@@ -1282,6 +1258,9 @@ impl AccountsWidget {
                     || login_generation.load(Ordering::SeqCst) != generation
             };
             let fail = |message: String| {
+                let Some(sign_in_state) = sign_in_state.upgrade() else {
+                    return;
+                };
                 let mut state = sign_in_state.write().unwrap();
                 if is_cancelled() {
                     return;
@@ -1301,11 +1280,14 @@ impl AccountsWidget {
 
             {
                 // A cancelled login has already moved the state elsewhere.
+                let Some(sign_in_state) = sign_in_state.upgrade() else {
+                    return;
+                };
                 let mut guard = sign_in_state.write().unwrap();
                 if is_cancelled() {
                     return;
                 }
-                let SignInState::XaiDeviceCode(state) = &mut *guard else {
+                let Some(state) = guard.xai_mut() else {
                     return;
                 };
                 state.device_code = Some(device_code.clone());
@@ -1314,6 +1296,9 @@ impl AccountsWidget {
 
             match complete_xai_device_code_login(opts, device_code).await {
                 Ok(()) => {
+                    let Some(sign_in_state) = sign_in_state.upgrade() else {
+                        return;
+                    };
                     let mut state = sign_in_state.write().unwrap();
                     if is_cancelled() {
                         return;
@@ -1331,13 +1316,13 @@ impl AccountsWidget {
             cancelled,
             abort: join.abort_handle(),
         };
-        if let SignInState::XaiDeviceCode(state) = &mut *self.sign_in_state.write().unwrap() {
+        if let Some(state) = self.sign_in_state.write().unwrap().xai_mut() {
             state.cancel = Some(cancel);
         }
     }
 
     fn consume_chatgpt_account_flow(&mut self, mut handle: LoginFlowHandle) {
-        let sign_in_state = self.sign_in_state.clone();
+        let sign_in_state = Arc::downgrade(&self.sign_in_state);
         let error = self.error.clone();
         let request_frame = self.request_frame.clone();
         let auth_manager = self.auth_manager.clone();
@@ -1348,6 +1333,9 @@ impl AccountsWidget {
         tokio::spawn(async move {
             let cancel = handle.cancel_handle();
             while let Some(update) = handle.recv().await {
+                let Some(sign_in_state) = sign_in_state.upgrade() else {
+                    break;
+                };
                 let mut state = sign_in_state.write().unwrap();
                 if login_generation.load(Ordering::SeqCst) != generation {
                     break;
@@ -1412,8 +1400,8 @@ impl AccountsWidget {
 
 impl StepStateProvider for AccountsWidget {
     fn get_step_state(&self) -> StepState {
-        let sign_in_state = self.sign_in_state.read().unwrap();
-        match &*sign_in_state {
+        let sign_in_state = self.sign_in_state();
+        match &sign_in_state {
             SignInState::PickProvider
             | SignInState::PickMode
             | SignInState::ApiKeyEntry(_)
@@ -1428,8 +1416,8 @@ impl StepStateProvider for AccountsWidget {
 
 impl WidgetRef for AccountsWidget {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
-        let sign_in_state = self.sign_in_state.read().unwrap();
-        match &*sign_in_state {
+        let sign_in_state = self.sign_in_state();
+        match &sign_in_state {
             SignInState::PickProvider => {
                 self.render_pick_provider(area, buf);
             }

@@ -11,7 +11,7 @@
 //! Backtrack operates as a small state machine:
 //! - The first `Esc` in the main view "primes" the feature and captures a base thread id.
 //! - A subsequent `Esc` opens the transcript overlay (`Ctrl+T`) and highlights a user message.
-//! - `Enter` requests a rollback from core and records a `pending_rollback` guard.
+//! - `Enter` requests a rollback from core and enters Pending.
 //! - On `EventMsg::ProcessRolledBack`, we either finish an in-flight backtrack request or queue a
 //!   rollback trim so it runs in event order with transcript inserts.
 //!
@@ -55,7 +55,7 @@ mod lifecycle;
 /// Aggregates all backtrack-related state used by the App.
 #[derive(Default)]
 pub(crate) struct BacktrackState {
-    navigation: lifecycle::NavigationWorkflow,
+    workflow: lifecycle::Workflow,
     /// Session id of the base thread to rollback.
     ///
     /// If the current thread changes, backtrack selections become invalid and must be ignored.
@@ -65,11 +65,6 @@ pub(crate) struct BacktrackState {
     /// This is an index into the filtered "user messages since the last session start" view,
     /// not an index into `transcript_cells`. `usize::MAX` indicates "no selection".
     pub(crate) nth_user_message: usize,
-    /// Pending rollback request awaiting confirmation from core.
-    ///
-    /// This acts as a guardrail: once we request a rollback, we block additional backtrack
-    /// submissions until core responds with either a success or failure event.
-    pub(crate) pending_rollback: Option<PendingBacktrackRollback>,
 }
 
 /// A user-visible backtrack choice that can be confirmed into a rollback request.
@@ -217,7 +212,7 @@ impl App {
             return;
         }
 
-        if self.backtrack.pending_rollback.is_some() {
+        if self.backtrack.rollback_pending() {
             self.chat_widget
                 .add_error_message("Backtrack rollback already in progress.".to_string());
             return;
@@ -599,7 +594,7 @@ impl App {
     pub(crate) fn handle_backtrack_event(&mut self, event: &EventMsg) {
         match event {
             EventMsg::ProcessRolledBack(rollback) => {
-                // `pending_rollback` is set only after this UI sends `Op::ProcessRollback`
+                // Pending is entered only when this UI sends `Op::ProcessRollback`
                 // from the backtrack flow. In that case, finish immediately using the
                 // stored selection (nth user message) so local trim matches the exact
                 // backtrack target.
@@ -608,7 +603,7 @@ impl App {
                 // queue an AppEvent so rollback trim runs in FIFO order with
                 // `InsertHistoryCell` events, avoiding races with in-flight transcript
                 // inserts.
-                if self.backtrack.pending_rollback.is_some() {
+                if self.backtrack.rollback_pending() {
                     self.finish_pending_backtrack();
                 } else {
                     self.app_event_tx.send(AppEvent::ApplyProcessRollback {
@@ -628,7 +623,7 @@ impl App {
     }
 
     /// Apply rollback semantics for `ProcessRolledBack` events where this TUI does not have an
-    /// in-flight backtrack request (`pending_rollback` is `None`).
+    /// in-flight backtrack request.
     ///
     /// Returns `true` when local transcript state changed.
     pub(crate) fn apply_non_pending_process_rollback(&mut self, num_turns: u32) -> bool {

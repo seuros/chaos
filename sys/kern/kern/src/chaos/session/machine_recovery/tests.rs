@@ -44,13 +44,20 @@ async fn unresolved(session: &Session) {
 async fn machine_recovery_wait_parks_only_after_a_single_tool_batch() {
     let (session, turn) = crate::chaos::make_session_and_context().await;
     unresolved(&session).await;
-    session
+    let id = session
         .state
         .lock()
         .await
         .machine_recovery
         .request_wait(&turn.sub_id)
         .unwrap();
+    {
+        let mut state = session.state.lock().await;
+        let recovery = &mut state.machine_recovery;
+        assert!(recovery.park_wait("another turn").is_none());
+        assert_eq!(recovery.wait_id(), Some(id.as_str()));
+        assert_eq!(recovery.requested_turn(), Some(turn.sub_id.as_str()));
+    }
     assert!(!session.machine_recovery_parked().await);
     session.finish_machine_wait_request(&turn, 2).await;
     assert!(!session.machine_recovery_parked().await);
@@ -66,8 +73,19 @@ async fn machine_recovery_wait_parks_only_after_a_single_tool_batch() {
         .unwrap();
     session.finish_machine_wait_request(&turn, 1).await;
     assert!(session.machine_recovery_parked().await);
+    assert!(
+        session
+            .state
+            .lock()
+            .await
+            .machine_recovery
+            .requested_turn()
+            .is_none()
+    );
     session.cancel_machine_recovery_wait().await;
     assert!(!session.machine_recovery_parked().await);
+    session.finish_machine_wait_request(&turn, 1).await;
+    assert!(session.machine_recovery_status().await.wait_id.is_none());
 }
 
 #[tokio::test]

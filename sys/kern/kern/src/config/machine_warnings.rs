@@ -29,6 +29,10 @@ pub struct MachineWarningsConfig {
     #[serde(deserialize_with = "recovery_seconds")]
     #[schemars(range(min = 30, max = 86400))]
     pub recovery_stable_seconds: u64,
+    /// Additional charge percentage points above the battery warning threshold.
+    #[serde(deserialize_with = "percentage")]
+    #[schemars(range(min = 0, max = 100))]
+    pub recovery_battery_margin_percent: u8,
     /// Physical/control channel headroom below the threshold that triggered it.
     #[serde(deserialize_with = "recovery_temperature")]
     #[schemars(range(min = 0.1, max = 100))]
@@ -51,6 +55,7 @@ impl Default for MachineWarningsConfig {
             thermal: true,
             cpu_temperature_celsius: None,
             recovery_stable_seconds: 300,
+            recovery_battery_margin_percent: 5,
             recovery_temperature_margin_celsius: 5.0,
             recovery_disk_margin_percent: 2,
             recovery_disk_margin_bytes: 1 << 30,

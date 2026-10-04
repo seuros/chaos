@@ -15,6 +15,10 @@ fn ascii_first_char_is_held_then_flushes_as_typed() {
     let mut burst = PasteBurst::default();
     let t0 = Instant::now();
     std::assert_matches!(burst.on_plain_char('a', t0), CharDecision::RetainFirstChar);
+    std::assert_matches!(
+        burst.flush_if_due(t0 + PASTE_BURST_CHAR_INTERVAL),
+        FlushResult::None
+    );
 
     let t1 = t0 + PasteBurst::recommended_flush_delay() + Duration::from_millis(1);
     std::assert_matches!(burst.flush_if_due(t1), FlushResult::Typed('a'));
@@ -34,6 +38,10 @@ fn ascii_two_fast_chars_start_buffer_from_pending_and_flush_as_paste() {
         CharDecision::BeginBufferFromPending
     );
     burst.append_char_to_buffer('b', t1);
+    std::assert_matches!(
+        burst.flush_if_due(t1 + PASTE_BURST_ACTIVE_IDLE_TIMEOUT),
+        FlushResult::None
+    );
 
     let t2 = t1 + PasteBurst::recommended_active_flush_delay() + Duration::from_millis(1);
     std::assert_matches!(
@@ -68,6 +76,22 @@ fn decide_begin_buffer_only_triggers_for_pastey_prefixes() {
     assert_eq!(grab.start_byte, 1);
     assert_eq!(grab.grabbed, " b");
     assert!(burst.is_active());
+    assert_eq!(burst.flush_before_modified_input().as_deref(), Some(" b"));
+    let unicode = burst.decide_begin_buffer(now, "甲 🙂b", 3).unwrap();
+    assert_eq!(unicode.start_byte, 3);
+    assert_eq!(unicode.grabbed, " 🙂b");
+    burst.clear_window_after_non_char();
+    assert!(burst.is_active());
+    std::assert_matches!(
+        burst.flush_if_due(now + Duration::from_secs(1)),
+        FlushResult::None
+    );
+    assert_eq!(burst.flush_before_modified_input().as_deref(), Some(" 🙂b"));
+    assert!(!burst.is_active());
+    burst.begin_with_retro_grabbed("discarded".into(), now);
+    burst.clear_after_explicit_paste();
+    assert!(!burst.is_active());
+    assert!(!burst.newline_should_insert_instead_of_submit(now));
 }
 
 /// Behavior: after a paste-like burst, we keep an "enter suppression window" alive briefly so
@@ -89,6 +113,9 @@ fn newline_suppression_window_outlives_buffer_flush() {
     assert!(!burst.is_active());
 
     assert!(burst.newline_should_insert_instead_of_submit(t2));
+    assert!(burst.newline_should_insert_instead_of_submit(t1 + PASTE_ENTER_SUPPRESS_WINDOW));
     let t3 = t1 + PASTE_ENTER_SUPPRESS_WINDOW + Duration::from_millis(1);
+    assert!(!burst.newline_should_insert_instead_of_submit(t3));
+    std::assert_matches!(burst.flush_if_due(t3), FlushResult::None);
     assert!(!burst.newline_should_insert_instead_of_submit(t3));
 }

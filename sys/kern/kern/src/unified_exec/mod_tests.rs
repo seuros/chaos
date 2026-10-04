@@ -18,10 +18,8 @@ async fn test_session_and_turn() -> (Arc<Session>, Arc<TurnContext>) {
         .set(ApprovalPolicy::Headless)
         .expect("test setup should allow updating approval policy");
     let sandbox_policy = SandboxPolicy::RootAccess;
-    turn.vfs_policy =
-        chaos_ipc::permissions::VfsPolicy::from(&sandbox_policy);
-    turn.socket_policy =
-        chaos_ipc::permissions::SocketPolicy::from(&sandbox_policy);
+    turn.vfs_policy = chaos_ipc::permissions::VfsPolicy::from(&sandbox_policy);
+    turn.socket_policy = chaos_ipc::permissions::SocketPolicy::from(&sandbox_policy);
     (Arc::new(session), Arc::new(turn))
 }
 
@@ -233,6 +231,59 @@ async fn unified_exec_timeouts() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
+    let buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
+    let output = Arc::new(tokio::sync::Notify::new());
+    let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let closed_notify = Arc::new(tokio::sync::Notify::new());
+    let exited = tokio_util::sync::CancellationToken::new();
+    exited.cancel();
+    let (pause, receiver) = tokio::sync::watch::channel(true);
+    let producer = {
+        let buffer = Arc::clone(&buffer);
+        let output = Arc::clone(&output);
+        let closed = Arc::clone(&closed);
+        let closed_notify = Arc::clone(&closed_notify);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            buffer
+                .lock()
+                .await
+                .push_chunk("tail: 前🙂\n".as_bytes().to_vec());
+            output.notify_waiters();
+            closed.store(true, std::sync::atomic::Ordering::Release);
+            closed_notify.notify_waiters();
+            drop(pause);
+        })
+    };
+    let tail = UnifiedExecProcessManager::collect_output_until_deadline(
+        &buffer,
+        &output,
+        &closed,
+        &closed_notify,
+        &exited,
+        Some(receiver),
+        tokio::time::Instant::now() + Duration::from_millis(250),
+    )
+    .await;
+    producer.await?;
+    assert_eq!(tail, "tail: 前🙂\n".as_bytes());
+
+    closed.store(false, std::sync::atomic::Ordering::Release);
+    let tail = tokio::time::timeout(
+        Duration::from_secs(1),
+        UnifiedExecProcessManager::collect_output_until_deadline(
+            &buffer,
+            &output,
+            &closed,
+            &closed_notify,
+            &exited,
+            None,
+            tokio::time::Instant::now() + Duration::from_secs(5),
+        ),
+    )
+    .await?;
+    assert!(tail.is_empty());
+
     skip_if_sandbox!(Ok(()));
 
     let (session, turn) = test_session_and_turn().await;

@@ -190,6 +190,7 @@ pub(crate) fn instructions(warnings: &[MachineWarning]) -> Option<String> {
     }
     Some(format!(
         "Machine warning (harness host): {}\n\
+         🩺 Kernel health checks and notifications are automatic. \
          Save essential work and a minimal checkpoint to verified persistent storage outside /tmp and other temporary directories; \
          verify the write succeeded. If unavailable, tell the operator. Do not rely on suspend to preserve data. \
          Pause heavy or interruption-sensitive work, including flashing. \

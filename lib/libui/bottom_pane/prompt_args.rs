@@ -139,6 +139,20 @@ fn shift_text_element_left(elem: &TextElement, offset: usize) -> Option<TextElem
     (start < end).then_some(elem.map_range(|_| ByteRange { start, end }))
 }
 
+fn local_text_elements(elements: &[TextElement], offset: usize, len: usize) -> Vec<TextElement> {
+    elements
+        .iter()
+        .filter_map(|element| {
+            let mut shifted = shift_text_element_left(element, offset)?;
+            if shifted.byte_range.start >= len {
+                return None;
+            }
+            shifted.byte_range.end = shifted.byte_range.end.min(len);
+            (shifted.byte_range.start < shifted.byte_range.end).then_some(shifted)
+        })
+        .collect()
+}
+
 /// Parses the `key=value` pairs that follow a custom prompt name.
 ///
 /// The input is split using shlex rules, so quoted values are supported
@@ -206,18 +220,7 @@ pub fn expand_custom_prompt(
     };
     // If there are named placeholders, expect key=value inputs.
     let required = prompt_argument_names(&prompt.content);
-    let local_elements: Vec<TextElement> = text_elements
-        .iter()
-        .filter_map(|elem| {
-            let mut shifted = shift_text_element_left(elem, rest_offset)?;
-            if shifted.byte_range.start >= rest.len() {
-                return None;
-            }
-            let end = shifted.byte_range.end.min(rest.len());
-            shifted.byte_range.end = end;
-            (shifted.byte_range.start < shifted.byte_range.end).then_some(shifted)
-        })
-        .collect();
+    let local_elements = local_text_elements(text_elements, rest_offset, rest.len());
     if !required.is_empty() {
         let inputs = parse_prompt_inputs(rest, &local_elements).map_err(|error| {
             PromptExpansionError::Args {
@@ -294,18 +297,7 @@ pub fn extract_positional_args_for_prompt_line(
         return Vec::new();
     }
     let args_offset = trim_offset + rest_offset + (rest.len() - rest_trimmed_start.len());
-    let local_elements: Vec<TextElement> = text_elements
-        .iter()
-        .filter_map(|elem| {
-            let mut shifted = shift_text_element_left(elem, args_offset)?;
-            if shifted.byte_range.start >= args_str.len() {
-                return None;
-            }
-            let end = shifted.byte_range.end.min(args_str.len());
-            shifted.byte_range.end = end;
-            (shifted.byte_range.start < shifted.byte_range.end).then_some(shifted)
-        })
-        .collect();
+    let local_elements = local_text_elements(text_elements, args_offset, args_str.len());
     parse_positional_args(args_str, &local_elements)
 }
 

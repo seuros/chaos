@@ -21,7 +21,9 @@ impl RequestUserInputOverlay {
         }
         self.save_current_draft();
         let offset = if next { 1 } else { len.saturating_sub(1) };
-        self.current_idx = (self.current_idx + offset) % len;
+        if let Some(data) = self.lifecycle.data_mut() {
+            data.current_idx = (data.current_idx + offset) % len;
+        }
         self.restore_current_draft();
         self.ensure_focus_available();
     }
@@ -31,7 +33,9 @@ impl RequestUserInputOverlay {
             return;
         }
         self.save_current_draft();
-        self.current_idx = idx;
+        if let Some(data) = self.lifecycle.data_mut() {
+            data.current_idx = idx;
+        }
         self.restore_current_draft();
         self.ensure_focus_available();
     }
@@ -65,7 +69,7 @@ impl RequestUserInputOverlay {
             answer.answer_committed = false;
             answer.notes_visible = false;
         }
-        self.pending_submission_draft = None;
+        *self.pending_submission_draft() = None;
         self.composer
             .set_text_content(String::new(), Vec::new(), Vec::new());
         self.composer.move_cursor_to_end();
@@ -81,11 +85,11 @@ impl RequestUserInputOverlay {
             answer.answer_committed = false;
             answer.notes_visible = false;
         }
-        self.pending_submission_draft = None;
+        *self.pending_submission_draft() = None;
         self.composer
             .set_text_content(String::new(), Vec::new(), Vec::new());
         self.composer.move_cursor_to_end();
-        self.focus.options();
+        self.focus_options();
         self.sync_composer_placeholder();
     }
 
@@ -116,11 +120,10 @@ impl RequestUserInputOverlay {
         if !self.lifecycle.apply(super::InputRequestEvent::Submit) {
             return;
         }
-        self.confirm_unanswered = None;
         self.save_current_draft();
         let mut answers = HashMap::new();
         for (idx, question) in self.request.questions.iter().enumerate() {
-            let answer_state = &self.answers[idx];
+            let answer_state = &self.answers()[idx];
             let options = question.options.as_ref();
             // For option questions we may still produce no selection.
             let selected_idx =
@@ -179,22 +182,21 @@ impl RequestUserInputOverlay {
             return;
         }
         if !self.has_options() {
-            self.focus.notes();
+            self.focus_notes();
             if let Some(answer) = self.current_answer_mut() {
                 answer.notes_visible = true;
             }
             return;
         }
-        if matches!(self.focus, Focus::Notes) && !self.notes_ui_visible() {
-            self.focus.options();
+        if matches!(self.focus(), Focus::Notes) && !self.notes_ui_visible() {
+            self.focus_options();
             self.sync_composer_placeholder();
         }
     }
 
     /// Rebuild local answer state from the current request.
     pub(super) fn reset_for_request(&mut self) {
-        self.lifecycle.apply(super::InputRequestEvent::Next);
-        self.answers = self
+        let answers = self
             .request
             .questions
             .iter()
@@ -216,11 +218,8 @@ impl RequestUserInputOverlay {
             })
             .collect();
 
-        self.current_idx = 0;
-        self.focus.options();
+        self.lifecycle.reset(answers);
         self.composer
             .set_text_content(String::new(), Vec::new(), Vec::new());
-        self.confirm_unanswered = None;
-        self.pending_submission_draft = None;
     }
 }

@@ -1,6 +1,6 @@
 use chaos_ipc::product::OS_NAME;
 
-use super::{App, EXTERNAL_EDITOR_HINT, ExternalEditorState, external_editor, history_cell, tui};
+use super::{App, EXTERNAL_EDITOR_HINT, external_editor, history_cell, tui};
 
 impl App {
     pub(super) async fn launch_external_editor(&mut self, tui: &mut tui::Tui) {
@@ -25,12 +25,12 @@ impl App {
         };
 
         let seed = self.chat_widget.composer_text_with_pending();
-        let editor_result = tui
-            .with_restored(tui::RestoreMode::KeepRaw, || async {
+        let editor_result = self
+            .chat_widget
+            .with_external_editor(tui.with_restored(tui::RestoreMode::KeepRaw, || async {
                 external_editor::run_editor(&seed, &editor_cmd).await
-            })
+            }))
             .await;
-        self.reset_external_editor_state(tui);
 
         match editor_result {
             Ok(new_text) => {
@@ -49,8 +49,9 @@ impl App {
     }
 
     pub(super) fn request_external_editor_launch(&mut self, tui: &mut tui::Tui) {
-        self.chat_widget
-            .set_external_editor_state(ExternalEditorState::Requested);
+        if !self.chat_widget.request_external_editor() {
+            return;
+        }
         self.chat_widget.set_footer_hint_override(Some(vec![(
             EXTERNAL_EDITOR_HINT.to_string(),
             String::new(),
@@ -59,8 +60,7 @@ impl App {
     }
 
     pub(super) fn reset_external_editor_state(&mut self, tui: &mut tui::Tui) {
-        self.chat_widget
-            .set_external_editor_state(ExternalEditorState::Closed);
+        self.chat_widget.finish_external_editor();
         self.chat_widget.set_footer_hint_override(/*items*/ None);
         tui.frame_requester().schedule_frame();
     }

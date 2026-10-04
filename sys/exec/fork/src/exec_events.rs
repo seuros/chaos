@@ -9,6 +9,9 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum ProcessEvent {
+    /// A committed database view. Turn completion does not complete a plan.
+    #[serde(rename = "plan.updated")]
+    PlanUpdated(chaos_ipc::plan_tool::PlanUpdate),
     /// Payload-free status of a direct child, independent of collaboration tool calls.
     #[serde(rename = "agent.status_changed")]
     AgentStatusChanged(chaos_ipc::protocol::CollabAgentStatusChangedEvent),
@@ -146,9 +149,6 @@ pub enum ProcessItemDetails {
     /// Captures a web search request. It starts when the search is kicked off
     /// and completes when results are returned to the agent.
     WebSearch(WebSearchItem),
-    /// Tracks the agent's running to-do list. It starts when the plan is first
-    /// issued, updates as steps change state, and completes when the turn ends.
-    TodoList(TodoListItem),
     /// Describes a non-fatal error surfaced as an item.
     Error(ErrorItem),
 }
@@ -317,16 +317,4 @@ pub struct WebSearchItem {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ErrorItem {
     pub message: String,
-}
-
-/// An item in agent's to-do list.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TodoItem {
-    pub text: String,
-    pub completed: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TodoListItem {
-    pub items: Vec<TodoItem>,
 }

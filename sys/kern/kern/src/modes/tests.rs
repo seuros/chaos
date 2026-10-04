@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+fn mode_switches_keep_storage_specific_instructions() {
+    use chaos_proc::planning::PlanningCapabilities;
+    let mut registry = ModeRegistry::builtins(CollaborationModesConfig::default()).unwrap();
+    registry.configure_planning(PlanningCapabilities::POSTGRES);
+    let base = CollaborationMode {
+        mode: ModeKind::Default,
+        settings: chaos_ipc::config_types::Settings {
+            model: "test".into(),
+            reasoning_effort: None,
+            developer_instructions: None,
+        },
+    };
+    let plan = registry.apply_mode(PLAN_MODE_ID, &base).unwrap();
+    let text = plan.settings.developer_instructions.as_ref().unwrap();
+    assert!(text.contains("shared across machines"));
+    assert!(!text.contains("local database"));
+    let execution = registry.apply_mode(DEFAULT_MODE_ID, &plan).unwrap();
+    assert!(
+        !execution
+            .settings
+            .developer_instructions
+            .as_ref()
+            .unwrap()
+            .contains("plan_progress")
+    );
+    assert_eq!(
+        registry
+            .apply_mode(PLAN_MODE_ID, &execution)
+            .unwrap()
+            .settings
+            .developer_instructions,
+        plan.settings.developer_instructions
+    );
+    registry.configure_planning(PlanningCapabilities::SQLITE);
+    let resumed = registry.apply_mode(PLAN_MODE_ID, &execution).unwrap();
+    let text = resumed.settings.developer_instructions.as_ref().unwrap();
+    assert!(text.contains("local database"));
+    assert!(!text.contains("shared across machines"));
+}
+
+#[test]
 fn loads_custom_modes_and_omits_instructions_from_resource() {
     let chaos_home = tempfile::tempdir().expect("temp chaos home");
     let modes_dir = chaos_home.path().join("modes");
@@ -16,7 +57,7 @@ reasoning_effort = "high"
 [capabilities]
 mutation = false
 request_user_input = true
-update_plan = true
+planning_records = true
 +++
 Secret full instructions that must not appear in the metadata resource.
 "#,
@@ -96,7 +137,7 @@ fn child_policy_cannot_broaden_parent_modes() {
             ModeCapabilities {
                 mutation: false,
                 request_user_input: true,
-                update_plan: false,
+                planning_records: true,
             },
             Some(DEFAULT_MODE_ID),
             Some(&[DEFAULT_MODE_ID.to_string()]),

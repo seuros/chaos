@@ -256,7 +256,9 @@ impl ToolRegistry {
         }
 
         let is_mutating = handler.is_mutating(&invocation).await;
-        if is_mutating && !invocation.turn.mode_capabilities.mutation {
+        let planning_write = matches!(tool_name.as_ref(), "plan" | "plan_progress")
+            && invocation.turn.mode_capabilities.planning_records;
+        if is_mutating && !invocation.turn.mode_capabilities.mutation && !planning_write {
             return Err(FunctionCallError::RespondToModel(format!(
                 "tool `{tool_name}` would mutate state, but mutation is disabled in mode `{}`",
                 invocation.turn.mode_id

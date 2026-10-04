@@ -4,7 +4,7 @@ use crate::approvals::ElicitationRequestEvent;
 use crate::approvals::ExecApprovalRequestEvent;
 use crate::dynamic_tools::DynamicToolCallRequest;
 use crate::message_history::HistoryEntry;
-use crate::plan_tool::UpdatePlanArgs;
+use crate::plan_tool::PlanUpdate;
 use crate::request_permissions::RequestPermissionsEvent;
 use crate::request_user_input::RequestUserInputEvent;
 use schemars::JsonSchema;
@@ -263,7 +263,7 @@ pub enum EventMsg {
     /// visibility metadata.
     ListModelsResponse(ListModelsResponseEvent),
 
-    PlanUpdate(UpdatePlanArgs),
+    PlanUpdate(PlanUpdate),
 
     TurnAborted(TurnAbortedEvent),
 

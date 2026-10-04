@@ -69,6 +69,8 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
             "request_permissions",
             "refresh_models",
             "wait_for_machine_recovery",
+            "plan",
+            "plan_progress",
         ],
         ToolExposure::Always,
     )?;
@@ -111,7 +113,6 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     assign(
         &catalog,
         [
-            "update_plan",
             "read_session_history",
             "search_session_history",
             "compaction_control",
@@ -176,7 +177,8 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         "cancel_attested_review",
         "spawn_minions_on_csv",
         "report_minion_job_result",
-        "update_plan",
+        "plan",
+        "plan_progress",
         "read_session_history",
         "search_session_history",
         "compaction_control",

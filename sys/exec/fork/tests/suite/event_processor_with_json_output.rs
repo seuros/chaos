@@ -10,7 +10,6 @@ use chaos_fork::exec_events::CommandExecutionStatus;
 use chaos_fork::exec_events::ErrorItem;
 use chaos_fork::exec_events::ItemCompletedEvent;
 use chaos_fork::exec_events::ItemStartedEvent;
-use chaos_fork::exec_events::ItemUpdatedEvent;
 use chaos_fork::exec_events::McpToolCallItem;
 use chaos_fork::exec_events::McpToolCallItemError;
 use chaos_fork::exec_events::McpToolCallItemResult;
@@ -23,8 +22,6 @@ use chaos_fork::exec_events::ProcessItem;
 use chaos_fork::exec_events::ProcessItemDetails;
 use chaos_fork::exec_events::ProcessStartedEvent;
 use chaos_fork::exec_events::ReasoningItem;
-use chaos_fork::exec_events::TodoItem as ExecTodoItem;
-use chaos_fork::exec_events::TodoListItem as ExecTodoListItem;
 use chaos_fork::exec_events::TurnCompletedEvent;
 use chaos_fork::exec_events::TurnFailedEvent;
 use chaos_fork::exec_events::TurnStartedEvent;
@@ -39,9 +36,7 @@ use chaos_ipc::items::TurnItem;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use chaos_ipc::plan_tool::PlanItemArg;
-use chaos_ipc::plan_tool::StepStatus;
-use chaos_ipc::plan_tool::UpdatePlanArgs;
+use chaos_ipc::plan_tool::{PlanStatus, PlanTask, PlanUpdate, TaskStatus};
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
 use chaos_ipc::protocol::AgentStatus;
@@ -354,88 +349,21 @@ fn web_search_begin_then_end_reuses_item_id() {
 }
 
 #[test]
-fn plan_update_emits_todo_list_started_updated_and_completed() {
+fn plan_update_preserves_database_identity_and_does_not_complete_with_the_turn() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
 
-    // First plan update => item.started (todo_list)
-    let first = event(
-        "p1",
-        EventMsg::PlanUpdate(UpdatePlanArgs {
-            explanation: None,
-            plan: vec![
-                PlanItemArg {
-                    step: "step one".to_string(),
-                    status: StepStatus::Pending,
-                },
-                PlanItemArg {
-                    step: "step two".to_string(),
-                    status: StepStatus::InProgress,
-                },
-            ],
-        }),
-    );
+    let mut update = plan_snapshot();
+    let first = event("p1", EventMsg::PlanUpdate(update.clone()));
     let out_first = ep.collect_process_events(&first);
-    assert_eq!(
-        out_first,
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::TodoList(ExecTodoListItem {
-                    items: vec![
-                        ExecTodoItem {
-                            text: "step one".to_string(),
-                            completed: false
-                        },
-                        ExecTodoItem {
-                            text: "step two".to_string(),
-                            completed: false
-                        },
-                    ],
-                }),
-            },
-        })]
-    );
+    assert_eq!(out_first, vec![ProcessEvent::PlanUpdated(update.clone())]);
 
-    // Second plan update in same turn => item.updated (same id)
-    let second = event(
-        "p2",
-        EventMsg::PlanUpdate(UpdatePlanArgs {
-            explanation: None,
-            plan: vec![
-                PlanItemArg {
-                    step: "step one".to_string(),
-                    status: StepStatus::Completed,
-                },
-                PlanItemArg {
-                    step: "step two".to_string(),
-                    status: StepStatus::InProgress,
-                },
-            ],
-        }),
-    );
+    update.tasks[0].status = TaskStatus::Cancelled;
+    update.tasks[1].status = TaskStatus::Blocked;
+    let second = event("p2", EventMsg::PlanUpdate(update.clone()));
     let out_second = ep.collect_process_events(&second);
-    assert_eq!(
-        out_second,
-        vec![ProcessEvent::ItemUpdated(ItemUpdatedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::TodoList(ExecTodoListItem {
-                    items: vec![
-                        ExecTodoItem {
-                            text: "step one".to_string(),
-                            completed: true
-                        },
-                        ExecTodoItem {
-                            text: "step two".to_string(),
-                            completed: false
-                        },
-                    ],
-                }),
-            },
-        })]
-    );
+    assert_eq!(out_second, vec![ProcessEvent::PlanUpdated(update)]);
 
-    // Task completes => item.completed (same id, latest state)
+    // No synthetic plan completion when the chat turn ends.
     let complete = event(
         "p3",
         EventMsg::TurnComplete(chaos_ipc::protocol::TurnCompleteEvent {
@@ -446,37 +374,18 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
     let out_complete = ep.collect_process_events(&complete);
     assert_eq!(
         out_complete,
-        vec![
-            ProcessEvent::ItemCompleted(ItemCompletedEvent {
-                item: ProcessItem {
-                    id: "item_0".to_string(),
-                    details: ProcessItemDetails::TodoList(ExecTodoListItem {
-                        items: vec![
-                            ExecTodoItem {
-                                text: "step one".to_string(),
-                                completed: true
-                            },
-                            ExecTodoItem {
-                                text: "step two".to_string(),
-                                completed: false
-                            },
-                        ],
-                    }),
-                },
+        vec![ProcessEvent::TurnCompleted(TurnCompletedEvent {
+            telemetry_schema_version: 1,
+            usage: Usage {
+                complete: true,
+                ..Usage::default()
+            },
+            session_usage: Some(Usage {
+                scope: UsageScope::ProcessCumulative,
+                complete: true,
+                ..Usage::default()
             }),
-            ProcessEvent::TurnCompleted(TurnCompletedEvent {
-                telemetry_schema_version: 1,
-                usage: Usage {
-                    complete: true,
-                    ..Usage::default()
-                },
-                session_usage: Some(Usage {
-                    scope: UsageScope::ProcessCumulative,
-                    complete: true,
-                    ..Usage::default()
-                }),
-            }),
-        ]
+        }),]
     );
 }
 
@@ -837,20 +746,11 @@ fn collab_wait_end_without_begin_synthesizes_failed_item() {
 }
 
 #[test]
-fn plan_update_after_complete_starts_new_todo_list_with_new_id() {
+fn plan_update_after_a_turn_retains_the_same_database_identity() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
 
-    // First turn: start + complete
-    let start = event(
-        "t1",
-        EventMsg::PlanUpdate(UpdatePlanArgs {
-            explanation: None,
-            plan: vec![PlanItemArg {
-                step: "only".to_string(),
-                status: StepStatus::Pending,
-            }],
-        }),
-    );
+    let update = plan_snapshot();
+    let start = event("t1", EventMsg::PlanUpdate(update.clone()));
     let _ = ep.collect_process_events(&start);
     let complete = event(
         "t2",
@@ -861,24 +761,34 @@ fn plan_update_after_complete_starts_new_todo_list_with_new_id() {
     );
     let _ = ep.collect_process_events(&complete);
 
-    // Second turn: a new todo list should have a new id
-    let start_again = event(
-        "t3",
-        EventMsg::PlanUpdate(UpdatePlanArgs {
-            explanation: None,
-            plan: vec![PlanItemArg {
-                step: "again".to_string(),
-                status: StepStatus::Pending,
-            }],
-        }),
-    );
+    let start_again = event("t3", EventMsg::PlanUpdate(update.clone()));
     let out = ep.collect_process_events(&start_again);
 
-    match &out[0] {
-        ProcessEvent::ItemStarted(ItemStartedEvent { item }) => {
-            assert_eq!(&item.id, "item_1");
-        }
-        other => panic!("unexpected event: {other:?}"),
+    assert_eq!(out, vec![ProcessEvent::PlanUpdated(update)]);
+}
+
+fn plan_snapshot() -> PlanUpdate {
+    PlanUpdate {
+        plan_id: "plan-uuid".into(),
+        reference: "A3F092/00AF".into(),
+        title: "Plan spanning turns".into(),
+        status: PlanStatus::Active,
+        revision: 3,
+        next_offset: None,
+        tasks: vec![
+            PlanTask {
+                reference: "T2".into(),
+                title: "Parent task".into(),
+                status: TaskStatus::Pending,
+                depth: 0,
+            },
+            PlanTask {
+                reference: "T1".into(),
+                title: "Child task".into(),
+                status: TaskStatus::InProgress,
+                depth: 1,
+            },
+        ],
     }
 }
 

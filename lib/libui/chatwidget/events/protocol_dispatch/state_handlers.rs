@@ -106,7 +106,7 @@ impl ChatWidget {
         );
     }
 
-    pub(crate) fn on_plan_update(&mut self, update: chaos_ipc::plan_tool::UpdatePlanArgs) {
+    pub(crate) fn on_plan_update(&mut self, update: chaos_ipc::plan_tool::PlanUpdate) {
         self.saw_plan_update_this_turn = true;
         self.add_to_history(history_cell::new_plan_update(update));
     }

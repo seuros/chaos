@@ -26,13 +26,29 @@ the parent or sibling sessions.
 
 | Mode | Description |
 |------|-------------|
-| `default` | General-purpose execution mode with mutation and implementation planning enabled |
-| `plan` | Conversational planning mode with repository mutation and `update_plan` disabled |
+| `default` | Execution mode; compact progress tools appear only for an explicitly attached plan |
+| `plan` | Conversational planning with durable planning-record writes permitted, repository mutation disabled |
 
 Plan mode retains tools used for inspection, builds, tests, structured
-questions, and mode switching. It removes `apply_patch`, `update_plan`,
+questions, and mode switching. It removes `apply_patch`,
 `request_permissions`, dynamic mutating tools, and MCP tools marked
 destructive.
+
+The bundled `collaboration_mode/plan.md` is a conditional MiniJinja template.
+The kernel renders it after mounting the session database. PostgreSQL sessions
+receive nesting, dependency-DAG, and shared-workspace guidance; SQLite sessions
+receive local nested-task guidance only. Neither prompt includes instructions
+or fallback caveats for the other backend. Sessions without a planning database
+receive conversational planning instructions without durable-tool guidance.
+
+See chaos-planning(7) for workspace registration, checkout bindings, plan
+commands, optimistic revisions, and explicit child attachments.
+
+The same mounted-backend capabilities filter the tool schemas: SQLite does not
+advertise dependency actions. Execution-mode planning guidance is emitted only
+when `plan_progress` is visible. An attached agent may switch to Plan mode to
+revise structure and return to execution without asking the operator to switch.
+The session's existing allowed-mode policy still applies.
 
 ## DISCOVERY
 
@@ -102,7 +118,7 @@ reasoning_effort = "high"
 [capabilities]
 mutation = false
 request_user_input = true
-update_plan = true
+planning_records = true
 +++
 Investigate the request using available read-only tools. Separate verified
 facts from inferences and report uncertainty explicitly.
@@ -121,7 +137,7 @@ to narrow its model-visible surface:
 |------------|--------|
 | `mutation` | Permit tools that can change user or repository state |
 | `request_user_input` | Permit the structured question tool |
-| `update_plan` | Permit the implementation checklist tool |
+| `planning_records` | Permit database planning operations, independently of repository mutation |
 
 A mode can remove capabilities but cannot grant filesystem, network, sandbox,
 approval, delegation, or other security authority.

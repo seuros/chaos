@@ -53,9 +53,7 @@ use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::default_input_modalities;
 use chaos_ipc::parse_command::ParsedCommand;
-use chaos_ipc::plan_tool::PlanItemArg;
-use chaos_ipc::plan_tool::StepStatus;
-use chaos_ipc::plan_tool::UpdatePlanArgs;
+use chaos_ipc::plan_tool::{PlanStatus, PlanTask, PlanUpdate, TaskStatus};
 use chaos_ipc::protocol::AgentMessageContentDeltaEvent;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
@@ -3412,11 +3410,18 @@ async fn plan_implementation_popup_skips_without_proposed_plan() {
     chat.set_collaboration_mask(plan_mask);
 
     chat.on_task_started();
-    chat.on_plan_update(UpdatePlanArgs {
-        explanation: None,
-        plan: vec![PlanItemArg {
-            step: "First".to_string(),
-            status: StepStatus::Pending,
+    chat.on_plan_update(PlanUpdate {
+        plan_id: "plan-id".into(),
+        reference: "000000/0000".into(),
+        title: "First plan".into(),
+        status: PlanStatus::Active,
+        revision: 1,
+        next_offset: None,
+        tasks: vec![PlanTask {
+            reference: "T1".into(),
+            title: "First".into(),
+            status: TaskStatus::Pending,
+            depth: 0,
         }],
     });
     chat.on_task_complete(None, false);
@@ -8135,20 +8140,31 @@ async fn apply_patch_request_shows_diff_summary() -> ConstraintResult<()> {
 #[cfg(test)]
 async fn plan_update_renders_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    let update = UpdatePlanArgs {
-        explanation: Some("Adapting plan".to_string()),
-        plan: vec![
-            PlanItemArg {
-                step: "Explore codebase".into(),
-                status: StepStatus::Completed,
+    let update = PlanUpdate {
+        plan_id: "plan-id".into(),
+        reference: "A3F092/00AF".into(),
+        title: "Adapting plan".into(),
+        status: PlanStatus::Active,
+        revision: 4,
+        next_offset: None,
+        tasks: vec![
+            PlanTask {
+                reference: "T1".into(),
+                title: "Explore codebase".into(),
+                status: TaskStatus::Completed,
+                depth: 0,
             },
-            PlanItemArg {
-                step: "Implement feature".into(),
-                status: StepStatus::InProgress,
+            PlanTask {
+                reference: "T2".into(),
+                title: "Implement feature".into(),
+                status: TaskStatus::InProgress,
+                depth: 1,
             },
-            PlanItemArg {
-                step: "Write tests".into(),
-                status: StepStatus::Pending,
+            PlanTask {
+                reference: "T3".into(),
+                title: "Write tests".into(),
+                status: TaskStatus::Pending,
+                depth: 0,
             },
         ],
     };
@@ -8160,7 +8176,7 @@ async fn plan_update_renders_history_cell() {
     assert!(!cells.is_empty(), "expected plan update cell to be sent");
     let blob = lines_to_single_string(cells.last().unwrap());
     assert!(
-        blob.contains("Updated Plan"),
+        blob.contains("Plan A3F092/00AF"),
         "missing plan header: {blob:?}"
     );
     assert!(blob.contains("Explore codebase"));

@@ -1,8 +1,10 @@
-use chaos_ipc::plan_tool::StepStatus;
+use anyhow::Context;
+use chaos_ipc::plan_tool::TaskStatus;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::UserInput;
+use chaos_proc::planning::{Plan, PlanChange, PlanMutation, PlanningActor};
 use core_test_support::assert_regex_match;
 use core_test_support::responses;
 use core_test_support::responses::ResponsesRequest;
@@ -19,7 +21,6 @@ use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use serde_json::Value;
 use serde_json::json;
-use std::assert_matches;
 fn call_output(req: &ResponsesRequest, call_id: &str) -> (String, Option<bool>) {
     let raw = req.function_call_output(call_id);
     assert_eq!(
@@ -106,7 +107,7 @@ tool harness
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
+async fn plan_progress_emits_committed_database_view() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -118,20 +119,25 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
         session_configured,
         ..
     } = builder.build(&server).await?;
+    let plan = attached_plan(&chaos, session_configured.session_id).await?;
 
     let call_id = "plan-tool-call";
     let plan_args = json!({
-        "explanation": "Tool harness check",
-        "plan": [
-            {"step": "Inspect workspace", "status": "in_progress"},
-            {"step": "Report results", "status": "pending"},
-        ],
+        "action": "change",
+        "request_id": "start-T1",
+        "change": {
+            "action": "transition",
+            "task": "T1",
+            "task_revision": 1,
+            "event": "start",
+            "reason": "Inspecting the workspace"
+        }
     })
     .to_string();
 
     let first_response = sse(vec![
         ev_response_created("resp-1"),
-        ev_function_call(call_id, "update_plan", &plan_args),
+        ev_function_call(call_id, "plan_progress", &plan_args),
         ev_completed("resp-1"),
     ]);
     responses::mount_sse_once(&server, first_response).await;
@@ -168,12 +174,14 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
     wait_for_event(&chaos, |event| match event {
         EventMsg::PlanUpdate(update) => {
             saw_plan_update = true;
-            assert_eq!(update.explanation.as_deref(), Some("Tool harness check"));
-            assert_eq!(update.plan.len(), 2);
-            assert_eq!(update.plan[0].step, "Inspect workspace");
-            assert_matches!(update.plan[0].status, StepStatus::InProgress);
-            assert_eq!(update.plan[1].step, "Report results");
-            assert_matches!(update.plan[1].status, StepStatus::Pending);
+            assert_eq!(update.plan_id, plan.id);
+            assert_eq!(update.tasks.len(), 2);
+            assert_eq!(update.tasks[0].reference, "T1");
+            assert_eq!(update.tasks[0].title, "Inspect workspace");
+            assert_eq!(update.tasks[0].status, TaskStatus::InProgress);
+            assert_eq!(update.tasks[1].title, "Report results");
+            assert_eq!(update.tasks[1].status, TaskStatus::Pending);
+            assert_eq!(update.tasks[1].depth, 1);
             false
         }
         EventMsg::TurnComplete(_) => true,
@@ -185,13 +193,23 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
 
     let req = second_mock.single_request();
     let (output_text, _success_flag) = call_output(&req, call_id);
-    assert_eq!(output_text, "Plan updated");
+    let result: chaos_proc::planning::MutationResult = serde_json::from_str(&output_text)?;
+    assert_eq!(result.plan.id, plan.id);
+    assert_eq!(
+        result.task.context("changed task")?.status,
+        TaskStatus::InProgress
+    );
+    let db = chaos.runtime_db().context("runtime database")?;
+    assert_eq!(
+        db.planning_task(&plan.id, "T1", 0).await?.task.status,
+        TaskStatus::InProgress
+    );
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
+async fn plan_progress_rejects_malformed_payload_without_ui_update() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -203,16 +221,19 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
         session_configured,
         ..
     } = builder.build(&server).await?;
+    attached_plan(&chaos, session_configured.session_id).await?;
 
     let call_id = "plan-tool-invalid";
     let invalid_args = json!({
-        "explanation": "Missing plan data"
+        "action": "change",
+        "request_id": "invalid",
+        "change": {"action": "transition", "task": "T1", "task_revision": 1, "event": "start"}
     })
     .to_string();
 
     let first_response = sse(vec![
         ev_response_created("resp-1"),
-        ev_function_call(call_id, "update_plan", &invalid_args),
+        ev_function_call(call_id, "plan_progress", &invalid_args),
         ev_completed("resp-1"),
     ]);
     responses::mount_sse_once(&server, first_response).await;
@@ -274,5 +295,108 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
         );
     }
 
+    Ok(())
+}
+
+async fn attached_plan(
+    process: &chaos_kern::Process,
+    session: chaos_ipc::ProcessId,
+) -> anyhow::Result<Plan> {
+    let db = process.runtime_db().context("runtime database")?;
+    let workspace = db.planning_create_workspace("tool harness").await?;
+    let actor = PlanningActor {
+        session: "operator".into(),
+        installation: "test".into(),
+    };
+    let plan = db
+        .planning_mutate(
+            &actor,
+            &PlanMutation {
+                request_id: "create".into(),
+                plan: None,
+                expected_revision: None,
+                change: PlanChange::Create {
+                    workspace: workspace.id,
+                    title: "Harness plan".into(),
+                },
+            },
+        )
+        .await?
+        .plan;
+    for (revision, title, parent) in [
+        (1, "Inspect workspace", None),
+        (2, "Report results", Some("T1".into())),
+    ] {
+        db.planning_mutate(
+            &actor,
+            &PlanMutation {
+                request_id: format!("add-{revision}"),
+                plan: Some(plan.id.clone()),
+                expected_revision: Some(revision),
+                change: PlanChange::AddTask {
+                    title: title.into(),
+                    parent,
+                    position: 0,
+                },
+            },
+        )
+        .await?;
+    }
+    db.planning_attach(&session.to_string(), Some(&plan.id))
+        .await?;
+    Ok(plan)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn plan_resume_reads_current_database_not_transcript() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = start_mock_server().await;
+    let mut builder = test_chaos();
+    let test = builder.build(&server).await?;
+    let plan = attached_plan(&test.process, test.session_configured.session_id).await?;
+    responses::mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "saved"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    test.submit_turn("save this session").await?;
+    test.process.submit(Op::Shutdown {}).await?;
+    wait_for_event(&test.process, |event| {
+        matches!(event, EventMsg::ShutdownComplete)
+    })
+    .await;
+    let db = test.process.runtime_db().context("runtime database")?;
+    db.planning_mutate(
+        &PlanningActor {
+            session: "other-session".into(),
+            installation: "other-machine".into(),
+        },
+        &PlanMutation {
+            request_id: "rename".into(),
+            plan: Some(plan.id.clone()),
+            expected_revision: Some(3),
+            change: PlanChange::Edit {
+                title: "Updated while offline".into(),
+            },
+        },
+    )
+    .await?;
+    let resumed = builder
+        .resume(&server, test.home, test.session_configured.session_id)
+        .await?;
+    wait_for_event(&resumed.process, |event| match event {
+        EventMsg::PlanUpdate(update) => {
+            assert_eq!(update.plan_id, plan.id);
+            assert_eq!(update.title, "Updated while offline");
+            assert_eq!(update.revision, 4);
+            true
+        }
+        _ => false,
+    })
+    .await;
+    resumed.process.submit(Op::Shutdown {}).await?;
     Ok(())
 }

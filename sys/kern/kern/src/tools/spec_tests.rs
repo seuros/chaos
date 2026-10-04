@@ -534,7 +534,7 @@ fn non_mutating_mode_hides_mutating_tools_but_keeps_mode_switching() {
         crate::modes::ModeCapabilities {
             mutation: false,
             request_user_input: true,
-            update_plan: false,
+            planning_records: true,
         },
         /*switching_allowed*/ true,
     );
@@ -565,6 +565,52 @@ fn non_mutating_mode_hides_mutating_tools_but_keeps_mode_switching() {
     assert_lacks_tool_name(&tools, "apply_patch");
     assert_lacks_tool_name(&tools, "request_permissions");
     assert_lacks_tool_name(&tools, "external_mutation");
+}
+
+#[test]
+fn planning_tool_visibility_requires_storage_mode_and_attachment() {
+    use chaos_proc::planning::PlanningCapabilities;
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
+    let available_models = Vec::new();
+    let base = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        approval_policy: ApprovalPolicy::Interactive,
+        minion_jobs_allowed: false,
+        web_search_mode: None,
+        session_source: SessionSource::Cli,
+        collab_enabled: false,
+    });
+    for planning in [
+        PlanningCapabilities::default(),
+        PlanningCapabilities::SQLITE,
+        PlanningCapabilities::POSTGRES,
+    ] {
+        for authoring in [false, true] {
+            for attached in [false, true] {
+                let mut config = base.clone();
+                config.planning = planning;
+                config.planning_authoring = authoring;
+                config.attached_plan = attached.then(|| "plan-id".into());
+                let (tools, _) = build_specs(&config, None, None, &[]).build();
+                for (name, visible) in [
+                    ("plan", planning.available && authoring),
+                    (
+                        "plan_progress",
+                        planning.available && !authoring && attached,
+                    ),
+                ] {
+                    if visible {
+                        assert_contains_tool_names(&tools, &[name]);
+                    } else {
+                        assert_lacks_tool_name(&tools, name);
+                    }
+                }
+                assert_lacks_tool_name(&tools, "update_plan");
+            }
+        }
+    }
 }
 
 #[test]
@@ -893,7 +939,6 @@ fn test_full_toolset_specs_for_codex_style_exec_web_search_model() {
         super::tool_builders::create_hook_tool("hooks_set_enabled"),
         super::tool_builders::create_hook_tool("hooks_delete"),
         super::tool_builders::create_hook_tool("hooks_preview"),
-        PLAN_TOOL.clone(),
         create_read_session_history_tool(),
         create_search_session_history_tool(),
         create_request_user_input_tool(CollaborationModesConfig::default()),
@@ -1459,7 +1504,6 @@ const MODEL_TOOL_TAIL_PREFIX: &[&str] = &[
     "hooks_set_enabled",
     "hooks_delete",
     "hooks_preview",
-    "update_plan",
     "read_session_history",
     "search_session_history",
     "request_user_input",
@@ -1959,7 +2003,7 @@ fn test_build_specs_default_shell_present() {
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
 
     // Only check the shell variant and a couple of core tools.
-    let mut subset = vec!["exec_command", "write_stdin", "update_plan"];
+    let mut subset = vec!["exec_command", "write_stdin"];
     if let Some(shell_tool) = shell_tool_name(&tools_config) {
         subset.push(shell_tool);
     }

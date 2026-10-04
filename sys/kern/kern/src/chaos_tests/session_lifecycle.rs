@@ -294,7 +294,7 @@ async fn switch_mode_changes_the_next_sample_context_in_the_same_session() {
     assert_eq!(plan_context.mode_id, crate::modes::PLAN_MODE_ID);
     assert!(!plan_context.mode_capabilities.mutation);
     assert!(plan_context.tools_config.apply_patch_tool_type.is_none());
-    assert!(!plan_context.tools_config.mode_allow_update_plan);
+    assert!(plan_context.tools_config.planning_authoring);
     assert!(plan_context.tools_config.mode_switching);
 
     session
@@ -304,7 +304,7 @@ async fn switch_mode_changes_the_next_sample_context_in_the_same_session() {
     let default_context = session.effective_turn_context(&turn_context).await;
     assert_eq!(default_context.mode_id, crate::modes::DEFAULT_MODE_ID);
     assert!(default_context.mode_capabilities.mutation);
-    assert!(default_context.tools_config.mode_allow_update_plan);
+    assert!(!default_context.tools_config.planning_authoring);
     assert_eq!(default_context.reasoning_effort, base_reasoning_effort);
 }
 

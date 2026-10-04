@@ -69,7 +69,7 @@ pub(crate) fn create_switch_mode_tool() -> ToolSpec {
     )]);
     ToolSpec::Function(ResponsesApiTool {
         name: "switch_mode".to_string(),
-        description: "Switch this ChaOS session to another allowed mode. Read chaos://modes for the caller-filtered catalog. The next model sample in the same user turn uses the new mode. The switch is session-scoped and cannot change parent, sibling, or global modes."
+        description: "Switch this ChaOS session to another allowed mode. Read chaos://modes for the caller-filtered catalog. For structural changes to an attached plan, switch to Plan mode yourself and return to execution afterward; no operator intervention is needed for the switch. The next model sample uses the new mode. Cannot change parent, sibling, or global modes."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -682,7 +682,7 @@ pub(crate) fn create_collab_input_items_schema() -> JsonSchema {
 
 pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
     let available_models_description = spawn_agent_models_description(&config.available_models);
-    let properties = BTreeMap::from([
+    let mut properties = BTreeMap::from([
         (
             "message".to_string(),
             JsonSchema::String {
@@ -781,6 +781,17 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             },
         ),
     ]);
+
+    if config.planning_records
+        && config.planning.available
+        && (config.planning_authoring || config.attached_plan.is_some())
+    {
+        properties.insert("plan".into(), JsonSchema::String {
+            description: Some(
+                "Explicit plan UUID or workspace/plan reference to attach to the child. Omitted means no attachment, even with fork_context. Execution can pass only its attached plan.".into(),
+            ),
+        });
+    }
 
     ToolSpec::Function(ResponsesApiTool {
         name: "spawn_agent".to_string(),

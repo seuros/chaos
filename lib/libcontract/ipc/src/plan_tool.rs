@@ -1,28 +1,63 @@
 use schemars::JsonSchema;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use strum_macros::{AsRefStr, EnumString};
 
-// Types for the TODO tool arguments matching chaos-vscode/todo-mcp/src/main.rs
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, AsRefStr, EnumString,
+)]
 #[serde(rename_all = "snake_case")]
-pub enum StepStatus {
+#[strum(serialize_all = "snake_case")]
+pub enum TaskStatus {
     Pending,
     InProgress,
+    Blocked,
     Completed,
+    Cancelled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PlanItemArg {
-    pub step: String,
-    pub status: StepStatus,
+impl TryFrom<String> for TaskStatus {
+    type Error = strum::ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct UpdatePlanArgs {
-    /// Arguments for the `update_plan` todo/checklist tool (not plan mode).
-    #[serde(default)]
-    pub explanation: Option<String>,
-    pub plan: Vec<PlanItemArg>,
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, AsRefStr, EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum PlanStatus {
+    Active,
+    Completed,
+    Cancelled,
+}
+
+impl TryFrom<String> for PlanStatus {
+    type Error = strum::ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanTask {
+    pub reference: String,
+    pub title: String,
+    pub status: TaskStatus,
+    pub depth: i64,
+}
+
+/// A bounded, committed database snapshot, including immutable display references.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanUpdate {
+    pub plan_id: String,
+    pub reference: String,
+    pub title: String,
+    pub status: PlanStatus,
+    pub revision: i16,
+    pub tasks: Vec<PlanTask>,
+    pub next_offset: Option<i64>,
 }

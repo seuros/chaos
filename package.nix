@@ -20,7 +20,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "chaos";
-  version = "47.10.2";
+  version = "47.11.0";
 
   # Restrict src to what cargo actually needs so flake/tooling edits don't
   # invalidate the build. Keep the list minimal: sys/kern/kern/build.rs

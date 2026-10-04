@@ -27,8 +27,8 @@ pub(crate) struct ModeCapabilities {
     pub(crate) mutation: bool,
     /// Whether the mode may ask structured questions.
     pub(crate) request_user_input: bool,
-    /// Whether the mode may maintain the implementation checklist.
-    pub(crate) update_plan: bool,
+    /// Planning database writes are separate from repository mutation.
+    pub(crate) planning_records: bool,
 }
 
 impl Default for ModeCapabilities {
@@ -36,7 +36,7 @@ impl Default for ModeCapabilities {
         Self {
             mutation: true,
             request_user_input: true,
-            update_plan: true,
+            planning_records: true,
         }
     }
 }
@@ -45,7 +45,7 @@ impl ModeCapabilities {
     pub(crate) fn permits_child(self, child: Self) -> bool {
         (self.mutation || !child.mutation)
             && (self.request_user_input || !child.request_user_input)
-            && (self.update_plan || !child.update_plan)
+            && (self.planning_records || !child.planning_records)
     }
 }
 
@@ -137,7 +137,7 @@ impl ModeRegistry {
                     ModeCapabilities {
                         mutation: false,
                         request_user_input: true,
-                        update_plan: false,
+                        planning_records: true,
                     },
                 ),
                 _ => continue,
@@ -160,6 +160,17 @@ impl ModeRegistry {
 
     pub(crate) fn get(&self, id: &str) -> Option<&ModeDefinition> {
         self.modes.get(id)
+    }
+
+    /// The storage backend is fixed for the session. Render after mounting it,
+    /// not from a URL guess or a UI preset carried over from another machine.
+    pub(crate) fn configure_planning(
+        &mut self,
+        capabilities: chaos_proc::planning::PlanningCapabilities,
+    ) {
+        if let Some(plan) = self.modes.get_mut(PLAN_MODE_ID) {
+            plan.instructions = crate::collaboration_modes::plan_mode_instructions(capabilities);
+        }
     }
 
     pub(crate) fn ids(&self) -> BTreeSet<String> {

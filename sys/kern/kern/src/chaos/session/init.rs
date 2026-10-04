@@ -278,6 +278,19 @@ impl Session {
             error!("failed to initialize rollout recorder: {e:#}");
             e
         })?;
+        Arc::make_mut(&mut session_configuration.mode_registry).configure_planning(
+            state_db_ctx
+                .as_ref()
+                .map(|db| db.planning_capabilities())
+                .unwrap_or_default(),
+        );
+        session_configuration.collaboration_mode = session_configuration
+            .mode_registry
+            .apply_mode(
+                &session_configuration.mode_policy.active_mode,
+                &session_configuration.collaboration_mode,
+            )
+            .map_err(anyhow::Error::msg)?;
         if config.unattended_recovery
             && config.model_provider.requires_managed_auth()
             && auth.is_none()
@@ -592,6 +605,7 @@ impl Session {
         for event in events {
             sess.send_event_raw(event).await;
         }
+        sess.send_attached_plan().await?;
 
         if let InitialHistory::Resumed(_) = &initial_history {
             if sess.services.rollout.lock().await.is_some() {

@@ -132,6 +132,25 @@ impl Session {
     }
 
     pub(crate) async fn effective_turn_context(&self, base: &Arc<TurnContext>) -> Arc<TurnContext> {
+        let planning = self
+            .runtime_db()
+            .map(|db| db.planning_capabilities())
+            .unwrap_or_default();
+        // Re-read before every model sample. Attachments can change in a previous
+        // tool call or through an operator on another client.
+        let attached_plan = match self.runtime_db() {
+            Some(db) => match db
+                .planning_attachment(&self.conversation_id.to_string())
+                .await
+            {
+                Ok(plan) => plan,
+                Err(error) => {
+                    tracing::warn!(%error, "planning attachment unavailable");
+                    None
+                }
+            },
+            None => None,
+        };
         let (collaboration_mode, mode_registry, mode_policy) = {
             let state = self.state.lock().await;
             (
@@ -151,6 +170,8 @@ impl Session {
             && base.mode_policy == mode_policy
             && base.collaboration_mode == collaboration_mode
             && permissions_unchanged
+            && base.tools_config.attached_plan == attached_plan
+            && base.tools_config.planning == planning
         {
             return Arc::clone(base);
         }
@@ -164,7 +185,7 @@ impl Session {
         let mut config = (*base.config).clone();
         config.model_reasoning_effort = collaboration_mode.reasoning_effort();
         config.mode_policy_override = Some(mode_policy.clone());
-        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        let mut tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &base.model_info,
             available_models: &self
                 .services
@@ -190,6 +211,8 @@ impl Session {
         .with_allow_login_shell(base.tools_config.allow_login_shell)
         .with_agent_roles(config.agent_roles.clone())
         .with_mode_policy(mode_capabilities, mode_policy.switching_allowed);
+        tools_config.attached_plan = attached_plan;
+        tools_config.planning = planning;
 
         let mut effective = (**base).clone();
         effective.config = Arc::new(config);

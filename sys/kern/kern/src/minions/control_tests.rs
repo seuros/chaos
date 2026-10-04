@@ -359,6 +359,76 @@ async fn spawn_agent_creates_process_and_sends_prompt() {
 }
 
 #[tokio::test]
+async fn planning_child_attachment_is_explicit_even_when_forking_history() -> anyhow::Result<()> {
+    use anyhow::Context;
+    use chaos_proc::planning::{PlanChange, PlanMutation, PlanningActor};
+
+    let harness = AgentControlHarness::new().await;
+    let (parent_id, parent) = harness.start_process().await;
+    let db = parent.runtime_db().context("parent database")?;
+    let workspace = db.planning_create_workspace("delegation").await?;
+    let plan = db
+        .planning_mutate(
+            &PlanningActor {
+                session: parent_id.to_string(),
+                installation: "test".into(),
+            },
+            &PlanMutation {
+                request_id: "create".into(),
+                plan: None,
+                expected_revision: None,
+                change: PlanChange::Create {
+                    workspace: workspace.id,
+                    title: "Shared plan".into(),
+                },
+            },
+        )
+        .await?
+        .plan;
+    db.planning_attach(&parent_id.to_string(), Some(&plan.id))
+        .await?;
+
+    for fork in [false, true] {
+        for attached in [false, true] {
+            let child = harness
+                .control
+                .spawn_agent_with_options(
+                    harness.config.clone(),
+                    text_input("inspect one task"),
+                    Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                        parent_process_id: parent_id,
+                        depth: 1,
+                        agent_nickname: None,
+                        agent_role: None,
+                    })),
+                    SpawnAgentOptions {
+                        plan: attached.then(|| plan.id.clone()),
+                        fork_parent_spawn_call_id: fork.then(|| format!("spawn-{attached}")),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let child_id = child.process_id;
+            assert_eq!(
+                db.planning_attachment(&child_id.to_string()).await?,
+                attached.then(|| plan.id.clone()),
+            );
+            let process = harness.manager.get_process(child_id).await?;
+            let base = process.chaos.session.new_default_turn().await;
+            let effective = process.chaos.session.effective_turn_context(&base).await;
+            assert_eq!(effective.tools_config.attached_plan.is_some(), attached);
+            harness.control.shutdown_agent(child_id).await?;
+        }
+    }
+    assert_eq!(
+        db.planning_attachment(&parent_id.to_string()).await?,
+        Some(plan.id)
+    );
+    parent.submit(Op::Shutdown {}).await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn spawn_agent_options_attach_the_final_output_schema_to_initial_input() {
     let harness = AgentControlHarness::new().await;
     let schema = serde_json::json!({

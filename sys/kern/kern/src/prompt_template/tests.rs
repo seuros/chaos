@@ -58,6 +58,34 @@ fn bundled_runtime_renders() {
 }
 
 #[test]
+fn progress_guidance_requires_an_attached_plan_tool() {
+    let catalog = crate::tools::groups::build_catalog().unwrap();
+    let state = catalog.new_state();
+    let render = |names| {
+        runtime_instructions(
+            &tools(names),
+            ToolGroupFilter {
+                catalog: &catalog,
+                state: &state,
+            },
+            ModeCapabilities::default(),
+            &SessionSource::Api,
+            false,
+            false,
+        )
+    };
+    let unattached = render("switch_mode read_file");
+    assert!(!unattached.contains("# Attached plan"));
+    assert!(!unattached.contains("plan_progress"));
+    let attached = render("switch_mode plan_progress");
+    assert!(attached.contains("# Attached plan"));
+    assert!(attached.contains("switch to Plan mode yourself"));
+    let fixed = render("plan_progress");
+    assert!(fixed.contains("# Attached plan"));
+    assert!(!fixed.contains("switch to Plan mode yourself"));
+}
+
+#[test]
 fn runtime_selects_sections_from_capabilities() -> anyhow::Result<()> {
     let mut engine = template_environment();
     for section in ["tools", "resources", "mcp", "jobs", "editing", "terminal"] {

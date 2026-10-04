@@ -3,7 +3,6 @@ use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::TUI_VISIBLE_COLLABORATION_MODES;
 use chaos_ipc::openai_models::ReasoningEffort;
 
-const COLLABORATION_MODE_PLAN: &str = include_str!("../templates/collaboration_mode/plan.md");
 const COLLABORATION_MODE_DEFAULT: &str = include_str!("../templates/collaboration_mode/default.md");
 const KNOWN_MODE_NAMES_PLACEHOLDER: &str = "{{KNOWN_MODE_NAMES}}";
 const REQUEST_USER_INPUT_AVAILABILITY_PLACEHOLDER: &str = "{{REQUEST_USER_INPUT_AVAILABILITY}}";
@@ -40,8 +39,17 @@ fn plan_preset() -> CollaborationModeMask {
         mode: Some(ModeKind::Plan),
         model: None,
         reasoning_effort: Some(Some(ReasoningEffort::Medium)),
-        developer_instructions: Some(Some(COLLABORATION_MODE_PLAN.to_string())),
+        developer_instructions: Some(Some(plan_mode_instructions(Default::default()))),
     }
+}
+
+pub(crate) fn plan_mode_instructions(
+    planning: chaos_proc::planning::PlanningCapabilities,
+) -> String {
+    crate::prompt_template::render_template(
+        "collaboration_mode/plan.md",
+        minijinja::context!(planning),
+    )
 }
 
 fn default_preset(collaboration_modes_config: CollaborationModesConfig) -> CollaborationModeMask {

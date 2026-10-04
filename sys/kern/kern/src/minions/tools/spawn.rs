@@ -35,6 +35,7 @@ impl ToolHandler for Handler {
             call_id,
             ..
         } = invocation;
+        let turn = session.effective_turn_context(&turn).await;
         let invocation_call_id = call_id.clone();
         let arguments = function_arguments(payload)?;
         let mut args: SpawnAgentArgs = parse_arguments(&arguments)?;
@@ -95,6 +96,7 @@ impl ToolHandler for Handler {
             )
             .await;
         let config = prepare_config(&session, &turn, role_name, child_depth, &args).await?;
+        let plan = resolve_plan(&session, &turn, args.plan.as_deref()).await?;
 
         session
             .begin_background_submission(&invocation_call_id)
@@ -118,6 +120,7 @@ impl ToolHandler for Handler {
                 SpawnAgentOptions {
                     completion_call_id: Some(invocation_call_id.clone()),
                     fork_parent_spawn_call_id: args.fork_context.then(|| call_id.clone()),
+                    plan,
                     ..SpawnAgentOptions::default()
                 },
             )
@@ -210,6 +213,40 @@ impl ToolHandler for Handler {
     }
 }
 
+pub(super) async fn resolve_plan(
+    session: &Session,
+    turn: &TurnContext,
+    requested: Option<&str>,
+) -> Result<Option<String>, FunctionCallError> {
+    let Some(requested) = requested else {
+        return Ok(None);
+    };
+    if !turn.mode_capabilities.planning_records {
+        return Err(FunctionCallError::RespondToModel(
+            "planning is unavailable in this mode".into(),
+        ));
+    }
+    let db = session
+        .runtime_db()
+        .ok_or_else(|| FunctionCallError::RespondToModel("planning database unavailable".into()))?;
+    let plan = db
+        .planning_resolve_plan(requested)
+        .await
+        .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?;
+    if !turn.tools_config.planning_authoring {
+        let attached = db
+            .planning_attachment(&session.conversation_id.to_string())
+            .await
+            .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?;
+        if attached.as_ref() != Some(&plan) || attached != turn.tools_config.attached_plan {
+            return Err(FunctionCallError::RespondToModel(
+                "only the current attached plan can be passed during execution".into(),
+            ));
+        }
+    }
+    Ok(Some(plan))
+}
+
 /// Resolve configuration before starting a child session or writing its submission.
 pub(super) async fn prepare_config(
     session: &Session,
@@ -280,6 +317,7 @@ pub(super) struct SpawnAgentArgs {
     mode: Option<String>,
     allowed_modes: Option<Vec<String>>,
     allow_mode_switching: Option<bool>,
+    plan: Option<String>,
     #[serde(default)]
     fork_context: bool,
 }

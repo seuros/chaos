@@ -27,7 +27,7 @@ mod tool_groups;
 mod view_image;
 
 use chaos_realpath::AbsolutePathBufGuard;
-pub use plan::PLAN_TOOL;
+pub(crate) use plan::planning_tool;
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::Path;

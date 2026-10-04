@@ -1391,30 +1391,42 @@ fn render_uses_wrapping_for_long_url_like_line() {
 }
 
 fn plan_update_with_note_and_wrapping_snapshot() {
-    use chaos_ipc::plan_tool::PlanItemArg;
-    use chaos_ipc::plan_tool::StepStatus;
-    use chaos_ipc::plan_tool::UpdatePlanArgs;
+    use chaos_ipc::plan_tool::{PlanStatus, PlanTask, PlanUpdate, TaskStatus};
 
-    let update = UpdatePlanArgs {
-            explanation: Some(
-                "I'll update Grafana call error handling by adding retries and clearer messages when the backend is unreachable."
-                    .to_string(),
-            ),
-            plan: vec![
-                PlanItemArg {
-                    step: "Investigate existing error paths and logging around HTTP timeouts".into(),
-                    status: StepStatus::Completed,
-                },
-                PlanItemArg {
-                    step: "Harden Grafana client error handling with retry/backoff and user‑friendly messages".into(),
-                    status: StepStatus::InProgress,
-                },
-                PlanItemArg {
-                    step: "Add tests for transient failure scenarios and surfacing to the UI".into(),
-                    status: StepStatus::Pending,
-                },
-            ],
-        };
+    let update = PlanUpdate {
+        plan_id: "plan-id".into(),
+        reference: "A3F092/00AF".into(),
+        title: "Improve Grafana call error handling and backend availability messages".into(),
+        status: PlanStatus::Active,
+        revision: 7,
+        next_offset: Some(50),
+        tasks: vec![
+            PlanTask {
+                reference: "T3".into(),
+                title: "Investigate existing error paths and logging around HTTP timeouts".into(),
+                status: TaskStatus::Completed,
+                depth: 0,
+            },
+            PlanTask {
+                reference: "T1".into(),
+                title: "Improve Grafana client error handling with user‑friendly messages".into(),
+                status: TaskStatus::InProgress,
+                depth: 0,
+            },
+            PlanTask {
+                reference: "T4".into(),
+                title: "Add tests for transient failure scenarios and surfacing to the UI".into(),
+                status: TaskStatus::Blocked,
+                depth: 1,
+            },
+            PlanTask {
+                reference: "T2".into(),
+                title: "Legacy error mapping".into(),
+                status: TaskStatus::Cancelled,
+                depth: 0,
+            },
+        ],
+    };
 
     let cell = new_plan_update(update);
     let lines = cell.display_lines(32);
@@ -1423,20 +1435,27 @@ fn plan_update_with_note_and_wrapping_snapshot() {
 }
 
 fn plan_update_without_note_snapshot() {
-    use chaos_ipc::plan_tool::PlanItemArg;
-    use chaos_ipc::plan_tool::StepStatus;
-    use chaos_ipc::plan_tool::UpdatePlanArgs;
+    use chaos_ipc::plan_tool::{PlanStatus, PlanTask, PlanUpdate, TaskStatus};
 
-    let update = UpdatePlanArgs {
-        explanation: None,
-        plan: vec![
-            PlanItemArg {
-                step: "Define error taxonomy".into(),
-                status: StepStatus::InProgress,
+    let update = PlanUpdate {
+        plan_id: "plan-id".into(),
+        reference: "000000/0000".into(),
+        title: "Error handling".into(),
+        status: PlanStatus::Active,
+        revision: 3,
+        next_offset: None,
+        tasks: vec![
+            PlanTask {
+                reference: "T1".into(),
+                title: "Define error taxonomy".into(),
+                status: TaskStatus::InProgress,
+                depth: 0,
             },
-            PlanItemArg {
-                step: "Implement mapping to user messages".into(),
-                status: StepStatus::Pending,
+            PlanTask {
+                reference: "T2".into(),
+                title: "Implement mapping to user messages".into(),
+                status: TaskStatus::Pending,
+                depth: 1,
             },
         ],
     };
@@ -1448,19 +1467,22 @@ fn plan_update_without_note_snapshot() {
 }
 
 fn plan_update_does_not_split_url_like_tokens_in_note_or_step() {
-    use chaos_ipc::plan_tool::PlanItemArg;
-    use chaos_ipc::plan_tool::StepStatus;
-    use chaos_ipc::plan_tool::UpdatePlanArgs;
+    use chaos_ipc::plan_tool::{PlanStatus, PlanTask, PlanUpdate, TaskStatus};
 
     let note_url = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890";
     let step_url = "example.test/api/v1/projects/beta-team/releases/2026-02-17/builds/0987654321/artifacts/reports/performance";
-    let update = UpdatePlanArgs {
-        explanation: Some(format!(
-            "Investigate failures under {note_url} immediately."
-        )),
-        plan: vec![PlanItemArg {
-            step: format!("Validate callbacks under {step_url} before rollout."),
-            status: StepStatus::InProgress,
+    let update = PlanUpdate {
+        plan_id: "plan-id".into(),
+        reference: "000000/0000".into(),
+        title: format!("Investigate failures under {note_url} immediately."),
+        status: PlanStatus::Active,
+        revision: 2,
+        next_offset: None,
+        tasks: vec![PlanTask {
+            reference: "T1".into(),
+            title: format!("Validate callbacks under {step_url} before rollout."),
+            status: TaskStatus::InProgress,
+            depth: 0,
         }],
     };
 

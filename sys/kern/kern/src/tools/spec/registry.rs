@@ -110,7 +110,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::McpTaskHandler;
-    use crate::tools::handlers::PLAN_TOOL;
     use crate::tools::handlers::ParentEffortHandler;
     use crate::tools::handlers::PlanHandler;
     use crate::tools::handlers::RequestPermissionsHandler;
@@ -125,6 +124,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::TestSyncHandler;
     use crate::tools::handlers::ToolGroupsHandler;
     use crate::tools::handlers::ViewImageHandler;
+    use crate::tools::handlers::planning_tool;
     use chaos_parrot::sanitize::parse_tool_input_schema;
     use chaos_traits::catalog::CatalogRegistration;
 
@@ -295,13 +295,21 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler(name, Arc::new(crate::tools::handlers::HooksHandler));
     }
 
-    if config.mode_allow_update_plan {
+    if config.planning_records
+        && config.planning.available
+        && (config.planning_authoring || config.attached_plan.is_some())
+    {
+        let name = if config.planning_authoring {
+            "plan"
+        } else {
+            "plan_progress"
+        };
         push_tool_spec(
             &mut builder,
-            PLAN_TOOL.clone(),
+            planning_tool(config.planning_authoring, config.planning),
             /*supports_parallel_tool_calls*/ false,
         );
-        builder.register_handler("update_plan", plan_handler);
+        builder.register_handler(name, plan_handler);
     }
 
     if config.mode_switching {

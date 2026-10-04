@@ -9,7 +9,16 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.11.0] - 2026-10-04
+
 ### Added
+- Database-backed workspaces, multi-project plans, and nested tasks with immutable
+  short references, independent ordering, cancellation, revision checks,
+  idempotent mutations, and append-only history. PostgreSQL supports shared
+  multi-machine plans and a separate dependency DAG; SQLite supports local nesting.
+- Operator-facing `chaos workspace` and `chaos plan` commands, installation-local
+  checkout bindings, and explicit session attachments restored from the database
+  on resume.
 - NixOS support: a flake (`nix profile install github:seuros/chaos`) building
   the release binary set against the pinned `rust-toolchain.toml` toolchain,
   plus a `nix develop` shell with the native build prerequisites.
@@ -27,6 +36,11 @@ should. There is no patch level; the build timestamp is the patch.
   or mismatched mTLS identities now fail exporter initialization.
 
 ### Changed
+- Expose plan authoring only in Plan mode and compact progress tools only when
+  an execution-mode session has an attached plan. Render planning instructions
+  and schemas from the mounted database's capabilities.
+- Render committed plan snapshots with stable task references, nesting, statuses,
+  and revisions in the terminal UI and JSONL output.
 - Consolidate managed sessions and one-shot process execution under `exec`, retaining
   PTYs, pipes, stdin, background tracking, direct argv, hard timeouts, and cancellation.
   Shell model metadata now uses `exec`; execution-source tags are `exec_startup` and
@@ -37,6 +51,8 @@ should. There is no patch level; the build timestamp is the patch.
   without a Git backend or external binary.
 
 ### Removed
+- The transcript-only `update_plan` tool and legacy todo-list output. Finishing
+  a model turn no longer fabricates plan completion.
 - `fff-search` and its transitive `git2`/vendored-libgit2 dependency.
 
 ## [47.10.2] - 2026-10-03

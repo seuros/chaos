@@ -52,6 +52,7 @@ use std::time::Duration;
 use uuid::Uuid;
 mod backfill;
 mod hooks;
+mod planning;
 mod logs;
 mod memories;
 mod message_history;

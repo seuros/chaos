@@ -52,3 +52,33 @@ fn default_mode_instructions_mention_request_user_input_when_enabled() {
         .unwrap();
     assert!(instructions.contains("request_user_input"));
 }
+
+#[test]
+fn plan_instructions_are_rendered_for_the_mounted_backend_only() {
+    use chaos_proc::planning::PlanningCapabilities;
+    let postgres = plan_mode_instructions(PlanningCapabilities::POSTGRES);
+    assert!(postgres.contains("separate acyclic dependency edges"));
+    assert!(postgres.contains("Plans are shared across machines."));
+    assert!(!postgres.contains("local database"));
+    assert!(!postgres.contains("SQLite"));
+    assert!(!postgres.contains("require PostgreSQL"));
+
+    let sqlite = plan_mode_instructions(PlanningCapabilities::SQLITE);
+    assert!(sqlite.contains("single-parent nesting and explicit sibling ordering"));
+    assert!(sqlite.contains("local database"));
+    assert!(!sqlite.contains("dependency edges"));
+    assert!(!sqlite.contains("`link`"));
+    assert!(!sqlite.contains("`graph`"));
+    assert!(!sqlite.contains("PostgreSQL"));
+    assert!(!sqlite.contains("shared across machines"));
+
+    let unavailable = plan_mode_instructions(PlanningCapabilities::default());
+    assert!(!unavailable.contains("## Durable planning tools"));
+    assert!(!unavailable.contains("`plan` tool"));
+    assert!(unavailable.contains("You must not perform **mutating** actions."));
+    for rendered in [&postgres, &sqlite, &unavailable] {
+        assert!(!rendered.contains("{%"));
+        assert!(!rendered.contains("{{"));
+        assert!(rendered.contains("<proposed_plan>"));
+    }
+}

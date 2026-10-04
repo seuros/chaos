@@ -1,21 +1,20 @@
 ---
-source: lib/libui/history_cell.rs
-assertion_line: 1435
+source: lib/libui/history_cell/tests.rs
 expression: rendered
 ---
-• Updated Plan
-  └ I'll update Grafana call
-    error handling by adding
-    retries and clearer messages
-    when the backend is
-    unreachable.
-    ✔ Investigate existing error
-      paths and logging around
-      HTTP timeouts
-    □ Harden Grafana client
-      error handling with retry/
-      backoff and user‑friendly
-      messages
-    □ Add tests for transient
-      failure scenarios and
-      surfacing to the UI
+• Plan A3F092/00AF · active · r7
+  └ Improve Grafana call error
+    handling and backend
+    availability messages
+    ✔ T3 Investigate existing
+      error paths and logging
+      around HTTP timeouts
+    ▶ T1 Improve Grafana client
+      error handling with
+      user‑friendly messages
+      ! T4 Add tests for
+        transient failure
+        scenarios and surfacing
+        to the UI
+    × T2 Legacy error mapping
+    More tasks: read offset 50

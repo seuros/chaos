@@ -7,6 +7,7 @@ mod init;
 mod machine_recovery;
 mod mcp_notifications;
 mod modes;
+mod planning;
 pub(crate) mod tokens;
 mod turn;
 

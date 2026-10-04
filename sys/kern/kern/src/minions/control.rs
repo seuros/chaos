@@ -42,6 +42,8 @@ pub(crate) struct SpawnAgentOptions {
     pub(crate) suppress_parent_completion_notification: bool,
     pub(crate) final_output_json_schema: Option<Value>,
     pub(crate) completion_call_id: Option<String>,
+    /// Explicit attachment; never inferred from a parent or forked transcript.
+    pub(crate) plan: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -484,9 +486,29 @@ impl AgentControl {
         // TODO(jif) add helper for drain
         state.notify_process_created(process_id);
 
-        let submitted = self
-            .send_input_with_schema(process_id, items, final_output_json_schema)
-            .await;
+        let submitted = async {
+            if let Some(plan) = options.plan.as_deref() {
+                let db = new_process
+                    .process
+                    .runtime_db()
+                    .ok_or_else(|| ChaosErr::Fatal("child planning database unavailable".into()))?;
+                db.planning_attach(&process_id.to_string(), Some(plan))
+                    .await
+                    .map_err(|error| {
+                        ChaosErr::Fatal(format!("child plan attachment failed: {error}"))
+                    })?;
+                new_process
+                    .process
+                    .chaos
+                    .session
+                    .send_attached_plan()
+                    .await
+                    .map_err(|error| ChaosErr::Fatal(format!("child plan read failed: {error}")))?;
+            }
+            self.send_input_with_schema(process_id, items, final_output_json_schema)
+                .await
+        }
+        .await;
         let execution_id = match submitted {
             Ok(id) => id,
             Err(error) => {

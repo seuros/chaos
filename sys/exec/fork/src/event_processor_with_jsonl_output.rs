@@ -18,7 +18,6 @@ use crate::exec_events::FileChangeItem;
 use crate::exec_events::FileUpdateChange;
 use crate::exec_events::ItemCompletedEvent;
 use crate::exec_events::ItemStartedEvent;
-use crate::exec_events::ItemUpdatedEvent;
 use crate::exec_events::McpToolCallItem;
 use crate::exec_events::McpToolCallItemError;
 use crate::exec_events::McpToolCallItemResult;
@@ -31,16 +30,12 @@ use crate::exec_events::ProcessItem;
 use crate::exec_events::ProcessItemDetails;
 use crate::exec_events::ProcessStartedEvent;
 use crate::exec_events::ReasoningItem;
-use crate::exec_events::TodoItem;
-use crate::exec_events::TodoListItem;
 use crate::exec_events::TurnCompletedEvent;
 use crate::exec_events::TurnFailedEvent;
 use crate::exec_events::TurnStartedEvent;
 use crate::exec_events::Usage;
 use crate::exec_events::WebSearchItem;
 use chaos_ipc::models::WebSearchAction;
-use chaos_ipc::plan_tool::StepStatus;
-use chaos_ipc::plan_tool::UpdatePlanArgs;
 use chaos_ipc::protocol;
 use chaos_ipc::protocol::AgentStatus as CoreAgentStatus;
 use chaos_ipc::protocol::CollabAgentInteractionBeginEvent;
@@ -63,8 +58,6 @@ pub struct EventProcessorWithJsonOutput {
     // Tracks running commands by call_id, including the associated item id.
     running_commands: HashMap<String, RunningCommand>,
     running_patch_applies: HashMap<String, protocol::PatchApplyBeginEvent>,
-    // Tracks the todo list for the current turn (at most one per turn).
-    running_todo_list: Option<RunningTodoList>,
     last_total_token_usage: Option<chaos_ipc::protocol::TokenUsage>,
     invocation_usage_baseline: Option<chaos_ipc::protocol::TokenUsage>,
     running_mcp_tool_calls: HashMap<String, RunningMcpToolCall>,
@@ -78,12 +71,6 @@ struct RunningCommand {
     command: String,
     item_id: String,
     aggregated_output: String,
-}
-
-#[derive(Debug, Clone)]
-struct RunningTodoList {
-    item_id: String,
-    items: Vec<TodoItem>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,7 +95,6 @@ impl EventProcessorWithJsonOutput {
             next_event_id: AtomicU64::new(0),
             running_commands: HashMap::new(),
             running_patch_applies: HashMap::new(),
-            running_todo_list: None,
             last_total_token_usage: None,
             invocation_usage_baseline: None,
             running_mcp_tool_calls: HashMap::new(),
@@ -201,7 +187,7 @@ impl EventProcessorWithJsonOutput {
                 };
                 vec![ProcessEvent::Error(ProcessErrorEvent { message })]
             }
-            protocol::EventMsg::PlanUpdate(ev) => self.handle_plan_update(ev),
+            protocol::EventMsg::PlanUpdate(ev) => vec![ProcessEvent::PlanUpdated(ev.clone())],
             _ => Vec::new(),
         }
     }
@@ -752,40 +738,6 @@ impl EventProcessorWithJsonOutput {
         vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }
 
-    fn todo_items_from_plan(&self, args: &UpdatePlanArgs) -> Vec<TodoItem> {
-        args.plan
-            .iter()
-            .map(|p| TodoItem {
-                text: p.step.clone(),
-                completed: matches!(p.status, StepStatus::Completed),
-            })
-            .collect()
-    }
-
-    fn handle_plan_update(&mut self, args: &UpdatePlanArgs) -> Vec<ProcessEvent> {
-        let items = self.todo_items_from_plan(args);
-
-        if let Some(running) = &mut self.running_todo_list {
-            running.items = items.clone();
-            let item = ProcessItem {
-                id: running.item_id.clone(),
-                details: ProcessItemDetails::TodoList(TodoListItem { items }),
-            };
-            return vec![ProcessEvent::ItemUpdated(ItemUpdatedEvent { item })];
-        }
-
-        let item_id = self.get_next_item_id();
-        self.running_todo_list = Some(RunningTodoList {
-            item_id: item_id.clone(),
-            items: items.clone(),
-        });
-        let item = ProcessItem {
-            id: item_id,
-            details: ProcessItemDetails::TodoList(TodoListItem { items }),
-        };
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent { item })]
-    }
-
     fn handle_task_started(&mut self, _: &protocol::TurnStartedEvent) -> Vec<ProcessEvent> {
         self.last_critical_error = None;
         self.invocation_usage_baseline = None;
@@ -824,16 +776,6 @@ impl EventProcessorWithJsonOutput {
         );
 
         let mut items = Vec::new();
-
-        if let Some(running) = self.running_todo_list.take() {
-            let item = ProcessItem {
-                id: running.item_id,
-                details: ProcessItemDetails::TodoList(TodoListItem {
-                    items: running.items,
-                }),
-            };
-            items.push(ProcessEvent::ItemCompleted(ItemCompletedEvent { item }));
-        }
 
         if !self.running_commands.is_empty() {
             for (_, running) in self.running_commands.drain() {

@@ -22,6 +22,8 @@ use std::sync::LazyLock;
 const TEMPLATE_NAME: &str = "prompt.md.j2";
 const RUNTIME_TEMPLATE_NAME: &str = "runtime.md.j2";
 static TEMPLATES: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/templates/prompt");
+static COLLABORATION_TEMPLATES: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/templates/collaboration_mode");
 static ENGINE: LazyLock<Environment<'static>> = LazyLock::new(template_environment);
 
 #[derive(Default, Serialize)]
@@ -134,7 +136,11 @@ fn template_environment() -> Environment<'static> {
     engine.set_trim_blocks(true);
     engine.set_lstrip_blocks(true);
     engine.set_loader(|name| {
-        let Some(file) = TEMPLATES.get_file(name) else {
+        let file = match name.strip_prefix("collaboration_mode/") {
+            Some(name) => COLLABORATION_TEMPLATES.get_file(name),
+            None => TEMPLATES.get_file(name),
+        };
+        let Some(file) = file else {
             return Ok(None);
         };
         let source = file.contents_utf8().ok_or_else(|| {
@@ -152,7 +158,7 @@ fn template_environment() -> Environment<'static> {
     clippy::expect_used,
     reason = "bundled templates and the concrete context are validated by unit tests"
 )]
-fn render_template(name: &str, context: impl Serialize) -> String {
+pub(crate) fn render_template(name: &str, context: impl Serialize) -> String {
     ENGINE
         .get_template(name)
         .and_then(|template| template.render(context))

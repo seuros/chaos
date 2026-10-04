@@ -42,7 +42,10 @@ pub(crate) struct ToolsConfig {
     pub agent_compaction_control: bool,
     pub agent_session_title: bool,
     pub mode_switching: bool,
-    pub mode_allow_update_plan: bool,
+    pub planning_records: bool,
+    pub planning_authoring: bool,
+    pub planning: chaos_proc::planning::PlanningCapabilities,
+    pub attached_plan: Option<String>,
     pub mode_allow_dynamic_tools: bool,
     /// Native server-side tools declared by the model/provider ABI.
     pub native_server_side_tools: Vec<String>,
@@ -127,7 +130,10 @@ impl ToolsConfig {
             agent_compaction_control: false,
             agent_session_title: false,
             mode_switching: false,
-            mode_allow_update_plan: true,
+            planning_records: true,
+            planning_authoring: false,
+            planning: Default::default(),
+            attached_plan: None,
             mode_allow_dynamic_tools: true,
             native_server_side_tools: model_info.native_server_side_tools.clone(),
         }
@@ -178,7 +184,8 @@ impl ToolsConfig {
         switching_allowed: bool,
     ) -> Self {
         self.mode_switching = switching_allowed;
-        self.mode_allow_update_plan = capabilities.update_plan;
+        self.planning_records = capabilities.planning_records;
+        self.planning_authoring = capabilities.planning_records && !capabilities.mutation;
         self.mode_allow_dynamic_tools = capabilities.mutation;
         self.request_user_input &= capabilities.request_user_input;
         if !capabilities.mutation {

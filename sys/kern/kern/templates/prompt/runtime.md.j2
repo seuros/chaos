@@ -4,6 +4,15 @@
 {% if mode.mutation and ("mcp_add_server" in tools or "mcp_server" in tools or "mcp-management" in disabled_groups) %}{% include "_mcp.md.j2" %}{% endif %}
 {% if "call_mcp_tool_async" in tools or "write_stdin" in tools %}{% include "_jobs.md.j2" %}{% endif %}
 {% if mode.mutation and ("apply_patch" in tools or "editing" in disabled_groups) %}{% include "_editing.md.j2" %}{% endif %}
+{% if "plan_progress" in tools %}
+
+# Attached plan
+
+Use `plan_progress` for bounded reads, transitions, and notes on the attached plan.
+{% if "switch_mode" in tools %}
+For structural changes, switch to Plan mode yourself, revise the attached plan, then return to execution. Do not wait for operator intervention merely to change modes.
+{% endif %}
+{% endif %}
 {% endif %}
 {% if not mode.mutation %}
 

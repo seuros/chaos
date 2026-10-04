@@ -7,9 +7,7 @@ use crate::render::line_utils::push_owned_lines;
 use crate::style::proposed_plan_style;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
-use chaos_ipc::plan_tool::PlanItemArg;
-use chaos_ipc::plan_tool::StepStatus;
-use chaos_ipc::plan_tool::UpdatePlanArgs;
+use chaos_ipc::plan_tool::{PlanTask, PlanUpdate, TaskStatus};
 use ratatui::prelude::*;
 use ratatui::style::Style;
 use ratatui::style::Styled;
@@ -99,60 +97,71 @@ pub fn new_proposed_plan_stream(
 
 #[derive(Debug)]
 pub struct PlanUpdateCell {
-    explanation: Option<String>,
-    plan: Vec<PlanItemArg>,
+    update: PlanUpdate,
 }
 
 impl HistoryCell for PlanUpdateCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let render_note = |text: &str| -> Vec<Line<'static>> {
-            let wrap_width = width.saturating_sub(4).max(1) as usize;
-            let note = Line::from(text.to_string().dim().italic());
-            let wrapped = adaptive_wrap_line(&note, RtOptions::new(wrap_width));
-            let mut out = Vec::new();
-            push_owned_lines(&wrapped, &mut out);
-            out
-        };
-
-        let render_step = |status: &StepStatus, text: &str| -> Vec<Line<'static>> {
-            let (box_str, step_style) = match status {
-                StepStatus::Completed => ("✔ ", Style::default().crossed_out().dim()),
-                StepStatus::InProgress => (
-                    "□ ",
+        let render_task = |task: &PlanTask| -> Vec<Line<'static>> {
+            let (marker, style) = match task.status {
+                TaskStatus::Completed => ("✔ ", Style::default().crossed_out().dim()),
+                TaskStatus::Cancelled => ("× ", Style::default().crossed_out().dim()),
+                TaskStatus::Blocked => ("! ", Style::default().yellow()),
+                TaskStatus::InProgress => (
+                    "▶ ",
                     Style::default().fg(crate::theme::accent_color()).bold(),
                 ),
-                StepStatus::Pending => ("□ ", Style::default().dim()),
+                TaskStatus::Pending => ("□ ", Style::default().dim()),
             };
-
+            // Cap only visual indentation to the viewport, not the stored hierarchy.
+            let indent =
+                " ".repeat((task.depth as usize * 2).min(width.saturating_sub(12) as usize));
             let opts = RtOptions::new(width.saturating_sub(4).max(1) as usize)
-                .initial_indent(box_str.into())
-                .subsequent_indent("  ".into());
-            let step = Line::from(text.to_string().set_style(step_style));
-            let wrapped = adaptive_wrap_line(&step, opts);
+                .initial_indent(format!("{indent}{marker}").into())
+                .subsequent_indent(format!("{indent}  ").into());
+            let task = Line::from(format!("{} {}", task.reference, task.title).set_style(style));
+            let wrapped = adaptive_wrap_line(&task, opts);
             let mut out = Vec::new();
             push_owned_lines(&wrapped, &mut out);
             out
         };
 
         let mut lines: Vec<Line<'static>> = vec![];
-        lines.push(vec!["• ".dim(), "Updated Plan".bold()].into());
+        lines.push(
+            vec![
+                "• ".dim(),
+                format!("Plan {}", self.update.reference).bold(),
+                format!(
+                    " · {} · r{}",
+                    self.update.status.as_ref(),
+                    self.update.revision
+                )
+                .dim(),
+            ]
+            .into(),
+        );
 
         let mut indented_lines = vec![];
-        let note = self
-            .explanation
-            .as_ref()
-            .map(|s| s.trim())
-            .filter(|t| !t.is_empty());
-        if let Some(expl) = note {
-            indented_lines.extend(render_note(expl));
-        };
+        let title = Line::from(self.update.title.clone().bold());
+        push_owned_lines(
+            &adaptive_wrap_line(
+                &title,
+                RtOptions::new(width.saturating_sub(4).max(1) as usize),
+            ),
+            &mut indented_lines,
+        );
 
-        if self.plan.is_empty() {
-            indented_lines.push(Line::from("(no steps provided)".dim().italic()));
+        if self.update.tasks.is_empty() {
+            indented_lines.push(Line::from("(no tasks on this page)".dim().italic()));
         } else {
-            for PlanItemArg { step, status } in self.plan.iter() {
-                indented_lines.extend(render_step(status, step));
+            for task in &self.update.tasks {
+                indented_lines.extend(render_task(task));
             }
+        }
+        if let Some(offset) = self.update.next_offset {
+            indented_lines.push(Line::from(
+                format!("More tasks: read offset {offset}").dim(),
+            ));
         }
         lines.extend(prefix_lines(indented_lines, "  └ ".dim(), "    ".into()));
 
@@ -160,8 +169,7 @@ impl HistoryCell for PlanUpdateCell {
     }
 }
 
-/// Render a user-friendly plan update styled like a checkbox todo list.
-pub fn new_plan_update(update: UpdatePlanArgs) -> PlanUpdateCell {
-    let UpdatePlanArgs { explanation, plan } = update;
-    PlanUpdateCell { explanation, plan }
+/// Render a bounded database snapshot with stable task references and nesting.
+pub fn new_plan_update(update: PlanUpdate) -> PlanUpdateCell {
+    PlanUpdateCell { update }
 }

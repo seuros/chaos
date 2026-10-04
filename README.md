@@ -205,37 +205,6 @@ The `install.sh` script intentionally refuses to run on NixOS: its
 release binaries are glibc-linked and fail with a missing dynamic loader.
 Set `CHAOS_ALLOW_NIXOS_BINARY=1` to override if you run `programs.nix-ld`.
 
-### Upgrading to 47.9.0
-
-`chaos config migrate-secrets` and legacy Keychain credential import have been
-removed. Already-migrated vaults need no further migration.
-
-If credentials still live in the pre-47.8 per-item Keychain store, stop ChaOS
-and run this command **with 47.8.x before installing 47.9.0**:
-
-```sh
-chaos config migrate-secrets
-```
-
-Otherwise, re-enter the credentials in the new version. There is no legacy-store
-fallback or import command in 47.9.0. The separate `chaos config migrate` command
-for user settings remains available.
-
-Settings, MCP credentials, named secrets, and provider auth in `keyring`/`auto`
-mode share one encrypted vault per ChaOS home. Normal operation loads its
-OS-held unlock key once per home/process, rather than accessing Keychain for
-each credential.
-
-Provider `auto` mode no longer falls back to plaintext `auth.json`. If you relied
-on that behavior, explicitly select `file` mode or reconnect into the vault.
-The existing default `file` mode and `ephemeral` mode are unchanged.
-
-Do not run pre-47.8 binaries against the vault. Back up both
-`$CHAOS_HOME/secrets/local.age` **and** its OS-held unlock key. macOS may still
-prompt after a restart or binary-signature change. See
-[credential vault migration](docs/database-configuration.md#credential-vault-and-macos-prompts)
-for details.
-
 ### Drivers
 
 Model-facing git and forge tools are not built into `chaos`. They come from

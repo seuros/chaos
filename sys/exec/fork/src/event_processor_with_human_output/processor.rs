@@ -1,7 +1,6 @@
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::num_format::format_with_separators;
-use chaos_ipc::plan_tool::StepStatus;
-use chaos_ipc::plan_tool::UpdatePlanArgs;
+use chaos_ipc::plan_tool::TaskStatus;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningRawContentEvent;
@@ -526,37 +525,34 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 ts_msg!(self, "model: {}", model);
                 eprintln!();
             }
-            EventMsg::PlanUpdate(plan_update_event) => {
-                let UpdatePlanArgs { explanation, plan } = plan_update_event;
-
-                // Header
-                ts_msg!(self, "{}", "Plan update".style(self.magenta));
-
-                // Optional explanation
-                if let Some(explanation) = explanation
-                    && !explanation.trim().is_empty()
-                {
-                    ts_msg!(self, "{}", explanation.style(self.italic));
+            EventMsg::PlanUpdate(update) => {
+                ts_msg!(
+                    self,
+                    "Plan {} · {} · r{}",
+                    update.reference,
+                    update.status.as_ref(),
+                    update.revision
+                );
+                ts_msg!(self, "{}", update.title.style(self.bold));
+                for task in update.tasks {
+                    let marker = match task.status {
+                        TaskStatus::Completed => "✓".style(self.green),
+                        TaskStatus::InProgress => "→".style(self.cyan),
+                        TaskStatus::Pending => "□".style(self.dimmed),
+                        TaskStatus::Blocked => "!".style(self.yellow),
+                        TaskStatus::Cancelled => "×".style(self.dimmed),
+                    };
+                    ts_msg!(
+                        self,
+                        "  {}{} {} {}",
+                        "  ".repeat(task.depth as usize),
+                        marker,
+                        task.reference,
+                        task.title
+                    );
                 }
-
-                // Pretty-print the plan items with simple status markers.
-                for item in plan {
-                    match item.status {
-                        StepStatus::Completed => {
-                            ts_msg!(self, "  {} {}", "✓".style(self.green), item.step);
-                        }
-                        StepStatus::InProgress => {
-                            ts_msg!(self, "  {} {}", "→".style(self.cyan), item.step);
-                        }
-                        StepStatus::Pending => {
-                            ts_msg!(
-                                self,
-                                "  {} {}",
-                                "•".style(self.dimmed),
-                                item.step.style(self.dimmed)
-                            );
-                        }
-                    }
+                if let Some(offset) = update.next_offset {
+                    ts_msg!(self, "More tasks: read offset {offset}");
                 }
             }
             EventMsg::ViewImageToolCall(view) => {

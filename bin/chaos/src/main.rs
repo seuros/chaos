@@ -36,6 +36,7 @@ use supports_color::Stream;
 mod config_cmd;
 mod debug_logging;
 mod hooks_cmd;
+mod planning_cmd;
 mod mcp_cmd;
 mod models_cmd;
 mod reflex_cmd;
@@ -127,6 +128,10 @@ enum Subcommand {
     Config(config_cmd::ConfigCommand),
     /// Manage database lifecycle hooks.
     Hooks(hooks_cmd::HooksCommand),
+    /// Register shared workspaces/projects and manage installation-local checkouts.
+    Workspace(planning_cmd::WorkspaceCommand),
+    /// Inspect, attach, and maintain durable database plans.
+    Plan(planning_cmd::PlanCommand),
     /// Inspect or revoke installation-local remembered approvals.
     Approvals(config_cmd::ApprovalsCommand),
     /// Diagnose configured reflex backends without sending session contents.
@@ -436,6 +441,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     match subcommand {
         Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
         Some(Subcommand::Hooks(command)) => hooks_cmd::run(command).await?,
+        Some(Subcommand::Workspace(command)) => planning_cmd::workspace(command).await?,
+        Some(Subcommand::Plan(command)) => planning_cmd::plan(command).await?,
         Some(Subcommand::Approvals(command)) => config_cmd::approvals(command).await?,
         Some(Subcommand::Reflex(command)) => {
             reflex_cmd::run(command, root_config_overrides, models_profile).await?

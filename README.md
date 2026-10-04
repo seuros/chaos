@@ -180,6 +180,31 @@ installing, use `just chaos`. For a local release run, use
 `just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
 for system requirements and logging controls.
 
+### NixOS
+
+NixOS is supported through the repository flake, which builds chaos
+natively against the toolchain pinned in `rust-toolchain.toml` — no
+`nix-ld` shims and no contact with the prebuilt glibc binaries.
+
+```bash
+nix profile install github:seuros/chaos
+```
+
+Or run it without installing:
+
+```bash
+nix run github:seuros/chaos -- --help
+```
+
+For development, `nix develop` drops into a shell with the exact pinned
+Rust toolchain (clippy, rustfmt, cargo-nextest) plus the native build
+prerequisites (libclang, pkg-config, dbus, perl) — `just install` and
+`just test` work inside it.
+
+The `install.sh` script intentionally refuses to run on NixOS: its
+release binaries are glibc-linked and fail with a missing dynamic loader.
+Set `CHAOS_ALLOW_NIXOS_BINARY=1` to override if you run `programs.nix-ld`.
+
 ### Upgrading to 47.9.0
 
 `chaos config migrate-secrets` and legacy Keychain credential import have been

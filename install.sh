@@ -38,6 +38,29 @@ main() {
 
     say "detected target: $target"
 
+    # NixOS does not provide the FHS loader layout glibc-linked release
+    # binaries expect, so the tarball would fail with "No such file or
+    # directory" even though the file exists. The flake builds chaos
+    # natively against the Nix toolchain instead.
+    if [ "$os" = "Linux" ] && grep -qs '^ID=nixos$' /etc/os-release; then
+        if [ "${CHAOS_ALLOW_NIXOS_BINARY:-0}" = "1" ]; then
+            say "NixOS detected: CHAOS_ALLOW_NIXOS_BINARY=1 set, installing anyway"
+            say "(this only works with programs.nix-ld enabled)"
+        else
+            err "NixOS detected: prebuilt Linux binaries are glibc-linked and will not run.
+Install from the chaos Nix flake instead:
+
+    nix profile install github:${REPO}#chaos
+
+or run it without installing:
+
+    nix run github:${REPO} -- --help
+
+To force this installer anyway (only sensible with programs.nix-ld
+enabled in your NixOS configuration), set CHAOS_ALLOW_NIXOS_BINARY=1."
+        fi
+    fi
+
     if [ -n "${CHAOS_VERSION:-}" ]; then
         tag="$CHAOS_VERSION"
         say "pinned release: $tag"

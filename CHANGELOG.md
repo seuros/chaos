@@ -9,6 +9,14 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- NixOS support: a flake (`nix profile install github:seuros/chaos`) building
+  the release binary set against the pinned `rust-toolchain.toml` toolchain,
+  plus a `nix develop` shell with the native build prerequisites.
+  `install.sh` now detects NixOS and points at the flake instead of
+  installing glibc-linked binaries that cannot run there
+  (`CHAOS_ALLOW_NIXOS_BINARY=1` overrides for `programs.nix-ld` users).
+
 ### Fixed
 - Compact model-facing JSON from `chaos://machine`, Skipper tools, Helmsman skill
   resources, and Dictator tools instead of spending model context on indentation.

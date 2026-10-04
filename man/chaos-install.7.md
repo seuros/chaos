@@ -41,6 +41,20 @@ This is integrity checking against the same GitHub release, not an independent
 signature or provenance guarantee. Replacement of the four binaries is still
 sequential, not a transactional bundle update.
 
+### NixOS
+
+On NixOS, install from the repository flake instead of running `install.sh`:
+the prebuilt Linux binaries are glibc-linked and will not start on NixOS.
+
+```bash
+nix profile install github:seuros/chaos
+```
+
+`install.sh` detects NixOS and refuses to run unless
+`CHAOS_ALLOW_NIXOS_BINARY=1` is set (only sensible with `programs.nix-ld`
+enabled). `nix develop` provides the pinned Rust toolchain and the native
+build prerequisites for source installs.
+
 ### Per-commit builds
 
 Every successful `linux-build` workflow on `master` publishes both Linux x86_64

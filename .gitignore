@@ -29,3 +29,8 @@ libnull.rlib
 /profdata/
 !/.config/
 !/.config/nextest.toml
+
+# Nix build outputs
+/result
+/result-*
+.idea/

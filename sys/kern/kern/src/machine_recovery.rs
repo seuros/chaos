@@ -362,7 +362,7 @@ fn recovered(
                 .filter(|charge| *charge <= 100)
                 .ok_or("triggering battery charge unavailable")?;
             let target = u16::from(config.battery_percent)
-                + u16::from(config.recovery_battery_margin_percent.max(1));
+                + u16::from(config.recovery_battery_margin_percent);
             if target > 100 {
                 return Err("recovery target exceeds battery capacity");
             }

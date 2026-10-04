@@ -1,6 +1,6 @@
 [package]
 name = "chaos-model-catalog"
-description = "Model catalog: refresh strategy, discovery state machine, and provider-scoped cache"
+description = "Model catalog: refresh strategy and provider-scoped cache"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,7 +19,6 @@ jiff = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
-state-machines = { workspace = true, features = ["dynamic", "async"] }
 tracing = { workspace = true }
 
 [dev-dependencies]

@@ -289,6 +289,28 @@ async fn transport_recovers_session_on_404_and_retries_request() {
                         late_count.fetch_add(1, Ordering::Relaxed);
                     } else {
                         slow_count.fetch_add(1, Ordering::Relaxed);
+                        let progress = tokio_stream::once(Ok::<_, OpaqueError>(Bytes::from(
+                            "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\n",
+                        )));
+                        let result = tokio_stream::once(()).then(move |_| {
+                            let started = Arc::clone(&started);
+                            let release = Arc::clone(&release);
+                            async move {
+                                started.wait().await;
+                                release.wait().await;
+                                Ok::<_, OpaqueError>(Bytes::from(
+                                    "data: {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{}}\n\n",
+                                ))
+                            }
+                        });
+                        return Ok::<_, OpaqueError>(
+                            Response::builder()
+                                .status(StatusCode::OK)
+                                .header(CONTENT_TYPE, MIME_TEXT_EVENT_STREAM)
+                                .header(HEADER_SESSION_ID, "session-1")
+                                .body(Body::from_stream(progress.chain(result)))
+                                .unwrap(),
+                        );
                     }
                     if seen.session_id.as_deref() == Some("session-1") {
                         started.wait().await;
@@ -334,13 +356,17 @@ async fn transport_recovers_session_on_404_and_retries_request() {
                         .status(StatusCode::NOT_FOUND)
                         .body(Body::empty())
                         .unwrap(),
-                    3 => initialize_http_response("session-2"),
-                    4 => Response::builder()
+                    3 => Response::builder()
+                        .status(StatusCode::SERVICE_UNAVAILABLE)
+                        .body(Body::empty())
+                        .unwrap(),
+                    4 => initialize_http_response("session-2"),
+                    5 => Response::builder()
                         .status(StatusCode::ACCEPTED)
                         .header(HEADER_SESSION_ID, "session-2")
                         .body(Body::empty())
                         .unwrap(),
-                    5 => Response::builder()
+                    6 => Response::builder()
                         .status(StatusCode::OK)
                         .header(CONTENT_TYPE, MIME_APPLICATION_JSON)
                         .header(HEADER_SESSION_ID, "session-2")
@@ -425,15 +451,20 @@ async fn transport_recovers_session_on_404_and_retries_request() {
     tokio::time::timeout(Duration::from_secs(1), started.wait())
         .await
         .unwrap();
+    assert!(matches!(
+        transport.recv().await.unwrap(),
+        JsonRpcMessage::Notification(_)
+    ));
 
-    transport
-        .send(JsonRpcMessage::Request(JsonRpcRequest::new(
-            json!(2),
-            "ping",
-            Some(json!({})),
-        )))
-        .await
-        .unwrap();
+    let ping = JsonRpcMessage::Request(JsonRpcRequest::new(json!(2), "ping", Some(json!({}))));
+    assert!(matches!(
+        transport.send(ping.clone()).await,
+        Err(GuestError::Http(_))
+    ));
+    assert!(!transport.inner.has_active_session().await);
+    transport.inner.recover_session(0).await.unwrap();
+    assert!(transport.inner.has_active_session().await);
+    transport.send(ping).await.unwrap();
 
     let message = transport.recv().await.unwrap();
     let JsonRpcMessage::Response(response) = message else {
@@ -450,6 +481,19 @@ async fn transport_recovers_session_on_404_and_retries_request() {
     })
     .await
     .unwrap();
+    let ids = tokio::time::timeout(Duration::from_secs(1), async {
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            let JsonRpcMessage::Response(response) = transport.recv().await.unwrap() else {
+                panic!("expected accepted response");
+            };
+            ids.push(response.id);
+        }
+        ids
+    })
+    .await
+    .unwrap();
+    assert!(ids.contains(&Some(json!(3))) && ids.contains(&Some(json!(4))));
     assert_eq!(late_count.load(Ordering::Relaxed), 2);
     assert_eq!(slow_count.load(Ordering::Relaxed), 1);
     assert_eq!(
@@ -466,38 +510,21 @@ async fn transport_recovers_session_on_404_and_retries_request() {
     let seen = seen_requests.lock().await.clone();
     assert_eq!(
         seen,
-        vec![
-            SeenRequest {
-                http_method: "POST".to_string(),
-                rpc_method: Some("initialize".to_string()),
-                session_id: None,
-            },
-            SeenRequest {
-                http_method: "POST".to_string(),
-                rpc_method: Some("notifications/initialized".to_string()),
-                session_id: Some("session-1".to_string()),
-            },
-            SeenRequest {
-                http_method: "POST".to_string(),
-                rpc_method: Some("ping".to_string()),
-                session_id: Some("session-1".to_string()),
-            },
-            SeenRequest {
-                http_method: "POST".to_string(),
-                rpc_method: Some("initialize".to_string()),
-                session_id: None,
-            },
-            SeenRequest {
-                http_method: "POST".to_string(),
-                rpc_method: Some("notifications/initialized".to_string()),
-                session_id: Some("session-2".to_string()),
-            },
-            SeenRequest {
-                http_method: "POST".to_string(),
-                rpc_method: Some("ping".to_string()),
-                session_id: Some("session-2".to_string()),
-            },
+        [
+            ("initialize", None),
+            ("notifications/initialized", Some("session-1")),
+            ("ping", Some("session-1")),
+            ("initialize", None),
+            ("initialize", None),
+            ("notifications/initialized", Some("session-2")),
+            ("ping", Some("session-2")),
         ]
+        .map(|(method, session)| SeenRequest {
+            http_method: "POST".into(),
+            rpc_method: Some(method.into()),
+            session_id: session.map(str::to_owned),
+        })
+        .to_vec()
     );
 }
 

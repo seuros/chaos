@@ -209,6 +209,13 @@ fn power_recovers_on_external_power_or_observed_battery_headroom() {
         status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(charge);
         assert_eq!(recovered(&warning, &status, &config), Ok(true));
     }
+    let zero_margin = MachineWarningsConfig {
+        recovery_battery_margin_percent: 0,
+        ..config
+    };
+    status.machine.power.batteries.as_mut().unwrap()[0].charge_percent =
+        Some(config.battery_percent);
+    assert_eq!(recovered(&warning, &status, &zero_margin), Ok(true));
     status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = None;
     assert!(recovered(&warning, &status, &config).is_err());
     status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(100);

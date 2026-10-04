@@ -612,7 +612,14 @@ impl HttpTransportInner {
             return Err(GuestError::Disconnected);
         }
 
-        if self.session_generation.load(Ordering::Acquire) != observed_generation {
+        let generation = self.session_generation.load(Ordering::Acquire);
+        if generation != observed_generation
+            && self.lifecycle().data().is_some_and(|data| {
+                data.recovered_generation == Some(generation)
+                    && data.session_id.is_some()
+                    && data.negotiated_version.is_some()
+            })
+        {
             return Ok(());
         }
 
@@ -658,7 +665,11 @@ impl HttpTransportInner {
             if !lifecycle.session(HttpSessionEvent::Restored) {
                 return Err(GuestError::Disconnected);
             }
-            self.session_generation.fetch_add(1, Ordering::AcqRel);
+            let generation = self.session_generation.fetch_add(1, Ordering::AcqRel) + 1;
+            lifecycle
+                .data_mut()
+                .ok_or(GuestError::Disconnected)?
+                .recovered_generation = Some(generation);
         }
         if initialized_sent {
             self.ensure_sse_task().await;

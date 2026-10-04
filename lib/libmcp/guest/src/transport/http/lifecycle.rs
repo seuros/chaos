@@ -8,6 +8,7 @@ pub(super) struct SessionData {
     pub session_id: Option<String>,
     pub negotiated_version: Option<String>,
     pub last_event_id: Option<String>,
+    pub recovered_generation: Option<u64>,
     pub streams: JoinSet<()>,
 }
 
@@ -16,7 +17,7 @@ impl SessionData {
         self.session_id = None;
         self.negotiated_version = None;
         self.last_event_id = None;
-        self.streams.abort_all();
+        self.recovered_generation = None;
     }
 }
 

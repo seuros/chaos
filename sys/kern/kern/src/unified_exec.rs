@@ -46,7 +46,6 @@ mod process;
 mod process_manager;
 
 #[cfg(test)]
-#[path = "unified_exec/mod_tests.rs"]
 mod tests;
 
 pub(crate) fn set_deterministic_process_ids_for_tests(enabled: bool) {

@@ -152,5 +152,4 @@ fn response_item_records_turn_ttft(item: &ResponseItem) -> bool {
 }
 
 #[cfg(test)]
-#[path = "turn_timing_tests.rs"]
 mod tests;

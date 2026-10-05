@@ -150,5 +150,4 @@ fn intersect_automation_permission(
 }
 
 #[cfg(test)]
-#[path = "macos_permissions_tests.rs"]
 mod tests;

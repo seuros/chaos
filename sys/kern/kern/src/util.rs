@@ -227,5 +227,4 @@ pub fn resume_command(process_name: Option<&str>, process_id: Option<ProcessId>)
 }
 
 #[cfg(test)]
-#[path = "util_tests.rs"]
 mod tests;

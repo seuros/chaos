@@ -168,7 +168,7 @@ where
 }
 
 #[cfg(test)]
-mod breaker_tests;
+mod tests;
 
 /// Generates a `Session` method that delegates an async MCP call through the
 /// per-server circuit breaker.

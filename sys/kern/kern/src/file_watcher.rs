@@ -365,5 +365,4 @@ fn classify_event(event: &Event, state: &RwLock<WatchState>) -> Vec<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "file_watcher_tests.rs"]
 mod tests;

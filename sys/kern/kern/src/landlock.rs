@@ -137,5 +137,4 @@ pub(crate) fn create_linux_sandbox_command_args(
 }
 
 #[cfg(test)]
-#[path = "landlock_tests.rs"]
 mod tests;

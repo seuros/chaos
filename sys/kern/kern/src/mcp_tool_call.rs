@@ -1438,5 +1438,4 @@ pub(crate) async fn handle_mcp_cancel_task(
 }
 
 #[cfg(test)]
-#[path = "mcp_tool_call_tests.rs"]
 mod tests;

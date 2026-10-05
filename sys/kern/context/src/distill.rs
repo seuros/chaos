@@ -265,5 +265,4 @@ pub fn trim_tool_output_item(item: &ResponseItem) -> Option<ResponseItem> {
 }
 
 #[cfg(test)]
-#[path = "distill_tests.rs"]
 mod tests;

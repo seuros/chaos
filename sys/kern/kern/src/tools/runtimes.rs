@@ -109,5 +109,4 @@ pub(crate) fn maybe_apply_shell_environment(
 }
 
 #[cfg(all(test, unix))]
-#[path = "runtimes/mod_tests.rs"]
 mod tests;

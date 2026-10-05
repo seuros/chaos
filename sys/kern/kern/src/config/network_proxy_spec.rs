@@ -328,5 +328,4 @@ fn upsert_network_domains(
 }
 
 #[cfg(test)]
-#[path = "network_proxy_spec_tests.rs"]
 mod tests;

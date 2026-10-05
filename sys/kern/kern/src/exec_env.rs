@@ -94,5 +94,4 @@ where
 }
 
 #[cfg(test)]
-#[path = "exec_env_tests.rs"]
 mod tests;

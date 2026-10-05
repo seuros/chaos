@@ -489,5 +489,4 @@ fn none_if_whitespace(value: String) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "terminal_tests.rs"]
 mod tests;

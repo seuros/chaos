@@ -432,5 +432,4 @@ fn symlink_blob_bytes(path: &Path) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[path = "turn_diff_tracker_tests.rs"]
 mod tests;

@@ -316,5 +316,4 @@ async fn run_script_with_timeout(
 }
 
 #[cfg(test)]
-#[path = "shell_environment_tests.rs"]
 mod tests;

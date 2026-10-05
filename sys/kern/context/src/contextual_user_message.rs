@@ -86,5 +86,4 @@ pub fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
 }
 
 #[cfg(test)]
-#[path = "contextual_user_message_tests.rs"]
 mod tests;

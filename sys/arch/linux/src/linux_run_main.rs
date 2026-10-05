@@ -219,5 +219,4 @@ fn exec_or_exit(command: Vec<String>) -> ! {
 }
 
 #[cfg(test)]
-#[path = "linux_run_main_tests.rs"]
 mod tests;

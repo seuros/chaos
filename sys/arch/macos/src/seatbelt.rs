@@ -525,7 +525,6 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
 }
 
 #[cfg(test)]
-#[path = "seatbelt_tests.rs"]
 mod tests;
 
 /// Wraps libc::confstr to return a String.

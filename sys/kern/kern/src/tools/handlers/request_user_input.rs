@@ -112,5 +112,4 @@ impl ToolHandler for RequestUserInputHandler {
 }
 
 #[cfg(test)]
-#[path = "request_user_input_tests.rs"]
 mod tests;

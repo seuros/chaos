@@ -436,5 +436,4 @@ fn clamp_claude_code_accepts(model: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "tools_tests.rs"]
 mod tests;

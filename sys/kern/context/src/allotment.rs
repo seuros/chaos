@@ -443,5 +443,4 @@ pub fn approx_tokens_from_byte_count_i64(bytes: i64) -> i64 {
 }
 
 #[cfg(test)]
-#[path = "allotment_tests.rs"]
 mod tests;

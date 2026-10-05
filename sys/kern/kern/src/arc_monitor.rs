@@ -461,5 +461,4 @@ fn build_arc_monitor_message(role: &str, content: serde_json::Value) -> ArcMonit
 }
 
 #[cfg(test)]
-#[path = "arc_monitor_tests.rs"]
 mod tests;

@@ -751,5 +751,4 @@ fn synthetic_exit_status(code: i32) -> ExitStatus {
 }
 
 #[cfg(test)]
-#[path = "oneshot_tests.rs"]
 mod tests;

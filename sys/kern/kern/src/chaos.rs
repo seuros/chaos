@@ -61,7 +61,6 @@ pub enum SteerInputError {
 // ── Test-only surface ────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[path = "chaos_tests.rs"]
 mod tests;
 
 // Test helpers used by test files outside this module

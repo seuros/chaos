@@ -170,5 +170,4 @@ impl From<EnvironmentContext> for ResponseItem {
 }
 
 #[cfg(test)]
-#[path = "environment_context_tests.rs"]
 mod tests;

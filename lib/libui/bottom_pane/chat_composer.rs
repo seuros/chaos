@@ -709,5 +709,4 @@ impl ChatComposer {
 impl ChatComposer {}
 
 #[cfg(test)]
-#[path = "chat_composer/chat_composer_tests.rs"]
 pub(crate) mod tests;

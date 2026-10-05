@@ -716,5 +716,4 @@ fn find_effective_layer(
 }
 
 #[cfg(test)]
-#[path = "service_tests.rs"]
 mod tests;

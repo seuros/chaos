@@ -88,5 +88,4 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
 }
 
 #[cfg(test)]
-#[path = "model_info_tests.rs"]
 mod tests;

@@ -271,5 +271,4 @@ async fn resolve_aggregated_output(
 }
 
 #[cfg(test)]
-#[path = "async_watcher_tests.rs"]
 mod tests;

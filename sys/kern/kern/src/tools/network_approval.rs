@@ -627,5 +627,4 @@ pub(crate) async fn finish_deferred_network_approval(
 }
 
 #[cfg(test)]
-#[path = "network_approval_tests.rs"]
 mod tests;

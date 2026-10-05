@@ -558,5 +558,4 @@ async fn dispatch_after_tool_use_hook(
 }
 
 #[cfg(test)]
-#[path = "registry_tests.rs"]
 mod tests;

@@ -99,5 +99,4 @@ pub fn default_headers() -> HeaderMap {
 }
 
 #[cfg(test)]
-#[path = "default_client_tests.rs"]
 mod tests;

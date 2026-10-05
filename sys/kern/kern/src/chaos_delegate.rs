@@ -614,5 +614,4 @@ where
 }
 
 #[cfg(test)]
-#[path = "chaos_delegate_tests.rs"]
 mod tests;

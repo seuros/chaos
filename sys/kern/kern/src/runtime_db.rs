@@ -508,5 +508,4 @@ pub(crate) async fn touch_process_updated_at(
 }
 
 #[cfg(test)]
-#[path = "runtime_db_tests.rs"]
 mod tests;

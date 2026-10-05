@@ -464,5 +464,4 @@ pub async fn current_branch_name(cwd: &Path) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "git_info_tests.rs"]
 mod tests;

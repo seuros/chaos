@@ -1465,5 +1465,4 @@ pub fn log_dir(cfg: &Config) -> std::io::Result<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "config/config_tests.rs"]
 mod tests;

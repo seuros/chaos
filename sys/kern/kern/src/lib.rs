@@ -130,7 +130,6 @@ pub mod saved_selection;
 pub mod shell;
 pub mod shell_environment;
 pub mod spawn;
-pub mod terminal;
 mod tools;
 pub mod turn_diff_tracker;
 mod turn_metadata;

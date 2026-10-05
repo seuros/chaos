@@ -17,6 +17,7 @@
 //! platform-specific clipboard behavior.
 
 use base64::Engine as _;
+use chaos_sysinfo::terminal;
 use std::fs::OpenOptions;
 use std::io::Write;
 
@@ -38,7 +39,7 @@ use std::io::Write;
 /// Returns a descriptive error string when the selected clipboard mechanism is
 /// unavailable or the fallback path also fails.
 pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
-    if std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some() {
+    if terminal::is_ssh_session() {
         return copy_via_osc52(text);
     }
 
@@ -60,7 +61,7 @@ pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
 /// controlling TTY so the escape sequence reaches the terminal even if stdout
 /// is redirected.
 fn copy_via_osc52(text: &str) -> Result<(), String> {
-    let sequence = osc52_sequence(text, std::env::var_os("TMUX").is_some());
+    let sequence = osc52_sequence(text, terminal::terminal_info().in_tmux());
     let mut tty = OpenOptions::new()
         .write(true)
         .open("/dev/tty")

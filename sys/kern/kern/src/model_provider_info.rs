@@ -347,15 +347,12 @@ impl ModelProviderInfo {
     pub fn api_key(&self) -> crate::error::Result<Option<String>> {
         match &self.env_key {
             Some(env_key) => {
-                let api_key = std::env::var(env_key)
-                    .ok()
-                    .filter(|v| !v.trim().is_empty())
-                    .ok_or_else(|| {
-                        crate::error::ChaosErr::EnvVar(EnvVarError {
-                            var: env_key.clone(),
-                            instructions: self.env_key_instructions.clone(),
-                        })
-                    })?;
+                let api_key = chaos_sysinfo::env::var_non_empty(env_key).ok_or_else(|| {
+                    crate::error::ChaosErr::EnvVar(EnvVarError {
+                        var: env_key.clone(),
+                        instructions: self.env_key_instructions.clone(),
+                    })
+                })?;
                 Ok(Some(api_key))
             }
             None => Ok(None),

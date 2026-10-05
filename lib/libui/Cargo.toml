@@ -50,7 +50,7 @@ chaos-machine = { workspace = true }
 chaos-pwd = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-sudoers = { workspace = true }
-chaos-sysinfo = { workspace = true }
+chaos-sysinfo = { workspace = true, features = ["tui"] }
 chaos-uptime = { workspace = true }
 chaos-wchar = { workspace = true }
 

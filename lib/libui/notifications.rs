@@ -1,11 +1,11 @@
 mod bel;
 mod osc9;
 
-use std::env;
 use std::io;
 
 use bel::BelBackend;
 use chaos_kern::config::types::NotificationMethod;
+use chaos_sysinfo::terminal::{TerminalInfo, TerminalName, terminal_info};
 use osc9::Osc9Backend;
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ impl DesktopNotificationBackend {
     pub fn for_method(method: NotificationMethod) -> Self {
         match method {
             NotificationMethod::Auto => {
-                if supports_osc9() {
+                if supports_osc9(&terminal_info()) {
                     Self::Osc9(Osc9Backend)
                 } else {
                     Self::Bel(BelBackend)
@@ -48,27 +48,15 @@ pub fn detect_backend(method: NotificationMethod) -> DesktopNotificationBackend 
     DesktopNotificationBackend::for_method(method)
 }
 
-fn supports_osc9() -> bool {
-    if env::var_os("WT_SESSION").is_some() {
-        return false;
-    }
-    // Prefer TERM_PROGRAM when present, but keep fallbacks for shells/launchers
-    // that don't set it (e.g., tmux/ssh) to avoid regressing OSC 9 support.
-    if matches!(
-        env::var("TERM_PROGRAM").ok().as_deref(),
-        Some("WezTerm" | "ghostty")
-    ) {
-        return true;
-    }
-    // iTerm still provides a strong session signal even when TERM_PROGRAM is missing.
-    if env::var_os("ITERM_SESSION_ID").is_some() {
-        return true;
-    }
-    // TERM-based hints cover kitty/wezterm setups without TERM_PROGRAM.
-    matches!(
-        env::var("TERM").ok().as_deref(),
-        Some("xterm-kitty" | "wezterm" | "wezterm-mux")
-    )
+fn supports_osc9(terminal: &TerminalInfo) -> bool {
+    !terminal.in_tmux()
+        && matches!(
+            terminal.name,
+            TerminalName::WezTerm
+                | TerminalName::Ghostty
+                | TerminalName::Iterm2
+                | TerminalName::Kitty
+        )
 }
 
 #[cfg(test)]

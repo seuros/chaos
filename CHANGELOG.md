@@ -9,6 +9,14 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Changed
+- Consolidate terminal, multiplexer, SSH, and display detection.
+- Headless builds no longer identify the terminal emulator.
+
+### Fixed
+- Desktop notifications inside tmux.
+- Provider API keys with surrounding whitespace in the environment.
+
 ## [47.12.0] - 2026-10-05
 
 ### Added

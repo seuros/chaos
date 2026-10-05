@@ -14,7 +14,7 @@ path = "src/lib.rs"
 workspace = true
 
 [features]
-tui = []
+tui = ["chaos-sysinfo/tui"]
 
 [build-dependencies]
 serde = { workspace = true, features = ["derive"] }

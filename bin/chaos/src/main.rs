@@ -45,7 +45,7 @@ use crate::mcp_cmd::McpCli;
 use crate::models_cmd::ModelsCli;
 
 #[cfg(feature = "tui")]
-use chaos_kern::terminal::TerminalName;
+use chaos_sysinfo::terminal::TerminalName;
 
 /// Chaos
 ///
@@ -558,7 +558,7 @@ async fn run_interactive_tui(
     interactive: TuiCli,
     arg0_paths: Arg0DispatchPaths,
 ) -> std::io::Result<AppExitInfo> {
-    let terminal_info = chaos_kern::terminal::terminal_info();
+    let terminal_info = chaos_sysinfo::terminal::terminal_info();
     if terminal_info.name == TerminalName::Dumb {
         if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
             return Ok(AppExitInfo::fatal(

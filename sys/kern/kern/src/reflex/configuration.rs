@@ -3,11 +3,11 @@
 use anyhow::{Context, ensure};
 use chaos_sysctl::edit::{ConfigEdit, ConfigEditsBuilder};
 use chaos_sysctl::secrets;
+use chaos_sysinfo::env::var_non_empty;
 use url::Url;
 
 use crate::AuthManager;
 use crate::config::{Config, ReflexBackendSettings, ReflexKind};
-use crate::env::read_non_empty_env_var;
 
 /// Interactive setup presets.
 pub fn presets() -> [(&'static str, ReflexBackendSettings); 4] {
@@ -161,10 +161,7 @@ pub(super) fn resolve_api_key(
                 .context("provider has no saved API key; connect it using /accounts")?,
         )
     } else if let Some(env_key) = &settings.env_key {
-        Some(
-            read_non_empty_env_var(env_key)
-                .context("configured reflex environment key is unset")?,
-        )
+        Some(var_non_empty(env_key).context("configured reflex environment key is unset")?)
     } else {
         None
     };

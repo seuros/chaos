@@ -29,13 +29,13 @@ use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_kern::path_utils;
 use chaos_kern::runtime_db::get_runtime_db;
-use chaos_kern::terminal::Multiplexer;
 use chaos_proc::RuntimeDbHandle;
 use chaos_pwd::find_chaos_home;
 use chaos_snitch::BoxedLogLayer;
 use chaos_snitch::open_debug_log_file_layer;
 use chaos_snitch::open_log_file_layer;
 use chaos_snitch::runtime_db;
+use chaos_sysinfo::terminal::Multiplexer;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;
 use cwd_prompt::CwdSelection;
@@ -756,7 +756,7 @@ fn determine_alt_screen_mode(no_alt_screen: bool, tui_alternate_screen: AltScree
             AltScreenMode::Always => true,
             AltScreenMode::Never => false,
             AltScreenMode::Auto => {
-                let terminal_info = chaos_kern::terminal::terminal_info();
+                let terminal_info = chaos_sysinfo::terminal::terminal_info();
                 !matches!(terminal_info.multiplexer, Some(Multiplexer::Zellij { .. }))
             }
         }

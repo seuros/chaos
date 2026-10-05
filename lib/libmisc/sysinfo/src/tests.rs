@@ -116,31 +116,16 @@ fn serialization_has_expected_keys() {
 
 #[test]
 fn multiplexer_detected_when_in_tmux() {
-    // If $TMUX is set (which it is in our dev environment), we should detect it.
     if std::env::var("TMUX").is_ok() {
         let facts = platform::detect();
         let mux = facts.multiplexer.expect("should detect tmux");
-        assert_eq!(mux.kind, "tmux");
-        // $TMUX_PANE is always set by tmux for every spawned pane, so the
-        // stable id should never be empty inside a real tmux session.
-        assert!(!mux.id.is_empty(), "stable pane id should not be empty");
+        assert_eq!(mux.kind(), "tmux");
+        let pane = mux.id().expect("tmux always sets $TMUX_PANE");
         assert!(
-            mux.id.starts_with('%'),
-            "tmux pane ids always start with '%', got: {id}",
-            id = mux.id
+            pane.starts_with('%'),
+            "tmux pane ids start with '%', got: {pane}"
         );
     }
-}
-
-#[test]
-fn multiplexer_none_without_env() {
-    // Temporarily unset all multiplexer vars and verify None.
-    // We can't actually unset env in a running test safely across threads,
-    // so just verify the detection function exists and returns the right type.
-    let info = detect_multiplexer();
-    // In CI without tmux/zellij this would be None; in our tmux it's Some.
-    // Either way, the function must not panic.
-    let _ = info;
 }
 
 #[cfg(target_os = "linux")]

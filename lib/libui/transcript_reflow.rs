@@ -14,8 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use chaos_kern::terminal::TerminalName;
-use chaos_kern::terminal::terminal_info;
+use chaos_sysinfo::terminal::TerminalName;
+use chaos_sysinfo::terminal::terminal_info;
 use ratatui::text::Line;
 
 use crate::history_cell::HistoryCell;

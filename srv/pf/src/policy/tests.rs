@@ -19,34 +19,30 @@ fn method_allowed_limited_allows_only_safe_methods() {
 }
 
 #[test]
-fn compile_globset_normalizes_trailing_dots() {
-    let set = compile_globset(&["Example.COM.".to_string()]).unwrap();
-
-    assert_eq!(true, set.is_match("example.com"));
-    assert_eq!(false, set.is_match("api.example.com"));
-}
-
-#[test]
-fn compile_globset_normalizes_wildcards() {
-    let set = compile_globset(&["*.Example.COM.".to_string()]).unwrap();
-
-    assert_eq!(true, set.is_match("api.example.com"));
-    assert_eq!(false, set.is_match("example.com"));
-}
-
-#[test]
-fn compile_globset_normalizes_apex_and_subdomains() {
-    let set = compile_globset(&["**.Example.COM.".to_string()]).unwrap();
-
-    assert_eq!(true, set.is_match("example.com"));
-    assert_eq!(true, set.is_match("api.example.com"));
-}
-
-#[test]
-fn compile_globset_normalizes_bracketed_ipv6_literals() {
-    let set = compile_globset(&["[::1]".to_string()]).unwrap();
-
-    assert_eq!(true, set.is_match("::1"));
+fn compile_globset_normalizes_patterns_and_preserves_host_scope() {
+    for (label, pattern, matches) in [
+        (
+            "exact host with trailing dot",
+            "Example.COM.",
+            [("example.com", true), ("api.example.com", false)].as_slice(),
+        ),
+        (
+            "subdomains only",
+            "*.Example.COM.",
+            [("api.example.com", true), ("example.com", false)].as_slice(),
+        ),
+        (
+            "apex and subdomains",
+            "**.Example.COM.",
+            [("example.com", true), ("api.example.com", true)].as_slice(),
+        ),
+        ("bracketed IPv6", "[::1]", [("::1", true)].as_slice()),
+    ] {
+        let set = compile_globset(&[pattern.to_string()]).expect(label);
+        for &(host, expected) in matches {
+            assert_eq!(set.is_match(host), expected, "{label}: {host}");
+        }
+    }
 }
 
 #[test]
@@ -89,33 +85,17 @@ fn is_non_public_ip_rejects_private_and_loopback_ranges() {
 }
 
 #[test]
-fn normalize_host_lowercases_and_trims() {
-    assert_eq!(normalize_host("  ExAmPlE.CoM  "), "example.com");
-}
-
-#[test]
-fn normalize_host_strips_port_for_host_port() {
-    assert_eq!(normalize_host("example.com:1234"), "example.com");
-}
-
-#[test]
-fn normalize_host_preserves_unbracketed_ipv6() {
-    assert_eq!(normalize_host("2001:db8::1"), "2001:db8::1");
-}
-
-#[test]
-fn normalize_host_strips_trailing_dot() {
-    assert_eq!(normalize_host("example.com."), "example.com");
-    assert_eq!(normalize_host("ExAmPlE.CoM."), "example.com");
-}
-
-#[test]
-fn normalize_host_strips_trailing_dot_with_port() {
-    assert_eq!(normalize_host("example.com.:443"), "example.com");
-}
-
-#[test]
-fn normalize_host_strips_brackets_for_ipv6() {
-    assert_eq!(normalize_host("[::1]"), "::1");
-    assert_eq!(normalize_host("[::1]:443"), "::1");
+fn normalize_host_preserves_addresses_while_removing_host_decoration() {
+    for (label, input, expected) in [
+        ("case and whitespace", "  ExAmPlE.CoM  ", "example.com"),
+        ("host port", "example.com:1234", "example.com"),
+        ("unbracketed IPv6", "2001:db8::1", "2001:db8::1"),
+        ("trailing dot", "example.com.", "example.com"),
+        ("case and trailing dot", "ExAmPlE.CoM.", "example.com"),
+        ("trailing dot with port", "example.com.:443", "example.com"),
+        ("bracketed IPv6", "[::1]", "::1"),
+        ("bracketed IPv6 with port", "[::1]:443", "::1"),
+    ] {
+        assert_eq!(normalize_host(input), expected, "{label}: {input}");
+    }
 }

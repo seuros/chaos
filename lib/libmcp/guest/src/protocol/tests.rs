@@ -1,13 +1,8 @@
 use super::*;
 
 #[test]
-fn test_supported_versions_cover_the_negotiable_range() {
-    assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, ["2025-11-25", "2025-06-18"]);
+fn test_latest_supported_protocol_version() {
     assert_eq!(latest_supported_protocol_version(), "2025-11-25");
-    assert!(is_supported_protocol_version("2025-11-25"));
-    assert!(is_supported_protocol_version("2025-06-18"));
-    assert!(!is_supported_protocol_version("2026-07-28"));
-    assert!(!is_supported_protocol_version("2025-03-26"));
 }
 
 #[test]

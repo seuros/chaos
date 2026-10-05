@@ -18,12 +18,9 @@ async fn outgoing_message_suite() {
     test_send_event_as_notification()
         .await
         .expect("test_send_event_as_notification");
-    test_send_event_as_notification_with_meta()
+    test_send_event_as_notification_with_metadata_variants()
         .await
-        .expect("test_send_event_as_notification_with_meta");
-    test_send_event_as_notification_with_meta_and_process_id()
-        .await
-        .expect("test_send_event_as_notification_with_meta_and_process_id");
+        .expect("test_send_event_as_notification_with_metadata_variants");
     empty_elicitation_capability_defaults_to_form_support();
 }
 
@@ -91,74 +88,7 @@ async fn test_send_event_as_notification() -> Result<()> {
     Ok(())
 }
 
-async fn test_send_event_as_notification_with_meta() -> Result<()> {
-    let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
-    let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
-
-    let conversation_id = ProcessId::new();
-    let session_configured_event = SessionConfiguredEvent {
-        session_id: conversation_id,
-        forked_from_id: None,
-        process_name: None,
-        model: TEST_MODEL.to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: ApprovalPolicy::Headless,
-        approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
-        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-        socket_policy: chaos_ipc::protocol::SocketPolicy::from(
-            &SandboxPolicy::new_read_only_policy(),
-        ),
-        cwd: PathBuf::from("/home/user/project"),
-        reasoning_effort: Some(ReasoningEffort::default()),
-        history_log_id: 1,
-        history_entry_count: 1000,
-        initial_messages: None,
-        network_proxy: None,
-    };
-    let event = Event {
-        id: "1".to_string(),
-        msg: EventMsg::SessionConfigured(session_configured_event.clone()),
-    };
-    let meta = OutgoingNotificationMeta {
-        request_id: Some(RequestId::String("123".into())),
-        process_id: None,
-    };
-
-    outgoing_message_sender
-        .send_event_as_notification(&event, Some(meta))
-        .await;
-
-    let result = outgoing_rx.recv().await.unwrap();
-    let OutgoingMessage::Notification(OutgoingNotification { method, params }) = result else {
-        panic!("expected Notification for first message");
-    };
-    assert_eq!(method, "chaos/event");
-    let expected_params = json!({
-        "_meta": {
-            "requestId": "123",
-        },
-        "id": "1",
-        "msg": {
-            "type": "session_configured",
-            "session_id": session_configured_event.session_id,
-            "model": TEST_MODEL,
-            "model_provider_id": "test-provider",
-            "approval_policy": "headless",
-            "approvals_reviewer": "user",
-            "vfs_policy": session_configured_event.vfs_policy,
-            "socket_policy": session_configured_event.socket_policy,
-            "cwd": "/home/user/project",
-            "reasoning_effort": session_configured_event.reasoning_effort,
-            "history_log_id": session_configured_event.history_log_id,
-            "history_entry_count": session_configured_event.history_entry_count,
-        }
-    });
-    assert_eq!(params.unwrap(), expected_params);
-    Ok(())
-}
-
-async fn test_send_event_as_notification_with_meta_and_process_id() -> Result<()> {
+async fn test_send_event_as_notification_with_metadata_variants() -> Result<()> {
     let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
     let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
 
@@ -185,44 +115,36 @@ async fn test_send_event_as_notification_with_meta_and_process_id() -> Result<()
     };
     let event = Event {
         id: "1".to_string(),
-        msg: EventMsg::SessionConfigured(session_configured_event.clone()),
+        msg: EventMsg::SessionConfigured(session_configured_event),
     };
-    let meta = OutgoingNotificationMeta {
-        request_id: Some(RequestId::String("123".into())),
-        process_id: Some(process_id),
-    };
+    for (label, meta_process_id, expected_meta) in [
+        ("request id only", None, json!({"requestId": "123"})),
+        (
+            "request and process ids",
+            Some(process_id),
+            json!({"requestId": "123", "processId": process_id.to_string()}),
+        ),
+    ] {
+        let meta = OutgoingNotificationMeta {
+            request_id: Some(RequestId::String("123".into())),
+            process_id: meta_process_id,
+        };
 
-    outgoing_message_sender
-        .send_event_as_notification(&event, Some(meta))
-        .await;
+        outgoing_message_sender
+            .send_event_as_notification(&event, Some(meta))
+            .await;
 
-    let result = outgoing_rx.recv().await.unwrap();
-    let OutgoingMessage::Notification(OutgoingNotification { method, params }) = result else {
-        panic!("expected Notification for first message");
-    };
-    assert_eq!(method, "chaos/event");
-    let expected_params = json!({
-        "_meta": {
-            "requestId": "123",
-            "processId": process_id.to_string(),
-        },
-        "id": "1",
-        "msg": {
-            "type": "session_configured",
-            "session_id": session_configured_event.session_id,
-            "model": TEST_MODEL,
-            "model_provider_id": "test-provider",
-            "approval_policy": "headless",
-            "approvals_reviewer": "user",
-            "vfs_policy": session_configured_event.vfs_policy,
-            "socket_policy": session_configured_event.socket_policy,
-            "cwd": "/home/user/project",
-            "reasoning_effort": session_configured_event.reasoning_effort,
-            "history_log_id": session_configured_event.history_log_id,
-            "history_entry_count": session_configured_event.history_entry_count,
-        }
-    });
-    assert_eq!(params.unwrap(), expected_params);
+        let result = outgoing_rx.recv().await.expect(label);
+        let OutgoingMessage::Notification(OutgoingNotification { method, params }) = result else {
+            panic!("{label}: expected Notification");
+        };
+        assert_eq!(method, "chaos/event", "{label}");
+        // IPC owns the event's wire fields; this sender owns preserving the
+        // event while flattening the MCP metadata into its envelope.
+        let mut expected_params = serde_json::to_value(&event)?;
+        expected_params["_meta"] = expected_meta;
+        assert_eq!(params, Some(expected_params), "{label}");
+    }
     Ok(())
 }
 

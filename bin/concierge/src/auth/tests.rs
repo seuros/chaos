@@ -8,76 +8,52 @@ use super::resolve_oauth_scopes;
 use super::should_retry_without_scopes;
 
 #[test]
-fn resolve_oauth_scopes_prefers_explicit() {
-    let resolved = resolve_oauth_scopes(
-        Some(vec!["explicit".to_string()]),
-        Some(vec!["configured".to_string()]),
-        Some(vec!["discovered".to_string()]),
-    );
+fn resolve_oauth_scopes_preserves_precedence_and_empty_configuration() {
+    use McpOAuthScopesSource::{Configured, Discovered, Empty, Explicit};
 
-    assert_eq!(
-        resolved,
-        ResolvedMcpOAuthScopes {
-            scopes: vec!["explicit".to_string()],
-            source: McpOAuthScopesSource::Explicit,
-        }
-    );
-}
-
-#[test]
-fn resolve_oauth_scopes_prefers_configured_over_discovered() {
-    let resolved = resolve_oauth_scopes(
-        None,
-        Some(vec!["configured".to_string()]),
-        Some(vec!["discovered".to_string()]),
-    );
-
-    assert_eq!(
-        resolved,
-        ResolvedMcpOAuthScopes {
-            scopes: vec!["configured".to_string()],
-            source: McpOAuthScopesSource::Configured,
-        }
-    );
-}
-
-#[test]
-fn resolve_oauth_scopes_uses_discovered_when_needed() {
-    let resolved = resolve_oauth_scopes(None, None, Some(vec!["discovered".to_string()]));
-
-    assert_eq!(
-        resolved,
-        ResolvedMcpOAuthScopes {
-            scopes: vec!["discovered".to_string()],
-            source: McpOAuthScopesSource::Discovered,
-        }
-    );
-}
-
-#[test]
-fn resolve_oauth_scopes_preserves_explicitly_empty_configured_scopes() {
-    let resolved = resolve_oauth_scopes(None, Some(Vec::new()), Some(vec!["ignored".into()]));
-
-    assert_eq!(
-        resolved,
-        ResolvedMcpOAuthScopes {
-            scopes: Vec::new(),
-            source: McpOAuthScopesSource::Configured,
-        }
-    );
-}
-
-#[test]
-fn resolve_oauth_scopes_falls_back_to_empty() {
-    let resolved = resolve_oauth_scopes(None, None, None);
-
-    assert_eq!(
-        resolved,
-        ResolvedMcpOAuthScopes {
-            scopes: Vec::new(),
-            source: McpOAuthScopesSource::Empty,
-        }
-    );
+    let configured = Some(vec!["configured".to_string()]);
+    let discovered = Some(vec!["discovered".to_string()]);
+    for (label, explicit, configured, discovered, scopes, source) in [
+        (
+            "explicit overrides configured and discovered",
+            Some(vec!["explicit".into()]),
+            configured.clone(),
+            discovered.clone(),
+            vec!["explicit".into()],
+            Explicit,
+        ),
+        (
+            "configured overrides discovered",
+            None,
+            configured,
+            discovered.clone(),
+            vec!["configured".into()],
+            Configured,
+        ),
+        (
+            "discovered fallback",
+            None,
+            None,
+            discovered,
+            vec!["discovered".into()],
+            Discovered,
+        ),
+        (
+            "explicitly empty configuration suppresses discovery",
+            None,
+            Some(Vec::new()),
+            Some(vec!["ignored".into()]),
+            Vec::new(),
+            Configured,
+        ),
+        ("no scopes", None, None, None, Vec::new(), Empty),
+    ] {
+        assert_eq!(
+            resolve_oauth_scopes(explicit, configured, discovered),
+            ResolvedMcpOAuthScopes { scopes, source },
+            "{label}"
+        );
+    }
 }
 
 #[test]

@@ -24,7 +24,7 @@ pub fn redact_secrets(input: String) -> String {
 fn compile_regex(pattern: &str) -> Regex {
     match Regex::new(pattern) {
         Ok(regex) => regex,
-        // Panic is ok thanks to `load_regex` test.
+        // All patterns are exercised by the sanitizer redaction tests.
         Err(err) => panic!("invalid regex pattern `{pattern}`: {err}"),
     }
 }

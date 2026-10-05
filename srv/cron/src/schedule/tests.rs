@@ -17,71 +17,62 @@ fn interval_rejects_non_positive_seconds() {
 }
 
 #[test]
-fn daily_advances_to_same_day_if_still_ahead() {
-    // 2026-06-01T00:00:00Z, ask for 10:30 the same day.
-    let after = Timestamp::from_second(1_780_272_000).expect("ts");
+fn daily_advances_to_the_next_scheduled_time() {
     let sched = Schedule::Daily {
         hour: 10,
         minute: 30,
     };
-    let next = sched.next_after(after).expect("next");
-    let zdt = Timestamp::from_second(next)
-        .expect("ts")
-        .to_zoned(TimeZone::UTC);
-    assert_eq!(zdt.date().to_string(), "2026-06-01");
-    assert_eq!((zdt.hour(), zdt.minute()), (10, 30));
+    for (label, after, expected) in [
+        (
+            "same day, still ahead",
+            1_780_272_000,
+            "2026-06-01T10:30:00Z",
+        ),
+        (
+            "next day, time passed",
+            1_780_315_200,
+            "2026-06-02T10:30:00Z",
+        ),
+    ] {
+        let after = Timestamp::from_second(after).expect(label);
+        let expected: Timestamp = expected.parse().expect(label);
+        assert_eq!(
+            sched.next_after(after).expect(label),
+            expected.as_second(),
+            "{label}"
+        );
+    }
 }
 
 #[test]
-fn daily_rolls_to_next_day_when_time_has_passed() {
-    // 2026-06-01T12:00:00Z, ask for 10:30 (already past today), rolls to Jan 2.
-    let after = Timestamp::from_second(1_780_315_200).expect("ts");
-    let sched = Schedule::Daily {
-        hour: 10,
-        minute: 30,
-    };
-    let next = sched.next_after(after).expect("next");
-    let zdt = Timestamp::from_second(next)
-        .expect("ts")
-        .to_zoned(TimeZone::UTC);
-    assert_eq!(zdt.date().to_string(), "2026-06-02");
-    assert_eq!((zdt.hour(), zdt.minute()), (10, 30));
-}
-
-#[test]
-fn weekly_rolls_to_next_matching_weekday() {
-    // 2026-06-01 is a Monday. Ask for Wednesday 09:00.
-    let after = Timestamp::from_second(1_780_272_000).expect("ts");
-    let sched = Schedule::Weekly {
-        weekday: Weekday::Wed,
-        hour: 9,
-        minute: 0,
-    };
-    let next = sched.next_after(after).expect("next");
-    let zdt = Timestamp::from_second(next)
-        .expect("ts")
-        .to_zoned(TimeZone::UTC);
-    assert_eq!(zdt.date().to_string(), "2026-06-03");
-    assert_eq!(zdt.weekday(), jiff::civil::Weekday::Wednesday);
-    assert_eq!((zdt.hour(), zdt.minute()), (9, 0));
-}
-
-#[test]
-fn weekly_rolls_a_full_week_when_same_day_but_time_passed() {
-    // 2026-06-01T12:00:00Z is Monday noon. Ask for Monday 09:00, already
-    // passed today, should roll a full week to 2026-06-08.
-    let after = Timestamp::from_second(1_780_315_200).expect("ts");
-    let sched = Schedule::Weekly {
-        weekday: Weekday::Mon,
-        hour: 9,
-        minute: 0,
-    };
-    let next = sched.next_after(after).expect("next");
-    let zdt = Timestamp::from_second(next)
-        .expect("ts")
-        .to_zoned(TimeZone::UTC);
-    assert_eq!(zdt.date().to_string(), "2026-06-08");
-    assert_eq!((zdt.hour(), zdt.minute()), (9, 0));
+fn weekly_advances_to_the_next_matching_weekday() {
+    for (label, weekday, after, expected) in [
+        (
+            "later weekday",
+            Weekday::Wed,
+            1_780_272_000,
+            "2026-06-03T09:00:00Z",
+        ),
+        (
+            "full week, same day but time passed",
+            Weekday::Mon,
+            1_780_315_200,
+            "2026-06-08T09:00:00Z",
+        ),
+    ] {
+        let sched = Schedule::Weekly {
+            weekday,
+            hour: 9,
+            minute: 0,
+        };
+        let after = Timestamp::from_second(after).expect(label);
+        let expected: Timestamp = expected.parse().expect(label);
+        assert_eq!(
+            sched.next_after(after).expect(label),
+            expected.as_second(),
+            "{label}"
+        );
+    }
 }
 
 #[test]

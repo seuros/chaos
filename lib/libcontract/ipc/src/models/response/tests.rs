@@ -1,19 +1,14 @@
 use super::ResponseItem;
 
 #[test]
-fn compaction_trigger_serializes_as_request_control() {
+fn compaction_trigger_is_outbound_request_control_only() {
+    let wire = serde_json::json!({"type": "compaction_trigger"});
     let value = serde_json::to_value(ResponseItem::CompactionTrigger {})
         .expect("compaction trigger should serialize");
 
-    assert_eq!(value, serde_json::json!({"type": "compaction_trigger"}));
-}
+    assert_eq!(value, wire, "outbound request control");
+    let item: ResponseItem =
+        serde_json::from_value(wire).expect("unknown response items should deserialize safely");
 
-#[test]
-fn compaction_trigger_is_not_accepted_as_response_data() {
-    let item: ResponseItem = serde_json::from_value(serde_json::json!({
-        "type": "compaction_trigger"
-    }))
-    .expect("unknown response items should deserialize safely");
-
-    assert_eq!(item, ResponseItem::Other);
+    assert_eq!(item, ResponseItem::Other, "inbound response data");
 }

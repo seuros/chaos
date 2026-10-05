@@ -2,24 +2,35 @@ use super::*;
 use chaos_test_fixtures::TEST_MODEL;
 
 #[test]
-fn trigger_request_accepts_request_field() {
-    let json = r#"{"request": "hello world"}"#;
-    let req: TriggerRequest = serde_json::from_str(json).unwrap();
-    assert_eq!(req.request.as_deref(), Some("hello world"));
-}
-
-#[test]
-fn trigger_request_accepts_prompt_alias() {
-    let json = r#"{"prompt": "hello world"}"#;
-    let req: TriggerRequest = serde_json::from_str(json).unwrap();
-    assert_eq!(req.request.as_deref(), Some("hello world"));
-}
-
-#[test]
-fn trigger_request_accepts_session_id_alias() {
-    let json = r#"{"request": "x", "session_id": "abc-123"}"#;
-    let req: TriggerRequest = serde_json::from_str(json).unwrap();
-    assert_eq!(req.caller_session_id.as_deref(), Some("abc-123"));
+fn trigger_request_accepts_canonical_fields_and_aliases() {
+    for (label, json, request, session_id) in [
+        (
+            "request field",
+            r#"{"request": "hello world"}"#,
+            "hello world",
+            None,
+        ),
+        (
+            "prompt alias",
+            r#"{"prompt": "hello world"}"#,
+            "hello world",
+            None,
+        ),
+        (
+            "session_id alias",
+            r#"{"request": "x", "session_id": "abc-123"}"#,
+            "x",
+            Some("abc-123"),
+        ),
+    ] {
+        let req: TriggerRequest = serde_json::from_str(json).expect(label);
+        assert_eq!(req.request.as_deref(), Some(request), "{label}: request");
+        assert_eq!(
+            req.caller_session_id.as_deref(),
+            session_id,
+            "{label}: caller session"
+        );
+    }
 }
 
 #[test]
@@ -37,18 +48,24 @@ fn empty_request_is_none() {
 }
 
 #[test]
-fn error_response_serializes_consistently() {
-    let err = ApiErrorResponse::error("unauthorized");
-    let json = serde_json::to_value(&err).unwrap();
-    assert_eq!(json["status"], "error");
-    assert_eq!(json["error"], "unauthorized");
-    // Optional fields should be absent, not null
-    assert!(json.get("process_id").is_none());
-}
-
-#[test]
-fn timeout_response_has_timeout_status() {
-    let err = ApiErrorResponse::timeout("deadline exceeded");
-    let json = serde_json::to_value(&err).unwrap();
-    assert_eq!(json["status"], "timeout");
+fn failure_responses_preserve_wire_status_and_omit_absent_ids() {
+    for (label, response, message) in [
+        (
+            "error",
+            ApiErrorResponse::error("unauthorized"),
+            "unauthorized",
+        ),
+        (
+            "timeout",
+            ApiErrorResponse::timeout("deadline exceeded"),
+            "deadline exceeded",
+        ),
+    ] {
+        let json = serde_json::to_value(&response).expect(label);
+        assert_eq!(
+            json,
+            serde_json::json!({"status": label, "error": message}),
+            "{label}: absent identifiers must be omitted, not null"
+        );
+    }
 }

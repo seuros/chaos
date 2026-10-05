@@ -111,23 +111,15 @@ fn rejects_variable_assignment_prefix() {
 }
 
 #[test]
-fn rejects_trailing_operator_parse_error() {
-    assert!(parse_seq("ls &&").is_none());
-}
-
-#[test]
-fn rejects_empty_command_position_with_leading_operator() {
-    assert!(parse_seq("&& ls").is_none());
-}
-
-#[test]
-fn rejects_empty_command_position_with_double_separator() {
-    assert!(parse_seq("ls ;; pwd").is_none());
-}
-
-#[test]
-fn rejects_empty_command_position_with_empty_pipeline_segment() {
-    assert!(parse_seq("ls | | wc").is_none());
+fn rejects_malformed_command_positions() {
+    for (label, src) in [
+        ("trailing operator parse error", "ls &&"),
+        ("leading operator", "&& ls"),
+        ("double separator", "ls ;; pwd"),
+        ("empty pipeline segment", "ls | | wc"),
+    ] {
+        assert!(parse_seq(src).is_none(), "{label}: {src:?}");
+    }
 }
 
 #[test]

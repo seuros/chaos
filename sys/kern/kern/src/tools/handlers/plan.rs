@@ -2,10 +2,14 @@ use std::collections::BTreeMap;
 
 use chaos_ipc::protocol::EventMsg;
 use chaos_parrot::sanitize::JsonSchema;
-use chaos_proc::planning::{PlanChange, PlanMutation, PlanningActor};
+use chaos_proc::RuntimeDbHandle;
+use chaos_proc::planning::{
+    ConsolidationRequest, PlanChange, PlanMutation, PlanSnapshot, PlanningActor,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{extract_function_arguments, parse_arguments};
+use crate::chaos::{Session, TurnContext};
 use crate::client_common::tools::{ResponsesApiTool, ToolSpec};
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::{FunctionToolOutput, ToolInvocation};
@@ -19,7 +23,11 @@ enum Operation {
     List,
     Projects,
     Read,
+    Detail,
     Task,
+    Clarifications,
+    Consolidate,
+    Consolidation,
     History,
     Graph,
     Attach,
@@ -41,6 +49,9 @@ struct Args {
     request_id: Option<String>,
     expected_revision: Option<i16>,
     change: Option<PlanChange>,
+    provider: Option<String>,
+    model: Option<String>,
+    job: Option<String>,
 }
 
 fn error(e: impl std::fmt::Display) -> FunctionCallError {
@@ -59,6 +70,20 @@ struct Attachment {
     attached_plan: Option<String>,
 }
 
+async fn read_and_publish(
+    session: &Session,
+    turn: &TurnContext,
+    db: &RuntimeDbHandle,
+    plan: &str,
+    offset: i64,
+) -> Result<PlanSnapshot, FunctionCallError> {
+    let snapshot = db.planning_read(plan, offset).await.map_err(error)?;
+    session
+        .send_transient_event(turn, EventMsg::PlanUpdate(snapshot.clone().into()))
+        .await;
+    Ok(snapshot)
+}
+
 pub(crate) fn planning_tool(
     authoring: bool,
     planning: chaos_proc::planning::PlanningCapabilities,
@@ -69,17 +94,44 @@ pub(crate) fn planning_tool(
     let integer = |s: &str| JsonSchema::Integer {
         description: Some(s.into()),
     };
+    let mut changes = vec!["transition", "note", "complete", "cancel"];
+    let mut actions = vec![
+        "read",
+        "detail",
+        "task",
+        "clarifications",
+        "consolidation",
+        "history",
+        "detach",
+        "change",
+    ];
+    let mut task_description = if authoring {
+        "Task for details, clarifications or consolidation; omit for plan content."
+    } else {
+        "Task for details or clarifications; omit for plan clarifications."
+    }
+    .to_owned();
+    if authoring {
+        changes.extend([
+            "create",
+            "edit",
+            "add_task",
+            "edit_task",
+            "move_task",
+            "clarify",
+            "reopen",
+        ]);
+        actions.extend(["consolidate", "list", "projects", "attach"]);
+        if planning.dependencies {
+            changes.extend(["link", "unlink"]);
+        }
+    }
+    if planning.dependencies {
+        actions.push("graph");
+        task_description.push_str(" For graph: optional descendant root.");
+    }
     let mut change = BTreeMap::from([
-        (
-            "action".into(),
-            string(if authoring && planning.dependencies {
-                "create, edit, add_task, edit_task, move_task, transition, note, link, unlink, complete, cancel, reopen"
-            } else if authoring {
-                "create, edit, add_task, edit_task, move_task, transition, note, complete, cancel, reopen"
-            } else {
-                "transition, note, complete, cancel"
-            }),
-        ),
+        ("action".into(), string(&changes.join(", "))),
         (
             "task".into(),
             string(
@@ -107,6 +159,8 @@ pub(crate) fn planning_tool(
         change.extend([
             ("workspace".into(), string("Workspace UUID or six-hex code, required for create.")),
             ("title".into(), string("Title for create/edit/add_task/edit_task.")),
+            ("body".into(), string("Initial Markdown body for create/add_task; omitted means empty. Use clarify for subsequent changes.")),
+            ("text".into(), string("Required for clarify: an appended intent change. Omit task to clarify the plan.")),
             ("parent".into(), string(if planning.dependencies {
                 "Parent task for nesting or prerequisite task for a dependency. Omit for root nesting."
             } else { "Parent task for nesting. Omit for root nesting." })),
@@ -118,37 +172,23 @@ pub(crate) fn planning_tool(
         }
     }
     let mut properties = BTreeMap::from([
-        (
-            "action".into(),
-            string(if authoring && planning.dependencies {
-                "list, projects, read, task, history, graph, attach, detach, change"
-            } else if authoring {
-                "list, projects, read, task, history, attach, detach, change"
-            } else if planning.dependencies {
-                "read, task, history, graph, detach, change"
-            } else {
-                "read, task, history, detach, change"
-            }),
-        ),
-        (
-            "task".into(),
-            string(if planning.dependencies {
-                "Task reference for task details, or optional root for a descendant dependency subgraph."
-            } else {
-                "Task reference for task details and project targets."
-            }),
-        ),
+        ("action".into(), string(&actions.join(", "))),
+        ("task".into(), string(&task_description)),
         (
             "offset".into(),
             integer("Page offset, default 0. At most 50 records per page."),
         ),
         (
             "after".into(),
-            integer("Exclusive history sequence returned by the previous page."),
+            integer("Exclusive history or clarification sequence returned by the previous page."),
         ),
         (
             "request_id".into(),
-            string("Required for change. Unique retry key; reuse only with identical arguments."),
+            string(if authoring {
+                "Required for change/consolidate. Unique retry key; reuse only with identical arguments."
+            } else {
+                "Required for change. Unique retry key; reuse only with identical arguments."
+            }),
         ),
         (
             "expected_revision".into(),
@@ -165,6 +205,14 @@ pub(crate) fn planning_tool(
     ]);
     if authoring {
         properties.insert(
+            "provider".into(),
+            string("Required for consolidate: select a configured provider from chaos://models."),
+        );
+        properties.insert(
+            "model".into(),
+            string("Required for consolidate: select a model from that provider's catalogue."),
+        );
+        properties.insert(
             "plan".into(),
             string(
                 "Plan UUID or six-hex/four-hex reference. Defaults to explicit session attachment.",
@@ -177,12 +225,13 @@ pub(crate) fn planning_tool(
             ),
         );
     }
+    properties.insert("job".into(), string("Job ID for consolidation status. Cancellation uses cancel_mcp_task and the returned background task ID."));
     ToolSpec::Function(ResponsesApiTool {
         name: if authoring { "plan" } else { "plan_progress" }.into(),
         description: if authoring {
             "Author durable database plans. Attach explicitly before execution. Read bounded pages; IDs are immutable, ordering is separate. After replanning, switch back to execution mode yourself."
         } else {
-            "Read and update the explicitly attached database plan. Revision conflicts require re-reading, not blind retries. For structural changes, autonomously switch to Plan mode, revise, then return to execution; no operator permission is needed for the mode switch."
+            "Read and update the explicitly attached database plan. Read task bodies and pending clarifications before execution. Revision conflicts require re-reading, not blind retries. For intent or structural changes, switch to Plan mode yourself, revise, then return to execution."
         }.into(),
         strict: false,
         defer_loading: None,
@@ -200,7 +249,7 @@ impl ToolHandler for PlanHandler {
         &self,
         _invocation: &ToolInvocation,
     ) -> impl std::future::Future<Output = bool> + Send + '_ {
-        async { true }
+        std::future::ready(true)
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -277,17 +326,16 @@ impl ToolHandler for PlanHandler {
                     )
                 }
             }
-            Operation::Read => {
-                let snapshot = db
-                    .planning_read(require_plan()?, args.offset)
-                    .await
-                    .map_err(error)?;
-                invocation
-                    .session
-                    .send_transient_event(&turn, EventMsg::PlanUpdate(snapshot.clone().into()))
-                    .await;
-                output(snapshot)
-            }
+            Operation::Read => output(
+                read_and_publish(
+                    &invocation.session,
+                    &turn,
+                    &db,
+                    require_plan()?,
+                    args.offset,
+                )
+                .await?,
+            ),
             Operation::Task => output(
                 db.planning_task(
                     require_plan()?,
@@ -298,6 +346,60 @@ impl ToolHandler for PlanHandler {
                 )
                 .await
                 .map_err(error)?,
+            ),
+            Operation::Detail => output(db.planning_detail(require_plan()?).await.map_err(error)?),
+            Operation::Consolidate if authoring => {
+                let request = ConsolidationRequest {
+                    request_id: args
+                        .request_id
+                        .ok_or_else(|| error("request_id is required"))?,
+                    plan: require_plan()?.into(),
+                    task: args.task,
+                    provider: args
+                        .provider
+                        .ok_or_else(|| error("provider is required; select from chaos://models"))?,
+                    model: args
+                        .model
+                        .ok_or_else(|| error("model is required; select from chaos://models"))?,
+                };
+                let job = invocation
+                    .session
+                    .request_consolidation(
+                        turn,
+                        &actor,
+                        &request,
+                        use_attachment.then_some(require_plan()?),
+                        &invocation.call_id,
+                    )
+                    .await
+                    .map_err(error)?;
+                output(serde_json::json!({
+                    "job": job,
+                    "task_id": crate::background_tasks::TaskRegistry::submission_id(&job.origin_call_id),
+                }))
+            }
+            Operation::Consolidation => {
+                let job = db
+                    .planning_consolidation(
+                        args.job
+                            .as_deref()
+                            .ok_or_else(|| error("job is required"))?,
+                    )
+                    .await
+                    .map_err(error)?;
+                let plan = db
+                    .planning_resolve_plan(require_plan()?)
+                    .await
+                    .map_err(error)?;
+                if job.plan_id != plan {
+                    return Err(error("job belongs to another plan"));
+                }
+                output(job)
+            }
+            Operation::Clarifications => output(
+                db.planning_clarifications(require_plan()?, args.task.as_deref(), args.after)
+                    .await
+                    .map_err(error)?,
             ),
             Operation::History => output(
                 db.planning_history(require_plan()?, args.after)
@@ -316,11 +418,7 @@ impl ToolHandler for PlanHandler {
                 db.planning_attach(&session, Some(require_plan()?))
                     .await
                     .map_err(error)?;
-                let snapshot = db.planning_read(require_plan()?, 0).await.map_err(error)?;
-                invocation
-                    .session
-                    .send_transient_event(&turn, EventMsg::PlanUpdate(snapshot.into()))
-                    .await;
+                read_and_publish(&invocation.session, &turn, &db, require_plan()?, 0).await?;
                 output(Attachment {
                     attached_plan: db.planning_attachment(&session).await.map_err(error)?,
                 })
@@ -342,7 +440,7 @@ impl ToolHandler for PlanHandler {
                 let change = args.change.ok_or_else(|| error("change is required"))?;
                 if !authoring && !change.progress_only() {
                     return Err(error(
-                        "structural edits require Plan mode; switch_mode yourself, edit, then return",
+                        "intent and structural edits require Plan mode; switch_mode yourself, edit, then return",
                     ));
                 }
                 let mutation = PlanMutation {
@@ -366,11 +464,7 @@ impl ToolHandler for PlanHandler {
                 .map_err(error)?;
                 // Never publish proposed intent as if it committed. Read the
                 // current database view only after the mutation succeeded.
-                let snapshot = db.planning_read(&result.plan.id, 0).await.map_err(error)?;
-                invocation
-                    .session
-                    .send_transient_event(&turn, EventMsg::PlanUpdate(snapshot.into()))
-                    .await;
+                read_and_publish(&invocation.session, &turn, &db, &result.plan.id, 0).await?;
                 output(result)
             }
             _ => Err(error("action is unavailable in this mode")),
@@ -401,6 +495,12 @@ mod tests {
             assert!(!postgres.contains("SQLite"));
             assert!(!postgres.contains("PostgreSQL only"));
             assert_eq!(postgres.contains("unlink"), authoring);
+            assert_eq!(postgres.contains("\"provider\""), authoring);
+            assert_eq!(postgres.contains("\"body\""), authoring);
+            assert_eq!(postgres.contains("\"text\""), authoring);
+            assert_eq!(postgres.contains("consolidate,"), authoring);
+            assert!(postgres.contains("clarifications"));
+            assert!(postgres.contains("consolidation"));
         }
         Ok(())
     }

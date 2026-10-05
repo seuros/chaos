@@ -7,6 +7,40 @@ use chaos_proc::{RuntimeDbHandle, StateRuntime};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+async fn create_plan(db: &RuntimeDbHandle, workspace: &str, title: &str) -> anyhow::Result<Plan> {
+    Ok(db
+        .planning_mutate(
+            &PlanningActor {
+                session: "operator".into(),
+                installation: "test".into(),
+            },
+            &PlanMutation {
+                request_id: title.into(),
+                plan: None,
+                expected_revision: None,
+                change: PlanChange::Create {
+                    workspace: workspace.into(),
+                    title: title.into(),
+                    body: String::new(),
+                },
+            },
+        )
+        .await?
+        .plan)
+}
+
+async fn switch_mode(
+    session: &Session,
+    turn: &Arc<TurnContext>,
+    mode: &str,
+) -> anyhow::Result<Arc<TurnContext>> {
+    session
+        .switch_mode(mode, turn)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    Ok(session.effective_turn_context(turn).await)
+}
+
 async fn fixture() -> anyhow::Result<(
     tempfile::TempDir,
     Arc<Session>,
@@ -15,28 +49,10 @@ async fn fixture() -> anyhow::Result<(
     Plan,
 )> {
     let home = tempfile::tempdir()?;
-    let (mut session, turn) =
-        crate::chaos::make_session_and_context_with_home(home.path()).await;
+    let (mut session, turn) = crate::chaos::make_session_and_context_with_home(home.path()).await;
     let db = RuntimeDbHandle::Sqlite(StateRuntime::init(home.path().into(), "test".into()).await?);
     let workspace = db.planning_create_workspace("tools").await?;
-    let plan = db
-        .planning_mutate(
-            &PlanningActor {
-                session: "operator".into(),
-                installation: "test".into(),
-            },
-            &PlanMutation {
-                request_id: "create".into(),
-                plan: None,
-                expected_revision: None,
-                change: PlanChange::Create {
-                    workspace: workspace.id,
-                    title: "Plan".into(),
-                },
-            },
-        )
-        .await?
-        .plan;
+    let plan = create_plan(&db, &workspace.id, "Plan").await?;
     db.planning_attach(&session.conversation_id.to_string(), Some(&plan.id))
         .await?;
     session.services.runtime_db = Some(db);
@@ -72,11 +88,7 @@ async fn call(
 async fn planning_replanning_round_trip_and_stale_calls() -> anyhow::Result<()> {
     use serde_json::json;
     let (_home, session, execution, rx, plan) = fixture().await?;
-    session
-        .switch_mode("plan", &execution)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    let authoring = session.effective_turn_context(&execution).await;
+    let authoring = switch_mode(&session, &execution, "plan").await?;
     call(
         &session,
         &authoring,
@@ -87,11 +99,7 @@ async fn planning_replanning_round_trip_and_stale_calls() -> anyhow::Result<()> 
         }),
     )
     .await?;
-    session
-        .switch_mode("default", &authoring)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    let execution = session.effective_turn_context(&authoring).await;
+    let execution = switch_mode(&session, &authoring, "default").await?;
     assert_eq!(
         execution.tools_config.attached_plan.as_deref(),
         Some(plan.id.as_str())
@@ -159,11 +167,7 @@ async fn planning_replanning_round_trip_and_stale_calls() -> anyhow::Result<()> 
 async fn planning_storage_failure_does_not_publish_ui_update() -> anyhow::Result<()> {
     use serde_json::json;
     let (_home, session, execution, rx, plan) = fixture().await?;
-    session
-        .switch_mode("plan", &execution)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    let authoring = session.effective_turn_context(&execution).await;
+    let authoring = switch_mode(&session, &execution, "plan").await?;
     while rx.try_recv().is_ok() {}
     // A nonexistent task is a failed database read inside the write transaction.
     assert!(
@@ -194,33 +198,12 @@ async fn planning_storage_failure_does_not_publish_ui_update() -> anyhow::Result
 async fn planning_authoring_rejects_rebound_implicit_plan() -> anyhow::Result<()> {
     use serde_json::json;
     let (_home, session, execution, rx, plan) = fixture().await?;
-    session
-        .switch_mode("plan", &execution)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    let authoring = session.effective_turn_context(&execution).await;
+    let authoring = switch_mode(&session, &execution, "plan").await?;
     while rx.try_recv().is_ok() {}
     let db = session
         .runtime_db()
         .ok_or_else(|| anyhow::anyhow!("database"))?;
-    let other = db
-        .planning_mutate(
-            &PlanningActor {
-                session: "operator".into(),
-                installation: "test".into(),
-            },
-            &PlanMutation {
-                request_id: "other".into(),
-                plan: None,
-                expected_revision: None,
-                change: PlanChange::Create {
-                    workspace: plan.workspace_id,
-                    title: "Another plan".into(),
-                },
-            },
-        )
-        .await?
-        .plan;
+    let other = create_plan(&db, &plan.workspace_id, "Another plan").await?;
     db.planning_attach(&session.conversation_id.to_string(), Some(&other.id))
         .await?;
     assert!(
@@ -248,5 +231,75 @@ async fn planning_authoring_rejects_rebound_implicit_plan() -> anyhow::Result<()
     );
     assert!(db.planning_read(&other.id, 0).await?.tasks.is_empty());
     assert!(rx.try_recv().is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_bodies_and_intent_changes_are_gated_without_bloating_updates()
+-> anyhow::Result<()> {
+    use serde_json::json;
+    let (_home, session, execution, rx, plan) = fixture().await?;
+    let authoring = switch_mode(&session, &execution, "plan").await?;
+    call(&session, &authoring, "plan", json!({
+        "action":"change", "request_id":"body", "expected_revision":1,
+        "change":{"action":"add_task", "title":"Inspect", "position":0, "body":"# Specification"}
+    })).await?;
+    call(
+        &session,
+        &authoring,
+        "plan",
+        json!({
+            "action":"change", "request_id":"clarify",
+            "change":{"action":"clarify", "task":"T1", "text":"Test restart recovery"}
+        }),
+    )
+    .await?;
+    while let Ok(event) = rx.try_recv() {
+        if let EventMsg::PlanUpdate(update) = event.msg {
+            let text = serde_json::to_string(&update)?;
+            assert!(!text.contains("Specification"));
+            assert!(!text.contains("restart recovery"));
+        }
+    }
+    let execution = switch_mode(&session, &authoring, "default").await?;
+    let detail: serde_json::Value = serde_json::from_str(
+        &call(
+            &session,
+            &execution,
+            "plan_progress",
+            json!({"action":"task","task":"T1"}),
+        )
+        .await?
+        .into_text(),
+    )?;
+    assert_eq!(detail["body"], "# Specification");
+    assert_eq!(
+        detail["clarifications"]["entries"][0]["text"],
+        "Test restart recovery"
+    );
+    let db = session.runtime_db().expect("database");
+    let before = db.planning_history(&plan.id, 0).await?;
+    for args in [
+        json!({
+            "action":"change", "request_id":"denied",
+            "change":{"action":"clarify", "task":"T1", "text":"Change intent"}
+        }),
+        json!({
+            "action":"consolidate", "request_id":"denied",
+            "provider":"provider", "model":"model"
+        }),
+    ] {
+        assert!(
+            call(&session, &execution, "plan_progress", args)
+                .await
+                .is_err()
+        );
+    }
+    assert_eq!(db.planning_history(&plan.id, 0).await?, before);
+    assert!(
+        db.planning_pending_consolidations(&session.conversation_id.to_string(), "")
+            .await?
+            .is_empty()
+    );
     Ok(())
 }

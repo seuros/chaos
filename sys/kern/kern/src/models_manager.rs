@@ -1,6 +1,7 @@
 mod discovery;
 pub mod manager;
 pub mod model_info;
+pub(crate) mod selection;
 
 // Re-export from chaos-model-catalog so existing crate-internal paths keep working.
 pub use chaos_model_catalog::ModelsCache;

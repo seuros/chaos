@@ -159,6 +159,7 @@ impl Session {
                 Some(chaos_ipc::background_tasks::TaskSource::Mcp { .. }) => "mcp",
                 Some(chaos_ipc::background_tasks::TaskSource::FleetInbox { .. }) => "fleet_inbox",
                 Some(chaos_ipc::background_tasks::TaskSource::MachineRecovery) => "machine_recovery",
+                Some(chaos_ipc::background_tasks::TaskSource::PlanningConsolidation { .. }) => "planning_consolidation",
                 None => "unknown",
             },
             "state": task.state,
@@ -179,20 +180,7 @@ impl Session {
             end_turn: None,
             phase: None,
         };
-        // Keep the notification in live history even if the durability barrier
-        // fails. In that case stop automatic work; only owner input may resume.
-        self.record_into_history(std::slice::from_ref(&item), turn)
-            .await;
-        registry.acknowledge(&ids, &turn.sub_id).await;
-        // Message and delivery marker enter the same ordered journal batch.
-        if let Err(error) = self
-            .persist_background_batch(vec![RolloutItem::ResponseItem(item)])
-            .await
-        {
-            registry.set_policy(WakePolicy::Interrupted).await;
-            return Err(error);
-        }
-        Ok(())
+        self.commit_background_delivery(turn, &ids, item).await
     }
 
     /// Called once, before the first sample of a runner-owned continuation.
@@ -253,11 +241,22 @@ impl Session {
             end_turn: None,
             phase: None,
         };
+        // This marks local prompt delivery, NEVER server-side handling.
+        self.commit_background_delivery(turn, &ids, item).await
+    }
+
+    // Called with journal_serial held: the message and acknowledgement must commit together.
+    async fn commit_background_delivery(
+        &self,
+        turn: &TurnContext,
+        ids: &[String],
+        item: ResponseItem,
+    ) -> anyhow::Result<()> {
+        // Keep live history on a durability failure, but suspend automatic work.
         self.record_into_history(std::slice::from_ref(&item), turn)
             .await;
-        // This marks local prompt delivery, NEVER server-side handling. Commit
-        // it together with the prompt before any model execution can begin.
-        registry.acknowledge(&ids, &turn.sub_id).await;
+        let registry = &self.services.internal_task_store;
+        registry.acknowledge(ids, &turn.sub_id).await;
         if let Err(error) = self
             .persist_background_batch(vec![RolloutItem::ResponseItem(item)])
             .await

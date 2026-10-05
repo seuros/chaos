@@ -77,9 +77,11 @@ fn progress_guidance_requires_an_attached_plan_tool() {
     let unattached = render("switch_mode read_file");
     assert!(!unattached.contains("# Attached plan"));
     assert!(!unattached.contains("plan_progress"));
+    assert!(!unattached.contains("pending clarification"));
     let attached = render("switch_mode plan_progress");
     assert!(attached.contains("# Attached plan"));
     assert!(attached.contains("switch to Plan mode yourself"));
+    assert!(attached.contains("all pending clarification pages"));
     let fixed = render("plan_progress");
     assert!(fixed.contains("# Attached plan"));
     assert!(!fixed.contains("switch to Plan mode yourself"));

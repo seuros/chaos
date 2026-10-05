@@ -31,6 +31,16 @@ async fn fixture() -> anyhow::Result<(
     ))
     .execute(&pool)
     .await?;
+    sqlx::raw_sql(include_str!(
+        "../../../db/migrate/postgres/0021_planning_content.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    sqlx::raw_sql(include_str!(
+        "../../../db/migrate/postgres/0022_planning_consolidations.sql"
+    ))
+    .execute(&pool)
+    .await?;
     let db =
         RuntimeDbHandle::from_postgres_pool(PathBuf::from("/unused"), "test".into(), pool.clone());
     let actor = PlanningActor {
@@ -48,6 +58,23 @@ async fn cleanup(pool: PgPool, admin: PgPool, schema: &str) -> anyhow::Result<()
         .await?;
     admin.close().await;
     Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL"]
+async fn postgres_bodies_and_clarifications() -> anyhow::Result<()> {
+    let (db, pool, admin, schema, actor, workspace) = fixture().await?;
+    super::tests::content_roundtrip(&db, &actor, &workspace).await?;
+    super::consolidation::tests::roundtrip(&db, &actor, &workspace).await?;
+    cleanup(pool, admin, &schema).await
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL"]
+async fn postgres_consolidation_races_publish_once() -> anyhow::Result<()> {
+    let (db, pool, admin, schema, actor, workspace) = fixture().await?;
+    super::consolidation::tests::publication_races(&db, &actor, &workspace).await?;
+    cleanup(pool, admin, &schema).await
 }
 
 async fn edge(
@@ -302,6 +329,7 @@ async fn postgres_concurrent_edges_revisions_and_cross_machine_resume() -> anyho
         Some(revision),
         PlanChange::AddTask {
             title: "retry".into(),
+            body: String::new(),
             parent: None,
             position: 3,
         },

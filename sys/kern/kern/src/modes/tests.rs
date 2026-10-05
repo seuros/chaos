@@ -16,6 +16,8 @@ fn mode_switches_keep_storage_specific_instructions() {
     let plan = registry.apply_mode(PLAN_MODE_ID, &base).unwrap();
     let text = plan.settings.developer_instructions.as_ref().unwrap();
     assert!(text.contains("shared across machines"));
+    assert!(text.contains("append `clarify`"));
+    assert!(text.contains("explicitly request `consolidate`"));
     assert!(!text.contains("local database"));
     let execution = registry.apply_mode(DEFAULT_MODE_ID, &plan).unwrap();
     assert!(
@@ -39,6 +41,16 @@ fn mode_switches_keep_storage_specific_instructions() {
     let text = resumed.settings.developer_instructions.as_ref().unwrap();
     assert!(text.contains("local database"));
     assert!(!text.contains("shared across machines"));
+    assert!(text.contains("append `clarify`"));
+    registry.configure_planning(PlanningCapabilities::default());
+    let unavailable = registry.apply_mode(PLAN_MODE_ID, &execution).unwrap();
+    let text = unavailable
+        .settings
+        .developer_instructions
+        .as_ref()
+        .unwrap();
+    assert!(!text.contains("append `clarify`"));
+    assert!(!text.contains("`consolidate`"));
 }
 
 #[test]

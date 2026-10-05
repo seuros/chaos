@@ -1,4 +1,4 @@
-//! Recover observations, never replay execution.
+//! Recover durable planning work and observations of external executions.
 
 use crate::chaos::Session;
 use crate::rollout::RolloutRecorder;
@@ -10,6 +10,14 @@ impl Session {
     pub(crate) async fn recover_background_tasks(self: &Arc<Self>, items: &[RolloutItem]) {
         let registry = &self.services.internal_task_store;
         registry.restore(items).await;
+        if registry.subscribe().borrow().wake_policy
+            != chaos_ipc::background_tasks::WakePolicy::Closed
+            && let Err(error) = self.recover_consolidations().await
+        {
+            registry
+                .set_blocked(Some(format!("planning recovery deferred: {error}")))
+                .await;
+        }
         for task in registry.list().await {
             if task.state.is_terminal() {
                 continue;
@@ -84,6 +92,7 @@ impl Session {
                 }
                 Some(
                     TaskSource::AgentMessage { .. }
+                    | TaskSource::PlanningConsolidation { .. }
                     | TaskSource::FleetInbox { .. }
                     | TaskSource::MachineRecovery,
                 ) => {}

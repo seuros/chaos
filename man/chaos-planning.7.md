@@ -73,6 +73,7 @@ Commands print JSON, with up to 50 records per page. Use the returned
 chaos plan list 000000
 chaos plan read 000000/0000
 chaos plan read 000000/0000 --offset 50
+chaos plan detail 000000/0000
 chaos plan task 000000/0000 T1
 chaos plan history 000000/0000
 chaos plan history 000000/0000 --after 50
@@ -80,22 +81,63 @@ chaos plan attach SESSION_ID 000000/0000
 chaos plan detach SESSION_ID
 ```
 
-Task details include the projects the task targets. History shows past changes.
+Plan and task details include their Markdown body and pending clarifications.
+Task details also include the projects the task targets. History shows past changes.
+Lists and `read` keep bodies out of the compact overview.
 
 The `change` command accepts JSON. Reuse a `request_id` only
 when retrying the identical operation:
 
 ```sh
 chaos plan change '{"request_id":"create-1","action":"create","workspace":"000000","title":"Ship durable planning"}'
-chaos plan change '{"request_id":"add-1","plan":"000000/0000","expected_revision":1,"action":"add_task","title":"Storage","position":0}'
+chaos plan change '{"request_id":"add-1","plan":"000000/0000","expected_revision":1,"action":"add_task","title":"Storage","body":"Persist plans and tasks. Verify restart recovery.","position":0}'
 chaos plan change '{"request_id":"start-1","plan":"000000/0000","action":"transition","task":"T1","task_revision":1,"event":"start","reason":"Implementing storage"}'
 ```
 
-Authoring actions are `create`, `edit`, `add_task`, `edit_task`, and `move_task`.
+Authoring actions are `create`, `edit`, `add_task`, `edit_task`, `move_task`, and `clarify`.
 `edit_task` sets a title and the full list of project IDs. `add_task` and
 `move_task` accept an optional parent and a separate sibling-order position.
 Progress actions are `transition` and `note`; a note may target a task or the
 whole plan. Plan lifecycle actions are `complete`, `cancel`, and `reopen`.
+
+### Bodies and clarifications
+
+`create` and `add_task` accept an initial Markdown `body`. To change the intent
+later, append a clarification rather than replacing the body:
+
+```sh
+chaos plan change '{"request_id":"clarify-1","plan":"000000/0000","action":"clarify","task":"T1","text":"Also verify recovery on another machine."}'
+chaos plan clarifications 000000/0000 --task T1
+```
+
+Omit `task` to clarify the whole plan. Clarifications preserve changes to intent;
+use progress notes for work performed. Details show pending clarifications, with
+`next_after` for further pages. `clarifications --after SEQUENCE` continues a page;
+starting at zero includes the retained history of incorporated clarifications.
+
+In Plan mode, the model can explicitly request a background rewrite:
+
+```json
+{"action":"consolidate","task":"T1","request_id":"rewrite-1","provider":"PROVIDER","model":"MODEL"}
+```
+
+Choose the provider and model from `chaos://models`. Appending a clarification
+does not start a rewrite. The job receives only the item's title, body, and
+captured clarifications, with no tools or conversation history.
+
+Successful jobs publish the revised body automatically, without changing status,
+ordering, or dependencies. Clarifications added while a job runs remain pending.
+An outdated result is not published. Failed or cancelled jobs leave the body and
+pending clarifications intact; retry explicitly with a new request ID.
+
+```sh
+chaos plan consolidation JOB_ID
+chaos plan cancel-consolidation JOB_ID
+```
+
+The tool also returns a background task ID for `tasks://` reads and
+`cancel_mcp_task` (omit `server`). Before executing a task, read its body and all
+pending clarifications, as well as the plan's.
 
 ### PostgreSQL dependencies
 

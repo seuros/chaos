@@ -91,6 +91,22 @@ enum PlanAction {
         #[usage(long, default = "0")]
         offset: i64,
     },
+    Detail {
+        plan: String,
+    },
+    Clarifications {
+        plan: String,
+        #[usage(long)]
+        task: Option<String>,
+        #[usage(long, default = "0")]
+        after: i64,
+    },
+    Consolidation {
+        job: String,
+    },
+    CancelConsolidation {
+        job: String,
+    },
     Task {
         plan: String,
         task: String,
@@ -140,6 +156,15 @@ pub async fn plan(command: PlanCommand) -> anyhow::Result<()> {
             print(db.planning_list(&workspace, offset).await?)
         }
         PlanAction::Read { plan, offset } => print(db.planning_read(&plan, offset).await?),
+        PlanAction::Detail { plan } => print(db.planning_detail(&plan).await?),
+        PlanAction::Clarifications { plan, task, after } => print(
+            db.planning_clarifications(&plan, task.as_deref(), after)
+                .await?,
+        ),
+        PlanAction::Consolidation { job } => print(db.planning_consolidation(&job).await?),
+        PlanAction::CancelConsolidation { job } => {
+            print(db.planning_cancel_consolidation(&job).await?)
+        }
         PlanAction::Task { plan, task, offset } => {
             print(db.planning_task(&plan, &task, offset).await?)
         }

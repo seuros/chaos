@@ -113,6 +113,7 @@ impl InternalTaskStore {
             TaskSource::Mcp { .. }
             | TaskSource::MachineRecovery
             | TaskSource::AgentMessage { .. }
+            | TaskSource::PlanningConsolidation { .. }
             | TaskSource::FleetInbox { .. } => None,
         }
     }
@@ -482,6 +483,14 @@ impl Session {
 
     pub(crate) async fn cancel_internal_task(&self, task_id: &str) -> anyhow::Result<McpTask> {
         let current = self.get_internal_task(task_id).await?;
+        if let Some(task) = self.services.internal_task_store.get(task_id).await
+            && let Some(TaskSource::PlanningConsolidation { job_id }) = task.source
+        {
+            let db = self.runtime_db().context("planning database unavailable")?;
+            let job = db.planning_cancel_consolidation(&job_id).await?;
+            self.report_consolidation(task_id, &job).await?;
+            return self.get_internal_task(task_id).await;
+        }
         if self
             .services
             .internal_task_store

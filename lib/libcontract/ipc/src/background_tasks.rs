@@ -28,6 +28,9 @@ pub enum TaskSource {
     AgentMessage {
         process_id: ProcessId,
     },
+    PlanningConsolidation {
+        job_id: String,
+    },
     Mcp {
         server: String,
         remote_task_id: String,

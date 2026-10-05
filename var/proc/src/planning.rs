@@ -3,6 +3,11 @@ pub use chaos_ipc::plan_tool::{PlanStatus, TaskStatus};
 use serde::{Deserialize, Serialize};
 use state_machines::state_machine;
 
+mod content;
+pub use content::*;
+mod consolidation;
+pub use consolidation::*;
+
 /// Capabilities of the mounted storage, shared by prompt and tool rendering.
 /// No storage is the default: previews must not advertise unavailable tools.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +137,8 @@ impl From<PlanSnapshot> for chaos_ipc::plan_tool::PlanUpdate {
 #[derive(Debug, Clone, Serialize)]
 pub struct TaskDetail {
     pub task: Task,
+    #[serde(flatten)]
+    pub content: PlanningContent,
     pub projects: Page<Project>,
 }
 
@@ -191,12 +198,16 @@ pub enum PlanChange {
     Create {
         workspace: String,
         title: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        body: String,
     },
     Edit {
         title: String,
     },
     AddTask {
         title: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        body: String,
         parent: Option<String>,
         position: i64,
     },
@@ -221,6 +232,10 @@ pub enum PlanChange {
     Note {
         task: Option<String>,
         note: String,
+    },
+    Clarify {
+        task: Option<String>,
+        text: String,
     },
     Link {
         parent: String,

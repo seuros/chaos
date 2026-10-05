@@ -281,7 +281,7 @@ impl Session {
         Arc::make_mut(&mut session_configuration.mode_registry).configure_planning(
             state_db_ctx
                 .as_ref()
-                .map(|db| db.planning_capabilities())
+                .map(chaos_proc::RuntimeDbHandle::planning_capabilities)
                 .unwrap_or_default(),
         );
         session_configuration.collaboration_mode = session_configuration

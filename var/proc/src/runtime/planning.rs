@@ -2,6 +2,10 @@ use super::*;
 use crate::planning::*;
 use sqlx::types::Json;
 
+mod consolidation;
+mod content;
+mod transaction;
+
 const PLAN: &str = "SELECT p.id,p.workspace_id,w.code || '/' || p.code AS reference,
     p.title,p.status,p.revision FROM planning_plans p
     JOIN planning_workspaces w ON w.id=p.workspace_id
@@ -132,10 +136,7 @@ macro_rules! planning_backend {
             }
 
             async fn planning_read(&self, reference: &str, offset: i64) -> anyhow::Result<PlanSnapshot> {
-                let mut tx = self.pool().begin().await?;
-                if $dag {
-                    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY").execute(&mut *tx).await?;
-                }
+                let mut tx = self.planning_read_transaction().await?;
                 let plan: Plan = sqlx::query_as(PLAN).bind(reference).fetch_one(&mut *tx).await?;
                 let rows = sqlx::query_as(TASK_PAGE).bind(&plan.id).bind(offset).fetch_all(&mut *tx).await?;
                 let page = Page::new(rows,offset);
@@ -147,17 +148,15 @@ macro_rules! planning_backend {
             }
 
             async fn planning_task(&self, plan: &str, task: &str, offset: i64) -> anyhow::Result<TaskDetail> {
-                let mut tx = self.pool().begin().await?;
-                if $dag {
-                    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY").execute(&mut *tx).await?;
-                }
+                let mut tx = self.planning_read_transaction().await?;
                 let plan: Plan = sqlx::query_as(PLAN).bind(plan).fetch_one(&mut *tx).await?;
                 let task: Task = sqlx::query_as(TASK).bind(&plan.id).bind(task).fetch_one(&mut *tx).await?;
+                let content = Self::planning_read_content(&mut tx, &plan.id, Some(&task.id)).await?;
                 let projects = sqlx::query_as("SELECT p.id,p.workspace_id,p.name,p.revision FROM planning_projects p
                     JOIN planning_targets t ON t.project_id=p.id WHERE t.task_id=$1 ORDER BY p.id LIMIT 51 OFFSET $2")
                     .bind(&task.id).bind(offset).fetch_all(&mut *tx).await?;
                 tx.commit().await?;
-                Ok(TaskDetail {task,projects:Page::new(projects,offset)})
+                Ok(TaskDetail {task,content,projects:Page::new(projects,offset)})
             }
 
             async fn planning_history(&self, plan: &str, after: i64) -> anyhow::Result<HistoryPage> {
@@ -179,11 +178,7 @@ macro_rules! planning_backend {
 
             async fn planning_commit(&self, actor: &PlanningActor, request: &PlanMutation, attached: Option<&str>) -> anyhow::Result<MutationResult> {
                 let mut tx = self.pool().begin().await?;
-                if let Some(attached) = attached {
-                    let current: Option<String> = sqlx::query_scalar("UPDATE planning_attachments SET plan_id=plan_id WHERE session_id=$1 RETURNING plan_id")
-                        .bind(&actor.session).fetch_optional(&mut *tx).await?;
-                    anyhow::ensure!(current.as_deref()==Some(attached),"attachment_conflict: refresh before continuing");
-                }
+                Self::planning_lock_attachment(&mut tx, &actor.session, attached).await?;
                 sqlx::query("INSERT INTO planning_requests(actor,request_id,payload) VALUES($1,$2,$3) ON CONFLICT(actor,request_id) DO NOTHING")
                     .bind(&actor.session).bind(&request.request_id).bind(Json(request)).execute(&mut *tx).await?;
                 let saved: SavedRequest = sqlx::query_as("SELECT payload,result FROM planning_requests WHERE actor=$1 AND request_id=$2")
@@ -196,21 +191,17 @@ macro_rules! planning_backend {
 
                 let plan_id;
                 let mut task_id = None;
-                if let PlanChange::Create { workspace,title } = &request.change {
+                if let PlanChange::Create { workspace,title,body } = &request.change {
                     let (workspace,number): (String,i64) = sqlx::query_as("UPDATE planning_workspaces SET next_plan=next_plan+1 WHERE (id=$1 OR code=$1) AND next_plan<65536 RETURNING id,next_plan-1")
                         .bind(workspace).fetch_optional(&mut *tx).await?
                         .ok_or_else(||anyhow::anyhow!("workspace missing or plan reference namespace exhausted"))?;
                     plan_id=Uuid::now_v7().to_string();
-                    sqlx::query("INSERT INTO planning_plans(id,workspace_id,code,title) VALUES($1,$2,$3,$4)")
-                        .bind(&plan_id).bind(workspace).bind(format!("{number:04X}")).bind(title).execute(&mut *tx).await?;
+                    sqlx::query("INSERT INTO planning_plans(id,workspace_id,code,title,body) VALUES($1,$2,$3,$4,$5)")
+                        .bind(&plan_id).bind(workspace).bind(format!("{number:04X}")).bind(title).bind(body).execute(&mut *tx).await?;
                 } else {
                     let reference=request.plan.as_deref().ok_or_else(||anyhow::anyhow!("plan is required"))?;
-                    plan_id=sqlx::query_scalar("UPDATE planning_plans SET revision=revision WHERE id=$1 OR id IN (SELECT p.id FROM planning_plans p JOIN planning_workspaces w ON w.id=p.workspace_id WHERE w.code || '/' || p.code=$1) RETURNING id")
-                        .bind(reference).fetch_one(&mut *tx).await?;
+                    plan_id=Self::planning_lock_plan(&mut tx, reference, attached).await?;
                     let plan: Plan=sqlx::query_as(PLAN).bind(&plan_id).fetch_one(&mut *tx).await?;
-                    if let Some(attached)=attached {
-                        anyhow::ensure!(plan.id==attached,"attachment_conflict: mutation targets another plan");
-                    }
                     if request.change.structural() {check_revision(&plan.id,request.expected_revision,plan.revision)?;}
                     if !matches!(request.change,PlanChange::Reopen { .. }) {
                         anyhow::ensure!(plan.status==PlanStatus::Active,"plan is terminal; reopen before editing");
@@ -224,13 +215,13 @@ macro_rules! planning_backend {
                         PlanChange::Edit { title } => {
                             sqlx::query("UPDATE planning_plans SET title=$1 WHERE id=$2").bind(title).bind(&plan.id).execute(&mut *tx).await?;
                         }
-                        PlanChange::AddTask { title,parent,position } => {
+                        PlanChange::AddTask { title,body,parent,position } => {
                             let parent=match parent {Some(p)=>Some(task!(p).id),None=>None};
                             let number: i64=sqlx::query_scalar("UPDATE planning_plans SET next_task=next_task+1 WHERE id=$1 RETURNING next_task-1")
                                 .bind(&plan.id).fetch_one(&mut *tx).await?;
                             let id=Uuid::now_v7().to_string();
-                            sqlx::query("INSERT INTO planning_tasks(id,plan_id,number,title,parent_id,position) VALUES($1,$2,$3,$4,$5,$6)")
-                                .bind(&id).bind(&plan.id).bind(number).bind(title).bind(parent).bind(position).execute(&mut *tx).await?;
+                            sqlx::query("INSERT INTO planning_tasks(id,plan_id,number,title,body,parent_id,position) VALUES($1,$2,$3,$4,$5,$6,$7)")
+                                .bind(&id).bind(&plan.id).bind(number).bind(title).bind(body).bind(parent).bind(position).execute(&mut *tx).await?;
                             task_id=Some(id);
                         }
                         PlanChange::EditTask { task,task_revision,title,projects } => {
@@ -262,6 +253,10 @@ macro_rules! planning_backend {
                             task_id=Some(task.id);
                         }
                         PlanChange::Note { task,.. } => {
+                            if let Some(reference)=task {task_id=Some(task!(reference).id);}
+                        }
+                        PlanChange::Clarify { task,text } => {
+                            anyhow::ensure!(!text.trim().is_empty(),"clarification text is required");
                             if let Some(reference)=task {task_id=Some(task!(reference).id);}
                         }
                         PlanChange::Link { parent,child } | PlanChange::Unlink { parent,child } => {
@@ -305,11 +300,8 @@ macro_rules! planning_backend {
                     None=>None,
                 };
                 let result=MutationResult {plan,task};
-                let seq: i64=sqlx::query_scalar("UPDATE planning_plans SET next_event=next_event+1 WHERE id=$1 RETURNING next_event-1")
-                    .bind(&plan_id).fetch_one(&mut *tx).await?;
-                sqlx::query("INSERT INTO planning_history(id,plan_id,seq,task_id,actor,installation_id,event) VALUES($1,$2,$3,$4,$5,$6,$7)")
-                    .bind(Uuid::now_v7().to_string()).bind(&plan_id).bind(seq).bind(task_id)
-                    .bind(&actor.session).bind(&actor.installation).bind(Json(&request.change)).execute(&mut *tx).await?;
+                Self::planning_record_event(&mut tx, &plan_id, task_id.as_deref(),
+                    &actor.session, &actor.installation, &request.change).await?;
                 sqlx::query("UPDATE planning_requests SET result=$1 WHERE actor=$2 AND request_id=$3")
                     .bind(Json(&result)).bind(&actor.session).bind(&request.request_id).execute(&mut *tx).await?;
                 tx.commit().await?;

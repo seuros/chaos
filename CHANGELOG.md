@@ -9,6 +9,10 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- Markdown bodies for plans and tasks, append-only clarifications, and explicitly
+  requested background consolidation using a model chosen from the catalog.
+
 ## [47.11.0] - 2026-10-04
 
 ### Added

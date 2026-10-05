@@ -6,10 +6,10 @@ use super::{
     AgentStatus, CollabAgentSpawnBeginEvent, CollabAgentSpawnEndEvent, Deserialize,
     FunctionCallError, ReasoningEffort, ResponseInputItem, Serialize, ToolHandler, ToolInvocation,
     ToolKind, ToolOutput, ToolPayload, UserInput, apply_requested_spawn_agent_model_overrides,
-    apply_requested_spawn_agent_provider_binding, apply_spawn_agent_overrides,
-    apply_spawn_agent_runtime_overrides, build_agent_spawn_config, collab_spawn_error,
-    function_arguments, input_preview, parse_arguments, parse_collab_input, process_spawn_source,
-    resolve_spawn_agent_transport, tool_output_json_text, tool_output_response_item,
+    apply_spawn_agent_overrides, apply_spawn_agent_runtime_overrides, build_agent_spawn_config,
+    collab_spawn_error, function_arguments, input_preview, parse_arguments, parse_collab_input,
+    process_spawn_source, resolve_spawn_agent_transport, tool_output_json_text,
+    tool_output_response_item,
 };
 use crate::chaos::{Session, TurnContext};
 use crate::config::Config;
@@ -260,14 +260,16 @@ pub(super) async fn prepare_config(
         apply_role_to_config(&mut config, role_name)
             .await
             .map_err(FunctionCallError::RespondToModel)?;
-        apply_requested_spawn_agent_provider_binding(
-            session,
-            &mut config,
-            model_provider,
-            args.model.as_deref(),
-            args.reasoning_effort,
-        )
-        .await?;
+        session
+            .services
+            .models_manager
+            .apply_provider_binding(
+                &mut config,
+                model_provider,
+                args.model.as_deref(),
+                args.reasoning_effort,
+            )
+            .await?;
     } else {
         // Preserve the existing override order when no provider binding is
         // requested: role configuration continues to apply after model

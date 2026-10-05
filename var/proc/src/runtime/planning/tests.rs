@@ -1,7 +1,7 @@
 use super::*;
 
-async fn fixture() -> anyhow::Result<(tempfile::TempDir, RuntimeDbHandle, PlanningActor, Workspace)>
-{
+pub(super) async fn fixture()
+-> anyhow::Result<(tempfile::TempDir, RuntimeDbHandle, PlanningActor, Workspace)> {
     let home = tempfile::tempdir()?;
     let db = RuntimeDbHandle::Sqlite(StateRuntime::init(home.path().into(), "test".into()).await?);
     let actor = PlanningActor {
@@ -39,6 +39,7 @@ pub(super) async fn create(
                 PlanChange::Create {
                     workspace: workspace.into(),
                     title: "durable plan".into(),
+                    body: String::new(),
                 },
             ),
         )
@@ -59,12 +60,125 @@ pub(super) async fn add(
             Some(revision),
             PlanChange::AddTask {
                 title: "task".into(),
+                body: String::new(),
                 parent: None,
                 position: 0,
             },
         ),
     )
     .await
+}
+
+pub(super) async fn content_roundtrip(
+    db: &RuntimeDbHandle,
+    actor: &PlanningActor,
+    workspace: &str,
+) -> anyhow::Result<()> {
+    let plan = db
+        .planning_mutate(
+            actor,
+            &request(
+                None,
+                None,
+                PlanChange::Create {
+                    workspace: workspace.into(),
+                    title: "Content".into(),
+                    body: "# Design\n\nKeep **Markdown**.".into(),
+                },
+            ),
+        )
+        .await?
+        .plan;
+    let task = db
+        .planning_mutate(
+            actor,
+            &request(
+                Some(&plan.id),
+                Some(1),
+                PlanChange::AddTask {
+                    title: "Implement".into(),
+                    body: "Accept Unicode: café 🦀".into(),
+                    parent: None,
+                    position: 0,
+                },
+            ),
+        )
+        .await?
+        .task
+        .expect("created task");
+    for index in 0..53 {
+        let mutation = request(
+            Some(&plan.id),
+            None,
+            PlanChange::Clarify {
+                task: Some("T1".into()),
+                text: format!("Clarification {index}"),
+            },
+        );
+        db.planning_mutate(actor, &mutation).await?;
+        db.planning_mutate(actor, &mutation).await?;
+    }
+    db.planning_mutate(
+        actor,
+        &request(
+            Some(&plan.id),
+            None,
+            PlanChange::Clarify {
+                task: None,
+                text: "Plan clarification".into(),
+            },
+        ),
+    )
+    .await?;
+    let detail = db.planning_detail(&plan.id).await?;
+    assert_eq!(detail.content.body, "# Design\n\nKeep **Markdown**.");
+    assert_eq!(detail.content.clarifications.entries.len(), 1);
+    let detail = db.planning_task(&plan.id, "T1", 0).await?;
+    assert_eq!(detail.content.body, "Accept Unicode: café 🦀");
+    assert_eq!(detail.task.revision, task.revision);
+    assert_eq!(detail.content.clarifications.entries.len(), 50);
+    let after = detail.content.clarifications.next_after.expect("next page");
+    assert_eq!(
+        db.planning_clarifications(&plan.id, Some("T1"), after)
+            .await?
+            .entries
+            .len(),
+        3
+    );
+    let snapshot = serde_json::to_value(db.planning_read(&plan.id, 0).await?)?;
+    assert!(snapshot["plan"].get("body").is_none());
+    assert!(snapshot["tasks"][0].get("body").is_none());
+    assert_eq!(db.planning_history(&plan.id, 0).await?.entries.len(), 50);
+    let job = db
+        .planning_enqueue_consolidation(
+            actor,
+            &ConsolidationRequest {
+                request_id: "all-pending".into(),
+                plan: plan.id,
+                task: Some("T1".into()),
+                provider: "provider".into(),
+                model: "model".into(),
+            },
+            None,
+            "all-pending",
+        )
+        .await?;
+    assert_eq!(job.input.clarifications.len(), 53);
+    let last = job
+        .input
+        .clarifications
+        .last()
+        .expect("pending clarifications");
+    assert_eq!(last.text, "Clarification 52");
+    assert_eq!(job.input.through_seq, last.seq);
+    db.planning_cancel_consolidation(&job.id).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn bodies_and_clarifications_are_separate_from_summaries() -> anyhow::Result<()> {
+    let (_home, db, actor, workspace) = fixture().await?;
+    content_roundtrip(&db, &actor, &workspace.id).await
 }
 
 #[tokio::test]
@@ -76,6 +190,7 @@ async fn identities_revisions_history_and_retry() -> anyhow::Result<()> {
         Some(1),
         PlanChange::AddTask {
             title: "first".into(),
+            body: String::new(),
             parent: None,
             position: 10,
         },
@@ -88,6 +203,7 @@ async fn identities_revisions_history_and_retry() -> anyhow::Result<()> {
     let mut reused = mutation.clone();
     reused.change = PlanChange::AddTask {
         title: "different".into(),
+        body: String::new(),
         parent: None,
         position: 0,
     };
@@ -129,6 +245,7 @@ async fn task_details_targets_and_bounded_tree_pages() -> anyhow::Result<()> {
             Some(53),
             PlanChange::AddTask {
                 title: "Nested".into(),
+                body: String::new(),
                 parent: Some("T1".into()),
                 position: 0,
             },
@@ -332,6 +449,7 @@ async fn containment_and_backend_boundaries() -> anyhow::Result<()> {
             Some(2),
             PlanChange::AddTask {
                 title: "child".into(),
+                body: String::new(),
                 parent: Some("T1".into()),
                 position: 0,
             },
@@ -460,6 +578,7 @@ async fn attachment_and_installation_scoped_checkouts() -> anyhow::Result<()> {
         Some(1),
         PlanChange::AddTask {
             title: "new".into(),
+            body: String::new(),
             parent: None,
             position: 0,
         },

@@ -114,6 +114,7 @@ async fn plan_progress_emits_committed_database_view() -> anyhow::Result<()> {
 
     let mut builder = test_chaos();
     let TestChaos {
+        home: _home,
         process: chaos,
         cwd,
         session_configured,
@@ -216,6 +217,7 @@ async fn plan_progress_rejects_malformed_payload_without_ui_update() -> anyhow::
 
     let mut builder = test_chaos();
     let TestChaos {
+        home: _home,
         process: chaos,
         cwd,
         session_configured,
@@ -318,6 +320,7 @@ async fn attached_plan(
                 change: PlanChange::Create {
                     workspace: workspace.id,
                     title: "Harness plan".into(),
+                    body: String::new(),
                 },
             },
         )
@@ -335,6 +338,7 @@ async fn attached_plan(
                 expected_revision: Some(revision),
                 change: PlanChange::AddTask {
                     title: title.into(),
+                    body: String::new(),
                     parent,
                     position: 0,
                 },

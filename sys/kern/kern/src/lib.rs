@@ -61,6 +61,7 @@ mod machine_warnings;
 pub mod background_recovery;
 mod background_tasks;
 mod internal_tasks;
+mod planning_consolidation;
 pub mod landlock;
 pub mod mcp;
 mod mcp_manage_tools;

@@ -945,17 +945,17 @@ impl ReviewerBoundary for SessionReviewerBoundary {
         let mut config = crate::minions::tools::build_agent_spawn_config(
             &self.session.get_base_instructions().await,
             self.turn.as_ref(),
-        )
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
-        crate::minions::tools::apply_requested_spawn_agent_provider_binding(
-            &self.session,
-            &mut config,
-            &binding.provider_id,
-            Some(&binding.model),
-            None,
-        )
-        .await
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        )?;
+        self.session
+            .services
+            .models_manager
+            .apply_provider_binding(
+                &mut config,
+                &binding.provider_id,
+                Some(&binding.model),
+                None,
+            )
+            .await?;
         crate::minions::tools::apply_spawn_agent_overrides(&mut config, child_depth);
         config.collab_enabled = false;
         config.minion_jobs_allowed = false;

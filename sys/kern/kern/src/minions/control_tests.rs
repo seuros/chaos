@@ -380,6 +380,7 @@ async fn planning_child_attachment_is_explicit_even_when_forking_history() -> an
                 change: PlanChange::Create {
                     workspace: workspace.id,
                     title: "Shared plan".into(),
+                    body: String::new(),
                 },
             },
         )

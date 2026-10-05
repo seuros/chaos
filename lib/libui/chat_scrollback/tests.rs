@@ -3,6 +3,46 @@ use crate::history_cell::PlainHistoryCell;
 use pretty_assertions::assert_eq;
 use ratatui::style::{Color, Stylize};
 
+#[test]
+fn mermaid_keeps_source_and_only_uses_retained_graphics_with_capabilities() {
+    use crate::history_cell::AgentMessageCell;
+    use crate::markdown_render::MarkdownPart;
+    use crate::tui::FrameRequester;
+    use ratatui_image::picker::{Picker, ProtocolType};
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(AgentMessageCell::from_parts(
+        vec![MarkdownPart::Mermaid {
+            source: "source".into(),
+            fallback: vec![Line::from("literal source")],
+        }],
+        true,
+    ))];
+    let mut view = ChatScrollback::default();
+    view.prepare_graphics(&cells, FrameRequester::test_dummy(), None);
+    view.sync(&cells, 40, None, |_| Vec::new());
+    assert!(!view.uses_retained_view());
+    assert!(first_row(&mut view, 40, 4).contains("literal source"));
+
+    let mut picker = Picker::halfblocks();
+    picker.set_protocol_type(ProtocolType::Iterm2);
+    view.prepare_graphics(&cells, FrameRequester::test_dummy(), Some(&picker));
+    view.sync(&cells, 40, None, |_| Vec::new());
+    view.follow_live();
+    assert!(view.uses_retained_view());
+    assert!(!view.is_scrolled());
+    // Without a worker result, the source must still be readable.
+    assert!(first_row(&mut view, 40, 4).contains("literal source"));
+    assert!(
+        cells[0].transcript_lines(40)[0]
+            .to_string()
+            .contains("literal source")
+    );
+
+    view.prepare_graphics(&[], FrameRequester::test_dummy(), Some(&picker));
+    assert!(!view.uses_retained_view());
+    assert!(view.mermaid.is_none());
+}
+
 fn history(rows: usize) -> Vec<Arc<dyn HistoryCell>> {
     vec![Arc::new(PlainHistoryCell::new(
         (0..rows)
@@ -14,7 +54,7 @@ fn history(rows: usize) -> Vec<Arc<dyn HistoryCell>> {
 fn first_row(view: &mut ChatScrollback, width: u16, height: u16) -> String {
     let area = Rect::new(3, 2, width, height);
     let mut buf = Buffer::empty(area);
-    view.render(area, &mut buf);
+    view.render(area, &mut buf, true);
     (area.x..area.right())
         .map(|x| buf[(x, area.y)].symbol())
         .collect::<String>()
@@ -47,7 +87,7 @@ fn scrollback_navigation_clamps_and_resumes_live_output() {
     view.sync(&[], 0, None, |_| Vec::new());
     view.scroll(Scroll::Start, 0);
     assert!(!view.is_scrolled());
-    view.render(Rect::default(), &mut Buffer::empty(Rect::default()));
+    view.render(Rect::default(), &mut Buffer::empty(Rect::default()), true);
 }
 
 #[test]

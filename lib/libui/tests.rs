@@ -66,6 +66,7 @@ libui_suites! {
     markdown_suite => crate::markdown::tests::markdown_suite();
     markdown_render_suite => crate::markdown_render::tests::markdown_render_suite();
     markdown_stream_suite => run_async(crate::markdown_stream::tests::markdown_stream_suite());
+    mermaid_stream_suite => crate::markdown_stream::tests::mermaid_stream_suite();
     mention_codec_suite => crate::mention_codec::tests::mention_codec_suite();
     multi_agents_suite => crate::multi_agents::tests::multi_agents_suite();
     notifications_suite => crate::notifications::tests::notifications_suite();

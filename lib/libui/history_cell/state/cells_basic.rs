@@ -225,27 +225,73 @@ pub fn new_reasoning_summary_block(
 
 #[derive(Debug)]
 pub struct AgentMessageCell {
-    lines: Vec<Line<'static>>,
+    parts: Vec<crate::markdown_render::MarkdownPart>,
     is_first_line: bool,
 }
 
 impl AgentMessageCell {
     pub fn new(lines: Vec<Line<'static>>, is_first_line: bool) -> Self {
         Self {
-            lines,
+            parts: lines
+                .into_iter()
+                .map(crate::markdown_render::MarkdownPart::Line)
+                .collect(),
+            is_first_line,
+        }
+    }
+
+    pub(crate) fn from_parts(
+        parts: Vec<crate::markdown_render::MarkdownPart>,
+        is_first_line: bool,
+    ) -> Self {
+        Self {
+            parts,
             is_first_line,
         }
     }
 }
 
 impl HistoryCell for AgentMessageCell {
+    fn has_mermaid(&self) -> bool {
+        self.parts
+            .iter()
+            .any(|part| matches!(part, crate::markdown_render::MarkdownPart::Mermaid { .. }))
+    }
+
+    fn display_chunks(&self, width: u16) -> Vec<crate::mermaid::DisplayChunk> {
+        use crate::markdown_render::MarkdownPart;
+        use crate::mermaid::DisplayChunk;
+        if !self.has_mermaid() {
+            return vec![DisplayChunk::Text(self.display_lines(width))];
+        }
+        let mut first = self.is_first_line;
+        self.parts
+            .iter()
+            .map(|part| {
+                let lines = part.clone().into_lines();
+                let fallback = AgentMessageCell::new(lines, first).display_lines(width);
+                first = false;
+                match part {
+                    MarkdownPart::Line(_) => DisplayChunk::Text(fallback),
+                    MarkdownPart::Mermaid { source, .. } => DisplayChunk::Mermaid {
+                        source: source.clone(),
+                        fallback,
+                    },
+                }
+            })
+            .collect()
+    }
+
     fn has_display_content(&self) -> bool {
-        !self.lines.is_empty()
+        !self.parts.is_empty()
     }
 
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         adaptive_wrap_lines(
-            &self.lines,
+            self.parts
+                .iter()
+                .flat_map(crate::markdown_render::MarkdownPart::lines)
+                .cloned(),
             RtOptions::new(width as usize)
                 .initial_indent(if self.is_first_line {
                     "• ".dim().into()

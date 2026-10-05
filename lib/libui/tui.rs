@@ -54,6 +54,7 @@ use unicode_width::UnicodeWidthChar;
 mod event_stream;
 mod frame_rate_limiter;
 mod frame_requester;
+mod image_capabilities;
 mod job_control;
 mod restoration;
 
@@ -226,17 +227,21 @@ pub struct Tui {
     sandbox_policy: Option<chaos_ipc::protocol::SandboxPolicy>,
     terminal_title_enabled: bool,
     startup_timeline: Option<chaos_snitch::startup::StartupTimeline>,
+    image_picker: Option<ratatui_image::picker::Picker>,
 }
 
 impl Tui {
     pub fn new(terminal: Terminal) -> Self {
         let enhanced_keys_supported = supports_keyboard_enhancement().unwrap_or(false);
         crate::terminal_palette::stdout_color_level();
-        Self::with_capabilities(
+        let image_picker = image_capabilities::image_capabilities();
+        let mut tui = Self::with_capabilities(
             terminal,
             enhanced_keys_supported,
             Some(detect_backend(NotificationMethod::default())),
-        )
+        );
+        tui.image_picker = image_picker;
+        tui
     }
 
     #[cfg(feature = "vt100-tests")]
@@ -281,7 +286,12 @@ impl Tui {
             sandbox_policy: None,
             terminal_title_enabled: false,
             startup_timeline: None,
+            image_picker: None,
         }
+    }
+
+    pub fn image_picker(&self) -> Option<&ratatui_image::picker::Picker> {
+        self.image_picker.as_ref()
     }
 
     /// Record the first successfully drawn frame on the frontend timeline.

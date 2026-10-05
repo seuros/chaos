@@ -1,4 +1,6 @@
 use super::*;
+use crate::history_cell::{AgentMessageCell, HistoryCell};
+
 async fn no_commit_until_newline() {
     let mut c = super::MarkdownStreamCollector::new(None, &super::test_cwd());
     c.push_delta("Hello, world");
@@ -665,4 +667,95 @@ async fn fuzz_class_bullet_duplication_variant_2() {
 async fn streaming_html_block_then_text_matches_full() {
     assert_streamed_equals_full(&["HTML block:\n", "<div>inline block</div>\n", "more stuff\n"])
         .await;
+}
+
+pub(crate) fn mermaid_stream_suite() {
+    // Exercise our Markdown/stream representation with literal diagram source.
+    for fence in ["```", "~~~~"] {
+        let source = format!("Before\n\n{fence}mermaid\nA --> B\n{fence}\n\nAfter\n");
+        for split in 0..=source.len() {
+            let mut collector = MarkdownStreamCollector::new(Some(60), &test_cwd());
+            collector.push_delta(&source[..split]);
+            let mut parts = collector.commit_complete_parts();
+            collector.push_delta(&source[split..]);
+            parts.extend(collector.commit_complete_parts());
+            parts.extend(collector.finalize_parts());
+            assert_eq!(
+                parts
+                    .iter()
+                    .filter(|part| matches!(part, MarkdownPart::Mermaid { .. }))
+                    .count(),
+                1
+            );
+            let cell = AgentMessageCell::from_parts(parts, true);
+            let lines = cell.transcript_lines(80);
+            let text = lines
+                .iter()
+                .map(Line::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(text.matches("A --> B").count(), 1);
+            assert!(text.find("Before") < text.find("A --> B"));
+            assert!(text.find("A --> B") < text.find("After"));
+            assert!(!text.contains('\x1b'));
+        }
+    }
+
+    let mut collector = MarkdownStreamCollector::new(None, &test_cwd());
+    collector.push_delta("```mermaid\nA --> B\n");
+    assert!(collector.commit_complete_parts().is_empty());
+    let parts = collector.finalize_parts();
+    assert!(
+        parts
+            .iter()
+            .all(|part| matches!(part, MarkdownPart::Line(_)))
+    );
+    let text = parts
+        .into_iter()
+        .flat_map(MarkdownPart::into_lines)
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("A --> B"));
+
+    for source in [
+        "```rust\nmermaid\n```\n",
+        "````text\n```mermaid\nA --> B\n```\n````\n",
+        "> ```mermaid\n> A --> B\n> ```\n",
+        "- item\n\n  ```mermaid\n  A --> B\n  ```\n",
+        "```mermaid\nA --> B\n    ```\n",
+    ] {
+        let mut collector = MarkdownStreamCollector::new(None, &test_cwd());
+        collector.push_delta(source);
+        assert!(
+            collector
+                .finalize_parts()
+                .iter()
+                .all(|part| matches!(part, MarkdownPart::Line(_)))
+        );
+    }
+
+    let mut controller = crate::streaming::controller::StreamController::new(None, &test_cwd());
+    controller.push("Before\n\n```mermaid\nA --> B\nB --> C\n```\n\nAfter\n");
+    let mut cells = Vec::new();
+    while controller.queued_lines() > 0 {
+        if let (Some(cell), _) = controller.on_commit_tick_batch(1) {
+            cells.push(cell);
+        }
+    }
+    cells.extend(controller.finalize());
+    assert_eq!(cells.iter().filter(|cell| cell.has_mermaid()).count(), 1);
+    let diagram = cells
+        .iter()
+        .find(|cell| cell.has_mermaid())
+        .expect("diagram cell");
+    assert!(diagram.is_stream_continuation());
+    let text = diagram
+        .display_lines(80)
+        .iter()
+        .map(Line::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("A --> B"));
+    assert!(text.contains("B --> C"));
 }

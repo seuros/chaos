@@ -558,6 +558,13 @@ enum DrawCommand {
     ClearToEnd { x: u16, y: u16, bg: Color },
 }
 
+fn cell_width(cell: &Cell) -> usize {
+    match cell.diff_option {
+        CellDiffOption::ForcedWidth(width) => usize::from(width.get()),
+        _ => display_width(cell.symbol()),
+    }
+}
+
 fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
     let previous_buffer = &a.content;
     let next_buffer = &b.content;
@@ -579,8 +586,12 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
         let mut column = 0usize;
         while column < row.len() {
             let cell = &row[column];
-            let width = display_width(cell.symbol());
-            if cell.symbol() != " " || cell.bg != bg || cell.modifier != Modifier::empty() {
+            let width = cell_width(cell);
+            if cell.symbol() != " "
+                || cell.bg != bg
+                || cell.modifier != Modifier::empty()
+                || cell.diff_option == CellDiffOption::Skip
+            {
                 last_nonblank_column = column + (width.saturating_sub(1));
             }
             column += width.max(1); // treat zero-width symbols as width 1
@@ -606,7 +617,7 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
         {
             let (x, y) = a.pos_of(i);
             let row = i / a.area.width as usize;
-            if x <= last_nonblank_columns[row] {
+            if x.saturating_sub(a.area.x) <= last_nonblank_columns[row] {
                 updates.push(DrawCommand::Put {
                     x,
                     y,
@@ -615,12 +626,9 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
             }
         }
 
-        to_skip = display_width(current.symbol()).saturating_sub(1);
+        to_skip = cell_width(current).saturating_sub(1);
 
-        let affected_width = std::cmp::max(
-            display_width(current.symbol()),
-            display_width(previous.symbol()),
-        );
+        let affected_width = std::cmp::max(cell_width(current), cell_width(previous));
         invalidated = std::cmp::max(affected_width, invalidated).saturating_sub(1);
     }
     updates
@@ -667,6 +675,10 @@ where
                 }
 
                 queue!(writer, Print(cell.symbol()))?;
+                if matches!(cell.diff_option, CellDiffOption::ForcedWidth(_)) {
+                    // Image escapes can leave the cursor stationary.
+                    last_pos = None;
+                }
             }
             DrawCommand::ClearToEnd { bg: clear_bg, .. } => {
                 queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;

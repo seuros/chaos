@@ -258,6 +258,8 @@ where
     pub(super) fn end_codeblock(&mut self) {
         if let Some(lang) = self.code_block_lang.take() {
             let code = std::mem::take(&mut self.code_block_buffer);
+            self.flush_current_line();
+            let start = self.text.lines.len();
             if !code.is_empty() {
                 let highlighted = highlight_code_to_lines(&code, &lang);
                 for hl_line in highlighted {
@@ -265,6 +267,18 @@ where
                     for span in hl_line.spans {
                         self.push_span(span);
                     }
+                }
+            }
+            // Containers keep their literal fallback: replacing a list/quote with
+            // an image would otherwise discard its indentation and markers.
+            if lang.eq_ignore_ascii_case("mermaid")
+                && self.indent_stack.len() == 1
+                && crate::mermaid::within_source_limits(&code)
+            {
+                self.flush_current_line();
+                if self.text.lines.len() > start {
+                    self.mermaid_blocks
+                        .push((start..self.text.lines.len(), code));
                 }
             }
         }

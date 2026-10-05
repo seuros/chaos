@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use super::StreamState;
+use crate::markdown_render::MarkdownPart;
 
 /// Controller that manages newline-gated streaming, header emission, and
 /// commit animation across streams.
@@ -41,16 +42,16 @@ impl StreamController {
         // Finalize collector first.
         let remaining = {
             let state = &mut self.state;
-            state.collector.finalize_and_drain()
+            state.collector.finalize_parts()
         };
         // Collect all output first to avoid emitting headers when there is no content.
         let mut out_lines = Vec::new();
         {
             let state = &mut self.state;
             if !remaining.is_empty() {
-                state.enqueue(remaining);
+                state.enqueue_parts(remaining);
             }
-            let step = state.drain_all();
+            let step = state.drain_parts(usize::MAX);
             out_lines.extend(step);
         }
 
@@ -63,7 +64,7 @@ impl StreamController {
     /// Step animation: commit at most one queued line and handle end-of-drain cleanup.
     pub fn on_commit_tick(&mut self) -> (Option<Box<dyn HistoryCell>>, bool) {
         self.state.commit_if_due(Instant::now());
-        let step = self.state.step();
+        let step = self.state.drain_parts(1);
         (self.emit(step), self.is_idle())
     }
 
@@ -76,7 +77,7 @@ impl StreamController {
         max_lines: usize,
     ) -> (Option<Box<dyn HistoryCell>>, bool) {
         self.state.commit_if_due(Instant::now());
-        let step = self.state.drain_n(max_lines.max(1));
+        let step = self.state.drain_parts(max_lines.max(1));
         (self.emit(step), self.is_idle())
     }
 
@@ -101,15 +102,18 @@ impl StreamController {
         self.state.oldest_queued_age(now)
     }
 
-    fn emit(&mut self, lines: Vec<Line<'static>>) -> Option<Box<dyn HistoryCell>> {
+    fn emit(&mut self, lines: Vec<MarkdownPart>) -> Option<Box<dyn HistoryCell>> {
         if lines.is_empty() {
             return None;
         }
-        Some(Box::new(history_cell::AgentMessageCell::new(lines, {
-            let header_emitted = self.header_emitted;
-            self.header_emitted = true;
-            !header_emitted
-        })))
+        Some(Box::new(history_cell::AgentMessageCell::from_parts(
+            lines,
+            {
+                let header_emitted = self.header_emitted;
+                self.header_emitted = true;
+                !header_emitted
+            },
+        )))
     }
 }
 

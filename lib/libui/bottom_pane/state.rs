@@ -673,7 +673,7 @@ impl BottomPane {
     pub fn allows_transcript_scroll(&self) -> bool {
         self.active_view().map_or_else(
             || !self.composer.popup_active(),
-            |view| view.allows_transcript_scroll(),
+            BottomPaneView::allows_transcript_scroll,
         )
     }
 

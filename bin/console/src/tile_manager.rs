@@ -220,7 +220,7 @@ impl TileManager {
     pub fn uses_full_viewport(&self) -> bool {
         !self.is_single_pane()
             || self.runtime.is_palette_open()
-            || self.chat_scrollback.is_scrolled()
+            || self.chat_scrollback.uses_retained_view()
     }
 
     pub fn needs_inline_history_restore(&self) -> bool {

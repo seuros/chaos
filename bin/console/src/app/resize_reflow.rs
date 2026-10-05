@@ -78,7 +78,7 @@ impl App {
         }
         if self.overlay.is_some()
             || tui.is_alt_screen_active()
-            || self.tile_manager.chat_scrollback.is_scrolled()
+            || self.tile_manager.chat_scrollback.uses_retained_view()
         {
             return Ok(());
         }

@@ -68,6 +68,7 @@ where
 {
     pub(super) iter: I,
     pub(super) text: Text<'static>,
+    pub(super) mermaid_blocks: Vec<(std::ops::Range<usize>, String)>,
     pub(super) styles: MarkdownStyles,
     pub(super) inline_styles: Vec<Style>,
     pub(super) indent_stack: Vec<IndentContext>,
@@ -106,6 +107,7 @@ where
         Self {
             iter,
             text: Text::default(),
+            mermaid_blocks: Vec::new(),
             styles: MarkdownStyles::default(),
             inline_styles: Vec::new(),
             indent_stack: Vec::new(),

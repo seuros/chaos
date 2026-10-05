@@ -90,10 +90,16 @@ impl App {
             self.chat_widget.active_cell_transcript_key(),
             |width| self.chat_widget.active_cell_display_lines(width),
         );
-        self.tile_manager.chat_scrollback.render(body, buf);
+        self.tile_manager.chat_scrollback.render(
+            body,
+            buf,
+            !self.tile_manager.runtime.is_palette_open(),
+        );
         self.chat_widget.render_bottom_pane(composer, buf);
         // Reuse the composer's existing top padding; no extra chrome or pager.
-        let hint = if self.chat_widget.no_modal_or_popup_active() {
+        let hint = if !self.tile_manager.chat_scrollback.is_scrolled() {
+            "Mermaid · scroll to explore · Ctrl+T for source"
+        } else if self.chat_widget.no_modal_or_popup_active() {
             "Scrollback · End / Esc to follow live"
         } else if self.chat_widget.allows_transcript_scroll() {
             "Scrollback · End to follow live"

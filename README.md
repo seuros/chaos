@@ -106,6 +106,23 @@ or Page Up/Page Down to navigate; `Ctrl+T` or `q` returns to the composer. For
 terminal-native text selection or shell scrollback, use your terminal's
 mouse-capture bypass (usually holding Shift).
 
+### Mermaid diagrams
+
+Top-level `mermaid` fenced blocks in assistant replies render as inline diagrams
+in Kitty, Ghostty, iTerm2, and WezTerm when graphics support is detected. Rendering
+runs locally in a background worker.
+
+Ghostty/Kitty through tmux are supported: the graphics backend enables passthrough
+for the current pane and probes the outer terminal. SSH transmits image data
+inline. Capability replies determine graphics support across tmux/SSH;
+unsuccessful probes fall back to source.
+
+Diagrams wait for the closing fence. Unsupported terminals or transports,
+invalid or oversized diagrams, and fences inside lists or quotes keep readable
+source text. `Ctrl+T` shows the source; copying a reply keeps its original Markdown.
+Threads containing graphical diagrams use the scrollable chat viewport with the
+composer pinned below it.
+
 ---
 
 ## Right-side inspector

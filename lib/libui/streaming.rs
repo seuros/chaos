@@ -16,13 +16,14 @@ use std::time::Instant;
 
 use ratatui::text::Line;
 
+use crate::markdown_render::MarkdownPart;
 use crate::markdown_stream::MarkdownStreamCollector;
 pub mod chunking;
 pub mod commit_tick;
 pub mod controller;
 
 struct QueuedLine {
-    line: Line<'static>,
+    line: MarkdownPart,
     enqueued_at: Instant,
 }
 
@@ -89,11 +90,11 @@ impl StreamState {
         }
         self.render_pending = false;
         self.last_render_at = Some(now);
-        let newly_completed = self.collector.commit_complete_lines();
+        let newly_completed = self.collector.commit_complete_parts();
         if newly_completed.is_empty() {
             return false;
         }
-        self.enqueue(newly_completed);
+        self.enqueue_parts(newly_completed);
         true
     }
     /// Returns whether a throttled render is still waiting to run.
@@ -102,17 +103,20 @@ impl StreamState {
     }
     /// Drains one queued line from the front of the queue.
     pub fn step(&mut self) -> Vec<Line<'static>> {
-        self.queued_lines
-            .pop_front()
-            .map(|queued| queued.line)
-            .into_iter()
-            .collect()
+        self.drain_n(1)
     }
     /// Drains up to `max_lines` queued lines from the front of the queue.
     ///
     /// Callers that pass very large values still get bounded behavior because this method clamps to
     /// the currently available queue length.
     pub fn drain_n(&mut self, max_lines: usize) -> Vec<Line<'static>> {
+        self.drain_parts(max_lines)
+            .into_iter()
+            .flat_map(MarkdownPart::into_lines)
+            .collect()
+    }
+
+    pub(crate) fn drain_parts(&mut self, max_lines: usize) -> Vec<MarkdownPart> {
         let end = max_lines.min(self.queued_lines.len());
         self.queued_lines
             .drain(..end)
@@ -121,10 +125,7 @@ impl StreamState {
     }
     /// Drains all queued lines from the front of the queue.
     pub fn drain_all(&mut self) -> Vec<Line<'static>> {
-        self.queued_lines
-            .drain(..)
-            .map(|queued| queued.line)
-            .collect()
+        self.drain_n(usize::MAX)
     }
     /// Returns whether no lines are queued for commit.
     pub fn is_idle(&self) -> bool {
@@ -142,6 +143,10 @@ impl StreamState {
     }
     /// Appends committed lines to the queue with a shared enqueue timestamp.
     pub fn enqueue(&mut self, lines: Vec<Line<'static>>) {
+        self.enqueue_parts(lines.into_iter().map(MarkdownPart::Line).collect());
+    }
+
+    pub(crate) fn enqueue_parts(&mut self, lines: Vec<MarkdownPart>) {
         let now = Instant::now();
         self.queued_lines
             .extend(lines.into_iter().map(|line| QueuedLine {

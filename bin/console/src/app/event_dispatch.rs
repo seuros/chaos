@@ -22,6 +22,11 @@ impl App {
             self.tile_manager.runtime.close_palette();
         }
         if matches!(event, TuiEvent::Draw) {
+            self.tile_manager.chat_scrollback.prepare_graphics(
+                &self.transcript_cells,
+                tui.frame_requester(),
+                tui.image_picker(),
+            );
             let size = tui.terminal.size()?;
             self.refresh_inspector(tui, size.width).await;
             self.handle_draw_pre_render(tui, size)?;
@@ -116,7 +121,7 @@ impl App {
                     }
                     // Allow widgets to process any pending timers before rendering.
                     self.chat_widget.pre_draw_tick();
-                    if self.tile_manager.chat_scrollback.is_scrolled() {
+                    if self.tile_manager.chat_scrollback.uses_retained_view() {
                         // These cells are retained and rendered in the pane. Do not
                         // also write them into native scrollback under the reader.
                         tui.clear_pending_history_lines();
@@ -163,7 +168,7 @@ impl App {
                             self.tile_manager.render(main_area, frame.buffer);
 
                             if let Some(chat_rect) = self.tile_manager.pane_rect(PaneId::ROOT) {
-                                if self.tile_manager.chat_scrollback.is_scrolled() {
+                                if self.tile_manager.chat_scrollback.uses_retained_view() {
                                     let cursor = self.render_scrolled_chat(chat_rect, frame.buffer);
                                     if self.tile_manager.chat_focused()
                                         && !self.tile_manager.runtime.is_palette_open()
@@ -472,6 +477,11 @@ impl App {
                     tui.frame_requester().schedule_frame();
                 }
                 self.transcript_cells.push(cell.clone());
+                self.tile_manager.chat_scrollback.prepare_graphics(
+                    &self.transcript_cells,
+                    tui.frame_requester(),
+                    tui.image_picker(),
+                );
                 let mut display = cell.display_lines(tui.terminal.last_known_screen_size.width);
                 if !display.is_empty() {
                     // Only insert a separating blank line for new cells that are not
@@ -486,7 +496,7 @@ impl App {
                     }
                     if self.overlay.is_some() {
                         self.deferred_history_lines.extend(display);
-                    } else if !self.tile_manager.chat_scrollback.is_scrolled() {
+                    } else if !self.tile_manager.chat_scrollback.uses_retained_view() {
                         tui.insert_history_lines(display);
                     }
                 }

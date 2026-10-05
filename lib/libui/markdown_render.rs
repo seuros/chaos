@@ -21,6 +21,56 @@ use std::path::Path;
 
 use writer::Writer;
 
+/// A diagram is one atomic stream item, with ordinary styled lines as its
+/// fallback. Copying and transcript exports retain the source text.
+#[derive(Clone, Debug)]
+pub(crate) enum MarkdownPart {
+    Line(ratatui::text::Line<'static>),
+    Mermaid {
+        source: String,
+        fallback: Vec<ratatui::text::Line<'static>>,
+    },
+}
+
+impl MarkdownPart {
+    pub(crate) fn lines(&self) -> &[ratatui::text::Line<'static>] {
+        match self {
+            Self::Line(line) => std::slice::from_ref(line),
+            Self::Mermaid { fallback, .. } => fallback,
+        }
+    }
+
+    pub(crate) fn into_lines(self) -> Vec<ratatui::text::Line<'static>> {
+        match self {
+            Self::Line(line) => vec![line],
+            Self::Mermaid { fallback, .. } => fallback,
+        }
+    }
+}
+
+pub(crate) fn render_stream_parts<'a>(
+    events: impl Iterator<Item = Event<'a>>,
+    width: Option<usize>,
+    cwd: &Path,
+) -> Vec<MarkdownPart> {
+    let mut w = Writer::new(events, width, Some(cwd));
+    w.prose_style = crate::theme::assistant_message();
+    w.run();
+    let mut blocks = w.mermaid_blocks.into_iter().peekable();
+    let mut lines = w.text.lines.into_iter().enumerate();
+    let mut out = Vec::new();
+    while let Some((index, line)) = lines.next() {
+        if let Some((range, source)) = blocks.next_if(|(range, _)| range.start == index) {
+            let mut fallback = vec![line];
+            fallback.extend(lines.by_ref().take(range.len() - 1).map(|(_, line)| line));
+            out.push(MarkdownPart::Mermaid { source, fallback });
+        } else {
+            out.push(MarkdownPart::Line(line));
+        }
+    }
+    out
+}
+
 pub fn render_markdown_text(input: &str) -> Text<'static> {
     render_markdown_text_with_width(input, /*width*/ None)
 }

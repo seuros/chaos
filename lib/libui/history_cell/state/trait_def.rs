@@ -15,6 +15,18 @@ pub trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
     /// Returns the logical lines for the main chat viewport.
     fn display_lines(&self, width: u16) -> Vec<Line<'static>>;
 
+    /// Graphics are confined to retained chat; all line-based consumers keep
+    /// source text, including native scrollback and the transcript overlay.
+    fn has_mermaid(&self) -> bool {
+        false
+    }
+
+    fn display_chunks(&self, width: u16) -> Vec<crate::mermaid::DisplayChunk> {
+        vec![crate::mermaid::DisplayChunk::Text(
+            self.display_lines(width),
+        )]
+    }
+
     /// Whether this cell contributes visible history. Override to avoid rendering
     /// merely to decide whether it should break an active tool group.
     fn has_display_content(&self) -> bool {

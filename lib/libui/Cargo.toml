@@ -63,6 +63,9 @@ derive_more = { workspace = true, features = ["is_variant"] }
 diffy = { workspace = true }
 dirs = { workspace = true }
 image = { workspace = true, features = ["jpeg", "png", "gif", "webp"] }
+mermaid-rs-renderer = { workspace = true }
+resvg = { workspace = true }
+ratatui-image = { workspace = true }
 itertools = { workspace = true }
 jiff = { workspace = true }
 pathdiff = { workspace = true }

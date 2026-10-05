@@ -11,7 +11,7 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
-use pulldown_cmark::{BrokenLink, Event, Options, Parser, Tag};
+use pulldown_cmark::{BrokenLink, CodeBlockKind, Event, Options, Parser, Tag};
 
 pub(super) fn stable_events(source: &str) -> impl Iterator<Item = Event<'_>> {
     let mut first_unresolved = source.len();
@@ -34,6 +34,14 @@ pub(super) fn stable_events(source: &str) -> impl Iterator<Item = Event<'_>> {
     };
     let first_unstable =
         first_unresolved.min(pending_metadata(source, &events).unwrap_or(source.len()));
+    let first_unstable = events
+        .iter()
+        .filter_map(|(event, range)| {
+            matches!(event, Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info)))
+            if super::is_mermaid(info) && !super::closed_fence(&source[range.clone()]))
+            .then_some(range.start)
+        })
+        .fold(first_unstable, usize::min);
     let boundary = stable_block_boundary(source, &events, first_unstable);
     events
         .into_iter()

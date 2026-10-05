@@ -9,7 +9,14 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.12.0] - 2026-10-05
+
 ### Added
+- Inline Mermaid diagrams in assistant replies, rendered locally in the
+  background. Terminal graphics support includes Ghostty/Kitty through tmux and
+  inline image transport over SSH. The scrollable chat viewport keeps the
+  composer pinned, while transcripts, copying, and fallback rendering preserve
+  diagram source.
 - Markdown bodies for plans and tasks, append-only clarifications, and explicitly
   requested background consolidation using a model chosen from the catalog.
 
@@ -244,7 +251,8 @@ See the Drivers section of `man/chaos-install.7.md`.
   access for the model now comes from skipper.
 - `git://branches` resource template.
 
-[Unreleased]: https://github.com/seuros/chaos/compare/v47.10.0...HEAD
+[Unreleased]: https://github.com/seuros/chaos/compare/v47.12.0...HEAD
+[47.12.0]: https://github.com/seuros/chaos/compare/v47.11.0...v47.12.0
 [47.10.0]: https://github.com/seuros/chaos/compare/v47.9.0...v47.10.0
 [47.9.0]: https://github.com/seuros/chaos/compare/v47.8.0...v47.9.0
 [47.8.0]: https://github.com/seuros/chaos/compare/v47.7.1...v47.8.0

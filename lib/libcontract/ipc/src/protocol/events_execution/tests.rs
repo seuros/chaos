@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn legacy_exec_journal_sources_decode_and_reserialize_canonically() {
+    for (source, canonical) in [
+        ("unified_exec_startup", "exec_startup"),
+        ("unified_exec_interaction", "exec_interaction"),
+    ] {
+        let value = serde_json::json!({
+            "type": "event_msg",
+            "payload": {
+                "type": "exec_command_end",
+                "call_id": "old-call", "turn_id": "old-turn",
+                "command": ["true"], "cwd": "/tmp", "parsed_cmd": [],
+                "source": source, "stdout": "", "stderr": "",
+                "exit_code": 0, "duration": {"secs": 0, "nanos": 1},
+                "formatted_output": "", "status": "completed"
+            }
+        });
+        let item = serde_json::from_value::<crate::protocol::RolloutItem>(value)
+            .expect("legacy exec journal entry should deserialize");
+        let serialized = serde_json::to_value(item).unwrap();
+        assert_eq!(serialized["payload"]["source"], canonical);
+    }
+}
+
+#[test]
 fn exec_sources_use_canonical_wire_names() {
     for (source, name) in [
         (ExecCommandSource::Agent, "agent"),

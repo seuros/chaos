@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn legacy_cached_exec_model_decodes_and_reserializes_canonically() {
+    let mut value = serde_json::to_value(test_model(None)).unwrap();
+    value["shell_type"] = "unified_exec".into();
+    let models = serde_json::from_value::<Vec<ModelInfo>>(serde_json::json!([value]))
+        .expect("legacy cached model catalog should deserialize");
+    assert_eq!(models[0].shell_type, ConfigShellToolType::Exec);
+    assert_eq!(
+        serde_json::to_value(models).unwrap()[0]["shell_type"],
+        "exec"
+    );
+}
+
+#[test]
 fn exec_shell_type_uses_canonical_wire_name() {
     let value = serde_json::to_value(ConfigShellToolType::Exec).unwrap();
     assert_eq!(value, "exec");

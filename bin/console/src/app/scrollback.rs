@@ -93,15 +93,20 @@ impl App {
         self.tile_manager.chat_scrollback.render(body, buf);
         self.chat_widget.render_bottom_pane(composer, buf);
         // Reuse the composer's existing top padding; no extra chrome or pager.
-        Line::from("Scrollback · End / Esc to follow live")
-            .dim()
-            .render(
-                Rect {
-                    height: bottom_height.min(1),
-                    ..composer
-                },
-                buf,
-            );
+        let hint = if self.chat_widget.no_modal_or_popup_active() {
+            "Scrollback · End / Esc to follow live"
+        } else if self.chat_widget.allows_transcript_scroll() {
+            "Scrollback · End to follow live"
+        } else {
+            "Scrollback"
+        };
+        Line::from(hint).dim().render(
+            Rect {
+                height: bottom_height.min(1),
+                ..composer
+            },
+            buf,
+        );
         bottom.cursor_pos(composer)
     }
 }

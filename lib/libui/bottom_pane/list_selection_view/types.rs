@@ -116,6 +116,8 @@ pub struct SelectionViewParams {
     pub footer_hint: Option<Line<'static>>,
     pub items: Vec<SelectionItem>,
     pub is_searchable: bool,
+    /// Allow transcript navigation without dismissing this selection view.
+    pub allows_transcript_scroll: bool,
     pub search_placeholder: Option<String>,
     pub col_width_mode: ColumnWidthMode,
     pub header: Box<dyn Renderable>,
@@ -158,6 +160,7 @@ impl Default for SelectionViewParams {
             footer_hint: None,
             items: Vec::new(),
             is_searchable: false,
+            allows_transcript_scroll: false,
             search_placeholder: None,
             col_width_mode: ColumnWidthMode::AutoVisible,
             header: Box::new(()),

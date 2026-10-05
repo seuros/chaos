@@ -274,6 +274,10 @@ impl ChatWidget {
         self.bottom_pane.no_modal_or_popup_active()
     }
 
+    pub fn allows_transcript_scroll(&self) -> bool {
+        self.bottom_pane.allows_transcript_scroll()
+    }
+
     pub fn can_launch_external_editor(&self) -> bool {
         self.bottom_pane.can_launch_external_editor()
     }

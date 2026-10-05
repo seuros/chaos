@@ -13,6 +13,11 @@ should. There is no patch level; the build timestamp is the patch.
 - Markdown bodies for plans and tasks, append-only clarifications, and explicitly
   requested background consolidation using a model chosen from the catalog.
 
+### Fixed
+- Keep long plans scrollable with the mouse wheel and paging keys while the
+  "Implement this plan?" prompt stays open, without changing its selection or
+  dismissing it.
+
 ## [47.11.0] - 2026-10-04
 
 ### Added

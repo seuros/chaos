@@ -668,6 +668,15 @@ impl BottomPane {
         self.can_launch_external_editor()
     }
 
+    /// Only the active view may opt into transcript navigation; other modal
+    /// and composer-popup input guards remain unchanged.
+    pub fn allows_transcript_scroll(&self) -> bool {
+        self.active_view().map_or_else(
+            || !self.composer.popup_active(),
+            |view| view.allows_transcript_scroll(),
+        )
+    }
+
     pub fn show_view(&mut self, view: Box<dyn BottomPaneView>) {
         self.push_view(view);
     }

@@ -24,6 +24,12 @@ pub trait BottomPaneView: Renderable {
         false
     }
 
+    /// Allow reading the transcript while this view remains open.
+    /// This does not permit other input to bypass the view.
+    fn allows_transcript_scroll(&self) -> bool {
+        false
+    }
+
     /// Stable identifier for views that need external refreshes while open.
     fn view_id(&self) -> Option<&'static str> {
         None

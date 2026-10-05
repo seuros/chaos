@@ -133,6 +133,7 @@ impl ChatWidget {
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some(PLAN_IMPLEMENTATION_TITLE.to_string()),
+            allows_transcript_scroll: true,
             subtitle: None,
             footer_hint: Some(standard_popup_hint_line()),
             items,

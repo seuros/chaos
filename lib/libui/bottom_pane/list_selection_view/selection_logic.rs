@@ -39,6 +39,7 @@ pub struct ListSelectionView {
     pub(super) complete: bool,
     pub(super) app_event_tx: AppEventSender,
     pub(super) is_searchable: bool,
+    pub(super) allows_transcript_scroll: bool,
     pub(super) search_query: String,
     pub(super) search_placeholder: Option<String>,
     pub(super) col_width_mode: ColumnWidthMode,
@@ -87,6 +88,7 @@ impl ListSelectionView {
             complete: false,
             app_event_tx,
             is_searchable: params.is_searchable,
+            allows_transcript_scroll: params.allows_transcript_scroll,
             search_query: String::new(),
             search_placeholder: if params.is_searchable {
                 params.search_placeholder
@@ -499,6 +501,10 @@ impl BottomPaneView for ListSelectionView {
 
     fn is_complete(&self) -> bool {
         self.complete
+    }
+
+    fn allows_transcript_scroll(&self) -> bool {
+        self.allows_transcript_scroll
     }
 
     fn view_id(&self) -> Option<&'static str> {

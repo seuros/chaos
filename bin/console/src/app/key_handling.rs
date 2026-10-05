@@ -235,7 +235,11 @@ impl App {
                 code: KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
-            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
+            } if self.overlay.is_none()
+                && self.chat_widget.allows_transcript_scroll()
+                && (key_event.modifiers.is_empty()
+                    || self.chat_widget.no_modal_or_popup_active()) =>
+            {
                 if self.tile_manager.chat_focused() {
                     let page = self.chat_scroll_page_height(tui);
                     let scroll = match key_event.code {

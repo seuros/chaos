@@ -35,34 +35,40 @@ impl App {
                     self.handle_key_event(tui, key_event).await;
                 }
                 TuiEvent::Mouse(mouse_event) => {
-                    if !self.chat_widget.no_modal_or_popup_active()
+                    if !self.chat_widget.allows_transcript_scroll()
                         || self.tile_manager.runtime.is_palette_open()
                     {
                         return Ok(AppRunControl::Continue);
                     }
                     let position =
                         ratatui::layout::Position::new(mouse_event.column, mouse_event.row);
-                    if self.agent_navigation.tabs_contain(position)
-                        && matches!(
-                            mouse_event.kind,
-                            MouseEventKind::Down(_)
-                                | MouseEventKind::ScrollUp
-                                | MouseEventKind::ScrollDown
-                        )
-                    {
-                        if mouse_event.kind
-                            == MouseEventKind::Down(crossterm::event::MouseButton::Left)
-                            && mouse_event.modifiers.is_empty()
-                            && let Some(process_id) = self.agent_navigation.tab_at(position)
+                    if self.chat_widget.no_modal_or_popup_active() {
+                        if self.agent_navigation.tabs_contain(position)
+                            && matches!(
+                                mouse_event.kind,
+                                MouseEventKind::Down(_)
+                                    | MouseEventKind::ScrollUp
+                                    | MouseEventKind::ScrollDown
+                            )
                         {
-                            self.tile_manager.cancel_layout_drag();
-                            self.select_agent_process(tui, process_id).await?;
-                            tui.frame_requester().schedule_frame();
+                            if mouse_event.kind
+                                == MouseEventKind::Down(crossterm::event::MouseButton::Left)
+                                && mouse_event.modifiers.is_empty()
+                                && let Some(process_id) = self.agent_navigation.tab_at(position)
+                            {
+                                self.tile_manager.cancel_layout_drag();
+                                self.select_agent_process(tui, process_id).await?;
+                                tui.frame_requester().schedule_frame();
+                            }
+                            return Ok(AppRunControl::Continue);
                         }
-                        return Ok(AppRunControl::Continue);
-                    }
-                    if self.tile_manager.handle_pane_mouse(mouse_event) {
-                        tui.frame_requester().schedule_frame();
+                        if self.tile_manager.handle_pane_mouse(mouse_event) {
+                            tui.frame_requester().schedule_frame();
+                            return Ok(AppRunControl::Continue);
+                        }
+                    } else if !self.chat_scroll_area(tui).contains(position) {
+                        // A scroll-permitting modal still blocks pane/tab clicks
+                        // and layout gestures. Only wheel input over chat passes.
                         return Ok(AppRunControl::Continue);
                     }
                     if self.tile_manager.chat_focused() {

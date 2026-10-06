@@ -43,6 +43,15 @@ const EMPTY_MESSAGE_ERROR: &str = "Empty message can't be sent to an agent";
 const MESSAGE_AND_ITEMS_CONFLICT_ERROR: &str = "Provide either message or items, but not both";
 const DEPTH_LIMIT_ERROR: &str = "Agent depth limit reached. Solve the task yourself.";
 
+// Tests that boot real sessions must retain their database directory until the
+// session work is finished. The lightweight fixture drops its home on return.
+async fn persistent_session_and_context() -> (tempfile::TempDir, crate::chaos::Session, TurnContext)
+{
+    let home = tempfile::tempdir().expect("create persistent test home");
+    let (session, turn) = crate::chaos::make_session_and_context_with_home(home.path()).await;
+    (home, session, turn)
+}
+
 struct ValidationCase {
     name: &'static str,
     tool_name: &'static str,
@@ -313,7 +322,7 @@ async fn spawn_agent_uses_scout_role_and_preserves_approval_policy() {
         nickname: Option<String>,
     }
 
-    let (mut session, mut turn) = make_session_and_context().await;
+    let (_home, mut session, mut turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let mut config = (*turn.config).clone();
@@ -466,7 +475,7 @@ async fn spawn_agent_allows_depth_up_to_configured_max_depth() {
         nickname: Option<String>,
     }
 
-    let (mut session, mut turn) = make_session_and_context().await;
+    let (_home, mut session, mut turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
 
@@ -559,7 +568,7 @@ async fn collab_agent_lookup_handlers_report_missing_agents() {
 
 #[tokio::test]
 async fn send_input_interrupts_before_prompt() {
-    let (mut session, turn) = make_session_and_context().await;
+    let (_home, mut session, turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
@@ -598,7 +607,7 @@ async fn send_input_interrupts_before_prompt() {
 
 #[tokio::test]
 async fn send_input_accepts_structured_items() {
-    let (mut session, turn) = make_session_and_context().await;
+    let (_home, mut session, turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
@@ -698,7 +707,7 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
         assert!(!child_tools.iter().any(|name| name == unavailable));
     }
 
-    let (mut session, mut turn) = make_session_and_context().await;
+    let (_home, mut session, mut turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let parent_thread = manager
@@ -794,7 +803,7 @@ async fn spawned_subagent_alone_can_message_its_supervisor() {
 
 #[tokio::test]
 async fn resume_agent_noops_for_active_agent() {
-    let (mut session, turn) = make_session_and_context().await;
+    let (_home, mut session, turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
@@ -830,7 +839,7 @@ async fn resume_agent_noops_for_active_agent() {
 
 #[tokio::test]
 async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
-    let (mut session, turn) = make_session_and_context().await;
+    let (_home, mut session, turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
@@ -1143,7 +1152,7 @@ async fn wait_agent_returns_when_status_becomes_final() {
 
 #[tokio::test]
 async fn close_agent_submits_shutdown_and_returns_status() {
-    let (mut session, turn) = make_session_and_context().await;
+    let (_home, mut session, turn) = persistent_session_and_context().await;
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();

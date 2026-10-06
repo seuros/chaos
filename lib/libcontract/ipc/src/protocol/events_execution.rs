@@ -17,7 +17,9 @@ pub enum ExecCommandSource {
     #[default]
     Agent,
     UserShell,
+    #[serde(alias = "unified_exec_startup")]
     ExecStartup,
+    #[serde(alias = "unified_exec_interaction")]
     ExecInteraction,
 }
 

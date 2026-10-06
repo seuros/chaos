@@ -185,6 +185,7 @@ pub enum ModelVisibility {
 pub enum ConfigShellToolType {
     Default,
     Local,
+    #[serde(alias = "unified_exec")]
     Exec,
     Disabled,
     ShellCommand,

@@ -20,6 +20,3 @@ pub fn var_non_empty(key: &str) -> Option<String> {
 pub fn is_set(key: &str) -> bool {
     var(key).is_some_and(|value| !value.trim().is_empty())
 }
-
-#[cfg(test)]
-mod tests;

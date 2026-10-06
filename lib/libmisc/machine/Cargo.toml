@@ -10,6 +10,7 @@ description = "Machine, power-source, thermal, and task-scoped filesystem observ
 workspace = true
 
 [dependencies]
+chaos-sysinfo = { workspace = true }
 libc = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 

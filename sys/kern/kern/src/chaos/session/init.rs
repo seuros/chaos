@@ -333,7 +333,10 @@ impl Session {
             Some(TelemetryAuthMode::ApiKey)
         };
         let originator = crate::default_client::originator().value.as_str();
-        let terminal_type = crate::terminal::user_agent();
+        #[cfg(feature = "tui")]
+        let terminal_type = chaos_sysinfo::terminal::user_agent();
+        #[cfg(not(feature = "tui"))]
+        let terminal_type = String::from("unknown");
         let session_model = session_configuration.collaboration_mode.model().to_string();
         let mut session_telemetry = SessionTelemetry::new(
             conversation_id,

@@ -192,5 +192,4 @@ where
 }
 
 #[cfg(test)]
-#[path = "token_data_tests.rs"]
 mod tests;

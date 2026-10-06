@@ -291,5 +291,4 @@ impl ToolRouter {
     }
 }
 #[cfg(test)]
-#[path = "router_tests.rs"]
 mod tests;

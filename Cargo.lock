@@ -1127,6 +1127,7 @@ dependencies = [
  "chaos-selinux",
  "chaos-snitch",
  "chaos-sysctl",
+ "chaos-sysinfo",
  "chaos-taskd",
  "chaos-test-fixtures",
  "chaos-which",
@@ -1218,6 +1219,7 @@ dependencies = [
  "chaos-realpath",
  "chaos-session",
  "chaos-snitch",
+ "chaos-sysinfo",
  "chaos-termcap",
  "chaos-test-fixtures",
  "chaos-which",
@@ -1727,6 +1729,7 @@ version = "47.12.0"
 name = "chaos-machine"
 version = "47.12.0"
 dependencies = [
+ "chaos-sysinfo",
  "libc",
  "objc2-foundation",
  "serde",
@@ -2196,8 +2199,10 @@ version = "47.12.0"
 dependencies = [
  "jiff",
  "libc",
+ "pretty_assertions",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

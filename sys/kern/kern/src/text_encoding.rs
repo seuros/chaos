@@ -119,5 +119,4 @@ fn is_windows_1252_punct(byte: u8) -> bool {
 }
 
 #[cfg(test)]
-#[path = "text_encoding_tests.rs"]
 mod tests;

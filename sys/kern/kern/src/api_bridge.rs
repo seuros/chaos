@@ -342,5 +342,4 @@ impl ApiAuthProvider for CoreAuthProvider {
 }
 
 #[cfg(test)]
-#[path = "api_bridge_tests.rs"]
 mod tests;

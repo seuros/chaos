@@ -265,7 +265,7 @@ impl App {
             auth_mode,
             chaos_kern::default_client::originator().value.as_str(),
             config.otel.log_user_prompt,
-            chaos_kern::terminal::user_agent(),
+            chaos_sysinfo::terminal::user_agent(),
             SessionSource::Cli,
         );
         let enhanced_keys_supported = tui.enhanced_keys_supported();

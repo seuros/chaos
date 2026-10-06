@@ -59,12 +59,9 @@ pub struct SessionContext {
 
 impl SessionContext {
     pub(crate) fn local() -> Self {
-        fn set(name: &str) -> bool {
-            std::env::var_os(name).is_some_and(|value| !value.is_empty())
-        }
         Self {
-            ssh: set("SSH_CONNECTION") || set("SSH_TTY"),
-            graphical_hint: set("DISPLAY") || set("WAYLAND_DISPLAY"),
+            ssh: chaos_sysinfo::terminal::is_ssh_session(),
+            graphical_hint: chaos_sysinfo::session_display_server().is_some(),
             terminal_attached: std::io::stdin().is_terminal(),
         }
     }

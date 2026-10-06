@@ -409,5 +409,4 @@ pub(crate) fn response_input_to_response_item(input: &ResponseInputItem) -> Opti
 }
 
 #[cfg(test)]
-#[path = "stream_events_utils_tests.rs"]
 mod tests;

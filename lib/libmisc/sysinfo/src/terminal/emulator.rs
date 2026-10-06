@@ -1,9 +1,9 @@
-//! Terminal detection utilities.
-//!
-//! This module feeds terminal metadata into OpenTelemetry user-agent logging and into
-//! terminal-specific configuration choices in the TUI.
-
 use std::sync::OnceLock;
+
+use super::{
+    Environment, Multiplexer, ProcessEnvironment, detect_multiplexer, is_tmux_term_program,
+    none_if_whitespace,
+};
 
 /// Structured terminal identification data.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,20 +51,6 @@ pub enum TerminalName {
     Unknown,
 }
 
-/// Detected terminal multiplexer metadata.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Multiplexer {
-    /// tmux terminal multiplexer.
-    Tmux {
-        /// tmux version string when `TERM_PROGRAM=tmux` is available.
-        ///
-        /// This is derived from `TERM_PROGRAM_VERSION`.
-        version: Option<String>,
-    },
-    /// zellij terminal multiplexer.
-    Zellij {},
-}
-
 /// tmux client terminal identification captured via `tmux display-message`.
 ///
 /// `termtype` corresponds to `#{client_termtype}` and typically reflects the
@@ -76,12 +62,28 @@ pub enum Multiplexer {
 /// This information is only available when running under tmux and lets us
 /// attribute the session to the underlying terminal rather than to tmux itself.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct TmuxClientInfo {
-    termtype: Option<String>,
-    termname: Option<String>,
+pub(super) struct TmuxClientInfo {
+    pub(super) termtype: Option<String>,
+    pub(super) termname: Option<String>,
 }
 
 impl TerminalInfo {
+    pub fn in_tmux(&self) -> bool {
+        matches!(self.multiplexer, Some(Multiplexer::Tmux { .. }))
+    }
+
+    pub fn behind_tmux(&self) -> bool {
+        self.in_tmux()
+            || self
+                .term_program
+                .as_deref()
+                .is_some_and(is_tmux_term_program)
+            || self
+                .term
+                .as_deref()
+                .is_some_and(|term| term.starts_with("tmux"))
+    }
+
     /// Creates terminal metadata from detected fields.
     fn new(
         name: TerminalName,
@@ -205,47 +207,17 @@ impl TerminalInfo {
 
 static TERMINAL_INFO: OnceLock<TerminalInfo> = OnceLock::new();
 
-/// Environment variable access used by terminal detection.
-///
-/// This trait exists to allow faking the environment in tests.
-trait Environment {
-    /// Returns an environment variable when set.
-    fn var(&self, name: &str) -> Option<String>;
-
+trait TerminalEnvironment: Environment {
     /// Returns whether an environment variable is set.
     fn has(&self, name: &str) -> bool {
         self.var(name).is_some()
-    }
-
-    /// Returns a non-empty environment variable.
-    fn var_non_empty(&self, name: &str) -> Option<String> {
-        self.var(name).and_then(none_if_whitespace)
-    }
-
-    /// Returns whether an environment variable is set and non-empty.
-    fn has_non_empty(&self, name: &str) -> bool {
-        self.var_non_empty(name).is_some()
     }
 
     /// Returns tmux client details when available.
     fn tmux_client_info(&self) -> TmuxClientInfo;
 }
 
-/// Reads environment variables from the running process.
-struct ProcessEnvironment;
-
-impl Environment for ProcessEnvironment {
-    fn var(&self, name: &str) -> Option<String> {
-        match std::env::var(name) {
-            Ok(value) => Some(value),
-            Err(std::env::VarError::NotPresent) => None,
-            Err(std::env::VarError::NotUnicode(_)) => {
-                tracing::warn!("failed to read env var {name}: value not valid UTF-8");
-                None
-            }
-        }
-    }
-
+impl TerminalEnvironment for ProcessEnvironment {
     fn tmux_client_info(&self) -> TmuxClientInfo {
         tmux_client_info()
     }
@@ -277,7 +249,7 @@ pub fn terminal_info() -> TerminalInfo {
 /// tmux client term info is only consulted when a tmux multiplexer is detected, and it is
 /// derived from `tmux display-message` to surface the underlying terminal program instead of
 /// reporting tmux itself.
-fn detect_terminal_info_from_env(env: &dyn Environment) -> TerminalInfo {
+fn detect_terminal_info_from_env(env: &dyn TerminalEnvironment) -> TerminalInfo {
     let multiplexer = detect_multiplexer(env);
 
     if let Some(term_program) = env.var_non_empty("TERM_PROGRAM") {
@@ -294,7 +266,11 @@ fn detect_terminal_info_from_env(env: &dyn Environment) -> TerminalInfo {
         return TerminalInfo::from_term_program(name, term_program, version, multiplexer);
     }
 
-    if env.has("WEZTERM_VERSION") {
+    if env.has("WEZTERM_VERSION")
+        || env
+            .var("TERM")
+            .is_some_and(|term| matches!(term.as_str(), "wezterm" | "wezterm-mux"))
+    {
         let version = env.var_non_empty("WEZTERM_VERSION");
         return TerminalInfo::from_name(TerminalName::WezTerm, version, multiplexer);
     }
@@ -358,27 +334,6 @@ fn detect_terminal_info_from_env(env: &dyn Environment) -> TerminalInfo {
     TerminalInfo::unknown(multiplexer)
 }
 
-fn detect_multiplexer(env: &dyn Environment) -> Option<Multiplexer> {
-    if env.has_non_empty("TMUX") || env.has_non_empty("TMUX_PANE") {
-        return Some(Multiplexer::Tmux {
-            version: tmux_version_from_env(env),
-        });
-    }
-
-    if env.has_non_empty("ZELLIJ")
-        || env.has_non_empty("ZELLIJ_SESSION_NAME")
-        || env.has_non_empty("ZELLIJ_VERSION")
-    {
-        return Some(Multiplexer::Zellij {});
-    }
-
-    None
-}
-
-fn is_tmux_term_program(value: &str) -> bool {
-    value.eq_ignore_ascii_case("tmux")
-}
-
 fn terminal_from_tmux_client_info(
     client_info: TmuxClientInfo,
     multiplexer: Option<Multiplexer>,
@@ -401,15 +356,6 @@ fn terminal_from_tmux_client_info(
     termname
         .as_ref()
         .map(|termname| TerminalInfo::from_term(termname.to_string(), multiplexer))
-}
-
-fn tmux_version_from_env(env: &dyn Environment) -> Option<String> {
-    let term_program = env.var("TERM_PROGRAM")?;
-    if !is_tmux_term_program(&term_program) {
-        return None;
-    }
-
-    env.var_non_empty("TERM_PROGRAM_VERSION")
 }
 
 fn split_term_program_and_version(value: &str) -> (String, Option<String>) {
@@ -484,10 +430,5 @@ fn format_terminal_version(name: &str, version: &Option<String>) -> String {
     }
 }
 
-fn none_if_whitespace(value: String) -> Option<String> {
-    (!value.trim().is_empty()).then_some(value)
-}
-
 #[cfg(test)]
-#[path = "terminal_tests.rs"]
 mod tests;

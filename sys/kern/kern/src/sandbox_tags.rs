@@ -39,5 +39,4 @@ pub(crate) fn sandbox_policy_tag_for_policies(
 }
 
 #[cfg(test)]
-#[path = "sandbox_tags_tests.rs"]
 mod tests;

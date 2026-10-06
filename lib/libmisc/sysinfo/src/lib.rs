@@ -25,6 +25,9 @@ mod platform;
 #[cfg(any(target_os = "macos", target_os = "freebsd"))]
 mod sysctl;
 
+pub mod env;
+pub mod terminal;
+
 // ── Public API ───────────────────────────────────────────────────────
 
 static SYSINFO: OnceLock<SystemInfo> = OnceLock::new();
@@ -32,6 +35,16 @@ static SYSINFO: OnceLock<SystemInfo> = OnceLock::new();
 /// Returns the cached system info, computing it on first call.
 pub fn sysinfo() -> &'static SystemInfo {
     SYSINFO.get_or_init(platform::detect)
+}
+
+pub fn session_display_server() -> Option<&'static str> {
+    if env::is_set("WAYLAND_DISPLAY") {
+        Some("wayland")
+    } else if env::is_set("DISPLAY") {
+        Some("x11")
+    } else {
+        None
+    }
 }
 
 /// Read the hostname without collecting unrelated hardware facts.
@@ -126,31 +139,7 @@ pub struct SystemInfo {
 
     // ── Terminal ─────────────────────────────────────────────────
     /// Terminal multiplexer info, if running inside tmux/zellij/screen.
-    pub multiplexer: Option<MultiplexerInfo>,
-}
-
-/// Terminal multiplexer session info (tmux, zellij, screen).
-///
-/// Only stable identifiers that never change for the lifetime of the
-/// pane/session are captured here. Display coordinates like tmux's
-/// `0:1.2` are deliberately **not** stored because they shift whenever
-/// a neighbouring pane or window is closed, which would make any
-/// cached value go stale immediately. If a caller needs the current
-/// display coordinate (e.g. to render a `Ctrl-b 0:1.2`-style hint),
-/// resolve it on demand with `tmux display-message -p -t <id>` instead.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct MultiplexerInfo {
-    /// `"tmux"`, `"zellij"`, or `"screen"`.
-    pub kind: String,
-    /// Stable pane/session identifier that is immutable for the lifetime
-    /// of the pane:
-    /// - **tmux**: `$TMUX_PANE` (e.g. `%3`) — internal pane id, allocated
-    ///   once per pane and never reused or renumbered.
-    /// - **zellij**: `$ZELLIJ_PANE_ID` (e.g. `terminal_3`).
-    /// - **screen**: `$STY` (e.g. `12345.pts-0.hostname`) — the screen
-    ///   session identifier, which is the closest stable handle screen
-    ///   exposes to child processes.
-    pub id: String,
+    pub multiplexer: Option<terminal::Multiplexer>,
 }
 
 /// Platform sandbox mechanism available at compile time.
@@ -193,13 +182,9 @@ pub(crate) fn detect_display_server() -> String {
     if cfg!(target_os = "macos") {
         return "aqua".into();
     }
-    if env_var_is_set("WAYLAND_DISPLAY") {
-        "wayland".into()
-    } else if env_var_is_set("DISPLAY") {
-        "x11".into()
-    } else {
-        normalize_display_server(std::env::var("XDG_SESSION_TYPE").ok()).into()
-    }
+    session_display_server()
+        .unwrap_or_else(|| normalize_display_server(env::var("XDG_SESSION_TYPE")))
+        .into()
 }
 
 /// Read `$LANG`.
@@ -277,60 +262,6 @@ pub(crate) fn detect_has_network() -> bool {
 
     unsafe { libc::freeifaddrs(addrs) };
     has_network
-}
-
-/// Detect terminal multiplexer from environment variables.
-///
-/// All three supported multiplexers expose a stable identifier through
-/// environment variables that the multiplexer sets once when the pane
-/// is spawned and never touches again for the life of that pane:
-/// - **tmux**: `$TMUX_PANE` holds the internal pane id (e.g. `%3`).
-/// - **zellij**: `$ZELLIJ_PANE_ID` holds the pane id (e.g. `terminal_3`).
-/// - **screen**: `$STY` holds the session identifier.
-///
-/// We intentionally do *not* shell out to `tmux display-message` to
-/// derive display coordinates (`session:window.pane`). Those numbers
-/// shift whenever a neighbouring pane is killed, so any cached value
-/// ages badly. The stable id is all the top bar needs, and reading
-/// it from the environment avoids a subprocess on every sysinfo probe.
-pub(crate) fn detect_multiplexer() -> Option<MultiplexerInfo> {
-    if env_var_is_set("TMUX") {
-        return Some(detect_tmux());
-    }
-    if env_var_is_set("ZELLIJ") {
-        return Some(detect_zellij());
-    }
-    if env_var_is_set("STY") {
-        return Some(detect_screen());
-    }
-    None
-}
-
-fn detect_tmux() -> MultiplexerInfo {
-    MultiplexerInfo {
-        kind: "tmux".into(),
-        id: std::env::var("TMUX_PANE").unwrap_or_default(),
-    }
-}
-
-fn detect_zellij() -> MultiplexerInfo {
-    MultiplexerInfo {
-        kind: "zellij".into(),
-        id: std::env::var("ZELLIJ_PANE_ID").unwrap_or_default(),
-    }
-}
-
-fn detect_screen() -> MultiplexerInfo {
-    MultiplexerInfo {
-        kind: "screen".into(),
-        id: std::env::var("STY").unwrap_or_default(),
-    }
-}
-
-fn env_var_is_set(name: &str) -> bool {
-    std::env::var(name)
-        .ok()
-        .is_some_and(|value| !value.trim().is_empty())
 }
 
 fn normalize_display_server(session_type: Option<String>) -> &'static str {

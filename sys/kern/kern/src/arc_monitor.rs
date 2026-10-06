@@ -8,10 +8,10 @@ use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::default_client::build_http_client;
 use crate::distill::content_items_to_text;
-use crate::env::read_non_empty_env_var;
 use crate::event_mapping::is_contextual_user_message_content;
 use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseItem;
+use chaos_sysinfo::env::var_non_empty;
 
 const ARC_MONITOR_TIMEOUT: Duration = Duration::from_secs(30);
 const CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE: &str = "CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE";
@@ -169,7 +169,7 @@ async fn monitor_action_inner(
         },
         None => None,
     };
-    let token = if let Some(token) = read_non_empty_env_var(CHAOS_ARC_MONITOR_TOKEN) {
+    let token = if let Some(token) = var_non_empty(CHAOS_ARC_MONITOR_TOKEN) {
         token
     } else {
         let Some(auth) = auth.as_ref() else {
@@ -188,7 +188,7 @@ async fn monitor_action_inner(
         }
     };
 
-    let url = read_non_empty_env_var(CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE).unwrap_or_else(|| {
+    let url = var_non_empty(CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE).unwrap_or_else(|| {
         format!(
             "{}/chaos/safety/arc",
             turn_context.config.chatgpt_base_url.trim_end_matches('/')
@@ -461,5 +461,4 @@ fn build_arc_monitor_message(role: &str, content: serde_json::Value) -> ArcMonit
 }
 
 #[cfg(test)]
-#[path = "arc_monitor_tests.rs"]
 mod tests;

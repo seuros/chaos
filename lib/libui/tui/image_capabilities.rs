@@ -3,7 +3,7 @@
 
 use std::io::{IsTerminal, stdin, stdout};
 
-use chaos_kern::terminal::{Multiplexer, TerminalName};
+use chaos_sysinfo::terminal::{self, Multiplexer, TerminalName};
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui_image::picker::cap_parser::QueryStdioOptions;
@@ -45,19 +45,18 @@ fn protocol_confirmed(protocol: ProtocolType, capabilities: &[Capability]) -> bo
 }
 
 pub(super) fn image_capabilities() -> Option<Picker> {
-    if !stdin().is_terminal()
-        || !stdout().is_terminal()
-        || std::env::var_os("STY").is_some()
-        || std::env::var_os("ZELLIJ").is_some()
-    {
+    if !stdin().is_terminal() || !stdout().is_terminal() {
         return None;
     }
-    let terminal = chaos_kern::terminal::terminal_info();
-    let tmux = matches!(terminal.multiplexer, Some(Multiplexer::Tmux { .. }))
-        || std::env::var("TERM").is_ok_and(|term| term.starts_with("tmux"))
-        || std::env::var("TERM_PROGRAM").is_ok_and(|program| program == "tmux");
-    let remote =
-        std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some();
+    let terminal = terminal::terminal_info();
+    if matches!(
+        terminal.multiplexer,
+        Some(Multiplexer::Screen { .. } | Multiplexer::Zellij { .. })
+    ) {
+        return None;
+    }
+    let tmux = terminal.behind_tmux();
+    let remote = terminal::is_ssh_session();
     if !should_probe(terminal.name, tmux, remote) {
         return None;
     }

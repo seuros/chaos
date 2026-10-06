@@ -176,5 +176,4 @@ impl HeadTailBuffer {
 }
 
 #[cfg(test)]
-#[path = "head_tail_buffer_tests.rs"]
 mod tests;

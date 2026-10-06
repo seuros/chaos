@@ -375,5 +375,4 @@ fn telemetry_preview(content: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "context_tests.rs"]
 mod tests;

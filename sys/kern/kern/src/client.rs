@@ -315,5 +315,4 @@ pub struct ModelClientSession {
 }
 
 #[cfg(test)]
-#[path = "client_tests.rs"]
 mod tests;

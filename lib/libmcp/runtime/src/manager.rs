@@ -1336,5 +1336,4 @@ fn resource_subscriptions_supported(
 mod mcp_init_error_display_tests {}
 
 #[cfg(test)]
-#[path = "manager_tests.rs"]
 mod tests;

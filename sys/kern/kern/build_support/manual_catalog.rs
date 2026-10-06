@@ -122,5 +122,5 @@ pub fn render_catalog(pages: &[ManualPage]) -> Result<String, std::fmt::Error> {
 }
 
 #[cfg(test)]
-#[path = "manual_catalog_tests.rs"]
+#[path = "manual_catalog/tests.rs"]
 mod tests;

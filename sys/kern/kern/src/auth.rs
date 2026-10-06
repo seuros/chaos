@@ -639,5 +639,4 @@ pub(crate) fn load_auth_for_provider(
 }
 
 #[cfg(test)]
-#[path = "auth_tests.rs"]
 mod tests;

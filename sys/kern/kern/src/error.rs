@@ -658,5 +658,4 @@ pub fn get_error_message_ui(e: &ChaosErr) -> String {
 }
 
 #[cfg(test)]
-#[path = "error_tests.rs"]
 mod tests;

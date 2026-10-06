@@ -1,38 +1,15 @@
 use super::detect_backend;
+use super::supports_osc9;
 use chaos_kern::config::types::NotificationMethod;
-use std::ffi::OsString;
+use chaos_sysinfo::terminal::{Multiplexer, TerminalInfo, TerminalName};
 
-struct EnvVarGuard {
-    key: &'static str,
-    original: Option<OsString>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let original = std::env::var_os(key);
-        unsafe {
-            std::env::set_var(key, value);
-        }
-        Self { key, original }
-    }
-
-    fn remove(key: &'static str) -> Self {
-        let original = std::env::var_os(key);
-        unsafe {
-            std::env::remove_var(key);
-        }
-        Self { key, original }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        unsafe {
-            match &self.original {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
-        }
+fn terminal(name: TerminalName, multiplexer: Option<Multiplexer>) -> TerminalInfo {
+    TerminalInfo {
+        name,
+        term_program: None,
+        version: None,
+        term: None,
+        multiplexer,
     }
 }
 
@@ -40,7 +17,8 @@ pub(crate) fn notifications_suite() {
     selects_osc9_method();
     selects_bel_method();
     auto_prefers_bel_without_hints();
-    auto_uses_osc9_for_iterm();
+    auto_uses_osc9_for_known_terminals();
+    auto_prefers_bel_inside_tmux();
 }
 #[cfg(test)]
 fn selects_osc9_method() {
@@ -59,23 +37,29 @@ fn selects_bel_method() {
 }
 
 fn auto_prefers_bel_without_hints() {
-    let _term = EnvVarGuard::remove("TERM");
-    let _term_program = EnvVarGuard::remove("TERM_PROGRAM");
-    let _iterm = EnvVarGuard::remove("ITERM_SESSION_ID");
-    let _wt = EnvVarGuard::remove("WT_SESSION");
-    std::assert_matches!(
-        detect_backend(NotificationMethod::Auto),
-        super::DesktopNotificationBackend::Bel(_)
-    );
+    assert!(!supports_osc9(&terminal(TerminalName::Unknown, None)));
+    assert!(!supports_osc9(&terminal(TerminalName::AppleTerminal, None)));
 }
 
-fn auto_uses_osc9_for_iterm() {
-    let _term = EnvVarGuard::remove("TERM");
-    let _term_program = EnvVarGuard::remove("TERM_PROGRAM");
-    let _iterm = EnvVarGuard::set("ITERM_SESSION_ID", "abc");
-    let _wt = EnvVarGuard::remove("WT_SESSION");
-    std::assert_matches!(
-        detect_backend(NotificationMethod::Auto),
-        super::DesktopNotificationBackend::Osc9(_)
-    );
+fn auto_uses_osc9_for_known_terminals() {
+    for name in [
+        TerminalName::Iterm2,
+        TerminalName::Ghostty,
+        TerminalName::WezTerm,
+        TerminalName::Kitty,
+    ] {
+        assert!(supports_osc9(&terminal(name, None)), "{name:?}");
+    }
+}
+
+fn auto_prefers_bel_inside_tmux() {
+    let tmux = Multiplexer::Tmux {
+        version: None,
+        pane: Some("%1".to_string()),
+    };
+    assert!(!supports_osc9(&terminal(TerminalName::Ghostty, Some(tmux))));
+    assert!(supports_osc9(&terminal(
+        TerminalName::Ghostty,
+        Some(Multiplexer::Zellij { pane: None })
+    )));
 }

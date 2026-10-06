@@ -20,7 +20,7 @@ workspace = true
 [features]
 default = ["tui"]
 # Omit the interactive console and renderer from headless/server builds.
-tui = ["dep:chaos-console", "dep:owo-colors", "dep:supports-color"]
+tui = ["dep:chaos-console", "dep:owo-colors", "dep:supports-color", "chaos-sysinfo/tui"]
 
 [dependencies]
 alcatraz = { workspace = true }
@@ -31,6 +31,7 @@ chaos-sysctl = { workspace = true }
 toml_edit = { workspace = true }
 toml = { workspace = true }
 chaos-kern = { workspace = true }
+chaos-sysinfo = { workspace = true }
 chaos-fork = { workspace = true }
 chaos-selinux = { workspace = true }
 chaos-pam = { workspace = true }

@@ -829,5 +829,4 @@ fn truncate_before_nth_user_message(history: InitialHistory, n: usize) -> Initia
 }
 
 #[cfg(test)]
-#[path = "process_table_tests.rs"]
 mod tests;

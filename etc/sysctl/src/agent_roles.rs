@@ -458,5 +458,4 @@ fn collect_agent_role_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> s
 }
 
 #[cfg(test)]
-#[path = "agent_roles_tests.rs"]
 mod tests;

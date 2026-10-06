@@ -496,5 +496,4 @@ pub(crate) mod built_in {
 }
 
 #[cfg(test)]
-#[path = "role_tests.rs"]
 mod tests;

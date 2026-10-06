@@ -5,7 +5,7 @@
 use super::sysctl::{sysctl_string, sysctl_u32, sysctl_u64};
 use super::{
     SandboxKind, SystemInfo, detect_disk, detect_display_server, detect_hostname, detect_locale,
-    detect_multiplexer, detect_os_version, detect_shell, detect_timezone,
+    detect_os_version, detect_shell, detect_timezone,
 };
 use std::mem;
 
@@ -42,7 +42,7 @@ pub(super) fn detect() -> SystemInfo {
         locale: detect_locale(),
         timezone: detect_timezone(),
         has_network: super::detect_has_network(),
-        multiplexer: detect_multiplexer(),
+        multiplexer: crate::terminal::multiplexer(),
     }
 }
 

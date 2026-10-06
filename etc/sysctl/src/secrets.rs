@@ -13,7 +13,6 @@ fn credential_key(account: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "secrets_tests.rs"]
 mod tests;
 
 pub fn is_reference(value: &str) -> bool {

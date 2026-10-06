@@ -188,5 +188,4 @@ fn is_valid_bundle_id(bundle_id: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "seatbelt_permissions_tests.rs"]
 mod tests;

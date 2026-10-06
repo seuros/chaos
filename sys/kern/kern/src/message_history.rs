@@ -76,5 +76,4 @@ pub(crate) async fn lookup(
 }
 
 #[cfg(test)]
-#[path = "message_history_tests.rs"]
 mod tests;

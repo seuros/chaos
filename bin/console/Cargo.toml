@@ -29,6 +29,7 @@ chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-coreboot = { workspace = true }
 chaos-kern = { workspace = true, features = ["tui"] }
+chaos-sysinfo = { workspace = true, features = ["tui"] }
 chaos-session = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-pam = { workspace = true }

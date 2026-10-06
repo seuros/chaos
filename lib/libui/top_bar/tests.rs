@@ -10,8 +10,8 @@ use crate::top_bar::widgets::storage;
 use chaos_kern::machine_status::MachineWarning;
 use chaos_kern::{PersistenceHealth, PersistenceStatus, RuntimeStorageBackend};
 use chaos_machine::{BatteryKind, PowerInfo, PowerSource};
-use chaos_sysinfo::MultiplexerInfo;
 use chaos_sysinfo::SandboxKind;
+use chaos_sysinfo::terminal::Multiplexer;
 use tokio::sync::watch;
 
 pub(super) mod observations;
@@ -196,9 +196,9 @@ fn full_bar(status: watch::Receiver<PersistenceStatus>) -> Vec<BarWidget> {
     info.sandbox_type = SandboxKind::Seccomp;
     info.in_container = true;
     info.container_type = "podman".into();
-    info.multiplexer = Some(MultiplexerInfo {
-        kind: "tmux".into(),
-        id: "%3".into(),
+    info.multiplexer = Some(Multiplexer::Tmux {
+        version: None,
+        pane: Some("%3".into()),
     });
     let (_, power) = watch::channel(snapshot(discharging(Some(87))));
     // Match runtime registration, including the asynchronously appended group.
@@ -255,28 +255,24 @@ fn static_widgets_preserve_labels_styles_and_optional_visibility() {
         (container::new(true, "jail"), "jail", 150, palette.warning),
         (multiplexer::new(None), "", 120, palette.accent),
         (
-            multiplexer::new(Some(&MultiplexerInfo {
-                kind: "tmux".into(),
-                id: "%42".into(),
+            multiplexer::new(Some(&Multiplexer::Tmux {
+                version: None,
+                pane: Some("%42".into()),
             })),
             "tmux %42",
             120,
             palette.accent,
         ),
         (
-            multiplexer::new(Some(&MultiplexerInfo {
-                kind: "zellij".into(),
-                id: "terminal_3".into(),
+            multiplexer::new(Some(&Multiplexer::Zellij {
+                pane: Some("terminal_3".into()),
             })),
             "zellij terminal_3",
             120,
             palette.accent,
         ),
         (
-            multiplexer::new(Some(&MultiplexerInfo {
-                kind: "screen".into(),
-                id: String::new(),
-            })),
+            multiplexer::new(Some(&Multiplexer::Screen { session: None })),
             "screen",
             120,
             palette.accent,

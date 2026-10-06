@@ -101,8 +101,8 @@ async fn spool_registry_from_env(config: &Config) -> chaos_abi::SpoolRegistry {
         config.model_provider.egress.clone(),
     );
 
-    if let Some(api_key) = non_empty_env("ANTHROPIC_API_KEY") {
-        let model = if let Some(m) = non_empty_env("ANTHROPIC_SPOOL_MODEL") {
+    if let Some(api_key) = chaos_sysinfo::env::var_non_empty("ANTHROPIC_API_KEY") {
+        let model = if let Some(m) = chaos_sysinfo::env::var_non_empty("ANTHROPIC_SPOOL_MODEL") {
             Some(m)
         } else {
             cache.first_model_id("anthropic").await
@@ -117,8 +117,8 @@ async fn spool_registry_from_env(config: &Config) -> chaos_abi::SpoolRegistry {
         }
     }
 
-    if let Some(api_key) = non_empty_env("XAI_API_KEY") {
-        let model = if let Some(m) = non_empty_env("XAI_SPOOL_MODEL") {
+    if let Some(api_key) = chaos_sysinfo::env::var_non_empty("XAI_API_KEY") {
+        let model = if let Some(m) = chaos_sysinfo::env::var_non_empty("XAI_SPOOL_MODEL") {
             Some(m)
         } else {
             cache.first_model_id("xai").await
@@ -134,13 +134,6 @@ async fn spool_registry_from_env(config: &Config) -> chaos_abi::SpoolRegistry {
     }
 
     registry
-}
-
-fn non_empty_env(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 fn runtime_handle_from_vfs(
@@ -508,5 +501,4 @@ pub(crate) async fn touch_process_updated_at(
 }
 
 #[cfg(test)]
-#[path = "runtime_db_tests.rs"]
 mod tests;

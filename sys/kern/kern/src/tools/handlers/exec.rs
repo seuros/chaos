@@ -336,5 +336,4 @@ pub(crate) fn get_command(
 }
 
 #[cfg(test)]
-#[path = "exec_tests.rs"]
 mod tests;

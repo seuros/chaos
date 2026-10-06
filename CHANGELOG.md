@@ -9,7 +9,13 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Changed
+- Consolidate terminal, multiplexer, SSH, and display detection.
+- Headless builds no longer identify the terminal emulator.
+
 ### Fixed
+- Desktop notifications inside tmux.
+- Provider API keys with surrounding whitespace in the environment.
 - Continue reading legacy `unified_exec` model catalog metadata and
   `unified_exec_startup` / `unified_exec_interaction` journal events after the
   exec rename. Newly serialized data retains the canonical `exec` names.

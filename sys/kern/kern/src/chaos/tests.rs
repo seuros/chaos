@@ -906,15 +906,15 @@ async fn sample_rollout(
     )
 }
 
-#[path = "chaos_tests/aborts.rs"]
+#[path = "../chaos_tests/aborts.rs"]
 mod aborts;
-#[path = "chaos_tests/early_session.rs"]
+#[path = "../chaos_tests/early_session.rs"]
 mod early_session;
-#[path = "chaos_tests/parser_network.rs"]
+#[path = "../chaos_tests/parser_network.rs"]
 mod parser_network;
-#[path = "chaos_tests/session_lifecycle.rs"]
+#[path = "../chaos_tests/session_lifecycle.rs"]
 mod session_lifecycle;
-#[path = "chaos_tests/structured_output.rs"]
+#[path = "../chaos_tests/structured_output.rs"]
 mod structured_output;
-#[path = "chaos_tests/tools_rollout.rs"]
+#[path = "../chaos_tests/tools_rollout.rs"]
 mod tools_rollout;

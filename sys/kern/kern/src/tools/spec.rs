@@ -60,5 +60,4 @@ pub(crate) use tool_builders::{
 };
 
 #[cfg(test)]
-#[path = "spec_tests.rs"]
 mod tests;

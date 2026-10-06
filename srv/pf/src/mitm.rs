@@ -459,5 +459,4 @@ fn path_for_log(uri: &Uri) -> String {
 }
 
 #[cfg(test)]
-#[path = "mitm_tests.rs"]
 mod tests;

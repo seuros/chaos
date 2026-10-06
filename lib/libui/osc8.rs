@@ -74,7 +74,7 @@ pub fn enabled() -> bool {
         if supports_hyperlinks::on(Stream::Stdout) {
             return true;
         }
-        env::var("TERM_PROGRAM").as_deref() == Ok("tmux") || env::var("TMUX").is_ok()
+        chaos_sysinfo::terminal::terminal_info().behind_tmux()
     })
 }
 

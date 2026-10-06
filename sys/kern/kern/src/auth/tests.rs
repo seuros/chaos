@@ -13,7 +13,7 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 #[allow(clippy::duplicate_mod)]
-#[path = "test_support/auth_fixtures.rs"]
+#[path = "../test_support/auth_fixtures.rs"]
 mod auth_test_fixtures;
 
 use auth_test_fixtures::build_fake_jwt;

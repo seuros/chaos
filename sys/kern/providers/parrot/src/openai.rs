@@ -297,14 +297,15 @@ fn insert_grok_subscription_headers(base_url: &str, model: &str, headers: &mut H
 /// The proxy's `/models` listing does not report vision for the Grok 4 family,
 /// so discovery alone marks them text-only and every image is stripped from
 /// history before the request leaves. The Grok 4 chat models take images on
-/// xAI's own API; this list says so where the proxy is silent. The coding
-/// models are text-only and stay that way.
+/// the subscription proxy; this fallback says so where discovery is silent.
+/// Coding models are not included in the fallback.
 fn grok_proxy_model_accepts_images(base_url: &str, id: &str) -> bool {
     if !is_grok_subscription_proxy(base_url) {
         return false;
     }
     let id = id.to_ascii_lowercase();
-    id.starts_with("grok-4") && !id.contains("code")
+    let grok_4 = id == "grok-4" || id.starts_with("grok-4.") || id.starts_with("grok-4-");
+    grok_4 && !id.contains("code")
 }
 
 /// Resolve image support for a discovered model.

@@ -223,8 +223,16 @@ fn grok_subscription_requests_route_by_model_header() {
 #[test]
 fn grok_subscription_proxy_models_are_known_to_see() {
     let proxy = "https://cli-chat-proxy.grok.com/v1";
-    // The proxy is silent or says text for these; they take images on xAI's API.
-    for id in ["grok-4.5", "grok-4.6", "grok-4.7", "grok-4"] {
+    // The subscription proxy accepts images despite its text-only listing.
+    for id in [
+        "grok-4.5",
+        "grok-4.6",
+        "grok-4.7",
+        "grok-4.7-build-fast",
+        "grok-4",
+        "grok-4-fast",
+        "GROK-4.7",
+    ] {
         assert!(resolve_supports_images(proxy, id, None), "{id} silent");
         assert!(
             resolve_supports_images(proxy, id, Some(false)),
@@ -234,6 +242,9 @@ fn grok_subscription_proxy_models_are_known_to_see() {
     // Coding models stay text-only unless the proxy says otherwise.
     assert!(!resolve_supports_images(proxy, "grok-code-fast-1", None));
     assert!(!resolve_supports_images(proxy, "grok-4-code", None));
+    for id in ["grok-3", "grok-40", "grok-4unknown", "other-model"] {
+        assert!(!resolve_supports_images(proxy, id, None), "{id}");
+    }
     assert!(resolve_supports_images(
         proxy,
         "grok-code-fast-1",

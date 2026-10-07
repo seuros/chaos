@@ -346,6 +346,18 @@ URLs containing `x.ai` automatically expose xAI's native `web_search` and
 `x_search` server-side tools. Override the provider through
 `[model_providers.xai]` settings.
 
+With xAI subscription authentication, Chaos uses the Grok subscription proxy.
+Its model listing omits image capabilities, so Chaos enables image input for
+Grok 4 chat models on that exact proxy host, including images returned by tools.
+Coding models remain text-only unless discovery explicitly advertises vision.
+Other endpoints retain their advertised capabilities.
+
+After upgrading an existing subscription session, refresh its model catalog
+with the session's `refresh_models` tool (`provider: "xai"`) before the next turn.
+Alternatively, run the updated `chaos --provider xai models --refresh` against
+the same Chaos home and runtime database, then restart the session. A restart
+alone can reuse cached text-only capabilities.
+
 Provider HTTP 402 (Payment Required) responses, including Grok Build balance
 exhaustion, are reported as a non-retryable quota error (`UsageLimitExceeded`
 in protocol events). Replenish the balance or switch providers before retrying.

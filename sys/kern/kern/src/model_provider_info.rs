@@ -123,10 +123,8 @@ pub fn is_anthropic_wire(base_url: Option<&str>) -> bool {
 /// the list dynamically from `/models`).
 pub fn native_server_side_tools_for_url(base_url: Option<&str>) -> Vec<String> {
     match base_url {
-        Some(url) if url.contains("x.ai") => {
-            vec!["web_search".to_string(), "x_search".to_string()]
-        }
-        _ => vec![],
+        Some(url) => chaos_parrot::xai::native_tools_for_base_url(url),
+        None => vec![],
     }
 }
 

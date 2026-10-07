@@ -22,9 +22,11 @@ pub mod provider;
 pub mod rate_limits;
 pub mod representer;
 pub mod requests;
+mod responses_adapter;
 pub mod sanitize;
 pub mod sse;
 pub mod telemetry;
+pub mod xai;
 
 use chaos_abi::ModelAdapter;
 
@@ -75,6 +77,9 @@ pub fn adapter_for_wire(
                 default_model,
             )
             .with_sniffer(sniffer),
+        )),
+        "responses" if xai::is_xai_endpoint(&base_url) => Some(Box::new(
+            xai::XaiAdapter::from_base_url_and_api_key(base_url, api_key, default_model),
         )),
         "responses" => Some(Box::new(openai::OpenAiAdapter::from_base_url_and_api_key(
             base_url,

@@ -6,6 +6,7 @@ use chaos_parrot::chat_completions::ChatCompletionsAdapter;
 use chaos_parrot::endpoint::batches::{AnthropicSpoolBackend, XaiSpoolBackend};
 use chaos_parrot::lsd::LsdAdapter;
 use chaos_parrot::openai::{OpenAiAdapter, StaticAuthProvider};
+use chaos_parrot::xai::XaiAdapter;
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -36,6 +37,16 @@ fn provider(base_url: &str, gateway: &MockServer) -> Provider {
 
 fn openai(provider: Provider) -> OpenAiAdapter<StaticAuthProvider> {
     OpenAiAdapter::new(
+        RamaTransport::default_client_with_egress(provider.egress.clone()),
+        provider,
+        StaticAuthProvider::new(Some("vendor-token".into()), None),
+        None,
+        chaos_parrot::SessionRepresenter::wannabe(),
+    )
+}
+
+fn xai(provider: Provider) -> XaiAdapter<StaticAuthProvider> {
+    XaiAdapter::new(
         RamaTransport::default_client_with_egress(provider.egress.clone()),
         provider,
         StaticAuthProvider::new(Some("vendor-token".into()), None),
@@ -194,7 +205,7 @@ async fn every_wire_format_sends_vendor_authenticated_requests_through_egress() 
             "authorization",
         ),
         (
-            Box::new(openai(provider(
+            Box::new(xai(provider(
                 "https://cli-chat-proxy.grok.com/v1",
                 &gateway,
             ))),
@@ -277,6 +288,14 @@ async fn every_wire_format_sends_vendor_authenticated_requests_through_egress() 
         let requests = gateway.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1, "{upstream}");
         assert!(!requests[0].headers.contains_key("content-encoding"));
+        if upstream == "https://cli-chat-proxy.grok.com" {
+            assert_eq!(requests[0].headers["x-xai-token-auth"], "xai-grok-cli");
+            assert_eq!(requests[0].headers["x-grok-model-override"], request.model);
+            assert_eq!(
+                requests[0].headers["x-grok-client-version"],
+                env!("CARGO_PKG_VERSION")
+            );
+        }
         if let Some(schema) = request.output_schema {
             let body: serde_json::Value = requests[0].body_json().unwrap();
             assert_eq!(
@@ -292,7 +311,7 @@ async fn model_discovery_uses_the_same_egress() {
     let gateway = MockServer::start().await;
     for (adapter, upstream) in [
         (
-            Box::new(openai(provider(
+            Box::new(xai(provider(
                 "https://cli-chat-proxy.grok.com/v1",
                 &gateway,
             ))) as Box<dyn ModelAdapter>,
@@ -319,6 +338,14 @@ async fn model_discovery_uses_the_same_egress() {
         assert_eq!(adapter.list_models().await.unwrap()[0].id, "test-model");
     }
     gateway.verify().await;
+    let requests = gateway.received_requests().await.unwrap();
+    let proxy_request = &requests[0];
+    assert_eq!(proxy_request.headers["x-xai-token-auth"], "xai-grok-cli");
+    assert_eq!(
+        proxy_request.headers["x-grok-client-version"],
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(!proxy_request.headers.contains_key("x-grok-model-override"));
 }
 
 #[tokio::test]

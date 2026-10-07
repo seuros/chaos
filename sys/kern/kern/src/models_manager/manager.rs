@@ -868,13 +868,27 @@ impl ModelsManager {
         } else {
             chaos_parrot::SessionRepresenter::for_compatible_endpoint(&api_provider.base_url)
         };
-        let adapter = OpenAiAdapter::new(
-            chaos_parrot::RamaTransport::default_client_with_egress(api_provider.egress.clone()),
-            api_provider,
-            auth_provider,
-            None,
-            representer,
-        );
+        let transport =
+            chaos_parrot::RamaTransport::default_client_with_egress(api_provider.egress.clone());
+        let adapter: Box<dyn ModelAdapter> = if self.provider_id == "xai"
+            || chaos_parrot::xai::is_xai_endpoint(&api_provider.base_url)
+        {
+            Box::new(chaos_parrot::xai::XaiAdapter::new(
+                transport,
+                api_provider,
+                auth_provider,
+                None,
+                representer,
+            ))
+        } else {
+            Box::new(OpenAiAdapter::new(
+                transport,
+                api_provider,
+                auth_provider,
+                None,
+                representer,
+            ))
+        };
 
         let abi_models = timeout(MODELS_REFRESH_TIMEOUT, adapter.list_models())
             .await

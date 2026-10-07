@@ -291,6 +291,31 @@ fn insert_grok_subscription_headers(base_url: &str, model: &str, headers: &mut H
 
 // ── Model discovery ────────────────────────────────────────────────────────
 
+/// Whether a Grok model id served through the subscription proxy is known to
+/// accept image input.
+///
+/// The proxy's `/models` listing does not report vision for the Grok 4 family,
+/// so discovery alone marks them text-only and every image is stripped from
+/// history before the request leaves. The Grok 4 chat models take images on
+/// xAI's own API; this list says so where the proxy is silent. The coding
+/// models are text-only and stay that way.
+fn grok_proxy_model_accepts_images(base_url: &str, id: &str) -> bool {
+    if !is_grok_subscription_proxy(base_url) {
+        return false;
+    }
+    let id = id.to_ascii_lowercase();
+    id.starts_with("grok-4") && !id.contains("code")
+}
+
+/// Resolve image support for a discovered model.
+///
+/// A provider that says yes is believed. A "no" or silence is overridden only
+/// for models this program knows better about (see
+/// [`grok_proxy_model_accepts_images`]).
+fn resolve_supports_images(base_url: &str, id: &str, declared: Option<bool>) -> bool {
+    declared == Some(true) || grok_proxy_model_accepts_images(base_url, id)
+}
+
 /// Detect native server-side tools a provider supports based on its base URL.
 ///
 /// xAI exposes `web_search` and `x_search` as Responses-API server-side tools.
@@ -487,6 +512,8 @@ async fn fetch_openai_models(
         .map(|m| {
             let id = m.id;
             let caps = m.capabilities.unwrap_or_default();
+            let supports_images =
+                resolve_supports_images(base_url, &id, caps.vision.or(m.supports_image_in));
             chaos_abi::AbiModelInfo {
                 display_name: m.display_name.unwrap_or_else(|| id.clone()),
                 id,
@@ -497,7 +524,7 @@ async fn fetch_openai_models(
                 max_input_tokens: m.context_length,
                 max_output_tokens: m.max_tokens_output,
                 supports_thinking: caps.reasoning.or(m.supports_reasoning).unwrap_or(false),
-                supports_images: caps.vision.or(m.supports_image_in).unwrap_or(false),
+                supports_images,
                 supports_structured_output: false,
                 supports_reasoning_effort: false,
                 native_server_side_tools: native_tools.clone(),

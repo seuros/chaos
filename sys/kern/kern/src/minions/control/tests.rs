@@ -121,6 +121,37 @@ async fn wait_for_subagent_notification(parent_thread: &Arc<Process>) -> bool {
     timeout(Duration::from_secs(5), wait).await.is_ok()
 }
 
+async fn attach_test_plan(
+    db: &crate::runtime_db::RuntimeDbHandle,
+    parent_id: ProcessId,
+) -> anyhow::Result<chaos_proc::planning::Plan> {
+    use chaos_proc::planning::{PlanChange, PlanMutation, PlanningActor};
+
+    let workspace = db.planning_create_workspace("delegation").await?;
+    let plan = db
+        .planning_mutate(
+            &PlanningActor {
+                session: parent_id.to_string(),
+                installation: "test".into(),
+            },
+            &PlanMutation {
+                request_id: "create".into(),
+                plan: None,
+                expected_revision: None,
+                change: PlanChange::Create {
+                    workspace: workspace.id,
+                    title: "Shared plan".into(),
+                    body: String::new(),
+                },
+            },
+        )
+        .await?
+        .plan;
+    db.planning_attach(&parent_id.to_string(), Some(&plan.id))
+        .await?;
+    Ok(plan)
+}
+
 #[tokio::test]
 async fn send_input_errors_when_manager_dropped() {
     let control = AgentControl::for_tests();
@@ -360,72 +391,81 @@ async fn spawn_agent_creates_process_and_sends_prompt() {
 
 #[tokio::test]
 async fn planning_child_attachment_is_explicit_even_when_forking_history() -> anyhow::Result<()> {
-    use anyhow::Context;
-    use chaos_proc::planning::{PlanChange, PlanMutation, PlanningActor};
-
-    let harness = AgentControlHarness::new().await;
-    let (parent_id, parent) = harness.start_process().await;
-    let db = parent.runtime_db().context("parent database")?;
-    let workspace = db.planning_create_workspace("delegation").await?;
-    let plan = db
-        .planning_mutate(
-            &PlanningActor {
-                session: parent_id.to_string(),
-                installation: "test".into(),
-            },
-            &PlanMutation {
-                request_id: "create".into(),
-                plan: None,
-                expected_revision: None,
-                change: PlanChange::Create {
-                    workspace: workspace.id,
-                    title: "Shared plan".into(),
-                    body: String::new(),
-                },
-            },
+    // Attachment is a database/session policy, not a model turn or a shutdown
+    // test. Exercise the production post-spawn seam without live child loops.
+    // The adjacent spawn_agent_can_fork_parent_thread_history test owns the
+    // actual fork transport; here we retain its history/attachment distinction.
+    let home = TempDir::new()?;
+    let db = crate::runtime_db::RuntimeDbHandle::from(
+        chaos_proc::StateRuntime::init(home.path().into(), "test".into()).await?,
+    );
+    let (parent, parent_turn) = crate::chaos::make_session_and_context_with_home(home.path()).await;
+    let parent_id = parent.conversation_id;
+    let plan = attach_test_plan(&db, parent_id).await?;
+    parent
+        .record_conversation_items(
+            &parent_turn,
+            &[ResponseItem::Message {
+                id: None,
+                role: "user".into(),
+                content: vec![ContentItem::InputText {
+                    text: "parent planning context".into(),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
         )
-        .await?
-        .plan;
-    db.planning_attach(&parent_id.to_string(), Some(&plan.id))
-        .await?;
+        .await;
 
     for fork in [false, true] {
         for attached in [false, true] {
-            let child = harness
-                .control
-                .spawn_agent_with_options(
-                    harness.config.clone(),
-                    text_input("inspect one task"),
-                    Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-                        parent_process_id: parent_id,
-                        depth: 1,
-                        agent_nickname: None,
-                        agent_role: None,
-                    })),
-                    SpawnAgentOptions {
-                        plan: attached.then(|| plan.id.clone()),
-                        fork_parent_spawn_call_id: fork.then(|| format!("spawn-{attached}")),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-            let child_id = child.process_id;
+            let (mut child, base) =
+                crate::chaos::make_session_and_context_with_home(home.path()).await;
+            child.services.runtime_db = Some(db.clone());
+            if fork {
+                let history = parent.clone_history().await;
+                child
+                    .record_conversation_items(&base, history.raw_items())
+                    .await;
+            }
+            let (tx, rx) = async_channel::unbounded();
+            child.tx_event = tx;
+            let options = SpawnAgentOptions {
+                plan: attached.then(|| plan.id.clone()),
+                fork_parent_spawn_call_id: fork.then(|| format!("spawn-{attached}")),
+                ..Default::default()
+            };
+            attach_spawn_plan(&child, &options).await?;
             assert_eq!(
-                db.planning_attachment(&child_id.to_string()).await?,
+                db.planning_attachment(&child.conversation_id.to_string())
+                    .await?,
                 attached.then(|| plan.id.clone()),
             );
-            let process = harness.manager.get_process(child_id).await?;
-            let base = process.chaos.session.new_default_turn().await;
-            let effective = process.chaos.session.effective_turn_context(&base).await;
+            let effective = child.effective_turn_context(&Arc::new(base)).await;
             assert_eq!(effective.tools_config.attached_plan.is_some(), attached);
-            harness.control.shutdown_agent(child_id).await?;
+            assert_eq!(
+                history_contains_text(
+                    child.clone_history().await.raw_items(),
+                    "parent planning context"
+                ),
+                fork,
+            );
+            if attached {
+                let event = rx.try_recv()?;
+                assert!(
+                    matches!(event.msg, EventMsg::PlanUpdate(snapshot) if snapshot.plan_id == plan.id)
+                );
+            }
+            assert!(
+                rx.is_empty(),
+                "only an explicit attachment emits a plan update"
+            );
         }
     }
     assert_eq!(
         db.planning_attachment(&parent_id.to_string()).await?,
         Some(plan.id)
     );
-    parent.submit(Op::Shutdown {}).await?;
     Ok(())
 }
 
@@ -484,6 +524,10 @@ async fn spawn_agent_options_attach_the_final_output_schema_to_initial_input() {
 async fn spawn_agent_can_fork_parent_thread_history() {
     let harness = AgentControlHarness::new().await;
     let (parent_process_id, parent_thread) = harness.start_process().await;
+    let db = parent_thread.runtime_db().expect("parent database");
+    let plan = attach_test_plan(&db, parent_process_id)
+        .await
+        .expect("attach parent plan");
     parent_thread
         .inject_user_message_without_turn("parent seed context".to_string())
         .await;
@@ -540,6 +584,21 @@ async fn spawn_agent_can_fork_parent_thread_history() {
         history.raw_items(),
         "parent seed context"
     ));
+    // Forking real history must not copy the parent's database attachment.
+    // Explicit attachment and effective tool configuration are covered at the
+    // production post-spawn seam above, without starting extra model turns.
+    assert_eq!(
+        db.planning_attachment(&child_process_id.to_string())
+            .await
+            .expect("child attachment"),
+        None,
+    );
+    assert_eq!(
+        db.planning_attachment(&parent_process_id.to_string())
+            .await
+            .expect("parent attachment"),
+        Some(plan.id),
+    );
 
     let expected = (
         child_process_id,

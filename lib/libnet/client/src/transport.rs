@@ -59,6 +59,23 @@ impl RamaTransport {
         Self::new_with_egress(raw_http_client(), egress)
     }
 
+    /// One request, including non-success statuses, without collecting the body.
+    /// Callers handle redirects explicitly so every hop uses the same policies.
+    pub async fn stream_raw(&self, req: Request) -> Result<StreamResponse, TransportError> {
+        let raw = self.send(req).await?;
+        let stream = tokio_stream::StreamExt::map(
+            raw.body.into_body().into_data_stream(),
+            |result: Result<Bytes, _>| {
+                result.map_err(|err| TransportError::Network(err.to_string()))
+            },
+        );
+        Ok(StreamResponse {
+            status: raw.status,
+            headers: raw.headers,
+            bytes: Box::pin(stream),
+        })
+    }
+
     fn build_request(req: Request) -> Result<rama::http::Request, TransportError> {
         let Request {
             method,
@@ -147,7 +164,7 @@ impl RamaTransport {
             trace!(
                 "{} to {}: {}",
                 req.method,
-                req.url,
+                req.url.split(['?', '#']).next().unwrap_or_default(),
                 req.body.as_ref().unwrap_or_default()
             );
         }

@@ -36,9 +36,9 @@ use supports_color::Stream;
 mod config_cmd;
 mod debug_logging;
 mod hooks_cmd;
-mod planning_cmd;
 mod mcp_cmd;
 mod models_cmd;
+mod planning_cmd;
 mod reflex_cmd;
 
 use crate::mcp_cmd::McpCli;

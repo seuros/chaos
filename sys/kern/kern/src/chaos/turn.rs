@@ -341,6 +341,7 @@ pub(crate) async fn run_turn(
         .await;
     }
 
+    let mut recall_input = owner_turn.then(|| before_turn_input_messages.join("\n"));
     let mut before_turn_request = owner_turn.then_some(chaos_dtrace::BeforeTurnRequest {
         session_id: sess.conversation_id,
         turn_id: turn_context.sub_id.clone(),
@@ -428,6 +429,10 @@ pub(crate) async fn run_turn(
             if finalize_context_hook(&sess, &turn_context, outcome.into()).await {
                 break;
             }
+        }
+
+        if let Some(input) = recall_input.take() {
+            crate::recall::inject(&sess, &turn_context, input, cancellation_token.clone()).await;
         }
 
         // Note that pending_input would be something like a message the user
@@ -878,6 +883,19 @@ pub(crate) async fn built_tools(
 
     let plan_mode = !turn_context.mode_capabilities.mutation;
     let mut tools_config = turn_context.tools_config.clone();
+    if let Some(message) = crate::recall::prepare_for_router(sess, turn_context)
+        .or_cancel(cancellation_token)
+        .await?
+    {
+        sess.send_event(turn_context, EventMsg::Warning(WarningEvent { message }))
+            .await;
+    }
+    tools_config.recall_available = sess
+        .services
+        .recall
+        .as_ref()
+        .and_then(|runtime| runtime.ready_service())
+        .is_some();
     tools_config.machine_recovery = turn_context.config.machine_warnings.enabled
         && sess.state.lock().await.machine_recovery.unresolved();
     Ok(Arc::new(ToolRouter::from_config(

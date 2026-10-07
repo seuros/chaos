@@ -9,6 +9,25 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.13.0] - 2026-10-07
+
+Recall requires a PostgreSQL VFS mount with pgvector. The first activation needs
+network permission unless the pinned model is already cached under `chaos_home`.
+Changing models requires explicit reindexing.
+
+### Added
+- Native recall tools for scoped memory search, explicit storage and deletion,
+  permission-checked source opening, and receipt-gated use reinforcement.
+  Project and session memories are isolated; shared global search is opt-in.
+- Local Model2Vec embeddings and concurrent semantic/lexical retrieval through
+  Bonsai, with reciprocal-rank fusion, scoped deduplication, cancellation,
+  deadlines, and degraded results when one retrieval branch fails.
+- Opt-in automatic memory previews, treated as untrusted data. Reading a memory
+  does not reinforce it; explicit use is bounded and protected against replay.
+- Lazy, process-shared model preparation with pinned, verified artifacts.
+  Downloads honor network grants and configured egress across redirects;
+  verified cached models work offline. No sidecar or remote embedding service.
+
 ### Changed
 - Consolidate terminal, multiplexer, SSH, and display detection.
 - Headless builds no longer identify the terminal emulator.

@@ -45,6 +45,21 @@ impl ToolHandler for ToolGroupsHandler {
                 )));
             }
         };
+        crate::tools::groups::validate_groups(
+            &invocation.session.services.tool_group_catalog,
+            &args.groups,
+        )
+        .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?;
+        if enabled
+            && args
+                .groups
+                .iter()
+                .any(|group| group == crate::tools::groups::RECALL)
+        {
+            crate::recall::prepare(&invocation.session, &invocation.turn)
+                .await
+                .map_err(FunctionCallError::RespondToModel)?;
+        }
         let change = invocation
             .session
             .services

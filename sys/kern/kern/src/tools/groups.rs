@@ -11,6 +11,7 @@ pub(crate) const SESSION: &str = "session";
 pub(crate) const WEB: &str = "web";
 pub(crate) const CRON: &str = "cron";
 pub(crate) const MCP_MANAGEMENT: &str = "mcp-management";
+pub(crate) const RECALL: &str = "recall";
 
 pub(crate) struct ToolGroupFilter<'a> {
     pub(crate) catalog: &'a ToolGroupCatalog,
@@ -52,6 +53,10 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         (WEB, "Web retrieval and image generation"),
         (CRON, "Recurring job controls"),
         (MCP_MANAGEMENT, "Add and administer configured MCP servers"),
+        (
+            RECALL,
+            "Search and explicitly store scoped persistent memory",
+        ),
     ] {
         catalog.define_group(ToolGroupDefinition::new(id, description, false))?;
     }
@@ -133,6 +138,11 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         ToolExposure::groups([WEB]),
     )?;
     assign(&catalog, ["view_image"], ToolExposure::groups([FILESYSTEM]))?;
+    assign(
+        &catalog,
+        crate::tools::handlers::recall::NAMES,
+        ToolExposure::groups([RECALL]),
+    )?;
 
     let mut static_tool_names = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -188,6 +198,11 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         "web_search",
         "image_generation",
         "view_image",
+        "recall_search",
+        "recall_store",
+        "recall_delete",
+        "recall_open",
+        "recall_use",
     ]
     .into_iter()
     .map(str::to_string)
@@ -207,6 +222,27 @@ pub(crate) fn new_state(
         catalog.set_groups_enabled(&state, disabled_groups, true)?;
     }
     Ok(state)
+}
+
+/// Side-effect-free preflight, before a capability group can prepare assets.
+pub(crate) fn validate_groups(
+    catalog: &ToolGroupCatalog,
+    groups: &[String],
+) -> Result<(), ToolGroupError> {
+    let available: Vec<_> = catalog
+        .definitions()
+        .into_iter()
+        .map(|group| group.id)
+        .collect();
+    for group in groups {
+        if !available.contains(group) {
+            return Err(ToolGroupError::UnknownGroup {
+                group: group.clone(),
+                available,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn assign<const N: usize>(

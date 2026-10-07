@@ -13,6 +13,7 @@ mod mcp_task;
 pub(crate) mod minion_jobs;
 mod parent_effort;
 mod plan;
+pub(crate) mod recall;
 mod refresh_models;
 mod request_permissions;
 mod request_user_input;

@@ -503,6 +503,7 @@ fn make_test_session_services(
         network_proxy: None,
         network_approval,
         runtime_db: None,
+        recall: None,
         model_client: ModelClient::new(
             Some(auth_manager),
             conversation_id,

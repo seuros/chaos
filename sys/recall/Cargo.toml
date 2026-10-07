@@ -6,9 +6,12 @@ license.workspace = true
 publish.workspace = true
 
 [lib]
-doctest = false
+doctest = true
 name = "chaos_recall"
 path = "src/lib.rs"
+
+[features]
+test-support = []
 
 [dependencies]
 anyhow = { workspace = true }
@@ -17,12 +20,19 @@ tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 chaos-vfs = { workspace = true }
+chaos-synopsis = { workspace = true }
+model2vec-rs = { workspace = true }
+sha2 = { workspace = true }
 pgvector = { workspace = true, features = ["sqlx"] }
 sqlx = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
+time = { workspace = true, features = ["serde-well-known"] }
+uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 
 [lints]
 workspace = true

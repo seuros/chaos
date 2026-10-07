@@ -404,6 +404,7 @@ pub struct Config {
     /// Whether the model may compact early or defer once within a
     /// harness-computed safety band.
     pub agent_compaction_control: AgentCompactionControl,
+    pub recall_automatic: bool,
 
     /// Whether hook tools require human elicitation or standing authorization.
     pub hook_approval_policy: HookApprovalPolicy,
@@ -756,6 +757,8 @@ pub struct ConfigToml {
     /// harness-bounded deferral per pressure window.
     #[serde(default)]
     pub agent_compaction_control: Option<AgentCompactionControl>,
+    #[serde(default)]
+    pub recall_automatic: bool,
 
     /// Hook-tool mutation authorization. `on-request` requires human elicitation;
     /// `automatic` explicitly permits unattended management, not sandbox escalation.

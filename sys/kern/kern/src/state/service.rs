@@ -47,6 +47,8 @@ pub(crate) struct SessionServices {
     pub(crate) network_proxy: Option<StartedNetworkProxy>,
     pub(crate) network_approval: Arc<NetworkApprovalService>,
     pub(crate) runtime_db: Option<RuntimeDbHandle>,
+    /// PostgreSQL-gated shared handle; no preparation until first enable.
+    pub(crate) recall: Option<Arc<crate::recall::RecallRuntime>>,
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,
     /// Halluacinate scripting engine handle (Lua/WASM user scripts).

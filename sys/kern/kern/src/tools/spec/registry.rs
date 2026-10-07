@@ -137,6 +137,18 @@ pub(crate) fn build_specs_with_discoverable_tools(
         push_tool_spec(&mut builder, machine_recovery::tool(), false);
         builder.register_handler(machine_recovery::NAME, Arc::new(machine_recovery::Handler));
     }
+    if config.recall_available {
+        use crate::tools::handlers::recall;
+        let handler = Arc::new(recall::Handler);
+        for name in recall::NAMES {
+            let read_only = matches!(name, recall::SEARCH | "recall_open");
+            if plan_mode && !read_only {
+                continue;
+            }
+            push_tool_spec(&mut builder, recall::tool(name), read_only);
+            builder.register_handler(name, handler.clone());
+        }
+    }
 
     let shell_handler = Arc::new(ShellHandler);
     let exec_handler = Arc::new(ExecHandler);

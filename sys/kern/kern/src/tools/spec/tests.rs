@@ -112,6 +112,98 @@ fn capability_group_test_config() -> ToolsConfig {
 }
 
 #[test]
+fn recall_requires_ready_service_and_enabled_group_and_plan_is_read_only() {
+    let catalog = crate::tools::groups::build_catalog().unwrap();
+    let state = catalog.new_state();
+    let mut config = capability_group_test_config();
+    let has_recall = |tools: &[ConfiguredToolSpec]| {
+        tools
+            .iter()
+            .any(|tool| tool.spec.name().starts_with("recall_"))
+    };
+    assert!(!has_recall(&build_grouped_tools(
+        &config,
+        &catalog,
+        &state,
+        None,
+        &[]
+    )));
+    config.recall_available = true;
+    assert!(!has_recall(&build_grouped_tools(
+        &config,
+        &catalog,
+        &state,
+        None,
+        &[]
+    )));
+    catalog
+        .set_groups_enabled(&state, [crate::tools::groups::RECALL], true)
+        .unwrap();
+    let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
+    for name in crate::tools::handlers::recall::NAMES {
+        let tool = tools.iter().find(|tool| tool.spec.name() == name).unwrap();
+        assert_eq!(
+            tool.supports_parallel_tool_calls,
+            matches!(name, "recall_search" | "recall_open")
+        );
+        let ToolSpec::Function(spec) = &tool.spec else {
+            panic!()
+        };
+        let schema = serde_json::to_value(&spec.parameters).unwrap();
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(schema["properties"].get("project_id").is_none());
+        assert!(schema["properties"].get("session_id").is_none());
+    }
+    let (plan_tools, _) = build_specs_with_discoverable_tools(
+        &config,
+        None,
+        None,
+        &[],
+        vec![],
+        None,
+        true,
+        Some(ToolGroupFilter {
+            catalog: &catalog,
+            state: &state,
+        }),
+    )
+    .build();
+    assert!(
+        plan_tools
+            .iter()
+            .any(|tool| tool.spec.name() == "recall_search")
+    );
+    assert!(
+        !plan_tools
+            .iter()
+            .any(|tool| tool.spec.name() == "recall_store")
+    );
+    assert!(
+        !plan_tools
+            .iter()
+            .any(|tool| tool.spec.name() == "recall_delete")
+    );
+    assert!(
+        plan_tools
+            .iter()
+            .any(|tool| tool.spec.name() == "recall_open")
+    );
+    assert!(
+        !plan_tools
+            .iter()
+            .any(|tool| tool.spec.name() == "recall_use")
+    );
+    config.recall_available = false;
+    assert!(!has_recall(&build_grouped_tools(
+        &config,
+        &catalog,
+        &state,
+        None,
+        &[]
+    )));
+}
+
+#[test]
 fn machine_recovery_tool_is_conditional_exclusive_and_not_hidden_by_groups() {
     let catalog = crate::tools::groups::build_catalog().unwrap();
     let state = catalog.new_state();

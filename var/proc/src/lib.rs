@@ -9,8 +9,8 @@ mod extract;
 pub mod memories;
 mod migrations;
 pub mod minion_jobs;
-pub mod planning;
 mod model;
+pub mod planning;
 pub mod reviewer_orchestrations;
 mod runtime;
 

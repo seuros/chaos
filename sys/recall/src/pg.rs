@@ -1,20 +1,39 @@
-use anyhow::Context as _;
+use std::sync::LazyLock;
+
 use chaos_vfs::Vfs;
 use pgvector::Vector;
-use sqlx::AssertSqlSafe;
 use sqlx::PgPool;
-use tracing::{debug, instrument};
+use sqlx::migrate::Migrator;
+use time::OffsetDateTime;
+use tracing::instrument;
 
-use crate::store::{RecallDoc, RecallError, RecallStore, SearchRequest, SearchResult};
+use crate::store::{
+    RecallDoc, RecallError, RecallScope, RecallStore, RetrievalFilter, SearchRequest, SearchResult,
+    validate_embedding,
+};
 
-/// Dimension of embeddings stored in this table.
-/// Must match the model used by the indexer (potion-base-8M → 256).
-const DIM: i32 = 256;
+static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| {
+    let mut migrator = sqlx::migrate!("./db/migrate/postgres");
+    migrator.dangerous_set_table_name("_recall_migrations");
+    migrator
+});
 
-/// pgvector-backed recall store.
-///
-/// Expects the `vector` extension and the `recall_docs` table to exist.
-/// Call [`PgRecallStore::migrate`] once during startup.
+type Row = (
+    String,
+    String,
+    String,
+    String,
+    serde_json::Value,
+    f32,
+    String,
+    serde_json::Value,
+    bool,
+    f64,
+    OffsetDateTime,
+    OffsetDateTime,
+    Option<OffsetDateTime>,
+);
+
 #[derive(Debug, Clone)]
 pub struct PgRecallStore {
     pool: PgPool,
@@ -25,13 +44,10 @@ impl PgRecallStore {
         Self { pool }
     }
 
-    /// Build a store on the mounted backend. Recall is pgvector-backed, so a
-    /// SQLite mount has nothing to offer it.
     pub fn from_vfs() -> Result<Self, RecallError> {
         Self::from_pool(chaos_vfs::pool().map_err(anyhow::Error::from)?)
     }
 
-    /// Build a store on a backend the caller already holds.
     pub fn from_pool(pool: Vfs) -> Result<Self, RecallError> {
         match pool {
             Vfs::Postgres(pool) => Ok(Self::new(pool)),
@@ -41,167 +57,166 @@ impl PgRecallStore {
         }
     }
 
-    /// Create extension and table if absent. Idempotent.
     pub async fn migrate(&self) -> anyhow::Result<()> {
-        sqlx::query("CREATE EXTENSION IF NOT EXISTS vector")
-            .execute(&self.pool)
-            .await
-            .context("create vector extension")?;
-
-        sqlx::query(AssertSqlSafe(format!(
-            "CREATE TABLE IF NOT EXISTS recall_docs (
-                id          TEXT PRIMARY KEY,
-                content     TEXT NOT NULL,
-                metadata    JSONB NOT NULL DEFAULT '{{}}',
-                embedding   vector({DIM})
-            )"
-        )))
-        .execute(&self.pool)
-        .await
-        .context("create recall_docs table")?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS recall_docs_hnsw
-             ON recall_docs USING hnsw (embedding vector_cosine_ops)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("create hnsw index")?;
-
+        MIGRATOR.run(&self.pool).await?;
         Ok(())
     }
 
-    fn check_dim(&self, v: &[f32]) -> Result<(), RecallError> {
-        if v.len() != DIM as usize {
-            return Err(RecallError::DimMismatch {
-                expected: DIM as usize,
-                got: v.len(),
-            });
+    pub async fn bind_model(&self, fingerprint: &str) -> Result<(), RecallError> {
+        if fingerprint.is_empty() {
+            return Err(RecallError::InvalidInput("model fingerprint is empty"));
+        }
+        let bound: bool = sqlx::query_scalar("SELECT recall_bind_model($1)")
+            .bind(fingerprint)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(database_error)?;
+        if !bound {
+            return Err(RecallError::ModelMismatch);
         }
         Ok(())
+    }
+}
+
+fn database_error(error: sqlx::Error) -> RecallError {
+    let code = error
+        .as_database_error()
+        .and_then(sqlx::error::DatabaseError::code)
+        .map(std::borrow::Cow::into_owned);
+    match code.as_deref() {
+        Some("RC001") => RecallError::InvalidReceipt,
+        Some("RC002") => RecallError::ModelMismatch,
+        _ => RecallError::Backend(error.into()),
     }
 }
 
 impl RecallStore for PgRecallStore {
-    #[instrument(skip(self, doc))]
+    #[instrument(skip_all)]
     async fn index(&self, doc: RecallDoc) -> Result<(), RecallError> {
-        self.check_dim(&doc.embedding)?;
-        let vec = Vector::from(doc.embedding);
-        sqlx::query(
-            "INSERT INTO recall_docs (id, content, metadata, embedding)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (id) DO UPDATE
-               SET content   = EXCLUDED.content,
-                   metadata  = EXCLUDED.metadata,
-                   embedding = EXCLUDED.embedding",
-        )
-        .bind(&doc.id)
-        .bind(&doc.content)
-        .bind(&doc.metadata)
-        .bind(vec)
-        .execute(&self.pool)
-        .await
-        .context("upsert recall doc")
-        .map_err(RecallError::Backend)?;
-
-        Ok(())
+        self.index_batch(vec![doc]).await
     }
 
-    #[instrument(skip(self, docs), fields(n = docs.len()))]
-    async fn index_batch(&self, docs: Vec<RecallDoc>) -> Result<(), RecallError> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("begin transaction")
-            .map_err(RecallError::Backend)?;
-
+    #[instrument(skip_all, fields(count = docs.len()))]
+    async fn index_batch(&self, mut docs: Vec<RecallDoc>) -> Result<(), RecallError> {
+        for doc in &docs {
+            doc.validate()?;
+        }
+        docs.sort_by(|left, right| (&left.scope, &left.id).cmp(&(&right.scope, &right.id)));
+        let mut tx = self.pool.begin().await.map_err(database_error)?;
         for doc in docs {
-            self.check_dim(&doc.embedding)?;
-            let vec = Vector::from(doc.embedding);
-            sqlx::query(
-                "INSERT INTO recall_docs (id, content, metadata, embedding)
-                 VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (id) DO UPDATE
-                   SET content   = EXCLUDED.content,
-                       metadata  = EXCLUDED.metadata,
-                       embedding = EXCLUDED.embedding",
-            )
-            .bind(&doc.id)
-            .bind(&doc.content)
-            .bind(&doc.metadata)
-            .bind(vec)
-            .execute(&mut *tx)
-            .await
-            .context("upsert in batch")
-            .map_err(RecallError::Backend)?;
+            memory::write_doc(&mut tx, doc, crate::MemoryOptions::default()).await?;
         }
-
-        tx.commit()
-            .await
-            .context("commit batch")
-            .map_err(RecallError::Backend)?;
-
+        tx.commit().await.map_err(database_error)?;
         Ok(())
     }
 
-    #[instrument(skip(self, req), fields(limit = req.limit))]
+    #[instrument(skip_all, fields(limit = req.filter.limit))]
     async fn search(&self, req: &SearchRequest) -> Result<Vec<SearchResult>, RecallError> {
-        self.check_dim(&req.query_vec)?;
-
-        if let Some(ef) = req.ef_search {
-            sqlx::query(AssertSqlSafe(format!("SET hnsw.ef_search = {ef}")))
-                .execute(&self.pool)
+        req.filter.validate()?;
+        validate_embedding(&req.query_vec)?;
+        let (kind, scope_id) = req.filter.scope.parts();
+        let rows: Vec<Row> =
+            sqlx::query_as("SELECT * FROM recall_search($1, $2, $3, $4, $5, $6, $7)")
+                .bind(Vector::from(req.query_vec.clone()))
+                .bind(kind)
+                .bind(scope_id)
+                .bind(req.filter.include_global)
+                .bind(&req.filter.model_fingerprint)
+                .bind(req.filter.limit as i64)
+                .bind(req.filter.automatic_only)
+                .fetch_all(&self.pool)
                 .await
-                .context("set ef_search")
-                .map_err(RecallError::Backend)?;
-        }
-
-        let vec = Vector::from(req.query_vec.clone());
-
-        let rows: Vec<(String, String, serde_json::Value, f32)> = sqlx::query_as(
-            "SELECT id, content, metadata,
-                    (1 - (embedding <=> $1))::float4 AS score
-             FROM recall_docs
-             ORDER BY embedding <=> $1
-             LIMIT $2",
-        )
-        .bind(vec)
-        .bind(req.limit as i64)
-        .fetch_all(&self.pool)
-        .await
-        .context("vector search")
-        .map_err(RecallError::Backend)?;
-
-        let results = rows
-            .into_iter()
-            .filter(|(_, _, _, score)| req.min_score.is_none_or(|min| *score >= min))
-            .map(|(id, content, metadata, score)| SearchResult {
-                id,
-                score,
-                content,
-                metadata,
-            })
-            .collect();
-
-        debug!("search returned {} results", {
-            let r: &Vec<SearchResult> = &results;
-            r.len()
-        });
-        Ok(results)
+                .map_err(database_error)?;
+        decode_rows(rows)
     }
 
-    #[instrument(skip(self))]
-    async fn delete(&self, id: &str) -> Result<(), RecallError> {
-        sqlx::query("DELETE FROM recall_docs WHERE id = $1")
+    #[instrument(skip_all, fields(limit = filter.limit))]
+    async fn lexical_search(
+        &self,
+        query: &str,
+        filter: &RetrievalFilter,
+    ) -> Result<Vec<SearchResult>, RecallError> {
+        filter.validate()?;
+        let (kind, scope_id) = filter.scope.parts();
+        let rows: Vec<Row> =
+            sqlx::query_as("SELECT * FROM recall_lexical_search($1, $2, $3, $4, $5, $6, $7)")
+                .bind(query)
+                .bind(kind)
+                .bind(scope_id)
+                .bind(filter.include_global)
+                .bind(&filter.model_fingerprint)
+                .bind(filter.limit as i64)
+                .bind(filter.automatic_only)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(database_error)?;
+        decode_rows(rows)
+    }
+
+    #[instrument(skip_all)]
+    async fn delete(&self, scope: &RecallScope, id: &str) -> Result<(), RecallError> {
+        scope.validate()?;
+        if id.trim().is_empty() {
+            return Err(RecallError::InvalidInput("document ID is empty"));
+        }
+        let (kind, scope_id) = scope.parts();
+        sqlx::query("SELECT recall_delete($1, $2, $3)")
+            .bind(kind)
+            .bind(scope_id)
             .bind(id)
             .execute(&self.pool)
             .await
-            .context("delete recall doc")
-            .map_err(RecallError::Backend)?;
+            .map_err(database_error)?;
         Ok(())
     }
 }
 
+fn decode_rows(rows: Vec<Row>) -> Result<Vec<SearchResult>, RecallError> {
+    rows.into_iter()
+        .map(
+            |(
+                kind,
+                scope_id,
+                id,
+                content,
+                metadata,
+                score,
+                revision,
+                sources,
+                automatic,
+                charge,
+                created_at,
+                updated_at,
+                last_used_at,
+            )| {
+                let options = crate::MemoryOptions {
+                    sources: serde_json::from_value(sources).map_err(anyhow::Error::from)?,
+                    automatic,
+                    charge,
+                };
+                options.validate()?;
+                Ok(SearchResult {
+                    scope: RecallScope::from_parts(kind, scope_id)?,
+                    id,
+                    score,
+                    content,
+                    metadata,
+                    handle: crate::MemoryHandle {
+                        revision,
+                        options,
+                        timestamps: crate::MemoryTimestamps {
+                            created_at,
+                            updated_at,
+                            last_used_at,
+                        },
+                    },
+                })
+            },
+        )
+        .collect()
+}
+
+mod memory;
+
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

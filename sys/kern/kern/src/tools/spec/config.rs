@@ -19,6 +19,7 @@ use crate::original_image_detail::can_request_original_image_detail;
 pub(crate) struct ToolsConfig {
     pub model_tools_disabled: bool,
     pub machine_recovery: bool,
+    pub recall_available: bool,
     pub available_models: Vec<ModelPreset>,
     pub shell_type: ConfigShellToolType,
     pub allow_login_shell: bool,
@@ -107,6 +108,7 @@ impl ToolsConfig {
         Self {
             model_tools_disabled,
             machine_recovery: false,
+            recall_available: false,
             available_models: available_models_ref.to_vec(),
             shell_type,
             allow_login_shell: true,

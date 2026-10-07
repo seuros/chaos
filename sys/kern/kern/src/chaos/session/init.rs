@@ -487,6 +487,8 @@ impl Session {
             }
         };
 
+        let recall = crate::recall::for_session(config.chaos_home.clone());
+
         let tool_group_catalog =
             crate::tools::groups::build_catalog().context("failed to build tool group catalog")?;
         // Clamp harnesses already own tool gating. Starting their bridge with operational
@@ -528,6 +530,7 @@ impl Session {
             network_proxy,
             network_approval: Arc::clone(&network_approval),
             runtime_db: state_db_ctx.clone(),
+            recall,
             halluacinate,
             model_client: crate::client::ModelClient::new(
                 Some(Arc::clone(&auth_manager)),

@@ -60,6 +60,27 @@ pub(crate) struct SpawnedAgent {
     pub(crate) provenance: EffectiveSpawnProvenance,
 }
 
+/// Apply only the caller's explicit attachment, after either fresh or forked
+/// session creation and before the initial user turn is submitted.
+async fn attach_spawn_plan(
+    session: &crate::chaos::Session,
+    options: &SpawnAgentOptions,
+) -> ChaosResult<()> {
+    if let Some(plan) = options.plan.as_deref() {
+        let db = session
+            .runtime_db()
+            .ok_or_else(|| ChaosErr::Fatal("child planning database unavailable".into()))?;
+        db.planning_attach(&session.conversation_id.to_string(), Some(plan))
+            .await
+            .map_err(|error| ChaosErr::Fatal(format!("child plan attachment failed: {error}")))?;
+        session
+            .send_attached_plan()
+            .await
+            .map_err(|error| ChaosErr::Fatal(format!("child plan read failed: {error}")))?;
+    }
+    Ok(())
+}
+
 fn verify_effective_spawn_binding(
     expected_provider: &str,
     expected_model: Option<&str>,
@@ -487,24 +508,7 @@ impl AgentControl {
         state.notify_process_created(process_id);
 
         let submitted = async {
-            if let Some(plan) = options.plan.as_deref() {
-                let db = new_process
-                    .process
-                    .runtime_db()
-                    .ok_or_else(|| ChaosErr::Fatal("child planning database unavailable".into()))?;
-                db.planning_attach(&process_id.to_string(), Some(plan))
-                    .await
-                    .map_err(|error| {
-                        ChaosErr::Fatal(format!("child plan attachment failed: {error}"))
-                    })?;
-                new_process
-                    .process
-                    .chaos
-                    .session
-                    .send_attached_plan()
-                    .await
-                    .map_err(|error| ChaosErr::Fatal(format!("child plan read failed: {error}")))?;
-            }
+            attach_spawn_plan(&new_process.process.chaos.session, &options).await?;
             self.send_input_with_schema(process_id, items, final_output_json_schema)
                 .await
         }

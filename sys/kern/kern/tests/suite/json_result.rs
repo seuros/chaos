@@ -9,6 +9,7 @@ use core_test_support::responses;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
+use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use responses::ev_assistant_message;
@@ -68,11 +69,19 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
     };
     responses::mount_sse_once_match(&server, match_json_text_param, sse1).await;
 
+    // The session still needs its home/database and process table while the turn runs.
+    // Destructuring a temporary drops those omitted fixture fields before submission.
+    let fixture = test_chaos().build(&server).await?;
     let TestChaos {
         process: chaos,
         cwd,
+        config,
         ..
-    } = test_chaos().build(&server).await?;
+    } = &fixture;
+    assert!(
+        config.chaos_home.is_dir(),
+        "fixture home was removed before submitting the JSON-result turn"
+    );
 
     // 1) Normal user input – should hit server once.
     chaos
@@ -95,7 +104,7 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
         })
         .await?;
 
-    let message = wait_for_event_match(&chaos, |ev| match ev {
+    let message = wait_for_event_match(chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::AgentMessage(item),
             ..
@@ -122,6 +131,9 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
         json.get("final_answer"),
         Some(&serde_json::Value::String("final_answer".into()))
     );
+
+    wait_for_event(chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    chaos.shutdown_and_wait().await?;
 
     Ok(())
 }

@@ -9,6 +9,12 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- `chaos update` installs the latest GitHub release after confirmation,
+  verifying its SHA-256 and the complete binary bundle before atomically
+  replacing it. Only GitHub release builds include it; Nix, cargo, and source
+  installs are refused. Package builds omit it unless `self-update` is enabled.
+
 ## [47.13.0] - 2026-10-07
 
 Recall requires a PostgreSQL VFS mount with pgvector. The first activation needs

@@ -19,12 +19,15 @@ workspace = true
 
 [features]
 default = ["tui"]
+# `chaos update` from GitHub releases; only the GitHub release build enables it.
+self-update = ["dep:flate2", "dep:sha2", "dep:tar"]
 # Omit the interactive console and renderer from headless/server builds.
 tui = ["dep:chaos-console", "dep:owo-colors", "dep:supports-color", "chaos-sysinfo/tui"]
 
 [dependencies]
 alcatraz = { workspace = true }
 anyhow = { workspace = true }
+flate2 = { workspace = true, optional = true }
 chaos-argv = { workspace = true }
 chaos-getopt = { workspace = true }
 chaos-sysctl = { workspace = true }
@@ -51,8 +54,10 @@ owo-colors = { workspace = true, optional = true }
 regex-lite = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true, optional = true }
 thiserror = { workspace = true }
 supports-color = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",

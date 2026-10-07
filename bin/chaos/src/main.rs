@@ -40,6 +40,8 @@ mod mcp_cmd;
 mod models_cmd;
 mod planning_cmd;
 mod reflex_cmd;
+#[cfg(feature = "self-update")]
+mod update_cmd;
 
 use crate::mcp_cmd::McpCli;
 use crate::models_cmd::ModelsCli;
@@ -178,6 +180,10 @@ enum Subcommand {
 
     /// List available models for the active provider.
     Models(ModelsCli),
+
+    /// Replace this installation with the latest GitHub release.
+    #[cfg(feature = "self-update")]
+    Update(update_cmd::UpdateCommand),
 
     /// Hidden MCP bridge used by clamp subprocesses.
     #[usage(hide, name = "clamp-session-bridge")]
@@ -534,6 +540,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         Some(Subcommand::Models(cli)) => {
             models_cmd::run(cli, models_profile, models_provider).await?;
         }
+        #[cfg(feature = "self-update")]
+        Some(Subcommand::Update(command)) => update_cmd::run(command).await?,
         Some(Subcommand::ClampSessionBridge) => {
             chaos_mcpd::run_clamp_session_bridge_main().await?;
         }
@@ -584,7 +592,7 @@ async fn run_interactive_tui(
     .await
 }
 
-#[cfg(feature = "tui")]
+#[cfg(any(feature = "tui", feature = "self-update"))]
 fn confirm(prompt: &str) -> std::io::Result<bool> {
     eprintln!("{prompt}");
 

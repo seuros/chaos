@@ -104,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           artifact="chaos-${{ needs.prepare.outputs.tag_name }}-${{ matrix.target }}.tar.gz"
-          cargo build --release --target ${{ matrix.target }} --bin chaos --bin alcatraz --bin chaos_journald --bin chaos-forkve-wrapper
+          cargo build --release --target ${{ matrix.target }} --features chaos-cli/self-update --bin chaos --bin alcatraz --bin chaos_journald --bin chaos-forkve-wrapper
           release_dir="target/${{ matrix.target }}/release"
           for bin in chaos alcatraz chaos_journald chaos-forkve-wrapper; do
             strip "${release_dir}/$bin" 2>/dev/null || true

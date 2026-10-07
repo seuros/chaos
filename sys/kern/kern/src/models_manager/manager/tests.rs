@@ -129,6 +129,53 @@ fn anthropic_provider_for(gateway: &MockServer) -> ModelProviderInfo {
 }
 
 #[tokio::test]
+async fn compatible_catalog_routes_official_xai_alias_through_xai_adapter() {
+    let home = tempdir().unwrap();
+    let gateway = MockServer::start().await;
+    let provider = ModelProviderInfo {
+        name: "My Grok alias".into(),
+        egress: Some(
+            chaos_client::Egress::parse(&format!("{}/egress/chaos", gateway.uri())).unwrap(),
+        ),
+        experimental_bearer_token: Some("test-bearer-token".into()),
+        ..provider_for("https://cli-chat-proxy.grok.com/v1".into())
+    };
+    let manager = manager_over_own_cache(
+        home.path().to_path_buf(),
+        AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("test-key")),
+        provider,
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/egress/chaos/v1/models"))
+        .and(wiremock::matchers::header(
+            "x-lsd-upstream",
+            "https://cli-chat-proxy.grok.com",
+        ))
+        .and(wiremock::matchers::header(
+            "x-xai-token-auth",
+            "xai-grok-cli",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{"id": "grok-4.7"}]
+        })))
+        .expect(1)
+        .mount(&gateway)
+        .await;
+    let catalog = manager.fetch_catalog().await.unwrap();
+    let FetchedCatalog::Live { models, .. } = catalog else {
+        panic!("expected live Grok catalog");
+    };
+    assert_eq!(models[0].slug, "grok-4.7");
+    assert!(
+        models[0]
+            .input_modalities
+            .contains(&chaos_ipc::openai_models::InputModality::Image)
+    );
+    gateway.verify().await;
+}
+
+#[tokio::test]
 async fn refresh_models_forces_network_and_propagates_failure() {
     for automatic in [true, false] {
         let home = tempdir().unwrap();

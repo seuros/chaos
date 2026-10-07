@@ -1,33 +1,18 @@
 use std::sync::Arc;
 
-use chaos_abi::AbiError;
 use chaos_abi::AdapterFuture;
 use chaos_abi::ModelAdapter;
-use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
-use chaos_abi::TurnStream;
 use chaos_client::RequestTelemetry;
-use rama::http::HeaderMap;
-use rama::http::HeaderName;
-use rama::http::HeaderValue;
-use serde_json::Value;
-use tokio::sync::mpsc;
 
 use crate::AuthProvider;
 use crate::Provider;
 use crate::RamaTransport;
-use crate::ResponsesClient;
 use crate::ResponsesOptions;
 use crate::SseTelemetry;
-use crate::requests::responses::Compression;
+use crate::responses_adapter::ResponsesAdapter;
 
 pub use crate::endpoint::responses::ResponsesWebSocket;
-
-const GROK_SUBSCRIPTION_PROXY_HOST: &str = "cli-chat-proxy.grok.com";
-const GROK_CLIENT_VERSION_HEADER: &str = "x-grok-client-version";
-const GROK_MODEL_OVERRIDE_HEADER: &str = "x-grok-model-override";
-const XAI_TOKEN_AUTH_HEADER: &str = "x-xai-token-auth";
-const XAI_TOKEN_AUTH_VALUE: &str = "xai-grok-cli";
 
 #[derive(Clone, Default)]
 pub struct StaticAuthProvider {
@@ -61,23 +46,13 @@ impl AuthProvider for StaticAuthProvider {
 }
 
 pub struct OpenAiAdapter<A: AuthProvider> {
-    client: ResponsesClient<RamaTransport, A>,
-    options: ResponsesOptions,
-    default_model: Option<String>,
-    /// Base URL captured before the provider is consumed by `ResponsesClient`.
-    /// Used exclusively for model discovery (`GET {base_url}/models`).
-    discovery_base_url: String,
-    /// Bearer token captured from the auth provider at construction time.
-    discovery_token: Option<String>,
-    discovery_egress: Option<chaos_client::Egress>,
-    /// Session-scoped representer — projects Chaos-ABI items to this provider's wire format.
-    representer: crate::representer::SessionRepresenter,
+    responses: ResponsesAdapter<A>,
 }
 
 impl<A: AuthProvider> std::fmt::Debug for OpenAiAdapter<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpenAiAdapter")
-            .field("default_model", &self.default_model)
+            .field("default_model", &self.responses.default_model)
             .field("options", &"<responses-options>")
             .finish()
     }
@@ -118,49 +93,33 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
         default_model: Option<String>,
         representer: crate::representer::SessionRepresenter,
     ) -> Self {
-        let discovery_base_url = provider.base_url.clone();
-        let discovery_token = auth.bearer_token();
-        let discovery_egress = provider.egress.clone();
         Self {
-            client: ResponsesClient::new(transport, provider, auth),
-            options: ResponsesOptions::default(),
-            default_model,
-            discovery_base_url,
-            discovery_token,
-            discovery_egress,
-            representer,
+            responses: ResponsesAdapter::new(transport, provider, auth, default_model, representer),
         }
     }
 
     pub fn with_options(mut self, options: ResponsesOptions) -> Self {
-        self.options = options;
+        self.responses = self.responses.with_options(options);
         self
     }
 
     pub fn with_websocket(mut self, websocket: Arc<ResponsesWebSocket>) -> Self {
-        self.client = self.client.with_websocket(websocket);
+        self.responses = self.responses.with_websocket(websocket);
         self
     }
 
     /// Socket-only prewarm: no generation, request body, or auth refresh.
     pub fn prewarm(&self) {
-        self.client.prewarm(&self.options);
+        self.responses.prewarm();
     }
 
     pub fn with_telemetry(
-        self,
+        mut self,
         request: Option<Arc<dyn RequestTelemetry>>,
         sse: Option<Arc<dyn SseTelemetry>>,
     ) -> Self {
-        Self {
-            client: self.client.with_telemetry(request, sse),
-            options: self.options,
-            default_model: self.default_model,
-            discovery_base_url: self.discovery_base_url,
-            discovery_token: self.discovery_token,
-            discovery_egress: self.discovery_egress,
-            representer: self.representer,
-        }
+        self.responses = self.responses.with_telemetry(request, sse);
+        self
     }
 }
 
@@ -170,46 +129,8 @@ where
 {
     fn stream(&self, mut request: TurnRequest) -> AdapterFuture<'_> {
         Box::pin(async move {
-            if request.model.is_empty()
-                && let Some(default_model) = self.default_model.as_ref()
-            {
-                request.model = default_model.clone();
-            }
-
-            let mut options = responses_options_from_turn_request(&request, self.options.clone());
-            insert_grok_subscription_headers(
-                &self.discovery_base_url,
-                &request.model,
-                &mut options.extra_headers,
-            );
-            let api_request = crate::adapter::turn_request_to_api_request(
-                request,
-                self.representer.as_representer(),
-            );
-            let api_stream = self
-                .client
-                .stream_request(api_request, options)
-                .await
-                .map_err(AbiError::from)?;
-
-            let (tx_event, rx_event) = mpsc::channel(1600);
-            tokio::spawn(async move {
-                let mut api_stream = api_stream;
-                use futures::StreamExt;
-                loop {
-                    let event = tokio::select! {
-                        _ = tx_event.closed() => return,
-                        event = api_stream.next() => event,
-                    };
-                    let Some(event) = event else { return };
-                    let mapped = event.map(TurnEvent::from).map_err(AbiError::from);
-                    if tx_event.send(mapped).await.is_err() {
-                        return;
-                    }
-                }
-            });
-
-            Ok(TurnStream { rx_event })
+            let options = self.responses.prepare_turn(&mut request);
+            self.responses.stream(request, options).await
         })
     }
 
@@ -224,316 +145,8 @@ where
     }
 
     fn list_models(&self) -> chaos_abi::ListModelsFuture<'_> {
-        let base_url = self.discovery_base_url.clone();
-        let token = self.discovery_token.clone();
-        let egress = self.discovery_egress.clone();
-        Box::pin(async move { fetch_openai_models(&base_url, token.as_deref(), egress).await })
+        Box::pin(async move { self.responses.list_models(Default::default()).await })
     }
-}
-
-fn responses_options_from_turn_request(
-    request: &TurnRequest,
-    mut options: ResponsesOptions,
-) -> ResponsesOptions {
-    if request.extensions.contains_key("request_headers") {
-        options.extra_headers = parse_request_headers(request.extensions.get("request_headers"));
-    }
-    if request.extensions.contains_key("compression") {
-        options.compression = parse_compression(request.extensions.get("compression"));
-    }
-    if request.turn_state.is_some() {
-        options.turn_state = request.turn_state.clone();
-    }
-    options
-}
-
-fn parse_request_headers(value: Option<&Value>) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    let Some(Value::Object(entries)) = value else {
-        return headers;
-    };
-    for (name, value) in entries {
-        if let Some(value) = value.as_str()
-            && let (Ok(name), Ok(value)) = (
-                HeaderName::try_from(name.as_str()),
-                HeaderValue::from_str(value),
-            )
-        {
-            headers.insert(name, value);
-        }
-    }
-    headers
-}
-
-fn parse_compression(value: Option<&Value>) -> Compression {
-    match value.and_then(Value::as_str) {
-        Some("zstd") => Compression::Zstd,
-        _ => Compression::None,
-    }
-}
-
-fn is_grok_subscription_proxy(base_url: &str) -> bool {
-    url::Url::parse(base_url).is_ok_and(|url| url.host_str() == Some(GROK_SUBSCRIPTION_PROXY_HOST))
-}
-
-fn insert_grok_subscription_headers(base_url: &str, model: &str, headers: &mut HeaderMap) {
-    if !is_grok_subscription_proxy(base_url) {
-        return;
-    }
-    headers.insert(
-        HeaderName::from_static(GROK_CLIENT_VERSION_HEADER),
-        HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
-    );
-    if let Ok(model) = HeaderValue::from_str(model) {
-        headers.insert(HeaderName::from_static(GROK_MODEL_OVERRIDE_HEADER), model);
-    }
-}
-
-// ── Model discovery ────────────────────────────────────────────────────────
-
-/// Whether a Grok model id served through the subscription proxy is known to
-/// accept image input.
-///
-/// The proxy's `/models` listing does not report vision for the Grok 4 family,
-/// so discovery alone marks them text-only and every image is stripped from
-/// history before the request leaves. The Grok 4 chat models take images on
-/// the subscription proxy; this fallback says so where discovery is silent.
-/// Coding models are not included in the fallback.
-fn grok_proxy_model_accepts_images(base_url: &str, id: &str) -> bool {
-    if !is_grok_subscription_proxy(base_url) {
-        return false;
-    }
-    let id = id.to_ascii_lowercase();
-    let grok_4 = id == "grok-4" || id.starts_with("grok-4.") || id.starts_with("grok-4-");
-    grok_4 && !id.contains("code")
-}
-
-/// Resolve image support for a discovered model.
-///
-/// A provider that says yes is believed. A "no" or silence is overridden only
-/// for models this program knows better about (see
-/// [`grok_proxy_model_accepts_images`]).
-fn resolve_supports_images(base_url: &str, id: &str, declared: Option<bool>) -> bool {
-    declared == Some(true) || grok_proxy_model_accepts_images(base_url, id)
-}
-
-/// Detect native server-side tools a provider supports based on its base URL.
-///
-/// xAI exposes `web_search` and `x_search` as Responses-API server-side tools.
-/// Other OpenAI-compat providers typically do not, so we default to nothing.
-fn native_tools_for_base_url(base_url: &str) -> Vec<String> {
-    if base_url.contains("x.ai") {
-        vec!["web_search".to_string(), "x_search".to_string()]
-    } else {
-        vec![]
-    }
-}
-
-/// Families that share a `/models` listing with chat models while being unable
-/// to answer a prompt. Matched as substrings of the model id.
-const NON_CONVERSATIONAL_MARKERS: &[&str] = &[
-    "embed",
-    "ocr",
-    "moderation",
-    "rerank",
-    "guard",
-    "tts",
-    "stt",
-    "whisper",
-    "transcribe",
-    "speech",
-    "image",
-    "video",
-];
-
-/// Whether a discovered model can carry a turn.
-///
-/// A provider that declares its capabilities is taken at its word. The rest are
-/// judged by name, which is crude, but a listing is otherwise dominated by
-/// models nothing in this program can call: a prompt sent to an embedding or
-/// transcription endpoint is an error, not a conversation.
-fn can_carry_a_turn(id: &str, declares_chat: Option<bool>) -> bool {
-    if let Some(declared) = declares_chat {
-        return declared;
-    }
-    let id = id.to_ascii_lowercase();
-    !NON_CONVERSATIONAL_MARKERS
-        .iter()
-        .any(|marker| id.contains(marker))
-}
-
-/// Fetch models from an OpenAI-compatible `GET /models` endpoint.
-///
-/// The wire format is `{ "object": "list", "data": [{ "id", "object",
-/// "created", "owned_by" }] }`. OpenAI does not expose capability metadata
-/// here, so all `supports_*` fields default to `false` and token limits are
-/// left as `None`. Kern converts the result via `model_info_from_abi`, which
-/// fills in safe defaults — crucially without setting `used_fallback_model_metadata`,
-/// so the "Model metadata not found" warning is suppressed for known slugs.
-///
-/// This covers OpenAI, xAI/Grok, DeepSeek, and any other provider that
-/// implements the OpenAI-compat `/models` endpoint.
-async fn fetch_openai_models(
-    base_url: &str,
-    token: Option<&str>,
-    egress: Option<chaos_client::Egress>,
-) -> Result<Vec<chaos_abi::AbiModelInfo>, chaos_abi::ListModelsError> {
-    use rama::Service;
-    use rama::http::Body;
-    use rama::http::Request;
-    use rama::http::StatusCode;
-    use rama::http::body::util::BodyExt;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    struct ModelsListResponse {
-        data: Vec<ModelEntry>,
-    }
-
-    #[derive(Deserialize)]
-    struct ModelEntry {
-        id: String,
-        /// Human-readable name when provided by the provider.
-        #[serde(default)]
-        #[serde(alias = "name")]
-        display_name: Option<String>,
-        /// Short human description when provided by the provider.
-        #[serde(default)]
-        description: Option<String>,
-        /// Context window in tokens. Captured under multiple field names.
-        #[serde(default)]
-        #[serde(alias = "context_window")]
-        #[serde(alias = "max_context_tokens")]
-        #[serde(alias = "max_context_length")]
-        #[serde(alias = "max_input_tokens")]
-        context_length: Option<i64>,
-        /// Max output tokens when exposed.
-        #[serde(default)]
-        #[serde(alias = "max_output_tokens")]
-        max_tokens_output: Option<i64>,
-        /// Reasoning/thinking capability.
-        #[serde(default)]
-        #[serde(alias = "supports_thinking")]
-        supports_reasoning: Option<bool>,
-        /// Image input capability.
-        #[serde(default)]
-        #[serde(alias = "supports_vision")]
-        #[serde(alias = "supports_image_input")]
-        supports_image_in: Option<bool>,
-        /// Capability block exposed by providers that publish one.
-        #[serde(default)]
-        capabilities: Option<ModelCapabilities>,
-    }
-
-    /// A provider that publishes what its models can do is more reliable than
-    /// any guess made from a slug, so every field here outranks the top-level
-    /// hints and the name heuristic alike.
-    #[derive(Deserialize, Default)]
-    struct ModelCapabilities {
-        #[serde(default)]
-        #[serde(alias = "chat")]
-        #[serde(alias = "chat_completion")]
-        completion_chat: Option<bool>,
-        #[serde(default)]
-        #[serde(alias = "image_input")]
-        vision: Option<bool>,
-        #[serde(default)]
-        #[serde(alias = "thinking")]
-        reasoning: Option<bool>,
-    }
-
-    let url = format!("{}/models", base_url.trim_end_matches('/'));
-
-    let mut builder = Request::builder().method("GET").uri(url.as_str());
-    if let Some(token) = token {
-        let bearer = format!("Bearer {token}");
-        builder = builder.header(rama::http::header::AUTHORIZATION, bearer);
-    }
-    if is_grok_subscription_proxy(base_url) {
-        builder = builder
-            .header(XAI_TOKEN_AUTH_HEADER, XAI_TOKEN_AUTH_VALUE)
-            .header(GROK_CLIENT_VERSION_HEADER, env!("CARGO_PKG_VERSION"));
-    }
-    let request = builder
-        .body(Body::empty())
-        .map_err(|e| chaos_abi::ListModelsError::Failed {
-            message: e.to_string(),
-        })?;
-
-    let client = chaos_client::default_rama_http_client_with_egress(egress);
-    let response = client
-        .serve(request)
-        .await
-        .map_err(|e| chaos_abi::ListModelsError::Failed {
-            message: format!("transport: {e}"),
-        })?;
-
-    let status = response.status();
-    if status == StatusCode::NOT_FOUND {
-        return Err(chaos_abi::ListModelsError::Unsupported);
-    }
-    if !status.is_success() {
-        let body = response
-            .into_body()
-            .collect()
-            .await
-            .map(|b| String::from_utf8_lossy(&b.to_bytes()).to_string())
-            .unwrap_or_default();
-        return Err(chaos_abi::ListModelsError::Failed {
-            message: format!("HTTP {status}: {body}"),
-        });
-    }
-
-    let body = response
-        .into_body()
-        .collect()
-        .await
-        .map_err(|e| chaos_abi::ListModelsError::Failed {
-            message: e.to_string(),
-        })?
-        .to_bytes();
-
-    let resp: ModelsListResponse =
-        serde_json::from_slice(&body).map_err(|e| chaos_abi::ListModelsError::Failed {
-            message: format!("parse: {e}"),
-        })?;
-
-    let native_tools = native_tools_for_base_url(base_url);
-    let models = resp
-        .data
-        .into_iter()
-        .filter(|m| {
-            can_carry_a_turn(
-                &m.id,
-                m.capabilities
-                    .as_ref()
-                    .and_then(|caps| caps.completion_chat),
-            )
-        })
-        .map(|m| {
-            let id = m.id;
-            let caps = m.capabilities.unwrap_or_default();
-            let supports_images =
-                resolve_supports_images(base_url, &id, caps.vision.or(m.supports_image_in));
-            chaos_abi::AbiModelInfo {
-                display_name: m.display_name.unwrap_or_else(|| id.clone()),
-                id,
-                // OpenAI-compatible discovery is vendor-neutral. The configured
-                // provider or a richer catalog may fill this explicitly.
-                model_family: chaos_ipc::openai_models::ModelFamily::default(),
-                description: m.description,
-                max_input_tokens: m.context_length,
-                max_output_tokens: m.max_tokens_output,
-                supports_thinking: caps.reasoning.or(m.supports_reasoning).unwrap_or(false),
-                supports_images,
-                supports_structured_output: false,
-                supports_reasoning_effort: false,
-                native_server_side_tools: native_tools.clone(),
-            }
-        })
-        .collect();
-
-    Ok(models)
 }
 
 #[cfg(test)]

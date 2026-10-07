@@ -614,18 +614,38 @@ impl ModelClientSession {
                     options: &options,
                 },
             )?;
-            let mut adapter = OpenAiAdapter::new(
-                transport,
-                client_setup.api_provider,
-                client_setup.api_auth,
-                Some(model_info.slug.clone()),
-                self.client.state.representer.clone(),
-            )
-            .with_options(options.clone())
-            .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-            if let Some(websocket) = &self.client.state.responses_websocket {
-                adapter = adapter.with_websocket(Arc::clone(websocket));
-            }
+            let adapter: Box<dyn chaos_abi::ModelAdapter> = if self.client.state.provider_id
+                == "xai"
+                || chaos_parrot::xai::is_xai_endpoint(&client_setup.api_provider.base_url)
+            {
+                let mut adapter = chaos_parrot::xai::XaiAdapter::new(
+                    transport,
+                    client_setup.api_provider,
+                    client_setup.api_auth,
+                    Some(model_info.slug.clone()),
+                    self.client.state.representer.clone(),
+                )
+                .with_options(options.clone())
+                .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
+                if let Some(websocket) = &self.client.state.responses_websocket {
+                    adapter = adapter.with_websocket(Arc::clone(websocket));
+                }
+                Box::new(adapter)
+            } else {
+                let mut adapter = OpenAiAdapter::new(
+                    transport,
+                    client_setup.api_provider,
+                    client_setup.api_auth,
+                    Some(model_info.slug.clone()),
+                    self.client.state.representer.clone(),
+                )
+                .with_options(options.clone())
+                .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
+                if let Some(websocket) = &self.client.state.responses_websocket {
+                    adapter = adapter.with_websocket(Arc::clone(websocket));
+                }
+                Box::new(adapter)
+            };
             let stream_result = adapter.stream(turn_request).await;
 
             match stream_result {

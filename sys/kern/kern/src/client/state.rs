@@ -151,16 +151,30 @@ impl ModelClient {
             extra_headers: headers,
             ..Default::default()
         };
-        chaos_parrot::openai::OpenAiAdapter::new(
-            chaos_parrot::RamaTransport::default_client(),
-            provider,
-            api_auth,
-            None,
-            self.state.representer.clone(),
-        )
-        .with_options(options)
-        .with_websocket(websocket.clone())
-        .prewarm();
+        if self.state.provider_id == "xai" || chaos_parrot::xai::is_xai_endpoint(&provider.base_url)
+        {
+            chaos_parrot::xai::XaiAdapter::new(
+                chaos_parrot::RamaTransport::default_client(),
+                provider,
+                api_auth,
+                None,
+                self.state.representer.clone(),
+            )
+            .with_options(options)
+            .with_websocket(websocket.clone())
+            .prewarm();
+        } else {
+            chaos_parrot::openai::OpenAiAdapter::new(
+                chaos_parrot::RamaTransport::default_client(),
+                provider,
+                api_auth,
+                None,
+                self.state.representer.clone(),
+            )
+            .with_options(options)
+            .with_websocket(websocket.clone())
+            .prewarm();
+        }
     }
 
     pub(super) async fn ensure_clamp_mcp_bridge(

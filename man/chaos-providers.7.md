@@ -342,11 +342,14 @@ export XAI_API_KEY=xai-...
 chaos --provider xai --model grok-4
 ```
 
-URLs containing `x.ai` automatically expose xAI's native `web_search` and
+The exact `api.x.ai` host exposes xAI's native `web_search` and
 `x_search` server-side tools. Override the provider through
 `[model_providers.xai]` settings.
 
 With xAI subscription authentication, Chaos uses the Grok subscription proxy.
+The dedicated xAI adapter owns its subscription headers and model capabilities;
+it shares the Responses transport with OpenAI-compatible providers. Chaos selects
+it for the `xai` provider or either official xAI API/subscription endpoint.
 Its model listing omits image capabilities, so Chaos enables image input for
 Grok 4 chat models on that exact proxy host, including images returned by tools.
 Coding models remain text-only unless discovery explicitly advertises vision.

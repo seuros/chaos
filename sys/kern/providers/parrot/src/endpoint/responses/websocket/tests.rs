@@ -311,6 +311,54 @@ async fn prewarm_sends_no_generation_and_tool_rounds_reuse_one_socket_with_curre
 }
 
 #[tokio::test]
+async fn search_activation_reconnects_only_when_required_and_preserves_full_history() {
+    for reconnect in [false, true] {
+        let mut peer = Peer::start(false).await;
+        let client = peer.client(Arc::new(ResponsesWebSocket::default()), "fixture-token");
+        let options = ResponsesOptions {
+            websocket_reconnect_on_web_search_activation: reconnect,
+            ..Default::default()
+        };
+        client.prewarm(&options);
+        let (prewarmed, _) = peer.upgrade().await;
+        completed(&client, request("first"), options.clone()).await;
+        let (original, _) = peer.request().await;
+        assert_eq!(original, prewarmed);
+
+        // An ordinary function named web_search is not a hosted tool.
+        let mut function = request("function");
+        function.tools = vec![json!({
+            "type": "function", "name": "web_search", "parameters": {"type": "object"}
+        })];
+        completed(&client, function, options.clone()).await;
+        assert_eq!(peer.request().await.0, original);
+
+        let mut search = request("search");
+        search.tools = vec![json!({"type": "web_search", "external_web_access": true})];
+        let expected_input = serde_json::to_value(&search.input).unwrap();
+        completed(&client, search.clone(), options.clone()).await;
+        let (with_search, wire) = peer.request().await;
+        assert_eq!(with_search != original, reconnect);
+        assert_eq!(wire["input"], expected_input);
+        assert_eq!(wire["tools"], json!(search.tools));
+        assert!(wire.get("previous_response_id").is_none());
+        if reconnect {
+            assert_eq!(peer.upgrade().await.0, with_search);
+        }
+
+        // Once initialized with search, removing and restoring it is safe.
+        completed(&client, request("without-search"), options.clone()).await;
+        assert_eq!(peer.request().await.0, with_search);
+        search.tools[0]["external_web_access"] = json!(false);
+        completed(&client, search, options).await;
+        assert_eq!(peer.request().await.0, with_search);
+        assert!(peer.upgrades.try_recv().is_err());
+        assert!(peer.requests.try_recv().is_err(), "no request replay");
+        assert!(peer.posts.try_recv().is_err(), "no HTTP fallback");
+    }
+}
+
+#[tokio::test]
 async fn sessions_and_changed_credentials_or_routing_headers_get_separate_connections() {
     let mut peer = Peer::start(false).await;
     let session = Arc::new(ResponsesWebSocket::default());

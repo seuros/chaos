@@ -16,6 +16,9 @@ should. There is no patch level; the build timestamp is the patch.
   installs are refused. Package builds omit it unless `self-update` is enabled.
 
 ### Fixed
+- Reconnect ChatGPT subscription WebSockets before lazily activating native web
+  search on a socket initialized without it, avoiding hosted-tool authorization
+  failures without replaying requests or disabling search.
 - Keep ChatGPT subscription web search text-only when its catalog advertises
   unsupported image search, avoiding `rustponsesapi` turn failures without
   changing public API or custom-endpoint search capabilities.

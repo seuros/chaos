@@ -513,6 +513,7 @@ impl ModelClientSession {
             extra_headers,
             compression,
             turn_state: Some(Arc::clone(&self.turn_state)),
+            ..Default::default()
         }
     }
 

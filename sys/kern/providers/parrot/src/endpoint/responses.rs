@@ -40,6 +40,9 @@ pub struct ResponsesOptions {
     pub extra_headers: HeaderMap,
     pub compression: Compression,
     pub turn_state: Option<Arc<OnceLock<String>>>,
+    /// Some endpoints authorize hosted search on the socket's first request.
+    /// Reconnect before adding search to a socket initialized without it.
+    pub websocket_reconnect_on_web_search_activation: bool,
 }
 
 impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
@@ -115,7 +118,12 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         {
             tracing::Span::current().record("transport", "responses_websocket");
             return websocket
-                .stream(&request, connection, options.turn_state.clone())
+                .stream(
+                    &request,
+                    connection,
+                    options.turn_state.clone(),
+                    options.websocket_reconnect_on_web_search_activation,
+                )
                 .await;
         }
         tracing::Span::current().record("transport", "responses_http");

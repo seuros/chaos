@@ -455,8 +455,10 @@ async fn deadline_aborts_outstanding_actions() {
     assert_eq!(service.store.dropped.load(Ordering::SeqCst), 2);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn executor_panics_are_not_degraded_results() {
+    // Panic/backtrace formatting must not race the service's wall-clock
+    // deadline on a busy runner. This test owns panic propagation, not timing.
     let service = service(
         FakeStore {
             semantic: Behavior::Panic,
@@ -465,12 +467,13 @@ async fn executor_panics_are_not_degraded_results() {
         },
         FakeEmbedder::default(),
     );
-    assert!(matches!(
-        service
-            .search("query", options(), CancellationToken::new())
-            .await,
-        Err(RecallError::Workflow(_))
-    ));
+    let result = service
+        .search("query", options(), CancellationToken::new())
+        .await;
+    assert!(
+        matches!(result, Err(RecallError::Workflow(_))),
+        "{result:?}"
+    );
 }
 
 #[tokio::test]

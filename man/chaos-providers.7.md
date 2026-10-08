@@ -86,6 +86,18 @@ sessions use the selected CLI transport.
 
 WebSocket failures terminate the request with an error.
 
+### ChatGPT subscription web search
+
+The official ChatGPT subscription Responses endpoint supports text web search,
+but rejects image search even when its model catalog advertises
+`text_and_image`. The OpenAI adapter uses text-only web search for that endpoint
+on both HTTP and WebSocket transports. Search filters, location, context size,
+and live/cached access settings are preserved.
+
+The provider catalog is not modified or pinned. Public OpenAI API, Azure,
+custom endpoints, and other providers retain their declared search capabilities.
+This compatibility rule does not disable image input or image generation.
+
 ## CLAMP TRANSPORTS
 
 Clamp uses an installed, authenticated first-party CLI with Chaos tools over MCP.

@@ -63,6 +63,8 @@ enum Slot {
         key: Key,
         socket: Box<ClientWebSocket>,
         touched: Instant,
+        /// Whether this socket was initialized with native web search.
+        web_search_initialized: bool,
     },
 }
 
@@ -122,23 +124,36 @@ impl ResponsesWebSocket {
         request: &ResponsesApiRequest,
         connection: Connection,
         turn_state: Option<Arc<OnceLock<String>>>,
+        reconnect_on_web_search_activation: bool,
     ) -> Result<ResponseStream, ApiError> {
         let wire = serde_json::to_string(&ResponsesWsRequest::ResponseCreate(
             ResponseCreateWsRequest::from(request),
         ))
         .map_err(|_| ApiError::Stream("failed to encode websocket request".into()))?;
         let key = connection.key();
+        let has_web_search = request
+            .tools
+            .iter()
+            .any(|tool| tool["type"] == "web_search");
         // Tokio's timer boundary requires an unsigned std duration. All
         // policy intervals and elapsed calculations use Jiff.
         let idle_timeout = connection.idle_timeout.unsigned_abs();
         let mut slot = self.slot.clone().lock_owned().await;
         let previous = std::mem::replace(&mut *slot, Slot::Empty);
-        let (socket, source) = match previous {
+        let (socket, source, web_search_initialized) = match previous {
             Slot::Ready {
                 key: current,
                 socket,
                 touched,
-            } if current == key && elapsed_since(touched) < WARM_TTL => (*socket, "reuse"),
+                web_search_initialized,
+            } if current == key
+                && elapsed_since(touched) < WARM_TTL
+                && !(reconnect_on_web_search_activation
+                    && has_web_search
+                    && !web_search_initialized) =>
+            {
+                (*socket, "reuse", web_search_initialized)
+            }
             Slot::Warming {
                 key: current,
                 mut task,
@@ -147,11 +162,11 @@ impl ResponsesWebSocket {
                 let socket = (&mut task)
                     .await
                     .map_err(|_| ApiError::Stream("websocket prewarm was interrupted".into()))??;
-                (socket, "prewarm")
+                (socket, "prewarm", has_web_search)
             }
             old => {
                 drop(old); // Abort mismatched prewarming; do not wait for it.
-                (connect(connection).await?, "cold")
+                (connect(connection).await?, "cold", has_web_search)
             }
         };
         let mut socket = socket;
@@ -267,6 +282,7 @@ impl ResponsesWebSocket {
                                 key,
                                 socket: Box::new(socket),
                                 touched: Instant::now(),
+                                web_search_initialized,
                             };
                             drop(slot);
                             let _ = tx.send(Ok(event)).await;

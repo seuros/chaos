@@ -123,13 +123,17 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
     }
 
     fn prepare_turn(&self, request: &mut TurnRequest) -> ResponsesOptions {
-        let options = self.responses.prepare_turn(request);
+        let mut options = self.responses.prepare_turn(request);
+        let subscription = self.responses.discovery_base_url.trim_end_matches('/')
+            == chaos_services::openai::CHATGPT_BACKEND_BASE;
+        // Hosted search is authorized on the subscription socket's first
+        // request. Lazy activation must start a new socket before sending.
+        options.websocket_reconnect_on_web_search_activation = subscription;
         // The subscription catalog can advertise text_and_image even though
         // its Responses endpoint rejects image search. Omitting this field
         // keeps the endpoint's text-only default, without pinning the catalog
         // or changing tools sent to the public API and compatible providers.
-        if self.responses.discovery_base_url.trim_end_matches('/')
-            == chaos_services::openai::CHATGPT_BACKEND_BASE
+        if subscription
             && let Some(serde_json::Value::Array(tools)) =
                 request.extensions.get_mut("openai_tools")
         {

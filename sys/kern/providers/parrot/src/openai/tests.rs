@@ -81,7 +81,11 @@ fn web_search_content_types_follow_endpoint_compatibility() {
                     tools.clone(),
                 )]),
             };
-            adapter.prepare_turn(&mut request);
+            let options = adapter.prepare_turn(&mut request);
+            assert_eq!(
+                options.websocket_reconnect_on_web_search_activation, text_only,
+                "{endpoint}"
+            );
             // Both HTTP and WebSocket transports consume this same projection.
             let wire = crate::adapter::turn_request_to_api_request(
                 request,

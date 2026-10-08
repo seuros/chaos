@@ -15,6 +15,11 @@ should. There is no patch level; the build timestamp is the patch.
   replacing it. Only GitHub release builds include it; Nix, cargo, and source
   installs are refused. Package builds omit it unless `self-update` is enabled.
 
+### Fixed
+- Keep ChatGPT subscription web search text-only when its catalog advertises
+  unsupported image search, avoiding `rustponsesapi` turn failures without
+  changing public API or custom-endpoint search capabilities.
+
 ## [47.13.0] - 2026-10-07
 
 Recall requires a PostgreSQL VFS mount with pgvector. The first activation needs

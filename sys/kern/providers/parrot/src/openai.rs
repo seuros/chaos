@@ -121,6 +121,28 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
         self.responses = self.responses.with_telemetry(request, sse);
         self
     }
+
+    fn prepare_turn(&self, request: &mut TurnRequest) -> ResponsesOptions {
+        let options = self.responses.prepare_turn(request);
+        // The subscription catalog can advertise text_and_image even though
+        // its Responses endpoint rejects image search. Omitting this field
+        // keeps the endpoint's text-only default, without pinning the catalog
+        // or changing tools sent to the public API and compatible providers.
+        if self.responses.discovery_base_url.trim_end_matches('/')
+            == chaos_services::openai::CHATGPT_BACKEND_BASE
+            && let Some(serde_json::Value::Array(tools)) =
+                request.extensions.get_mut("openai_tools")
+        {
+            for tool in tools {
+                if let Some(tool) = tool.as_object_mut()
+                    && tool.get("type").and_then(serde_json::Value::as_str) == Some("web_search")
+                {
+                    tool.remove("search_content_types");
+                }
+            }
+        }
+        options
+    }
 }
 
 impl<A> ModelAdapter for OpenAiAdapter<A>
@@ -129,7 +151,7 @@ where
 {
     fn stream(&self, mut request: TurnRequest) -> AdapterFuture<'_> {
         Box::pin(async move {
-            let options = self.responses.prepare_turn(&mut request);
+            let options = self.prepare_turn(&mut request);
             self.responses.stream(request, options).await
         })
     }

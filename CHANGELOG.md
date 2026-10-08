@@ -22,6 +22,9 @@ should. There is no patch level; the build timestamp is the patch.
 - Keep ChatGPT subscription web search text-only when its catalog advertises
   unsupported image search, avoiding `rustponsesapi` turn failures without
   changing public API or custom-endpoint search capabilities.
+- `chaos://models` and `refresh_models` emit `input_modalities` when a catalog
+  preset advertises image input, so hosted vision is visible in the model-facing
+  catalog instead of only in the cache.
 
 ## [47.13.0] - 2026-10-07
 

@@ -1,4 +1,5 @@
 use chaos_ipc::ProcessId;
+use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_ipc::protocol::McpStartupStatus;
@@ -319,8 +320,8 @@ pub async fn session_detail_json_from_runtime_db(
 }
 
 /// Just enough to choose with: what to ask for, what it is good at, and which
-/// reasoning efforts it will accept. Picker flags, modalities and transport
-/// details stay behind.
+/// reasoning efforts it will accept, and whether it takes images. Picker flags
+/// and transport details stay behind.
 fn model_json(preset: &ModelPreset) -> serde_json::Value {
     let mut model = serde_json::Map::new();
     model.insert("id".to_string(), json!(preset.model));
@@ -339,6 +340,19 @@ fn model_json(preset: &ModelPreset) -> serde_json::Value {
                     .map(|effort| effort.effort)
                     .collect::<Vec<_>>()
             ),
+        );
+    }
+    // Text is implied. Emit modalities only when the catalog advertises image
+    // input, so hosted vision is visible in chaos://models and refresh_models
+    // without spending tokens on a text-only array.
+    if preset
+        .input_modalities
+        .iter()
+        .any(|modality| *modality == InputModality::Image)
+    {
+        model.insert(
+            "input_modalities".to_string(),
+            json!(preset.input_modalities),
         );
     }
     serde_json::Value::Object(model)

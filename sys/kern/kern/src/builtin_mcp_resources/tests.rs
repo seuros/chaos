@@ -142,3 +142,58 @@ fn mcp_status_is_unavailable_without_an_active_session() {
 
     assert_eq!(value["servers"][0]["status"]["state"], "unavailable");
 }
+
+fn test_preset(model: &str, description: &str, image: bool) -> ModelPreset {
+    ModelPreset {
+        id: model.to_string(),
+        model: model.to_string(),
+        model_family: Default::default(),
+        display_name: model.to_string(),
+        description: description.to_string(),
+        default_reasoning_effort: Default::default(),
+        supported_reasoning_efforts: Vec::new(),
+        supports_personality: false,
+        is_default: false,
+        show_in_picker: true,
+        availability_nux: None,
+        supported_in_api: true,
+        input_modalities: if image {
+            vec![InputModality::Text, InputModality::Image]
+        } else {
+            vec![InputModality::Text]
+        },
+    }
+}
+
+#[test]
+fn model_json_emits_input_modalities_only_when_image_is_advertised() {
+    let with_image = model_json(&test_preset("grok-4.7", "frontier", true));
+    assert_eq!(
+        with_image["input_modalities"],
+        json!(["text", "image"])
+    );
+
+    let text_only = model_json(&test_preset("text-only", "", false));
+    assert!(text_only.get("input_modalities").is_none());
+    assert!(text_only.get("description").is_none());
+
+    let groups = [ProviderModels {
+        provider_id: "xai".to_string(),
+        provider_name: "xAI".to_string(),
+        wire_api: "responses".to_string(),
+        active: true,
+        fetched_at: None,
+        models: vec![
+            test_preset("grok-4.7", "frontier", true),
+            test_preset("text-only", "", false),
+        ],
+    }];
+    let text = models_json_from_provider_models(&groups).expect("models JSON");
+    assert!(!text.contains('\n'), "model-facing JSON must be compact");
+    let value: serde_json::Value = serde_json::from_str(&text).expect("parse models JSON");
+    assert_eq!(
+        value[0]["models"][0]["input_modalities"],
+        json!(["text", "image"])
+    );
+    assert!(value[0]["models"][1].get("input_modalities").is_none());
+}

@@ -1,3 +1,5 @@
+extern crate usage as usage_rs;
+
 // mimalloc reclaims per-thread arenas faster than glibc's default malloc, which
 // keeps RSS flatter during long model streams where Chaos allocates and frees
 // millions of small buffers per conversation turn.

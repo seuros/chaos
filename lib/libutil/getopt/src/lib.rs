@@ -1,3 +1,5 @@
+extern crate usage as usage_rs;
+
 mod approval_mode_cli_arg;
 mod auto_exec_flags;
 mod config_override;

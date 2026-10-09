@@ -1,3 +1,5 @@
+extern crate usage as usage_rs;
+
 pub mod amend;
 pub mod decision;
 pub mod error;

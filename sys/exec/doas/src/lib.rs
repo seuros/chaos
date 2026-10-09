@@ -1,3 +1,5 @@
+extern crate usage as usage_rs;
+
 mod unix;
 
 pub use unix::EscalateAction;

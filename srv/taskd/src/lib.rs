@@ -1,6 +1,8 @@
 //! Foreground recovery supervisor. No model runner, task database, or policy
 //! engine lives here; all three remain kernel services.
 
+extern crate usage as usage_rs;
+
 use chaos_argv::Arg0DispatchPaths;
 use chaos_coreboot::CoreBoot;
 use chaos_getopt::CliConfigOverrides;

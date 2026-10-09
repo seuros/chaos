@@ -4,6 +4,8 @@
 // Send auto-trait evaluation past the default recursion depth.
 #![recursion_limit = "256"]
 
+extern crate usage as usage_rs;
+
 mod api;
 mod auth;
 pub mod cli;

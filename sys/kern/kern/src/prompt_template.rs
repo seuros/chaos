@@ -15,6 +15,9 @@ use minijinja::Environment;
 use minijinja::Error;
 use minijinja::ErrorKind;
 use minijinja::UndefinedBehavior;
+use minijinja::Value;
+use minijinja::syntax::SyntaxConfig;
+use minijinja::value::Serde;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
@@ -127,14 +130,20 @@ impl TemplateContext {
     }
 }
 
+#[expect(clippy::expect_used, reason = "default delimiters are valid")]
 fn template_environment() -> Environment<'static> {
     let mut engine = Environment::new();
     engine.add_global("OS_NAME", OS_NAME);
     engine.set_auto_escape_callback(|_| AutoEscape::None);
     engine.set_undefined_behavior(UndefinedBehavior::Strict);
-    engine.set_keep_trailing_newline(true);
-    engine.set_trim_blocks(true);
-    engine.set_lstrip_blocks(true);
+    engine.set_syntax(
+        SyntaxConfig::builder()
+            .keep_trailing_newline(true)
+            .trim_blocks(true)
+            .lstrip_blocks(true)
+            .build()
+            .expect("default template syntax must be valid"),
+    );
     engine.set_loader(|name| {
         let file = match name.strip_prefix("collaboration_mode/") {
             Some(name) => COLLABORATION_TEMPLATES.get_file(name),
@@ -158,7 +167,7 @@ fn template_environment() -> Environment<'static> {
     clippy::expect_used,
     reason = "bundled templates and the concrete context are validated by unit tests"
 )]
-pub(crate) fn render_template(name: &str, context: impl Serialize) -> String {
+pub(crate) fn render_template(name: &str, context: impl Into<Value>) -> String {
     ENGINE
         .get_template(name)
         .and_then(|template| template.render(context))
@@ -166,7 +175,7 @@ pub(crate) fn render_template(name: &str, context: impl Serialize) -> String {
 }
 
 fn render_context(context: &TemplateContext) -> String {
-    render_template(TEMPLATE_NAME, context)
+    render_template(TEMPLATE_NAME, Serde(context))
 }
 
 pub(crate) fn render(model: &ModelInfo, config: &Config) -> String {
@@ -188,14 +197,14 @@ pub(crate) fn runtime_instructions(
 ) -> String {
     render_template(
         RUNTIME_TEMPLATE_NAME,
-        RuntimeContext::new(
+        Serde(RuntimeContext::new(
             tools,
             tool_groups,
             mode,
             source,
             structured_output,
             tui_output,
-        ),
+        )),
     )
     .trim()
     .to_owned()

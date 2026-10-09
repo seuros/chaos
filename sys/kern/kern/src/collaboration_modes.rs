@@ -48,7 +48,7 @@ pub(crate) fn plan_mode_instructions(
 ) -> String {
     crate::prompt_template::render_template(
         "collaboration_mode/plan.md",
-        minijinja::context!(planning),
+        minijinja::context!(planning => minijinja::value::Serde(planning)),
     )
 }
 

@@ -4,6 +4,8 @@
 // For both modes, any other output must be written to stderr.
 #![deny(clippy::print_stdout)]
 
+extern crate usage as usage_rs;
+
 mod cli;
 mod event_processor;
 mod event_processor_with_human_output;

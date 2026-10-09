@@ -4,6 +4,9 @@
 //! can be enforced safely by the current Capsicum-backed helper and then execs
 //! the target command.
 #[cfg(target_os = "freebsd")]
+extern crate usage as usage_rs;
+
+#[cfg(target_os = "freebsd")]
 mod capsicum;
 #[cfg(target_os = "freebsd")]
 mod freebsd_run_main;

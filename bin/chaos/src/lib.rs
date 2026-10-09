@@ -1,3 +1,5 @@
+extern crate usage as usage_rs;
+
 pub mod accounts;
 pub mod debug_sandbox;
 mod exit_status;

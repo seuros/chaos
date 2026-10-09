@@ -1,3 +1,5 @@
+extern crate usage as usage_rs;
+
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 use crossbeam_channel::after;

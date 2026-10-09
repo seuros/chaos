@@ -3,6 +3,8 @@
 // alternate‑screen mode starts; that file opts‑out locally via `allow`.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
+extern crate usage as usage_rs;
+
 use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;

@@ -1,3 +1,5 @@
+extern crate usage as usage_rs;
+
 use std::path::PathBuf;
 
 use tracing_subscriber::EnvFilter;

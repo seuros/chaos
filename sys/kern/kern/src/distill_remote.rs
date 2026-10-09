@@ -29,6 +29,8 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::TokenUsage;
+use chrono_machines::BackoffStrategy;
+use chrono_machines::ConstantBackoff;
 use futures::Stream;
 use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -201,7 +203,10 @@ async fn request_remote_compaction_v2(
                 );
                 sess.notify_stream_error(
                     turn_context,
-                    format!("Reconnecting remote compaction... {retries}/{max_retries}"),
+                    format!(
+                        "Retrying remote compaction in {:.1}s... {retries}/{max_retries}",
+                        delay.as_secs_f64()
+                    ),
                     err,
                 )
                 .await;
@@ -249,7 +254,22 @@ fn remote_compaction_retry_delay(
     next_retry: u64,
     max_retries: u64,
 ) -> Option<Duration> {
-    if next_retry > max_retries || !err.is_retryable() {
+    if next_retry > max_retries {
+        return None;
+    }
+
+    if matches!(err, ChaosErr::ServerOverloaded) {
+        // Capacity can recover without switching models. Jitter around 20s
+        // (15–25s) instead of using the short connection-failure backoff.
+        // The provider's retry budget is enforced above.
+        return ConstantBackoff::new()
+            .delay_ms(25_000)
+            .jitter_factor(0.4)
+            .delay(1, &mut chrono_machines::rand::rng())
+            .map(Duration::from_millis);
+    }
+
+    if !err.is_retryable() {
         return None;
     }
 

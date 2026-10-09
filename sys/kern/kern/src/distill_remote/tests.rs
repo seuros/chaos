@@ -82,6 +82,48 @@ fn remote_compaction_retries_transient_connection_failures_within_budget() {
 }
 
 #[test]
+fn remote_compaction_retries_capacity_errors_with_jitter_around_twenty_seconds() {
+    // Overload remains non-retryable elsewhere; compaction handles it specially.
+    let error = ChaosErr::ServerOverloaded;
+    assert!(!error.is_retryable());
+
+    for retry in 1..=5 {
+        for _ in 0..32 {
+            let delay = remote_compaction_retry_delay(&error, retry, 5)
+                .expect("capacity errors should retry within the provider budget");
+            assert!((Duration::from_secs(15)..=Duration::from_secs(25)).contains(&delay));
+        }
+    }
+}
+
+#[test]
+fn remote_compaction_capacity_retries_respect_provider_budget() {
+    let error = ChaosErr::ServerOverloaded;
+    assert_eq!(remote_compaction_retry_delay(&error, 1, 0), None);
+    assert!(remote_compaction_retry_delay(&error, 2, 2).is_some());
+    assert_eq!(remote_compaction_retry_delay(&error, 3, 2), None);
+}
+
+#[test]
+fn remote_compaction_preserves_server_requested_retry_delay() {
+    let delay = Duration::from_secs(42);
+    let error = ChaosErr::Stream("retry later".to_string(), Some(delay));
+    assert_eq!(remote_compaction_retry_delay(&error, 1, 2), Some(delay));
+}
+
+#[test]
+fn remote_compaction_does_not_retry_permanent_errors() {
+    for error in [
+        ChaosErr::QuotaExceeded,
+        ChaosErr::InvalidRequest("invalid request".to_string()),
+        ChaosErr::Fatal("invalid compaction output".to_string()),
+        ChaosErr::TurnAborted,
+    ] {
+        assert_eq!(remote_compaction_retry_delay(&error, 1, 2), None);
+    }
+}
+
+#[test]
 fn v2_history_retains_messages_but_not_tool_transcript_or_trigger() {
     let user = ResponseItem::Message {
         id: None,

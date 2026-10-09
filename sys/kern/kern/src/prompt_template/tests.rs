@@ -141,7 +141,7 @@ fn runtime_selects_sections_from_capabilities() -> anyhow::Result<()> {
             false,
         );
         context.output.terminal = terminal;
-        let rendered = template.render(context)?;
+        let rendered = template.render(Serde(context))?;
         let sections = rendered
             .lines()
             .filter_map(|line| line.strip_prefix("section:"))

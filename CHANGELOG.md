@@ -9,6 +9,8 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.13.1] - 2026-10-10
+
 ### Added
 - `chaos update` installs the latest GitHub release after confirmation,
   verifying its SHA-256 and the complete binary bundle before atomically
@@ -20,6 +22,8 @@ should. There is no patch level; the build timestamp is the patch.
   across MCP parsing, notifications, catalog/cache conversion, context
   distillation, and UI rendering. Reuse bounded stdio buffers without losing
   partial frames on cancelled reads.
+- Share encoded provider payloads across retries, serialize WebSocket requests
+  by borrowing, and avoid redundant history, Markdown, and journal allocations.
 - Reconnect ChatGPT subscription WebSockets before lazily activating native web
   search on a socket initialized without it, avoiding hosted-tool authorization
   failures without replaying requests or disabling search.

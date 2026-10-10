@@ -219,21 +219,18 @@ impl ContextManager {
             return;
         }
 
-        let snapshot = self.items.clone();
-        let user_positions = user_message_positions(&snapshot);
-        let Some(&first_user_idx) = user_positions.first() else {
-            self.replace(snapshot);
-            return;
-        };
-
         let n_from_end = usize::try_from(num_turns).unwrap_or(usize::MAX);
-        let cut_idx = if n_from_end >= user_positions.len() {
-            first_user_idx
-        } else {
-            user_positions[user_positions.len() - n_from_end]
-        };
-
-        self.replace(snapshot[..cut_idx].to_vec());
+        let cut_idx = self
+            .items
+            .iter()
+            .enumerate()
+            .rev()
+            .filter_map(|(idx, item)| is_user_turn_boundary(item).then_some(idx))
+            .take(n_from_end)
+            .last();
+        if let Some(cut_idx) = cut_idx {
+            self.items.truncate(cut_idx);
+        }
     }
 
     pub(crate) fn update_token_info(
@@ -632,16 +629,6 @@ pub(crate) fn is_user_turn_boundary(item: &ResponseItem) -> bool {
     };
 
     role == "user" && !is_contextual_user_message_content(content)
-}
-
-fn user_message_positions(items: &[ResponseItem]) -> Vec<usize> {
-    let mut positions = Vec::new();
-    for (idx, item) in items.iter().enumerate() {
-        if is_user_turn_boundary(item) {
-            positions.push(idx);
-        }
-    }
-    positions
 }
 
 #[cfg(test)]

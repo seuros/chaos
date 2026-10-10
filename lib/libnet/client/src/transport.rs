@@ -82,6 +82,7 @@ impl RamaTransport {
             url,
             mut headers,
             body,
+            body_bytes,
             compression,
             timeout: _timeout, // TODO: rama per-request timeout via layer
         } = req;
@@ -89,9 +90,18 @@ impl RamaTransport {
         let http_method = rama::http::Method::from_bytes(method.as_str().as_bytes())
             .unwrap_or(rama::http::Method::GET);
 
-        let rama_body = if let Some(body) = body {
-            let json =
-                serde_json::to_vec(&body).map_err(|err| TransportError::Build(err.to_string()))?;
+        let json = match (body, body_bytes) {
+            (Some(body), None) => Some(Bytes::from(
+                serde_json::to_vec(&body).map_err(|err| TransportError::Build(err.to_string()))?,
+            )),
+            (None, bytes) => bytes,
+            (Some(_), Some(_)) => {
+                return Err(TransportError::Build(
+                    "request has both JSON and encoded JSON bodies".to_string(),
+                ));
+            }
+        };
+        let rama_body = if let Some(json) = json {
             if !headers.contains_key(rama::http::header::CONTENT_TYPE) {
                 headers.insert(
                     rama::http::header::CONTENT_TYPE,

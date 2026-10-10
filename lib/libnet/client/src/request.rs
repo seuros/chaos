@@ -20,6 +20,7 @@ pub struct Request {
     pub url: String,
     pub headers: HeaderMap,
     pub body: Option<Value>,
+    pub body_bytes: Option<Bytes>,
     pub compression: RequestCompression,
     pub timeout: Option<Duration>,
 }
@@ -31,6 +32,7 @@ impl Request {
             url,
             headers: HeaderMap::new(),
             body: None,
+            body_bytes: None,
             compression: RequestCompression::None,
             timeout: None,
         }
@@ -39,6 +41,13 @@ impl Request {
     /// Attach an already-serialized JSON value as the request body.
     pub fn with_json(mut self, body: Value) -> Self {
         self.body = Some(body);
+        self.body_bytes = None;
+        self
+    }
+
+    pub fn with_json_bytes(mut self, body: Bytes) -> Self {
+        self.body = None;
+        self.body_bytes = Some(body);
         self
     }
 

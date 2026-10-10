@@ -8,6 +8,7 @@ use chaos_client::Request;
 use chaos_client::RequestTelemetry;
 use chaos_client::Response;
 use chaos_client::StreamResponse;
+use rama::bytes::Bytes;
 use rama::http::HeaderMap;
 use rama::http::Method;
 use serde::Serialize;
@@ -167,14 +168,17 @@ impl<T: HttpTransport, A: AuthProvider> EndpointSession<T, A> {
         method: Method,
         path: &str,
         extra_headers: HeaderMap,
-        body: Option<Value>,
+        body: Option<Bytes>,
         configure: C,
     ) -> Result<StreamResponse, ApiError>
     where
         C: Fn(&mut Request),
     {
         let make_request = || {
-            let mut req = self.make_request(&method, path, &extra_headers, body.as_ref());
+            let mut req = self.make_request(&method, path, &extra_headers, None);
+            if let Some(body) = &body {
+                req = req.with_json_bytes(body.clone());
+            }
             configure(&mut req);
             req
         };

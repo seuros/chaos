@@ -108,6 +108,7 @@ impl Provider {
             url: self.url_for_path(path),
             headers: self.headers.clone(),
             body: None,
+            body_bytes: None,
             compression: RequestCompression::None,
             timeout: None,
         }

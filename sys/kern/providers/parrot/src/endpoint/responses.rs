@@ -15,6 +15,7 @@ use chaos_client::HttpTransport;
 use chaos_client::RequestCompression;
 use chaos_client::RequestTelemetry;
 use chaos_ipc::protocol::SessionSource;
+use rama::bytes::Bytes;
 use rama::http::HeaderMap;
 use rama::http::HeaderValue;
 use rama::http::Method;
@@ -128,23 +129,45 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         }
         tracing::Span::current().record("transport", "responses_http");
 
-        let mut body = serde_json::to_value(&request)
-            .map_err(|e| ApiError::Stream(format!("failed to encode responses request: {e}")))?;
-        if request.store && self.session.provider().is_azure_responses_endpoint() {
+        let body = if request.store && self.session.provider().is_azure_responses_endpoint() {
+            let mut body = serde_json::to_value(&request).map_err(|e| {
+                ApiError::Stream(format!("failed to encode responses request: {e}"))
+            })?;
             attach_item_ids(&mut body, &request.input);
+            serde_json::to_vec(&body)
+        } else {
+            serde_json::to_vec(&request)
         }
+        .map(Bytes::from)
+        .map_err(|e| ApiError::Stream(format!("failed to encode responses request: {e}")))?;
+        drop(request);
         debug!(
             target: "chaos_parrot::request_body",
-            body = %body,
+            body = %String::from_utf8_lossy(&body),
             "responses api request body"
         );
 
-        self.stream(body, headers, options.compression, options.turn_state)
+        self.stream_encoded(body, headers, options.compression, options.turn_state)
             .await
     }
 
     fn path() -> &'static str {
         "responses"
+    }
+
+    pub async fn stream(
+        &self,
+        body: Value,
+        extra_headers: HeaderMap,
+        compression: Compression,
+        turn_state: Option<Arc<OnceLock<String>>>,
+    ) -> Result<ResponseStream, ApiError> {
+        let encoded = serde_json::to_vec(&body)
+            .map(Bytes::from)
+            .map_err(|e| ApiError::Stream(format!("failed to encode responses request: {e}")))?;
+        drop(body);
+        self.stream_encoded(encoded, extra_headers, compression, turn_state)
+            .await
     }
 
     #[instrument(
@@ -158,9 +181,9 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
             turn.has_state = turn_state.is_some()
         )
     )]
-    pub async fn stream(
+    async fn stream_encoded(
         &self,
-        body: Value,
+        body: Bytes,
         extra_headers: HeaderMap,
         compression: Compression,
         turn_state: Option<Arc<OnceLock<String>>>,

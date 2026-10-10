@@ -1430,20 +1430,34 @@ fn retry_delay(attempt: usize) -> Duration {
 }
 
 fn batch_matches_journal(loaded: &LoadedJournal, first_seq: i64, batch: &[RolloutItem]) -> bool {
-    let persisted = loaded
+    let mut persisted = loaded
         .items
         .iter()
-        .filter(|entry| entry.seq >= first_seq && entry.seq < first_seq + batch.len() as i64)
-        .collect::<Vec<_>>();
-    persisted.len() == batch.len()
-        && persisted
-            .iter()
-            .zip(batch)
-            .enumerate()
-            .all(|(offset, (entry, item))| {
-                entry.seq == first_seq + offset as i64
-                    && serde_json::to_value(&entry.item).ok() == serde_json::to_value(item).ok()
-            })
+        .filter(|entry| entry.seq >= first_seq && entry.seq < first_seq + batch.len() as i64);
+    batch.iter().enumerate().all(|(offset, item)| {
+        persisted.next().is_some_and(|entry| {
+            entry.seq == first_seq + offset as i64 && rollout_items_match(&entry.item, item)
+        })
+    }) && persisted.next().is_none()
+}
+
+fn rollout_items_match(left: &RolloutItem, right: &RolloutItem) -> bool {
+    match (left, right) {
+        (RolloutItem::ResponseItem(left), RolloutItem::ResponseItem(right)) if left == right => {
+            true
+        }
+        (RolloutItem::BackgroundTask(left), RolloutItem::BackgroundTask(right))
+            if left == right =>
+        {
+            true
+        }
+        (RolloutItem::CompactionControl(left), RolloutItem::CompactionControl(right))
+            if left == right =>
+        {
+            true
+        }
+        _ => serde_json::to_value(left).ok() == serde_json::to_value(right).ok(),
+    }
 }
 
 async fn journal_client_for_mounted_backend() -> Result<JournalClient, String> {

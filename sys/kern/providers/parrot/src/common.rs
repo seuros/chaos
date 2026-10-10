@@ -237,6 +237,45 @@ pub enum ResponsesWsRequest {
     ResponseCreate(ResponseCreateWsRequest),
 }
 
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "response.create")]
+pub(crate) struct ResponseCreateWsRequestRef<'a> {
+    pub model: &'a str,
+    pub instructions: &'a str,
+    pub input: &'a [ResponseItem],
+    pub tools: &'a [Value],
+    pub tool_choice: &'a str,
+    pub parallel_tool_calls: bool,
+    pub reasoning: Option<&'a Reasoning>,
+    pub store: bool,
+    pub include: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_key: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<&'a TextControls>,
+}
+
+impl<'a> From<&'a ResponsesApiRequest> for ResponseCreateWsRequestRef<'a> {
+    fn from(request: &'a ResponsesApiRequest) -> Self {
+        Self {
+            model: &request.model,
+            instructions: &request.instructions,
+            input: &request.input,
+            tools: &request.tools,
+            tool_choice: &request.tool_choice,
+            parallel_tool_calls: request.parallel_tool_calls,
+            reasoning: request.reasoning.as_ref(),
+            store: request.store,
+            include: &request.include,
+            service_tier: request.service_tier.as_deref(),
+            prompt_cache_key: request.prompt_cache_key.as_deref(),
+            text: request.text.as_ref(),
+        }
+    }
+}
+
 pub fn create_text_param_for_request(
     verbosity: Option<VerbosityConfig>,
     output_schema: &Option<Value>,

@@ -19,7 +19,7 @@ use tokio::time::Instant;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::common::{
-    ResponseCreateWsRequest, ResponseEvent, ResponseStream, ResponsesApiRequest, ResponsesWsRequest,
+    ResponseCreateWsRequestRef, ResponseEvent, ResponseStream, ResponsesApiRequest,
 };
 use crate::error::ApiError;
 use crate::rate_limits::{parse_all_rate_limits, parse_rate_limit_event};
@@ -126,10 +126,8 @@ impl ResponsesWebSocket {
         turn_state: Option<Arc<OnceLock<String>>>,
         reconnect_on_web_search_activation: bool,
     ) -> Result<ResponseStream, ApiError> {
-        let wire = serde_json::to_string(&ResponsesWsRequest::ResponseCreate(
-            ResponseCreateWsRequest::from(request),
-        ))
-        .map_err(|_| ApiError::Stream("failed to encode websocket request".into()))?;
+        let wire = serde_json::to_string(&ResponseCreateWsRequestRef::from(request))
+            .map_err(|_| ApiError::Stream("failed to encode websocket request".into()))?;
         let key = connection.key();
         let has_web_search = request
             .tools

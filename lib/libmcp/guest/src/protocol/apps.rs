@@ -124,7 +124,7 @@ pub(crate) fn tool_ui(meta: Option<&Meta>) -> Result<Option<ToolUi>, GuestError>
     let Some(value) = ui_value(meta)? else {
         return Ok(None);
     };
-    let ui: ToolUi = serde_json::from_value(value.clone())?;
+    let ui = ToolUi::deserialize(value)?;
     ui.validate()
         .map_err(|error| GuestError::Protocol(error.to_string()))?;
     Ok(Some(ui))
@@ -134,7 +134,7 @@ pub(crate) fn resource_ui(meta: Option<&Meta>) -> Result<Option<UiResourceMeta>,
     let Some(value) = ui_value(meta)? else {
         return Ok(None);
     };
-    let ui: UiResourceMeta = serde_json::from_value(value.clone())?;
+    let ui = UiResourceMeta::deserialize(value)?;
     if let Some(csp) = &ui.csp {
         csp.validate()
             .map_err(|error| GuestError::Protocol(error.to_string()))?;

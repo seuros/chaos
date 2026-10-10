@@ -123,12 +123,11 @@ impl UserMessageItem {
     pub fn message(&self) -> String {
         self.content
             .iter()
-            .map(|c| match c {
-                UserInput::Text { text, .. } => text.clone(),
-                _ => String::new(),
+            .filter_map(|c| match c {
+                UserInput::Text { text, .. } => Some(text.as_str()),
+                _ => None,
             })
-            .collect::<Vec<String>>()
-            .join("")
+            .collect()
     }
 
     pub fn text_elements(&self) -> Vec<TextElement> {

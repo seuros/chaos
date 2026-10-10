@@ -184,16 +184,16 @@ pub(crate) enum ForwardedElicitationRequestParams {
 }
 
 impl ForwardedElicitationRequestParams {
-    fn from_protocol_request(request: &CoreElicitationRequest) -> Self {
+    fn from_protocol_request(request: CoreElicitationRequest) -> Self {
         match request {
             CoreElicitationRequest::Form {
                 meta,
                 message,
                 requested_schema,
             } => Self::Form {
-                meta: meta.clone(),
-                message: message.clone(),
-                requested_schema: requested_schema.clone(),
+                meta,
+                message,
+                requested_schema,
             },
             CoreElicitationRequest::Url {
                 meta,
@@ -201,10 +201,10 @@ impl ForwardedElicitationRequestParams {
                 url,
                 elicitation_id,
             } => Self::Url {
-                meta: meta.clone(),
-                message: message.clone(),
-                url: url.clone(),
-                elicitation_id: elicitation_id.clone(),
+                meta,
+                message,
+                url,
+                elicitation_id,
             },
         }
     }
@@ -222,7 +222,7 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
     outgoing: Arc<OutgoingMessageSender>,
     process: Arc<Process>,
 ) {
-    let params = ForwardedElicitationRequestParams::from_protocol_request(&request.request);
+    let params = ForwardedElicitationRequestParams::from_protocol_request(request.request);
     if !params.is_supported_by(outgoing.as_ref()) {
         error!(
             server_name = request.server_name,
@@ -259,8 +259,8 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
         }
     };
 
-    let server_name = request.server_name.clone();
-    let request_id = request.id.clone();
+    let server_name = request.server_name;
+    let request_id = request.id;
     let on_response = outgoing
         .send_request("elicitation/create", Some(params_json))
         .await;

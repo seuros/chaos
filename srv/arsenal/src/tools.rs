@@ -27,5 +27,5 @@ pub(crate) fn deserialize_tool_params<T>(arguments: &serde_json::Value) -> Resul
 where
     T: DeserializeOwned,
 {
-    serde_json::from_value(arguments.clone()).map_err(|e| format!("invalid arguments: {e}"))
+    T::deserialize(arguments).map_err(|e| format!("invalid arguments: {e}"))
 }

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use chaos_ipc::api::McpElicitationEnumSchema;
 use chaos_ipc::api::McpElicitationPrimitiveSchema;
 use chaos_ipc::api::McpElicitationSingleSelectEnumSchema;
+use serde::Deserialize;
 use serde_json::Value;
 
 use super::domain::{
@@ -149,15 +150,12 @@ pub(super) fn parse_fields_from_schema(
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .map(ToString::to_string)
         .collect::<HashSet<_>>();
     let properties = schema.get("properties")?.as_object()?;
     let mut fields = Vec::new();
     for (id, property_schema) in properties {
-        let property =
-            serde_json::from_value::<McpElicitationPrimitiveSchema>(property_schema.clone())
-                .ok()?;
-        fields.push(parse_field(id, property, required.contains(id))?);
+        let property = McpElicitationPrimitiveSchema::deserialize(property_schema).ok()?;
+        fields.push(parse_field(id, property, required.contains(id.as_str()))?);
     }
     if fields.is_empty() {
         return None;

@@ -123,7 +123,9 @@ impl Request {
         if value.to_string().len() > 24_576 {
             return Err("goal request too large");
         }
-        let mut fields = value.as_object().cloned().ok_or("invalid goal request")?;
+        let Value::Object(mut fields) = value else {
+            return Err("invalid goal request");
+        };
         if fields.remove("version") != Some(json!(VERSION)) {
             return Err("unsupported goal protocol");
         }

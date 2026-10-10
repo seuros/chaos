@@ -89,7 +89,7 @@ fn forwarded_elicitation_preserves_request_fields() {
         ),
     ] {
         assert_eq!(
-            ForwardedElicitationRequestParams::from_protocol_request(&request),
+            ForwardedElicitationRequestParams::from_protocol_request(request),
             expected
         );
     }

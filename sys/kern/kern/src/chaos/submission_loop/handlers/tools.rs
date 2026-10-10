@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -37,9 +38,7 @@ pub async fn list_models(sess: &Session, sub_id: String) {
 fn annotation_labels(tool: &chaos_traits::catalog::CatalogTool) -> Vec<String> {
     tool.annotations
         .as_ref()
-        .and_then(|value| {
-            serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(value.clone()).ok()
-        })
+        .and_then(|value| chaos_mcp_runtime::ToolAnnotations::deserialize(value).ok())
         .map(|annotations| {
             let mut labels = crate::tools::spec::annotation_labels(&annotations);
             let has_read_semantics = labels

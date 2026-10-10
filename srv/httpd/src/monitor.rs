@@ -183,7 +183,7 @@ fn sse_append_log(selector_id: &str, message: &str) -> Result<String, Infallible
 }
 
 fn one_line_html(input: &str) -> String {
-    input.lines().map(str::trim).collect::<Vec<_>>().join("")
+    input.lines().map(str::trim).collect()
 }
 
 fn escape_html(input: impl AsRef<str>) -> String {

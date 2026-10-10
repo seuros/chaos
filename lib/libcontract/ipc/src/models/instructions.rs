@@ -102,11 +102,12 @@ pub fn format_allow_prefixes(prefixes: Vec<Vec<String>>) -> Option<String> {
         .map(|(i, _)| i);
     if let Some(byte_idx) = byte_idx {
         truncated = true;
-        output = output[..byte_idx].to_string();
+        output.truncate(byte_idx);
     }
 
     if truncated {
-        Some(format!("{output}{TRUNCATED_MARKER}"))
+        output.push_str(TRUNCATED_MARKER);
+        Some(output)
     } else {
         Some(output)
     }

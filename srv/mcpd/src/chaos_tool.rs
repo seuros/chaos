@@ -201,10 +201,6 @@ impl ChaosToolParams {
 
 impl ChaosMcpServer {
     async fn handle_chaos<'a>(&self, ctx: ExecutionContext<'a>) -> Result<ToolOutput, ToolError> {
-        let args = ctx.params.clone();
-        let params: ChaosToolParams = serde_json::from_value(args)
-            .map_err(|e| ToolError::InvalidArguments(format!("invalid params: {e}")))?;
-
         let session_id = ctx.session.id.clone();
         // Use the JSON-RPC request id from the originating tools/call so that
         // elicitation/create requests include the correct codex_mcp_tool_call_id
@@ -213,6 +209,9 @@ impl ChaosMcpServer {
             .request_id()
             .cloned()
             .unwrap_or_else(|| RequestId::String(session_id.clone()));
+        let progress_token = ctx.progress_token().map(ToString::to_string);
+        let params: ChaosToolParams = serde_json::from_value(ctx.params)
+            .map_err(|e| ToolError::InvalidArguments(format!("invalid params: {e}")))?;
 
         // Resolve process_id: explicit > auto-resume from session > new
         // Pass "new" or "" to force a new process instead of auto-resuming.
@@ -247,8 +246,6 @@ impl ChaosMcpServer {
                 .map_err(|e| ToolError::Execution(format!("failed to load config: {e}")))?;
             (prompt, Some(cfg))
         };
-
-        let progress_token = ctx.progress_token().map(ToString::to_string);
 
         let outcome = chaos_runner::run_chaos_session(chaos_runner::RunChaosSessionArgs {
             request_id,

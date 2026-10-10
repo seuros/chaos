@@ -136,22 +136,18 @@ impl OutgoingMessageSender {
         event: &Event,
         meta: Option<OutgoingNotificationMeta>,
     ) {
-        #[expect(clippy::expect_used)]
-        let event_json = serde_json::to_value(event).expect("Event must serialize");
-
-        let params = if let Ok(params) = serde_json::to_value(OutgoingNotificationParams {
-            meta,
-            event: event_json.clone(),
-        }) {
-            params
-        } else {
-            warn!("Failed to serialize event as OutgoingNotificationParams");
-            event_json
-        };
+        let params =
+            if let Ok(params) = serde_json::to_value(OutgoingNotificationParams { meta, event }) {
+                params
+            } else {
+                warn!("Failed to serialize event as OutgoingNotificationParams");
+                #[expect(clippy::expect_used)]
+                serde_json::to_value(event).expect("Event must serialize")
+            };
 
         self.send_notification(OutgoingNotification {
             method: "chaos/event".to_string(),
-            params: Some(params.clone()),
+            params: Some(params),
         })
         .await;
     }
@@ -184,7 +180,11 @@ impl From<OutgoingMessage> for OutgoingJsonRpcMessage {
                 JsonRpcMessage::Notification(JsonRpcRequest::notification(method, params))
             }
             OutgoingMessage::Error(OutgoingError { id, error }) => {
-                JsonRpcMessage::Response(JsonRpcResponse::error(Some(id.to_value()), error))
+                let id = match id {
+                    RequestId::Number(number) => Value::Number(number),
+                    RequestId::String(string) => Value::String(string),
+                };
+                JsonRpcMessage::Response(JsonRpcResponse::error(Some(id), error))
             }
         }
     }
@@ -199,13 +199,13 @@ pub(crate) struct OutgoingNotification {
 
 /// Params envelope for `chaos/event` notifications. The `_meta` field follows
 /// the MCP spec's general extension mechanism.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingNotificationParams {
+#[derive(Serialize)]
+pub(crate) struct OutgoingNotificationParams<'a> {
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<OutgoingNotificationMeta>,
 
     #[serde(flatten)]
-    pub event: serde_json::Value,
+    pub event: &'a Event,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

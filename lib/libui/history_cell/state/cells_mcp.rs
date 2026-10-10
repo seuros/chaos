@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
 use std::time::Instant;
@@ -88,7 +89,7 @@ impl McpToolCallCell {
     }
 
     fn render_content_block(block: &serde_json::Value, width: usize) -> String {
-        let content = match serde_json::from_value::<mcp_guest::ContentBlock>(block.clone()) {
+        let content = match mcp_guest::ContentBlock::deserialize(block) {
             Ok(content) => content,
             Err(_) => {
                 return format_and_truncate_tool_result(

@@ -87,6 +87,7 @@ pub(crate) async fn app_tests_suite() {
     open_agent_picker_keeps_cached_closed_processes()
         .await
         .expect("open_agent_picker_keeps_cached_closed_processes");
+    #[cfg(feature = "vt100-tests")]
     open_agent_picker_selects_existing_agent_process()
         .await
         .expect("open_agent_picker_selects_existing_agent_process");
@@ -1113,6 +1114,7 @@ async fn open_agent_picker_keeps_cached_closed_processes() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "vt100-tests")]
 async fn open_agent_picker_selects_existing_agent_process() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let process_id = ProcessId::new();

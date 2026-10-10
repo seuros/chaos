@@ -168,10 +168,7 @@ fn test_preset(model: &str, description: &str, image: bool) -> ModelPreset {
 #[test]
 fn model_json_emits_input_modalities_only_when_image_is_advertised() {
     let with_image = model_json(&test_preset("grok-4.7", "frontier", true));
-    assert_eq!(
-        with_image["input_modalities"],
-        json!(["text", "image"])
-    );
+    assert_eq!(with_image["input_modalities"], json!(["text", "image"]));
 
     let text_only = model_json(&test_preset("text-only", "", false));
     assert!(text_only.get("input_modalities").is_none());

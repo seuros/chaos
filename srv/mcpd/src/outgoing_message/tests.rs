@@ -42,6 +42,28 @@ fn outgoing_notification_serializes_as_jsonrpc_notification() {
     );
 }
 
+#[test]
+fn outgoing_error_moves_the_owned_request_id() {
+    let id = "request".repeat(1024);
+    let pointer = id.as_ptr();
+    let response: OutgoingJsonRpcMessage = OutgoingMessage::Error(OutgoingError {
+        id: RequestId::String(id),
+        error: JsonRpcError {
+            code: mcp_host::protocol::types::ErrorCode::INTERNAL_ERROR,
+            message: "failed".into(),
+            data: None,
+        },
+    })
+    .into();
+    let JsonRpcMessage::Response(response) = response else {
+        panic!("error response expected")
+    };
+    assert_eq!(
+        response.id.as_ref().unwrap().as_str().unwrap().as_ptr(),
+        pointer
+    );
+}
+
 async fn test_send_event_as_notification() -> Result<()> {
     let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
     let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);

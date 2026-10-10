@@ -208,10 +208,7 @@ pub async fn run_main(
             let jsonrpc: OutgoingJsonRpcMessage = msg.into();
             match jsonrpc {
                 JsonRpcMessage::Notification(n) => {
-                    let notif = mcp_host::prelude::JsonRpcNotification::new(
-                        n.method.clone(),
-                        n.params.clone(),
-                    );
+                    let notif = mcp_host::prelude::JsonRpcNotification::new(n.method, n.params);
                     let _ = notification_sender.send(notif);
                 }
                 JsonRpcMessage::Response(_) | JsonRpcMessage::Request(_) => {

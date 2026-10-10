@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -435,9 +436,10 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 // appear when MCP servers are present and are not duplicated via inventory.
                 continue;
             }
-            let annotations = tool.annotations.as_ref().and_then(|v| {
-                serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone()).ok()
-            });
+            let annotations = tool
+                .annotations
+                .as_ref()
+                .and_then(|v| chaos_mcp_runtime::ToolAnnotations::deserialize(v).ok());
             if plan_mode && annotations_are_destructive(annotations.as_ref()) {
                 tracing::debug!(
                     tool = %tool.name,

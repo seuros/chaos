@@ -41,23 +41,20 @@ impl ToolFilter {
     }
 }
 
-pub(super) fn filter_tools(tools: Vec<ToolInfo>, filter: &ToolFilter) -> Vec<ToolInfo> {
+pub(super) fn filter_tools(mut tools: Vec<ToolInfo>, filter: &ToolFilter) -> Vec<ToolInfo> {
+    tools.retain(|tool| filter.allows(&tool.tool.name));
     tools
-        .into_iter()
-        .filter(|tool| filter.allows(&tool.tool.name))
-        .collect()
 }
 
 pub(super) fn store_managed_tools(
     tool_filter: &ToolFilter,
     tools_arc: &Arc<StdRwLock<Vec<ToolInfo>>>,
     tools: Vec<ToolInfo>,
-) -> Vec<ToolInfo> {
+) {
     let filtered_tools = filter_tools(tools, tool_filter);
     *tools_arc
         .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = filtered_tools.clone();
-    filtered_tools
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = filtered_tools;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]

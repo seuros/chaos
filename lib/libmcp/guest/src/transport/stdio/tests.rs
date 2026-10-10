@@ -30,36 +30,106 @@ async fn shutdown_force_kills_and_reaps_a_child_that_ignores_stdin() {
 #[tokio::test]
 async fn read_line_bounded_splits_lines_and_signals_eof() {
     let mut reader: &[u8] = b"one\ntwo\nlast";
-    assert_eq!(
-        read_line_bounded(&mut reader, 100)
+    let mut buffer = Vec::new();
+    for expected in [b"one".as_slice(), b"two", b"last"] {
+        assert!(
+            read_line_bounded(&mut reader, &mut buffer, 100)
+                .await
+                .unwrap()
+        );
+        assert_eq!(buffer, expected);
+        recycle_buffer(&mut buffer);
+    }
+    assert!(
+        !read_line_bounded(&mut reader, &mut buffer, 100)
             .await
             .unwrap()
-            .as_deref(),
-        Some("one")
     );
-    assert_eq!(
-        read_line_bounded(&mut reader, 100)
-            .await
-            .unwrap()
-            .as_deref(),
-        Some("two")
-    );
-    assert_eq!(
-        read_line_bounded(&mut reader, 100)
-            .await
-            .unwrap()
-            .as_deref(),
-        Some("last")
-    );
-    assert!(read_line_bounded(&mut reader, 100).await.unwrap().is_none());
 }
 
 #[tokio::test]
 async fn read_line_bounded_rejects_oversized_lines() {
     let data = vec![b'a'; 4096];
     let mut reader: &[u8] = &data;
-    let error = read_line_bounded(&mut reader, 100).await.unwrap_err();
+    let error = read_line_bounded(&mut reader, &mut Vec::new(), 100)
+        .await
+        .unwrap_err();
     std::assert_matches!(error, GuestError::Protocol(_), "got {error:?}");
+}
+
+#[tokio::test]
+async fn read_line_bounded_checks_limit_before_copying_even_with_newline() {
+    let mut reader: &[u8] = b"123456\n";
+    let mut buffer = Vec::new();
+    assert!(
+        read_line_bounded(&mut reader, &mut buffer, 5)
+            .await
+            .is_err()
+    );
+    assert!(
+        buffer.is_empty(),
+        "oversized chunks must not be allocated first"
+    );
+    assert!(
+        read_line_bounded(&mut reader, &mut buffer, 6)
+            .await
+            .unwrap()
+    );
+    assert_eq!(buffer, b"123456");
+}
+
+#[tokio::test]
+async fn cancelled_read_retains_partial_frame_and_reuses_buffer() {
+    let (mut writer, reader) = tokio::io::duplex(64);
+    let mut reader = BufReader::new(reader);
+    let mut buffer = Vec::new();
+    writer.write_all(b"partial").await.unwrap();
+    assert!(
+        timeout(
+            Duration::from_millis(10),
+            read_line_bounded(&mut reader, &mut buffer, 100)
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(buffer, b"partial");
+    writer.write_all(b" frame\n").await.unwrap();
+    assert!(
+        read_line_bounded(&mut reader, &mut buffer, 100)
+            .await
+            .unwrap()
+    );
+    assert_eq!(buffer, b"partial frame");
+    let pointer = buffer.as_ptr();
+    recycle_buffer(&mut buffer);
+    writer.write_all(b"next\n").await.unwrap();
+    assert!(
+        read_line_bounded(&mut reader, &mut buffer, 100)
+            .await
+            .unwrap()
+    );
+    assert_eq!(buffer, b"next");
+    assert_eq!(
+        buffer.as_ptr(),
+        pointer,
+        "ordinary frames reuse their buffer"
+    );
+}
+
+#[test]
+fn recycling_releases_oversized_buffers() {
+    let mut buffer = vec![0; MAX_RETAINED_BUFFER_BYTES + 1];
+    recycle_buffer(&mut buffer);
+    assert_eq!(buffer.capacity(), 0);
+}
+
+#[test]
+fn write_buffer_guard_recycles_on_early_exit() {
+    let mut buffer = vec![0; MAX_RETAINED_BUFFER_BYTES + 1];
+    {
+        let _guard = RecycledBuffer(&mut buffer);
+    }
+    assert_eq!(buffer.capacity(), 0);
 }
 
 #[tokio::test]

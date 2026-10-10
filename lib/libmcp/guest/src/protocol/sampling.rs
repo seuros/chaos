@@ -130,12 +130,12 @@ where
         if value
             .as_object()
             .is_some_and(|object| object.contains_key("task"))
-            && let Ok(task) = serde_json::from_value::<CreateTaskResult>(value.clone())
+            && let Ok(task) = CreateTaskResult::deserialize(&value)
         {
             return Ok(Self::Task(task));
         }
 
-        serde_json::from_value::<T>(value.clone())
+        T::deserialize(&value)
             .map(Self::Result)
             .or_else(|_| serde_json::from_value::<CreateTaskResult>(value).map(Self::Task))
             .map_err(serde::de::Error::custom)

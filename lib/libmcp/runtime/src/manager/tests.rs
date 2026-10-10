@@ -30,6 +30,29 @@ fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
 }
 
 #[test]
+fn storing_managed_tools_moves_the_original_vector_and_schema() {
+    let mut tool = create_test_tool("server", "tool");
+    tool.tool.input_schema = serde_json::json!({"description": "schema".repeat(8192)});
+    let tools = vec![tool];
+    let vector_pointer = tools.as_ptr();
+    let schema_pointer = tools[0].tool.input_schema["description"]
+        .as_str()
+        .unwrap()
+        .as_ptr();
+    let store = Arc::new(StdRwLock::new(Vec::new()));
+    super::filter::store_managed_tools(&ToolFilter::default(), &store, tools);
+    let tools = store.read().unwrap();
+    assert_eq!(tools.as_ptr(), vector_pointer);
+    assert_eq!(
+        tools[0].tool.input_schema["description"]
+            .as_str()
+            .unwrap()
+            .as_ptr(),
+        schema_pointer
+    );
+}
+
+#[test]
 fn elicitation_granular_policy_defaults_to_prompting() {
     assert!(!elicitation_is_rejected_by_policy(
         ApprovalPolicy::Interactive

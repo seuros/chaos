@@ -472,7 +472,7 @@ pub(crate) async fn shell_policy(home: &Path, cwd: &Path) -> anyhow::Result<chao
         .await?
     {
         if grant.kind == "shell" && grant.scope == scope && grant.state == ApprovalState::Active {
-            let prefix: Vec<String> = serde_json::from_value(grant.payload["prefix"].clone())?;
+            let prefix = Vec::<String>::deserialize(&grant.payload["prefix"])?;
             policy.add_prefix_rule(&prefix, chaos_selinux::Decision::Allow)?;
         }
     }

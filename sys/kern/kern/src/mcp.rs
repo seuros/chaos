@@ -121,17 +121,17 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
 }
 
 pub fn split_qualified_tool_name(qualified_name: &str) -> Option<(String, String)> {
-    let mut parts = qualified_name.split(MCP_TOOL_NAME_DELIMITER);
+    let mut parts = qualified_name.splitn(3, MCP_TOOL_NAME_DELIMITER);
     let prefix = parts.next()?;
     if prefix != MCP_TOOL_NAME_PREFIX {
         return None;
     }
     let server_name = parts.next()?;
-    let tool_name: String = parts.collect::<Vec<_>>().join(MCP_TOOL_NAME_DELIMITER);
+    let tool_name = parts.next()?;
     if tool_name.is_empty() {
         return None;
     }
-    Some((server_name.to_string(), tool_name))
+    Some((server_name.to_string(), tool_name.to_owned()))
 }
 
 pub fn group_tools_by_server(

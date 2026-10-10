@@ -226,7 +226,7 @@ impl HttpTransport for RamaTransport {
 
         if !status.is_success() {
             let body_bytes = collect_body(body).await?;
-            let body = String::from_utf8(body_bytes.to_vec()).ok();
+            let body = std::str::from_utf8(&body_bytes).ok().map(str::to_owned);
             return Err(TransportError::Http {
                 status,
                 url: Some(url),

@@ -49,7 +49,7 @@ fn handler<'a>(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolOutput, ToolError>> + Send + 'a>>
 {
     Box::pin(async move {
-        let params: RefreshModelsParams = serde_json::from_value(ctx.params.clone())
+        let params: RefreshModelsParams = serde_json::from_value(ctx.params)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
         let config = Config::load_with_cli_overrides(Vec::new())
             .await

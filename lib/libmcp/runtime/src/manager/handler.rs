@@ -289,17 +289,17 @@ impl ClientHandler for ChaosClientHandler {
                 ));
             }
 
-            let elicitation_request = match &request {
+            let elicitation_request = match request {
                 CreateElicitationRequest::Form(form) => ElicitationRequest::Form {
                     meta: None,
-                    message: form.message.clone(),
-                    requested_schema: form.requested_schema.clone(),
+                    message: form.message,
+                    requested_schema: form.requested_schema,
                 },
                 CreateElicitationRequest::Url(url_req) => ElicitationRequest::Url {
                     meta: None,
-                    message: url_req.message.clone(),
-                    url: url_req.url.clone(),
-                    elicitation_id: url_req.elicitation_id.clone(),
+                    message: url_req.message,
+                    url: url_req.url,
+                    elicitation_id: url_req.elicitation_id,
                 },
             };
 
@@ -454,7 +454,7 @@ async fn refresh_tools(
 async fn refresh_resources(server_name: &str, session: &McpSession, catalog: &dyn McpCatalogSink) {
     let resources = match session.list_resources().await {
         Ok(list) => list
-            .iter()
+            .into_iter()
             .map(crate::catalog_conv::mcp_resource_to_catalog)
             .collect(),
         Err(err) => {
@@ -465,7 +465,7 @@ async fn refresh_resources(server_name: &str, session: &McpSession, catalog: &dy
 
     let templates = match session.list_resource_templates().await {
         Ok(list) => list
-            .iter()
+            .into_iter()
             .map(crate::catalog_conv::mcp_resource_template_to_catalog)
             .collect(),
         Err(err) => {
@@ -484,7 +484,7 @@ async fn refresh_resources(server_name: &str, session: &McpSession, catalog: &dy
 async fn refresh_prompts(server_name: &str, session: &McpSession, catalog: &dyn McpCatalogSink) {
     let prompts = match session.list_prompts().await {
         Ok(result) => result
-            .iter()
+            .into_iter()
             .map(crate::catalog_conv::mcp_prompt_to_catalog)
             .collect(),
         Err(err) => {

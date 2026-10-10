@@ -198,11 +198,14 @@ pub fn mount(router: McpToolRouter<ChaosServer>) -> McpToolRouter<ChaosServer> {
 struct LineRecord {
     number: usize,
     raw: String,
-    display: String,
     indent: usize,
 }
 
 impl LineRecord {
+    fn display(&self) -> &str {
+        take_bytes_at_char_boundary(&self.raw, MAX_LINE_LENGTH)
+    }
+
     fn trimmed(&self) -> &str {
         self.raw.trim_start()
     }
@@ -309,7 +312,6 @@ pub mod indentation_mode {
     use super::IndentationParams;
     use super::LineRecord;
     use super::TAB_WIDTH;
-    use super::format_line;
     use super::trim_empty_lines;
     use std::collections::VecDeque;
     use std::path::Path;
@@ -353,7 +355,7 @@ pub mod indentation_mode {
         if final_limit == 1 {
             return Ok(vec![format!(
                 "L{}: {}",
-                collected[anchor_index].number, collected[anchor_index].display
+                collected[anchor_index].number, collected[anchor_index].display()
             )]);
         }
 
@@ -428,7 +430,7 @@ pub mod indentation_mode {
 
         Ok(out
             .into_iter()
-            .map(|record| format!("L{}: {}", record.number, record.display))
+            .map(|record| format!("L{}: {}", record.number, record.display()))
             .collect())
     }
 
@@ -463,11 +465,9 @@ pub mod indentation_mode {
             number += 1;
             let raw = String::from_utf8_lossy(&buffer).into_owned();
             let indent = measure_indent(&raw);
-            let display = format_line(&buffer);
             lines.push(LineRecord {
                 number,
                 raw,
-                display,
                 indent,
             });
         }

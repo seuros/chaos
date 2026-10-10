@@ -236,7 +236,7 @@ pub(super) async fn list_tools_for_session_uncached(
     let mut all_guest_tools = Vec::new();
     loop {
         let params = PaginatedRequestParams {
-            cursor: cursor.clone(),
+            cursor: cursor.take(),
         };
         let result: ListToolsResult = session
             .request_with_timeout("tools/list", &params, timeout)

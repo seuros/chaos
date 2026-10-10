@@ -7,6 +7,7 @@ use std::time::Duration;
 use chrono_machines::ExponentialBackoff;
 use chrono_machines::backoff::BackoffStrategy;
 use rama::Service;
+use rama::bytes::Bytes;
 use rama::error::extra::OpaqueError;
 use rama::http::Body;
 use rama::http::Request;
@@ -25,6 +26,7 @@ use url::Url;
 
 use crate::error::GuestError;
 use crate::protocol::InitializeResult;
+use serde::Deserialize;
 
 const MIME_APPLICATION_JSON: &str = "application/json";
 const MIME_TEXT_EVENT_STREAM: &str = "text/event-stream";
@@ -336,7 +338,7 @@ impl HttpTransportInner {
             return Ok(());
         }
 
-        let initialize: InitializeResult = serde_json::from_value(result.clone())?;
+        let initialize = InitializeResult::deserialize(result)?;
         let mut lifecycle = self.current_lifecycle(generation)?;
         if !lifecycle.session(HttpSessionEvent::Negotiated) {
             return Err(GuestError::Disconnected);
@@ -892,16 +894,16 @@ fn header_value(headers: &rama::http::HeaderMap, name: impl AsRef<str>) -> Optio
         .and_then(|value| value.to_str().ok())
 }
 
-async fn collect_body_bytes(response: Response) -> Result<Vec<u8>, GuestError> {
+async fn collect_body_bytes(response: Response) -> Result<Bytes, GuestError> {
     let collected = response.into_body().collect().await.map_err(http_error)?;
-    Ok(collected.to_bytes().to_vec())
+    Ok(collected.to_bytes())
 }
 
 async fn collect_body_string(response: Response) -> Option<String> {
     collect_body_bytes(response)
         .await
         .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|bytes| std::str::from_utf8(&bytes).ok().map(str::to_owned))
         .filter(|body| !body.trim().is_empty())
 }
 

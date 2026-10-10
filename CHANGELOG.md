@@ -16,6 +16,10 @@ should. There is no patch level; the build timestamp is the patch.
   installs are refused. Package builds omit it unless `self-update` is enabled.
 
 ### Fixed
+- Update the workspace to `mcp-host` 0.8.0 and remove redundant payload copies
+  across MCP parsing, notifications, catalog/cache conversion, context
+  distillation, and UI rendering. Reuse bounded stdio buffers without losing
+  partial frames on cancelled reads.
 - Reconnect ChatGPT subscription WebSockets before lazily activating native web
   search on a socket initialized without it, avoiding hosted-tool authorization
   failures without replaying requests or disabling search.

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::env;
+use std::fmt::Write;
 use std::io::Error;
 use std::io::ErrorKind;
 use std::io::Result as IoResult;
@@ -219,7 +220,7 @@ impl Tool for BridgeTool {
                 ClampBridgeRequest::CallTool {
                     token: self.state.token.clone(),
                     name: self.spec.name.clone(),
-                    arguments: ctx.params.clone(),
+                    arguments: ctx.params,
                 },
             )
             .await
@@ -253,7 +254,7 @@ fn response_input_to_tool_output(
         | ResponseInputItem::CustomToolCallOutput { output, .. } => {
             if prefer_structured {
                 ToolOutput::structured(serde_json::json!({
-                    "output": output.body.to_text().unwrap_or_default(),
+                    "output": output.body.into_text().unwrap_or_default(),
                     "success": output.success
                 }))
                 .map_err(|err| ToolError::Internal(err.to_string()))
@@ -295,7 +296,7 @@ fn function_call_output_body_to_tool_output(
     body: FunctionCallOutputBody,
 ) -> Result<ToolOutput, ToolError> {
     let FunctionCallOutputBody::ContentItems(items) = body else {
-        return Ok(ToolOutput::text(body.to_text().unwrap_or_default()));
+        return Ok(ToolOutput::text(body.into_text().unwrap_or_default()));
     };
 
     let content = items
@@ -304,7 +305,7 @@ fn function_call_output_body_to_tool_output(
             FunctionCallOutputContentItem::InputText { text } => {
                 Ok(Box::new(TextContent::new(text)) as Box<dyn Content>)
             }
-            FunctionCallOutputContentItem::InputImage { image_url, .. } => {
+            FunctionCallOutputContentItem::InputImage { mut image_url, .. } => {
                 let Some(data_url) = image_url.strip_prefix("data:") else {
                     return Err(ToolError::Execution(
                         "clamp bridge image output must use a base64 data URL".to_string(),
@@ -320,7 +321,12 @@ fn function_call_output_body_to_tool_output(
                         "clamp bridge image output must be base64 encoded".to_string(),
                     ));
                 };
-                Ok(Box::new(ImageContent::new(data, mime_type.to_string())) as Box<dyn Content>)
+                let data_start = image_url.len() - data.len();
+                let mime_type = mime_type.to_owned();
+                // Remove the small URL header in place, preserving the owned
+                // base64 buffer instead of allocating a second image payload.
+                image_url.drain(..data_start);
+                Ok(Box::new(ImageContent::new(image_url, mime_type)) as Box<dyn Content>)
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -329,16 +335,18 @@ fn function_call_output_body_to_tool_output(
 }
 
 fn content_items_to_text(content: &[serde_json::Value]) -> String {
-    content
-        .iter()
-        .map(|item| {
-            item.get("text")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| serde_json::to_string(item).unwrap_or_default())
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let mut text = String::new();
+    for (index, item) in content.iter().enumerate() {
+        if index != 0 {
+            text.push('\n');
+        }
+        if let Some(value) = item.get("text").and_then(Value::as_str) {
+            text.push_str(value);
+        } else {
+            let _ = write!(text, "{item}");
+        }
+    }
+    text
 }
 
 #[cfg(test)]

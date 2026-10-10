@@ -330,20 +330,16 @@ impl McpSession {
         let mut cursor: Option<String> = None;
         let mut items = Vec::new();
         for _ in 0..MAX_LIST_PAGES {
-            let resp: Resp = self
-                .request(
-                    method,
-                    &PaginatedRequestParams {
-                        cursor: cursor.clone(),
-                    },
-                )
-                .await?;
+            let params = PaginatedRequestParams {
+                cursor: cursor.take(),
+            };
+            let resp: Resp = self.request(method, &params).await?;
             let (page, next) = extract(resp);
             items.extend(page);
             if next.is_none() {
                 return Ok(items);
             }
-            if next == cursor {
+            if next == params.cursor {
                 return Err(GuestError::Protocol(format!(
                     "{method} returned the same cursor twice"
                 )));

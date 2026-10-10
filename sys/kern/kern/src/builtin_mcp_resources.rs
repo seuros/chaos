@@ -345,11 +345,7 @@ fn model_json(preset: &ModelPreset) -> serde_json::Value {
     // Text is implied. Emit modalities only when the catalog advertises image
     // input, so hosted vision is visible in chaos://models and refresh_models
     // without spending tokens on a text-only array.
-    if preset
-        .input_modalities
-        .iter()
-        .any(|modality| *modality == InputModality::Image)
-    {
+    if preset.input_modalities.contains(&InputModality::Image) {
         model.insert(
             "input_modalities".to_string(),
             json!(preset.input_modalities),

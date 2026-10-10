@@ -23,38 +23,62 @@ use crate::transport::MessageTransport;
 use crate::transport::TransportFuture;
 
 const MAX_LINE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_RETAINED_BUFFER_BYTES: usize = 64 * 1024;
 
-async fn read_line_bounded<R>(reader: &mut R, max_len: usize) -> Result<Option<String>, GuestError>
+// The caller retains `buf` across cancelled reads. No second UTF-8 buffer is
+// needed, and a select! losing to a command cannot discard a partial frame.
+async fn read_line_bounded<R>(
+    reader: &mut R,
+    buf: &mut Vec<u8>,
+    max_len: usize,
+) -> Result<bool, GuestError>
 where
     R: tokio::io::AsyncBufRead + Unpin,
 {
-    let mut buf = Vec::new();
     loop {
         let available = reader.fill_buf().await?;
         if available.is_empty() {
-            if buf.is_empty() {
-                return Ok(None);
-            }
-            return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
+            return Ok(!buf.is_empty());
         }
-        match available.iter().position(|&byte| byte == b'\n') {
-            Some(position) => {
-                buf.extend_from_slice(&available[..position]);
-                reader.consume(position + 1);
-                return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
-            }
-            None => {
-                buf.extend_from_slice(available);
-                let consumed = available.len();
-                reader.consume(consumed);
-            }
-        }
-        if buf.len() > max_len {
+        let newline = available.iter().position(|&byte| byte == b'\n');
+        let len = newline.unwrap_or(available.len());
+        if len > max_len.saturating_sub(buf.len()) {
             return Err(GuestError::Protocol(format!(
                 "stdio line exceeded {max_len} bytes"
             )));
         }
+        buf.extend_from_slice(&available[..len]);
+        reader.consume(len + usize::from(newline.is_some()));
+        if newline.is_some() {
+            return Ok(true);
+        }
     }
+}
+
+fn recycle_buffer(buf: &mut Vec<u8>) {
+    if buf.capacity() > MAX_RETAINED_BUFFER_BYTES {
+        *buf = Vec::new();
+    } else {
+        buf.clear();
+    }
+}
+
+struct RecycledBuffer<'a>(&'a mut Vec<u8>);
+
+impl Drop for RecycledBuffer<'_> {
+    fn drop(&mut self) {
+        recycle_buffer(self.0);
+    }
+}
+
+struct StdioReader {
+    reader: BufReader<ChildStdout>,
+    buffer: Vec<u8>,
+}
+
+struct StdioWriter {
+    writer: BufWriter<ChildStdin>,
+    buffer: Vec<u8>,
 }
 
 pub struct StdioChild {
@@ -105,8 +129,8 @@ impl StdioChild {
 }
 
 pub struct StdioTransport {
-    reader: Mutex<BufReader<ChildStdout>>,
-    writer: Mutex<BufWriter<ChildStdin>>,
+    reader: Mutex<StdioReader>,
+    writer: Mutex<StdioWriter>,
     child: Mutex<Child>,
     write_timeout: Duration,
     shutdown_timeout: Duration,
@@ -124,8 +148,14 @@ impl StdioTransport {
         kill_timeout: Duration,
     ) -> Arc<Self> {
         Arc::new(Self {
-            reader: Mutex::new(child.stdout),
-            writer: Mutex::new(child.stdin),
+            reader: Mutex::new(StdioReader {
+                reader: child.stdout,
+                buffer: Vec::new(),
+            }),
+            writer: Mutex::new(StdioWriter {
+                writer: child.stdin,
+                buffer: Vec::new(),
+            }),
             child: Mutex::new(child.child),
             write_timeout,
             shutdown_timeout,
@@ -140,20 +170,27 @@ impl StdioTransport {
         if self.closed.load(Ordering::Acquire) {
             return Err(GuestError::Disconnected);
         }
-        let json = serde_json::to_string(message)?;
         let result = timeout(self.write_timeout, async {
-            let mut writer = self.writer.lock().await;
-            writer.write_all(json.as_bytes()).await?;
-            writer.write_all(b"\n").await?;
-            writer.flush().await?;
-            Ok::<(), std::io::Error>(())
+            let mut state = self.writer.lock().await;
+            let StdioWriter { writer, buffer } = &mut *state;
+            let buffer = RecycledBuffer(buffer);
+            buffer.0.clear();
+            serde_json::to_writer(&mut *buffer.0, message)?;
+            buffer.0.push(b'\n');
+            let result = async {
+                writer.write_all(buffer.0).await?;
+                writer.flush().await?;
+                Ok::<(), std::io::Error>(())
+            }
+            .await;
+            result.map_err(GuestError::from)
         })
         .await;
         match result {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => {
                 self.closed.store(true, Ordering::Release);
-                Err(error.into())
+                Err(error)
             }
             Err(_) => {
                 self.closed.store(true, Ordering::Release);
@@ -229,8 +266,8 @@ impl StdioTransport {
         if graceful {
             match timeout(self.shutdown_timeout, async {
                 let mut writer = self.writer.lock().await;
-                writer.flush().await?;
-                writer.shutdown().await?;
+                writer.writer.flush().await?;
+                writer.writer.shutdown().await?;
                 Ok::<(), std::io::Error>(())
             })
             .await
@@ -265,33 +302,33 @@ impl MessageTransport for StdioTransport {
                     return Err(GuestError::Disconnected);
                 }
 
-                let line = {
-                    let mut reader = self.reader.lock().await;
-                    read_line_bounded(&mut *reader, MAX_LINE_BYTES).await
-                };
-
-                let line = match line {
-                    Ok(Some(line)) => line,
-                    Ok(None) => {
+                let mut state = self.reader.lock().await;
+                let StdioReader { reader, buffer } = &mut *state;
+                match read_line_bounded(reader, buffer, MAX_LINE_BYTES).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        recycle_buffer(buffer);
                         self.closed.store(true, Ordering::Relaxed);
                         return Err(GuestError::Disconnected);
                     }
                     Err(error) => {
+                        recycle_buffer(buffer);
                         self.closed.store(true, Ordering::Relaxed);
                         return Err(error);
                     }
-                };
-
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
                 }
-
-                match serde_json::from_str(trimmed) {
-                    Ok(message) => return Ok(message),
-                    Err(error) => {
+                // Borrow valid UTF-8; retain the old lossy behavior for noisy
+                // stdout without copying every valid JSON-RPC frame.
+                let line = String::from_utf8_lossy(buffer);
+                let trimmed = line.trim();
+                let result = (!trimmed.is_empty()).then(|| serde_json::from_str(trimmed));
+                recycle_buffer(buffer);
+                match result {
+                    Some(Ok(message)) => return Ok(message),
+                    Some(Err(error)) => {
                         tracing::warn!(%error, "skipping malformed line on MCP stdio stream");
                     }
+                    None => {}
                 }
             }
         })

@@ -59,10 +59,11 @@ pub fn collect_user_messages(items: &[ResponseItem]) -> Vec<String> {
         .iter()
         .filter_map(|item| match parse_turn_item(item) {
             Some(TurnItem::UserMessage(user)) => {
-                if is_summary_message(&user.message()) {
+                let message = user.message();
+                if is_summary_message(&message) {
                     None
                 } else {
-                    Some(user.message())
+                    Some(message)
                 }
             }
             _ => None,
@@ -71,7 +72,9 @@ pub fn collect_user_messages(items: &[ResponseItem]) -> Vec<String> {
 }
 
 pub fn is_summary_message(message: &str) -> bool {
-    message.starts_with(format!("{SUMMARY_PREFIX}\n").as_str())
+    message
+        .strip_prefix(SUMMARY_PREFIX)
+        .is_some_and(|rest| rest.starts_with('\n'))
 }
 
 /// Inserts canonical initial context into compacted replacement history at the
@@ -164,13 +167,11 @@ fn build_compacted_history_with_limit(
         selected_messages.reverse();
     }
 
-    for message in &selected_messages {
+    for message in selected_messages {
         history.push(ResponseItem::Message {
             id: None,
             role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: message.clone(),
-            }],
+            content: vec![ContentItem::InputText { text: message }],
             end_turn: None,
             phase: None,
         });

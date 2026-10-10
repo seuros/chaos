@@ -13,6 +13,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
 use futures::future::BoxFuture;
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
@@ -965,7 +966,7 @@ async fn read_stdout(stdout: ChildStdout, tx: mpsc::Sender<Message>) {
                 json_buffer.clear();
 
                 // Parse as a typed Message
-                let msg = match serde_json::from_value::<Message>(value.clone()) {
+                let msg = match Message::deserialize(&value) {
                     Ok(msg) => msg,
                     Err(_) => {
                         debug!("unrecognized message type: {:?}", value.get("type"));

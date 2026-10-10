@@ -505,27 +505,35 @@ pub(crate) async fn handle_clamp_hook_callback(
 }
 
 pub(crate) fn render_clamp_content_items(content: &[ContentItem]) -> String {
-    content
-        .iter()
-        .map(|item| match item {
-            ContentItem::InputText { text } | ContentItem::OutputText { text } => text.clone(),
+    let mut rendered = String::new();
+    for (index, item) in content.iter().enumerate() {
+        if index != 0 {
+            rendered.push('\n');
+        }
+        match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                rendered.push_str(text)
+            }
             ContentItem::InputImage { image_url } => {
                 if image_url.starts_with("data:") {
-                    "[image: inline data omitted]".to_string()
+                    rendered.push_str("[image: inline data omitted]");
                 } else {
-                    format!("[image: {image_url}]")
+                    rendered.push_str("[image: ");
+                    rendered.push_str(image_url);
+                    rendered.push(']');
                 }
             }
             ContentItem::Document { name, text, .. } => {
-                let header = name
-                    .as_deref()
-                    .map(|n| format!("[{n}]\n"))
-                    .unwrap_or_default();
-                format!("{header}{text}")
+                if let Some(name) = name {
+                    rendered.push('[');
+                    rendered.push_str(name);
+                    rendered.push_str("]\n");
+                }
+                rendered.push_str(text);
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+        }
+    }
+    rendered
 }
 
 pub(crate) fn render_json<T: serde::Serialize>(value: &T) -> String {

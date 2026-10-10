@@ -29,40 +29,39 @@ pub fn mcp_tool_info_to_catalog_tool(info: &ToolInfo) -> CatalogTool {
 }
 
 /// Convert a `mcp_guest` `ResourceInfo` into a `CatalogResource`.
-pub fn mcp_resource_to_catalog(info: &mcp_guest::protocol::ResourceInfo) -> CatalogResource {
+pub fn mcp_resource_to_catalog(info: mcp_guest::protocol::ResourceInfo) -> CatalogResource {
     CatalogResource {
-        uri: info.uri.clone(),
-        name: info.name.clone(),
-        description: info.description.clone(),
-        mime_type: info.mime_type.clone(),
+        uri: info.uri,
+        name: info.name,
+        description: info.description,
+        mime_type: info.mime_type,
     }
 }
 
 /// Convert a `mcp_guest` `ResourceTemplateInfo` into a `CatalogResourceTemplate`.
 pub fn mcp_resource_template_to_catalog(
-    info: &mcp_guest::protocol::ResourceTemplateInfo,
+    info: mcp_guest::protocol::ResourceTemplateInfo,
 ) -> CatalogResourceTemplate {
     CatalogResourceTemplate {
-        uri_template: info.uri_template.clone(),
-        name: info.name.clone(),
-        description: info.description.clone(),
-        mime_type: info.mime_type.clone(),
+        uri_template: info.uri_template,
+        name: info.name,
+        description: info.description,
+        mime_type: info.mime_type,
     }
 }
 
 /// Convert a `mcp_guest` `PromptInfo` into a `CatalogPrompt`.
-pub fn mcp_prompt_to_catalog(info: &mcp_guest::protocol::PromptInfo) -> CatalogPrompt {
+pub fn mcp_prompt_to_catalog(info: mcp_guest::protocol::PromptInfo) -> CatalogPrompt {
     CatalogPrompt {
-        name: info.name.clone(),
-        description: info.description.clone(),
+        name: info.name,
+        description: info.description,
         arguments: info
             .arguments
-            .as_deref()
             .unwrap_or_default()
-            .iter()
+            .into_iter()
             .map(|a| CatalogPromptArgument {
-                name: a.name.clone(),
-                description: a.description.clone(),
+                name: a.name,
+                description: a.description,
                 required: a.required.unwrap_or(false),
             })
             .collect(),

@@ -104,14 +104,16 @@ impl ModelsCacheManager {
         client_version: String,
         scope: ModelsCacheScope,
     ) {
-        let cache = ModelsCache {
-            fetched_at: Timestamp::now(),
-            etag,
-            client_version: Some(client_version),
-            scope: Some(scope),
-            models: models.to_vec(),
-        };
-        if let Err(err) = self.save_internal(&cache).await {
+        if let Err(err) = self
+            .save_values(
+                &scope,
+                Timestamp::now(),
+                etag.as_deref(),
+                Some(&client_version),
+                models,
+            )
+            .await
+        {
             error!("failed to write models cache: {err}");
         }
     }
@@ -208,14 +210,35 @@ impl ModelsCacheManager {
                 "cache scope is required",
             ));
         };
+        self.save_values(
+            scope,
+            cache.fetched_at,
+            cache.etag.as_deref(),
+            cache.client_version.as_deref(),
+            &cache.models,
+        )
+        .await
+    }
+
+    async fn save_values(
+        &self,
+        scope: &ModelsCacheScope,
+        fetched_at: Timestamp,
+        etag: Option<&str>,
+        client_version: Option<&str>,
+        models: &[ModelInfo],
+    ) -> io::Result<()> {
         let Some(pool) = self.runtime_pool().await else {
             return Err(io::Error::other("runtime db unavailable"));
         };
 
         match pool {
             Vfs::Sqlite(pool) => {
-                let models_json = serde_json::to_string(&encode_models_json(&cache.models))
-                    .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
+                let models_json = serde_json::to_string(&RawCatalogEnvelope {
+                    format: RAW_CATALOG_V1_FORMAT,
+                    models,
+                })
+                .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
                 sqlx::query(
                     "INSERT INTO model_catalog_cache \
                         (provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json) \
@@ -229,9 +252,9 @@ impl ModelsCacheManager {
                 .bind(&scope.provider_name)
                 .bind(&scope.wire_api)
                 .bind(&scope.base_url)
-                .bind(cache.fetched_at.as_second())
-                .bind(cache.etag.as_deref())
-                .bind(cache.client_version.as_deref())
+                .bind(fetched_at.as_second())
+                .bind(etag)
+                .bind(client_version)
                 .bind(models_json)
                 .execute(&pool)
                 .await
@@ -239,8 +262,7 @@ impl ModelsCacheManager {
                 .map_err(io::Error::other)
             }
             Vfs::Postgres(pool) => {
-                let models_json = serde_json::to_value(encode_models_json(&cache.models))
-                    .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
+                let models_json = encode_models_json(models);
                 sqlx::query(
                     "INSERT INTO model_catalog_cache \
                         (provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json) \
@@ -254,9 +276,9 @@ impl ModelsCacheManager {
                 .bind(&scope.provider_name)
                 .bind(&scope.wire_api)
                 .bind(&scope.base_url)
-                .bind(cache.fetched_at.as_second())
-                .bind(cache.etag.as_deref())
-                .bind(cache.client_version.as_deref())
+                .bind(fetched_at.as_second())
+                .bind(etag)
+                .bind(client_version)
                 .bind(models_json)
                 .execute(&pool)
                 .await
@@ -354,6 +376,12 @@ impl ModelsCacheManager {
     }
 }
 
+#[derive(Serialize)]
+struct RawCatalogEnvelope<'a> {
+    format: &'static str,
+    models: &'a [ModelInfo],
+}
+
 fn encode_models_json(models: &[ModelInfo]) -> serde_json::Value {
     serde_json::json!({
         "format": RAW_CATALOG_V1_FORMAT,
@@ -366,7 +394,10 @@ fn decode_models_json_value(models_json: serde_json::Value) -> Option<Vec<ModelI
     if format != RAW_CATALOG_V1_FORMAT {
         return None;
     }
-    let models = models_json.get("models")?.clone();
+    let serde_json::Value::Object(mut fields) = models_json else {
+        return None;
+    };
+    let models = fields.remove("models")?;
     serde_json::from_value(models).ok()
 }
 

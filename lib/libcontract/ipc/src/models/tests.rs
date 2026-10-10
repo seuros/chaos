@@ -1,4 +1,62 @@
 use super::function_call::convert_mcp_content_to_items;
+
+#[test]
+fn consuming_text_output_preserves_owned_buffer() {
+    let text = "large output ".repeat(8192);
+    let pointer = text.as_ptr();
+    let body = FunctionCallOutputBody::Text(text);
+    let output = body.into_text().unwrap();
+    assert_eq!(output.as_ptr(), pointer);
+
+    let text = "caption".to_owned();
+    let pointer = text.as_ptr();
+    let body = FunctionCallOutputBody::ContentItems(vec![
+        FunctionCallOutputContentItem::InputImage {
+            image_url: "data:image/png;base64,AAA".into(),
+            detail: None,
+        },
+        FunctionCallOutputContentItem::InputText { text: "  ".into() },
+        FunctionCallOutputContentItem::InputText { text },
+    ]);
+    let output = body.into_text().unwrap();
+    assert_eq!(output, "caption");
+    assert_eq!(output.as_ptr(), pointer);
+}
+
+#[test]
+fn consuming_mcp_output_moves_text_and_data_url_buffers() {
+    let result = crate::mcp::CallToolResult {
+        content: vec![
+            serde_json::json!({"type":"text", "text":"caption"}),
+            serde_json::json!({"type":"image", "data":"data:image/png;base64,AAA"}),
+        ],
+        structured_content: None,
+        is_error: Some(false),
+        meta: None,
+    };
+    let text_pointer = result.content[0]["text"].as_str().unwrap().as_ptr();
+    let image_pointer = result.content[1]["data"].as_str().unwrap().as_ptr();
+    let payload = result.into_function_call_output_payload();
+    let items = payload.content_items().unwrap();
+    let FunctionCallOutputContentItem::InputText { text } = &items[0] else {
+        panic!("text output expected")
+    };
+    let FunctionCallOutputContentItem::InputImage { image_url, .. } = &items[1] else {
+        panic!("image output expected")
+    };
+    assert_eq!(text.as_ptr(), text_pointer);
+    assert_eq!(image_url.as_ptr(), image_pointer);
+}
+
+#[test]
+fn malformed_image_blocks_do_not_switch_text_output_to_multimodal() {
+    for image in [
+        serde_json::json!({"type":"image", "data":42}),
+        serde_json::json!({"type":"image", "data":"AAA", "mimeType":42}),
+    ] {
+        assert!(convert_mcp_content_to_items(&[image]).is_none());
+    }
+}
 use super::instructions::{MAX_ALLOW_PREFIX_TEXT_BYTES, MAX_RENDERED_PREFIXES, TRUNCATED_MARKER};
 use super::*;
 use crate::mcp::CallToolResult;

@@ -16,7 +16,7 @@ struct ToolAnnotationsView {
 }
 
 fn parsed_annotations(annotations: Option<&serde_json::Value>) -> Option<ToolAnnotationsView> {
-    annotations.and_then(|value| serde_json::from_value(value.clone()).ok())
+    annotations.and_then(|value| ToolAnnotationsView::deserialize(value).ok())
 }
 
 pub fn tool_name_style() -> Style {
@@ -72,38 +72,28 @@ pub fn tool_name_style_from_labels_and_annotations(
     labels: &[String],
     annotations: Option<&serde_json::Value>,
 ) -> Style {
-    let mut merged: Vec<String> = labels.to_vec();
-
-    if let Some(annotations) = parsed_annotations(annotations) {
-        let mut push_label = |label: &str| {
-            if !merged.iter().any(|existing| existing == label) {
-                merged.push(label.to_string());
+    let annotations = parsed_annotations(annotations).unwrap_or_default();
+    // These flags are idempotent; duplicates need no owned merge or deduplication.
+    let extra = [
+        annotations
+            .read_only_hint
+            .map(|read_only| if read_only { "read-only" } else { "writes" }),
+        (annotations.destructive_hint == Some(true)).then_some("destructive"),
+        (annotations.idempotent_hint == Some(true)).then_some("idempotent"),
+        annotations.open_world_hint.map(|open_world| {
+            if open_world {
+                "open-world"
+            } else {
+                "closed-world"
             }
-        };
-
-        match annotations.read_only_hint {
-            Some(true) => push_label("read-only"),
-            Some(false) => push_label("writes"),
-            None => {}
-        }
-        if annotations.destructive_hint == Some(true) {
-            push_label("destructive");
-        }
-        if annotations.idempotent_hint == Some(true) {
-            push_label("idempotent");
-        }
-        match annotations.open_world_hint {
-            Some(true) => push_label("open-world"),
-            Some(false) => push_label("closed-world"),
-            None => {}
-        }
-    }
-
-    if merged.is_empty() {
-        tool_name_style()
-    } else {
-        tool_name_style_from_labels(&merged)
-    }
+        }),
+    ];
+    style_for_labels(
+        labels
+            .iter()
+            .map(String::as_str)
+            .chain(extra.into_iter().flatten()),
+    )
 }
 
 pub fn tool_name_style_from_annotations(annotations: Option<&serde_json::Value>) -> Style {

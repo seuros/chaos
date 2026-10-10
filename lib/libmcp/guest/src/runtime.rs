@@ -15,7 +15,6 @@ use crate::protocol::CreateElicitationRequest;
 use crate::protocol::CreateMessageRequest;
 use crate::protocol::ElicitationCompleteNotificationParams;
 use crate::protocol::Implementation;
-use crate::protocol::InitializeRequest;
 use crate::protocol::InitializeResult;
 use crate::protocol::JsonRpcError;
 use crate::protocol::JsonRpcMessage;
@@ -80,18 +79,18 @@ async fn perform_handshake(
     transport: Arc<dyn MessageTransport>,
     options: &ConnectionOptions,
 ) -> Result<ServerInfo, GuestError> {
-    let requested_version = latest_supported_protocol_version().to_string();
-    let initialize = InitializeRequest {
-        protocol_version: requested_version.clone(),
-        capabilities: options.capabilities.clone(),
-        client_info: options.client_info.clone(),
-    };
+    let requested_version = latest_supported_protocol_version();
+    let initialize = serde_json::json!({
+        "protocolVersion": requested_version,
+        "capabilities": options.capabilities,
+        "clientInfo": options.client_info,
+    });
 
     transport
         .send(JsonRpcMessage::Request(JsonRpcRequest::new(
             serde_json::json!(crate::protocol::INITIALIZE_REQUEST_ID),
             "initialize",
-            Some(serde_json::to_value(&initialize)?),
+            Some(initialize),
         )))
         .await?;
 
@@ -122,7 +121,7 @@ async fn perform_handshake(
 
     if !crate::protocol::is_supported_protocol_version(&init_result.protocol_version) {
         return Err(GuestError::VersionMismatch {
-            sent: requested_version,
+            sent: requested_version.to_owned(),
             server: init_result.protocol_version,
         });
     }
@@ -459,7 +458,6 @@ async fn handle_server_request_message(
 ) -> JsonRpcResponse {
     let id = request
         .id
-        .clone()
         .unwrap_or_else(|| serde_json::json!("missing-id"));
 
     let result = match McpMethod::from(request.method.as_str()) {

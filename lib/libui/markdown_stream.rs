@@ -75,7 +75,7 @@ impl MarkdownStreamCollector {
             return Vec::new();
         };
         let source = &self.buffer[..=last_newline_idx];
-        let rendered = crate::markdown_render::render_stream_parts(
+        let mut rendered = crate::markdown_render::render_stream_parts(
             stability::stable_events(source),
             self.width,
             &self.cwd,
@@ -92,11 +92,10 @@ impl MarkdownStreamCollector {
             return Vec::new();
         }
 
-        let out_slice = &rendered[self.committed_part_count..complete_part_count];
-
-        let out = out_slice.to_vec();
+        rendered.truncate(complete_part_count);
+        rendered.drain(..self.committed_part_count);
         self.committed_part_count = complete_part_count;
-        out
+        rendered
     }
 
     /// Finalize the stream: emit all remaining lines beyond the last commit.
@@ -134,12 +133,14 @@ impl MarkdownStreamCollector {
                 }
                 _ => event,
             });
-        let rendered = crate::markdown_render::render_stream_parts(events, self.width, &self.cwd);
+        let mut rendered =
+            crate::markdown_render::render_stream_parts(events, self.width, &self.cwd);
 
         let out = if self.committed_part_count >= rendered.len() {
             Vec::new()
         } else {
-            rendered[self.committed_part_count..].to_vec()
+            rendered.drain(..self.committed_part_count);
+            rendered
         };
 
         // Reset collector state for next stream.

@@ -3,6 +3,7 @@ use chaos_abi::AbiError;
 use chaos_client::default_rama_http_client_with_egress;
 use chaos_libration::UsageSniffer;
 use rama::Service;
+use rama::bytes::Bytes;
 use rama::http::Body;
 use rama::http::HeaderMap;
 use rama::http::Request;
@@ -27,9 +28,7 @@ pub(crate) async fn start_rama_post_sse_request(
     transport_name: &str,
     sniffer: Option<&Arc<UsageSniffer>>,
 ) -> Result<Response<Body>, AbiError> {
-    let body_bytes = serde_json::to_vec(body).map_err(|e| AbiError::InvalidRequest {
-        message: e.to_string(),
-    })?;
+    let body_bytes = encode_body(body)?;
 
     let retry = &provider.retry;
     let max_attempts = retry.max_attempts.max(1);
@@ -114,3 +113,14 @@ pub(crate) async fn start_rama_post_sse_request(
         message: "all retry attempts exhausted".to_string(),
     })
 }
+
+fn encode_body(body: &Value) -> Result<Bytes, AbiError> {
+    serde_json::to_vec(body)
+        .map(Bytes::from)
+        .map_err(|e| AbiError::InvalidRequest {
+            message: e.to_string(),
+        })
+}
+
+#[cfg(test)]
+mod tests;

@@ -37,20 +37,21 @@ Unknown models remain available for ordinary use but cannot pass attested
 review's family check.
 
 Provider-scoped `model_family_overrides`
-mappings are operator-supplied TOML, exact-match only, are not a gateway-wide
-label, and do not infer or rename models automatically.
+mappings are operator-supplied settings, exact-match only, are not a
+gateway-wide label, and do not infer or rename models automatically.
 
 For example:
 
-```toml
-[model_providers.example]
-name = "Example Provider"
-base_url = "https://provider.example/v1"
-model_family = "family-default"
-
-[model_providers.example.model_family_overrides]
-"model-alpha" = "family-alpha"
-"model-beta" = "family-beta"
+```bash
+chaos config set model_providers.example '{
+  "name": "Example Provider",
+  "base_url": "https://provider.example/v1",
+  "model_family": "family-default",
+  "model_family_overrides": {
+    "model-alpha": "family-alpha",
+    "model-beta": "family-beta"
+  }
+}'
 ```
 
 Stored API keys count as configured credentials when the provider supports

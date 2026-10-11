@@ -180,6 +180,7 @@ fn ultra_effort_clamps_to_max_on_the_wire() {
 #[test]
 fn compatible_provider_preserves_ultra_effort_on_the_wire() {
     use crate::representer::OpenwAInnabeRepresenter;
+    use crate::representer::SystemRole;
 
     let mut req = make_req("grok-4");
     req.reasoning = Some(ReasoningConfig {
@@ -187,7 +188,8 @@ fn compatible_provider_preserves_ultra_effort_on_the_wire() {
         summary: None,
     });
 
-    let api_req = turn_request_to_api_request(req, &OpenwAInnabeRepresenter);
+    let representer = OpenwAInnabeRepresenter::new(SystemRole::Anywhere);
+    let api_req = turn_request_to_api_request(req, &representer);
 
     let reasoning = api_req.reasoning.expect("reasoning present");
     assert_eq!(reasoning.effort, Some(chaos_abi::ReasoningEffort::Ultra));
@@ -259,6 +261,7 @@ fn openai_tools_extension_overrides_neutral_tool_conversion() {
 #[test]
 fn wannabe_representer_used_via_turn_request_conversion() {
     use crate::representer::OpenwAInnabeRepresenter;
+    use crate::representer::SystemRole;
     use chaos_abi::ResponseItem;
     let req = TurnRequest {
         input: vec![
@@ -278,7 +281,8 @@ fn wannabe_representer_used_via_turn_request_conversion() {
         ],
         ..make_req("grok-4")
     };
-    let api_req = turn_request_to_api_request(req, &OpenwAInnabeRepresenter);
+    let representer = OpenwAInnabeRepresenter::new(SystemRole::Anywhere);
+    let api_req = turn_request_to_api_request(req, &representer);
     assert_eq!(api_req.input.len(), 1, "Reasoning item must be dropped");
     std::assert_matches!(
         &api_req.input[0], ResponseItem::Message { role, .. } if role == "system",

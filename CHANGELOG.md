@@ -9,6 +9,20 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- `chaos-local-models(7)` manual: self-hosted OpenAI-compatible servers (vLLM,
+  Ollama, llama.cpp, LocalAI, SGLang, NIM, DGX Spark) as providers,
+  with the structured tool-call switch for each backend.
+
+### Fixed
+- Keyless custom providers over `wire_api = "chat_completions"` no longer fail
+  with "No credentials found for provider"; no `Authorization` header is sent
+  when neither `env_key` nor a bearer token is configured.
+- Self-hosted Responses and Chat Completions endpoints receive one leading
+  system block: leading instruction items fold into it and later ones are sent
+  as user messages, so strict chat templates (Qwen3.6/3.8 under vLLM) no longer
+  reject requests with "System message must be at the beginning".
+
 ## [47.13.1] - 2026-10-10
 
 ### Added

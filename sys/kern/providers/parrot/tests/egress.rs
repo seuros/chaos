@@ -226,7 +226,7 @@ async fn every_wire_format_sends_vendor_authenticated_requests_through_egress() 
         (
             Box::new(ChatCompletionsAdapter::new(
                 provider("https://custom.example/v1", &gateway),
-                "vendor-token".into(),
+                Some("vendor-token".into()),
                 None,
             )),
             "https://custom.example",

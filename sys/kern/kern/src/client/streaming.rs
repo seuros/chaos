@@ -1639,9 +1639,8 @@ impl ModelClientSession {
     pub(super) fn resolve_chat_completions_api_key(
         &self,
         auth: &crate::api_bridge::CoreAuthProvider,
-    ) -> Result<String> {
+    ) -> Option<String> {
         auth.bearer_token()
-            .ok_or_else(|| crate::api_bridge::provider_auth_missing(&self.client.state.provider))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1729,7 +1728,7 @@ impl ModelClientSession {
             },
         )?;
 
-        let api_key = self.resolve_chat_completions_api_key(&client_setup.api_auth)?;
+        let api_key = self.resolve_chat_completions_api_key(&client_setup.api_auth);
         let sniffer = chaos_libration::registry::sniffer_for(
             "chat_completions",
             &client_setup.api_provider.base_url,

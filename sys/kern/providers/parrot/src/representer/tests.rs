@@ -69,7 +69,7 @@ fn wannabe_passes_system_role_through() {
         end_turn: None,
         phase: None,
     }];
-    let result = OpenwAInnabeRepresenter.represent(items);
+    let result = OpenwAInnabeRepresenter::new(SystemRole::Anywhere).represent(items);
     std::assert_matches!(
         &result[0], ResponseItem::Message { role, .. } if role == "system",
         "wannabe must keep system role unchanged"
@@ -84,7 +84,7 @@ fn wannabe_drops_reasoning_items() {
         content: None,
         encrypted_content: Some("enc".into()),
     }];
-    let result = OpenwAInnabeRepresenter.represent(items);
+    let result = OpenwAInnabeRepresenter::new(SystemRole::Anywhere).represent(items);
     assert!(result.is_empty(), "wannabe must drop Reasoning items");
 }
 
@@ -97,7 +97,7 @@ fn wannabe_drops_compaction_controls() {
         },
     ];
 
-    let result = OpenwAInnabeRepresenter.represent(items);
+    let result = OpenwAInnabeRepresenter::new(SystemRole::Anywhere).represent(items);
 
     assert!(result.is_empty(), "wannabe must drop compaction controls");
 }
@@ -111,7 +111,7 @@ fn wannabe_still_converts_custom_tool_call() {
         name: "apply_patch".into(),
         input: r#"{"p":"x"}"#.into(),
     }];
-    let result = OpenwAInnabeRepresenter.represent(items);
+    let result = OpenwAInnabeRepresenter::new(SystemRole::Anywhere).represent(items);
     std::assert_matches!(
         &result[0], ResponseItem::FunctionCall { call_id, .. } if call_id == "call_w"
     );
@@ -249,4 +249,105 @@ fn session_representer_is_clone() {
         }]
     };
     assert_eq!(sr.represent(items()).len(), sr2.represent(items()).len());
+}
+
+// --- OpenwAInnabeRepresenter system-role switch ---------------------------
+
+fn text_message(role: &str, text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: role.into(),
+        content: vec![chaos_abi::ContentItem::InputText { text: text.into() }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
+fn wannabe_request(input: Vec<ResponseItem>) -> crate::common::ResponsesApiRequest {
+    crate::common::ResponsesApiRequest {
+        model: "m".into(),
+        instructions: "base".into(),
+        input,
+        tools: vec![],
+        tool_choice: "auto".into(),
+        parallel_tool_calls: true,
+        reasoning: None,
+        store: false,
+        stream: true,
+        include: vec![],
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+    }
+}
+
+#[test]
+fn leading_only_folds_leading_instructions_and_demotes_later_system_items() {
+    let mut request = wannabe_request(vec![
+        text_message("developer", "permissions"),
+        text_message("system", "mode"),
+        text_message("user", "hello"),
+        text_message("system", "tools reminder"),
+    ]);
+    OpenwAInnabeRepresenter::new(SystemRole::LeadingOnly).prepare_request(&mut request);
+    assert_eq!(request.instructions, "base\n\npermissions\n\nmode");
+    let roles: Vec<&str> = request
+        .input
+        .iter()
+        .map(|item| match item {
+            ResponseItem::Message { role, .. } => role.as_str(),
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(roles, vec!["user", "user"]);
+}
+
+#[test]
+fn leading_only_keeps_image_bearing_instruction_items_as_user() {
+    let mut request = wannabe_request(vec![ResponseItem::Message {
+        id: None,
+        role: "system".into(),
+        content: vec![chaos_abi::ContentItem::InputImage {
+            image_url: "data:image/png;base64,AA==".into(),
+        }],
+        end_turn: None,
+        phase: None,
+    }]);
+    OpenwAInnabeRepresenter::new(SystemRole::LeadingOnly).prepare_request(&mut request);
+    assert_eq!(request.instructions, "base");
+    std::assert_matches!(
+        &request.input[0],
+        ResponseItem::Message { role, .. } if role == "user"
+    );
+}
+
+#[test]
+fn anywhere_leaves_system_items_in_place() {
+    let mut request = wannabe_request(vec![
+        text_message("system", "mode"),
+        text_message("user", "hello"),
+        text_message("system", "later"),
+    ]);
+    OpenwAInnabeRepresenter::new(SystemRole::Anywhere).prepare_request(&mut request);
+    assert_eq!(request.instructions, "base");
+    assert_eq!(request.input.len(), 3);
+    std::assert_matches!(
+        &request.input[2],
+        ResponseItem::Message { role, .. } if role == "system"
+    );
+}
+
+#[test]
+fn compatible_endpoint_selects_leading_only_except_xai() {
+    let mut strict = wannabe_request(vec![text_message("system", "mode")]);
+    SessionRepresenter::for_compatible_endpoint("http://127.0.0.1:8000/v1")
+        .0
+        .prepare_request(&mut strict);
+    assert!(strict.input.is_empty());
+
+    let mut xai = wannabe_request(vec![text_message("system", "mode")]);
+    SessionRepresenter::for_compatible_endpoint("https://api.x.ai/v1")
+        .0
+        .prepare_request(&mut xai);
+    assert_eq!(xai.input.len(), 1);
 }

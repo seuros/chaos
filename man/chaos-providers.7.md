@@ -12,8 +12,10 @@ chaos-providers - configure and select LLM providers for FreeChaOS
 ## DESCRIPTION
 
 Each session selects a provider ID and model. Provider settings control the
-endpoint, credentials, wire format, and transport. Additional providers use
-`[model_providers.<id>]` entries in the persisted configuration.
+endpoint, credentials, wire format, and transport. Additional providers are
+persisted user settings under `model_providers.<id>`, written with
+`chaos config set` and read back with `chaos config get`. Do not put them in
+`config.toml`; that file holds bootstrap settings only.
 
 See [chaos-support(7)](./chaos-support.7.md) for available providers and formats,
 and [chaos-storage(7)](./chaos-storage.7.md) for configuration storage.
@@ -250,15 +252,15 @@ session. Enabled WebSocket v2 selects Responses directly.
 For GPT-5.6 Sol, Chaos uses the context window advertised by the provider
 catalog by default:
 
-```toml
-chatgpt_context_window = "catalog"
+```bash
+chaos config set chatgpt_context_window '"catalog"'
 ```
 
 The optional `observed-400k` preset applies to `gpt-5.6-sol` on the built-in
 OpenAI ChatGPT OAuth route:
 
-```toml
-chatgpt_context_window = "observed-400k"
+```bash
+chaos config set chatgpt_context_window '"observed-400k"'
 ```
 
 You can also persist either choice from the TUI:
@@ -278,9 +280,9 @@ the configured preset.
 
 Explicit numeric settings are also available:
 
-```toml
-model_context_window = 400000
-model_auto_compact_token_limit = 350000
+```bash
+chaos config set model_context_window 400000
+chaos config set model_auto_compact_token_limit 350000
 ```
 
 An explicit `model_context_window` disables the named preset. An explicit
@@ -299,8 +301,8 @@ rather than emitted as a user-facing compaction warning.
 
 To enable bounded agent control over compaction timing:
 
-```toml
-agent_compaction_control = "bounded"
+```bash
+chaos config set agent_compaction_control '"bounded"'
 ```
 
 The default is `"disabled"`. In bounded mode, Chaos exposes a
@@ -322,19 +324,18 @@ pending decision made by the source agent.
 Chaos can mirror the active session's durable process name into the terminal
 title. This lets terminals such as WezTerm display descriptive tab labels:
 
-```toml
+```bash
 # Never emit terminal-title changes.
-terminal_title = "off"
+chaos config set terminal_title '"off"'
 
 # Mirror names set with /rename or restored on resume. This is the default.
-terminal_title = "process-name"
+chaos config set terminal_title '"process-name"'
 
 # Also let the current root agent name the session.
-terminal_title = "agent"
+chaos config set terminal_title '"agent"'
 
 # Optional idle identity marker is TUI presentation only.
-[tui]
-terminal_title_icon = "✦"
+chaos config set tui.terminal_title_icon '"✦"'
 ```
 
 The optional idle icon prefixes both named sessions and the `new session`
@@ -364,7 +365,7 @@ chaos --provider xai --model grok-4
 
 The exact `api.x.ai` host exposes xAI's native `web_search` and
 `x_search` server-side tools. Override the provider through
-`[model_providers.xai]` settings.
+`chaos config set model_providers.xai.<field>`.
 
 With xAI subscription authentication, Chaos uses the Grok subscription proxy.
 The dedicated xAI adapter owns its subscription headers and model capabilities;
@@ -389,11 +390,9 @@ in protocol events). Replenish the balance or switch providers before retrying.
 
 Already built-in, but you can override its config:
 
-```toml
-[model_providers.anthropic]
-name = "Anthropic"
-base_url = "https://api.anthropic.com/v1"
-env_key = "ANTHROPIC_API_KEY"
+```bash
+chaos config set model_providers.anthropic \
+  '{"name":"Anthropic","base_url":"https://api.anthropic.com/v1","env_key":"ANTHROPIC_API_KEY"}'
 ```
 
 ```bash
@@ -408,11 +407,9 @@ Five-minute prompt caching is enabled by default. Set
 
 ### LSD
 
-```toml
-[model_providers.lsd]
-name = "LSD"
-base_url = "http://localhost:8847"
-wire_api = "lsd"
+```bash
+chaos config set model_providers.lsd \
+  '{"name":"LSD","base_url":"http://localhost:8847","wire_api":"lsd"}'
 ```
 
 ```bash
@@ -493,14 +490,15 @@ model catalog. For a regional endpoint, override the provider's settings and
 use a key for that region.
 For example, the China Kimi Code endpoint is:
 
-```toml
-[model_providers.moonshotai-coding]
-name = "Moonshot AI Coding"
-model_family = "kimi"
-base_url = "https://api.kimi.com/coding/v1"
-env_key = "KIMI_API_KEY"
-wire_api = "responses"
-native_server_side_tools = ["web_search"]
+```bash
+chaos config set model_providers.moonshotai-coding '{
+  "name": "Moonshot AI Coding",
+  "model_family": "kimi",
+  "base_url": "https://api.kimi.com/coding/v1",
+  "env_key": "KIMI_API_KEY",
+  "wire_api": "responses",
+  "native_server_side_tools": ["web_search"]
+}'
 ```
 
 Protocol references:
@@ -509,28 +507,23 @@ Protocol references:
 
 ### DeepSeek
 
-```toml
-[model_providers.deepseek]
-name = "DeepSeek"
-base_url = "https://api.deepseek.com/v1"
-env_key = "DEEPSEEK_API_KEY"
+```bash
+chaos config set model_providers.deepseek \
+  '{"name":"DeepSeek","base_url":"https://api.deepseek.com/v1","env_key":"DEEPSEEK_API_KEY"}'
 ```
 
 ### Groq
 
-```toml
-[model_providers.groq]
-name = "Groq"
-base_url = "https://api.groq.com/openai/v1"
-env_key = "GROQ_API_KEY"
+```bash
+chaos config set model_providers.groq \
+  '{"name":"Groq","base_url":"https://api.groq.com/openai/v1","env_key":"GROQ_API_KEY"}'
 ```
 
 ### Ollama (local)
 
-```toml
-[model_providers.ollama]
-name = "Ollama"
-base_url = "http://localhost:11434/v1"
+```bash
+chaos config set model_providers.ollama \
+  '{"name":"Ollama","base_url":"http://localhost:11434/v1"}'
 ```
 
 No `env_key` needed — Ollama runs locally without authentication.
@@ -538,6 +531,19 @@ No `env_key` needed — Ollama runs locally without authentication.
 ```bash
 chaos --provider ollama --model llama3
 ```
+
+### Other self-hosted servers
+
+vLLM, llama.cpp, LocalAI, SGLang, NIM, and DGX Spark hosts are added with
+one command, keyless by default:
+
+```bash
+chaos config set model_providers.local \
+  '{"name":"Local server","base_url":"http://<host>:<port>/v1","wire_api":"chat_completions"}'
+```
+
+Server switches for structured tool calls, LAN access, wire format choice,
+and troubleshooting are in [chaos-local-models(7)](./chaos-local-models.7.md).
 
 ## REFLEX
 
@@ -581,9 +587,8 @@ API version endpoint. Most OpenAI-compatible providers use `/v1`.
 
 **Timeouts on slow providers** — Increase `stream_idle_timeout_ms`:
 
-```toml
-[model_providers.slow]
-stream_idle_timeout_ms = 600000
+```bash
+chaos config set model_providers.slow.stream_idle_timeout_ms 600000
 ```
 
 **Rate limiting** — FreeChaOS retries 429s automatically. Increase
@@ -600,3 +605,4 @@ stream_idle_timeout_ms = 600000
 - [chaos-reflex.7](./chaos-reflex.7.md)
 - [chaos-mcp.7](./chaos-mcp.7.md)
 - [chaos-halluacinate.7](./chaos-halluacinate.7.md)
+- [chaos-local-models.7](./chaos-local-models.7.md)

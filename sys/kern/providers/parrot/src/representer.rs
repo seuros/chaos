@@ -19,6 +19,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+use chaos_abi::ContentItem;
 use chaos_abi::ReasoningEffort;
 use chaos_abi::ResponseItem;
 
@@ -173,6 +174,17 @@ fn remap_system_to_developer(item: ResponseItem) -> ResponseItem {
 // OpenwAInnabeRepresenter — xAI and compat clones
 // ---------------------------------------------------------------------------
 
+/// How a wannabe endpoint accepts system-level instructions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemRole {
+    /// `system` items are accepted anywhere in the input (xAI).
+    Anywhere,
+    /// Only one leading system block is accepted. Self-hosted servers such as
+    /// vLLM render the request through the model's chat template, and strict
+    /// templates (Qwen3.6/3.8) reject any later system message.
+    LeadingOnly,
+}
+
 /// Representer for providers that speak the OpenAI Responses API dialect but
 /// diverge from it — xAI/Grok being the founding member.
 ///
@@ -180,9 +192,57 @@ fn remap_system_to_developer(item: ResponseItem) -> ResponseItem {
 /// OpenAI's `encrypted_content` mechanism for cross-turn context restoration
 /// that wannabe providers do not implement.
 ///
-/// The Chaos-ABI `"system"` role passes through unchanged — xAI accepts
-/// `"system"` natively and does not use the `"developer"` alias.
-pub struct OpenwAInnabeRepresenter;
+/// The Chaos-ABI `"system"` role passes through unchanged. With
+/// [`SystemRole::LeadingOnly`] the request pass folds leading
+/// `system`/`developer` items into `instructions` and demotes later ones to
+/// `user`, so the server sees exactly one system block.
+pub struct OpenwAInnabeRepresenter {
+    system_role: SystemRole,
+}
+
+impl OpenwAInnabeRepresenter {
+    pub fn new(system_role: SystemRole) -> Self {
+        Self { system_role }
+    }
+
+    fn fold_instruction_items(request: &mut crate::common::ResponsesApiRequest) {
+        let input = std::mem::take(&mut request.input);
+        let mut kept = Vec::with_capacity(input.len());
+        let mut leading = true;
+        for item in input {
+            match item {
+                ResponseItem::Message {
+                    id,
+                    role,
+                    content,
+                    end_turn,
+                    phase,
+                } if role == "system" || role == "developer" => {
+                    if leading && let Some(text) = text_only(&content) {
+                        if !request.instructions.is_empty() {
+                            request.instructions.push_str("\n\n");
+                        }
+                        request.instructions.push_str(&text);
+                    } else {
+                        leading = false;
+                        kept.push(ResponseItem::Message {
+                            id,
+                            role: "user".to_string(),
+                            content,
+                            end_turn,
+                            phase,
+                        });
+                    }
+                }
+                other => {
+                    leading = false;
+                    kept.push(other);
+                }
+            }
+        }
+        request.input = kept;
+    }
+}
 
 impl Representer for OpenwAInnabeRepresenter {
     fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem> {
@@ -199,6 +259,26 @@ impl Representer for OpenwAInnabeRepresenter {
             })
             .collect()
     }
+
+    fn prepare_request(&self, request: &mut crate::common::ResponsesApiRequest) {
+        if self.system_role == SystemRole::LeadingOnly {
+            Self::fold_instruction_items(request);
+        }
+    }
+}
+
+fn text_only(content: &[ContentItem]) -> Option<String> {
+    let mut parts = Vec::with_capacity(content.len());
+    for item in content {
+        match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                parts.push(text.as_str());
+            }
+            ContentItem::Document { text, .. } => parts.push(text.as_str()),
+            ContentItem::InputImage { .. } => return None,
+        }
+    }
+    Some(parts.join("\n"))
 }
 
 // ---------------------------------------------------------------------------
@@ -222,15 +302,19 @@ impl SessionRepresenter {
     /// Representer for OpenAI-compatible providers that diverge from the spec
     /// (xAI/Grok and future compat clones).
     pub fn wannabe() -> Self {
-        Self(Arc::new(OpenwAInnabeRepresenter))
+        Self(Arc::new(OpenwAInnabeRepresenter::new(SystemRole::Anywhere)))
     }
 
     /// Select a compatible endpoint's dialect without treating it as OpenAI.
     pub fn for_compatible_endpoint(base_url: &str) -> Self {
         if moonshootai::is_kimi_endpoint(base_url) {
             Self(Arc::new(moonshootai::KimiRepresenter))
-        } else {
+        } else if crate::xai::is_xai_endpoint(base_url) {
             Self::wannabe()
+        } else {
+            Self(Arc::new(OpenwAInnabeRepresenter::new(
+                SystemRole::LeadingOnly,
+            )))
         }
     }
 

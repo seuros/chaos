@@ -35,19 +35,18 @@ use tokio::time::timeout;
 
 /// Adapter for the OpenAI Chat Completions API (`/v1/chat/completions`).
 ///
-/// Holds a provider (headers, base URL, retry config) and a resolved API key.
-/// The API key must be non-empty; it is passed as `Authorization: Bearer <key>`.
+/// Holds a provider (headers, base URL, retry config) and an optional API key.
 #[derive(Debug, Clone)]
 pub struct ChatCompletionsAdapter {
     provider: Provider,
-    api_key: String,
+    api_key: Option<String>,
     default_model: Option<String>,
     sniffer: Option<Arc<UsageSniffer>>,
 }
 
 impl ChatCompletionsAdapter {
     /// Create an adapter backed by a fully-configured provider.
-    pub fn new(provider: Provider, api_key: String, default_model: Option<String>) -> Self {
+    pub fn new(provider: Provider, api_key: Option<String>, default_model: Option<String>) -> Self {
         Self {
             provider,
             api_key,
@@ -74,7 +73,7 @@ impl ChatCompletionsAdapter {
             base_url,
             false,
         );
-        Self::new(provider, api_key, default_model)
+        Self::new(provider, Some(api_key), default_model)
     }
 
     fn chat_completions_url(&self) -> String {
@@ -94,7 +93,9 @@ impl ChatCompletionsAdapter {
 
     fn build_headers(&self, stream: bool) -> Result<HeaderMap, AbiError> {
         let mut headers = self.provider.headers.clone();
-        crate::http_helpers::insert_bearer_auth(&mut headers, &self.api_key, "Chat Completions")?;
+        if let Some(api_key) = &self.api_key {
+            crate::http_helpers::insert_bearer_auth(&mut headers, api_key, "Chat Completions")?;
+        }
         if stream {
             crate::http_helpers::insert_streaming_json_headers(&mut headers);
         } else {
@@ -217,6 +218,7 @@ pub(crate) fn build_request_body(
     }
 
     messages.extend(convert_input_to_messages(&request.input));
+    normalize_system_messages(&mut messages);
 
     let tools = convert_tools(&request.tools);
     let parallel_tool_calls = if request.tools.is_empty() {
@@ -250,6 +252,59 @@ pub(crate) fn build_request_body(
     })?;
 
     Ok(body)
+}
+
+/// Strict chat templates (Qwen3.6/3.8 under vLLM) reject any
+/// `system` message that is not the first message. Merge the leading run of
+/// system messages into one and demote later ones to `user` so their position
+/// in the conversation is preserved.
+fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
+    let leading = messages
+        .iter()
+        .take_while(|message| message.role == "system")
+        .count();
+    if leading > 1 {
+        let merged: Vec<ChatMessage> = messages.drain(..leading).collect();
+        let all_text = merged
+            .iter()
+            .all(|message| matches!(message.content, Some(Value::String(_))));
+        let content = if all_text {
+            Value::String(
+                merged
+                    .iter()
+                    .filter_map(|message| message.content.as_ref()?.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n\n"),
+            )
+        } else {
+            let mut parts = Vec::new();
+            for message in merged {
+                match message.content {
+                    Some(Value::String(text)) => {
+                        parts.push(serde_json::json!({"type": "text", "text": text}));
+                    }
+                    Some(Value::Array(items)) => parts.extend(items),
+                    _ => {}
+                }
+            }
+            Value::Array(parts)
+        };
+        messages.insert(
+            0,
+            ChatMessage {
+                role: "system".to_string(),
+                content: Some(content),
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+            },
+        );
+    }
+    for message in messages.iter_mut().skip(1) {
+        if message.role == "system" {
+            message.role = "user".to_string();
+        }
+    }
 }
 
 fn convert_content_item_to_value(c: &ContentItem) -> Option<Value> {

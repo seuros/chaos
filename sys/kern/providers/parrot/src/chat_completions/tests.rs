@@ -259,6 +259,42 @@ fn build_request_body_preserves_output_schema() {
 }
 
 #[test]
+fn build_request_body_merges_leading_system_messages_and_demotes_later_ones() {
+    let message = |role: &str, text: &str| ResponseItem::Message {
+        id: None,
+        role: role.into(),
+        content: vec![ContentItem::InputText { text: text.into() }],
+        end_turn: None,
+        phase: None,
+    };
+    let request = TurnRequest {
+        model: TEST_MODEL.to_string(),
+        instructions: "base".to_string(),
+        input: vec![
+            message("developer", "permissions"),
+            message("user", "hello"),
+            message("system", "tools reminder"),
+        ],
+        tools: vec![],
+        parallel_tool_calls: false,
+        reasoning: None,
+        output_schema: None,
+        verbosity: None,
+        turn_state: None,
+        extensions: serde_json::Map::new(),
+    };
+    let body = build_request_body(&request, TEST_MODEL, true).expect("body should build");
+    let messages = body["messages"].as_array().expect("messages");
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(roles, vec!["system", "user", "user"]);
+    assert_eq!(messages[0]["content"], "base\n\npermissions");
+    assert_eq!(messages[2]["content"], "tools reminder");
+}
+
+#[test]
 fn build_request_body_includes_system_message() {
     let request = TurnRequest {
         model: TEST_MODEL.to_string(),
@@ -601,6 +637,20 @@ fn build_headers_rejects_empty_api_key() {
     );
     assert!(adapter.build_headers(true).is_err());
     assert!(adapter.build_headers(false).is_err());
+}
+
+#[test]
+fn build_headers_omits_authorization_without_api_key() {
+    let provider = Provider::from_base_url_with_default_streaming_config(
+        "ChatCompletions",
+        "http://127.0.0.1:8000/v1".to_string(),
+        false,
+    );
+    let adapter = ChatCompletionsAdapter::new(provider, None, None);
+    for stream in [true, false] {
+        let headers = adapter.build_headers(stream).expect("headers should build");
+        assert!(headers.get(rama::http::header::AUTHORIZATION).is_none());
+    }
 }
 
 #[test]

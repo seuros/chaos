@@ -24,7 +24,7 @@ Support levels used below:
 
 ## PROVIDERS (BUNDLED)
 
-Entries under `[model_providers.<id>]` in the persisted configuration
+Persisted `model_providers.<id>` settings, written with `chaos config set`,
 override or extend the built-in providers.
 
 | ID | Display name | Default wire | Auth env / methods | Notes | Level |
@@ -45,6 +45,7 @@ Configured as described in [chaos-providers(7)](./chaos-providers.7.md):
 | Example ID | Typical wire / routing | Env key | Level |
 |------------|------------------------|---------|-------|
 | `ollama` | `auto` / chat completions on local OpenAI-compatible server | none | Config-only |
+| vLLM, llama.cpp, LocalAI, SGLang, NIM, DGX Spark | `chat_completions` on a local or LAN OpenAI-compatible server; see [chaos-local-models(7)](./chaos-local-models.7.md) | none, or server `--api-key` | Config-only |
 | `deepseek` | OpenAI-compatible | `DEEPSEEK_API_KEY` | Config-only |
 | `groq` | OpenAI-compatible | `GROQ_API_KEY` | Config-only |
 | `lsd` | explicit `wire_api = "lsd"` | optional | Config-only |
@@ -124,6 +125,7 @@ See [chaos-storage(7)](./chaos-storage.7.md).
 ## SEE ALSO
 
 - [chaos-providers(7)](./chaos-providers.7.md)
+- [chaos-local-models(7)](./chaos-local-models.7.md)
 - [chaos-storage(7)](./chaos-storage.7.md)
 - [chaos-mcp(7)](./chaos-mcp.7.md)
 - [chaos-install(7)](./chaos-install.7.md)

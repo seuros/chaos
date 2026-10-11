@@ -274,8 +274,8 @@ session. To opt in, use the TUI command:
 
 The corresponding persisted setting is:
 
-```toml
-dynamic_parent_effort = true
+```bash
+chaos config set dynamic_parent_effort true
 ```
 
 When enabled, the parent model receives a `set_parent_effort` tool. A change is

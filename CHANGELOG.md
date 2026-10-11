@@ -9,6 +9,8 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.13.2] - 2026-10-11
+
 ### Added
 - `chaos-local-models(7)` manual: self-hosted OpenAI-compatible servers (vLLM,
   Ollama, llama.cpp, LocalAI, SGLang, NIM, DGX Spark) as providers,

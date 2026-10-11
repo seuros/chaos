@@ -20,7 +20,9 @@
 
 rustPlatform.buildRustPackage {
   pname = "chaos";
-  version = "47.11.0";
+  # Read from Cargo.toml so the package version tracks the release bumps
+  # instead of drifting every time the hardcoded string is forgotten.
+  version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
 
   # Restrict src to what cargo actually needs so flake/tooling edits don't
   # invalidate the build. Keep the list minimal: sys/kern/kern/build.rs
@@ -50,7 +52,10 @@ rustPlatform.buildRustPackage {
         !(builtins.elem (baseNameOf path) excluded);
     };
 
-  cargoHash = "sha256-y/yPoo0ZB60qB1R0FmHYYuMBVpc84YYSaVjm5IGwDb4=";
+  # Vendor straight from Cargo.lock: all dependencies come from crates.io
+  # and the lockfile embeds their sha256 checksums, so no cargoHash to
+  # update when the lockfile changes.
+  cargoLock.lockFile = ./Cargo.lock;
 
   # The workspace test suites drive agents, PTYs, and (for the regress set)
   # a live Postgres — none of that survives the build sandbox. Run them via

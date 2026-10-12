@@ -58,6 +58,9 @@ should. There is no patch level; the build timestamp is the patch.
   ran at session start.
 
 ### Fixed
+- The workspace `rust-version` is 1.98 so FreeBSD's ports Rust (1.98.1)
+  builds it; development still pins 1.99 through `mise` and
+  `rust-toolchain.toml`.
 - PostgreSQL mounts now enforce the same per-partition log retention as
   SQLite; previously only time-based cleanup ran.
 - The message-history log id on PostgreSQL changes when the table is

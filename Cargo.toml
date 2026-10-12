@@ -132,7 +132,7 @@ version = "47.13.2"
 # crates created with `cargo new -w ...` automatically inherit the 2024
 # edition.
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.98"
 license = "Apache-2.0"
 publish = false
 

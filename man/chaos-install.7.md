@@ -22,6 +22,7 @@ In an installed system, this page would typically be installed as
 | Requirement                 | Details                                                         |
 | --------------------------- | --------------------------------------------------------------- |
 | Operating systems           | Linux 6.10+, macOS 15+, FreeBSD 15+                            |
+| Rust (source builds)        | 1.98+ (`rust-version`); development uses 1.99 via `mise`/`rust-toolchain.toml`. FreeBSD's ports `rust` (1.98.1) builds it |
 | Git (optional, recommended) | 2.53+                                                           |
 | RAM                         | ~80 MB (MCP mode), ~128 MB (TUI mode) — MCP servers not included |
 

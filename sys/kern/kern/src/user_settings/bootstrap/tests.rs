@@ -110,7 +110,7 @@ fn set_bootstrap_round_trips_both_keys_and_rejects_others() -> anyhow::Result<()
         resolved.egress_url.as_deref(),
         Some("https://gateway.example/egress/chaos")
     );
-    assert_eq!(resolved.sqlite_home, home.path());
+    assert_eq!(resolved.storage_home, home.path());
     Ok(())
 }
 

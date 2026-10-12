@@ -497,9 +497,12 @@ impl JournalStore for SqliteJournalStore {
         lease_token: &str,
         ttl: Duration,
     ) -> Result<Lease, JournalError> {
-        ensure_process_exists(&self.pool, process_id).await?;
+        // Validate and extend under one write lock so a competing acquire
+        // cannot slip in between the check and the update.
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        ensure_process_exists_in_tx(&mut tx, process_id).await?;
         let now = jiff::Timestamp::now();
-        let lease = load_valid_lease(&self.pool, process_id, owner_id, lease_token, now).await?;
+        let lease = load_valid_lease_in_tx(&mut tx, process_id, owner_id, lease_token, now).await?;
         let expires_at = timestamp_after(now, ttl)?;
 
         sqlx::query(
@@ -510,8 +513,9 @@ impl JournalStore for SqliteJournalStore {
         .bind(expires_at.as_second())
         .bind(now.as_second())
         .bind(process_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
 
         Ok(Lease {
             expires_at,
@@ -525,9 +529,10 @@ impl JournalStore for SqliteJournalStore {
         owner_id: &OwnerId,
         lease_token: &str,
     ) -> Result<(), JournalError> {
-        ensure_process_exists(&self.pool, process_id).await?;
-        let _lease = load_valid_lease(
-            &self.pool,
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        ensure_process_exists_in_tx(&mut tx, process_id).await?;
+        let _lease = load_valid_lease_in_tx(
+            &mut tx,
             process_id,
             owner_id,
             lease_token,
@@ -536,8 +541,9 @@ impl JournalStore for SqliteJournalStore {
         .await?;
         sqlx::query("DELETE FROM process_leases WHERE process_id = ?")
             .bind(process_id.to_string())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -774,6 +780,20 @@ async fn ensure_process_exists(
     Err(JournalError::ProcessNotFound(*process_id))
 }
 
+async fn ensure_process_exists_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    process_id: &ProcessId,
+) -> Result<(), JournalError> {
+    let exists = sqlx::query("SELECT 1 FROM processes WHERE id = ?")
+        .bind(process_id.to_string())
+        .fetch_optional(&mut **tx)
+        .await?;
+    if exists.is_some() {
+        return Ok(());
+    }
+    Err(JournalError::ProcessNotFound(*process_id))
+}
+
 async fn load_valid_lease(
     pool: &SqlitePool,
     process_id: &ProcessId,
@@ -789,7 +809,34 @@ async fn load_valid_lease(
     .bind(process_id.to_string())
     .fetch_optional(pool)
     .await?;
+    validate_lease_row(row, process_id, owner_id, lease_token, now)
+}
 
+async fn load_valid_lease_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    process_id: &ProcessId,
+    owner_id: &OwnerId,
+    lease_token: &str,
+    now: jiff::Timestamp,
+) -> Result<Lease, JournalError> {
+    let row = sqlx::query(
+        "SELECT owner_id, lease_token, expires_at
+         FROM process_leases
+         WHERE process_id = ?",
+    )
+    .bind(process_id.to_string())
+    .fetch_optional(&mut **tx)
+    .await?;
+    validate_lease_row(row, process_id, owner_id, lease_token, now)
+}
+
+fn validate_lease_row(
+    row: Option<sqlx::sqlite::SqliteRow>,
+    process_id: &ProcessId,
+    owner_id: &OwnerId,
+    lease_token: &str,
+    now: jiff::Timestamp,
+) -> Result<Lease, JournalError> {
     let Some(row) = row else {
         return Err(JournalError::InvalidLease {
             process_id: *process_id,

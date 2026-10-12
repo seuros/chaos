@@ -568,8 +568,9 @@ pub struct Config {
     /// Kernel-only admission flag; never accepted from user settings.
     pub(crate) unattended_recovery: bool,
 
-    /// Directory keying the SQLite mount root and workspace-write policy.
-    pub sqlite_home: PathBuf,
+    /// Directory keying the mounted storage backend for this home. On SQLite it
+    /// is where `chaos.sqlite` lives; on PostgreSQL it is only a registry key.
+    pub storage_home: PathBuf,
 
     /// Runtime storage URL resolved from bootstrap; never a silent default.
     pub storage_url: String,
@@ -1197,7 +1198,7 @@ pub async fn load_global_mcp_servers(
     let bootstrap = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_servers_from_runtime_db(&bootstrap.storage_url, &bootstrap.sqlite_home).await
+    load_global_mcp_servers_from_runtime_db(&bootstrap.storage_url, &bootstrap.storage_home).await
 }
 
 pub async fn load_global_mcp_server(
@@ -1207,16 +1208,16 @@ pub async fn load_global_mcp_server(
     let bootstrap = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_server_from_runtime_db(&bootstrap.storage_url, &bootstrap.sqlite_home, name)
+    load_global_mcp_server_from_runtime_db(&bootstrap.storage_url, &bootstrap.storage_home, name)
         .await
 }
 
 pub(crate) async fn load_effective_mcp_servers(
     storage_url: &str,
-    sqlite_home: &std::path::Path,
+    storage_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> std::io::Result<HashMap<String, McpServerConfig>> {
-    let global = load_global_mcp_servers_from_runtime_db(storage_url, sqlite_home).await?;
+    let global = load_global_mcp_servers_from_runtime_db(storage_url, storage_home).await?;
     let mut effective = global.into_iter().collect::<HashMap<_, _>>();
 
     for layer in config_layer_stack.get_layers(
@@ -1244,11 +1245,14 @@ pub(crate) async fn load_effective_mcp_servers(
 
 async fn load_global_mcp_servers_from_runtime_db(
     storage_url: &str,
-    sqlite_home: &std::path::Path,
+    storage_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db(storage_url, sqlite_home, "unknown")
-        .await
-        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(storage_url, storage_home, "unknown")
+            .await
+            .map_err(|err| {
+                std::io::Error::other(format!("failed to open runtime storage: {err}"))
+            })?;
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_global_mcp_servers())
         .await
     {
@@ -1269,12 +1273,15 @@ async fn load_global_mcp_servers_from_runtime_db(
 
 async fn load_global_mcp_server_from_runtime_db(
     storage_url: &str,
-    sqlite_home: &std::path::Path,
+    storage_home: &std::path::Path,
     name: &str,
 ) -> std::io::Result<Option<McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db(storage_url, sqlite_home, "unknown")
-        .await
-        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(storage_url, storage_home, "unknown")
+            .await
+            .map_err(|err| {
+                std::io::Error::other(format!("failed to open runtime storage: {err}"))
+            })?;
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.get_global_mcp_server(name))
         .await
     {
@@ -1327,7 +1334,7 @@ pub async fn upsert_global_mcp_server(
     let bootstrap = runtime_storage_config(chaos_home)?;
     let runtime = crate::runtime_db::open_or_create_runtime_db(
         &bootstrap.storage_url,
-        &bootstrap.sqlite_home,
+        &bootstrap.storage_home,
         "unknown",
     )
     .await?;
@@ -1342,7 +1349,7 @@ pub async fn delete_global_mcp_server(
     let bootstrap = runtime_storage_config(chaos_home)?;
     let runtime = crate::runtime_db::open_or_create_runtime_db(
         &bootstrap.storage_url,
-        &bootstrap.sqlite_home,
+        &bootstrap.storage_home,
         "unknown",
     )
     .await?;
@@ -1371,7 +1378,7 @@ pub fn replace_global_mcp_servers(
             .block_on(async move {
                 let runtime = crate::runtime_db::open_or_create_runtime_db(
                     &bootstrap.storage_url,
-                    &bootstrap.sqlite_home,
+                    &bootstrap.storage_home,
                     "unknown",
                 )
                 .await?;
@@ -1406,7 +1413,7 @@ pub fn set_project_trust_level(
             .block_on(async move {
                 let runtime = crate::runtime_db::open_or_create_runtime_db(
                     &bootstrap.storage_url,
-                    &bootstrap.sqlite_home,
+                    &bootstrap.storage_home,
                     "unknown",
                 )
                 .await?;

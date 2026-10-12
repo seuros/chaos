@@ -24,7 +24,7 @@ fn storage_targets_use_turn_cwd_and_configured_paths_not_global_disks() {
     let mut config = crate::config::test_config();
     config.cwd = PathBuf::from("/unused-startup-cwd");
     config.chaos_home = PathBuf::from("/state");
-    config.sqlite_home = PathBuf::from("/cache");
+    config.storage_home = PathBuf::from("/cache");
     config.log_dir = PathBuf::from("/logs");
     let targets = storage_targets(&config, Path::new("/active-workspace"), "/scratch".into());
     assert_eq!(
@@ -38,10 +38,7 @@ fn storage_targets_use_turn_cwd_and_configured_paths_not_global_disks() {
                 role: StorageRole::State,
                 path: "/state".into()
             },
-            StorageTarget {
-                role: StorageRole::State,
-                path: "/cache".into()
-            },
+            // storage_home ("/cache") is probed only under a mounted SQLite backend.
             StorageTarget {
                 role: StorageRole::State,
                 path: "/logs".into()
@@ -58,7 +55,7 @@ fn storage_targets_use_turn_cwd_and_configured_paths_not_global_disks() {
 fn repeated_paths_are_deduplicated_but_distinct_roles_are_preserved() {
     let mut config = crate::config::test_config();
     config.chaos_home = PathBuf::from("/shared");
-    config.sqlite_home = config.chaos_home.clone();
+    config.storage_home = config.chaos_home.clone();
     config.log_dir = config.chaos_home.clone();
     let targets = storage_targets(&config, Path::new("/shared"), "/shared".into());
     assert_eq!(targets.len(), 3);

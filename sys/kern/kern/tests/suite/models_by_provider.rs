@@ -182,12 +182,12 @@ fn scope_for(provider: &ModelProviderInfo) -> ModelsCacheScope {
     }
 }
 
-async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
+async fn write_cache(storage_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
     let scope = cache
         .scope
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cache scope expected"))?;
-    let pool = open_runtime_db(sqlite_home).await?;
+    let pool = open_runtime_db(storage_home).await?;
     sqlx::query(
         "INSERT INTO model_catalog_cache \
             (provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json) \

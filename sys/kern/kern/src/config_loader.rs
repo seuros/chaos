@@ -491,7 +491,7 @@ async fn project_trust_context(
     let mut trust_levels_by_path = std::collections::HashMap::new();
     let runtime = match crate::runtime_db::open_or_create_runtime_db(
         &bootstrap.storage_url,
-        &bootstrap.sqlite_home,
+        &bootstrap.storage_home,
         "unknown",
     )
     .await

@@ -1,12 +1,10 @@
 //! Runtime data for persisted session metadata.
 //!
-//! This crate owns process metadata, memories, log indexes, and the database
-//! schema used by session journals. SQLite journal access is mediated by
+//! This crate owns process metadata, log indexes, and the database schema
+//! used by session journals. SQLite journal access is mediated by
 //! journald; PostgreSQL journal access uses the mounted database directly.
 
-pub mod backfill;
 mod extract;
-pub mod memories;
 mod migrations;
 pub mod minion_jobs;
 mod model;
@@ -31,9 +29,7 @@ pub use runtime::{ApprovalState, RememberedApproval, SettingsSnapshot};
 pub use extract::apply_rollout_item;
 pub use extract::rollout_item_affects_process_metadata;
 pub use model::Anchor;
-pub use model::BackfillState;
 pub use model::BackfillStats;
-pub use model::BackfillStatus;
 pub use model::ExtractionOutcome;
 pub use model::MinionJob;
 pub use model::MinionJobCreateParams;

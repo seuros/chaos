@@ -1,6 +1,12 @@
-use super::super::{LogEntry, LogQuery, LogRow, PostgresRuntime, QueryBuilder, RuntimeDbHandle};
+use super::super::{
+    BTreeSet, LOG_PARTITION_ROW_LIMIT, LOG_PARTITION_SIZE_LIMIT_BYTES, LogEntry, LogQuery, LogRow,
+    PostgresRuntime, QueryBuilder, RuntimeDbHandle,
+};
+use super::prune::logs_prune_backend;
 use crate::{LogTailBatch, LogTailCursor};
-use sqlx::{Postgres, Row};
+use sqlx::{PgConnection, Postgres, Row};
+
+logs_prune_backend!(PostgresRuntime, Postgres, PgConnection);
 
 impl RuntimeDbHandle {
     pub async fn insert_logs(&self, entries: &[LogEntry]) -> anyhow::Result<()> {
@@ -25,6 +31,19 @@ impl RuntimeDbHandle {
         match self {
             Self::Postgres(runtime) => runtime.tail_backfill(query, limit).await,
             Self::Sqlite(runtime) => runtime.tail_backfill(query, limit).await,
+        }
+    }
+
+    /// Poll for rows after the provided cursor and return the advanced cursor.
+    pub async fn tail_poll(
+        &self,
+        query: &LogQuery,
+        cursor: &LogTailCursor,
+        limit: Option<usize>,
+    ) -> anyhow::Result<LogTailBatch> {
+        match self {
+            Self::Postgres(runtime) => runtime.tail_poll(query, cursor, limit).await,
+            Self::Sqlite(runtime) => runtime.tail_poll(query, cursor, limit).await,
         }
     }
 }
@@ -70,7 +89,10 @@ impl PostgresRuntime {
                 .push_bind(line)
                 .push_bind(estimated_bytes);
         });
-        builder.build().execute(&self.pool).await?;
+        let mut tx = self.pool.begin().await?;
+        builder.build().execute(&mut *tx).await?;
+        self.prune_logs_after_insert(entries, &mut tx).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -88,6 +110,33 @@ impl PostgresRuntime {
             .last()
             .map(|row| row.id)
             .unwrap_or(self.max_log_id(query).await?);
+        Ok(LogTailBatch {
+            rows,
+            cursor: LogTailCursor { last_id },
+        })
+    }
+
+    async fn query_logs_after(
+        &self,
+        query: &LogQuery,
+        after_id: i64,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<LogRow>> {
+        let mut next_query = query.clone();
+        next_query.after_id = Some(after_id);
+        next_query.limit = limit;
+        next_query.descending = false;
+        self.query_logs(&next_query).await
+    }
+
+    async fn tail_poll(
+        &self,
+        query: &LogQuery,
+        cursor: &LogTailCursor,
+        limit: Option<usize>,
+    ) -> anyhow::Result<LogTailBatch> {
+        let rows = self.query_logs_after(query, cursor.last_id, limit).await?;
+        let last_id = rows.last().map(|row| row.id).unwrap_or(cursor.last_id);
         Ok(LogTailBatch {
             rows,
             cursor: LogTailCursor { last_id },

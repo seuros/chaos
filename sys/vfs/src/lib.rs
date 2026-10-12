@@ -131,7 +131,7 @@ impl ChaosVfs {
     /// Open the backend described by `config`, running its migrations.
     pub async fn from_config(config: MountConfig) -> Result<Self, VfsError> {
         match config {
-            MountConfig::SqliteHome(sqlite_home) => chaos_proc::open_runtime_db(&sqlite_home)
+            MountConfig::SqliteHome(storage_home) => chaos_proc::open_runtime_db(&storage_home)
                 .await
                 .map(Self::from_sqlite_pool)
                 .map_err(|err| VfsError::Open(err.to_string())),
@@ -233,20 +233,20 @@ pub fn pool() -> Result<Vfs, VfsError> {
     root().map(ChaosVfs::pool)
 }
 
-/// The backend serving `sqlite_home`, falling back to the root for a home this
+/// The backend serving `storage_home`, falling back to the root for a home this
 /// process never mounted. The lookup keys on the home alone: a process serving
 /// one backend from a URL mounted no home and lands on the root, while a process
 /// holding several homes reaches the one it named.
-pub fn root_for(sqlite_home: &Path) -> Result<&'static ChaosVfs, VfsError> {
-    if let Some(vfs) = mounted(&MountConfig::sqlite_home(sqlite_home)) {
+pub fn root_for(storage_home: &Path) -> Result<&'static ChaosVfs, VfsError> {
+    if let Some(vfs) = mounted(&MountConfig::sqlite_home(storage_home)) {
         return Ok(vfs);
     }
     root()
 }
 
-/// The pool of the backend serving `sqlite_home`.
-pub fn pool_for(sqlite_home: &Path) -> Result<Vfs, VfsError> {
-    root_for(sqlite_home).map(ChaosVfs::pool)
+/// The pool of the backend serving `storage_home`.
+pub fn pool_for(storage_home: &Path) -> Result<Vfs, VfsError> {
+    root_for(storage_home).map(ChaosVfs::pool)
 }
 
 pub fn is_mounted() -> bool {

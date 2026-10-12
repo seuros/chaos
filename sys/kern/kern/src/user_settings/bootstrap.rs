@@ -26,8 +26,9 @@ pub struct BootstrapConfig {
 pub struct ResolvedBootstrap {
     /// Normalized storage URL. Explicit: there is no silent SQLite default.
     pub storage_url: String,
-    /// Directory keying the SQLite mount root and workspace-write policy.
-    pub sqlite_home: PathBuf,
+    /// Directory keying the mounted backend: `CHAOS_SQLITE_HOME` or the home.
+    /// SQLite stores `chaos.sqlite` there; PostgreSQL only uses it as a key.
+    pub storage_home: PathBuf,
     /// Egress gateway from the bootstrap file; `CHAOS_EGRESS_URL` overrides later.
     pub egress_url: Option<String>,
 }
@@ -37,7 +38,7 @@ impl ResolvedBootstrap {
     pub fn sqlite_in(home: &Path) -> Self {
         Self {
             storage_url: sqlite_url_in(home),
-            sqlite_home: home.to_path_buf(),
+            storage_home: home.to_path_buf(),
             egress_url: None,
         }
     }
@@ -119,7 +120,7 @@ impl BootstrapConfig {
     }
 
     /// `CHAOS_SQLITE_HOME` (relative paths join the home), else the home itself.
-    pub fn sqlite_home(&self, home: &Path) -> PathBuf {
+    pub fn storage_home(&self, home: &Path) -> PathBuf {
         sqlite_home_for(home)
     }
 
@@ -161,7 +162,7 @@ impl BootstrapConfig {
             .transpose()?;
         Ok(ResolvedBootstrap {
             storage_url,
-            sqlite_home: sqlite_home_for(home),
+            storage_home: sqlite_home_for(home),
             egress_url,
         })
     }

@@ -50,10 +50,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
-mod backfill;
 mod hooks;
 mod logs;
-mod memories;
 mod message_history;
 mod minion_jobs;
 mod planning;
@@ -529,6 +527,8 @@ impl RuntimeDbHandle {
             max_bytes: Option<usize>,
         ) -> anyhow::Result<()>;
         pub async fn message_history_metadata(&self) -> anyhow::Result<(u64, usize)>;
+        /// Generation token clients echo back so stale history offsets are rejected.
+        pub async fn message_history_log_id(&self) -> anyhow::Result<u64>;
         pub async fn get_message_history_entry(
             &self,
             log_id: u64,
@@ -1888,13 +1888,14 @@ WHERE job_id = $5
         })
     }
 
+    /// Storage identity of the history table: the relation filenode changes on
+    /// TRUNCATE or rewrite, like the SQLite file inode changes on recreate.
     async fn message_history_log_id(&self) -> anyhow::Result<u64> {
-        let database_oid: i64 = sqlx::query_scalar(
-            "SELECT oid::bigint FROM pg_database WHERE datname = current_database()",
-        )
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(u64::try_from(database_oid).unwrap_or(0))
+        let filenode: Option<i64> =
+            sqlx::query_scalar("SELECT pg_relation_filenode('message_history')::bigint")
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(filenode.and_then(|id| u64::try_from(id).ok()).unwrap_or(0))
     }
 }
 

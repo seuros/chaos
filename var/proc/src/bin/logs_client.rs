@@ -7,25 +7,29 @@ use anyhow::Context;
 use chaos_proc::LogQuery;
 use chaos_proc::LogRow;
 use chaos_proc::LogTailCursor;
-use chaos_proc::StateRuntime;
+use chaos_proc::RuntimeDbHandle;
 use owo_colors::OwoColorize;
+
+const STORAGE_URL_ENV: &str = "CHAOS_STORAGE_URL";
 
 #[derive(Debug, usage::Cli)]
 #[usage(
     bin = "chaos-state-logs",
-    about = "Tail FreeChaOS logs from the runtime SQLite DB with simple filters",
+    about = "Tail FreeChaOS logs from the runtime database with simple filters",
     unknown_flags = "error",
     args_override_self = false
 )]
 struct Args {
-    /// Path to the ChaOS home directory. Defaults to `CHAOS_HOME`, then
-    /// `~/.chaos`.
+    /// Runtime database URL (`sqlite:///path/chaos.sqlite` or
+    /// `postgres://...`). Defaults to `CHAOS_STORAGE_URL`. The database must
+    /// already exist; this tool never creates one.
+    #[usage(long, value_name = "URL")]
+    storage_url: Option<String>,
+
+    /// Directory keying local state for the handle. Defaults to the current
+    /// directory; it does not select the database.
     #[usage(long)]
     chaos_home: Option<PathBuf>,
-
-    /// Direct path to the runtime SQLite database. Overrides --chaos-home.
-    #[usage(long)]
-    db: Option<PathBuf>,
 
     /// Log level to match exactly (case-insensitive).
     #[usage(long)]
@@ -87,19 +91,14 @@ struct LogFilter {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let db_path = resolve_db_path(&args)?;
     let filter = build_filter(&args)?;
-    let chaos_home = db_path
-        .parent()
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let runtime = StateRuntime::init(chaos_home, "logs-client".to_string()).await?;
+    let runtime = open_runtime(&args).await?;
 
-    let mut cursor = print_backfill(runtime.as_ref(), &filter, args.backfill, args.compact).await?;
+    let mut cursor = print_backfill(&runtime, &filter, args.backfill, args.compact).await?;
 
     let poll_interval = Duration::from_millis(args.poll_ms);
     loop {
-        let polled = fetch_new_rows(runtime.as_ref(), &filter, &cursor).await?;
+        let polled = fetch_new_rows(&runtime, &filter, &cursor).await?;
         for row in &polled.rows {
             println!("{}", format_row(row, args.compact));
         }
@@ -108,31 +107,55 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-fn resolve_db_path(args: &Args) -> anyhow::Result<PathBuf> {
-    if let Some(db) = args.db.as_ref() {
-        return Ok(db.clone());
-    }
-
-    let chaos_home = args
-        .chaos_home
+/// Open the mounted backend named by `--storage-url` or `CHAOS_STORAGE_URL`.
+async fn open_runtime(args: &Args) -> anyhow::Result<RuntimeDbHandle> {
+    let storage_url = args
+        .storage_url
         .clone()
-        .or_else(resolve_home_from_env)
-        .unwrap_or_else(default_chaos_home);
-    Ok(chaos_proc::runtime_db_path(chaos_home.as_path()))
-}
-
-fn resolve_home_from_env() -> Option<PathBuf> {
-    if let Ok(value) = std::env::var("CHAOS_HOME") {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(PathBuf::from(trimmed));
-        }
+        .or_else(|| std::env::var(STORAGE_URL_ENV).ok())
+        .map(|url| url.trim().to_owned())
+        .filter(|url| !url.is_empty())
+        .with_context(|| {
+            format!("no runtime database configured; pass --storage-url or set {STORAGE_URL_ENV}")
+        })?;
+    let chaos_home = match args.chaos_home.clone() {
+        Some(home) => home,
+        None => std::env::current_dir()?,
+    };
+    let provider = "logs-client".to_string();
+    if storage_url.starts_with("postgres://") || storage_url.starts_with("postgresql://") {
+        let pool = chaos_proc::open_runtime_db_postgres_url(&storage_url)
+            .await
+            .context("failed to open the PostgreSQL runtime database")?;
+        return Ok(RuntimeDbHandle::from_postgres_pool(
+            chaos_home, provider, pool,
+        ));
     }
-    None
+    if let Some(path) = sqlite_file_path(&storage_url) {
+        anyhow::ensure!(
+            path.is_file(),
+            "SQLite runtime database {} does not exist; this tool never creates one",
+            path.display()
+        );
+    }
+    let pool = chaos_proc::open_runtime_db_url(&storage_url)
+        .await
+        .context("failed to open the SQLite runtime database")?;
+    Ok(RuntimeDbHandle::from_sqlite_pool(
+        chaos_home, provider, pool,
+    ))
 }
 
-fn default_chaos_home() -> PathBuf {
-    PathBuf::from(".chaos")
+/// The file behind a `sqlite:` URL, or `None` for in-memory or non-SQLite URLs.
+fn sqlite_file_path(storage_url: &str) -> Option<PathBuf> {
+    let rest = storage_url
+        .strip_prefix("sqlite://")
+        .or_else(|| storage_url.strip_prefix("sqlite:"))?;
+    let path = rest.split('?').next().unwrap_or_default();
+    if path.is_empty() || path == ":memory:" {
+        return None;
+    }
+    Some(PathBuf::from(path))
 }
 
 fn build_filter(args: &Args) -> anyhow::Result<LogFilter> {
@@ -193,7 +216,7 @@ fn parse_timestamp(value: &str) -> anyhow::Result<i64> {
 }
 
 async fn print_backfill(
-    runtime: &StateRuntime,
+    runtime: &RuntimeDbHandle,
     filter: &LogFilter,
     backfill: usize,
     compact: bool,
@@ -206,7 +229,7 @@ async fn print_backfill(
 }
 
 async fn fetch_backfill(
-    runtime: &StateRuntime,
+    runtime: &RuntimeDbHandle,
     filter: &LogFilter,
     backfill: usize,
 ) -> anyhow::Result<chaos_proc::LogTailBatch> {
@@ -218,7 +241,7 @@ async fn fetch_backfill(
 }
 
 async fn fetch_new_rows(
-    runtime: &StateRuntime,
+    runtime: &RuntimeDbHandle,
     filter: &LogFilter,
     cursor: &LogTailCursor,
 ) -> anyhow::Result<chaos_proc::LogTailBatch> {

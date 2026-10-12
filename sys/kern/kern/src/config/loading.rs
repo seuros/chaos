@@ -101,7 +101,7 @@ impl ConfigBuilder {
         harness_overrides.mcp_servers = Some(
             crate::config::load_effective_mcp_servers(
                 &bootstrap.storage_url,
-                &bootstrap.sqlite_home,
+                &bootstrap.storage_home,
                 &config_layer_stack,
             )
             .await?,

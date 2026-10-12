@@ -42,7 +42,6 @@ pub struct CatalogResourceRequest {
     pub uri: String,
     pub cwd: PathBuf,
     pub project_root: PathBuf,
-    pub sqlite_home: PathBuf,
     pub session_id: String,
 }
 
@@ -72,7 +71,6 @@ pub struct CatalogToolRequest {
     pub arguments: Value,
     pub cwd: PathBuf,
     pub project_root: PathBuf,
-    pub sqlite_home: PathBuf,
     pub session_id: String,
 }
 

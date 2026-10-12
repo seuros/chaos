@@ -78,7 +78,6 @@ impl ToolHandler for CatalogModuleHandler {
                 arguments: args_value,
                 cwd: turn.cwd.clone(),
                 project_root,
-                sqlite_home: turn.config.sqlite_home.clone(),
                 session_id: session.conversation_id.to_string(),
             })
             .await

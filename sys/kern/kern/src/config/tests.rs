@@ -605,7 +605,7 @@ fn sqlite_home_defaults_to_codex_home_for_workspace_write() -> std::io::Result<(
         chaos_home.path().to_path_buf(),
     )?;
 
-    assert_eq!(config.sqlite_home, chaos_home.path().to_path_buf());
+    assert_eq!(config.storage_home, chaos_home.path().to_path_buf());
 
     Ok(())
 }
@@ -1039,7 +1039,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         chaos_home: fixture.chaos_home(),
         mode_policy_override: None,
         unattended_recovery: false,
-        sqlite_home: fixture.chaos_home(),
+        storage_home: fixture.chaos_home(),
         storage_url: crate::user_settings::ResolvedBootstrap::sqlite_in(&fixture.chaos_home())
             .storage_url,
         bootstrap_egress_url: None,

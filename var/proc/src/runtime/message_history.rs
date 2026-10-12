@@ -1,4 +1,4 @@
-use super::{Path, Row, SqliteConnection, StateRuntime, runtime_db_path};
+use super::{Row, SqliteConnection, StateRuntime, runtime_db_path};
 use chaos_ipc::message_history::HistoryEntry;
 use std::os::unix::fs::MetadataExt;
 
@@ -34,7 +34,7 @@ VALUES (?, ?, ?, ?)
             .fetch_one(self.pool.as_ref())
             .await?;
         Ok((
-            message_history_log_id(self.chaos_home()).unwrap_or(0),
+            self.message_history_log_id().await.unwrap_or(0),
             usize::try_from(count).unwrap_or(0),
         ))
     }
@@ -44,7 +44,7 @@ VALUES (?, ?, ?, ?)
         log_id: u64,
         offset: usize,
     ) -> anyhow::Result<Option<HistoryEntry>> {
-        let current_log_id = message_history_log_id(self.chaos_home()).unwrap_or(0);
+        let current_log_id = self.message_history_log_id().await.unwrap_or(0);
         if log_id != 0 && current_log_id != 0 && current_log_id != log_id {
             return Ok(None);
         }
@@ -130,8 +130,11 @@ WHERE id IN (
     Ok(())
 }
 
-fn message_history_log_id(chaos_home: &Path) -> Option<u64> {
-    std::fs::metadata(runtime_db_path(chaos_home))
-        .ok()
-        .map(|metadata| metadata.ino())
+impl StateRuntime {
+    /// Storage identity of the history: the database file inode, which
+    /// changes when the file is recreated.
+    pub(crate) async fn message_history_log_id(&self) -> anyhow::Result<u64> {
+        let metadata = std::fs::metadata(runtime_db_path(self.chaos_home()))?;
+        Ok(metadata.ino())
+    }
 }

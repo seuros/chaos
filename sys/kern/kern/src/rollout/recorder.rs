@@ -264,10 +264,10 @@ impl RolloutRecorder {
         archived: bool,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        let runtime_db = runtime_db::get_runtime_db_for(config.sqlite_home(), default_provider);
+        let runtime_db = runtime_db::get_runtime_db_for(config.storage_home(), default_provider);
         let db_page = runtime_db::list_processes_db(
             runtime_db.as_ref(),
-            config.sqlite_home(),
+            config.storage_home(),
             page_size,
             cursor,
             sort_key,

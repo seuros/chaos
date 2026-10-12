@@ -285,21 +285,21 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
 }
 
 async fn rewrite_cache_timestamp(
-    sqlite_home: &std::path::Path,
+    storage_home: &std::path::Path,
     scope: &ModelsCacheScope,
     fetched_at: Timestamp,
 ) -> Result<()> {
-    let mut cache = read_cache(sqlite_home, scope).await?;
+    let mut cache = read_cache(storage_home, scope).await?;
     cache.fetched_at = fetched_at;
-    write_cache(sqlite_home, &cache).await?;
+    write_cache(storage_home, &cache).await?;
     Ok(())
 }
 
 async fn read_cache(
-    sqlite_home: &std::path::Path,
+    storage_home: &std::path::Path,
     scope: &ModelsCacheScope,
 ) -> Result<ModelsCache> {
-    let pool = open_runtime_db(sqlite_home).await?;
+    let pool = open_runtime_db(storage_home).await?;
     let row = sqlx::query(
         "SELECT fetched_at, etag, client_version, models_json \
          FROM model_catalog_cache \
@@ -332,12 +332,12 @@ async fn read_cache(
     })
 }
 
-async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
+async fn write_cache(storage_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
     let scope = cache
         .scope
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cache scope expected"))?;
-    let pool = open_runtime_db(sqlite_home).await?;
+    let pool = open_runtime_db(storage_home).await?;
     let models_json = serde_json::to_string(&serde_json::json!({
         "format": "raw_catalog_v1",
         "models": &cache.models,
@@ -364,9 +364,9 @@ async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Resu
     Ok(())
 }
 
-fn write_cache_sync(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
+fn write_cache_sync(storage_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
     tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(write_cache(sqlite_home, cache))
+        tokio::runtime::Handle::current().block_on(write_cache(storage_home, cache))
     })
 }
 

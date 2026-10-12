@@ -48,7 +48,6 @@ members = [
     "lib/libmcp/guest",
     "lib/libmcp/runtime",
     "srv/arsenal",
-    "srv/daemon",
     "srv/journald",
     "srv/pf",
     "srv/cron",
@@ -179,7 +178,6 @@ chaos-mcpd = { path = "srv/mcpd" }
 mcp-guest = { path = "lib/libmcp/guest" }
 chaos-mcp-runtime = { path = "lib/libmcp/runtime" }
 chaos-arsenal = { path = "srv/arsenal" }
-chaos-daemon = { path = "srv/daemon" }
 chaos_journald = { path = "srv/journald" }
 chaos-pf = { path = "srv/pf" }
 chaos-cron = { path = "srv/cron" }
@@ -487,7 +485,6 @@ ignored = [
     "zeroize",
     "include_dir",
     "chaos-warden",
-    "chaos-daemon",
     "async-stream",
     "env_logger",
     "tar",

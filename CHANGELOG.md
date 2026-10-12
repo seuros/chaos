@@ -38,6 +38,26 @@ should. There is no patch level; the build timestamp is the patch.
 - `docs/getting-started.md`: database provisioning (PostgreSQL recommended),
   first run, headless bootstrap, first provider.
 
+### Fixed
+- PostgreSQL mounts now enforce the same per-partition log retention as
+  SQLite; previously only time-based cleanup ran.
+- The message-history log id on PostgreSQL changes when the table is
+  rewritten, matching the SQLite inode semantics, so a stale client cursor
+  cannot survive a reset.
+- `chaos_journald` (SQLite) heartbeats and releases a lease inside one
+  transaction; a stale owner can no longer extend or delete a lease another
+  owner acquired in between.
+- Machine status no longer probes free space on the SQLite directory when the
+  mounted backend is PostgreSQL, and the model catalog cache logs the real
+  backend instead of a filesystem path.
+
+### Removed
+- The evicted memory-consolidation and backfill tables' SQLite-only code in
+  `chaos-proc` (no caller on either backend) and the unused `chaos-daemon`
+  crate. Migrations are unchanged.
+- `Config.sqlite_home` is now `Config.storage_home`: a mount-registry key on
+  every backend, the SQLite directory only under SQLite.
+
 ## [47.13.2] - 2026-10-11
 
 ### Added

@@ -123,7 +123,7 @@ impl Config {
     pub(crate) fn resolved_bootstrap(&self) -> crate::user_settings::ResolvedBootstrap {
         crate::user_settings::ResolvedBootstrap {
             storage_url: self.storage_url.clone(),
-            sqlite_home: self.sqlite_home.clone(),
+            storage_home: self.storage_home.clone(),
             egress_url: self.bootstrap_egress_url.clone(),
         }
     }
@@ -143,7 +143,7 @@ impl Config {
     pub(crate) async fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
         let effective = crate::config::load_effective_mcp_servers(
             &self.storage_url,
-            self.sqlite_home.as_path(),
+            self.storage_home.as_path(),
             &self.config_layer_stack,
         )
         .await?;
@@ -544,7 +544,7 @@ impl Config {
             });
         let crate::user_settings::ResolvedBootstrap {
             storage_url,
-            sqlite_home,
+            storage_home,
             egress_url: bootstrap_egress_url,
         } = bootstrap;
         let original_sandbox_policy = sandbox_policy.clone();
@@ -664,7 +664,7 @@ impl Config {
             chaos_home,
             mode_policy_override: None,
             unattended_recovery: false,
-            sqlite_home,
+            storage_home,
             storage_url,
             bootstrap_egress_url,
             log_dir,

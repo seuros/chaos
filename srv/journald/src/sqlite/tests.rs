@@ -11,6 +11,7 @@ use serde_json::json;
 use tempfile::tempdir;
 
 use super::SqliteJournalStore;
+use crate::error::JournalError;
 use crate::model::AppendBatchInput;
 use crate::model::CreateProcessInput;
 use crate::model::InitializeProcessInput;
@@ -476,4 +477,81 @@ async fn initialize_process_atomically_creates_row_lease_and_entries() {
         .await
         .expect_err("empty-batch initialize_process should fail");
     std::assert_matches!(empty_err, crate::error::JournalError::InvalidRequest(_));
+}
+
+#[tokio::test]
+async fn stale_owner_cannot_heartbeat_or_release_a_reacquired_lease() {
+    let temp_dir = tempdir().unwrap_or_else(|err| panic!("tempdir: {err}"));
+    let db_path = temp_dir.path().join("journal.sqlite");
+    let store = SqliteJournalStore::open(&db_path)
+        .await
+        .unwrap_or_else(|err| panic!("open: {err}"));
+
+    let process_id = ProcessId::new();
+    store
+        .create_process(CreateProcessInput {
+            process_id,
+            parent: None,
+            source: SessionSource::Cli,
+            cwd: temp_dir.path().to_path_buf(),
+            created_at: jiff::Timestamp::now(),
+            title: Some("lease race".to_string()),
+            model_provider: Some("openai".to_string()),
+            cli_version: Some("47.0.0".to_string()),
+        })
+        .await
+        .unwrap_or_else(|err| panic!("create_process: {err}"));
+
+    let old_owner = "owner-old".to_string();
+    let old = store
+        .acquire_lease(&process_id, &old_owner, Duration::from_secs(30))
+        .await
+        .unwrap_or_else(|err| panic!("acquire old lease: {err}"));
+    // Releasing lets a second owner take over; the old owner keeps its token.
+    store
+        .release_lease(&process_id, &old_owner, &old.lease_token)
+        .await
+        .unwrap_or_else(|err| panic!("release old lease: {err}"));
+    let new_owner = "owner-new".to_string();
+    let new = store
+        .acquire_lease(&process_id, &new_owner, Duration::from_secs(30))
+        .await
+        .unwrap_or_else(|err| panic!("acquire new lease: {err}"));
+
+    let heartbeat = store
+        .heartbeat_lease(
+            &process_id,
+            &old_owner,
+            &old.lease_token,
+            Duration::from_secs(60),
+        )
+        .await;
+    assert!(
+        matches!(heartbeat, Err(JournalError::InvalidLease { .. })),
+        "stale heartbeat must be rejected: {heartbeat:?}"
+    );
+    let release = store
+        .release_lease(&process_id, &old_owner, &old.lease_token)
+        .await;
+    assert!(
+        matches!(release, Err(JournalError::InvalidLease { .. })),
+        "stale release must be rejected: {release:?}"
+    );
+
+    // The new owner's lease is untouched: it still heartbeats and releases.
+    let extended = store
+        .heartbeat_lease(
+            &process_id,
+            &new_owner,
+            &new.lease_token,
+            Duration::from_secs(60),
+        )
+        .await
+        .unwrap_or_else(|err| panic!("new owner heartbeat: {err}"));
+    assert_eq!(extended.owner_id, new_owner);
+    assert!(extended.expires_at >= new.expires_at);
+    store
+        .release_lease(&process_id, &new_owner, &new.lease_token)
+        .await
+        .unwrap_or_else(|err| panic!("new owner release: {err}"));
 }

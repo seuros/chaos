@@ -73,13 +73,22 @@ impl ObservationRequest {
 fn storage_targets(config: &Config, cwd: &Path, temporary: PathBuf) -> Vec<StorageTarget> {
     // Known working paths, not a drive inventory. Roles survive FS deduplication.
     let mut targets = Vec::new();
+    // Only a SQLite mount keeps state under storage_home; PostgreSQL holds it
+    // on the server, so probing that directory would report an unused disk.
+    let sqlite_state_dir =
+        chaos_vfs::mounted(&chaos_vfs::MountConfig::sqlite_home(&config.storage_home))
+            .is_some()
+            .then(|| config.storage_home.clone());
     for (role, path) in [
-        (StorageRole::Workspace, cwd.to_path_buf()),
-        (StorageRole::State, config.chaos_home.clone()),
-        (StorageRole::State, config.sqlite_home.clone()),
-        (StorageRole::State, config.log_dir.clone()),
-        (StorageRole::Temporary, temporary),
-    ] {
+        Some((StorageRole::Workspace, cwd.to_path_buf())),
+        Some((StorageRole::State, config.chaos_home.clone())),
+        sqlite_state_dir.map(|dir| (StorageRole::State, dir)),
+        Some((StorageRole::State, config.log_dir.clone())),
+        Some((StorageRole::Temporary, temporary)),
+    ]
+    .into_iter()
+    .flatten()
+    {
         let target = StorageTarget { role, path };
         if !targets.contains(&target) {
             targets.push(target);

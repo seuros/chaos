@@ -120,10 +120,12 @@ async fn apply_rollout_items_restores_memory_mode_from_session_meta() {
         .await
         .expect("apply_rollout_items should succeed");
 
-    let memory_mode = runtime
-        .get_process_memory_mode(process_id)
-        .await
-        .expect("memory mode should load");
+    let memory_mode: Option<String> =
+        sqlx::query_scalar("SELECT memory_mode FROM processes WHERE id = ?")
+            .bind(process_id.to_string())
+            .fetch_one(runtime.pool.as_ref())
+            .await
+            .expect("memory mode should load");
     assert_eq!(memory_mode.as_deref(), Some("polluted"));
 }
 
@@ -234,149 +236,6 @@ async fn apply_rollout_items_preserves_existing_git_branch_and_fills_missing_git
         persisted.git_origin_url.as_deref(),
         Some("git@example.com:seuros/chaos.git")
     );
-}
-
-#[tokio::test]
-async fn update_process_git_info_preserves_newer_non_git_metadata() {
-    let chaos_home = unique_temp_dir();
-    let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
-        .await
-        .expect("runtime db should initialize");
-    let process_id =
-        ProcessId::from_string("00000000-0000-0000-0000-000000000789").expect("valid thread id");
-    let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
-
-    runtime
-        .upsert_process(&metadata)
-        .await
-        .expect("initial upsert should succeed");
-
-    let updated_at =
-        datetime_to_epoch_seconds(jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp"));
-    sqlx::query(
-        "UPDATE processes SET updated_at = ?, tokens_used = ?, first_user_message = ? WHERE id = ?",
-    )
-    .bind(updated_at)
-    .bind(123_i64)
-    .bind("newer preview")
-    .bind(process_id.to_string())
-    .execute(runtime.pool.as_ref())
-    .await
-    .expect("concurrent metadata write should succeed");
-
-    let updated = runtime
-        .update_process_git_info(
-            process_id,
-            Some(Some("abc123")),
-            Some(Some("feature/branch")),
-            Some(Some("git@example.com:seuros/chaos.git")),
-        )
-        .await
-        .expect("git info update should succeed");
-    assert!(updated, "git info update should touch the thread row");
-
-    let persisted = runtime
-        .get_process(process_id)
-        .await
-        .expect("thread should load")
-        .expect("thread should exist");
-    assert_eq!(persisted.tokens_used, 123);
-    assert_eq!(
-        persisted.first_user_message.as_deref(),
-        Some("newer preview")
-    );
-    // The processes_touch trigger advances updated_at on any UPDATE
-    // where it was not explicitly changed, so it will be >= the value
-    // we manually set.
-    assert!(
-        datetime_to_epoch_seconds(persisted.updated_at) >= updated_at,
-        "updated_at should advance (trigger) or stay the same"
-    );
-    assert_eq!(persisted.git_sha.as_deref(), Some("abc123"));
-    assert_eq!(persisted.git_branch.as_deref(), Some("feature/branch"));
-    assert_eq!(
-        persisted.git_origin_url.as_deref(),
-        Some("git@example.com:seuros/chaos.git")
-    );
-}
-
-#[tokio::test]
-async fn insert_thread_if_absent_preserves_existing_metadata() {
-    let chaos_home = unique_temp_dir();
-    let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
-        .await
-        .expect("runtime db should initialize");
-    let process_id =
-        ProcessId::from_string("00000000-0000-0000-0000-000000000791").expect("valid thread id");
-
-    let mut existing = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
-    existing.tokens_used = 123;
-    existing.first_user_message = Some("newer preview".to_string());
-    existing.updated_at = jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp");
-    runtime
-        .upsert_process(&existing)
-        .await
-        .expect("initial upsert should succeed");
-
-    let mut fallback = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
-    fallback.tokens_used = 0;
-    fallback.first_user_message = None;
-    fallback.updated_at = jiff::Timestamp::new(1_700_000_000, 0).expect("timestamp");
-
-    let inserted = runtime
-        .insert_process_if_absent(&fallback)
-        .await
-        .expect("insert should succeed");
-    assert!(!inserted, "existing rows should not be overwritten");
-
-    let persisted = runtime
-        .get_process(process_id)
-        .await
-        .expect("thread should load")
-        .expect("thread should exist");
-    assert_eq!(persisted.tokens_used, 123);
-    assert_eq!(
-        persisted.first_user_message.as_deref(),
-        Some("newer preview")
-    );
-    assert_eq!(
-        datetime_to_epoch_seconds(persisted.updated_at),
-        datetime_to_epoch_seconds(existing.updated_at)
-    );
-}
-
-#[tokio::test]
-async fn update_process_git_info_can_clear_fields() {
-    let chaos_home = unique_temp_dir();
-    let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
-        .await
-        .expect("runtime db should initialize");
-    let process_id =
-        ProcessId::from_string("00000000-0000-0000-0000-000000000790").expect("valid thread id");
-    let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
-    metadata.git_sha = Some("abc123".to_string());
-    metadata.git_branch = Some("feature/branch".to_string());
-    metadata.git_origin_url = Some("git@example.com:seuros/chaos.git".to_string());
-
-    runtime
-        .upsert_process(&metadata)
-        .await
-        .expect("initial upsert should succeed");
-
-    let updated = runtime
-        .update_process_git_info(process_id, Some(None), Some(None), Some(None))
-        .await
-        .expect("git info clear should succeed");
-    assert!(updated, "git info clear should touch the thread row");
-
-    let persisted = runtime
-        .get_process(process_id)
-        .await
-        .expect("thread should load")
-        .expect("thread should exist");
-    assert_eq!(persisted.git_sha, None);
-    assert_eq!(persisted.git_branch, None);
-    assert_eq!(persisted.git_origin_url, None);
 }
 
 #[tokio::test]

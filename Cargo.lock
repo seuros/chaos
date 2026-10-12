@@ -1337,21 +1337,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chaos-daemon"
-version = "47.13.2"
-dependencies = [
- "chaos-pwd",
- "jiff",
- "serde",
- "serde_json",
- "sqlx",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "chaos-diff"
 version = "47.13.2"
 dependencies = [

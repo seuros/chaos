@@ -38,7 +38,7 @@ pub async fn open(home: &Path) -> anyhow::Result<RuntimeDbHandle> {
     }
     let runtime = crate::runtime_db::open_or_create_runtime_db(
         &bootstrap.storage_url,
-        &bootstrap.sqlite_home,
+        &bootstrap.storage_home,
         "settings",
     )
     .await

@@ -55,7 +55,7 @@ async fn machine_resource_reads_are_fresh_and_use_the_active_turn_directory() {
     let mut config = crate::config::test_config();
     config.cwd = "/unused-startup-cwd".into();
     config.chaos_home = "/state".into();
-    config.sqlite_home = "/cache".into();
+    config.storage_home = "/cache".into();
     config.log_dir = "/logs".into();
     let calls = Cell::new(0);
 

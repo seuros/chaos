@@ -25,7 +25,10 @@ fn complete_json_preserves_lifecycle_and_usage() {
             TurnEvent::Completed { response_id, token_usage: Some(usage) },
         ] if model == "server-model"
             && text == "{\"ok\":true}"
-            && matches!(content.as_slice(), [ContentItem::OutputText { text }] if text == "{\"ok\":true}")
+            && matches!(
+                content.as_slice(),
+                [ContentItem::OutputText { text }] if text == "{\"ok\":true}"
+            )
             && response_id == "chatcmpl-test"
             && usage.input_tokens == 10
             && usage.output_tokens == 5
@@ -39,7 +42,8 @@ fn complete_json_preserves_multiple_tool_calls_without_indexes() {
         "message": {
             "content": null,
             "tool_calls": [
-                {"id": "a", "type": "function", "function": {"name": "first", "arguments": "{\"x\":1}"},
+                {"id": "a", "type": "function",
+                 "function": {"name": "first", "arguments": "{\"x\":1}"},
                  "extra_content": {"google": {"thought_signature": "signature"}}},
                 {"id": "b", "type": "function", "function": {"name": "second", "arguments": "{}"}}
             ]
@@ -51,8 +55,18 @@ fn complete_json_preserves_multiple_tool_calls_without_indexes() {
     std::assert_matches!(events.as_slice(), [
             TurnEvent::Created,
             TurnEvent::ServerModel(_),
-            TurnEvent::OutputItemDone(ResponseItem::FunctionCall { call_id: first_id, name: first_name, arguments, provider_metadata: Some(metadata), .. }),
-            TurnEvent::OutputItemDone(ResponseItem::FunctionCall { call_id: second_id, name: second_name, .. }),
+            TurnEvent::OutputItemDone(ResponseItem::FunctionCall {
+                call_id: first_id,
+                name: first_name,
+                arguments,
+                provider_metadata: Some(metadata),
+                ..
+            }),
+            TurnEvent::OutputItemDone(ResponseItem::FunctionCall {
+                call_id: second_id,
+                name: second_name,
+                ..
+            }),
             TurnEvent::Completed { token_usage: None, .. },
         ] if first_id == "a" && first_name == "first" && arguments == "{\"x\":1}"
             && metadata["google"]["thought_signature"] == "signature"
@@ -66,8 +80,11 @@ fn complete_json_handles_absent_usage_and_missing_total() {
         .as_object_mut()
         .unwrap()
         .remove("total_tokens");
-    std::assert_matches!(parse_completion(&json).unwrap().last(),
-            Some(TurnEvent::Completed { token_usage: Some(usage), .. }) if usage.total_tokens == 15);
+    std::assert_matches!(
+        parse_completion(&json).unwrap().last(),
+        Some(TurnEvent::Completed { token_usage: Some(usage), .. })
+            if usage.total_tokens == 15
+    );
     json.as_object_mut().unwrap().remove("usage");
     std::assert_matches!(
         parse_completion(&json).unwrap().last(),
@@ -128,13 +145,17 @@ async fn adapter_selects_json_for_schema_and_sse_otherwise() {
             ResponseTemplate::new(200).set_body_json(completion_fixture())
         } else {
             ResponseTemplate::new(200).set_body_raw(
-                    concat!(
-                        "data: {\"id\":\"chatcmpl-test\",\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n",
-                        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":17}}\n\n",
-                        "data: [DONE]\n\n",
-                    ),
-                    "text/event-stream",
-                )
+                concat!(
+                    "data: {\"id\":\"chatcmpl-test\",",
+                    "\"choices\":[{\"delta\":{\"content\":\"hello\"},",
+                    "\"finish_reason\":\"stop\"}],\"usage\":null}\n\n",
+                    "data: {\"choices\":[],",
+                    "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,",
+                    "\"total_tokens\":17}}\n\n",
+                    "data: [DONE]\n\n",
+                ),
+                "text/event-stream",
+            )
         };
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
@@ -178,8 +199,11 @@ async fn adapter_selects_json_for_schema_and_sse_otherwise() {
             events.push(event.unwrap());
         }
         std::assert_matches!(events.first(), Some(TurnEvent::Created));
-        std::assert_matches!(events.last(),
-                Some(TurnEvent::Completed { token_usage: Some(usage), .. }) if usage.total_tokens == 17);
+        std::assert_matches!(
+            events.last(),
+            Some(TurnEvent::Completed { token_usage: Some(usage), .. })
+                if usage.total_tokens == 17
+        );
         assert_eq!(
             events
                 .iter()

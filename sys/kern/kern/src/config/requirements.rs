@@ -69,7 +69,8 @@ fn add_additional_vfs_writes(
             matches!(
                 &entry.path,
                 chaos_ipc::permissions::VfsPath::Path { path: existing }
-                    if existing == path && entry.access == chaos_ipc::permissions::VfsAccessMode::Write
+                    if existing == path
+                        && entry.access == chaos_ipc::permissions::VfsAccessMode::Write
             )
         });
         if !exists {
@@ -364,7 +365,8 @@ impl Config {
         {
             tracing::warn!(
                 error = %err,
-                "default approval policy is disallowed by requirements; falling back to required default"
+                "default approval policy is disallowed by requirements; \
+                 falling back to required default"
             );
             approval_policy = constrained_approval_policy.value();
         }

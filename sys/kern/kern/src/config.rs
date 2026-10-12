@@ -520,7 +520,8 @@ pub struct Config {
 
     /// Preferred store for MCP OAuth credentials.
     /// keyring: Use an OS-specific keyring service.
-    ///          Credentials stored in the keyring will only be readable by Chaos unless the user explicitly grants access via OS-level keyring access.
+    ///          Credentials stored in the keyring will only be readable by Chaos
+    ///          unless the user explicitly grants access via OS-level keyring access.
     /// file: `${CHAOS_HOME}/.credentials.json`
     ///       This file will be readable to ChaOS and other applications running as the same user.
     /// auto (default): keyring if available, otherwise file.
@@ -1337,7 +1338,8 @@ fn ensure_mcp_credentials_migrated(config: &McpServerConfig) -> std::io::Result<
     let value = serde_json::to_value(config).map_err(std::io::Error::other)?;
     if chaos_sysctl::secrets::has_literals(&value) {
         return Err(std::io::Error::other(
-            "MCP configuration contains literal credentials/environment values; run `chaos config migrate`",
+            "MCP configuration contains literal credentials/environment values; \
+             run `chaos config migrate`",
         ));
     }
     Ok(())
@@ -1351,7 +1353,8 @@ pub(crate) fn ensure_mcp_endpoint_has_no_credentials(
             .is_ok_and(|url| !url.username().is_empty() || url.password().is_some())
     {
         return Err(std::io::Error::other(
-            "MCP endpoint userinfo is not supported in stored configuration; move credentials to a bearer-token or header reference",
+            "MCP endpoint userinfo is not supported in stored configuration; \
+             move credentials to a bearer-token or header reference",
         ));
     }
     Ok(())

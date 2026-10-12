@@ -896,10 +896,13 @@ fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
     let tempdir = TempDir::new().expect("create temp dir");
     let role_path = tempdir.path().join("researcher.toml");
     fs::write(
-            &role_path,
-            "name = \"researcher\"\ndeveloper_instructions = \"Research carefully\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
-        )
-        .expect("write role config");
+        &role_path,
+        "name = \"researcher\"\n\
+         developer_instructions = \"Research carefully\"\n\
+         model = \"gpt-5\"\n\
+         model_reasoning_effort = \"high\"\n",
+    )
+    .expect("write role config");
     let user_defined_roles = BTreeMap::from([(
         "researcher".to_string(),
         AgentRoleConfig {
@@ -923,7 +926,9 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
     let role_path = tempdir.path().join("reviewer.toml");
     fs::write(
         &role_path,
-        "name = \"reviewer\"\ndeveloper_instructions = \"Review carefully\"\nmodel_reasoning_effort = \"medium\"\n",
+        "name = \"reviewer\"\n\
+         developer_instructions = \"Review carefully\"\n\
+         model_reasoning_effort = \"medium\"\n",
     )
     .expect("write role config");
     let user_defined_roles = BTreeMap::from([(

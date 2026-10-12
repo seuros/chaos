@@ -421,7 +421,10 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<ChatMessage> {
                         tool_calls: Some(serde_json::json!([{
                             "id": id,
                             "type": "function",
-                            "function": { "name": "shell", "arguments": format!(r#"{{"command": {:?}}}"#, cmd) }
+                            "function": {
+                                "name": "shell",
+                                "arguments": format!(r#"{{"command": {:?}}}"#, cmd),
+                            }
                         }])),
                         tool_call_id: None,
                         name: None,
@@ -465,7 +468,10 @@ fn convert_tools(tools: &[chaos_abi::ToolDef]) -> Vec<ChatTool> {
                         "properties": {
                             "input": {
                                 "type": "string",
-                                "description": format!("Input in {} format: {}", f.format_type, f.syntax),
+                                "description": format!(
+                                    "Input in {} format: {}",
+                                    f.format_type, f.syntax
+                                ),
                             }
                         },
                         "required": ["input"],
@@ -498,7 +504,8 @@ struct TextAccumulator {
 /// The schema is:
 /// ```json
 /// {"id":"chatcmpl-...","object":"chat.completion.chunk","model":"example-model",
-///  "choices":[{"delta":{"role":"assistant","content":"...","tool_calls":[...]},"finish_reason":null}],
+///  "choices":[{"delta":{"role":"assistant","content":"...","tool_calls":[...]},
+///              "finish_reason":null}],
 ///  "usage":null}
 /// ```
 /// The final chunk carries `"finish_reason": "stop"` or similar, and when

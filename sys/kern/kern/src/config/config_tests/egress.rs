@@ -35,7 +35,7 @@ wire_api = "chat_completions"
 "#,
     )
     .unwrap();
-    let bootstrap_endpoint = "http://192.168.3.21:8847/egress/chaos";
+    let bootstrap_endpoint = "http://gateway.example:8847/egress/chaos";
     let endpoint = "http://localhost:8847/egress/chaos";
     for configured in [None, Some(bootstrap_endpoint.to_string())] {
         assert_eq!(

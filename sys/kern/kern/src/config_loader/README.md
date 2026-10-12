@@ -48,6 +48,9 @@ File-based assets are discovered through `asset_folders()`, lowest precedence fi
 3. Every `<dir>/.chaos` between the project root and `cwd` (`Project`): restrictions only, and
    carried with a `disabled_reason` when the project is not trusted.
 
+Agent roles are read from the database (`ConfigOverrides::database_agent_roles`, filled by
+`ConfigBuilder::build`) and overlaid only by `Project` folders' `agents/`.
+
 ## Typical usage
 
 ```rust

@@ -921,7 +921,7 @@ async fn spawn_process_subagent_uses_role_specific_nickname_candidates() {
         "researcher".to_string(),
         AgentRoleConfig {
             description: Some("Research role".to_string()),
-            config_file: None,
+            source: None,
             nickname_candidates: Some(vec!["Atlas".to_string()]),
             topics: None,
             catchphrases: None,

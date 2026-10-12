@@ -50,6 +50,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
+mod agent_roles;
 mod hooks;
 mod logs;
 mod message_history;
@@ -58,6 +59,7 @@ mod planning;
 mod processes;
 mod reviewer_orchestration;
 mod settings;
+pub use agent_roles::AgentRoleRecord;
 pub use settings::{ApprovalState, RememberedApproval, SettingsSnapshot};
 #[cfg(test)]
 mod test_support;

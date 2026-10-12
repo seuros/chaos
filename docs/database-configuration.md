@@ -64,8 +64,11 @@ See [Getting started](./getting-started.md).
   `chaos hooks` or policy-authorized `hooks_*` tools (human-approved by default).
   `hooks.json` files are never loaded at runtime. Project hooks also require
   project trust. See [chaos-hooks(7)](../man/chaos-hooks.7.md).
-- Project `.mcp.json`, project instructions, and `agents/` documents remain
-  files. There is no project `config.toml` and no system `config.toml`.
+- Agent roles are database-backed, managed with `chaos agents`. A trusted
+  project may still ship roles as files under `.chaos/agents/`; those overlay
+  the stored ones.
+- Project `.mcp.json` and project instructions remain files. There is no
+  project `config.toml` and no system `config.toml`.
 - Administrator constraints live in `/etc/chaos/requirements.toml`, including
   network policy under `[experimental_network]`. Administrator rules in
   `/etc/chaos/rules/*.decrees` are the only rules that can grant. Rules under

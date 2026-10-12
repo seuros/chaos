@@ -9,11 +9,25 @@ summary = "Standalone agent role definitions."
 
 chaos-agents - standalone agent role definitions
 
-## ROLE FILES
+## ROLE DOCUMENTS
 
-Define user roles in `.toml` files or Markdown files with TOML frontmatter
-under `$CHAOS_HOME/agents/` (normally `~/.chaos/agents/`) or a trusted project's
-`.chaos/agents/`. Subdirectories are scanned recursively.
+A role is a `.toml` document or a Markdown document with TOML front matter.
+Your own roles live in the runtime database and are managed with
+`chaos agents`; a trusted project ships shared roles as files under
+`.chaos/agents/` (scanned recursively).
+
+```sh
+chaos agents import ~/roles/researcher.toml   # name comes from the document
+chaos agents list
+chaos agents show researcher
+chaos agents export researcher > researcher.toml
+chaos agents disable researcher
+chaos agents remove researcher
+```
+
+Import validates the document and records the file's directory, so relative
+config paths keep resolving against it. Changes apply to new sessions.
+`$CHAOS_HOME/agents/` and `/etc/chaos/agents/` are no longer read.
 
 Each file must declare a non-empty `name` and non-blank
 `developer_instructions`. A Markdown body can supply the instructions instead
@@ -37,13 +51,13 @@ Hook-management authorization is inherited from the parent's effective
 `hook_approval_policy`. Role files and built-in personas cannot override it;
 selecting a role never opts a session into automatic hook authorization.
 
-Role folders are scanned in increasing precedence: `/etc/chaos/agents/`,
-`$CHAOS_HOME/agents/`, then each trusted `.chaos/agents/` from the project root
-toward the working directory. A higher-precedence folder selects the role file
-for a repeated name and inherits omitted metadata from lower folders. A
-non-blank description is required after this merge. Duplicate names within one
-folder and malformed files generate startup warnings; malformed definitions are
-skipped. Untrusted project folders are not loaded.
+Roles are layered in increasing precedence: stored roles first, then each
+trusted project `.chaos/agents/` folder from the project root toward the
+working directory. A higher layer selects the role for a repeated name and
+inherits omitted metadata from lower layers. A non-blank description is
+required after this merge. Duplicate names within one folder, malformed files,
+and malformed stored documents generate startup warnings and are skipped.
+Disabled stored roles and untrusted project folders are not loaded.
 
 ## GLOBAL LIMITS
 

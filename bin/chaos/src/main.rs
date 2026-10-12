@@ -35,6 +35,7 @@ use std::io::IsTerminal;
 #[cfg(feature = "tui")]
 use supports_color::Stream;
 
+mod agents_cmd;
 mod config_cmd;
 mod debug_logging;
 mod hooks_cmd;
@@ -132,6 +133,8 @@ enum Subcommand {
     Config(config_cmd::ConfigCommand),
     /// Manage database lifecycle hooks.
     Hooks(hooks_cmd::HooksCommand),
+    /// Manage stored agent role definitions.
+    Agents(agents_cmd::AgentsCommand),
     /// Register shared workspaces/projects and manage installation-local checkouts.
     Workspace(planning_cmd::WorkspaceCommand),
     /// Inspect, attach, and maintain durable database plans.
@@ -449,6 +452,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     match subcommand {
         Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
         Some(Subcommand::Hooks(command)) => hooks_cmd::run(command).await?,
+        Some(Subcommand::Agents(command)) => agents_cmd::run(command).await?,
         Some(Subcommand::Workspace(command)) => planning_cmd::workspace(command).await?,
         Some(Subcommand::Plan(command)) => planning_cmd::plan(command).await?,
         Some(Subcommand::Approvals(command)) => config_cmd::approvals(command).await?,

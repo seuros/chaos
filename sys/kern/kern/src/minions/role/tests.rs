@@ -64,7 +64,7 @@ async fn apply_role_rejects_incomplete_standalone_files() {
         "custom".to_string(),
         AgentRoleConfig {
             description: Some("Custom role".to_string()),
-            config_file: Some(role_path.clone()),
+            source: Some(AgentRoleSource::File(role_path.clone())),
             ..Default::default()
         },
     );
@@ -258,7 +258,9 @@ async fn apply_role_returns_unavailable_for_missing_user_role_file() {
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(PathBuf::from("/path/does/not/exist.toml")),
+            source: Some(AgentRoleSource::File(PathBuf::from(
+                "/path/does/not/exist.toml",
+            ))),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -280,7 +282,7 @@ async fn apply_role_returns_unavailable_for_invalid_user_role_toml() {
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -317,35 +319,54 @@ async fn apply_role_returns_error_for_legacy_worker_role() {
 }
 
 #[tokio::test]
-async fn apply_role_ignores_agent_metadata_fields_in_user_role_file() {
+async fn apply_role_ignores_agent_metadata_fields_in_stored_role() {
     let (home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
-    let role_path = write_role_config(
-        &home,
-        "metadata-role.toml",
+    let role = chaos_sysctl::agent_roles::database_role(
+        "custom",
+        "toml",
         r#"
+name = "custom"
 description = "Role metadata"
 nickname_candidates = ["Hypatia"]
 developer_instructions = "Stay focused"
 model = "role-model"
 "#,
+        Some(home.path()),
     )
-    .await;
-    config.agent_roles.insert(
-        "custom".to_string(),
-        AgentRoleConfig {
-            description: None,
-            config_file: Some(role_path),
-            nickname_candidates: None,
-            topics: None,
-            catchphrases: None,
-        },
-    );
+    .expect("stored role parses");
+    assert_eq!(role.description.as_deref(), Some("Role metadata"));
+    assert!(matches!(
+        role.source,
+        Some(AgentRoleSource::Database { .. })
+    ));
+    config.agent_roles.insert("custom".to_string(), role);
 
     apply_role_to_config(&mut config, Some("custom"))
         .await
         .expect("custom role should apply");
 
     assert_eq!(config.model.as_deref(), Some("role-model"));
+}
+
+#[tokio::test]
+async fn stored_role_relative_paths_resolve_against_base_dir() {
+    let (home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
+    let base_dir = TempDir::new().expect("create base dir");
+    let role = chaos_sysctl::agent_roles::database_role(
+        "custom",
+        "toml",
+        "name = \"custom\"\ndeveloper_instructions = \"Stay focused\"\nlog_dir = \"role-logs\"",
+        Some(base_dir.path()),
+    )
+    .expect("stored role parses");
+    config.agent_roles.insert("custom".to_string(), role);
+
+    apply_role_to_config(&mut config, Some("custom"))
+        .await
+        .expect("custom role should apply");
+
+    assert_eq!(config.log_dir, base_dir.path().join("role-logs"));
+    assert_ne!(config.log_dir, home.path().join("role-logs"));
 }
 
 #[tokio::test]
@@ -356,22 +377,15 @@ async fn apply_role_preserves_unspecified_keys() {
     )])
     .await;
     config.alcatraz_exe = PathBuf::from("/tmp/alcatraz");
-    let role_path = write_role_config(
-        &home,
-        "effort-only.toml",
-        "developer_instructions = \"Stay focused\"\nmodel_reasoning_effort = \"high\"",
+    let role = chaos_sysctl::agent_roles::database_role(
+        "custom",
+        "toml",
+        "name = \"custom\"\ndeveloper_instructions = \"Stay focused\"\n\
+         model_reasoning_effort = \"high\"",
+        Some(home.path()),
     )
-    .await;
-    config.agent_roles.insert(
-        "custom".to_string(),
-        AgentRoleConfig {
-            description: None,
-            config_file: Some(role_path),
-            nickname_candidates: None,
-            topics: None,
-            catchphrases: None,
-        },
-    );
+    .expect("stored role parses");
+    config.agent_roles.insert("custom".to_string(), role);
 
     apply_role_to_config(&mut config, Some("custom"))
         .await
@@ -421,7 +435,7 @@ model_provider = "test-provider"
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -478,7 +492,7 @@ model_verbosity = "high"
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -546,7 +560,7 @@ model_provider = "role-provider"
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -606,7 +620,7 @@ model_provider = "base-provider"
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -672,7 +686,7 @@ model_reasoning_effort = "high"
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -717,7 +731,7 @@ writable_roots = ["./sandbox-root"]
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -778,7 +792,7 @@ async fn apply_role_takes_precedence_over_existing_session_flags_for_same_key() 
         "custom".to_string(),
         AgentRoleConfig {
             description: None,
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -800,7 +814,7 @@ fn spawn_tool_spec_build_deduplicates_user_defined_built_in_roles() {
             "scout".to_string(),
             AgentRoleConfig {
                 description: Some("user override".to_string()),
-                config_file: None,
+                source: None,
                 nickname_candidates: None,
                 topics: None,
                 catchphrases: None,
@@ -825,7 +839,7 @@ fn spawn_tool_spec_lists_user_defined_roles_before_built_ins() {
         "aaa".to_string(),
         AgentRoleConfig {
             description: Some("first".to_string()),
-            config_file: None,
+            source: None,
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -856,7 +870,7 @@ fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
         "researcher".to_string(),
         AgentRoleConfig {
             description: Some("Research carefully.".to_string()),
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,
@@ -882,7 +896,7 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
         "reviewer".to_string(),
         AgentRoleConfig {
             description: Some("Review carefully.".to_string()),
-            config_file: Some(role_path),
+            source: Some(AgentRoleSource::File(role_path)),
             nickname_candidates: None,
             topics: None,
             catchphrases: None,

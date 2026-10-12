@@ -17,6 +17,7 @@ pub use model::LogQuery;
 pub use model::LogRow;
 pub use model::LogTailBatch;
 pub use model::LogTailCursor;
+pub use runtime::AgentRoleRecord;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::ClampExchangeRecord;
 pub use runtime::RuntimeDbHandle;

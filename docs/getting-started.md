@@ -113,7 +113,8 @@ chaos config bootstrap set egress_url https://gateway.example/egress/chaos
 | Approvals | the runtime database | `chaos approvals list/revoke` |
 | Project MCP servers | `<project>/.mcp.json` | edit the file |
 | Admin constraints | `/etc/chaos/requirements.toml` | edit the file |
-| Admin and user rules, agent roles | `/etc/chaos/{rules,agents}`, `~/.chaos/{rules,agents}` | edit the files |
+| Agent roles | the runtime database | `chaos agents import/list/remove` |
+| Admin and user rules | `/etc/chaos/rules`, `~/.chaos/rules` | edit the files |
 
 The bootstrap file accepts only those two keys. Anything else in it stops
 startup with a message naming the key and the `chaos config set` command that

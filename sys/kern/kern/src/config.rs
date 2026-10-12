@@ -1048,6 +1048,7 @@ impl From<ConfigToml> for UserSavedConfig {
 }
 
 pub use chaos_sysctl::types::AgentRoleConfig;
+pub use chaos_sysctl::types::AgentRoleSource;
 pub use chaos_sysctl::types::AgentsToml;
 pub use chaos_sysctl::types::RealtimeAudioConfig;
 pub use chaos_sysctl::types::RealtimeAudioToml;
@@ -1084,6 +1085,8 @@ pub struct ConfigOverrides {
     pub ephemeral: Option<bool>,
     pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
     pub active_project_trust: Option<ProjectTrust>,
+    /// Stored agent role documents; parsed into roles during config build.
+    pub database_agent_roles: Option<Vec<chaos_proc::AgentRoleRecord>>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
 }
@@ -1210,6 +1213,31 @@ pub async fn load_global_mcp_server(
     })?;
     load_global_mcp_server_from_runtime_db(&bootstrap.storage_url, &bootstrap.storage_home, name)
         .await
+}
+
+/// Enabled agent role documents from the runtime database.
+pub(crate) async fn load_agent_role_records(
+    storage_url: &str,
+    storage_home: &std::path::Path,
+) -> std::io::Result<Vec<chaos_proc::AgentRoleRecord>> {
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(storage_url, storage_home, "unknown")
+            .await
+            .map_err(|err| {
+                std::io::Error::other(format!("failed to open runtime storage: {err}"))
+            })?;
+    match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_agent_roles()).await {
+        Ok(records) => Ok(records
+            .into_iter()
+            .filter(|record| record.enabled)
+            .collect()),
+        Err(BreakerError::Open) => Err(std::io::Error::other(
+            "runtime storage circuit is open while loading agent roles",
+        )),
+        Err(BreakerError::Operation(err)) => Err(std::io::Error::other(format!(
+            "failed to load agent roles: {err}"
+        ))),
+    }
 }
 
 pub(crate) async fn load_effective_mcp_servers(

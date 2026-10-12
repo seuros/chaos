@@ -106,6 +106,10 @@ impl ConfigBuilder {
             )
             .await?,
         );
+        harness_overrides.database_agent_roles = Some(
+            crate::config::load_agent_role_records(&bootstrap.storage_url, &bootstrap.storage_home)
+                .await?,
+        );
         harness_overrides.active_project_trust = Some(
             crate::config_loader::resolve_active_project_trust(
                 &bootstrap,

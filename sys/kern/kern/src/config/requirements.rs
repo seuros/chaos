@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_ipc::config_types::ServiceTier;
@@ -212,6 +214,7 @@ impl Config {
             ephemeral,
             mcp_servers: mcp_servers_override,
             active_project_trust: active_project_trust_override,
+            database_agent_roles,
             additional_writable_roots,
         } = overrides;
 
@@ -373,8 +376,28 @@ impl Config {
             resolve_web_search_mode_inner(&cfg, &config_profile).unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config_inner(&cfg, &config_profile);
 
-        let agent_roles =
-            agent_roles::load_agent_roles(&config_layer_stack, &mut startup_warnings)?;
+        let mut database_roles = BTreeMap::new();
+        for record in database_agent_roles.unwrap_or_default() {
+            match agent_roles::database_role(
+                &record.name,
+                &record.format,
+                &record.source,
+                record.base_dir.as_deref().map(Path::new),
+            ) {
+                Ok(role) => {
+                    database_roles.insert(record.name, role);
+                }
+                Err(err) => startup_warnings.push(format!(
+                    "Ignoring malformed stored agent role `{}`: {err}",
+                    record.name
+                )),
+            }
+        }
+        let agent_roles = agent_roles::load_agent_roles(
+            &config_layer_stack,
+            database_roles,
+            &mut startup_warnings,
+        )?;
 
         let mut model_providers = built_in_model_providers();
         // User-configured providers replace built-ins. Partial overrides

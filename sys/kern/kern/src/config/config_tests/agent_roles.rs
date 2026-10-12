@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::AgentRoleSource;
 use std::path::Path;
 
 fn write_agent_file(dir: &Path, name: &str, contents: &str) -> std::io::Result<PathBuf> {
@@ -6,6 +7,25 @@ fn write_agent_file(dir: &Path, name: &str, contents: &str) -> std::io::Result<P
     std::fs::create_dir_all(path.parent().expect("agent file parent"))?;
     std::fs::write(&path, contents)?;
     Ok(path)
+}
+
+fn trusted_repo(chaos_home: &Path) -> std::io::Result<TempDir> {
+    let repo_root = TempDir::new()?;
+    std::fs::create_dir_all(repo_root.path().join(".git"))?;
+    crate::config::set_project_trust_level(chaos_home, repo_root.path(), TrustLevel::Trusted)
+        .map_err(std::io::Error::other)?;
+    Ok(repo_root)
+}
+
+async fn build(chaos_home: &TempDir, cwd: &Path) -> std::io::Result<Config> {
+    ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .harness_overrides(ConfigOverrides {
+            cwd: Some(cwd.to_path_buf()),
+            ..Default::default()
+        })
+        .build()
+        .await
 }
 
 #[tokio::test]
@@ -28,8 +48,9 @@ config_file = "./agents/researcher.toml"
 async fn agent_role_file_name_is_independent_of_filename() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
+    let repo_root = trusted_repo(chaos_home.path())?;
     let role_path = write_agent_file(
-        &chaos_home.path().join("agents"),
+        &repo_root.path().join(".chaos/agents"),
         "researcher.toml",
         r#"
 name = "archivist"
@@ -39,18 +60,14 @@ developer_instructions = "Research carefully"
 model = "serpent"
 "#,
     )?;
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
+    let config = build(&chaos_home, repo_root.path()).await?;
     assert!(!config.agent_roles.contains_key("researcher"));
     let role = config
         .agent_roles
         .get("archivist")
         .expect("role should load");
     assert_eq!(role.description.as_deref(), Some("Role metadata from file"));
-    assert_eq!(role.config_file.as_ref(), Some(&role_path));
+    assert_eq!(role.source, Some(AgentRoleSource::File(role_path)));
     assert_eq!(
         role.nickname_candidates.as_deref(),
         Some(["Hypatia".to_string(), "Noether".to_string()].as_slice())
@@ -59,10 +76,97 @@ model = "serpent"
 }
 
 #[tokio::test]
+async fn stored_roles_load_from_the_database() -> std::io::Result<()> {
+    let chaos_home = TempDir::new()?;
+    let name = crate::test_support::seed_agent_role(
+        chaos_home.path(),
+        "md",
+        "---\nname = 'archivist'\ndescription = 'Stored role'\n\
+         nickname_candidates = ['Hypatia']\n---\nResearch carefully",
+    )
+    .await
+    .map_err(std::io::Error::other)?;
+    assert_eq!(name, "archivist");
+    let config = build(&chaos_home, chaos_home.path()).await?;
+    let role = config
+        .agent_roles
+        .get("archivist")
+        .expect("stored role should load");
+    assert_eq!(role.description.as_deref(), Some("Stored role"));
+    let Some(AgentRoleSource::Database {
+        config: layer,
+        base_dir,
+    }) = &role.source
+    else {
+        panic!(
+            "stored role should carry a database source: {:?}",
+            role.source
+        );
+    };
+    assert_eq!(base_dir, &None);
+    assert_eq!(
+        layer
+            .get("developer_instructions")
+            .and_then(toml::Value::as_str),
+        Some("Research carefully")
+    );
+    assert!(layer.get("description").is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn disabled_and_mismatched_stored_roles_are_skipped() -> std::io::Result<()> {
+    let chaos_home = TempDir::new()?;
+    crate::test_support::seed_agent_role(
+        chaos_home.path(),
+        "toml",
+        "name = 'dormant'\ndescription = 'Disabled role'\ndeveloper_instructions = 'Rest'",
+    )
+    .await
+    .map_err(std::io::Error::other)?;
+    let runtime = crate::user_settings::open(chaos_home.path())
+        .await
+        .map_err(std::io::Error::other)?;
+    let dormant = runtime
+        .get_agent_role("dormant")
+        .await
+        .map_err(std::io::Error::other)?
+        .expect("seeded role");
+    runtime
+        .set_agent_role_enabled("dormant", dormant.revision, false)
+        .await
+        .map_err(std::io::Error::other)?;
+    runtime
+        .put_agent_role(
+            "mismatched",
+            "toml",
+            "name = 'other'\ndescription = 'Wrong name'\ndeveloper_instructions = 'Work'",
+            None,
+            0,
+        )
+        .await
+        .map_err(std::io::Error::other)?;
+
+    let config = build(&chaos_home, chaos_home.path()).await?;
+    assert!(!config.agent_roles.contains_key("dormant"));
+    assert!(!config.agent_roles.contains_key("mismatched"));
+    assert!(!config.agent_roles.contains_key("other"));
+    assert!(
+        config.startup_warnings.iter().any(|warning| {
+            warning.contains("stored agent role `mismatched`") && warning.contains("`other`")
+        }),
+        "expected a name-mismatch warning: {:?}",
+        config.startup_warnings
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn malformed_agent_files_are_dropped_with_warnings() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
-    let agents_dir = chaos_home.path().join("agents");
+    let repo_root = trusted_repo(chaos_home.path())?;
+    let agents_dir = repo_root.path().join(".chaos/agents");
     for (filename, contents) in [
         (
             "missing-instructions.toml",
@@ -87,11 +191,7 @@ async fn malformed_agent_files_are_dropped_with_warnings() -> std::io::Result<()
     ] {
         write_agent_file(&agents_dir, filename, contents)?;
     }
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
+    let config = build(&chaos_home, repo_root.path()).await?;
     assert_eq!(config.agent_roles.len(), 1);
     assert!(config.agent_roles.contains_key("reviewer"));
     for expected in [
@@ -116,16 +216,9 @@ async fn malformed_agent_files_are_dropped_with_warnings() -> std::io::Result<()
 async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
-    let repo_root = TempDir::new()?;
+    let repo_root = trusted_repo(chaos_home.path())?;
     let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(&nested_cwd)?;
-    crate::config::set_project_trust_level(
-        chaos_home.path(),
-        repo_root.path(),
-        TrustLevel::Trusted,
-    )
-    .map_err(std::io::Error::other)?;
 
     write_agent_file(
         &repo_root.path().join(".chaos/agents"),
@@ -143,14 +236,7 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
         "writer.md",
         "---\nname = 'writer'\ndescription = 'from sibling'\nnickname_candidates = ['Sagan']\n---\nWrite carefully",
     )?;
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .harness_overrides(ConfigOverrides {
-            cwd: Some(nested_cwd),
-            ..Default::default()
-        })
-        .build()
-        .await?;
+    let config = build(&chaos_home, &nested_cwd).await?;
     for (name, description, nickname) in [
         ("researcher", "from root", None),
         ("reviewer", "from nested", Some("Atlas")),
@@ -170,40 +256,33 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
 }
 
 #[tokio::test]
-async fn standalone_agent_role_sources_merge_with_precedence() -> std::io::Result<()> {
+async fn stored_and_project_role_sources_merge_with_precedence() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
-    let repo_root = TempDir::new()?;
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
-    crate::config::set_project_trust_level(
+    crate::test_support::seed_agent_role(
         chaos_home.path(),
-        repo_root.path(),
-        TrustLevel::Trusted,
-    )
-    .map_err(std::io::Error::other)?;
-
-    let home_agents = chaos_home.path().join("agents");
-    write_agent_file(
-        &home_agents,
-        "researcher.toml",
+        "toml",
         r#"
 name = "researcher"
-description = "Research role from home"
+description = "Research role from the database"
 nickname_candidates = ["Noether"]
 topics = ["research"]
 catchphrases = ["Look closely."]
 developer_instructions = "Research carefully"
 model = "serpent"
 "#,
-    )?;
-    let critic_path = write_agent_file(
-        &home_agents,
-        "critic.toml",
+    )
+    .await
+    .map_err(std::io::Error::other)?;
+    crate::test_support::seed_agent_role(
+        chaos_home.path(),
+        "toml",
         "name = 'critic'\ndescription = 'Critic role'\ndeveloper_instructions = 'Critique carefully'",
-    )?;
-    let project_agents = repo_root.path().join(".chaos/agents");
+    )
+    .await
+    .map_err(std::io::Error::other)?;
+    let repo_root = trusted_repo(chaos_home.path())?;
     let researcher_path = write_agent_file(
-        &project_agents,
+        &repo_root.path().join(".chaos/agents"),
         "researcher.toml",
         r#"
 name = "researcher"
@@ -212,17 +291,13 @@ developer_instructions = "Research from project"
 model = "fireship"
 "#,
     )?;
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .harness_overrides(ConfigOverrides {
-            cwd: Some(repo_root.path().to_path_buf()),
-            ..Default::default()
-        })
-        .build()
-        .await?;
+    let config = build(&chaos_home, repo_root.path()).await?;
     let role = config.agent_roles.get("researcher").expect("merged role");
-    assert_eq!(role.description.as_deref(), Some("Research role from home"));
-    assert_eq!(role.config_file.as_ref(), Some(&researcher_path));
+    assert_eq!(
+        role.description.as_deref(),
+        Some("Research role from the database")
+    );
+    assert_eq!(role.source, Some(AgentRoleSource::File(researcher_path)));
     assert_eq!(
         role.nickname_candidates.as_deref(),
         Some(["Hypatia".to_string()].as_slice())
@@ -235,13 +310,28 @@ model = "fireship"
         role.catchphrases.as_deref(),
         Some(["Look closely.".to_string()].as_slice())
     );
-    assert_eq!(
+    assert!(matches!(
         config
             .agent_roles
             .get("critic")
-            .and_then(|role| role.config_file.as_ref()),
-        Some(&critic_path)
-    );
+            .and_then(|role| role.source.as_ref()),
+        Some(AgentRoleSource::Database { .. })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn home_agents_folder_is_no_longer_read() -> std::io::Result<()> {
+    let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
+    write_agent_file(
+        &chaos_home.path().join("agents"),
+        "researcher.toml",
+        "name = 'researcher'\ndescription = 'Legacy home role'\n\
+         developer_instructions = 'Research'",
+    )?;
+    let config = build(&chaos_home, chaos_home.path()).await?;
+    assert!(!config.agent_roles.contains_key("researcher"));
     Ok(())
 }
 
@@ -262,14 +352,7 @@ async fn untrusted_project_agent_files_are_not_loaded() -> std::io::Result<()> {
         "researcher.toml",
         "name = 'researcher'\ndescription = 'Project role'\ndeveloper_instructions = 'Research'",
     )?;
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .harness_overrides(ConfigOverrides {
-            cwd: Some(repo_root.path().to_path_buf()),
-            ..Default::default()
-        })
-        .build()
-        .await?;
+    let config = build(&chaos_home, repo_root.path()).await?;
     assert!(!config.agent_roles.contains_key("researcher"));
     Ok(())
 }

@@ -37,6 +37,10 @@ should. There is no patch level; the build timestamp is the patch.
 ### Added
 - `docs/getting-started.md`: database provisioning (PostgreSQL recommended),
   first run, headless bootstrap, first provider.
+- `chaos agents list|show|import|export|remove|enable|disable`: agent role
+  documents live in the runtime database. `$CHAOS_HOME/agents/` and
+  `/etc/chaos/agents/` are no longer read; trusted project `.chaos/agents/`
+  files still overlay stored roles.
 
 ### Fixed
 - PostgreSQL mounts now enforce the same per-partition log retention as

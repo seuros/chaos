@@ -359,3 +359,23 @@ pub async fn seed_user_settings(home: &Path, settings: toml::Value) -> anyhow::R
 pub async fn seed_user_settings_toml(home: &Path, toml: &str) -> anyhow::Result<()> {
     seed_user_settings(home, toml::from_str(toml)?).await
 }
+
+/// Store an agent role document in the test home's database. `format` is
+/// `toml` or `md`; the role name comes from the document.
+pub async fn seed_agent_role(home: &Path, format: &str, source: &str) -> anyhow::Result<String> {
+    bootstrap_sqlite(home)?;
+    let label = PathBuf::from(format!("role.{format}"));
+    let parsed = chaos_sysctl::agent_roles::parse_agent_role_file_contents(
+        source, &label, home, /*require_developer_instructions*/ true,
+    )?;
+    let runtime = crate::user_settings::open(home).await?;
+    let revision = runtime
+        .get_agent_role(&parsed.role_name)
+        .await?
+        .map(|record| record.revision)
+        .unwrap_or(0);
+    runtime
+        .put_agent_role(&parsed.role_name, format, source, None, revision)
+        .await?;
+    Ok(parsed.role_name)
+}

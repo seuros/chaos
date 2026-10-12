@@ -1118,12 +1118,26 @@ pub struct AgentsToml {
     pub job_max_runtime_seconds: Option<u64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Where a role's config layer comes from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentRoleSource {
+    /// Compiled-in role; the path indexes the embedded directories.
+    BuiltIn(PathBuf),
+    /// A file in a trusted project's `.chaos/agents` folder.
+    File(PathBuf),
+    /// A database row, already parsed. Relative paths resolve against `base_dir`.
+    Database {
+        config: toml::Value,
+        base_dir: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct AgentRoleConfig {
     /// Human-facing role documentation used in spawn tool guidance.
     pub description: Option<String>,
-    /// Path to a role-specific config layer.
-    pub config_file: Option<PathBuf>,
+    /// The role-specific config layer, when the role carries one.
+    pub source: Option<AgentRoleSource>,
     /// Candidate nicknames for agents spawned with this role.
     pub nickname_candidates: Option<Vec<String>>,
     /// Topic tags used for dynamic routing (e.g. ["ruby", "rails"]).

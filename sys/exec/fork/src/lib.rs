@@ -179,6 +179,7 @@ fn exec_config_overrides(inputs: ExecConfigOverrideInputs) -> ConfigOverrides {
         ephemeral: inputs.ephemeral.then_some(true),
         mcp_servers: None,
         active_project_trust: None,
+        database_agent_roles: None,
         additional_writable_roots: inputs.additional_writable_roots,
         provider_user_override,
         model_provider: inputs.model_provider,

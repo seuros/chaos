@@ -24,6 +24,7 @@ async fn open_runtime_db_creates_unified_runtime_schema() {
         "journal_entries",
         "logs",
         "message_history",
+        "agent_roles",
         "process_dynamic_tools",
         "agent_jobs",
         "agent_job_items",

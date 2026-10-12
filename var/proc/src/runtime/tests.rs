@@ -7,6 +7,25 @@ async fn runtime_db_uses_new_filename() {
 }
 
 #[tokio::test]
+async fn message_history_log_id_follows_the_open_sqlite_file() -> anyhow::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let root = test_support::unique_temp_dir();
+    let chaos_home = root.join("home");
+    let state_dir = root.join("elsewhere");
+    tokio::fs::create_dir_all(&chaos_home).await?;
+    tokio::fs::create_dir_all(&state_dir).await?;
+    let state_file = state_dir.join("state.sqlite");
+    let pool = open_runtime_db_at_path(&state_file).await?;
+    let runtime = StateRuntime::from_sqlite_pool(chaos_home.clone(), "test".into(), pool);
+
+    let log_id = runtime.message_history_log_id().await?;
+
+    assert_eq!(log_id, std::fs::metadata(&state_file)?.ino());
+    assert!(!runtime_db_path(&chaos_home).exists());
+    Ok(())
+}
+
+#[tokio::test]
 async fn open_runtime_db_creates_unified_runtime_schema() {
     let chaos_home = test_support::unique_temp_dir();
     tokio::fs::create_dir_all(&chaos_home)

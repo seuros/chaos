@@ -61,6 +61,11 @@ should. There is no patch level; the build timestamp is the patch.
   ran at session start.
 
 ### Fixed
+- Applying a stored agent role no longer drops the other stored roles from
+  the resulting config, so nested agents can still select them.
+- The message-history generation token now reads the SQLite file name from
+  the open connection, so a storage URL outside ChaOS home still rejects
+  stale history after the file is recreated.
 - Compatible endpoints that accept one system block (self-hosted servers
   with strict chat templates) now receive every `developer`/`system`
   instruction hoisted into that block, in order, on both wire formats.

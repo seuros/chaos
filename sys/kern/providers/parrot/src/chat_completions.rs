@@ -260,11 +260,11 @@ pub(crate) fn build_request_body(
 /// input; the chat format only carries their cumulative state, not when each
 /// one arrived.
 fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
-    let system_count = messages
+    let misplaced = messages
         .iter()
-        .filter(|message| message.role == "system")
-        .count();
-    if system_count > 1 {
+        .skip(1)
+        .any(|message| message.role == "system");
+    if misplaced {
         let (merged, rest): (Vec<ChatMessage>, Vec<ChatMessage>) = std::mem::take(messages)
             .into_iter()
             .partition(|message| message.role == "system");

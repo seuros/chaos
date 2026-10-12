@@ -1,4 +1,4 @@
-use super::{Row, SqliteConnection, StateRuntime, runtime_db_path};
+use super::{Row, SqliteConnection, StateRuntime};
 use chaos_ipc::message_history::HistoryEntry;
 use std::os::unix::fs::MetadataExt;
 
@@ -132,9 +132,15 @@ WHERE id IN (
 
 impl StateRuntime {
     /// Storage identity of the history: the database file inode, which
-    /// changes when the file is recreated.
+    /// changes when the file is recreated. The file name comes from the open
+    /// connection; the storage URL may name any path, not only the home file.
     pub(crate) async fn message_history_log_id(&self) -> anyhow::Result<u64> {
-        let metadata = std::fs::metadata(runtime_db_path(self.chaos_home()))?;
+        let file: String =
+            sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
+                .fetch_one(self.pool())
+                .await?;
+        anyhow::ensure!(!file.is_empty(), "runtime database is not file-backed");
+        let metadata = std::fs::metadata(file)?;
         Ok(metadata.ino())
     }
 }

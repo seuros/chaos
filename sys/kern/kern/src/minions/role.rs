@@ -303,6 +303,9 @@ mod reload {
             model_provider: preserve_current_provider.then(|| config.model_provider_id.clone()),
             active_project_trust: Some(config.active_project_trust.clone()),
             alcatraz_exe: Some(config.alcatraz_exe.clone()),
+            // Stored roles are not re-read here; without this the child
+            // config would lose every database role after one role applied.
+            database_agent_roles: Some(config.database_agent_roles.clone()),
             ..Default::default()
         }
     }

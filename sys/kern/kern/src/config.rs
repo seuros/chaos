@@ -555,6 +555,10 @@ pub struct Config {
     /// User-defined role declarations keyed by role name.
     pub agent_roles: BTreeMap<String, AgentRoleConfig>,
 
+    /// Enabled stored role documents, kept so role rebuilds (which pass no
+    /// override) re-parse the same rows instead of dropping them.
+    pub database_agent_roles: Vec<chaos_proc::AgentRoleRecord>,
+
     /// Memory subsystem configuration.
     pub memories: MemoriesConfig,
 

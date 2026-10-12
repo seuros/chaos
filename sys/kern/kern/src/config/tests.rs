@@ -1035,6 +1035,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
+        database_agent_roles: Vec::new(),
         minion_job_max_runtime_seconds: DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
         chaos_home: fixture.chaos_home(),
         mode_policy_override: None,

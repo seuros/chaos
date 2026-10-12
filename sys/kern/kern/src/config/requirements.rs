@@ -376,8 +376,9 @@ impl Config {
             resolve_web_search_mode_inner(&cfg, &config_profile).unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config_inner(&cfg, &config_profile);
 
+        let database_agent_roles = database_agent_roles.unwrap_or_default();
         let mut database_roles = BTreeMap::new();
-        for record in database_agent_roles.unwrap_or_default() {
+        for record in &database_agent_roles {
             match agent_roles::database_role(
                 &record.name,
                 &record.format,
@@ -385,7 +386,7 @@ impl Config {
                 record.base_dir.as_deref().map(Path::new),
             ) {
                 Ok(role) => {
-                    database_roles.insert(record.name, role);
+                    database_roles.insert(record.name.clone(), role);
                 }
                 Err(err) => startup_warnings.push(format!(
                     "Ignoring malformed stored agent role `{}`: {err}",
@@ -683,6 +684,7 @@ impl Config {
             agent_max_threads,
             agent_max_depth,
             agent_roles,
+            database_agent_roles,
             minion_job_max_runtime_seconds,
             chaos_home,
             mode_policy_override: None,

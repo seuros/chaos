@@ -252,6 +252,40 @@ async fn apply_scout_role_sets_model_and_adds_session_flags_layer() {
 }
 
 #[tokio::test]
+async fn applying_a_stored_role_keeps_stored_roles_for_nested_agents() -> anyhow::Result<()> {
+    let home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(home.path())?;
+    for name in ["archivist", "scribe"] {
+        crate::test_support::seed_agent_role(
+            home.path(),
+            "toml",
+            &format!("name = '{name}'\ndescription = 'Stored'\ndeveloper_instructions = 'Go'"),
+        )
+        .await?;
+    }
+    let home_path = home.path().to_path_buf();
+    let mut config = ConfigBuilder::default()
+        .chaos_home(home_path.clone())
+        .fallback_cwd(Some(home_path))
+        .build()
+        .await?;
+    assert!(config.agent_roles.contains_key("archivist"));
+
+    apply_role_to_config(&mut config, Some("archivist"))
+        .await
+        .map_err(anyhow::Error::msg)?;
+
+    assert_eq!(config.developer_instructions.as_deref(), Some("Go"));
+    assert!(
+        config.agent_roles.contains_key("scribe"),
+        "nested agents must still see stored roles: {:?}",
+        config.agent_roles.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(config.database_agent_roles.len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
 async fn apply_role_returns_unavailable_for_missing_user_role_file() {
     let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
     config.agent_roles.insert(

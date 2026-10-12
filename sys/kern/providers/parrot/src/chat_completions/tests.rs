@@ -298,6 +298,41 @@ fn build_request_body_merges_every_system_message_into_the_leading_block() {
 }
 
 #[test]
+fn build_request_body_hoists_a_lone_later_system_message_without_instructions() {
+    let message = |role: &str, text: &str| ResponseItem::Message {
+        id: None,
+        role: role.into(),
+        content: vec![ContentItem::InputText { text: text.into() }],
+        end_turn: None,
+        phase: None,
+    };
+    let request = TurnRequest {
+        model: TEST_MODEL.to_string(),
+        instructions: String::new(),
+        input: vec![
+            message("user", "hello"),
+            message("system", "tools reminder"),
+        ],
+        tools: vec![],
+        parallel_tool_calls: false,
+        reasoning: None,
+        output_schema: None,
+        verbosity: None,
+        turn_state: None,
+        extensions: serde_json::Map::new(),
+    };
+    let body = build_request_body(&request, TEST_MODEL, true).expect("body should build");
+    let messages = body["messages"].as_array().expect("messages");
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(roles, vec!["system", "user"]);
+    assert_eq!(messages[0]["content"], "tools reminder");
+    assert_eq!(messages[1]["content"], "hello");
+}
+
+#[test]
 fn build_request_body_includes_system_message() {
     let request = TurnRequest {
         model: TEST_MODEL.to_string(),

@@ -22,9 +22,16 @@ impl std::fmt::Debug for StorageChoice {
     }
 }
 
-/// Require a non-empty storage_url in the bootstrap file before interactive startup.
+/// Interactive startup needs setup unless storage is already explicit: a
+/// `storage_url` in the bootstrap file or a non-empty `CHAOS_STORAGE_URL`.
+/// References are not resolved here; that happens when storage opens.
 pub fn is_needed(home: &Path) -> anyhow::Result<bool> {
-    Ok(!BootstrapConfig::read(home)?.has_storage_url())
+    if BootstrapConfig::read(home)?.has_storage_url() {
+        return Ok(false);
+    }
+    Ok(std::env::var("CHAOS_STORAGE_URL")
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(true))
 }
 
 fn postgres_url(home: &Path, connection: &str) -> anyhow::Result<String> {

@@ -94,10 +94,9 @@ before loading database-backed settings. Selecting SQLite creates or opens
 in the bootstrap file.
 
 A configured PostgreSQL/SQLite URL or reference such as `env:CHAOS_DATABASE_URL`
-skips storage onboarding. Literal URLs need no environment variable. Environment
-variables alone or an existing SQLite file do not replace the bootstrap choice
-for the console; non-interactive commands accept `CHAOS_STORAGE_URL` as the
-explicit choice.
+skips storage onboarding, and so does a non-empty `CHAOS_STORAGE_URL` in the
+environment. Literal URLs need no environment variable. An existing SQLite file
+on its own is not a choice.
 
 First-run setup puts the SQLite file under the chaos home (`$CHAOS_HOME`, or
 `~/.chaos`). To keep it elsewhere, name the file in the URL:

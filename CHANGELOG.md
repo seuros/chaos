@@ -25,15 +25,17 @@ should. There is no patch level; the build timestamp is the patch.
   error code.
 
 ### Changed
-- Storage is never chosen silently. Non-interactive commands now require
-  `storage_url` or `CHAOS_STORAGE_URL` and exit with setup instructions
-  otherwise; the console still runs first-run setup.
+- Storage is never chosen silently. Every command requires `storage_url` or
+  `CHAOS_STORAGE_URL`; the console runs first-run setup when neither is set,
+  everything else exits with setup instructions.
 - `chaos config export` prints JSON and `chaos config import` reads JSON.
 - Administrator network constraints come only from
   `/etc/chaos/requirements.toml` (`[experimental_network]`).
-- `rules/*.decrees` and `agents/` are discovered through asset folders:
-  `/etc/chaos` (grants allowed), `$CHAOS_HOME` and trusted project `.chaos`
-  folders (restrictions only). `$CHAOS_HOME/rules` is now loaded from disk.
+- File-based `rules/*.decrees` and `agents/` come from two places only:
+  `/etc/chaos` (rules may grant) and trusted project `.chaos` folders
+  (restrictions only). The user's own rules and roles are database rows
+  (`chaos rules`, `chaos agents`); `$CHAOS_HOME/rules` and
+  `$CHAOS_HOME/agents` are not read.
 
 ### Added
 - `docs/getting-started.md`: database provisioning (PostgreSQL recommended),

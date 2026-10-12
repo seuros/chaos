@@ -205,6 +205,19 @@ pub(crate) fn mount_config_for(
     Ok(config)
 }
 
+/// The directory holding the SQLite database named by `storage_url`, or `None`
+/// for PostgreSQL. This is where SQLite state actually lives, whichever mount
+/// key the URL ends up under.
+pub(crate) fn sqlite_state_dir(storage_url: &str) -> Option<PathBuf> {
+    match chaos_vfs::MountConfig::from_url(storage_url).ok()? {
+        chaos_vfs::MountConfig::SqliteHome(dir) => Some(dir),
+        chaos_vfs::MountConfig::SqliteUrl(url) => {
+            sqlite_file_path(&url).and_then(|path| path.parent().map(Path::to_path_buf))
+        }
+        chaos_vfs::MountConfig::PostgresUrl(_) => None,
+    }
+}
+
 /// The file a plain `sqlite:` URL points at, when it has no query options.
 fn sqlite_file_path(url: &str) -> Option<PathBuf> {
     let parsed = url::Url::parse(&url.replacen("sqlite:", "file:", 1)).ok()?;

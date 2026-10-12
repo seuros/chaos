@@ -9,17 +9,39 @@ fn fresh_home_needs_setup_without_creating_state() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Only meaningful under `CHAOS_STORAGE_URL`; the subprocess test below sets it.
 #[test]
-fn environment_does_not_replace_bootstrap_storage_choice() -> anyhow::Result<()> {
+fn environment_storage_url_skips_setup_without_creating_state() -> anyhow::Result<()> {
+    let Some(url) = std::env::var("CHAOS_STORAGE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    assert!(url.starts_with("postgresql://"));
+    let parent = tempfile::tempdir()?;
+    let home = parent.path().join("new-machine");
+    assert!(!is_needed(&home)?);
+    assert!(!home.exists());
+    Ok(())
+}
+
+#[test]
+fn environment_storage_url_counts_as_an_explicit_choice() -> anyhow::Result<()> {
     // Set environment only in a subprocess, not in this parallel test harness.
-    for url in ["", "postgresql://localhost/environment-only"] {
+    for (url, test) in [
+        ("", "fresh_home_needs_setup_without_creating_state"),
+        (
+            "postgresql://localhost/environment-only",
+            "environment_storage_url_skips_setup_without_creating_state",
+        ),
+    ] {
         let output = std::process::Command::new(std::env::current_exe()?)
             .args([
                 "--exact",
-                "user_settings::storage_setup::tests::fresh_home_needs_setup_without_creating_state",
+                &format!("user_settings::storage_setup::tests::{test}"),
             ])
             .env("CHAOS_STORAGE_URL", url)
-            .env("CHAOS_DATABASE_URL", url)
             .output()?;
         assert!(
             output.status.success(),

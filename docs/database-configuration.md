@@ -32,8 +32,8 @@ access.
 
 ## First-run storage setup
 
-When the bootstrap file has no `storage_url`, the console asks where to store
-data before loading database-backed settings:
+When the bootstrap file has no `storage_url` and `CHAOS_STORAGE_URL` is unset,
+the console asks where to store data before loading database-backed settings:
 
 - **PostgreSQL (Recommended)** connects to an existing database on a local or
   remote PostgreSQL server. Enter a `postgresql://user:password@host:5432/database`

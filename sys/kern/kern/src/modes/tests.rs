@@ -197,3 +197,18 @@ fn child_policy_cannot_broaden_parent_modes() {
 
     assert!(error.contains("not allowed by the active parent mode"));
 }
+
+#[test]
+fn reserved_mode_ids_are_rejected_at_import() {
+    for reserved in [DEFAULT_MODE_ID, PLAN_MODE_ID] {
+        let source = RESEARCH_MODE.replace("id = \"research\"", &format!("id = \"{reserved}\""));
+        let error = crate::user_documents::validate(
+            crate::user_documents::DocumentKind::Mode,
+            reserved,
+            &source,
+        )
+        .expect_err("reserved id must not be stored")
+        .to_string();
+        assert!(error.contains("reserved"), "{error}");
+    }
+}

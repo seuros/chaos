@@ -7,13 +7,12 @@ use rama::http::Method;
 use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
-use rama::http::body::util::BodyExt;
-use rama::http::body::util::LengthLimitError;
 use rama::service::service_fn;
 use tracing::{Instrument, error, info_span, warn};
 
 use crate::ServerState;
 use crate::auth;
+use crate::ingress::{self, BodyError};
 use crate::monitor;
 use crate::protocol::{ApiErrorResponse, HealthResponse, TriggerRequest, TriggerResponse};
 use crate::runner;
@@ -39,7 +38,10 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     // The monitor page is a static login shell; only authenticated callers may
     // subscribe to live state. Authenticate before touching either request body.
-    if matches!(path, TRIGGER_PATH | MONITOR_EVENTS_PATH) {
+    if matches!(path, TRIGGER_PATH | MONITOR_EVENTS_PATH)
+        || path == "/api/sessions"
+        || path.starts_with("/api/sessions/")
+    {
         let auth_header = request
             .headers()
             .get("authorization")
@@ -52,6 +54,10 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
                 .insert("www-authenticate", "Bearer".parse().unwrap());
             return response;
         }
+    }
+
+    if path == "/api/sessions" || path.starts_with("/api/sessions/") {
+        return crate::sessions::http::handle(state, request).await;
     }
 
     match (method.clone(), path) {
@@ -83,32 +89,8 @@ fn handle_health() -> Response {
 async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
     let deadline = tokio::time::Instant::now() + state.timeout;
 
-    // Content-Type check: accept "application/json" with optional params
-    // (e.g. "application/json; charset=utf-8") but not subtypes like
-    // "application/json-patch+json".
-    let content_type = request
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let mime_base = content_type.split(';').next().unwrap_or("").trim();
-    if !mime_base.eq_ignore_ascii_case("application/json") {
-        return json_response(
-            StatusCode::BAD_REQUEST,
-            &ApiErrorResponse::error("Content-Type must be application/json"),
-        );
-    }
-
-    // Content-Length pre-check: reject before buffering when the header
-    // advertises a body larger than the configured limit.
-    if let Some(cl) = request.headers().get("content-length")
-        && let Ok(len) = cl.to_str().unwrap_or("0").parse::<usize>()
-        && len > state.body_limit
-    {
-        return json_response(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            &ApiErrorResponse::error("request body too large"),
-        );
+    if let Err(error) = ingress::validate_json_headers(&request, state.body_limit) {
+        return body_error_response(error);
     }
 
     // Bound ingress as well as agent execution. Do not buffer a body while
@@ -123,40 +105,10 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         }
     };
 
-    // Rama's limiter stops polling as soon as a frame crosses the byte cap,
-    // including chunked bodies and clients without a Content-Length header.
-    let body_bytes = match tokio::time::timeout_at(
-        deadline,
-        request.into_body().limited(state.body_limit).collect(),
-    )
-    .await
+    let body_bytes = match ingress::read_body(request.into_body(), state.body_limit, deadline).await
     {
-        Ok(Ok(collected)) => collected.to_bytes(),
-        Ok(Err(e))
-            if matches!(
-                e.kind(),
-                rama::http::body::CollectErrorKind::Stream(source)
-                    if source.is::<LengthLimitError>()
-            ) =>
-        {
-            return json_response(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                &ApiErrorResponse::error("request body too large"),
-            );
-        }
-        Ok(Err(e)) => {
-            error!(error = %e, "failed to read request body");
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                &ApiErrorResponse::error("failed to read request body"),
-            );
-        }
-        Err(_) => {
-            return json_response(
-                StatusCode::REQUEST_TIMEOUT,
-                &ApiErrorResponse::timeout("request body deadline exceeded"),
-            );
-        }
+        Ok(bytes) => bytes,
+        Err(error) => return body_error_response(error),
     };
 
     // Deserialize.
@@ -188,22 +140,16 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
     }
 
     // Validate: require non-empty request.
-    match trigger_req.request.as_deref() {
-        None | Some("") => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                &ApiErrorResponse::error("missing required field: request")
-                    .with_caller_fields(caller_session_id, Some(conversation_id)),
-            );
-        }
-        Some(s) if s.trim().is_empty() => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                &ApiErrorResponse::error("missing required field: request")
-                    .with_caller_fields(caller_session_id, Some(conversation_id)),
-            );
-        }
-        _ => {}
+    if !trigger_req
+        .request
+        .as_deref()
+        .is_some_and(|request| !request.trim().is_empty())
+    {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            &ApiErrorResponse::error("missing required field: request")
+                .with_caller_fields(caller_session_id, Some(conversation_id)),
+        );
     }
 
     state.monitor.publish(
@@ -286,14 +232,10 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                         error = %outcome.text,
                         "trigger process returned error",
                     );
-                    json_response(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        &ApiErrorResponse::error(INTERNAL_SERVER_ERROR)
-                            .with_process_id(outcome.process_id)
-                            .with_caller_fields(
-                                caller_session_id.clone(),
-                                Some(conversation_id.clone()),
-                            ),
+                    execution_error_response(
+                        outcome.process_id,
+                        caller_session_id.clone(),
+                        conversation_id.clone(),
                     )
                 } else {
                     state.monitor.publish(
@@ -323,14 +265,10 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
                     Some(e.to_string()),
                 );
                 error!(error = %e, "trigger runner failed");
-                json_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    &ApiErrorResponse::error(INTERNAL_SERVER_ERROR)
-                        .with_process_id(started.process_id)
-                        .with_caller_fields(
-                            caller_session_id.clone(),
-                            Some(conversation_id.clone()),
-                        ),
+                execution_error_response(
+                    started.process_id,
+                    caller_session_id.clone(),
+                    conversation_id.clone(),
                 )
             }
             Err(_elapsed) => {
@@ -371,6 +309,30 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
     }
     .instrument(span)
     .await
+}
+
+/// Return the same sanitized execution failure with caller correlation.
+fn execution_error_response(
+    process_id: chaos_ipc::ProcessId,
+    caller_session_id: Option<String>,
+    conversation_id: String,
+) -> Response {
+    json_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        &ApiErrorResponse::error(INTERNAL_SERVER_ERROR)
+            .with_process_id(process_id)
+            .with_caller_fields(caller_session_id, Some(conversation_id)),
+    )
+}
+
+/// Preserve the legacy timeout status for body-read deadlines.
+fn body_error_response(error: BodyError) -> Response {
+    let body = if matches!(error, BodyError::Deadline) {
+        ApiErrorResponse::timeout(error.message())
+    } else {
+        ApiErrorResponse::error(error.message())
+    };
+    json_response(error.status(), &body)
 }
 
 /// 405 response with the correct `Allow` header.

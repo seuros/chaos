@@ -16,11 +16,11 @@ pub struct ServeCli {
     #[usage(long = "bearer-token", env = "CHAOS_BEARER_TOKEN")]
     pub bearer_token: Option<String>,
 
-    /// Per-trigger wall-clock timeout in seconds, including body reading.
+    /// Trigger wall-clock timeout, retained-turn deadline and body-read timeout, in seconds.
     #[usage(long = "timeout", default = "600")]
     pub timeout: u64,
 
-    /// Maximum concurrent triggers, including bodies being read and process cleanup.
+    /// Maximum concurrent triggers/retained turns, including trigger body reading and cleanup.
     #[usage(long = "max-concurrent", default = "4")]
     pub max_concurrent: usize,
 
@@ -28,7 +28,19 @@ pub struct ServeCli {
     #[usage(long = "body-limit", default = "1048576")]
     pub body_limit: usize,
 
-    /// Model used for every trigger served by this process.
+    /// Enable the experimental retained-session API alongside /api/trigger.
+    #[usage(long = "sessions")]
+    pub sessions: bool,
+
+    /// Maximum retained session records (including closed-session tombstones).
+    #[usage(long = "max-sessions", default = "32")]
+    pub max_sessions: usize,
+
+    /// Maximum lifetime of a retained session in seconds.
+    #[usage(long = "session-ttl", default = "3600")]
+    pub session_ttl: u64,
+
+    /// Default model for triggers and retained sessions.
     #[usage(short = 'm', long = "model")]
     pub model: Option<String>,
 

@@ -9,9 +9,13 @@ extern crate usage as usage_rs;
 mod api;
 mod auth;
 pub mod cli;
+mod ingress;
 mod monitor;
 pub mod protocol;
 mod runner;
+mod sessions;
+#[cfg(test)]
+mod test_support;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -55,6 +59,18 @@ pub(crate) struct ServerState {
     timeout: Duration,
     body_limit: usize,
     monitor: monitor::MonitorState,
+    sessions: Option<Arc<sessions::SessionManager>>,
+}
+
+impl ServerState {
+    async fn shutdown_sessions(&self) {
+        if let Some(sessions) = &self.sessions {
+            sessions.close_all();
+            self.process_table
+                .shutdown_all_processes_bounded(Duration::from_secs(30))
+                .await;
+        }
+    }
 }
 
 /// Entry point called from `bin/chaos` when `chaos serve` is dispatched.
@@ -76,6 +92,9 @@ pub async fn run_main(
     }
     if serve_cli.body_limit == 0 {
         bail!("--body-limit must be at least 1");
+    }
+    if serve_cli.max_sessions == 0 || serve_cli.session_ttl == 0 {
+        bail!("--max-sessions and --session-ttl must be at least 1");
     }
 
     // 2. Parse CLI -c overrides.
@@ -123,6 +142,9 @@ pub async fn run_main(
         .harness_overrides(overrides)
         .build()
         .await?;
+    if serve_cli.sessions && config.clamp {
+        bail!("retained HTTP sessions do not yet support clamp transports");
+    }
 
     // 7. Mount the storage backend for the life of the process.
     chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
@@ -181,6 +203,12 @@ pub async fn run_main(
         timeout: Duration::from_secs(serve_cli.timeout),
         body_limit: serve_cli.body_limit,
         monitor: monitor::MonitorState::new(),
+        sessions: serve_cli.sessions.then(|| {
+            Arc::new(sessions::SessionManager::new(
+                serve_cli.max_sessions,
+                Duration::from_secs(serve_cli.session_ttl),
+            ))
+        }),
     });
 
     // 12. Bind and serve.
@@ -193,9 +221,13 @@ pub async fn run_main(
         Some(addr.to_string()),
     );
 
-    let graceful = graceful::Shutdown::new(async {
+    let shutdown_state = state.clone();
+    let graceful = graceful::Shutdown::new(async move {
         let mut signal = Box::pin(graceful::default_signal());
         signal.as_mut().await;
+        // Close retained streams/processes before waiting for HTTP drainage.
+        // Otherwise an SSE subscriber could keep graceful shutdown alive.
+        shutdown_state.shutdown_sessions().await;
     });
     let exec = Executor::graceful(graceful.guard());
 
@@ -205,7 +237,7 @@ pub async fn run_main(
         .map_err(|err| anyhow::anyhow!("{err}"))
         .with_context(|| format!("bind chaos-httpd: {addr}"))?;
 
-    let service = api::http_service(state);
+    let service = api::http_service(state.clone());
 
     info!(
         bind = %addr,
@@ -222,6 +254,7 @@ pub async fn run_main(
 
     tokio::select! {
         result = &mut serve_task => {
+            state.shutdown_sessions().await;
             return match result {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(err)) => Err(anyhow::anyhow!("chaos-httpd serve error: {err}")),
@@ -235,6 +268,8 @@ pub async fn run_main(
             );
         }
     }
+
+    state.shutdown_sessions().await;
 
     match serve_task.await {
         Ok(Ok(())) => Ok(()),

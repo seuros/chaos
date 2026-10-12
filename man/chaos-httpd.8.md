@@ -19,7 +19,9 @@ chaos serve --bearer-token <TOKEN> [OPTIONS]
 
 HTTP trigger server. Turns Chaos into a webhook target.
 
-One request -> one process -> one response. No sessions, no streaming.
+By default, one request -> one process -> one response.
+`--sessions` additionally enables an experimental daemon-owned session API,
+with asynchronous turns, live steering and authenticated event replay/SSE.
 
 Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env var.
 
@@ -31,9 +33,12 @@ Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env va
 | `--port` | `4000` | |
 | `--bearer-token` | env `CHAOS_BEARER_TOKEN` | Required. Empty = rejected at startup. |
 | `--timeout` | `600` | Wall-clock seconds per trigger (body reading + start + execution). |
-| `--max-concurrent` | `4` | Bounds body reading through process cleanup. Excess requests get `429` before body parsing. |
+| `--max-concurrent` | `4` | Bounds triggers from body reading through cleanup, and active retained turns through background quiescence. |
 | `--body-limit` | `1048576` | Bytes. Enforced while streaming, including chunked bodies; oversized `Content-Length` is rejected before reading. |
-| `-m, --model` | config default | Server-wide. Per-request override is rejected. |
+| `--sessions` | `false` | Enable the experimental retained-session endpoints. |
+| `--max-sessions` | `32` | Maximum retained records, including closed-session tombstones. |
+| `--session-ttl` | `3600` | Maximum session lifetime in seconds, including active execution. |
+| `-m, --model` | config default | Server default. `/api/trigger` still rejects per-request overrides. |
 | `--sandbox` | config default | Sandbox policy for spawned commands. |
 | `--skip-git-repo-check` | `false` | |
 | `--ephemeral` | `false` | No session persistence. |
@@ -124,9 +129,108 @@ The authenticated SSE stream includes process/conversation IDs and diagnostic
 details. Neither the page nor live responses may be cached. Treat the token as
 a full-access credential: it also permits triggering agent runs.
 
+### Experimental retained sessions (`--sessions`)
+
+This is a validation API, **not yet a production replacement for souls.house's
+durable execution ledger**. Provider, credentials, working directory, tool
+environment and sandbox are server-owned. Clamp transports are rejected at
+startup when this API is enabled. Per-turn environment isolation, invocation
+billing telemetry and expiring/withdrawable steering notices are not implemented.
+
+```sh
+chaos serve --sessions -C /path/to/project
+```
+
+All session endpoints require the same bearer authentication as `/api/trigger`.
+Responses have `Cache-Control: no-store`. Mutations additionally require
+`X-Chaos-Daemon-ID`, obtained from `GET /api/sessions`. A missing generation
+returns `428`; a changed generation returns `409`. **Never simply refresh this
+header and replay an uncertain submission.** Reconcile it through your own
+durable ledger first.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| GET | `/api/sessions` | Current daemon generation and bounded session list |
+| POST | `/api/sessions` | Accept creation; return `202` and a server-generated session UUID |
+| GET | `/api/sessions/{session}` | Read state, process ID and active turn ID |
+| POST | `/api/sessions/{session}/turns/{turn}` | Accept a caller-generated turn UUID; return `202` without waiting for inference |
+| GET | `/api/sessions/{session}/turns/{turn}` | Read execution state, bounded result and usage snapshot |
+| POST | `/api/sessions/{session}/turns/{turn}/steer` | Inject input only into that active foreground turn |
+| POST | `/api/sessions/{session}/turns/{turn}/interrupt` | Request interruption; `202` is not proof of termination |
+| GET | `/api/sessions/{session}/events?after=0` | Bounded, sequence-numbered kernel event replay |
+| DELETE | `/api/sessions/{session}` | Request shutdown; delete a closed/failed record on a subsequent call |
+
+Creation accepts `{}` or `{"resume_process_id":"saved-process-uuid"}`.
+Poll the session until its status is `idle` before submitting a turn. A process
+already running in this daemon cannot be resumed into a second event consumer.
+Explicit resume restores saved history, not an in-flight model request, tool or
+shell command, and cannot be used with `--ephemeral`.
+
+Turn submission accepts:
+
+```json
+{"request":"Run the tests","model":"optional-model-slug","reasoning_effort":"medium"}
+```
+
+Only the existing provider is used; model/effort changes apply to the submitted
+turn and subsequent session context. No credential, environment, sandbox or
+provider overrides are accepted. Repeating a turn UUID with the same payload
+returns its existing state without executing again; changing the payload returns
+`409`. One HTTP turn may occupy a session at a time. At most 256 turn records
+are retained per session; reaching this limit returns `429` rather than silently
+discarding deduplication evidence.
+
+Steering accepts `{"request":"Focus on the failing parser test"}`. It returns
+`200` on kernel acceptance, not on model consumption. An inactive or mismatched
+turn returns `409`. Steering is **not idempotent**: after a lost acknowledgement,
+do not automatically retry. Interrupting does not itself terminate background
+terminal processes; session shutdown is the stronger operation.
+
+Turn states include `accepted`, `running`, `waiting_background`, `interrupting`,
+`completed`, `failed`, `interrupted`, `timed_out` and `unknown`. Execution capacity
+is retained until matching completion and kernel background quiescence, or
+confirmed session shutdown. An error event or cancellation request alone does
+not release it. Failed containment remains `unknown` and occupies capacity;
+an explicit DELETE may retry containment. The limit does not count detached
+processes, external side effects or all sub-agent work.
+
+Turn results are capped at 16 KiB with `result_truncated`. Usage is the kernel's
+cumulative/last-request snapshot, **not invocation-local billing telemetry**.
+The turn deadline uses `--timeout`; hitting it shuts down the session instead
+of reusing ambiguous partial context. Control requests have their own bounded
+ingress and remain available when execution capacity is full.
+
+Request `Accept: text/event-stream` on the events endpoint for SSE. Reconnection
+supports `Last-Event-ID` or the `after` query cursor. The stream sends `kernel`,
+`session` and explicit `gap` events; disconnect does not cancel execution.
+On daemon shutdown, session SSE streams close with `shutting_down: true` even
+when containment is uncertain; this does not change an `unknown` execution into
+a confirmed terminal outcome.
+Replay retains at most 256 events / 1 MiB; events over 64 KiB are replaced with
+`http_event_omitted` markers. JSON replay returns `events`, `gap` and
+`next_cursor` inside `replay`. A cursor ahead of the session returns `400`.
+Never treat an event gap as proof of completion; read turn status.
+
+**These are private runtime events**, potentially containing prompts, tool
+arguments/results and reasoning. A frontend adapter must implement its own
+authorization, redaction and narration-consent projection. Do not expose this
+stream directly to public browsers.
+
+Session records and deduplication are memory-only and scoped to the daemon
+generation. History persistence follows normal kernel configuration. On daemon
+restart, missing sessions/turns mean **unknown outcome**, not permission to
+re-execute. Session TTL closes execution but retains its record; DELETE the
+closed record only after durably accounting for its outcomes. Forgetting a
+record also forgets its in-memory turn tombstones.
+
 ## ARCHITECTURE
 
 Runs in-process via `ProcessTable::start_process` — same runtime path as `chaos exec`, no subprocess.
+
+With `--sessions`, a bounded registry retains process supervisors independently
+of HTTP handlers. Each supervisor alone drains its process's kernel event queue;
+polling and SSE clients read a separate bounded replay buffer. Commands and
+execution have separate admission limits.
 
 ```
 POST /api/trigger

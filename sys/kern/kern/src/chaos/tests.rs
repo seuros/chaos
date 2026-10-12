@@ -406,7 +406,7 @@ fn make_test_collaboration_mode(config: &Config) -> (CollaborationMode, ModelInf
     (collaboration_mode, model_info)
 }
 
-fn make_test_session_config(
+async fn make_test_session_config(
     config: &Arc<Config>,
     model_info: &ModelInfo,
     collaboration_mode: CollaborationMode,
@@ -416,6 +416,7 @@ fn make_test_session_config(
             &config.chaos_home,
             crate::collaboration_modes::CollaborationModesConfig::default(),
         )
+        .await
         .expect("load test mode registry"),
     );
     let mode_policy = crate::modes::ModePolicy::root(&mode_registry);
@@ -527,7 +528,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
     let config = build_test_config(&chaos_home).await;
     let config = Arc::new(config);
     let (collaboration_mode, model_info) = make_test_collaboration_mode(&config);
-    make_test_session_config(&config, &model_info, collaboration_mode)
+    make_test_session_config(&config, &model_info, collaboration_mode).await
 }
 
 pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
@@ -555,7 +556,8 @@ pub(crate) async fn make_session_and_context_with_home(
     let exec_policy = ExecPolicyManager::default();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let (collaboration_mode, _model_info) = make_test_collaboration_mode(&config);
-    let session_configuration = make_test_session_config(&config, &_model_info, collaboration_mode);
+    let session_configuration =
+        make_test_session_config(&config, &_model_info, collaboration_mode).await;
     let per_turn_config = Session::build_per_turn_config(&session_configuration);
     let model_info = ModelsManager::construct_model_info_offline_for_tests(
         session_configuration.collaboration_mode.model(),
@@ -640,7 +642,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let (collaboration_mode, _model_info) = make_test_collaboration_mode(&config);
     let mut session_configuration =
-        make_test_session_config(&config, &_model_info, collaboration_mode);
+        make_test_session_config(&config, &_model_info, collaboration_mode).await;
     session_configuration.dynamic_tools = dynamic_tools;
     let per_turn_config = Session::build_per_turn_config(&session_configuration);
     let model_info = ModelsManager::construct_model_info_offline_for_tests(

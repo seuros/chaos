@@ -251,12 +251,9 @@ pub async fn list_mcp_tools(sess: &Session, _config: &Arc<Config>, sub_id: Strin
 }
 
 pub async fn list_custom_prompts(sess: &Session, sub_id: String) {
+    let chaos_home = sess.chaos_home().await;
     let custom_prompts: Vec<CustomPrompt> =
-        if let Some(dir) = crate::custom_prompts::default_prompts_dir() {
-            crate::custom_prompts::discover_prompts_in(&dir).await
-        } else {
-            Vec::new()
-        };
+        crate::custom_prompts::discover_prompts(&chaos_home).await;
 
     let event = Event {
         id: sub_id,

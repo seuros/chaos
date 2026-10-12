@@ -385,3 +385,14 @@ pub async fn seed_user_rule(home: &Path, name: &str, source: &str) -> anyhow::Re
     bootstrap_sqlite(home)?;
     crate::user_settings::rules::put_user_rule(home, name, source).await
 }
+
+/// Store a user document (mode, prompt, theme, script) in the test home.
+pub async fn seed_document(
+    home: &Path,
+    kind: crate::user_documents::DocumentKind,
+    name: &str,
+    source: &str,
+) -> anyhow::Result<i64> {
+    bootstrap_sqlite(home)?;
+    crate::user_documents::import(home, kind, name, source).await
+}

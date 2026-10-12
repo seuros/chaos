@@ -115,6 +115,7 @@ chaos config bootstrap set egress_url https://gateway.example/egress/chaos
 | Admin constraints | `/etc/chaos/requirements.toml` | edit the file |
 | Agent roles | the runtime database | `chaos agents import/list/remove` |
 | Your exec-policy rules (restrict only) | the runtime database | `chaos rules import/list/remove` |
+| Custom modes and prompts | the runtime database | `chaos modes`, `chaos prompts` |
 | Admin rules (may grant) | `/etc/chaos/rules/*.decrees` | edit the files |
 
 The bootstrap file accepts only those two keys. Anything else in it stops

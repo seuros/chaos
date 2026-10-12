@@ -39,6 +39,7 @@ pub mod config;
 pub mod config_loader;
 mod context_manager;
 pub mod hooks;
+pub mod user_documents;
 pub mod user_settings;
 mod contextual_user_message {
     pub use chaos_context::contextual_user_message::*;

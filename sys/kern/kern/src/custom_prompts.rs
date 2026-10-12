@@ -1,77 +1,35 @@
 use chaos_ipc::custom_prompts::CustomPrompt;
-use chaos_pwd::find_chaos_home;
-use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
-use tokio::fs;
 
-/// Return the default prompts directory: `$CHAOS_HOME/prompts`.
-/// If `CHAOS_HOME` cannot be resolved, returns `None`.
-pub fn default_prompts_dir() -> Option<PathBuf> {
-    find_chaos_home().ok().map(|home| home.join("prompts"))
-}
-
-/// Discover prompt files in the given directory, returning entries sorted by name.
-/// Non-files are ignored. If the directory does not exist or cannot be read, returns empty.
-pub async fn discover_prompts_in(dir: &Path) -> Vec<CustomPrompt> {
-    discover_prompts_in_excluding(dir, &HashSet::new()).await
-}
-
-/// Discover prompt files in the given directory, excluding any with names in `exclude`.
-/// Returns entries sorted by name. Non-files are ignored. Missing/unreadable dir yields empty.
-pub async fn discover_prompts_in_excluding(
-    dir: &Path,
-    exclude: &HashSet<String>,
-) -> Vec<CustomPrompt> {
-    let mut out: Vec<CustomPrompt> = Vec::new();
-    let mut entries = match fs::read_dir(dir).await {
-        Ok(entries) => entries,
-        Err(_) => return out,
+/// Enabled prompts stored for `chaos_home`, sorted by name. The `path` field is
+/// a `chaos://prompts/<name>` locator; prompts no longer live on disk.
+pub async fn discover_prompts(chaos_home: &Path) -> Vec<CustomPrompt> {
+    let documents = match crate::user_documents::enabled(
+        chaos_home,
+        crate::user_documents::DocumentKind::Prompt,
+    )
+    .await
+    {
+        Ok(documents) => documents,
+        Err(err) => {
+            tracing::warn!("failed to load stored prompts: {err:#}");
+            return Vec::new();
+        }
     };
-
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let path = entry.path();
-        let is_file_like = fs::metadata(&path)
-            .await
-            .map(|m| m.is_file())
-            .unwrap_or(false);
-        if !is_file_like {
-            continue;
-        }
-        // Only include Markdown files with a .md extension.
-        let is_md = path
-            .extension()
-            .and_then(|s| s.to_str())
-            .map(|ext| ext.eq_ignore_ascii_case("md"))
-            .unwrap_or(false);
-        if !is_md {
-            continue;
-        }
-        let Some(name) = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
-        else {
-            continue;
-        };
-        if exclude.contains(&name) {
-            continue;
-        }
-        let content = match fs::read_to_string(&path).await {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let (description, argument_hint, body) = parse_frontmatter(&content);
-        out.push(CustomPrompt {
-            name,
-            path,
-            content: body,
-            description,
-            argument_hint,
-        });
-    }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    out
+    documents
+        .into_iter()
+        .map(|document| {
+            let (description, argument_hint, body) = parse_frontmatter(&document.source);
+            CustomPrompt {
+                path: PathBuf::from(format!("chaos://prompts/{}", document.name)),
+                name: document.name,
+                content: body,
+                description,
+                argument_hint,
+            }
+        })
+        .collect()
 }
 
 /// Parse optional YAML-like frontmatter at the beginning of `content`.
@@ -79,7 +37,7 @@ pub async fn discover_prompts_in_excluding(
 /// - `description`: short description shown in the slash popup
 /// - `argument-hint` or `argument_hint`: brief hint string shown after the description
 ///   Returns (description, argument_hint, body_without_frontmatter).
-fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, String) {
+pub(crate) fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, String) {
     let mut segments = content.split_inclusive('\n');
     let Some(first_segment) = segments.next() else {
         return (None, None, String::new());

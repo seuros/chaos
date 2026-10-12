@@ -67,6 +67,9 @@ See [Getting started](./getting-started.md).
 - Agent roles are database-backed, managed with `chaos agents`. A trusted
   project may still ship roles as files under `.chaos/agents/`; those overlay
   the stored ones.
+- Custom modes and prompts are database-backed, managed with `chaos modes`
+  and `chaos prompts`. `$CHAOS_HOME/modes/` and `$CHAOS_HOME/prompts/` are no
+  longer read.
 - Project `.mcp.json` and project instructions remain files. There is no
   project `config.toml` and no system `config.toml`.
 - Administrator constraints live in `/etc/chaos/requirements.toml`, including

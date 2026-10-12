@@ -46,6 +46,11 @@ should. There is no patch level; the build timestamp is the patch.
   `allow` decision is refused. `$CHAOS_HOME/rules/` is no longer read.
   Administrator `/etc/chaos/rules` and trusted project `.chaos/rules` are
   unchanged.
+- `chaos modes` and `chaos prompts` (`list|show|import|export|remove|enable|
+  disable`): custom collaboration modes and `/prompts:<name>` documents live
+  in the runtime database. `$CHAOS_HOME/modes/` and `$CHAOS_HOME/prompts/`
+  are no longer read. A stored mode that fails to parse is skipped with a
+  warning instead of failing session start.
 
 ### Fixed
 - PostgreSQL mounts now enforce the same per-partition log retention as

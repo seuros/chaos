@@ -251,6 +251,7 @@ impl Chaos {
                 &config.chaos_home,
                 crate::collaboration_modes::CollaborationModesConfig::default(),
             )
+            .await
             .map_err(|err| ChaosErr::InvalidRequest(err.to_string()))?,
         );
         let mode_policy = config

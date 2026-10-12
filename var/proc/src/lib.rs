@@ -23,6 +23,7 @@ pub use runtime::ClampExchangeRecord;
 pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
 pub use runtime::{ApprovalState, RememberedApproval, SettingsSnapshot};
+pub use runtime::{DocumentKind, StoredDocument};
 
 /// Low-level storage engine: useful for focused tests.
 ///

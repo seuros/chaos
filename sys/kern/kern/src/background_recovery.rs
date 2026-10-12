@@ -56,7 +56,8 @@ impl RecoveryCandidate {
         let registry = crate::modes::ModeRegistry::load(
             &config.chaos_home,
             crate::collaboration_modes::CollaborationModesConfig::default(),
-        )?;
+        )
+        .await?;
         let policy = crate::modes::ModePolicy {
             active_mode: self.recovery.mode_id.clone(),
             allowed_modes: self.recovery.allowed_modes.clone(),

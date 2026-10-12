@@ -104,9 +104,22 @@ the root session's TUI.
 
 ## CUSTOM MODES
 
-Place custom mode files in `${CHAOS_HOME}/modes/`. Each Markdown file begins
-with TOML front matter delimited by `+++`; the remaining content is injected as
-developer instructions whenever the mode is active.
+Custom modes are Markdown documents stored in the runtime database and
+managed with `chaos modes`:
+
+```sh
+chaos modes import research.md      # stored under the file stem; must equal `id`
+chaos modes list
+chaos modes show research
+chaos modes export research > research.md
+chaos modes disable research
+chaos modes remove research
+```
+
+Each document begins with TOML front matter delimited by `+++`; the remaining
+content is injected as developer instructions whenever the mode is active.
+Import validates the document. A stored mode that no longer parses is skipped
+with a warning at session start. `${CHAOS_HOME}/modes/` is no longer read.
 
 ```markdown
 +++
@@ -144,8 +157,8 @@ approval, delegation, or other security authority.
 
 ## FILES
 
-- `${CHAOS_HOME}/modes/*.md` - custom collaboration mode definitions
-- `~/.chaos/modes/*.md` - default custom mode location
+- runtime database, `user_documents` rows of kind `mode` - custom
+  collaboration mode definitions (`chaos modes`)
 
 ## SEE ALSO
 

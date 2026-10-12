@@ -16,7 +16,6 @@ use crate::config::ConstraintResult;
 pub(super) use super::SessionSettingsUpdate;
 
 impl Session {
-    #[expect(dead_code)]
     pub(crate) async fn chaos_home(&self) -> PathBuf {
         let state = self.state.lock().await;
         state.session_configuration.chaos_home().clone()

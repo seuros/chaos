@@ -391,11 +391,12 @@ pub async fn refresh_models_json(
     )
 }
 
-pub fn modes_json_from_chaos_home(chaos_home: &Path) -> Result<String, String> {
+pub async fn modes_json_from_chaos_home(chaos_home: &Path) -> Result<String, String> {
     let registry = crate::modes::ModeRegistry::load(
         chaos_home,
         crate::collaboration_modes::CollaborationModesConfig::default(),
     )
+    .await
     .map_err(|err| format!("failed to load ChaOS mode catalog: {err}"))?;
     let policy = crate::modes::ModePolicy::root(&registry);
     registry.installation_resource_json(&policy)

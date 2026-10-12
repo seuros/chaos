@@ -941,6 +941,7 @@ async fn set_rate_limits_retains_previous_credits() {
             &config.chaos_home,
             crate::collaboration_modes::CollaborationModesConfig::default(),
         )
+        .await
         .expect("load test mode registry"),
     );
     let mode_policy = crate::modes::ModePolicy::root(&mode_registry);

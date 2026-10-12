@@ -38,6 +38,7 @@ use supports_color::Stream;
 mod agents_cmd;
 mod config_cmd;
 mod debug_logging;
+mod documents_cmd;
 mod hooks_cmd;
 mod mcp_cmd;
 mod models_cmd;
@@ -138,6 +139,10 @@ enum Subcommand {
     Agents(agents_cmd::AgentsCommand),
     /// Manage stored user exec-policy rules (restrictions only).
     Rules(rules_cmd::RulesCommand),
+    /// Manage stored custom collaboration modes.
+    Modes(documents_cmd::DocumentsCommand),
+    /// Manage stored custom prompts (`/prompts:<name>`).
+    Prompts(documents_cmd::DocumentsCommand),
     /// Register shared workspaces/projects and manage installation-local checkouts.
     Workspace(planning_cmd::WorkspaceCommand),
     /// Inspect, attach, and maintain durable database plans.
@@ -457,6 +462,12 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         Some(Subcommand::Hooks(command)) => hooks_cmd::run(command).await?,
         Some(Subcommand::Agents(command)) => agents_cmd::run(command).await?,
         Some(Subcommand::Rules(command)) => rules_cmd::run(command).await?,
+        Some(Subcommand::Modes(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Mode, command).await?
+        }
+        Some(Subcommand::Prompts(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Prompt, command).await?
+        }
         Some(Subcommand::Workspace(command)) => planning_cmd::workspace(command).await?,
         Some(Subcommand::Plan(command)) => planning_cmd::plan(command).await?,
         Some(Subcommand::Approvals(command)) => config_cmd::approvals(command).await?,

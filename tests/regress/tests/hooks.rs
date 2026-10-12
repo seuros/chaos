@@ -236,8 +236,6 @@ async fn imported_and_resident_hooks_execute_after_restart_without_human_endpoin
                 "-c",
                 "machine_warnings.enabled=false",
                 "-c",
-                "disable_user_scripts=true",
-                "-c",
                 "model_provider=fixture",
                 "-c",
                 "model_providers.fixture.name=Fixture",

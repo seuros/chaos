@@ -93,6 +93,12 @@ impl Process {
         self.chaos.steer_input(input, expected_turn_id).await
     }
 
+    /// Replace (Some) or withdraw (None) the host notice for this process.
+    /// It is delivered once, at the next delivery boundary, if still valid.
+    pub fn set_host_notice(&self, notice: Option<crate::host_notice::HostNotice>) {
+        self.chaos.set_host_notice(notice);
+    }
+
     pub async fn set_app_server_client_name(
         &self,
         app_server_client_name: Option<String>,

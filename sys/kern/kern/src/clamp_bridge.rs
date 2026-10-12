@@ -191,11 +191,15 @@ async fn handle_request(
     }
 }
 
-/// Drain text steered into the active turn so it reaches the external model on
+/// Drain text steered into the active turn, and the host notice if it is still
+/// valid, so they reach the external model on
 /// this tool result. Anything that is not steered user text goes back on the
 /// turn's pending queue untouched.
 async fn take_steered_notices(session: &Arc<crate::chaos::Session>) -> Vec<String> {
-    let (notices, other) = split_steered_notices(session.get_pending_input().await);
+    let (mut notices, other) = split_steered_notices(session.get_pending_input().await);
+    if let Some(text) = session.host_notice.take(crate::host_notice::now_unix()) {
+        notices.push(text);
+    }
     if !other.is_empty()
         && let Err(items) = session.inject_response_items(other).await
     {

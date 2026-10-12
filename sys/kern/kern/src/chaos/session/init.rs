@@ -588,6 +588,7 @@ impl Session {
             permission_actor,
             services,
             next_internal_sub_id: AtomicU64::new(0),
+            host_notice: Default::default(),
         });
         sess.services.model_client.bind_session(&sess);
         if let Some(network_policy_decider_session) = network_policy_decider_session {

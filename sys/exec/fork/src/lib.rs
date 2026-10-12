@@ -732,6 +732,7 @@ async fn run_event_loop(
     let mut interrupt_channel_open = true;
     let mut steer_tick = tokio::time::interval(std::time::Duration::from_secs(1));
     steer_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut steer_mirror = steer_notice::Mirror::default();
     loop {
         let event = tokio::select! {
             maybe_interrupt = interrupt_rx.recv(), if interrupt_channel_open => {
@@ -746,22 +747,10 @@ async fn run_event_loop(
             }
             _ = steer_tick.tick(), if steer_file.is_some() => {
                 if let Some(path) = steer_file
-                    && let Some(notice) = steer_notice::claim(path, steer_notice::now_unix())
+                    && let Some(change) =
+                        steer_mirror.observe(steer_notice::read(path, steer_notice::now_unix()))
                 {
-                    let input = vec![UserInput::Text {
-                        text: notice.text,
-                        text_elements: Vec::new(),
-                    }];
-                    if let Err(err) = thread.steer_input(input, None).await {
-                        let reason = match err {
-                            chaos_kern::SteerInputError::NoActiveTurn(_) => "no active turn",
-                            chaos_kern::SteerInputError::ExpectedTurnMismatch { .. } => {
-                                "turn mismatch"
-                            }
-                            chaos_kern::SteerInputError::EmptyInput => "empty input",
-                        };
-                        warn!("steer notice not delivered: {reason}");
-                    }
+                    thread.set_host_notice(change);
                 }
                 continue;
             }

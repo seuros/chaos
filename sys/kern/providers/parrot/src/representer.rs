@@ -193,9 +193,11 @@ pub enum SystemRole {
 /// that wannabe providers do not implement.
 ///
 /// The Chaos-ABI `"system"` role passes through unchanged. With
-/// [`SystemRole::LeadingOnly`] the request pass folds leading
-/// `system`/`developer` items into `instructions` and demotes later ones to
-/// `user`, so the server sees exactly one system block.
+/// [`SystemRole::LeadingOnly`] the request pass hoists every text-only
+/// `system`/`developer` item into `instructions`, in order, so the server sees
+/// exactly one system block and operator instructions are never relabeled as
+/// user input. Only an instruction item carrying an image (which cannot live in
+/// a text block) stays in the conversation, as a `user` message.
 pub struct OpenwAInnabeRepresenter {
     system_role: SystemRole,
 }
@@ -208,7 +210,6 @@ impl OpenwAInnabeRepresenter {
     fn fold_instruction_items(request: &mut crate::common::ResponsesApiRequest) {
         let input = std::mem::take(&mut request.input);
         let mut kept = Vec::with_capacity(input.len());
-        let mut leading = true;
         for item in input {
             match item {
                 ResponseItem::Message {
@@ -218,13 +219,12 @@ impl OpenwAInnabeRepresenter {
                     end_turn,
                     phase,
                 } if role == "system" || role == "developer" => {
-                    if leading && let Some(text) = text_only(&content) {
+                    if let Some(text) = text_only(&content) {
                         if !request.instructions.is_empty() {
                             request.instructions.push_str("\n\n");
                         }
                         request.instructions.push_str(&text);
                     } else {
-                        leading = false;
                         kept.push(ResponseItem::Message {
                             id,
                             role: "user".to_string(),
@@ -234,10 +234,7 @@ impl OpenwAInnabeRepresenter {
                         });
                     }
                 }
-                other => {
-                    leading = false;
-                    kept.push(other);
-                }
+                other => kept.push(other),
             }
         }
         request.input = kept;

@@ -254,17 +254,21 @@ pub(crate) fn build_request_body(
     Ok(body)
 }
 
-/// Strict chat templates (Qwen3.6/3.8 under vLLM) reject any
-/// `system` message that is not the first message. Merge the leading run of
-/// system messages into one and demote later ones to `user` so their position
-/// in the conversation is preserved.
+/// Strict chat templates (Qwen3.6/3.8 under vLLM) reject any `system`
+/// message that is not the first message. Merge every system message, in
+/// order, into one leading block. Instructions are never relabeled as `user`
+/// input; the chat format only carries their cumulative state, not when each
+/// one arrived.
 fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
-    let leading = messages
+    let system_count = messages
         .iter()
-        .take_while(|message| message.role == "system")
+        .filter(|message| message.role == "system")
         .count();
-    if leading > 1 {
-        let merged: Vec<ChatMessage> = messages.drain(..leading).collect();
+    if system_count > 1 {
+        let (merged, rest): (Vec<ChatMessage>, Vec<ChatMessage>) = std::mem::take(messages)
+            .into_iter()
+            .partition(|message| message.role == "system");
+        *messages = rest;
         let all_text = merged
             .iter()
             .all(|message| matches!(message.content, Some(Value::String(_))));
@@ -299,11 +303,6 @@ fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
                 name: None,
             },
         );
-    }
-    for message in messages.iter_mut().skip(1) {
-        if message.role == "system" {
-            message.role = "user".to_string();
-        }
     }
 }
 

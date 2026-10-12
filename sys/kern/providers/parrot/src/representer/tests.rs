@@ -282,7 +282,7 @@ fn wannabe_request(input: Vec<ResponseItem>) -> crate::common::ResponsesApiReque
 }
 
 #[test]
-fn leading_only_folds_leading_instructions_and_demotes_later_system_items() {
+fn leading_only_hoists_every_text_instruction_into_the_system_block() {
     let mut request = wannabe_request(vec![
         text_message("developer", "permissions"),
         text_message("system", "mode"),
@@ -290,7 +290,10 @@ fn leading_only_folds_leading_instructions_and_demotes_later_system_items() {
         text_message("system", "tools reminder"),
     ]);
     OpenwAInnabeRepresenter::new(SystemRole::LeadingOnly).prepare_request(&mut request);
-    assert_eq!(request.instructions, "base\n\npermissions\n\nmode");
+    assert_eq!(
+        request.instructions,
+        "base\n\npermissions\n\nmode\n\ntools reminder"
+    );
     let roles: Vec<&str> = request
         .input
         .iter()
@@ -299,7 +302,7 @@ fn leading_only_folds_leading_instructions_and_demotes_later_system_items() {
             _ => "other",
         })
         .collect();
-    assert_eq!(roles, vec!["user", "user"]);
+    assert_eq!(roles, vec!["user"]);
 }
 
 #[test]

@@ -259,7 +259,7 @@ fn build_request_body_preserves_output_schema() {
 }
 
 #[test]
-fn build_request_body_merges_leading_system_messages_and_demotes_later_ones() {
+fn build_request_body_merges_every_system_message_into_the_leading_block() {
     let message = |role: &str, text: &str| ResponseItem::Message {
         id: None,
         role: role.into(),
@@ -289,9 +289,12 @@ fn build_request_body_merges_leading_system_messages_and_demotes_later_ones() {
         .iter()
         .map(|m| m["role"].as_str().unwrap_or(""))
         .collect();
-    assert_eq!(roles, vec!["system", "user", "user"]);
-    assert_eq!(messages[0]["content"], "base\n\npermissions");
-    assert_eq!(messages[2]["content"], "tools reminder");
+    assert_eq!(roles, vec!["system", "user"]);
+    assert_eq!(
+        messages[0]["content"],
+        "base\n\npermissions\n\ntools reminder"
+    );
+    assert_eq!(messages[1]["content"], "hello");
 }
 
 #[test]

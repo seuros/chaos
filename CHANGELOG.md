@@ -61,6 +61,12 @@ should. There is no patch level; the build timestamp is the patch.
   ran at session start.
 
 ### Fixed
+- Compatible endpoints that accept one system block (self-hosted servers
+  with strict chat templates) now receive every `developer`/`system`
+  instruction hoisted into that block, in order, on both wire formats.
+  47.13.2 relabeled instructions that arrived after the first user turn as
+  `user` messages, so permission and mode changes reached the model as if
+  the human had typed them.
 - The workspace `rust-version` is 1.98 so FreeBSD's ports Rust (1.98.1)
   builds it; development still pins 1.99 through `mise` and
   `rust-toolchain.toml`.

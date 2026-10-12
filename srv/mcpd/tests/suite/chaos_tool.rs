@@ -219,13 +219,16 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
             )
         })
         .collect();
-    let instruction_contents: Vec<&str> = instruction_messages
+    // Compatible endpoints hoist developer items into `instructions`; the
+    // permissions text must be present in one of the two places.
+    let mut instruction_contents: Vec<&str> = instruction_messages
         .iter()
         .filter_map(|msg| msg.get("content").and_then(serde_json::Value::as_array))
         .flat_map(|content| content.iter())
         .filter(|span| span.get("type").and_then(serde_json::Value::as_str) == Some("input_text"))
         .filter_map(|span| span.get("text").and_then(serde_json::Value::as_str))
         .collect();
+    instruction_contents.push(instructions);
     assert!(
         instruction_contents
             .iter()
@@ -233,7 +236,9 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         "expected permissions instruction message, got {instruction_contents:?}"
     );
     assert!(
-        instruction_contents.contains(&"Foreshadow upcoming tool calls."),
+        instruction_contents
+            .iter()
+            .any(|content| content.contains("Foreshadow upcoming tool calls.")),
         "expected developer instructions in instruction messages, got {instruction_contents:?}"
     );
 

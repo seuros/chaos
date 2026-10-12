@@ -113,23 +113,3 @@ pub(crate) async fn shell_policy(home: &Path, cwd: &Path) -> anyhow::Result<chao
     }
     Ok(policy)
 }
-
-/// User restrictions stored in the database. They can only narrow authority.
-pub(crate) async fn database_user_restrictions(
-    home: &Path,
-) -> anyhow::Result<chaos_selinux::Policy> {
-    let runtime = open(home).await?;
-    let sources: Vec<String> = serde_json::from_value(runtime.user_policy_sources().await?)?;
-    let mut policy = chaos_selinux::Policy::empty();
-    for source in sources {
-        let mut parser = chaos_selinux::PolicyParser::new();
-        parser.parse("database user restrictions", &source)?;
-        let parsed = parser.build();
-        anyhow::ensure!(
-            parsed.host_executables().is_empty(),
-            "user policy cannot redefine executable identities"
-        );
-        policy = policy.merge_overlay(&parsed.restrictions_only());
-    }
-    Ok(policy)
-}

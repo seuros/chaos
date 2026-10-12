@@ -71,8 +71,12 @@ See [Getting started](./getting-started.md).
   project `config.toml` and no system `config.toml`.
 - Administrator constraints live in `/etc/chaos/requirements.toml`, including
   network policy under `[experimental_network]`. Administrator rules in
-  `/etc/chaos/rules/*.decrees` are the only rules that can grant. Rules under
-  `$CHAOS_HOME/rules/` and a trusted project's `.chaos/rules/` can only restrict.
+  `/etc/chaos/rules/*.decrees` are the only rules that can grant.
+- Your own exec-policy rules are database-backed, managed with `chaos rules`
+  (`import <file.decrees>`, `list`, `show`, `remove`). They can only restrict:
+  a document with an `allow` decision is refused at import. A trusted
+  project's `.chaos/rules/` files also restrict only. `$CHAOS_HOME/rules/` is
+  no longer read.
 - Credentials use opaque references backed by `$CHAOS_HOME/secrets/local.age`.
   macOS keeps the vault's single unlock key in the native login Keychain.
   Provider auth modes `keyring` and `auto` use this same vault with no plaintext

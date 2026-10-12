@@ -8,16 +8,18 @@ use toml::Value;
 
 mod approvals;
 mod bootstrap;
+pub mod rules;
 pub mod storage_setup;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use approvals::{database_user_restrictions, put_scoped_approval, shell_policy};
 pub use approvals::{fingerprint, installation_id, workspace_scope};
+pub(crate) use approvals::{put_scoped_approval, shell_policy};
 pub use bootstrap::{
     BOOTSTRAP_KEYS, BootstrapConfig, ResolvedBootstrap, resolve_bootstrap, set_bootstrap,
 };
+pub(crate) use rules::database_user_restrictions;
 
 pub async fn open(home: &Path) -> anyhow::Result<RuntimeDbHandle> {
     let bootstrap = resolve_bootstrap_for_open(home).await?;

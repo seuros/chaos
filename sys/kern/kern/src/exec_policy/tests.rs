@@ -26,6 +26,13 @@ fn asset_folder(scope: AssetScope, dir: &Path) -> AssetFolder {
     )
 }
 
+/// A bootstrapped home: stored user rules are read from its database.
+fn bootstrapped_home() -> tempfile::TempDir {
+    let home = tempdir().expect("create home");
+    crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap home");
+    home
+}
+
 fn config_stack_for_folders(folders: Vec<AssetFolder>) -> ConfigLayerStack {
     ConfigLayerStack::new(
         Vec::new(),
@@ -75,7 +82,8 @@ async fn returns_empty_policy_when_no_policy_files_exist() {
     let temp_dir = tempdir().expect("create temp dir");
     let config_stack = config_stack_for_dot_codex_folder(temp_dir.path());
 
-    let manager = ExecPolicyManager::load(&config_stack)
+    let home = bootstrapped_home();
+    let manager = ExecPolicyManager::load(&config_stack, home.path())
         .await
         .expect("manager result");
     let policy = manager.current();
@@ -123,7 +131,8 @@ async fn format_exec_policy_error_with_source_renders_range() {
     )
     .expect("write broken policy file");
 
-    let err = load_exec_policy(&config_stack)
+    let home = bootstrapped_home();
+    let err = load_exec_policy(&config_stack, home.path())
         .await
         .expect_err("expected parse error");
     let rendered = format_exec_policy_error_with_source(&err);
@@ -168,7 +177,8 @@ async fn loads_policies_from_policy_subdirectory() {
     )
     .expect("write policy file");
 
-    let policy = load_exec_policy(&config_stack)
+    let home = bootstrapped_home();
+    let policy = load_exec_policy(&config_stack, home.path())
         .await
         .expect("policy result");
     let command = [vec!["rm".to_string()]];
@@ -209,7 +219,8 @@ async fn merges_requirements_exec_policy_network_rules() -> anyhow::Result<()> {
         ConfigLayerStack::new(Vec::new(), requirements, ConfigRequirementsToml::default())?
             .with_asset_folders(vec![asset_folder(AssetScope::Project, temp_dir.path())]);
 
-    let policy = load_exec_policy(&config_stack).await?;
+    let home = bootstrapped_home();
+    let policy = load_exec_policy(&config_stack, home.path()).await?;
     let (allowed, denied) = policy.compiled_network_domains();
 
     assert!(allowed.is_empty());
@@ -253,7 +264,8 @@ host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
         ConfigLayerStack::new(Vec::new(), requirements, ConfigRequirementsToml::default())?
             .with_asset_folders(vec![asset_folder(AssetScope::Admin, temp_dir.path())]);
 
-    let policy = load_exec_policy(&config_stack).await?;
+    let home = bootstrapped_home();
+    let policy = load_exec_policy(&config_stack, home.path()).await?;
 
     assert_eq!(
         policy
@@ -276,7 +288,8 @@ async fn ignores_policies_outside_policy_dir() {
     )
     .expect("write policy file");
 
-    let policy = load_exec_policy(&config_stack)
+    let home = bootstrapped_home();
+    let policy = load_exec_policy(&config_stack, home.path())
         .await
         .expect("policy result");
     let command = [vec!["ls".to_string()]];
@@ -309,7 +322,8 @@ async fn ignores_rules_from_untrusted_project_layers() -> anyhow::Result<()> {
         "marked untrusted",
     )]);
 
-    let policy = load_exec_policy(&config_stack).await?;
+    let home = bootstrapped_home();
+    let policy = load_exec_policy(&config_stack, home.path()).await?;
 
     assert_eq!(
         Evaluation {
@@ -326,16 +340,14 @@ async fn ignores_rules_from_untrusted_project_layers() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
-    let user_dir = tempdir()?;
-    crate::test_support::bootstrap_sqlite(user_dir.path())?;
-    let project_dir = tempdir()?;
-
-    let user_policy_dir = user_dir.path().join(RULES_DIR_NAME);
-    fs::create_dir_all(&user_policy_dir)?;
-    fs::write(
-        user_policy_dir.join("user.decrees"),
+    let home = tempdir()?;
+    crate::test_support::seed_user_rule(
+        home.path(),
+        "user",
         r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
-    )?;
+    )
+    .await?;
+    let project_dir = tempdir()?;
 
     let project_policy_dir = project_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&project_policy_dir)?;
@@ -344,12 +356,10 @@ async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
         r#"prefix_rule {pattern={"ls"}, decision="prompt"}"#,
     )?;
 
-    let config_stack = config_stack_for_folders(vec![
-        asset_folder(AssetScope::Home, user_dir.path()),
-        asset_folder(AssetScope::Project, project_dir.path()),
-    ]);
+    let config_stack =
+        config_stack_for_folders(vec![asset_folder(AssetScope::Project, project_dir.path())]);
 
-    let policy = load_exec_policy(&config_stack).await?;
+    let policy = load_exec_policy(&config_stack, home.path()).await?;
 
     assert_eq!(
         Evaluation {
@@ -379,21 +389,31 @@ async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn home_rules_are_restrictions_only() -> anyhow::Result<()> {
-    let home = tempdir()?;
-    crate::test_support::bootstrap_sqlite(home.path())?;
-    let policy_dir = home.path().join(RULES_DIR_NAME);
-    fs::create_dir_all(&policy_dir)?;
-    fs::write(
-        policy_dir.join("home.decrees"),
-        r#"prefix_rule {pattern={"ls"}, decision="allow"}
-prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
-    )?;
-    let config_stack = config_stack_for_folders(vec![asset_folder(AssetScope::Home, home.path())]);
+async fn stored_rules_cannot_grant() -> anyhow::Result<()> {
+    let home = bootstrapped_home();
+    let err = crate::test_support::seed_user_rule(
+        home.path(),
+        "grant",
+        r#"prefix_rule {pattern={"ls"}, decision="allow"}"#,
+    )
+    .await
+    .expect_err("allow rules are not user rules");
+    assert!(
+        err.to_string().contains("administrator policy"),
+        "unexpected error: {err}"
+    );
 
-    let policy = load_exec_policy(&config_stack).await?;
+    crate::test_support::seed_user_rule(
+        home.path(),
+        "deny",
+        r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
+    )
+    .await?;
+    let config_stack = config_stack_for_folders(Vec::new());
 
-    // The home allow rule must not grant: heuristics decide instead.
+    let policy = load_exec_policy(&config_stack, home.path()).await?;
+
+    // Nothing grants `ls`: heuristics decide instead.
     assert_eq!(
         Evaluation {
             decision: Decision::Prompt,

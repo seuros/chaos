@@ -138,13 +138,10 @@ pub(crate) async fn load_config_layers_state_with_bootstrap(
         snapshot.settings,
     ));
 
-    let mut asset_folders = vec![
-        AssetFolder::new(
-            AssetScope::Admin,
-            AbsolutePathBuf::from_absolute_path(Path::new(SYSTEM_CONFIG_DIR_UNIX))?,
-        ),
-        AssetFolder::new(AssetScope::Home, AbsolutePathBuf::try_from(chaos_home)?),
-    ];
+    let mut asset_folders = vec![AssetFolder::new(
+        AssetScope::Admin,
+        AbsolutePathBuf::from_absolute_path(Path::new(SYSTEM_CONFIG_DIR_UNIX))?,
+    )];
 
     if let Some(cwd) = cwd {
         let mut merged_so_far = TomlValue::Table(toml::map::Map::new());

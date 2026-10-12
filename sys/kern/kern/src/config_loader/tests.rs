@@ -254,7 +254,7 @@ async fn returns_empty_user_layer_when_nothing_is_configured() {
 }
 
 #[tokio::test]
-async fn asset_folders_list_admin_home_and_trusted_projects() -> std::io::Result<()> {
+async fn asset_folders_list_admin_and_trusted_projects() -> std::io::Result<()> {
     let tmp = tempdir()?;
     let project_root = tmp.path().join("project");
     let nested = project_root.join("child");
@@ -270,8 +270,12 @@ async fn asset_folders_list_admin_home_and_trusted_projects() -> std::io::Result
     let folders = layers.asset_folders();
     assert_eq!(folders[0].scope, AssetScope::Admin);
     assert_eq!(folders[0].dir.as_path(), Path::new("/etc/chaos"));
-    assert_eq!(folders[1].scope, AssetScope::Home);
-    assert_eq!(folders[1].dir.as_path(), chaos_home.as_path());
+    assert!(
+        folders
+            .iter()
+            .all(|folder| folder.dir.as_path() != chaos_home.as_path()),
+        "the home is not an asset folder; user rules and roles live in the database"
+    );
     assert_eq!(
         project_asset_dirs(&layers),
         vec![project_root.join(".chaos"), nested.join(".chaos")],
@@ -428,14 +432,12 @@ async fn chaos_home_within_project_tree_is_not_double_listed() -> std::io::Resul
     let layers = load_layers(&project_dot_chaos, &nested).await?;
 
     assert_eq!(project_asset_dirs(&layers), vec![nested_dot_chaos]);
-    assert_eq!(
+    assert!(
         layers
             .asset_folders()
             .iter()
-            .filter(|folder| folder.scope == AssetScope::Home)
-            .map(|folder| folder.dir.to_path_buf())
-            .collect::<Vec<_>>(),
-        vec![project_dot_chaos]
+            .all(|folder| folder.dir.as_path() != project_dot_chaos.as_path()),
+        "a chaos home inside the project tree is not listed as a project folder"
     );
 
     Ok(())
@@ -922,7 +924,9 @@ prefix_rules = []
         let config_stack =
             config_stack_for_dot_codex_folder_with_requirements(temp_dir.path(), requirements);
 
-        let policy = load_exec_policy(&config_stack).await?;
+        let home = tempdir()?;
+        crate::test_support::bootstrap_sqlite(home.path())?;
+        let policy = load_exec_policy(&config_stack, home.path()).await?;
 
         assert_eq!(
             policy.check_multiple([vec!["rm".to_string()]].iter(), &panic_if_called),
@@ -961,7 +965,9 @@ prefix_rules = []
         let config_stack =
             config_stack_for_dot_codex_folder_with_requirements(temp_dir.path(), requirements);
 
-        let policy = load_exec_policy(&config_stack).await?;
+        let home = tempdir()?;
+        crate::test_support::bootstrap_sqlite(home.path())?;
+        let policy = load_exec_policy(&config_stack, home.path()).await?;
 
         assert_eq!(
             policy.check_multiple([vec!["rm".to_string()]].iter(), &panic_if_called),

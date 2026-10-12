@@ -236,7 +236,7 @@ pub async fn run_main(
     startup.mark("storage_mounted");
 
     #[allow(clippy::print_stderr)]
-    match check_execpolicy_for_warnings(&config.config_layer_stack).await {
+    match check_execpolicy_for_warnings(&config.config_layer_stack, &config.chaos_home).await {
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(

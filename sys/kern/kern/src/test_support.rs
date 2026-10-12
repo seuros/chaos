@@ -379,3 +379,9 @@ pub async fn seed_agent_role(home: &Path, format: &str, source: &str) -> anyhow:
         .await?;
     Ok(parsed.role_name)
 }
+
+/// Store a restrictions-only rule document in the test home's database.
+pub async fn seed_user_rule(home: &Path, name: &str, source: &str) -> anyhow::Result<()> {
+    bootstrap_sqlite(home)?;
+    crate::user_settings::rules::put_user_rule(home, name, source).await
+}

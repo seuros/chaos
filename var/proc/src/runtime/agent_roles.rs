@@ -53,7 +53,10 @@ macro_rules! agent_roles_backend {
                     !name.is_empty() && expected_revision >= 0,
                     "invalid role identity"
                 );
-                anyhow::ensure!(matches!(format, "toml" | "md"), "role format must be toml or md");
+                anyhow::ensure!(
+                    matches!(format, "toml" | "md"),
+                    "role format must be toml or md"
+                );
                 let mut tx = self.pool().begin().await?;
                 let timestamp = settings::now()?;
                 let revision = expected_revision + 1;
@@ -63,15 +66,28 @@ macro_rules! agent_roles_backend {
                          revision, enabled, created_at, updated_at) \
                          VALUES ($1,$2,$3,$4,$5,1,$6,$6) ON CONFLICT (name) DO NOTHING",
                     )
-                    .bind(name).bind(format).bind(source).bind(base_dir).bind(revision)
-                    .bind(timestamp).execute(&mut *tx).await?
+                    .bind(name)
+                    .bind(format)
+                    .bind(source)
+                    .bind(base_dir)
+                    .bind(revision)
+                    .bind(timestamp)
+                    .execute(&mut *tx)
+                    .await?
                 } else {
                     sqlx::query(
                         "UPDATE agent_roles SET format = $1, source = $2, base_dir = $3, \
                          revision = $4, updated_at = $5 WHERE name = $6 AND revision = $7",
                     )
-                    .bind(format).bind(source).bind(base_dir).bind(revision).bind(timestamp)
-                    .bind(name).bind(expected_revision).execute(&mut *tx).await?
+                    .bind(format)
+                    .bind(source)
+                    .bind(base_dir)
+                    .bind(revision)
+                    .bind(timestamp)
+                    .bind(name)
+                    .bind(expected_revision)
+                    .execute(&mut *tx)
+                    .await?
                 };
                 anyhow::ensure!(
                     result.rows_affected() == 1,
@@ -81,8 +97,11 @@ macro_rules! agent_roles_backend {
                     "INSERT INTO configuration_events (id, event, subject, created_at) \
                      VALUES ($1,'agent_role_updated',$2,$3)",
                 )
-                .bind(Uuid::now_v7().to_string()).bind(name).bind(timestamp)
-                .execute(&mut *tx).await?;
+                .bind(Uuid::now_v7().to_string())
+                .bind(name)
+                .bind(timestamp)
+                .execute(&mut *tx)
+                .await?;
                 tx.commit().await?;
                 Ok(revision)
             }
@@ -100,8 +119,13 @@ macro_rules! agent_roles_backend {
                     "UPDATE agent_roles SET enabled = $1, revision = $2, updated_at = $3 \
                      WHERE name = $4 AND revision = $5",
                 )
-                .bind(i64::from(enabled)).bind(revision).bind(timestamp).bind(name)
-                .bind(expected_revision).execute(&mut *tx).await?;
+                .bind(i64::from(enabled))
+                .bind(revision)
+                .bind(timestamp)
+                .bind(name)
+                .bind(expected_revision)
+                .execute(&mut *tx)
+                .await?;
                 anyhow::ensure!(
                     result.rows_affected() == 1,
                     "agent role revision conflict; reload and retry"
@@ -110,8 +134,11 @@ macro_rules! agent_roles_backend {
                     "INSERT INTO configuration_events (id, event, subject, created_at) \
                      VALUES ($1,'agent_role_updated',$2,$3)",
                 )
-                .bind(Uuid::now_v7().to_string()).bind(name).bind(timestamp)
-                .execute(&mut *tx).await?;
+                .bind(Uuid::now_v7().to_string())
+                .bind(name)
+                .bind(timestamp)
+                .execute(&mut *tx)
+                .await?;
                 tx.commit().await?;
                 Ok(revision)
             }
@@ -124,7 +151,10 @@ macro_rules! agent_roles_backend {
                 let mut tx = self.pool().begin().await?;
                 let result =
                     sqlx::query("DELETE FROM agent_roles WHERE name = $1 AND revision = $2")
-                        .bind(name).bind(expected_revision).execute(&mut *tx).await?;
+                        .bind(name)
+                        .bind(expected_revision)
+                        .execute(&mut *tx)
+                        .await?;
                 anyhow::ensure!(
                     result.rows_affected() == 1,
                     "agent role revision conflict; reload and retry"
@@ -133,8 +163,11 @@ macro_rules! agent_roles_backend {
                     "INSERT INTO configuration_events (id, event, subject, created_at) \
                      VALUES ($1,'agent_role_deleted',$2,$3)",
                 )
-                .bind(Uuid::now_v7().to_string()).bind(name).bind(settings::now()?)
-                .execute(&mut *tx).await?;
+                .bind(Uuid::now_v7().to_string())
+                .bind(name)
+                .bind(settings::now()?)
+                .execute(&mut *tx)
+                .await?;
                 tx.commit().await?;
                 Ok(())
             }

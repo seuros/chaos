@@ -153,7 +153,7 @@ impl Chaos {
 
         let user_instructions = config.user_instructions.clone();
 
-        let exec_policy = ExecPolicyManager::load(&config.config_layer_stack)
+        let exec_policy = ExecPolicyManager::load(&config.config_layer_stack, &config.chaos_home)
             .await
             .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?
             .with_storage(&config.chaos_home, &config.cwd);

@@ -41,6 +41,11 @@ should. There is no patch level; the build timestamp is the patch.
   documents live in the runtime database. `$CHAOS_HOME/agents/` and
   `/etc/chaos/agents/` are no longer read; trusted project `.chaos/agents/`
   files still overlay stored roles.
+- `chaos rules list|show|import|remove`: your exec-policy rules live in the
+  runtime database as named documents and can only restrict; importing an
+  `allow` decision is refused. `$CHAOS_HOME/rules/` is no longer read.
+  Administrator `/etc/chaos/rules` and trusted project `.chaos/rules` are
+  unchanged.
 
 ### Fixed
 - PostgreSQL mounts now enforce the same per-partition log retention as

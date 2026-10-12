@@ -1,8 +1,9 @@
 //! Folders that carry non-config assets (`rules/*.decrees`, `agents/*`).
 //!
-//! Configuration itself lives in the runtime database. These folders only
-//! anchor file-based assets and are ordered from lowest to highest precedence:
-//! administrator, home, then trusted project folders from root to cwd.
+//! Configuration, the user's rules, and the user's roles live in the runtime
+//! database. These folders only anchor file-based assets and are ordered from
+//! lowest to highest precedence: administrator, then trusted project folders
+//! from root to cwd.
 use chaos_realpath::AbsolutePathBuf;
 use std::path::PathBuf;
 
@@ -13,8 +14,6 @@ pub const AGENTS_DIR_NAME: &str = "agents";
 pub enum AssetScope {
     /// `/etc/chaos`; the only scope whose rules may grant authority.
     Admin,
-    /// `$CHAOS_HOME`; restrictions only.
-    Home,
     /// `<dir>/.chaos` between cwd and the project root; trust-gated, restrictions only.
     Project,
 }

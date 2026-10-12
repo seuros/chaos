@@ -351,7 +351,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
     }
 
     #[allow(clippy::print_stderr)]
-    match check_execpolicy_for_warnings(&config.config_layer_stack).await {
+    match check_execpolicy_for_warnings(&config.config_layer_stack, &config.chaos_home).await {
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(

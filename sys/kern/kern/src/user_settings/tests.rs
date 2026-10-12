@@ -235,3 +235,49 @@ async fn a_running_process_keeps_storage_when_the_bootstrap_file_disappears() ->
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn stored_rules_round_trip_by_name() -> anyhow::Result<()> {
+    use crate::user_settings::rules;
+    let home = tempfile::tempdir()?;
+    crate::test_support::bootstrap_sqlite(home.path())?;
+    let deny_rm = "prefix_rule {pattern = {'rm'}, decision = 'forbidden'}\n";
+    let deny_ls = "prefix_rule {pattern = {'ls'}, decision = 'forbidden'}\n";
+    rules::put_user_rule(home.path(), "zeta", deny_rm).await?;
+    rules::put_user_rule(home.path(), "alpha", deny_ls).await?;
+    rules::put_user_rule(home.path(), "zeta", deny_ls).await?;
+    let stored = rules::list_user_rules(home.path()).await?;
+    assert_eq!(
+        stored
+            .iter()
+            .map(|rule| (rule.name.as_str(), rule.source.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("alpha", deny_ls), ("zeta", deny_ls)],
+        "listing is sorted and a repeated name replaces the earlier document"
+    );
+    assert!(
+        rules::remove_user_rule(home.path(), "missing")
+            .await
+            .is_err()
+    );
+    rules::remove_user_rule(home.path(), "alpha").await?;
+    assert_eq!(rules::list_user_rules(home.path()).await?.len(), 1);
+    assert!(
+        rules::put_user_rule(home.path(), "bad name!", deny_rm)
+            .await
+            .is_err()
+    );
+
+    let parsed = rules::parse_policy_sources(&serde_json::json!([
+        "prefix_rule {pattern = {'a'}, decision = 'forbidden'}",
+        {"name": "named", "source": "prefix_rule {pattern = {'b'}, decision = 'forbidden'}"}
+    ]))?;
+    assert_eq!(
+        parsed
+            .iter()
+            .map(|rule| rule.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["legacy-1", "named"]
+    );
+    Ok(())
+}

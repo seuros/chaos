@@ -49,7 +49,7 @@ async fn build_config_state_with_mtimes() -> Result<(ConfigState, Vec<LayerMtime
             .await
             .context("failed to load Chaos config")?;
 
-    let (exec_policy, warning) = match load_exec_policy(&config_layer_stack).await {
+    let (exec_policy, warning) = match load_exec_policy(&config_layer_stack, &chaos_home).await {
         Ok(policy) => (policy, None),
         Err(err @ ExecPolicyError::ParsePolicy { .. }) => {
             (chaos_selinux::Policy::empty(), Some(err))

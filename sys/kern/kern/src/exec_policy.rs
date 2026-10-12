@@ -171,8 +171,11 @@ impl ExecPolicyManager {
     }
 
     #[instrument(level = "info", skip_all)]
-    pub(crate) async fn load(config_stack: &ConfigLayerStack) -> Result<Self, ExecPolicyError> {
-        let policy = load_exec_policy(config_stack).await?;
+    pub(crate) async fn load(
+        config_stack: &ConfigLayerStack,
+        chaos_home: &Path,
+    ) -> Result<Self, ExecPolicyError> {
+        let policy = load_exec_policy(config_stack, chaos_home).await?;
         Ok(Self::new(Arc::new(policy)))
     }
 
@@ -351,8 +354,9 @@ impl Default for ExecPolicyManager {
 
 pub async fn check_execpolicy_for_warnings(
     config_stack: &ConfigLayerStack,
+    chaos_home: &Path,
 ) -> Result<Option<ExecPolicyError>, ExecPolicyError> {
-    let (_, warning) = load_exec_policy_with_warning(config_stack).await?;
+    let (_, warning) = load_exec_policy_with_warning(config_stack, chaos_home).await?;
     Ok(warning)
 }
 
@@ -429,30 +433,32 @@ pub fn format_exec_policy_error_with_source(error: &ExecPolicyError) -> String {
 
 async fn load_exec_policy_with_warning(
     config_stack: &ConfigLayerStack,
+    chaos_home: &Path,
 ) -> Result<(Policy, Option<ExecPolicyError>), ExecPolicyError> {
-    match load_exec_policy(config_stack).await {
+    match load_exec_policy(config_stack, chaos_home).await {
         Ok(policy) => Ok((policy, None)),
         Err(err @ ExecPolicyError::ParsePolicy { .. }) => Ok((Policy::empty(), Some(err))),
         Err(err) => Err(err),
     }
 }
 
-pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy, ExecPolicyError> {
+/// Administrator rules (`/etc/chaos/rules`) may grant; trusted project rules
+/// and the user's stored rules only restrict.
+pub async fn load_exec_policy(
+    config_stack: &ConfigLayerStack,
+    chaos_home: &Path,
+) -> Result<Policy, ExecPolicyError> {
     // Iterate asset folders in increasing order of precedence, adding the
     // rules from each, so that higher-precedence folders can override rules
     // defined in lower-precedence ones.
     let mut policy_paths = Vec::new();
-    let mut database_restrictions = Policy::empty();
+    let database_restrictions =
+        crate::user_settings::database_user_restrictions(chaos_home).await?;
     for folder in config_stack
         .asset_folders()
         .iter()
         .filter(|folder| folder.is_enabled())
     {
-        if folder.scope == chaos_sysctl::AssetScope::Home {
-            let policy =
-                crate::user_settings::database_user_restrictions(folder.dir.as_path()).await?;
-            database_restrictions = database_restrictions.merge_overlay(&policy);
-        }
         let layer_policy_paths = collect_policy_files(folder.rules_dir()).await?;
         // Only administrator policy may grant; every other scope restricts.
         let restrictions_only = folder.scope != chaos_sysctl::AssetScope::Admin;

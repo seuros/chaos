@@ -44,12 +44,12 @@ computing the effective config and origins metadata.
 File-based assets are discovered through `asset_folders()`, lowest precedence first:
 
 1. `/etc/chaos` (`Admin`): the only scope whose `rules/*.decrees` may grant.
-2. `$CHAOS_HOME` (`Home`): restrictions only; database user restrictions are merged here too.
-3. Every `<dir>/.chaos` between the project root and `cwd` (`Project`): restrictions only, and
+2. Every `<dir>/.chaos` between the project root and `cwd` (`Project`): restrictions only, and
    carried with a `disabled_reason` when the project is not trusted.
 
-Agent roles are read from the database (`ConfigOverrides::database_agent_roles`, filled by
-`ConfigBuilder::build`) and overlaid only by `Project` folders' `agents/`.
+The user's own rules (`chaos rules`) and roles (`chaos agents`) are database rows, merged as the
+lowest user-controlled layer: `user_settings::rules::database_user_restrictions` for exec policy
+and `ConfigOverrides::database_agent_roles` (filled by `ConfigBuilder::build`) for roles.
 
 ## Typical usage
 

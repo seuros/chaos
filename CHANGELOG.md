@@ -54,7 +54,8 @@ should. There is no patch level; the build timestamp is the patch.
 ### Removed
 - The evicted memory-consolidation and backfill tables' SQLite-only code in
   `chaos-proc` (no caller on either backend) and the unused `chaos-daemon`
-  crate. Migrations are unchanged.
+  crate. Migration `0023` drops the orphaned `stage1_outputs`, `jobs`, and
+  `backfill_state` tables on both backends.
 - `Config.sqlite_home` is now `Config.storage_home`: a mount-registry key on
   every backend, the SQLite directory only under SQLite.
 

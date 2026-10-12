@@ -24,9 +24,6 @@ async fn open_runtime_db_creates_unified_runtime_schema() {
         "journal_entries",
         "logs",
         "message_history",
-        "backfill_state",
-        "jobs",
-        "stage1_outputs",
         "process_dynamic_tools",
         "agent_jobs",
         "agent_job_items",
@@ -42,6 +39,15 @@ async fn open_runtime_db_creates_unified_runtime_schema() {
 
         let discovered_name: String = row.get("name");
         assert_eq!(discovered_name, table_name);
+    }
+
+    for dropped in ["stage1_outputs", "jobs", "backfill_state"] {
+        let row = sqlx::query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind(dropped)
+            .fetch_optional(&pool)
+            .await
+            .expect("query dropped table");
+        assert!(row.is_none(), "{dropped} should have been dropped by 0023");
     }
 
     for view_name in [

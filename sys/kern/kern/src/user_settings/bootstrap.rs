@@ -26,8 +26,8 @@ pub struct BootstrapConfig {
 pub struct ResolvedBootstrap {
     /// Normalized storage URL. Explicit: there is no silent SQLite default.
     pub storage_url: String,
-    /// Directory keying the mounted backend: `CHAOS_SQLITE_HOME` or the home.
-    /// SQLite stores `chaos.sqlite` there; PostgreSQL only uses it as a key.
+    /// The chaos home, keying the mounted backend. SQLite's default file lives
+    /// there; PostgreSQL only uses it as a key.
     pub storage_home: PathBuf,
     /// Egress gateway from the bootstrap file; `CHAOS_EGRESS_URL` overrides later.
     pub egress_url: Option<String>,
@@ -69,9 +69,9 @@ impl BootstrapConfig {
             }
             if key == SQLITE_HOME_KEY {
                 bail!(
-                    "{}: `{SQLITE_HOME_KEY}` was removed. Remove it from the file, then set \
-                     the CHAOS_SQLITE_HOME environment variable or run \
-                     `chaos config bootstrap set storage_url sqlite:///<dir>/chaos.sqlite`.",
+                    "{}: `{SQLITE_HOME_KEY}` was removed. Remove it from the file, then run \
+                     `chaos config bootstrap set storage_url sqlite:///<dir>/chaos.sqlite` \
+                     (or set {STORAGE_URL_ENV}) to name the SQLite file explicitly.",
                     path.display()
                 );
             }
@@ -119,13 +119,8 @@ impl BootstrapConfig {
             .is_some_and(|url| !url.trim().is_empty())
     }
 
-    /// `CHAOS_SQLITE_HOME` (relative paths join the home), else the home itself.
-    pub fn storage_home(&self, home: &Path) -> PathBuf {
-        sqlite_home_for(home)
-    }
-
-    /// Bootstrap `storage_url`, then `CHAOS_STORAGE_URL`, then a SQLite file
-    /// under `CHAOS_SQLITE_HOME`. Returns `None` when nothing is configured.
+    /// Bootstrap `storage_url`, then `CHAOS_STORAGE_URL`. Returns `None` when
+    /// nothing is configured; storage is never chosen silently.
     pub fn resolved_storage_url(&self, home: &Path) -> anyhow::Result<Option<String>> {
         if let Some(value) = self.storage_url.as_deref().filter(|v| !v.trim().is_empty()) {
             return resolve_reference(home, value.trim()).map(Some);
@@ -135,9 +130,6 @@ impl BootstrapConfig {
             .filter(|v| !v.trim().is_empty())
         {
             return Ok(Some(value.trim().to_owned()));
-        }
-        if chaos_proc::sqlite_home_env_value().is_some() {
-            return Ok(Some(sqlite_url_in(&sqlite_home_for(home))));
         }
         Ok(None)
     }
@@ -162,17 +154,9 @@ impl BootstrapConfig {
             .transpose()?;
         Ok(ResolvedBootstrap {
             storage_url,
-            storage_home: sqlite_home_for(home),
+            storage_home: home.to_path_buf(),
             egress_url,
         })
-    }
-}
-
-fn sqlite_home_for(home: &Path) -> PathBuf {
-    match chaos_proc::sqlite_home_env_value().map(PathBuf::from) {
-        Some(path) if path.is_absolute() => path,
-        Some(path) => home.join(path),
-        None => home.to_path_buf(),
     }
 }
 

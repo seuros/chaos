@@ -196,7 +196,7 @@ async fn sqlite_home_key_is_rejected_with_hint() {
 
     let message = err.to_string();
     assert!(message.contains("`sqlite_home` was removed"), "{message}");
-    assert!(message.contains("CHAOS_SQLITE_HOME"), "{message}");
+    assert!(message.contains("bootstrap set storage_url"), "{message}");
 }
 
 #[tokio::test]

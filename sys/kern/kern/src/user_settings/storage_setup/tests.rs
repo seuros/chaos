@@ -12,7 +12,6 @@ fn fresh_home_needs_setup_without_creating_state() -> anyhow::Result<()> {
 #[test]
 fn environment_does_not_replace_bootstrap_storage_choice() -> anyhow::Result<()> {
     // Set environment only in a subprocess, not in this parallel test harness.
-    let home = tempfile::tempdir()?;
     for url in ["", "postgresql://localhost/environment-only"] {
         let output = std::process::Command::new(std::env::current_exe()?)
             .args([
@@ -21,7 +20,6 @@ fn environment_does_not_replace_bootstrap_storage_choice() -> anyhow::Result<()>
             ])
             .env("CHAOS_STORAGE_URL", url)
             .env("CHAOS_DATABASE_URL", url)
-            .env("CHAOS_SQLITE_HOME", home.path())
             .output()?;
         assert!(
             output.status.success(),

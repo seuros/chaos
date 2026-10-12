@@ -117,7 +117,7 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
             let mut command = Command::new(&binary);
             command.current_dir(&work)
                 .env("CHAOS_HOME", &home)
-                .env_remove("CHAOS_STORAGE_URL").env_remove("CHAOS_SQLITE_HOME")
+                .env_remove("CHAOS_STORAGE_URL")
                 .env_remove("CHAOS_JOURNALD_SOCKET").env_remove("CLAUDECODE")
                 .args(["exec", "--json", if live { "--full-auto" } else { "--headless" }, "--skip-git-repo-check",
                     "-c", "clamp=true", "-c", "machine_warnings.enabled=false",
@@ -181,7 +181,7 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
                 let mut command = Command::new(&binary);
                 command.current_dir(&work)
                     .env("CHAOS_HOME", &home)
-                    .env_remove("CHAOS_STORAGE_URL").env_remove("CHAOS_SQLITE_HOME")
+                    .env_remove("CHAOS_STORAGE_URL")
                     .env_remove("CHAOS_JOURNALD_SOCKET")
                     .env("PATH", &path).env("CLAMP_TEST_ROOT", root.path())
                     .env("CHAOS_AGY_PATH", peer_dir.join("agy"))

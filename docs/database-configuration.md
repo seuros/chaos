@@ -23,9 +23,8 @@ Storage is never chosen silently. Resolution order:
 
 1. `storage_url` in the bootstrap file
 2. `CHAOS_STORAGE_URL`
-3. `chaos.sqlite` under `CHAOS_SQLITE_HOME`, when that variable is set
 
-When none applies, interactive `chaos` runs first-run storage setup; every other
+When neither applies, interactive `chaos` runs first-run storage setup; every other
 command exits with instructions. `CHAOS_EGRESS_URL` overrides `egress_url`.
 A running process keeps the storage it resolved at startup if the bootstrap
 file is removed; a file that is present but invalid stops the next storage
@@ -104,8 +103,8 @@ credential references merely to save an offline edit.
 47.14.0 removed `chaos config migrate` and every TOML configuration layer. If a
 pre-47.14 bootstrap file still carries settings, startup names the first
 offending key; move it with `chaos config set <key> <json>` and delete it from
-the file. A `sqlite_home` key must be replaced with `CHAOS_SQLITE_HOME` or an
-explicit `sqlite:///path/chaos.sqlite` URL. `/etc/chaos/config.toml` and
+the file. A `sqlite_home` key must be replaced with an explicit
+`sqlite:///path/chaos.sqlite` storage URL; `CHAOS_SQLITE_HOME` is gone too. `/etc/chaos/config.toml` and
 `.chaos/config.toml` files are no longer read; admin network tables move to
 `requirements.toml`. Settings already in the database are unaffected.
 

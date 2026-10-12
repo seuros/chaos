@@ -16,17 +16,18 @@ should. There is no patch level; the build timestamp is the patch.
   key stops startup with the `chaos config set` command that replaces it.
 - `chaos config migrate` and the TOML-to-database migration path. Settings
   already in the database are unaffected.
-- The `sqlite_home` bootstrap key. Use `CHAOS_SQLITE_HOME` or an explicit
-  `sqlite:///path/chaos.sqlite` URL. A relative `CHAOS_SQLITE_HOME` now resolves
-  against the chaos home.
+- The `sqlite_home` bootstrap key and the `CHAOS_SQLITE_HOME` environment
+  variable. Name the SQLite file in the storage URL instead
+  (`sqlite:///path/chaos.sqlite`); `CHAOS_STORAGE_URL` is the only storage
+  environment variable.
 - IPC: `ConfigLayerSource::{System, User, Bootstrap, Project}`, the `filePath`
   fields on config write requests/responses, and the `configLayerReadonly`
   error code.
 
 ### Changed
 - Storage is never chosen silently. Non-interactive commands now require
-  `storage_url`, `CHAOS_STORAGE_URL`, or `CHAOS_SQLITE_HOME` and exit with
-  setup instructions otherwise; the console still runs first-run setup.
+  `storage_url` or `CHAOS_STORAGE_URL` and exit with setup instructions
+  otherwise; the console still runs first-run setup.
 - `chaos config export` prints JSON and `chaos config import` reads JSON.
 - Administrator network constraints come only from
   `/etc/chaos/requirements.toml` (`[experimental_network]`).

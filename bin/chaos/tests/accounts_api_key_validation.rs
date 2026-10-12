@@ -13,7 +13,6 @@ fn account_command(home: &TempDir, provider: &str) -> Command {
         .current_dir(home.path())
         .env("CHAOS_HOME", home.path())
         .env_remove("CHAOS_STORAGE_URL")
-        .env_remove("CHAOS_SQLITE_HOME")
         .env("NO_COLOR", "1")
         .timeout(std::time::Duration::from_secs(15))
         .args([

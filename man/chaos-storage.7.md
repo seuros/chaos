@@ -96,12 +96,13 @@ in the bootstrap file.
 A configured PostgreSQL/SQLite URL or reference such as `env:CHAOS_DATABASE_URL`
 skips storage onboarding. Literal URLs need no environment variable. Environment
 variables alone or an existing SQLite file do not replace the bootstrap choice
-for the console; non-interactive commands accept `CHAOS_STORAGE_URL` or
-`CHAOS_SQLITE_HOME` as the explicit choice.
+for the console; non-interactive commands accept `CHAOS_STORAGE_URL` as the
+explicit choice.
 
-The SQLite home is `$CHAOS_SQLITE_HOME` when set, otherwise the chaos home —
-`$CHAOS_HOME`, or `~/.chaos`. A relative `$CHAOS_SQLITE_HOME` is taken against
-the chaos home. The old `sqlite_home` bootstrap key is rejected.
+First-run setup puts the SQLite file under the chaos home (`$CHAOS_HOME`, or
+`~/.chaos`). To keep it elsewhere, name the file in the URL:
+`storage_url = "sqlite:///other/disk/chaos.sqlite"`. The old `sqlite_home`
+bootstrap key and the `CHAOS_SQLITE_HOME` variable are gone.
 
 ## POSTGRESQL
 
@@ -186,9 +187,8 @@ The backend is decided once, in this order:
 
 1. `storage_url` in `~/.chaos/config.toml`
 2. the `CHAOS_STORAGE_URL` environment variable
-3. `chaos.sqlite` under `$CHAOS_SQLITE_HOME`, when that variable is set
 
-Nothing else is a choice: with none of the three, the console runs first-run
+Nothing else is a choice: with neither, the console runs first-run
 setup and every other command exits with instructions. The bootstrap file wins
 over the environment, so a `storage_url` in place means `CHAOS_STORAGE_URL` is
 ignored — including for a one-off shell. `-c storage_url=...` is rejected;

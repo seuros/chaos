@@ -56,16 +56,3 @@ pub use runtime::open_runtime_db_postgres_url;
 pub use runtime::open_runtime_db_url;
 pub use runtime::runtime_db_filename;
 pub use runtime::runtime_db_path;
-
-/// Environment variable for overriding the SQLite runtime database home directory.
-pub const SQLITE_HOME_ENV: &str = "CHAOS_SQLITE_HOME";
-
-pub fn sqlite_home_env_value() -> Option<String> {
-    if let Ok(value) = std::env::var(SQLITE_HOME_ENV) {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-    None
-}

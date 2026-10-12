@@ -9,7 +9,6 @@ fn command(home: &TempDir) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_chaos"));
     cmd.env("CHAOS_HOME", home.path())
         .env_remove("CHAOS_STORAGE_URL")
-        .env_remove("CHAOS_SQLITE_HOME")
         .env_remove("CHAOS_BEARER_TOKEN")
         .env("TERM", "dumb")
         .env("NO_COLOR", "1")

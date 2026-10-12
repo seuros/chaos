@@ -2,7 +2,6 @@ use super::*;
 
 fn storage_env_is_clear() -> bool {
     std::env::var_os("CHAOS_STORAGE_URL").is_none()
-        && std::env::var_os("CHAOS_SQLITE_HOME").is_none()
 }
 
 #[test]
@@ -41,7 +40,7 @@ fn removed_sqlite_home_key_is_rejected_with_a_hint() -> anyhow::Result<()> {
     )?;
     let error = BootstrapConfig::read(home.path()).unwrap_err().to_string();
     assert!(error.contains("`sqlite_home` was removed"), "{error}");
-    assert!(error.contains("CHAOS_SQLITE_HOME"), "{error}");
+    assert!(error.contains("bootstrap set storage_url"), "{error}");
     Ok(())
 }
 

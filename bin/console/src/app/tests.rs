@@ -1945,6 +1945,7 @@ async fn update_reasoning_effort_updates_collaboration_mode() {
 async fn refresh_in_memory_config_from_disk_loads_latest_apps_state() -> Result<()> {
     let mut app = make_test_app().await;
     let chaos_home = tempdir()?;
+    chaos_kern::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap sqlite");
     app.config.chaos_home = chaos_home.path().to_path_buf();
     let app_id = "unit_test_refresh_in_memory_config_connector".to_string();
 

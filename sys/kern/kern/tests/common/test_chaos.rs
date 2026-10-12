@@ -98,10 +98,13 @@ impl TestChaosBuilder {
     }
 
     fn get_or_create_home(&self) -> anyhow::Result<Arc<TempDir>> {
-        Ok(match self.home.clone() {
+        let home = match self.home.clone() {
             Some(home) => home,
             None => Arc::new(TempDir::new()?),
-        })
+        };
+        // Storage is never chosen silently; test homes use SQLite inside the home.
+        chaos_kern::test_support::bootstrap_sqlite(home.path())?;
+        Ok(home)
     }
 
     pub async fn build(&mut self, server: &wiremock::MockServer) -> anyhow::Result<TestChaos> {

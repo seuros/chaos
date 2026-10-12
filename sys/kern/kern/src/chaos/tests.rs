@@ -365,6 +365,7 @@ fn init_test_tracing() {
 }
 
 async fn build_test_config(chaos_home: &Path) -> Config {
+    crate::test_support::bootstrap_sqlite(chaos_home).expect("bootstrap test storage");
     ConfigBuilder::default()
         .chaos_home(chaos_home.to_path_buf())
         .build()
@@ -522,16 +523,18 @@ fn make_test_session_services(
 }
 
 pub(crate) async fn make_session_configuration_for_tests() -> SessionConfiguration {
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(chaos_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir").keep();
+    let config = build_test_config(&chaos_home).await;
     let config = Arc::new(config);
     let (collaboration_mode, model_info) = make_test_collaboration_mode(&config);
     make_test_session_config(&config, &model_info, collaboration_mode)
 }
 
 pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    make_session_and_context_with_home(chaos_home.path()).await
+    // Storage resolution reads the bootstrap file on every open, so the home
+    // must outlive the session; leak it like the other fixtures do.
+    let chaos_home = tempfile::tempdir().expect("create temp dir").keep();
+    make_session_and_context_with_home(&chaos_home).await
 }
 
 pub(crate) async fn make_session_and_context_with_home(
@@ -621,8 +624,8 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     async_channel::Receiver<Event>,
 ) {
     let (tx_event, rx_event) = async_channel::unbounded();
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(chaos_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir").keep();
+    let config = build_test_config(&chaos_home).await;
     let config = Arc::new(config);
     let conversation_id = ProcessId::default();
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));

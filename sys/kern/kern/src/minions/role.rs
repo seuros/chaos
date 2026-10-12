@@ -197,6 +197,7 @@ mod reload {
             reload_overrides(config, preserve_current_provider),
             config.chaos_home.clone(),
             config_layer_stack,
+            config.resolved_bootstrap(),
         )?;
         if preserve_current_profile {
             next_config.active_profile = config.active_profile.clone();
@@ -220,7 +221,8 @@ mod reload {
             layers,
             config.config_layer_stack.requirements().clone(),
             config.config_layer_stack.requirements_toml().clone(),
-        )?)
+        )?
+        .with_asset_folders(config.config_layer_stack.asset_folders().to_vec()))
     }
 
     fn resolved_profile_layer(
@@ -241,7 +243,8 @@ mod reload {
                 layers,
                 config.config_layer_stack.requirements().clone(),
                 config.config_layer_stack.requirements_toml().clone(),
-            )?,
+            )?
+            .with_asset_folders(config.config_layer_stack.asset_folders().to_vec()),
         )?;
         let resolved_profile =
             merged_config.get_config_profile(Some(active_profile_name.to_string()))?;

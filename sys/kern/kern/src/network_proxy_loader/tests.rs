@@ -81,24 +81,45 @@ fn execpolicy_network_rules_overlay_network_lists() {
 }
 
 #[test]
-fn apply_network_constraints_includes_allow_all_unix_sockets_flag() {
-    let config: toml::Value = toml::from_str(
-        r#"
-default_permissions = "workspace"
+fn requirements_network_maps_to_proxy_constraints() {
+    let network = NetworkConstraints {
+        enabled: Some(true),
+        allow_upstream_proxy: Some(false),
+        dangerously_allow_non_loopback_proxy: Some(true),
+        dangerously_allow_all_unix_sockets: Some(true),
+        allowed_domains: Some(vec!["example.com".to_string()]),
+        denied_domains: Some(vec!["blocked.example.com".to_string()]),
+        allow_unix_sockets: Some(vec!["/run/docker.sock".to_string()]),
+        allow_local_binding: Some(true),
+        ..NetworkConstraints::default()
+    };
 
-[permissions.workspace.network]
-dangerously_allow_all_unix_sockets = true
-"#,
-    )
-    .expect("permissions profile should parse");
-    let network = selected_network_from_tables(
-        network_tables_from_toml(&config).expect("permissions profile should deserialize"),
-    )
-    .expect("permissions profile should select a network table")
-    .expect("network table should be present");
+    let constraints = constraints_from_requirements(Some(&network));
 
-    let mut constraints = NetworkProxyConstraints::default();
-    apply_network_constraints(network, &mut constraints);
-
+    assert_eq!(constraints.enabled, Some(true));
+    assert_eq!(constraints.mode, None);
+    assert_eq!(constraints.allow_upstream_proxy, Some(false));
+    assert_eq!(constraints.dangerously_allow_non_loopback_proxy, Some(true));
     assert_eq!(constraints.dangerously_allow_all_unix_sockets, Some(true));
+    assert_eq!(
+        constraints.allowed_domains,
+        Some(vec!["example.com".to_string()])
+    );
+    assert_eq!(
+        constraints.denied_domains,
+        Some(vec!["blocked.example.com".to_string()])
+    );
+    assert_eq!(
+        constraints.allow_unix_sockets,
+        Some(vec!["/run/docker.sock".to_string()])
+    );
+    assert_eq!(constraints.allow_local_binding, Some(true));
+}
+
+#[test]
+fn missing_requirements_leave_proxy_constraints_unset() {
+    assert_eq!(
+        constraints_from_requirements(None),
+        NetworkProxyConstraints::default()
+    );
 }

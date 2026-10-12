@@ -16,7 +16,6 @@ use chaos_ipc::permissions::VfsEntry;
 use chaos_ipc::permissions::VfsPath;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsSpecialPath;
-use chaos_sysctl::CONFIG_TOML_FILE;
 use tempfile::tempdir;
 
 use super::*;
@@ -270,6 +269,7 @@ terminal_title_icon = "{invalid}"
 #[tokio::test]
 async fn config_builder_applies_clamp_cli_override() {
     let chaos_home = tempdir().expect("tempdir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
     let cfg = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .cli_overrides(vec![
@@ -334,6 +334,7 @@ fn appearance_config_defaults_validation_and_schema() {
 #[tokio::test]
 async fn appearance_config_builder_preserves_partial_cli_overrides() {
     let home = tempdir().unwrap();
+    crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap");
     let snapshot = crate::user_settings::snapshot(home.path()).await.unwrap();
     let settings = toml::from_str(
         "[appearance.colors]\nfg = 'blue'\n[appearance.user]\nbold = true\nitalic = true",
@@ -610,48 +611,6 @@ fn sqlite_home_defaults_to_codex_home_for_workspace_write() -> std::io::Result<(
 }
 
 #[test]
-fn storage_url_is_loaded_from_config() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            storage_url: Some(" postgresql://user:pass@localhost/chaos ".to_string()),
-            ..Default::default()
-        },
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.storage_url.as_deref(),
-        Some("postgresql://user:pass@localhost/chaos")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn storage_url_rejects_unsupported_scheme() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let err = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            storage_url: Some("mysql://localhost/chaos".to_string()),
-            ..Default::default()
-        },
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )
-    .expect_err("unsupported storage_url should fail config loading");
-
-    assert_eq!(err.kind(), ErrorKind::InvalidInput);
-    assert!(
-        err.to_string().contains("unsupported storage URL scheme"),
-        "unexpected error: {err}"
-    );
-
-    Ok(())
-}
-
-#[test]
 fn workspace_write_includes_explicit_writable_root_once() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let extra_root = chaos_home.path().join("extra");
@@ -854,11 +813,11 @@ fn web_search_mode_for_turn_falls_back_when_live_is_disallowed() -> anyhow::Resu
 }
 
 #[tokio::test]
-async fn project_profile_overrides_user_profile() -> std::io::Result<()> {
+async fn session_profile_override_wins_over_user_profile() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let workspace = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
+    crate::test_support::seed_user_settings_toml(
+        chaos_home.path(),
         r#"
 profile = "global"
 
@@ -868,20 +827,9 @@ model = "serpent"
 [profiles.project]
 model = "gordon"
 "#,
-    )?;
-    crate::user_settings::migrate(chaos_home.path(), false)
-        .await
-        .map_err(std::io::Error::other)?;
-    set_project_trust_level(chaos_home.path(), workspace.path(), TrustLevel::Trusted)
-        .map_err(std::io::Error::other)?;
-    let project_config_dir = workspace.path().join(".chaos");
-    std::fs::create_dir_all(&project_config_dir)?;
-    std::fs::write(
-        project_config_dir.join(CONFIG_TOML_FILE),
-        r#"
-profile = "project"
-"#,
-    )?;
+    )
+    .await
+    .map_err(std::io::Error::other)?;
 
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
@@ -891,7 +839,21 @@ profile = "project"
         })
         .build()
         .await?;
+    assert_eq!(config.active_profile.as_deref(), Some("global"));
+    assert_eq!(config.model.as_deref(), Some("serpent"));
 
+    let config = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .cli_overrides(vec![(
+            "profile".to_string(),
+            TomlValue::String("project".to_string()),
+        )])
+        .harness_overrides(ConfigOverrides {
+            cwd: Some(workspace.path().to_path_buf()),
+            ..Default::default()
+        })
+        .build()
+        .await?;
     assert_eq!(config.active_profile.as_deref(), Some("project"));
     assert_eq!(config.model.as_deref(), Some("gordon"));
 
@@ -1078,7 +1040,9 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         mode_policy_override: None,
         unattended_recovery: false,
         sqlite_home: fixture.chaos_home(),
-        storage_url: None,
+        storage_url: crate::user_settings::ResolvedBootstrap::sqlite_in(&fixture.chaos_home())
+            .storage_url,
+        bootstrap_egress_url: None,
         log_dir: fixture.chaos_home().join("log"),
         config_layer_stack: Default::default(),
         startup_warnings: Vec::new(),
@@ -1402,6 +1366,7 @@ fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() -> any
         },
         fixture.chaos_home(),
         config_layer_stack,
+        crate::user_settings::ResolvedBootstrap::sqlite_in(&fixture.chaos_home()),
     )?;
 
     assert!(

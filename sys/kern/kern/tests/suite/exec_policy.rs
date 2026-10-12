@@ -86,7 +86,8 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
         home.path().join("rules/policy.decrees"),
         r#"prefix_rule {pattern={"echo"}, decision="forbidden"}"#,
     )?;
-    chaos_kern::user_settings::migrate(home.path(), false).await?;
+    // Home rules are restrictions-only and load directly from disk.
+    chaos_kern::test_support::bootstrap_sqlite(home.path())?;
     let mut builder = test_chaos().with_home(home);
     let server = start_mock_server().await;
     let test = builder.build(&server).await?;

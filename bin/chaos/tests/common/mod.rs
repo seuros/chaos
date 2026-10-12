@@ -19,6 +19,8 @@ pub const SECOND_TOKEN_REFERENCE: &str =
     "keyring:chaos-settings/00000000-0000-4000-8000-000000000002";
 
 pub fn chaos_command(chaos_home: &Path) -> Result<assert_cmd::Command> {
+    // Storage is never chosen silently; every test home names its SQLite file.
+    chaos_kern::test_support::bootstrap_sqlite(chaos_home)?;
     let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
     cmd.env("CHAOS_HOME", chaos_home);
     // Tests match plain-text stderr, but clap honors color-forcing variables
@@ -35,9 +37,9 @@ pub struct McpCliHarness {
 
 impl McpCliHarness {
     pub fn new() -> Result<Self> {
-        Ok(Self {
-            chaos_home: TempDir::new()?,
-        })
+        let chaos_home = TempDir::new()?;
+        chaos_kern::test_support::bootstrap_sqlite(chaos_home.path())?;
+        Ok(Self { chaos_home })
     }
 
     pub fn command(&self) -> Result<assert_cmd::Command> {

@@ -98,7 +98,7 @@ struct MultitoolCli {
     interactive: TuiCli,
 
     // Models also uses the root profile flag; do not require the console to parse it.
-    /// Configuration profile from config.toml to specify default options.
+    /// Configuration profile (a `profiles.<name>` user setting) to specify default options.
     #[cfg(not(feature = "tui"))]
     #[usage(long = "profile", short = 'p')]
     config_profile: Option<String>,

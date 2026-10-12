@@ -11,6 +11,7 @@ async fn test_config_and_runtime_db() -> (
     crate::runtime_db::RuntimeDbHandle,
 ) {
     let chaos_home = TempDir::new().expect("create temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap test storage");
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()

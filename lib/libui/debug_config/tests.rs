@@ -54,17 +54,16 @@ pub(crate) fn debug_config_suite() {
 }
 #[cfg(test)]
 fn debug_config_output_lists_all_layers_including_disabled() {
-    let system_file = absolute_path("/etc/chaos/config.toml");
-    let project_folder = absolute_path("/repo/.chaos");
+    let project_mcp_file = absolute_path("/repo/.mcp.json");
 
     let layers = vec![
         ConfigLayerEntry::new(
-            ConfigLayerSource::System { file: system_file },
+            ConfigLayerSource::UserDatabase { revision: 3 },
             empty_toml_table(),
         ),
         ConfigLayerEntry::new_disabled(
-            ConfigLayerSource::Project {
-                dot_codex_folder: project_folder,
+            ConfigLayerSource::ProjectMcp {
+                file: project_mcp_file,
             },
             empty_toml_table(),
             "project is untrusted",
@@ -78,8 +77,8 @@ fn debug_config_output_lists_all_layers_including_disabled() {
     .expect("config layer stack");
 
     let rendered = render_to_text(&render_debug_config_lines(&stack));
-    assert!(rendered.contains("(enabled)"));
-    assert!(rendered.contains("(disabled)"));
+    assert!(rendered.contains("user database (revision 3) (enabled)"));
+    assert!(rendered.contains("project (/repo/.mcp.json) (disabled)"));
     assert!(rendered.contains("reason: project is untrusted"));
     assert!(rendered.contains("Requirements:"));
     assert!(rendered.contains("  <none>"));
@@ -148,10 +147,9 @@ fn debug_config_output_lists_requirement_sources() {
         network: None,
     };
 
-    let user_file = absolute_path("/home/alice/.chaos/config.toml");
     let stack = ConfigLayerStack::new(
         vec![ConfigLayerEntry::new(
-            ConfigLayerSource::User { file: user_file },
+            ConfigLayerSource::UserDatabase { revision: 1 },
             empty_toml_table(),
         )],
         requirements,

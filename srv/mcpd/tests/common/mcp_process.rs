@@ -26,6 +26,27 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 use tokio::process::Command;
 
+/// JSON user settings a test may drop into its temporary home; imported by
+/// `chaos config import` before the server starts.
+pub const SETTINGS_FILE: &str = "settings.json";
+
+/// Point a test home at a SQLite database inside it unless storage is already
+/// configured. Storage is never chosen silently.
+pub fn bootstrap_sqlite(chaos_home: &Path) -> anyhow::Result<()> {
+    let bootstrap = chaos_home.join("config.toml");
+    if bootstrap.exists() {
+        return Ok(());
+    }
+    std::fs::write(
+        &bootstrap,
+        format!(
+            "storage_url = \"sqlite://{}\"\n",
+            chaos_home.join("chaos.sqlite").display()
+        ),
+    )?;
+    Ok(())
+}
+
 pub struct McpProcess {
     next_request_id: AtomicI64,
     /// Retain this child process until the client is dropped. The Tokio runtime
@@ -52,31 +73,33 @@ impl McpProcess {
         env_overrides: &[(&str, Option<&str>)],
     ) -> anyhow::Result<Self> {
         let program = chaos_which::cargo_bin("chaos").context("should find binary for chaos")?;
-        if chaos_home.join("config.toml").exists() {
-            let mut migration = Command::new(&program);
-            migration
-                .args(["config", "migrate"])
+        bootstrap_sqlite(chaos_home)?;
+        // Tests seed user settings as JSON; import them through the real CLI.
+        let settings = chaos_home.join(SETTINGS_FILE);
+        if settings.exists() {
+            let mut import = Command::new(&program);
+            import
+                .arg("config")
+                .arg("import")
+                .arg(&settings)
                 .env("CHAOS_HOME", chaos_home);
             for (key, value) in env_overrides {
                 match value {
                     Some(value) => {
-                        migration.env(key, value);
+                        import.env(key, value);
                     }
                     None => {
-                        migration.env_remove(key);
+                        import.env_remove(key);
                     }
                 }
             }
             // Mock-server Drop assertions can mask setup errors.
-            let status = migration
+            let status = import
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())
                 .status()
                 .await?;
-            anyhow::ensure!(
-                status.success(),
-                "test configuration migration failed: {status}"
-            );
+            anyhow::ensure!(status.success(), "test settings import failed: {status}");
         }
         let mut cmd = Command::new(program);
         cmd.arg("mcp").arg("serve");

@@ -1,4 +1,5 @@
 pub mod agent_roles;
+pub mod assets;
 mod config_requirements;
 mod constraint;
 mod diagnostics;
@@ -17,6 +18,8 @@ pub mod types;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
+pub use assets::AssetFolder;
+pub use assets::AssetScope;
 pub use config_requirements::AppRequirementToml;
 pub use config_requirements::AppsRequirementsToml;
 pub use config_requirements::ConfigRequirements;
@@ -41,8 +44,6 @@ pub use diagnostics::TextPosition;
 pub use diagnostics::TextRange;
 pub use diagnostics::config_error_from_toml;
 pub use diagnostics::config_error_from_typed_toml;
-pub use diagnostics::first_layer_config_error;
-pub use diagnostics::first_layer_config_error_from_entries;
 pub use diagnostics::format_config_error;
 pub use diagnostics::format_config_error_with_source;
 pub use diagnostics::format_error_chain;

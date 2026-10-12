@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_ipc::config_types::ServiceTier;
@@ -56,15 +55,6 @@ pub(super) fn resolve_egress_url(
             )
         }),
         None => Ok(configured),
-    }
-}
-
-fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
-    let path = PathBuf::from(chaos_proc::sqlite_home_env_value()?);
-    if path.is_absolute() {
-        Some(path)
-    } else {
-        Some(resolved_cwd.join(path))
     }
 }
 
@@ -129,6 +119,15 @@ fn resolve_web_search_config_inner(
 }
 
 impl Config {
+    /// The bootstrap values this config was built from, for in-process reloads.
+    pub(crate) fn resolved_bootstrap(&self) -> crate::user_settings::ResolvedBootstrap {
+        crate::user_settings::ResolvedBootstrap {
+            storage_url: self.storage_url.clone(),
+            sqlite_home: self.sqlite_home.clone(),
+            egress_url: self.bootstrap_egress_url.clone(),
+        }
+    }
+
     /// Clamp transport selection for a model client, with `CHAOS_AGY_*`
     /// environment overrides already applied.
     pub fn clamp_settings(&self) -> crate::config::ClampSettings {
@@ -143,7 +142,7 @@ impl Config {
 
     pub(crate) async fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
         let effective = crate::config::load_effective_mcp_servers(
-            self.storage_url.as_deref(),
+            &self.storage_url,
             self.sqlite_home.as_path(),
             &self.config_layer_stack,
         )
@@ -163,7 +162,14 @@ impl Config {
         chaos_home: PathBuf,
     ) -> std::io::Result<Self> {
         let config_layer_stack = ConfigLayerStack::default();
-        Self::load_config_with_layer_stack(cfg, overrides, chaos_home, config_layer_stack)
+        let bootstrap = crate::user_settings::ResolvedBootstrap::sqlite_in(&chaos_home);
+        Self::load_config_with_layer_stack(
+            cfg,
+            overrides,
+            chaos_home,
+            config_layer_stack,
+            bootstrap,
+        )
     }
 
     pub(crate) fn load_config_with_layer_stack(
@@ -171,6 +177,7 @@ impl Config {
         overrides: ConfigOverrides,
         chaos_home: PathBuf,
         config_layer_stack: ConfigLayerStack,
+        bootstrap: crate::user_settings::ResolvedBootstrap,
     ) -> std::io::Result<Self> {
         let ConfigRequirements {
             approval_policy: mut constrained_approval_policy,
@@ -378,7 +385,10 @@ impl Config {
             model_providers.insert(key, provider);
         }
 
-        let egress_url = resolve_egress_url(cfg.egress_url, std::env::var_os("CHAOS_EGRESS_URL"))?;
+        let egress_url = resolve_egress_url(
+            bootstrap.egress_url.clone(),
+            std::env::var_os("CHAOS_EGRESS_URL"),
+        )?;
         let egress = egress_url
             .as_deref()
             .map(chaos_client::Egress::parse)
@@ -532,14 +542,11 @@ impl Config {
                 p.push("log");
                 p
             });
-        let sqlite_home = cfg
-            .sqlite_home
-            .as_ref()
-            .map(AbsolutePathBuf::to_path_buf)
-            .or_else(|| resolve_sqlite_home_env(&resolved_cwd))
-            .unwrap_or_else(|| chaos_home.to_path_buf());
-        let storage_url = crate::config::normalize_storage_url(cfg.storage_url.as_deref())
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+        let crate::user_settings::ResolvedBootstrap {
+            storage_url,
+            sqlite_home,
+            egress_url: bootstrap_egress_url,
+        } = bootstrap;
         let original_sandbox_policy = sandbox_policy.clone();
 
         validation::apply_requirement_constrained_value(
@@ -659,6 +666,7 @@ impl Config {
             unattended_recovery: false,
             sqlite_home,
             storage_url,
+            bootstrap_egress_url,
             log_dir,
             config_layer_stack,
             history,

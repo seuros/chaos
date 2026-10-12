@@ -117,8 +117,7 @@ impl PtyConsole {
             home.join("config.toml"),
             toml::to_string(&BootstrapConfig {
                 storage_url: Some(format!("sqlite://{}", home.join("chaos.sqlite").display())),
-                sqlite_home: Some(home.clone()),
-                ..Default::default()
+                egress_url: None,
             })?,
         )?;
         set_project_trust_level(&home, &work, chaos_ipc::config_types::TrustLevel::Trusted)?;

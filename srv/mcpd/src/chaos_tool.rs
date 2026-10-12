@@ -68,7 +68,7 @@ pub struct ChaosToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
 
-    /// Configuration profile from config.toml.
+    /// Configuration profile (a `profiles.<name>` user setting).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
 
@@ -84,7 +84,7 @@ pub struct ChaosToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<ChaosSandboxMode>,
 
-    /// Individual config overrides (keys from config.toml).
+    /// Individual config overrides (user-setting keys).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<HashMap<String, serde_json::Value>>,
 

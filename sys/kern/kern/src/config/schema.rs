@@ -4,7 +4,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::Map;
 use serde_json::Value;
 
-/// Build the config schema for `config.toml`.
+/// Build the JSON schema for user settings.
 pub fn config_schema() -> Schema {
     SchemaSettings::draft07()
         .into_generator()

@@ -1,9 +1,9 @@
 use super::*;
-use crate::config_loader::ConfigLayerEntry;
+use crate::config_loader::AssetFolder;
+use crate::config_loader::AssetScope;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConfigRequirementsToml;
-use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::permissions::VfsAccessMode;
 use chaos_ipc::permissions::VfsEntry;
 use chaos_ipc::permissions::VfsPath;
@@ -11,27 +11,34 @@ use chaos_ipc::permissions::VfsSpecialPath;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_sysctl::assets::RULES_DIR_NAME;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::tempdir;
-use toml::Value as TomlValue;
 
-fn config_stack_for_dot_codex_folder(dot_codex_folder: &Path) -> ConfigLayerStack {
-    let dot_codex_folder =
-        AbsolutePathBuf::from_absolute_path(dot_codex_folder).expect("absolute dot_codex_folder");
-    let layer = ConfigLayerEntry::new(
-        ConfigLayerSource::Project { dot_codex_folder },
-        TomlValue::Table(Default::default()),
-    );
+fn asset_folder(scope: AssetScope, dir: &Path) -> AssetFolder {
+    AssetFolder::new(
+        scope,
+        AbsolutePathBuf::from_absolute_path(dir).expect("absolute asset folder"),
+    )
+}
+
+fn config_stack_for_folders(folders: Vec<AssetFolder>) -> ConfigLayerStack {
     ConfigLayerStack::new(
-        vec![layer],
+        Vec::new(),
         ConfigRequirements::default(),
         ConfigRequirementsToml::default(),
     )
     .expect("ConfigLayerStack")
+    .with_asset_folders(folders)
+}
+
+/// A trusted project `.chaos` folder: rules are restrictions-only.
+fn config_stack_for_dot_codex_folder(dot_codex_folder: &Path) -> ConfigLayerStack {
+    config_stack_for_folders(vec![asset_folder(AssetScope::Project, dot_codex_folder)])
 }
 
 fn host_absolute_path(segments: &[&str]) -> String {
@@ -198,13 +205,9 @@ async fn merges_requirements_exec_policy_network_rules() -> anyhow::Result<()> {
         )),
         ..ConfigRequirements::default()
     };
-    let dot_codex_folder = AbsolutePathBuf::from_absolute_path(temp_dir.path())?;
-    let layer = ConfigLayerEntry::new(
-        ConfigLayerSource::Project { dot_codex_folder },
-        TomlValue::Table(Default::default()),
-    );
     let config_stack =
-        ConfigLayerStack::new(vec![layer], requirements, ConfigRequirementsToml::default())?;
+        ConfigLayerStack::new(Vec::new(), requirements, ConfigRequirementsToml::default())?
+            .with_asset_folders(vec![asset_folder(AssetScope::Project, temp_dir.path())]);
 
     let policy = load_exec_policy(&config_stack).await?;
     let (allowed, denied) = policy.compiled_network_domains();
@@ -245,13 +248,10 @@ host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
         )),
         ..ConfigRequirements::default()
     };
-    let file = AbsolutePathBuf::from_absolute_path(temp_dir.path().join("config.toml"))?;
-    let layer = ConfigLayerEntry::new(
-        ConfigLayerSource::System { file },
-        TomlValue::Table(Default::default()),
-    );
+    // Only administrator folders may define host executable identities.
     let config_stack =
-        ConfigLayerStack::new(vec![layer], requirements, ConfigRequirementsToml::default())?;
+        ConfigLayerStack::new(Vec::new(), requirements, ConfigRequirementsToml::default())?
+            .with_asset_folders(vec![asset_folder(AssetScope::Admin, temp_dir.path())]);
 
     let policy = load_exec_policy(&config_stack).await?;
 
@@ -303,18 +303,11 @@ async fn ignores_rules_from_untrusted_project_layers() -> anyhow::Result<()> {
     )?;
 
     let project_dot_codex_folder = AbsolutePathBuf::from_absolute_path(project_dir.path())?;
-    let layers = vec![ConfigLayerEntry::new_disabled(
-        ConfigLayerSource::Project {
-            dot_codex_folder: project_dot_codex_folder,
-        },
-        TomlValue::Table(Default::default()),
+    let config_stack = config_stack_for_folders(vec![AssetFolder::disabled(
+        AssetScope::Project,
+        project_dot_codex_folder,
         "marked untrusted",
-    )];
-    let config_stack = ConfigLayerStack::new(
-        layers,
-        ConfigRequirements::default(),
-        ConfigRequirementsToml::default(),
-    )?;
+    )]);
 
     let policy = load_exec_policy(&config_stack).await?;
 
@@ -334,6 +327,7 @@ async fn ignores_rules_from_untrusted_project_layers() -> anyhow::Result<()> {
 #[tokio::test]
 async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
     let user_dir = tempdir()?;
+    crate::test_support::bootstrap_sqlite(user_dir.path())?;
     let project_dir = tempdir()?;
 
     let user_policy_dir = user_dir.path().join(RULES_DIR_NAME);
@@ -350,28 +344,10 @@ async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
         r#"prefix_rule {pattern={"ls"}, decision="prompt"}"#,
     )?;
 
-    let user_config_toml =
-        AbsolutePathBuf::from_absolute_path(user_dir.path().join("config.toml"))?;
-    let project_dot_codex_folder = AbsolutePathBuf::from_absolute_path(project_dir.path())?;
-    let layers = vec![
-        ConfigLayerEntry::new(
-            ConfigLayerSource::User {
-                file: user_config_toml,
-            },
-            TomlValue::Table(Default::default()),
-        ),
-        ConfigLayerEntry::new(
-            ConfigLayerSource::Project {
-                dot_codex_folder: project_dot_codex_folder,
-            },
-            TomlValue::Table(Default::default()),
-        ),
-    ];
-    let config_stack = ConfigLayerStack::new(
-        layers,
-        ConfigRequirements::default(),
-        ConfigRequirementsToml::default(),
-    )?;
+    let config_stack = config_stack_for_folders(vec![
+        asset_folder(AssetScope::Home, user_dir.path()),
+        asset_folder(AssetScope::Project, project_dir.path()),
+    ]);
 
     let policy = load_exec_policy(&config_stack).await?;
 
@@ -398,6 +374,47 @@ async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
             }],
         },
         policy.check_multiple([vec!["ls".to_string()]].iter(), &|_| Decision::Allow)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn home_rules_are_restrictions_only() -> anyhow::Result<()> {
+    let home = tempdir()?;
+    crate::test_support::bootstrap_sqlite(home.path())?;
+    let policy_dir = home.path().join(RULES_DIR_NAME);
+    fs::create_dir_all(&policy_dir)?;
+    fs::write(
+        policy_dir.join("home.decrees"),
+        r#"prefix_rule {pattern={"ls"}, decision="allow"}
+prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
+    )?;
+    let config_stack = config_stack_for_folders(vec![asset_folder(AssetScope::Home, home.path())]);
+
+    let policy = load_exec_policy(&config_stack).await?;
+
+    // The home allow rule must not grant: heuristics decide instead.
+    assert_eq!(
+        Evaluation {
+            decision: Decision::Prompt,
+            matched_rules: vec![RuleMatch::HeuristicsRuleMatch {
+                command: vec!["ls".to_string()],
+                decision: Decision::Prompt,
+            }],
+        },
+        policy.check_multiple([vec!["ls".to_string()]].iter(), &|_| Decision::Prompt)
+    );
+    assert_eq!(
+        Evaluation {
+            decision: Decision::Forbidden,
+            matched_rules: vec![RuleMatch::PrefixRuleMatch {
+                matched_prefix: vec!["rm".to_string()],
+                decision: Decision::Forbidden,
+                resolved_program: None,
+                justification: None,
+            }],
+        },
+        policy.check_multiple([vec!["rm".to_string()]].iter(), &|_| Decision::Allow)
     );
     Ok(())
 }
@@ -1055,6 +1072,7 @@ async fn heuristics_apply_when_other_commands_match_policy() {
 #[tokio::test]
 async fn append_execpolicy_amendment_updates_policy_and_file() {
     let chaos_home = tempdir().expect("create temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap test storage");
     let prefix = vec!["echo".to_string(), "hello".to_string()];
     let manager = ExecPolicyManager::default();
 

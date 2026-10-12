@@ -17,10 +17,11 @@ jobs and the spool, token accounting, the model catalog cache, project trust
 decisions, and globally registered MCP servers.
 
 That database is mounted once at boot and never swapped for the life of the
-process. Two backends exist. Interactive startup asks for an explicit storage
-choice in `config.toml`; non-interactive commands default to SQLite.
-PostgreSQL supports operators who want several machines reading the same history,
-or who want the semantic recall store.
+process. Two backends exist and the choice is always explicit: interactive
+startup asks on first run, and every other command refuses to start until
+`storage_url` is configured. PostgreSQL is recommended; it lets several machines
+share one history and powers the semantic recall store. SQLite serves a single
+machine. See [Getting started](../docs/getting-started.md) for the walkthrough.
 
 Shell environment capture stays in memory. ChaOS no longer reads, creates, or
 automatically removes the retired `$CHAOS_HOME/shell_snapshots` directory.
@@ -86,28 +87,33 @@ binary before running the suite so SQLite tests do not launch a stale binary.
 
 ## SQLITE
 
-The default for non-interactive commands. The interactive console first checks
-`storage_url` in `$CHAOS_HOME/config.toml`. If it is missing or empty, onboarding
-asks you to choose PostgreSQL or SQLite before loading database-backed settings.
-Selecting SQLite creates or opens `chaos.sqlite` under the chaos home, applies
-its migrations, and saves the URL in `config.toml`.
+The interactive console checks `storage_url` in `$CHAOS_HOME/config.toml`. If
+it is missing or empty, onboarding asks you to choose PostgreSQL or SQLite
+before loading database-backed settings. Selecting SQLite creates or opens
+`chaos.sqlite` under the chaos home, applies its migrations, and saves the URL
+in the bootstrap file.
 
 A configured PostgreSQL/SQLite URL or reference such as `env:CHAOS_DATABASE_URL`
 skips storage onboarding. Literal URLs need no environment variable. Environment
-variables alone or an existing SQLite file do not replace the TOML choice.
+variables alone or an existing SQLite file do not replace the bootstrap choice
+for the console; non-interactive commands accept `CHAOS_STORAGE_URL` or
+`CHAOS_SQLITE_HOME` as the explicit choice.
 
-The home is the `sqlite_home` config key when set, then `$CHAOS_SQLITE_HOME`,
-then the chaos home — `$CHAOS_HOME`, or `~/.chaos`. A relative
-`$CHAOS_SQLITE_HOME` is taken against the working directory.
+The SQLite home is `$CHAOS_SQLITE_HOME` when set, otherwise the chaos home —
+`$CHAOS_HOME`, or `~/.chaos`. A relative `$CHAOS_SQLITE_HOME` is taken against
+the chaos home. The old `sqlite_home` bootstrap key is rejected.
 
 ## POSTGRESQL
 
 Point `storage_url` at a database and FreeChaOS mounts it instead:
 
-```toml
-# ~/.chaos/config.toml
-storage_url = "postgres://chaos:PASSWORD@db.example.com:5432/chaos"
+```sh
+export CHAOS_DATABASE_URL='postgres://chaos:PASSWORD@db.example.com:5432/chaos'
+chaos config bootstrap set storage_url env:CHAOS_DATABASE_URL
 ```
+
+The resulting `~/.chaos/config.toml` holds only that reference (and optionally
+`egress_url`); every other setting lives in the database.
 
 The schema is tested against PostgreSQL 18 and uses nothing newer than
 PostgreSQL 10. Migrations run on first connect, so an empty database is all
@@ -180,25 +186,21 @@ The backend is decided once, in this order:
 
 1. `storage_url` in `~/.chaos/config.toml`
 2. the `CHAOS_STORAGE_URL` environment variable
-3. `chaos.sqlite` under the chaos home
+3. `chaos.sqlite` under `$CHAOS_SQLITE_HOME`, when that variable is set
 
-Config wins over the environment, so a `storage_url` in place means
-`CHAOS_STORAGE_URL` is ignored — including for a one-off shell.
+Nothing else is a choice: with none of the three, the console runs first-run
+setup and every other command exits with instructions. The bootstrap file wins
+over the environment, so a `storage_url` in place means `CHAOS_STORAGE_URL` is
+ignored — including for a one-off shell. `-c storage_url=...` is rejected;
+storage is never a session override.
 
 Accepted schemes are `postgres://`, `postgresql://`, `sqlite:`, `sqlite://`,
 and `sqlite3:` (rewritten to `sqlite:`). Anything else is rejected when the
 config loads rather than at first query. `sqlite::memory:` gives a throwaway
-backend that vanishes with the process, which is what test runs want:
+backend that vanishes with the process:
 
 ```sh
-CHAOS_STORAGE_URL=sqlite::memory: cargo test -p libui
-```
-
-Because config wins, that only takes effect when `storage_url` is unset. With
-one in place, a one-off backend means passing it as a config override instead:
-
-```sh
-chaos -c storage_url=sqlite::memory: exec "say hi"
+CHAOS_STORAGE_URL=sqlite::memory: chaos exec "say hi"
 ```
 
 ## MIGRATING AN EXISTING INSTALL
@@ -215,7 +217,7 @@ renewal.
 
 ## NOTES
 
-Manually entered literal URLs sit in plaintext in `config.toml`; keep such files
+Manually entered literal URLs sit in plaintext in the bootstrap file; keep it
 at mode `0600`. Prefer onboarding's encrypted-vault reference or `env:VARIABLE`.
 FreeChaOS does not read `.pgpass`.
 
@@ -224,8 +226,8 @@ the mounted pool directly and does not create or write `chaos.sqlite`.
 
 ## FILES
 
-- `~/.chaos/config.toml` - where `storage_url` goes
-- `~/.chaos/chaos.sqlite` - the default SQLite backend
+- `~/.chaos/config.toml` - bootstrap: `storage_url` and `egress_url` only
+- `~/.chaos/chaos.sqlite` - the SQLite backend
 
 ## SEE ALSO
 

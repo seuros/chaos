@@ -37,21 +37,20 @@ Hook-management authorization is inherited from the parent's effective
 `hook_approval_policy`. Role files and built-in personas cannot override it;
 selecting a role never opts a session into automatic hook authorization.
 
-Higher-precedence config layers select the role file for a repeated name and
-inherit omitted metadata from lower layers. A non-blank description is required
-after this merge. Duplicate names within one layer and malformed files generate
-startup warnings; malformed definitions are skipped. Untrusted project layers
-are not loaded.
+Role folders are scanned in increasing precedence: `/etc/chaos/agents/`,
+`$CHAOS_HOME/agents/`, then each trusted `.chaos/agents/` from the project root
+toward the working directory. A higher-precedence folder selects the role file
+for a repeated name and inherits omitted metadata from lower folders. A
+non-blank description is required after this merge. Duplicate names within one
+folder and malformed files generate startup warnings; malformed definitions are
+skipped. Untrusted project folders are not loaded.
 
 ## GLOBAL LIMITS
 
-The `[agents]` table in `config.toml` contains only operational limits:
+The `agents` user setting contains only operational limits:
 
-```toml
-[agents]
-max_threads = 4
-max_depth = 2
-job_max_runtime_seconds = 1800
+```sh
+chaos config set agents '{"max_threads": 4, "max_depth": 2, "job_max_runtime_seconds": 1800}'
 ```
 
 Split `[agents.<role>]` declarations and their `config_file` indirection are no

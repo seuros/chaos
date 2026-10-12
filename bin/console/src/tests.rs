@@ -44,6 +44,7 @@ fn report_to_io_error_shows_session_in_use_without_internal_wrappers() {
 }
 
 async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
+    chaos_kern::test_support::bootstrap_sqlite(temp_dir.path()).map_err(std::io::Error::other)?;
     ConfigBuilder::default()
         .chaos_home(temp_dir.path().to_path_buf())
         .build()
@@ -128,6 +129,7 @@ async fn config_rebuild_changes_trust_defaults_with_cwd() -> std::io::Result<()>
 
     let temp_dir = TempDir::new()?;
     let chaos_home = temp_dir.path().to_path_buf();
+    chaos_kern::test_support::bootstrap_sqlite(&chaos_home).map_err(std::io::Error::other)?;
     let trusted = temp_dir.path().join("trusted");
     let untrusted = temp_dir.path().join("untrusted");
     std::fs::create_dir_all(&trusted)?;

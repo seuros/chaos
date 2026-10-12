@@ -16,10 +16,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Result<Self> {
+        let root = tempfile::Builder::new()
+            .prefix("hooks-")
+            .tempdir_in("/tmp")?;
+        // The child runs with a cleared environment, so storage must be in the file.
+        chaos_kern::test_support::bootstrap_sqlite(root.path())?;
         Ok(Self {
-            root: tempfile::Builder::new()
-                .prefix("hooks-")
-                .tempdir_in("/tmp")?,
+            root,
             binary: chaos_which::cargo_bin("chaos")?,
         })
     }

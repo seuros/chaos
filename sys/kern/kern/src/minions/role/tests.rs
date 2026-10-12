@@ -1,5 +1,4 @@
 use super::*;
-use crate::config::CONFIG_TOML_FILE;
 use crate::config::ConfigBuilder;
 use crate::config::HookApprovalPolicy;
 use crate::config_loader::ConfigLayerStackOrdering;
@@ -16,6 +15,7 @@ async fn test_config_with_cli_overrides(
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> (TempDir, Config) {
     let home = TempDir::new().expect("create temp dir");
+    crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap sqlite");
     let home_path = home.path().to_path_buf();
     let config = ConfigBuilder::default()
         .chaos_home(home_path.clone())
@@ -88,6 +88,7 @@ async fn apply_role_rejects_incomplete_standalone_files() {
 async fn project_roles_cannot_override_parent_hook_approval_policy() -> anyhow::Result<()> {
     for extension in ["toml", "md"] {
         let home = TempDir::new()?;
+        crate::test_support::bootstrap_sqlite(home.path())?;
         let project = TempDir::new()?;
         fs::create_dir(project.path().join(".git"))?;
         let agents = project.path().join(".chaos/agents");
@@ -384,8 +385,8 @@ async fn apply_role_preserves_unspecified_keys() {
 #[tokio::test]
 async fn apply_role_preserves_active_profile_and_model_provider() {
     let home = TempDir::new().expect("create temp dir");
-    tokio::fs::write(
-        home.path().join(CONFIG_TOML_FILE),
+    crate::test_support::seed_user_settings_toml(
+        home.path(),
         r#"
 [model_providers.test-provider]
 name = "Test Provider"
@@ -398,10 +399,7 @@ model_provider = "test-provider"
 "#,
     )
     .await
-    .expect("write config.toml");
-    crate::user_settings::migrate(home.path(), false)
-        .await
-        .expect("migrate settings");
+    .expect("seed settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -443,8 +441,8 @@ model_provider = "test-provider"
 #[tokio::test]
 async fn apply_role_top_level_profile_settings_override_preserved_profile() {
     let home = TempDir::new().expect("create temp dir");
-    tokio::fs::write(
-        home.path().join(CONFIG_TOML_FILE),
+    crate::test_support::seed_user_settings_toml(
+        home.path(),
         r#"
 [profiles.base-profile]
 model = "profile-model"
@@ -454,10 +452,7 @@ model_verbosity = "low"
 "#,
     )
     .await
-    .expect("write config.toml");
-    crate::user_settings::migrate(home.path(), false)
-        .await
-        .expect("migrate settings");
+    .expect("seed settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -507,8 +502,8 @@ model_verbosity = "high"
 #[tokio::test]
 async fn apply_role_uses_role_profile_instead_of_current_profile() {
     let home = TempDir::new().expect("create temp dir");
-    tokio::fs::write(
-        home.path().join(CONFIG_TOML_FILE),
+    crate::test_support::seed_user_settings_toml(
+        home.path(),
         r#"
 [model_providers.base-provider]
 name = "Base Provider"
@@ -530,10 +525,7 @@ model_provider = "role-provider"
 "#,
     )
     .await
-    .expect("write config.toml");
-    crate::user_settings::migrate(home.path(), false)
-        .await
-        .expect("migrate settings");
+    .expect("seed settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -573,8 +565,8 @@ model_provider = "role-provider"
 #[tokio::test]
 async fn apply_role_uses_role_model_provider_instead_of_current_profile_provider() {
     let home = TempDir::new().expect("create temp dir");
-    tokio::fs::write(
-        home.path().join(CONFIG_TOML_FILE),
+    crate::test_support::seed_user_settings_toml(
+        home.path(),
         r#"
 [model_providers.base-provider]
 name = "Base Provider"
@@ -593,10 +585,7 @@ model_provider = "base-provider"
 "#,
     )
     .await
-    .expect("write config.toml");
-    crate::user_settings::migrate(home.path(), false)
-        .await
-        .expect("migrate settings");
+    .expect("seed settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -636,8 +625,8 @@ model_provider = "base-provider"
 #[tokio::test]
 async fn apply_role_uses_active_profile_model_provider_update() {
     let home = TempDir::new().expect("create temp dir");
-    tokio::fs::write(
-        home.path().join(CONFIG_TOML_FILE),
+    crate::test_support::seed_user_settings_toml(
+        home.path(),
         r#"
 [model_providers.base-provider]
 name = "Base Provider"
@@ -657,10 +646,7 @@ model_reasoning_effort = "low"
 "#,
     )
     .await
-    .expect("write config.toml");
-    crate::user_settings::migrate(home.path(), false)
-        .await
-        .expect("migrate settings");
+    .expect("seed settings");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
@@ -919,15 +905,12 @@ fn built_in_config_file_contents_returns_none_for_unknown_path() {
 #[tokio::test]
 async fn role_instructions_preserve_project_child_defaults() {
     let home = TempDir::new().expect("create temp dir");
-    tokio::fs::write(
-        home.path().join("config.toml"),
+    crate::test_support::seed_user_settings_toml(
+        home.path(),
         "minion_instructions = \"CHILD_DEFAULTS\"\ndeveloper_instructions = \"PARENT_ROLE\"\n",
     )
     .await
-    .expect("write config");
-    crate::user_settings::migrate(home.path(), false)
-        .await
-        .expect("migrate settings");
+    .expect("seed settings");
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .fallback_cwd(Some(home.path().to_path_buf()))

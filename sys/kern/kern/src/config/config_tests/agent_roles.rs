@@ -11,23 +11,15 @@ fn write_agent_file(dir: &Path, name: &str, contents: &str) -> std::io::Result<P
 #[tokio::test]
 async fn split_agent_role_declarations_are_rejected() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
+    let err = crate::test_support::seed_user_settings_toml(
+        chaos_home.path(),
         r#"[agents.researcher]
 description = "Research role"
 config_file = "./agents/researcher.toml"
 "#,
-    )?;
-    let err = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await
-        .expect_err("split declarations are no longer supported");
-    assert!(err.to_string().contains("must be migrated"));
-    let err = crate::user_settings::migrate(chaos_home.path(), true)
-        .await
-        .expect_err("migration must reject split declarations too");
+    )
+    .await
+    .expect_err("split declarations are no longer supported");
     assert!(format!("{err:#}").contains("unknown field `researcher`"));
     Ok(())
 }
@@ -35,6 +27,7 @@ config_file = "./agents/researcher.toml"
 #[tokio::test]
 async fn agent_role_file_name_is_independent_of_filename() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
     let role_path = write_agent_file(
         &chaos_home.path().join("agents"),
         "researcher.toml",
@@ -68,6 +61,7 @@ model = "serpent"
 #[tokio::test]
 async fn malformed_agent_files_are_dropped_with_warnings() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
     let agents_dir = chaos_home.path().join("agents");
     for (filename, contents) in [
         (
@@ -121,6 +115,7 @@ async fn malformed_agent_files_are_dropped_with_warnings() -> std::io::Result<()
 #[tokio::test]
 async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
     let repo_root = TempDir::new()?;
     let nested_cwd = repo_root.path().join("packages").join("app");
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
@@ -177,6 +172,7 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
 #[tokio::test]
 async fn standalone_agent_role_sources_merge_with_precedence() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
     let repo_root = TempDir::new()?;
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     crate::config::set_project_trust_level(
@@ -252,6 +248,7 @@ model = "fireship"
 #[tokio::test]
 async fn untrusted_project_agent_files_are_not_loaded() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
     let repo_root = TempDir::new()?;
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     crate::config::set_project_trust_level(

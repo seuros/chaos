@@ -2,7 +2,7 @@
 //!
 //! Providers can be defined in two places:
 //!   1. Built-in defaults compiled into the binary so Chaos works out-of-the-box.
-//!   2. User-defined entries inside `~/.chaos/config.toml` under the `model_providers`
+//!   2. User-defined entries in user settings under the `model_providers`
 //!      key. These override or extend the defaults at runtime.
 
 use crate::auth::AuthMode;

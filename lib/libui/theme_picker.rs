@@ -9,7 +9,7 @@
 //! - **Cancel-restore:** on dismiss (Esc / Ctrl+C) the `on_cancel` callback
 //!   restores the theme snapshot taken when the picker opened.
 //! - **Persist on confirm:** the `AppEvent::SyntaxThemeSelected` action persists
-//!   `[tui] theme = "..."` to `config.toml` via `ConfigEditsBuilder`.
+//!   `[tui] theme = "..."` to user settings via `ConfigEditsBuilder`.
 //!
 //! Two preview renderables adapt to terminal width:
 //!

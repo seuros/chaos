@@ -169,32 +169,6 @@ impl ChaosVfs {
     }
 }
 
-/// Decide what to mount: an explicit storage URL, then `CHAOS_STORAGE_URL`,
-/// then the chaos home's SQLite file.
-pub fn resolve_mount_config(
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
-) -> Result<MountConfig, VfsError> {
-    if let Some(url) = non_empty(storage_url) {
-        return MountConfig::from_url(url);
-    }
-
-    if let Some(url) = std::env::var(CHAOS_STORAGE_URL_ENV)
-        .ok()
-        .as_deref()
-        .and_then(|value| non_empty(Some(value)))
-        .map(str::to_string)
-    {
-        return MountConfig::from_url(url);
-    }
-
-    Ok(MountConfig::sqlite_home(sqlite_home))
-}
-
-fn non_empty(value: Option<&str>) -> Option<&str> {
-    value.map(str::trim).filter(|value| !value.is_empty())
-}
-
 fn absolute(path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();

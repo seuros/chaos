@@ -1,17 +1,12 @@
 use super::ConfigToml;
 use super::deserialize_config_toml_with_base;
 use crate::config::edit::ConfigEdit;
-use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::ConfigRequirementsToml;
 use crate::config_loader::LoaderOverrides;
 use crate::config_loader::load_config_layers_state;
 use crate::config_loader::merge_toml_values;
-use crate::path_utils;
-use crate::path_utils::SymlinkWritePaths;
-use crate::path_utils::resolve_symlink_write_paths;
-use crate::path_utils::write_atomically;
 use chaos_ipc::api::Config as ApiConfig;
 use chaos_ipc::api::ConfigBatchWriteParams;
 use chaos_ipc::api::ConfigLayerMetadata;
@@ -25,13 +20,9 @@ use chaos_ipc::api::MergeStrategy;
 use chaos_ipc::api::OverriddenMetadata;
 use chaos_ipc::api::WriteStatus;
 use chaos_realpath::AbsolutePathBuf;
-use chaos_sysctl::CONFIG_TOML_FILE;
 use serde_json::Value as JsonValue;
-use std::borrow::Cow;
-use std::path::Path;
 use std::path::PathBuf;
 use thiserror::Error;
-use tokio::task;
 use toml::Value as TomlValue;
 use toml_edit::Item as TomlItem;
 
@@ -164,13 +155,8 @@ impl ConfigService {
             .try_into()
             .map_err(|err| ConfigServiceError::toml("invalid configuration", err))?;
 
-        let mut json_value = serde_json::to_value(&effective_config_toml)
+        let json_value = serde_json::to_value(&effective_config_toml)
             .map_err(|err| ConfigServiceError::json("failed to serialize configuration", err))?;
-        // Keep resolved bootstrap credentials out of API extras.
-        if let Some(object) = json_value.as_object_mut() {
-            object.remove("storage_url");
-            object.remove("egress_url");
-        }
         let config: ApiConfig = serde_json::from_value(json_value)
             .map_err(|err| ConfigServiceError::json("failed to deserialize configuration", err))?;
 
@@ -211,8 +197,7 @@ impl ConfigService {
         params: ConfigValueWriteParams,
     ) -> Result<ConfigWriteResponse, ConfigServiceError> {
         let edits = vec![(params.key_path, params.value, params.merge_strategy)];
-        self.apply_edits(params.file_path, params.expected_version, edits)
-            .await
+        self.apply_edits(params.expected_version, edits).await
     }
 
     pub async fn batch_write(
@@ -225,8 +210,7 @@ impl ConfigService {
             .map(|edit| (edit.key_path, edit.value, edit.merge_strategy))
             .collect();
 
-        self.apply_edits(params.file_path, params.expected_version, edits)
-            .await
+        self.apply_edits(params.expected_version, edits).await
     }
 
     pub async fn load_user_saved_config(
@@ -240,39 +224,25 @@ impl ConfigService {
         let toml_value = layers.effective_config();
         let cfg: ConfigToml = toml_value
             .try_into()
-            .map_err(|err| ConfigServiceError::toml("failed to parse config.toml", err))?;
+            .map_err(|err| ConfigServiceError::toml("failed to parse configuration", err))?;
         Ok(cfg.into())
     }
 
     async fn apply_edits(
         &self,
-        file_path: Option<String>,
         expected_version: Option<String>,
         edits: Vec<(String, JsonValue, MergeStrategy)>,
     ) -> Result<ConfigWriteResponse, ConfigServiceError> {
-        let allowed_path =
-            AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, &self.chaos_home);
-        let provided_path = match file_path {
-            Some(path) => AbsolutePathBuf::from_absolute_path(PathBuf::from(path))
-                .map_err(|err| ConfigServiceError::io("failed to resolve user config path", err))?,
-            None => allowed_path.clone(),
-        };
-
-        if !paths_match(&allowed_path, &provided_path) {
-            return Err(ConfigServiceError::write(
-                ConfigWriteErrorCode::ConfigLayerReadonly,
-                "Only writes to the user config are allowed",
-            ));
-        }
-
         let layers = self
             .load_process_agnostic_config()
             .await
             .map_err(|err| ConfigServiceError::io("failed to load configuration", err))?;
-        let user_layer = match layers.get_user_layer() {
-            Some(layer) => Cow::Borrowed(layer),
-            None => Cow::Owned(create_empty_user_layer(&allowed_path).await?),
-        };
+        let user_layer = layers.get_user_layer().ok_or_else(|| {
+            ConfigServiceError::write(
+                ConfigWriteErrorCode::UserLayerNotFound,
+                "user settings layer not found; runtime storage is unavailable",
+            )
+        })?;
 
         if let Some(expected) = expected_version.as_deref()
             && expected != user_layer.version
@@ -345,10 +315,10 @@ impl ConfigService {
 
         let revision = match user_layer.name {
             ConfigLayerSource::UserDatabase { revision } => revision,
-            _ => {
+            ConfigLayerSource::ProjectMcp { .. } | ConfigLayerSource::SessionFlags => {
                 return Err(ConfigServiceError::write(
-                    ConfigWriteErrorCode::ConfigLayerReadonly,
-                    "User settings require database migration",
+                    ConfigWriteErrorCode::UserLayerNotFound,
+                    "user settings layer is not database-backed",
                 ));
             }
         };
@@ -390,7 +360,6 @@ impl ConfigService {
                 })?
                 .version
                 .clone(),
-            file_path: None,
             source: ConfigLayerSource::UserDatabase {
                 revision: next_revision,
             },
@@ -411,50 +380,6 @@ impl ConfigService {
         )
         .await
     }
-}
-
-async fn create_empty_user_layer(
-    config_toml: &AbsolutePathBuf,
-) -> Result<ConfigLayerEntry, ConfigServiceError> {
-    let SymlinkWritePaths {
-        read_path,
-        write_path,
-    } = resolve_symlink_write_paths(config_toml.as_path())
-        .map_err(|err| ConfigServiceError::io("failed to resolve user config path", err))?;
-    let toml_value = match read_path {
-        Some(path) => match tokio::fs::read_to_string(&path).await {
-            Ok(contents) => toml::from_str(&contents).map_err(|e| {
-                ConfigServiceError::toml("failed to parse existing user config.toml", e)
-            })?,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                write_empty_user_config(write_path.clone()).await?;
-                TomlValue::Table(toml::map::Map::new())
-            }
-            Err(err) => {
-                return Err(ConfigServiceError::io(
-                    "failed to read user config.toml",
-                    err,
-                ));
-            }
-        },
-        None => {
-            write_empty_user_config(write_path).await?;
-            TomlValue::Table(toml::map::Map::new())
-        }
-    };
-    Ok(ConfigLayerEntry::new(
-        ConfigLayerSource::User {
-            file: config_toml.clone(),
-        },
-        toml_value,
-    ))
-}
-
-async fn write_empty_user_config(write_path: PathBuf) -> Result<(), ConfigServiceError> {
-    task::spawn_blocking(move || write_atomically(&write_path, ""))
-        .await
-        .map_err(|err| ConfigServiceError::anyhow("config persistence task panicked", err.into()))?
-        .map_err(|err| ConfigServiceError::io("failed to create empty user config.toml", err))
 }
 
 fn parse_value(value: JsonValue) -> Result<Option<TomlValue>, String> {
@@ -607,17 +532,6 @@ fn validate_config(value: &TomlValue) -> Result<(), toml::de::Error> {
     Ok(())
 }
 
-fn paths_match(expected: impl AsRef<Path>, provided: impl AsRef<Path>) -> bool {
-    if let (Ok(expanded_expected), Ok(expanded_provided)) = (
-        path_utils::normalize_for_path_comparison(&expected),
-        path_utils::normalize_for_path_comparison(&provided),
-    ) {
-        expanded_expected == expanded_provided
-    } else {
-        expected.as_ref() == provided.as_ref()
-    }
-}
-
 fn value_at_path<'a>(root: &'a TomlValue, segments: &[String]) -> Option<&'a TomlValue> {
     let mut current = root;
     for segment in segments {
@@ -638,25 +552,12 @@ fn value_at_path<'a>(root: &'a TomlValue, segments: &[String]) -> Option<&'a Tom
 
 fn override_message(layer: &ConfigLayerSource) -> String {
     match layer {
-        ConfigLayerSource::System { file } => {
-            format!("Overridden by system config: {}", file.display())
-        }
-        ConfigLayerSource::Project { dot_codex_folder } => format!(
-            "Overridden by project config: {}/{CONFIG_TOML_FILE}",
-            dot_codex_folder.display(),
-        ),
         ConfigLayerSource::ProjectMcp { file } => {
             format!("Overridden by project MCP config: {}", file.display())
         }
         ConfigLayerSource::SessionFlags => "Overridden by session flags".to_string(),
-        ConfigLayerSource::User { file } => {
-            format!("Overridden by user config: {}", file.display())
-        }
         ConfigLayerSource::UserDatabase { revision } => {
             format!("Overridden by user database (revision {revision})")
-        }
-        ConfigLayerSource::Bootstrap { file } => {
-            format!("Overridden by bootstrap: {}", file.display())
         }
     }
 }

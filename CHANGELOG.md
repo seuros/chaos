@@ -9,6 +9,35 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Removed (MAJOR: read before upgrading)
+- TOML is no longer a configuration source. `/etc/chaos/config.toml` and
+  project `.chaos/config.toml` files are not read. `$CHAOS_HOME/config.toml`
+  is a strict two-key bootstrap file (`storage_url`, `egress_url`); any other
+  key stops startup with the `chaos config set` command that replaces it.
+- `chaos config migrate` and the TOML-to-database migration path. Settings
+  already in the database are unaffected.
+- The `sqlite_home` bootstrap key. Use `CHAOS_SQLITE_HOME` or an explicit
+  `sqlite:///path/chaos.sqlite` URL. A relative `CHAOS_SQLITE_HOME` now resolves
+  against the chaos home.
+- IPC: `ConfigLayerSource::{System, User, Bootstrap, Project}`, the `filePath`
+  fields on config write requests/responses, and the `configLayerReadonly`
+  error code.
+
+### Changed
+- Storage is never chosen silently. Non-interactive commands now require
+  `storage_url`, `CHAOS_STORAGE_URL`, or `CHAOS_SQLITE_HOME` and exit with
+  setup instructions otherwise; the console still runs first-run setup.
+- `chaos config export` prints JSON and `chaos config import` reads JSON.
+- Administrator network constraints come only from
+  `/etc/chaos/requirements.toml` (`[experimental_network]`).
+- `rules/*.decrees` and `agents/` are discovered through asset folders:
+  `/etc/chaos` (grants allowed), `$CHAOS_HOME` and trusted project `.chaos`
+  folders (restrictions only). `$CHAOS_HOME/rules` is now loaded from disk.
+
+### Added
+- `docs/getting-started.md`: database provisioning (PostgreSQL recommended),
+  first run, headless bootstrap, first provider.
+
 ## [47.13.2] - 2026-10-11
 
 ### Added

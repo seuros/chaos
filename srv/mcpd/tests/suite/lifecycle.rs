@@ -489,21 +489,23 @@ async fn refresh_models_fetches_provider_catalog_through_mcp() -> Result<()> {
         .mount(&server)
         .await;
     let home = TempDir::new()?;
+    // User settings never hold literal credentials; the key arrives via env.
     std::fs::write(
-        home.path().join("config.toml"),
-        format!(
-            r#"
-model_provider = "fixture"
-[model_providers.fixture]
-name = "Fixture"
-base_url = "{}"
-wire_api = "responses"
-experimental_bearer_token = "fixture-key"
-"#,
-            server.uri()
-        ),
+        home.path().join(mcp_test_support::SETTINGS_FILE),
+        serde_json::to_vec_pretty(&json!({
+            "model_provider": "fixture",
+            "model_providers": {
+                "fixture": {
+                    "name": "Fixture",
+                    "base_url": server.uri(),
+                    "wire_api": "responses",
+                    "env_key": "FIXTURE_API_KEY",
+                }
+            }
+        }))?,
     )?;
-    let mut mcp = McpProcess::new(home.path()).await?;
+    let mut mcp =
+        McpProcess::new_with_env(home.path(), &[("FIXTURE_API_KEY", Some("fixture-key"))]).await?;
     mcp.initialize().await?;
     let request_id = mcp
         .send_custom_request(

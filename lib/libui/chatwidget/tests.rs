@@ -153,7 +153,28 @@ async fn test_config() -> Config {
     // hits macOS's default 256-descriptor limit.
     static TEST_CHAOS_HOME: OnceLock<PathBuf> = OnceLock::new();
     let chaos_home = TEST_CHAOS_HOME
-        .get_or_init(|| tempdir().expect("create temp chaos home").keep())
+        .get_or_init(|| {
+            let home = tempdir().expect("create temp chaos home").keep();
+            // Bootstrap and migrate once: concurrent tests must not race the
+            // bootstrap lock or the first SQLite migration of the shared home.
+            let migrate_home = home.clone();
+            std::thread::spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("runtime")
+                    .block_on(async {
+                        chaos_kern::test_support::bootstrap_sqlite(&migrate_home)
+                            .expect("bootstrap sqlite");
+                        chaos_kern::user_settings::open(&migrate_home)
+                            .await
+                            .expect("open shared test storage");
+                    });
+            })
+            .join()
+            .expect("shared test home setup");
+            home
+        })
         .clone();
     ConfigBuilder::default()
         .chaos_home(chaos_home.clone())
@@ -5750,6 +5771,7 @@ async fn bare_goal_shows_usage_without_submitting_or_switching_mode() {
 #[cfg(test)]
 async fn collaboration_modes_defaults_to_code_on_startup() {
     let chaos_home = tempdir().expect("tempdir");
+    chaos_kern::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap sqlite");
     let cfg = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()

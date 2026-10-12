@@ -1,7 +1,7 @@
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chaos_kern::runtime_db::{LogEntry, open_or_create_runtime_db_with_config};
+use chaos_kern::runtime_db::{LogEntry, open_or_create_runtime_db};
 use tokio::time::timeout;
 
 #[test]
@@ -30,11 +30,7 @@ async fn unavailable_postgres_fails_without_creating_sqlite() -> anyhow::Result<
     let storage_url = "postgres://chaos:chaos@127.0.0.1:1/chaos?connect_timeout=1";
     let result = timeout(
         Duration::from_secs(15),
-        open_or_create_runtime_db_with_config(
-            Some(storage_url),
-            chaos_home.path(),
-            "test-provider",
-        ),
+        open_or_create_runtime_db(storage_url, chaos_home.path(), "test-provider"),
     )
     .await
     .map_err(|_| anyhow::anyhow!("timed out waiting for PostgreSQL startup failure"))?;
@@ -65,12 +61,8 @@ async fn live_postgres_log_round_trip_creates_no_sqlite() -> anyhow::Result<()> 
     let storage_url = std::env::var("CHAOS_TEST_POSTGRES_URL")
         .map_err(|_| anyhow::anyhow!("CHAOS_TEST_POSTGRES_URL must be set"))?;
     let chaos_home = tempfile::tempdir()?;
-    let runtime = open_or_create_runtime_db_with_config(
-        Some(storage_url.as_str()),
-        chaos_home.path(),
-        "test-provider",
-    )
-    .await?;
+    let runtime =
+        open_or_create_runtime_db(storage_url.as_str(), chaos_home.path(), "test-provider").await?;
     let marker = format!(
         "chaos-postgres-log-smoke-{}-{}",
         std::process::id(),

@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::config::parsing::deserialize_config_toml_with_base as _deserialize_config_toml_with_base;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::LoaderOverrides;
-use crate::config_loader::load_config_layers_state;
+use crate::config_loader::load_config_layers_state_with_bootstrap;
 
 /// Builder for constructing a [`Config`] from layered sources.
 #[derive(Debug, Clone, Default)]
@@ -66,11 +66,15 @@ impl ConfigBuilder {
             None => AbsolutePathBuf::current_dir()?,
         };
         harness_overrides.cwd = Some(cwd.to_path_buf());
-        let config_layer_stack = load_config_layers_state(
+        let bootstrap = crate::user_settings::resolve_bootstrap(&chaos_home)
+            .await
+            .map_err(std::io::Error::other)?;
+        let config_layer_stack = load_config_layers_state_with_bootstrap(
             &chaos_home,
             Some(cwd.clone()),
             &cli_overrides,
             loader_overrides,
+            &bootstrap,
         )
         .await?;
         let mut merged_toml = config_layer_stack.effective_config();
@@ -91,38 +95,20 @@ impl ConfigBuilder {
         }
         strip_toml_global_mcp_servers(&mut merged_toml);
 
-        let config_toml: ConfigToml = match merged_toml.try_into() {
-            Ok(config_toml) => config_toml,
-            Err(err) => {
-                if let Some(config_error) =
-                    crate::config_loader::first_layer_config_error(&config_layer_stack).await
-                {
-                    return Err(crate::config_loader::io_error_from_config_error(
-                        std::io::ErrorKind::InvalidData,
-                        config_error,
-                        Some(err),
-                    ));
-                }
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, err));
-            }
-        };
-        let sqlite_home = config_toml
-            .sqlite_home
-            .clone()
-            .map(|path| path.to_path_buf())
-            .unwrap_or_else(|| chaos_home.clone());
+        let config_toml: ConfigToml = merged_toml
+            .try_into()
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
         harness_overrides.mcp_servers = Some(
             crate::config::load_effective_mcp_servers(
-                config_toml.storage_url.as_deref(),
-                &sqlite_home,
+                &bootstrap.storage_url,
+                &bootstrap.sqlite_home,
                 &config_layer_stack,
             )
             .await?,
         );
         harness_overrides.active_project_trust = Some(
             crate::config_loader::resolve_active_project_trust(
-                config_toml.storage_url.as_deref(),
-                &sqlite_home,
+                &bootstrap,
                 cwd.as_path(),
                 &config_layer_stack,
             )
@@ -133,6 +119,7 @@ impl ConfigBuilder {
             harness_overrides,
             chaos_home,
             config_layer_stack,
+            bootstrap,
         )
     }
 }
@@ -206,11 +193,15 @@ impl Config {
         strip_toml_global_mcp_servers(&mut cli_layer);
         crate::config_loader::merge_toml_values(&mut merged, &cli_layer);
         let config_toml = _deserialize_config_toml_with_base(merged, &chaos_home)?;
+        let bootstrap = crate::user_settings::BootstrapConfig::read(&chaos_home)
+            .and_then(|bootstrap| bootstrap.resolve(&chaos_home))
+            .map_err(std::io::Error::other)?;
         Self::load_config_with_layer_stack(
             config_toml,
             ConfigOverrides::default(),
             chaos_home,
             ConfigLayerStack::default(),
+            bootstrap,
         )
     }
 

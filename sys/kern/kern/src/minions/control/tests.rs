@@ -30,6 +30,7 @@ async fn test_config_with_cli_overrides(
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> (TempDir, Config) {
     let home = TempDir::new().expect("create temp dir");
+    crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap sqlite");
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .cli_overrides(cli_overrides)

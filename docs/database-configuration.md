@@ -1,59 +1,75 @@
 # Database configuration and approvals
 
-User settings and remembered approvals use the existing runtime database:
-SQLite by default, or the configured PostgreSQL database/schema. Use one owner
-per database/schema. Storage failure does not fall back to TOML or another
-database.
+User settings and remembered approvals live in the runtime database: SQLite or
+the configured PostgreSQL database/schema. Use one owner per database/schema.
+Storage failure never falls back to a file or another database.
+
+## Bootstrap
+
+`$CHAOS_HOME/config.toml` holds exactly two keys and nothing else:
+
+```toml
+storage_url = "env:CHAOS_DATABASE_URL"
+egress_url = "https://gateway.example/egress/chaos"
+```
+
+Both accept a literal URL, an `env:VARIABLE` reference, or a credential
+reference into the local vault. Any other key, including the retired
+`sqlite_home`, stops every command with a message naming the key and the
+`chaos config set` command that replaces it. The file is not a configuration
+layer; it is read once to find the database.
+
+Storage is never chosen silently. Resolution order:
+
+1. `storage_url` in the bootstrap file
+2. `CHAOS_STORAGE_URL`
+3. `chaos.sqlite` under `CHAOS_SQLITE_HOME`, when that variable is set
+
+When none applies, interactive `chaos` runs first-run storage setup; every other
+command exits with instructions. `CHAOS_EGRESS_URL` overrides `egress_url`.
+A running process keeps the storage it resolved at startup if the bootstrap
+file is removed; a file that is present but invalid stops the next storage
+access.
 
 ## First-run storage setup
 
-When `storage_url` is missing or empty in `$CHAOS_HOME/config.toml`, the interactive
-console asks where to store data before loading database-backed settings:
+When the bootstrap file has no `storage_url`, the console asks where to store
+data before loading database-backed settings:
 
 - **PostgreSQL (Recommended)** connects to an existing database on a local or
   remote PostgreSQL server. Enter a `postgresql://user:password@host:5432/database`
   URL or an `env:VARIABLE` reference. ChaOS initializes its tables; it does not
-  install PostgreSQL or create the database itself. Use one owner per
-  database/schema.
+  install PostgreSQL or create the database itself.
 - **SQLite** creates `chaos.sqlite` in the ChaOS home, with no server required.
 
-Connection input is shown as entered. Literal PostgreSQL URLs use the secure
-vault; environment references are saved unchanged. The OS credential store holds
-only the vault's unlock key. If it is unavailable, onboarding fails without
-writing the connection to plaintext TOML, on every platform. Use `env:VARIABLE`
-when no OS credential store is available (including headless FreeBSD).
+Literal PostgreSQL URLs go to the encrypted vault; environment references are
+saved unchanged. The OS credential store holds only the vault's unlock key. If
+it is unavailable, onboarding fails without writing plaintext. Use
+`env:VARIABLE` when no OS credential store is available (including headless
+FreeBSD).
 
 Setup saves `storage_url` only after successful database initialization.
-Connection failures stay on the setup screen for retry or a different choice;
-there is no automatic SQLite fallback. Escape goes back or quits, and Ctrl+C
-quits without saving a choice.
+Connection failures stay on the setup screen for retry or a different choice.
+Escape goes back or quits, and Ctrl+C quits without saving a choice.
 
-A non-empty `storage_url` in `config.toml` bypasses this screen: use a PostgreSQL or
-SQLite URL, or a reference such as `env:CHAOS_DATABASE_URL`. Literal URLs do not
-require an environment variable. Configured references are resolved during normal
-startup; a missing referenced variable or unavailable keyring remains an error,
-not a reason to silently select another database.
-
-Environment variables alone (`CHAOS_STORAGE_URL`, `CHAOS_DATABASE_URL`, or
-`CHAOS_SQLITE_HOME`), an existing local database, and `installation-id` do not
-replace the TOML storage choice. Non-interactive commands retain their existing
-environment/default SQLite behavior.
+Headless installs skip the screen with
+`chaos config bootstrap set storage_url <url|env:VAR>` or `CHAOS_STORAGE_URL`.
+See [Getting started](./getting-started.md).
 
 ## Ownership
 
-- `~/.chaos/config.toml` contains bootstrap `storage_url` and `egress_url`.
-  Legacy `sqlite_home` is accepted during migration.
 - Preferences, profiles, providers, notices, trust decisions, MCP registrations,
   and remembered approvals are database-backed.
 - Global and project lifecycle hooks are database-backed, managed with
-  `chaos hooks` or policy-authorized `hooks_*` tools (human-approved by default). `hooks.json` files are never
-  loaded at runtime. Project hooks also require project trust.
-  See [chaos-hooks(7)](../man/chaos-hooks.7.md) for explicit legacy import and
-  approval semantics.
-- Project defaults, instructions, `.mcp.json`, standalone `agents/` documents,
-  and administrator policy remain files.
-- Project configuration cannot redirect bootstrap or grant security authority.
-  Project rules can restrict authority, not supply positive grants.
+  `chaos hooks` or policy-authorized `hooks_*` tools (human-approved by default).
+  `hooks.json` files are never loaded at runtime. Project hooks also require
+  project trust. See [chaos-hooks(7)](../man/chaos-hooks.7.md).
+- Project `.mcp.json`, project instructions, and `agents/` documents remain
+  files. There is no project `config.toml` and no system `config.toml`.
+- Administrator constraints live in `/etc/chaos/requirements.toml`, including
+  network policy under `[experimental_network]`. Administrator rules in
+  `/etc/chaos/rules/*.decrees` are the only rules that can grant. Rules under
+  `$CHAOS_HOME/rules/` and a trusted project's `.chaos/rules/` can only restrict.
 - Credentials use opaque references backed by `$CHAOS_HOME/secrets/local.age`.
   macOS keeps the vault's single unlock key in the native login Keychain.
   Provider auth modes `keyring` and `auto` use this same vault with no plaintext
@@ -61,52 +77,24 @@ environment/default SQLite behavior.
   unchanged.
 - The owner-only `installation-id` is local application state, not an export.
 
-Preference precedence remains system defaults, database user settings, trusted
-project defaults, then temporary overrides. Administrator requirements constrain
-the result independently.
+Preference precedence is system defaults, database user settings, then
+temporary session overrides. Administrator requirements constrain the result
+independently. Project trust gates `.mcp.json`, project rules, and project
+agent roles; it never supplies positive grants.
 
-Configured storage URLs retain precedence over `CHAOS_STORAGE_URL`.
-`CHAOS_EGRESS_URL` retains its existing egress override behavior.
-Bootstrap accepts connection references such as:
+Changing storage destinations requires a restart. Recovery commands validate
+literal URLs with the existing storage/egress validators and never resolve
+credential references merely to save an offline edit.
 
-```toml
-storage_url = "env:CHAOS_DATABASE_URL"
-egress_url = "https://gateway.example/egress/chaos"
-```
+## Upgrading from TOML-era installs
 
-Changing storage destinations requires restart. Recovery commands validate
-literal URLs using existing storage/egress validators and share the migration
-lock. They do not resolve credential references merely to save an offline edit.
-
-## Migration
-
-Stop older ChaOS processes before migrating. Do not run older binaries against
-the migrated installation. If credentials still use the pre-47.8 per-item
-Keychain store, import them with 47.8.x before installing 47.9.0, or re-enter them
-in the current version (see below). Settings migration does not import those
-Keychain items.
-
-```sh
-chaos config migrate --dry-run
-chaos config migrate
-chaos config doctor
-```
-
-Dry-run does not write settings or access the keychain. Actual migration
-validates settings, creates an owner-only TOML backup, and imports preferences,
-restrictive user rules, and inactive historical grants. A source digest makes
-interrupted TOML cleanup retryable without overwriting newer database edits.
-
-Old positive MCP, connector, shell, and network grants require reapproval.
-After migration, legacy user `rules/*.decrees` files are no longer live policy.
-Executable identity mappings must be defined in administrator policy.
-
-Explicit credential fields and environment/header values in global MCP
-registrations move to the encrypted vault before references are persisted. Endpoint
-userinfo must instead be moved to bearer-token/header references. Arbitrary
-secrets in commands, arguments, or free text cannot be identified automatically.
-Backups and historical database pages may retain old credentials; rotate them
-when necessary.
+47.14.0 removed `chaos config migrate` and every TOML configuration layer. If a
+pre-47.14 bootstrap file still carries settings, startup names the first
+offending key; move it with `chaos config set <key> <json>` and delete it from
+the file. A `sqlite_home` key must be replaced with `CHAOS_SQLITE_HOME` or an
+explicit `sqlite:///path/chaos.sqlite` URL. `/etc/chaos/config.toml` and
+`.chaos/config.toml` files are no longer read; admin network tables move to
+`requirements.toml`. Settings already in the database are unaffected.
 
 ## Credential vault and macOS prompts
 
@@ -115,32 +103,19 @@ mode, and named secrets share one encrypted vault per ChaOS home. Its unlock key
 is loaded once per process and kept in memory, never written to plaintext disk.
 Concurrent callers share that lookup. The decrypted snapshot is reused only
 while the ciphertext is unchanged; writes and deletions by other processes are
-observed on subsequent vault reads. Provider auth still honors its explicit
-snapshot/reload semantics. Mutations are locked across processes and persisted
-atomically with owner-only permissions. Missing keys or corrupt ciphertext fail
-closed; an existing vault never gets a replacement unlock key.
+observed on subsequent vault reads. Mutations are locked across processes and
+persisted atomically with owner-only permissions. Missing keys or corrupt
+ciphertext fail closed; an existing vault never gets a replacement unlock key.
 
-Legacy per-item Keychain import and `chaos config migrate-secrets` were removed
-in 47.9.0. Stop ChaOS and use 47.8.x to run that command **before** upgrading if
-credentials have not yet been imported, or re-enter them in the current version.
-Already-migrated vaults, reference IDs, and MCP approval identities are unchanged.
-47.9.0 never reads or imports legacy Keychain items. Explicit `file` provider
-credentials remain separate. If `auto` previously fell back to `auth.json`,
-select `file` explicitly or reconnect the account into the vault; `auto` no
-longer reads plaintext.
+The `keyring:chaos-settings/UUID` reference syntax addresses records inside this
+home-local vault. References alone are not portable between homes. Back up the
+encrypted vault **and** its OS-held key. Vault schema v2 is not writable by
+pre-47.8 ChaOS versions.
 
-The existing `keyring:chaos-settings/UUID` reference syntax is retained, but now
-addresses records inside this home-local vault. References alone are not
-portable between homes. Back up the encrypted vault **and** its OS-held key.
-Vault schema v2 is not writable by pre-47.8 ChaOS versions.
-
-Normal operation reads an existing vault's unlock key once per home/process,
-not once per MCP environment value or credential. Creating a new vault also
-verifies its newly saved key.
-macOS can still ask for authorization after restart or binary-signature changes;
-bulk Keychain queries cannot bypass per-item access controls. Locking Keychain
-does not erase a running process's already unlocked key; restart ChaOS to discard
-it. External master-key changes likewise require a restart.
+macOS can still ask for authorization after restart or binary-signature changes.
+Locking Keychain does not erase a running process's already unlocked key;
+restart ChaOS to discard it. External master-key changes likewise require a
+restart.
 
 ## Commands
 
@@ -149,28 +124,30 @@ chaos config get
 chaos config get model
 chaos config set model '"your-model-id"'
 chaos config unset model
-chaos config export > settings.toml
-chaos config import settings.toml
+chaos config export > settings.json
+chaos config import settings.json
 chaos approvals list
 chaos approvals revoke <grant-id>
 chaos approvals revoke all
 ```
 
-`set` accepts JSON. Import replaces the user settings document with validated
-TOML using optimistic revision checking. Neither import nor ordinary edits can
-create positive approval grants. Export excludes live grants and secret values;
-it does not include the separately managed MCP registry or project/admin files.
+`set` accepts JSON. Import replaces the user settings document with a validated
+JSON document using optimistic revision checking. Neither import nor ordinary
+edits can create positive approval grants. Export excludes live grants and
+secret values; it does not include the separately managed MCP registry or
+project/admin files.
 
 Recovery without starting providers, MCP servers, or schedulers:
 
 ```sh
 chaos config bootstrap show
 chaos config bootstrap set storage_url env:CHAOS_DATABASE_URL
+chaos config doctor
 ```
 
 Inspection redacts bootstrap connection values and preserves opaque credential
-references. API user layers use `userDatabase` with a revision; writes return
-`filePath: null` and an explicit source. Stale revisions are rejected.
+references. API user layers use `userDatabase` with a revision; writes return an
+explicit source. Stale revisions are rejected.
 
 ## Approval boundaries and current limits
 
@@ -192,8 +169,7 @@ approval. Retry with an explicit one-shot decision if appropriate.
 
 New turns require readable authoritative settings. Ordinary preferences remain
 session snapshots unless an existing UI action refreshes them; start a new
-session after CLI preference edits. Automatic preference refresh and exhaustive
-per-field source-classification coverage remain follow-up work.
+session after CLI preference edits.
 
 For restoration, stop sessions, restore storage, and revoke all installation-local
 grants before restarting. A different installation must retain its own new

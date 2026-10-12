@@ -18,19 +18,15 @@ fn cursor_to_anchor_normalizes_timestamp_format() {
 }
 
 #[tokio::test]
-async fn open_runtime_db_with_config_uses_storage_url() {
+async fn open_runtime_db_uses_storage_url() {
     let chaos_home = tempfile::tempdir().expect("create chaos home");
     let storage_dir = tempfile::tempdir().expect("create storage dir");
     let db_path = storage_dir.path().join("configured.sqlite");
     let storage_url = format!("sqlite://{}", db_path.display());
 
-    let runtime = open_or_create_runtime_db_with_config(
-        Some(&storage_url),
-        chaos_home.path(),
-        "test-provider",
-    )
-    .await
-    .expect("open runtime db from config storage_url");
+    let runtime = open_or_create_runtime_db(&storage_url, chaos_home.path(), "test-provider")
+        .await
+        .expect("open runtime db from bootstrap storage_url");
 
     std::assert_matches!(
         runtime,
@@ -47,7 +43,7 @@ async fn open_runtime_db_with_config_uses_storage_url() {
         !tokio::fs::try_exists(&chaos_proc::runtime_db_path(chaos_home.path()))
             .await
             .expect("stat fallback db"),
-        "explicit storage_url should not fall back to chaos_home"
+        "storage_url decides the backend; chaos_home only keys local state"
     );
 }
 
@@ -60,7 +56,7 @@ async fn failed_mount_does_not_hide_the_next_mount_error_behind_runtime_breaker(
         missing_parent.join("runtime.sqlite").display()
     );
 
-    let first = mount_vfs_for(Some(&storage_url), chaos_home.path())
+    let first = mount_vfs_for(&storage_url, chaos_home.path())
         .await
         .expect_err("opening SQLite below a missing parent should fail");
     assert!(
@@ -68,7 +64,7 @@ async fn failed_mount_does_not_hide_the_next_mount_error_behind_runtime_breaker(
         "first mount should expose the storage error: {first}"
     );
 
-    let second = mount_vfs_for(Some(&storage_url), chaos_home.path())
+    let second = mount_vfs_for(&storage_url, chaos_home.path())
         .await
         .expect_err("a repeated mount should still report the storage failure");
     assert!(
@@ -78,5 +74,25 @@ async fn failed_mount_does_not_hide_the_next_mount_error_behind_runtime_breaker(
     assert!(
         !second.to_string().contains("circuit"),
         "mount errors must remain actionable: {second}"
+    );
+}
+
+#[test]
+fn home_local_sqlite_urls_mount_under_the_home_key() {
+    let home = tempfile::tempdir().expect("create chaos home");
+    let url = format!("sqlite://{}", home.path().join("chaos.sqlite").display());
+    assert_eq!(
+        mount_config_for(&url, home.path()).expect("mount config"),
+        chaos_vfs::MountConfig::sqlite_home(home.path())
+    );
+    let elsewhere = format!("sqlite://{}", home.path().join("other.sqlite").display());
+    assert_eq!(
+        mount_config_for(&elsewhere, home.path()).expect("mount config"),
+        chaos_vfs::MountConfig::sqlite_url(&elsewhere)
+    );
+    let with_options = format!("{url}?mode=ro");
+    assert_eq!(
+        mount_config_for(&with_options, home.path()).expect("mount config"),
+        chaos_vfs::MountConfig::sqlite_url(&with_options)
     );
 }

@@ -1,5 +1,4 @@
 use crate::ConfigLayerStack;
-use crate::ConfigLayerStackOrdering;
 use crate::types::AgentRoleConfig;
 use chaos_realpath::AbsolutePathBufGuard;
 use serde::Deserialize;
@@ -14,24 +13,14 @@ pub fn load_agent_roles(
     config_layer_stack: &ConfigLayerStack,
     startup_warnings: &mut Vec<String>,
 ) -> std::io::Result<BTreeMap<String, AgentRoleConfig>> {
-    let layers = config_layer_stack.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ false,
-    );
     let mut roles: BTreeMap<String, AgentRoleConfig> = BTreeMap::new();
-    for layer in layers {
-        // Resolve role assets relative to bootstrap.
-        let folder = match &layer.name {
-            chaos_ipc::api::ConfigLayerSource::Bootstrap { file } => file.parent(),
-            _ => layer.config_folder(),
-        };
-        let Some(config_folder) = folder else {
-            continue;
-        };
-        let layer_roles = discover_agent_roles_in_dir(
-            config_folder.as_path().join("agents").as_path(),
-            startup_warnings,
-        )?;
+    for folder in config_layer_stack
+        .asset_folders()
+        .iter()
+        .filter(|folder| folder.is_enabled())
+    {
+        let layer_roles =
+            discover_agent_roles_in_dir(folder.agents_dir().as_path(), startup_warnings)?;
 
         for (role_name, role) in layer_roles {
             let mut merged_role = role;

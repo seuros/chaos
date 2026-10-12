@@ -4,6 +4,7 @@
 //! We prefer this to using a crate feature to avoid building multiple
 //! permutations of the crate.
 
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -329,4 +330,32 @@ pub fn assistant_msg(text: &str) -> ResponseItem {
         end_turn: None,
         phase: None,
     }
+}
+
+/// Point a test home at a SQLite database inside it, unless storage is already
+/// configured. Storage is never chosen silently, so every test home needs this.
+pub fn bootstrap_sqlite(home: &Path) -> anyhow::Result<()> {
+    if crate::user_settings::BootstrapConfig::read(home)?.has_storage_url() {
+        return Ok(());
+    }
+    let url = format!("sqlite://{}", home.join("chaos.sqlite").display());
+    crate::user_settings::set_bootstrap(home, "storage_url", &url)
+}
+
+/// Replace the test home's user settings document with `settings`.
+pub async fn seed_user_settings(home: &Path, settings: toml::Value) -> anyhow::Result<()> {
+    bootstrap_sqlite(home)?;
+    crate::user_settings::install_persistence();
+    crate::user_settings::validate(&settings, home)?;
+    let runtime = crate::user_settings::open(home).await?;
+    let revision = runtime.settings_snapshot().await?.revision;
+    runtime
+        .commit_settings(revision, &serde_json::to_value(settings)?, None)
+        .await?;
+    Ok(())
+}
+
+/// Parse `toml` and seed it as the test home's user settings.
+pub async fn seed_user_settings_toml(home: &Path, toml: &str) -> anyhow::Result<()> {
+    seed_user_settings(home, toml::from_str(toml)?).await
 }

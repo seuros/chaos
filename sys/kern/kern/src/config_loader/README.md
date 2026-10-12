@@ -1,10 +1,11 @@
 # `chaos-kern` config loader
 
-This module is the canonical place to **load and describe Chaos configuration layers** (user config, CLI/session overrides, and system config) and to produce:
+This module is the canonical place to **load and describe Chaos configuration layers** (database user settings, the project `.mcp.json` layer, and CLI/session overrides) and to produce:
 
-- An **effective merged** TOML config.
+- An **effective merged** config (`toml::Value` in memory; the database stores JSON).
 - **Per-key origins** metadata (which layer "wins" for a given key).
 - **Per-layer versions** (stable fingerprints) used for optimistic concurrency / conflict detection.
+- The **asset folders** that anchor file-based `rules/` and `agents/`.
 
 ## Public surface
 
@@ -15,8 +16,10 @@ Exported from `chaos_kern::config_loader`:
   - `effective_config() -> toml::Value`
   - `origins() -> HashMap<String, ConfigLayerMetadata>`
   - `layers_high_to_low() -> Vec<ConfigLayer>`
-  - `with_user_config(user_config) -> ConfigLayerStack`
+  - `asset_folders() -> &[AssetFolder]`
+  - `with_database_settings(revision, settings) -> ConfigLayerStack`
 - `ConfigLayerEntry` (one layer's `{name, config, version, disabled_reason}`; `name` carries source metadata)
+- `AssetFolder { scope: Admin | Home | Project, dir, disabled_reason }`
 - `LoaderOverrides` (test/override hooks, currently empty)
 - `merge_toml_values(base, overlay)` (public helper used elsewhere)
 
@@ -24,18 +27,28 @@ Exported from `chaos_kern::config_loader`:
 
 Precedence is **top overrides bottom**:
 
-1. **System** config (`/etc/chaos/config.toml`)
-2. **User** config (`$CHAOS_HOME/config.toml`)
-3. **Project** config (`.chaos/config.toml` in project tree)
-4. **Session flags** (CLI overrides, applied as dotted-path TOML writes)
+1. **User database** settings (the runtime database; written by `chaos config set`)
+2. **Project MCP** (`<project-root>/.mcp.json`, disabled when the project is untrusted)
+3. **Session flags** (CLI overrides, applied as dotted-path writes)
+
+Admin constraints from `/etc/chaos/requirements.toml` are applied on top of the
+merged result and can only narrow it. Bootstrap (`storage_url`, `egress_url` in
+`$CHAOS_HOME/config.toml`) is not a layer; the builder resolves it once and
+passes it to `Config` directly.
 
 Layers with a `disabled_reason` are still surfaced for UI, but are ignored when
-computing the effective config and origins metadata. This is what
-`ConfigLayerStack::effective_config()` implements.
+computing the effective config and origins metadata.
+
+## Asset folders
+
+File-based assets are discovered through `asset_folders()`, lowest precedence first:
+
+1. `/etc/chaos` (`Admin`): the only scope whose `rules/*.decrees` may grant.
+2. `$CHAOS_HOME` (`Home`): restrictions only; database user restrictions are merged here too.
+3. Every `<dir>/.chaos` between the project root and `cwd` (`Project`): restrictions only, and
+   carried with a `disabled_reason` when the project is not trusted.
 
 ## Typical usage
-
-Most callers want the effective config plus metadata:
 
 ```rust
 use chaos_kern::config_loader::{load_config_layers_state, LoaderOverrides};
@@ -58,9 +71,10 @@ let layers_for_ui = layers.layers_high_to_low();
 
 ## Internal layout
 
-Implementation is split by concern:
+Implementation is split by concern (shared code lives in `etc/sysctl`):
 
 - `state.rs`: public types (`ConfigLayerEntry`, `ConfigLayerStack`) + merge/origins convenience methods.
-- `overrides.rs`: CLI dotted-path overrides -> TOML "session flags" layer.
-- `merge.rs`: recursive TOML merge.
+- `assets.rs`: `AssetFolder` / `AssetScope`.
+- `overrides.rs`: CLI dotted-path overrides -> "session flags" layer.
+- `merge.rs`: recursive merge.
 - `fingerprint.rs`: stable per-layer hashing and per-key origins traversal.

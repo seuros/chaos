@@ -565,14 +565,17 @@ pub struct Config {
     /// Kernel-only mode policy carrier used when an orchestrator spawns a
     /// child session. This is never loaded from user config directly.
     pub(crate) mode_policy_override: Option<crate::modes::ModePolicy>,
-    /// Kernel-only admission flag; never accepted from config.toml.
+    /// Kernel-only admission flag; never accepted from user settings.
     pub(crate) unattended_recovery: bool,
 
-    /// Directory where Chaos stores the SQLite runtime DB.
+    /// Directory keying the SQLite mount root and workspace-write policy.
     pub sqlite_home: PathBuf,
 
-    /// Optional database URL for ChaOS runtime storage.
-    pub storage_url: Option<String>,
+    /// Runtime storage URL resolved from bootstrap; never a silent default.
+    pub storage_url: String,
+
+    /// Egress gateway from the bootstrap file, before `CHAOS_EGRESS_URL`.
+    pub(crate) bootstrap_egress_url: Option<String>,
 
     /// Directory where Chaos writes log files (defaults to `${CHAOS_HOME}/log`).
     pub log_dir: PathBuf,
@@ -710,7 +713,7 @@ pub struct Config {
     pub disable_user_scripts: bool,
 }
 
-/// Base config deserialized from ~/.chaos/config.toml.
+/// Base config deserialized from the merged settings layers.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ConfigToml {
@@ -725,11 +728,6 @@ pub struct ConfigToml {
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
-
-    /// Route all provider API requests through LSD's dynamic egress endpoint
-    /// (for example `http://gateway:3000/egress/chaos`), preserving vendor auth.
-    /// Overridden by `CHAOS_EGRESS_URL`.
-    pub egress_url: Option<String>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -881,15 +879,6 @@ pub struct ConfigToml {
     /// message-history store.
     #[serde(default)]
     pub history: Option<History>,
-
-    /// Directory where Chaos stores the SQLite runtime DB.
-    /// Defaults to `$CHAOS_SQLITE_HOME` when set. Otherwise uses `$CHAOS_HOME`.
-    pub sqlite_home: Option<AbsolutePathBuf>,
-
-    /// Optional database URL for ChaOS runtime storage.
-    /// Supports `sqlite:`, `sqlite://`, `postgres://`, and `postgresql://`.
-    /// When set, this takes precedence over `CHAOS_STORAGE_URL`.
-    pub storage_url: Option<String>,
 
     /// Directory where Chaos writes log files, for example `chaos-tui.log`.
     /// Defaults to `$CHAOS_HOME/log`.
@@ -1205,33 +1194,25 @@ pub(crate) fn normalize_storage_url(storage_url: Option<&str>) -> anyhow::Result
 pub async fn load_global_mcp_servers(
     chaos_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let storage_config = runtime_storage_config(chaos_home).map_err(|err| {
+    let bootstrap = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_servers_from_runtime_db(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
-    )
-    .await
+    load_global_mcp_servers_from_runtime_db(&bootstrap.storage_url, &bootstrap.sqlite_home).await
 }
 
 pub async fn load_global_mcp_server(
     chaos_home: &std::path::Path,
     name: &str,
 ) -> std::io::Result<Option<McpServerConfig>> {
-    let storage_config = runtime_storage_config(chaos_home).map_err(|err| {
+    let bootstrap = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_server_from_runtime_db(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
-        name,
-    )
-    .await
+    load_global_mcp_server_from_runtime_db(&bootstrap.storage_url, &bootstrap.sqlite_home, name)
+        .await
 }
 
 pub(crate) async fn load_effective_mcp_servers(
-    storage_url: Option<&str>,
+    storage_url: &str,
     sqlite_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> std::io::Result<HashMap<String, McpServerConfig>> {
@@ -1262,16 +1243,12 @@ pub(crate) async fn load_effective_mcp_servers(
 }
 
 async fn load_global_mcp_servers_from_runtime_db(
-    storage_url: Option<&str>,
+    storage_url: &str,
     sqlite_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_url,
-        sqlite_home,
-        "unknown",
-    )
-    .await
-    .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(storage_url, sqlite_home, "unknown")
+        .await
+        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_global_mcp_servers())
         .await
     {
@@ -1291,17 +1268,13 @@ async fn load_global_mcp_servers_from_runtime_db(
 }
 
 async fn load_global_mcp_server_from_runtime_db(
-    storage_url: Option<&str>,
+    storage_url: &str,
     sqlite_home: &std::path::Path,
     name: &str,
 ) -> std::io::Result<Option<McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_url,
-        sqlite_home,
-        "unknown",
-    )
-    .await
-    .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(storage_url, sqlite_home, "unknown")
+        .await
+        .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.get_global_mcp_server(name))
         .await
     {
@@ -1351,10 +1324,10 @@ pub async fn upsert_global_mcp_server(
     config: &McpServerConfig,
 ) -> anyhow::Result<()> {
     ensure_mcp_endpoint_has_no_credentials(config)?;
-    let storage_config = runtime_storage_config(chaos_home)?;
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
+    let bootstrap = runtime_storage_config(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(
+        &bootstrap.storage_url,
+        &bootstrap.sqlite_home,
         "unknown",
     )
     .await?;
@@ -1366,10 +1339,10 @@ pub async fn delete_global_mcp_server(
     chaos_home: &std::path::Path,
     name: &str,
 ) -> anyhow::Result<bool> {
-    let storage_config = runtime_storage_config(chaos_home)?;
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
+    let bootstrap = runtime_storage_config(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(
+        &bootstrap.storage_url,
+        &bootstrap.sqlite_home,
         "unknown",
     )
     .await?;
@@ -1380,7 +1353,7 @@ pub fn replace_global_mcp_servers(
     chaos_home: &std::path::Path,
     servers: &BTreeMap<String, McpServerConfig>,
 ) -> anyhow::Result<()> {
-    let storage_config = runtime_storage_config(chaos_home)?;
+    let bootstrap = runtime_storage_config(chaos_home)?;
     let servers = servers
         .iter()
         .map(|(name, config)| {
@@ -1396,9 +1369,9 @@ pub fn replace_global_mcp_servers(
             .enable_all()
             .build()?
             .block_on(async move {
-                let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-                    storage_config.storage_url.as_deref(),
-                    &storage_config.sqlite_home,
+                let runtime = crate::runtime_db::open_or_create_runtime_db(
+                    &bootstrap.storage_url,
+                    &bootstrap.sqlite_home,
                     "unknown",
                 )
                 .await?;
@@ -1412,17 +1385,10 @@ pub fn replace_global_mcp_servers(
 #[cfg(test)]
 pub(crate) use requirements::resolve_web_search_mode;
 
-struct RuntimeStorageConfig {
-    storage_url: Option<String>,
-    sqlite_home: PathBuf,
-}
-
-fn runtime_storage_config(chaos_home: &std::path::Path) -> anyhow::Result<RuntimeStorageConfig> {
-    let parsed = crate::user_settings::BootstrapConfig::read(chaos_home)?;
-    Ok(RuntimeStorageConfig {
-        storage_url: normalize_storage_url(parsed.resolved_storage_url(chaos_home)?.as_deref())?,
-        sqlite_home: parsed.sqlite_home(chaos_home),
-    })
+fn runtime_storage_config(
+    chaos_home: &std::path::Path,
+) -> anyhow::Result<crate::user_settings::ResolvedBootstrap> {
+    crate::user_settings::BootstrapConfig::read(chaos_home)?.resolve(chaos_home)
 }
 
 /// Persist project trust state in the runtime DB.
@@ -1431,16 +1397,16 @@ pub fn set_project_trust_level(
     project_path: &std::path::Path,
     trust_level: TrustLevel,
 ) -> anyhow::Result<()> {
-    let storage_config = runtime_storage_config(chaos_home)?;
+    let bootstrap = runtime_storage_config(chaos_home)?;
     let project_path = crate::runtime_db::normalize_cwd_for_runtime_db(project_path);
     std::thread::spawn(move || -> anyhow::Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async move {
-                let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-                    storage_config.storage_url.as_deref(),
-                    &storage_config.sqlite_home,
+                let runtime = crate::runtime_db::open_or_create_runtime_db(
+                    &bootstrap.storage_url,
+                    &bootstrap.sqlite_home,
                     "unknown",
                 )
                 .await?;
@@ -1453,7 +1419,7 @@ pub fn set_project_trust_level(
     .map_err(|_| anyhow::anyhow!("project trust persistence task panicked"))?
 }
 
-/// Save the default OSS provider preference to config.toml
+/// Save the default OSS provider preference in user settings.
 pub fn set_default_oss_provider(
     chaos_home: &std::path::Path,
     provider: &str,

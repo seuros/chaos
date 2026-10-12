@@ -161,7 +161,7 @@ async fn web_search_mode_updates_between_turns_with_sandbox_policy() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn web_search_tool_config_from_config_toml_is_forwarded_to_request() {
+async fn web_search_tool_config_from_user_settings_is_forwarded_to_request() {
     skip_if_no_network!();
 
     let server = start_mock_server().await;
@@ -172,8 +172,8 @@ async fn web_search_tool_config_from_config_toml_is_forwarded_to_request() {
     let resp_mock = responses::mount_sse_once(&server, sse).await;
 
     let home = Arc::new(tempfile::TempDir::new().expect("create chaos home"));
-    std::fs::write(
-        home.path().join("config.toml"),
+    core_test_support::seed_settings(
+        &home,
         r#"web_search = "live"
 
 [tools.web_search]
@@ -182,7 +182,7 @@ allowed_domains = ["example.com"]
 location = { country = "US", city = "New York", timezone = "America/New_York" }
 "#,
     )
-    .expect("write config.toml");
+    .await;
 
     let mut builder = test_chaos().with_model(TEST_MODEL).with_home(home);
     let test = builder

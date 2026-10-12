@@ -12,6 +12,7 @@ use tokio::sync::Semaphore;
 #[tokio::test]
 async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
     let home = tempfile::tempdir().unwrap();
+    chaos_kern::test_support::bootstrap_sqlite(home.path()).unwrap();
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .fallback_cwd(Some(home.path().to_path_buf()))

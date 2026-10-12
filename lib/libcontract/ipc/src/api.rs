@@ -160,36 +160,9 @@ pub enum SandboxModeV2 {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ConfigLayerSource {
-    /// System-wide config layer from a file (e.g. `/etc/chaos/config.toml`).
-    #[serde(rename_all = "camelCase")]
-    System {
-        /// This is the path to the system config.toml file, though it is not
-        /// guaranteed to exist.
-        file: AbsolutePathBuf,
-    },
-
-    /// User config layer from $CHAOS_HOME/config.toml. This layer is special
-    /// in that it is expected to be:
-    /// - writable by the user
-    /// - generally outside the workspace directory
-    #[serde(rename_all = "camelCase")]
-    User {
-        /// This is the path to the user's config.toml file, though it is not
-        /// guaranteed to exist.
-        file: AbsolutePathBuf,
-    },
-
     /// Owner-controlled runtime database settings; contains no connection URL.
     #[serde(rename_all = "camelCase")]
     UserDatabase { revision: i64 },
-
-    #[serde(rename_all = "camelCase")]
-    Bootstrap { file: AbsolutePathBuf },
-
-    /// Path to a .chaos/ folder within a project. There could be multiple of
-    /// these between `cwd` and the project/repo root.
-    #[serde(rename_all = "camelCase")]
-    Project { dot_codex_folder: AbsolutePathBuf },
 
     /// Project-scoped MCP configuration sourced from `<project-root>/.mcp.json`.
     #[serde(rename_all = "camelCase")]
@@ -204,12 +177,8 @@ impl ConfigLayerSource {
     /// from a layer with a lower precedence.
     pub fn precedence(&self) -> i16 {
         match self {
-            ConfigLayerSource::System { .. } => 10,
-            ConfigLayerSource::Bootstrap { .. } => 15,
-            ConfigLayerSource::User { .. } => 20,
             ConfigLayerSource::UserDatabase { .. } => 20,
             ConfigLayerSource::ProjectMcp { .. } => 24,
-            ConfigLayerSource::Project { .. } => 25,
             ConfigLayerSource::SessionFlags => 30,
         }
     }
@@ -429,8 +398,6 @@ pub struct OverriddenMetadata {
 pub struct ConfigWriteResponse {
     pub status: WriteStatus,
     pub version: String,
-    /// Present only for file-backed writes; database settings have no file path.
-    pub file_path: Option<AbsolutePathBuf>,
     pub source: ConfigLayerSource,
     pub overridden_metadata: Option<OverriddenMetadata>,
 }
@@ -438,7 +405,6 @@ pub struct ConfigWriteResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ConfigWriteErrorCode {
-    ConfigLayerReadonly,
     ConfigVersionConflict,
     ConfigValidationError,
     ConfigPathNotFound,
@@ -451,9 +417,9 @@ pub enum ConfigWriteErrorCode {
 pub struct ConfigReadParams {
     #[serde(default)]
     pub include_layers: bool,
-    /// Optional working directory to resolve project config layers. If specified,
-    /// return the effective config as seen from that directory (i.e., including any
-    /// project layers between `cwd` and the project/repo root).
+    /// Optional working directory used to resolve the project `.mcp.json`
+    /// layer. If specified, return the effective config as seen from that
+    /// directory.
     pub cwd: Option<String>,
 }
 
@@ -472,8 +438,6 @@ pub struct ConfigValueWriteParams {
     pub key_path: String,
     pub value: JsonValue,
     pub merge_strategy: MergeStrategy,
-    /// Path to the config file to write; defaults to the user's `config.toml` when omitted.
-    pub file_path: Option<String>,
     pub expected_version: Option<String>,
 }
 
@@ -481,8 +445,6 @@ pub struct ConfigValueWriteParams {
 #[serde(rename_all = "camelCase")]
 pub struct ConfigBatchWriteParams {
     pub edits: Vec<ConfigEdit>,
-    /// Path to the config file to write; defaults to the user's `config.toml` when omitted.
-    pub file_path: Option<String>,
     pub expected_version: Option<String>,
     /// When true, hot-reload the updated user config into all loaded threads after writing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -562,7 +524,7 @@ pub struct AppInfo {
     pub install_url: Option<String>,
     #[serde(default)]
     pub is_accessible: bool,
-    /// Whether this app is enabled in config.toml.
+    /// Whether this app is enabled in user settings.
     /// Example:
     /// ```toml
     /// [apps.bad_app]

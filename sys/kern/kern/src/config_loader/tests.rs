@@ -3,20 +3,25 @@ use super::load_config_layers_state;
 use super::resolve_relative_paths_in_config_toml;
 use crate::config::ConfigBuilder;
 use crate::config::ConfigOverrides;
-use crate::config::ConfigToml;
+use crate::config_loader::AssetFolder;
+use crate::config_loader::AssetScope;
 use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConfigRequirementsWithSources;
 use crate::config_loader::load_requirements_toml;
 use crate::config_loader::version_for_toml;
 use crate::runtime_db;
+use crate::test_support::bootstrap_sqlite;
+use crate::test_support::seed_user_settings;
+use crate::user_settings::BootstrapConfig;
+use crate::user_settings::ResolvedBootstrap;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
-use chaos_sysctl::CONFIG_TOML_FILE;
 use pretty_assertions::assert_eq;
 use std::path::Path;
+use std::path::PathBuf;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
 
@@ -60,28 +65,29 @@ foo = "xyzzy"
     Ok(())
 }
 
+/// Bootstrap SQLite storage in `chaos_home`, seed optional project root
+/// markers as user settings, and record a trust decision for `project_path`.
 async fn make_config_for_test(
     chaos_home: &Path,
     project_path: &Path,
     trust_level: TrustLevel,
     project_root_markers: Option<Vec<String>>,
 ) -> std::io::Result<()> {
-    crate::user_settings::install_persistence();
-    tokio::fs::write(
-        chaos_home.join(CONFIG_TOML_FILE),
-        toml::to_string(&ConfigToml {
-            project_root_markers,
-            ..Default::default()
-        })
-        .expect("serialize config"),
-    )
-    .await?;
-    crate::user_settings::migrate(chaos_home, false)
+    let mut settings = toml::map::Map::new();
+    if let Some(markers) = project_root_markers {
+        settings.insert(
+            "project_root_markers".to_string(),
+            TomlValue::Array(markers.into_iter().map(TomlValue::String).collect()),
+        );
+    }
+    seed_user_settings(chaos_home, TomlValue::Table(settings))
         .await
         .map_err(std::io::Error::other)?;
-    let runtime = runtime_db::open_or_create_runtime_db(chaos_home, "test-provider")
-        .await
-        .map_err(std::io::Error::other)?;
+    let bootstrap = ResolvedBootstrap::sqlite_in(chaos_home);
+    let runtime =
+        runtime_db::open_or_create_runtime_db(&bootstrap.storage_url, chaos_home, "test-provider")
+            .await
+            .map_err(std::io::Error::other)?;
     runtime
         .set_project_trust(
             runtime_db::normalize_cwd_for_runtime_db(project_path).as_path(),
@@ -91,9 +97,32 @@ async fn make_config_for_test(
         .map_err(std::io::Error::other)
 }
 
+async fn load_layers(
+    chaos_home: &Path,
+    cwd: &Path,
+) -> std::io::Result<crate::config_loader::ConfigLayerStack> {
+    load_config_layers_state(
+        chaos_home,
+        Some(AbsolutePathBuf::from_absolute_path(cwd)?),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides::default(),
+    )
+    .await
+}
+
+fn project_asset_dirs(stack: &crate::config_loader::ConfigLayerStack) -> Vec<PathBuf> {
+    stack
+        .asset_folders()
+        .iter()
+        .filter(|folder| folder.scope == AssetScope::Project)
+        .map(|folder| folder.dir.to_path_buf())
+        .collect()
+}
+
 #[tokio::test]
 async fn cli_overrides_resolve_relative_paths_against_cwd() -> std::io::Result<()> {
     let chaos_home = tempdir().expect("tempdir");
+    bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
     let cwd_dir = tempdir().expect("tempdir");
     let cwd_path = cwd_dir.path().to_path_buf();
 
@@ -116,31 +145,23 @@ async fn cli_overrides_resolve_relative_paths_against_cwd() -> std::io::Result<(
 }
 
 #[tokio::test]
-async fn returns_config_error_for_invalid_user_config_toml() {
+async fn returns_config_error_for_invalid_bootstrap_toml() {
     let tmp = tempdir().expect("tempdir");
-    let contents = "model = \"serpent\"\ninvalid = [";
-    let config_path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&config_path, contents).expect("write config");
+    let contents = "storage_url = \"sqlite:///tmp/x.sqlite\"\ninvalid = [";
+    std::fs::write(BootstrapConfig::path(tmp.path()), contents).expect("write config");
 
-    let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
-    let err = load_config_layers_state(
-        tmp.path(),
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await
-    .expect_err("expected error");
+    let err = load_layers(tmp.path(), tmp.path())
+        .await
+        .expect_err("expected error");
 
-    assert!(err.to_string().contains("invalid bootstrap TOML"));
+    assert!(err.to_string().contains("invalid bootstrap file"), "{err}");
 }
 
 #[tokio::test]
-async fn returns_config_error_for_schema_error_in_user_config() {
+async fn legacy_bootstrap_file_is_rejected_with_hint() {
     let tmp = tempdir().expect("tempdir");
-    let contents = "model_context_window = \"not_a_number\"";
-    let config_path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&config_path, contents).expect("write config");
+    let contents = "model_context_window = 1000\nstorage_url = \"sqlite:///tmp/x.sqlite\"\n";
+    std::fs::write(BootstrapConfig::path(tmp.path()), contents).expect("write config");
 
     let err = ConfigBuilder::default()
         .chaos_home(tmp.path().to_path_buf())
@@ -149,44 +170,39 @@ async fn returns_config_error_for_schema_error_in_user_config() {
         .await
         .expect_err("expected error");
 
-    assert!(err.to_string().contains("must be migrated"));
+    let message = err.to_string();
     assert!(
-        crate::user_settings::migrate(tmp.path(), true)
-            .await
-            .is_err()
+        message.contains("`model_context_window` is not a bootstrap setting"),
+        "{message}"
+    );
+    assert!(
+        message.contains("chaos config set model_context_window"),
+        "{message}"
     );
 }
 
 #[tokio::test]
-async fn returns_config_error_for_legacy_global_mcp_servers_in_user_config() {
+async fn sqlite_home_key_is_rejected_with_hint() {
     let tmp = tempdir().expect("tempdir");
-    let contents = r#"[mcp_servers.docs]
-command = "echo"
-"#;
-    let config_path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&config_path, contents).expect("write config");
-
-    let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
-    let err = load_config_layers_state(
-        tmp.path(),
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
+    std::fs::write(
+        BootstrapConfig::path(tmp.path()),
+        format!("sqlite_home = {:?}\n", tmp.path()),
     )
-    .await
-    .expect_err("expected error");
+    .expect("write config");
 
-    assert!(err.to_string().contains("must be migrated"));
-    assert!(
-        crate::user_settings::migrate(tmp.path(), true)
-            .await
-            .is_err()
-    );
+    let err = load_layers(tmp.path(), tmp.path())
+        .await
+        .expect_err("expected error");
+
+    let message = err.to_string();
+    assert!(message.contains("`sqlite_home` was removed"), "{message}");
+    assert!(message.contains("CHAOS_SQLITE_HOME"), "{message}");
 }
 
 #[tokio::test]
 async fn rejects_legacy_global_mcp_servers_in_cli_overrides() {
     let tmp = tempdir().expect("tempdir");
+    bootstrap_sqlite(tmp.path()).expect("bootstrap");
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
     let err = load_config_layers_state(
         tmp.path(),
@@ -205,26 +221,20 @@ async fn rejects_legacy_global_mcp_servers_in_cli_overrides() {
 }
 
 #[tokio::test]
-async fn returns_empty_when_all_layers_missing() {
+async fn returns_empty_user_layer_when_nothing_is_configured() {
     let tmp = tempdir().expect("tempdir");
+    bootstrap_sqlite(tmp.path()).expect("bootstrap");
 
-    let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
-    let layers = load_config_layers_state(
-        tmp.path(),
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await
-    .expect("load layers");
+    let layers = load_layers(tmp.path(), tmp.path())
+        .await
+        .expect("load layers");
     let user_layer = layers
         .get_user_layer()
-        .expect("expected a user layer even when CHAOS_HOME/config.toml does not exist");
+        .expect("expected a user layer even when no settings exist");
     assert_eq!(
         &ConfigLayerEntry {
             name: super::ConfigLayerSource::UserDatabase { revision: 0 },
             config: TomlValue::Table(toml::map::Map::new()),
-            raw_toml: None,
             version: format!(
                 "db:0:{}",
                 version_for_toml(&TomlValue::Table(toml::map::Map::new()))
@@ -233,37 +243,42 @@ async fn returns_empty_when_all_layers_missing() {
         },
         user_layer,
     );
-    assert_eq!(
-        user_layer.config,
-        TomlValue::Table(toml::map::Map::new()),
-        "expected empty config for user layer when config.toml does not exist"
-    );
 
-    let binding = layers.effective_config();
-    let base_table = binding.as_table().expect("base table expected");
+    let effective = layers.effective_config();
+    let table = effective.as_table().expect("top-level table expected");
     assert!(
-        base_table.contains_key("storage_url") && base_table.contains_key("sqlite_home"),
-        "bootstrap supplies the effective default storage destination"
+        !table.contains_key("storage_url") && !table.contains_key("egress_url"),
+        "bootstrap values never enter the settings document"
     );
-    let num_system_layers = layers
-        .layers_high_to_low()
-        .iter()
-        .filter(|layer| matches!(layer.name, super::ConfigLayerSource::System { .. }))
-        .count();
-    assert_eq!(
-        num_system_layers, 1,
-        "system layer should always be present"
-    );
+    assert_eq!(layers.layers_high_to_low().len(), 1);
+}
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        let effective = layers.effective_config();
-        let table = effective.as_table().expect("top-level table expected");
-        assert!(
-            table.contains_key("storage_url"),
-            "bootstrap supplies the effective default storage destination"
-        );
-    }
+#[tokio::test]
+async fn asset_folders_list_admin_home_and_trusted_projects() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let nested = project_root.join("child");
+    tokio::fs::create_dir_all(nested.join(".chaos")).await?;
+    tokio::fs::create_dir_all(project_root.join(".chaos")).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+
+    let chaos_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&chaos_home).await?;
+    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None).await?;
+    let layers = load_layers(&chaos_home, &nested).await?;
+
+    let folders = layers.asset_folders();
+    assert_eq!(folders[0].scope, AssetScope::Admin);
+    assert_eq!(folders[0].dir.as_path(), Path::new("/etc/chaos"));
+    assert_eq!(folders[1].scope, AssetScope::Home);
+    assert_eq!(folders[1].dir.as_path(), chaos_home.as_path());
+    assert_eq!(
+        project_asset_dirs(&layers),
+        vec![project_root.join(".chaos"), nested.join(".chaos")],
+        "project folders run from the project root toward cwd"
+    );
+    assert!(folders.iter().all(AssetFolder::is_enabled));
+    Ok(())
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -338,155 +353,11 @@ enforce_residency = "us"
 }
 
 #[tokio::test]
-async fn project_layers_prefer_closest_cwd() -> std::io::Result<()> {
-    let tmp = tempdir()?;
-    let project_root = tmp.path().join("project");
-    let nested = project_root.join("child");
-    tokio::fs::create_dir_all(nested.join(".chaos")).await?;
-    tokio::fs::create_dir_all(project_root.join(".chaos")).await?;
-    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
-
-    tokio::fs::write(
-        project_root.join(".chaos").join(CONFIG_TOML_FILE),
-        "foo = \"root\"\n",
-    )
-    .await?;
-    tokio::fs::write(
-        nested.join(".chaos").join(CONFIG_TOML_FILE),
-        "foo = \"child\"\n",
-    )
-    .await?;
-
-    let chaos_home = tmp.path().join("home");
-    tokio::fs::create_dir_all(&chaos_home).await?;
-    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None).await?;
-    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
-    let layers = load_config_layers_state(
-        &chaos_home,
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await?;
-
-    let project_layers: Vec<_> = layers
-        .layers_high_to_low()
-        .into_iter()
-        .filter_map(|layer| match &layer.name {
-            super::ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(project_layers.len(), 2);
-    assert_eq!(project_layers[0].as_path(), nested.join(".chaos").as_path());
-    assert_eq!(
-        project_layers[1].as_path(),
-        project_root.join(".chaos").as_path()
-    );
-
-    let config = layers.effective_config();
-    let foo = config
-        .get("foo")
-        .and_then(TomlValue::as_str)
-        .expect("foo entry");
-    assert_eq!(foo, "child");
-    Ok(())
-}
-
-#[tokio::test]
-async fn trusted_project_config_rejects_legacy_global_mcp_servers() {
-    let tmp = tempdir().expect("tempdir");
-    let project_root = tmp.path().join("project");
-    let chaos_home = tmp.path().join("home");
-    tokio::fs::create_dir_all(project_root.join(".chaos"))
-        .await
-        .expect("create project config dir");
-    tokio::fs::create_dir_all(&chaos_home)
-        .await
-        .expect("create chaos home");
-    tokio::fs::write(project_root.join(".git"), "gitdir: here")
-        .await
-        .expect("write git marker");
-    tokio::fs::write(
-        project_root.join(".chaos").join(CONFIG_TOML_FILE),
-        r#"[mcp_servers.docs]
-command = "echo"
-"#,
-    )
-    .await
-    .expect("write project config");
-    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None)
-        .await
-        .expect("seed trust");
-
-    let err = ConfigBuilder::default()
-        .chaos_home(chaos_home.clone())
-        .fallback_cwd(Some(project_root.clone()))
-        .build()
-        .await
-        .expect_err("expected error");
-
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("legacy top-level `mcp_servers`"));
-    assert!(err.to_string().contains(".chaos/config.toml"));
-}
-
-#[tokio::test]
-async fn project_paths_resolve_relative_to_dot_codex_and_override_in_order() -> std::io::Result<()>
-{
-    let tmp = tempdir()?;
-    let project_root = tmp.path().join("project");
-    let nested = project_root.join("child");
-    tokio::fs::create_dir_all(project_root.join(".chaos")).await?;
-    tokio::fs::create_dir_all(nested.join(".chaos")).await?;
-    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
-
-    let root_cfg = r#"
-model_instructions_file = "root.txt"
-"#;
-    let nested_cfg = r#"
-model_instructions_file = "child.txt"
-"#;
-    tokio::fs::write(project_root.join(".chaos").join(CONFIG_TOML_FILE), root_cfg).await?;
-    tokio::fs::write(nested.join(".chaos").join(CONFIG_TOML_FILE), nested_cfg).await?;
-    tokio::fs::write(
-        project_root.join(".chaos").join("root.txt"),
-        "root instructions",
-    )
-    .await?;
-    tokio::fs::write(
-        nested.join(".chaos").join("child.txt"),
-        "child instructions",
-    )
-    .await?;
-
-    let chaos_home = tmp.path().join("home");
-    tokio::fs::create_dir_all(&chaos_home).await?;
-    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None).await?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home)
-        .harness_overrides(ConfigOverrides {
-            cwd: Some(nested.clone()),
-            ..ConfigOverrides::default()
-        })
-        .build()
-        .await?;
-
-    assert_eq!(
-        config.base_instructions.as_deref(),
-        Some("child instructions")
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn cli_override_model_instructions_file_sets_base_instructions() -> std::io::Result<()> {
     let tmp = tempdir()?;
     let chaos_home = tmp.path().join("home");
     tokio::fs::create_dir_all(&chaos_home).await?;
-    tokio::fs::write(chaos_home.join(CONFIG_TOML_FILE), "").await?;
+    bootstrap_sqlite(&chaos_home).map_err(std::io::Error::other)?;
 
     let cwd = tmp.path().join("work");
     tokio::fs::create_dir_all(&cwd).await?;
@@ -518,77 +389,21 @@ async fn cli_override_model_instructions_file_sets_base_instructions() -> std::i
 }
 
 #[tokio::test]
-async fn project_layer_is_added_when_dot_codex_exists_without_config_toml() -> std::io::Result<()> {
-    let tmp = tempdir()?;
-    let project_root = tmp.path().join("project");
-    let nested = project_root.join("child");
-    tokio::fs::create_dir_all(&nested).await?;
-    tokio::fs::create_dir_all(project_root.join(".chaos")).await?;
-    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
-
-    let chaos_home = tmp.path().join("home");
-    tokio::fs::create_dir_all(&chaos_home).await?;
-    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None).await?;
-    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
-    let layers = load_config_layers_state(
-        &chaos_home,
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await?;
-
-    let project_layers: Vec<_> = layers
-        .layers_high_to_low()
-        .into_iter()
-        .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
-        .collect();
-    assert_eq!(
-        vec![&ConfigLayerEntry {
-            name: super::ConfigLayerSource::Project {
-                dot_codex_folder: AbsolutePathBuf::from_absolute_path(project_root.join(".chaos"))?,
-            },
-            config: TomlValue::Table(toml::map::Map::new()),
-            raw_toml: None,
-            version: version_for_toml(&TomlValue::Table(toml::map::Map::new())),
-            disabled_reason: None,
-        }],
-        project_layers
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn chaos_home_is_not_loaded_as_project_layer_from_home_dir() -> std::io::Result<()> {
+async fn chaos_home_is_not_listed_as_project_folder_from_home_dir() -> std::io::Result<()> {
     let tmp = tempdir()?;
     let home_dir = tmp.path().join("home");
     let chaos_home = home_dir.join(".chaos");
     tokio::fs::create_dir_all(&chaos_home).await?;
-    tokio::fs::write(chaos_home.join(CONFIG_TOML_FILE), "model = \"user\"\n").await?;
-    crate::user_settings::migrate(&chaos_home, false)
-        .await
-        .map_err(std::io::Error::other)?;
-
-    let cwd = AbsolutePathBuf::from_absolute_path(&home_dir)?;
-    let layers = load_config_layers_state(
+    seed_user_settings(
         &chaos_home,
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
+        toml::from_str("model = \"user\"\n").expect("settings"),
     )
-    .await?;
+    .await
+    .map_err(std::io::Error::other)?;
 
-    let project_layers: Vec<_> = layers
-        .get_layers(
-            super::ConfigLayerStackOrdering::HighestPrecedenceFirst,
-            true,
-        )
-        .into_iter()
-        .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
-        .collect();
-    let expected: Vec<&ConfigLayerEntry> = Vec::new();
-    assert_eq!(expected, project_layers);
+    let layers = load_layers(&chaos_home, &home_dir).await?;
+
+    assert_eq!(project_asset_dirs(&layers), Vec::<PathBuf>::new());
     assert_eq!(
         layers.effective_config().get("model"),
         Some(&TomlValue::String("user".to_string()))
@@ -598,194 +413,90 @@ async fn chaos_home_is_not_loaded_as_project_layer_from_home_dir() -> std::io::R
 }
 
 #[tokio::test]
-async fn chaos_home_within_project_tree_is_not_double_loaded() -> std::io::Result<()> {
+async fn chaos_home_within_project_tree_is_not_double_listed() -> std::io::Result<()> {
     let tmp = tempdir()?;
     let project_root = tmp.path().join("project");
     let nested = project_root.join("child");
-    let project_dot_codex = project_root.join(".chaos");
-    let nested_dot_codex = nested.join(".chaos");
+    let project_dot_chaos = project_root.join(".chaos");
+    let nested_dot_chaos = nested.join(".chaos");
 
-    tokio::fs::create_dir_all(&nested_dot_codex).await?;
+    tokio::fs::create_dir_all(&nested_dot_chaos).await?;
     tokio::fs::create_dir_all(project_root.join(".git")).await?;
-    tokio::fs::write(nested_dot_codex.join(CONFIG_TOML_FILE), "foo = \"child\"\n").await?;
+    tokio::fs::create_dir_all(&project_dot_chaos).await?;
+    make_config_for_test(&project_dot_chaos, &project_root, TrustLevel::Trusted, None).await?;
 
-    tokio::fs::create_dir_all(&project_dot_codex).await?;
-    make_config_for_test(&project_dot_codex, &project_root, TrustLevel::Trusted, None).await?;
-    chaos_sysctl::edit::ConfigEditsBuilder::new(&project_dot_codex)
-        .set_model(Some("user"), None)
-        .apply()
-        .await
-        .map_err(std::io::Error::other)?;
+    let layers = load_layers(&project_dot_chaos, &nested).await?;
 
-    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
-    let layers = load_config_layers_state(
-        &project_dot_codex,
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await?;
-
-    let project_layers: Vec<_> = layers
-        .get_layers(
-            super::ConfigLayerStackOrdering::HighestPrecedenceFirst,
-            true,
-        )
-        .into_iter()
-        .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
-        .collect();
-
-    let child_config: TomlValue = toml::from_str("foo = \"child\"\n").expect("parse child config");
+    assert_eq!(project_asset_dirs(&layers), vec![nested_dot_chaos]);
     assert_eq!(
-        vec![&ConfigLayerEntry {
-            name: super::ConfigLayerSource::Project {
-                dot_codex_folder: AbsolutePathBuf::from_absolute_path(&nested_dot_codex)?,
-            },
-            config: child_config.clone(),
-            raw_toml: None,
-            version: version_for_toml(&child_config),
-            disabled_reason: None,
-        }],
-        project_layers
-    );
-    assert_eq!(
-        layers.effective_config().get("foo"),
-        Some(&TomlValue::String("child".to_string()))
+        layers
+            .asset_folders()
+            .iter()
+            .filter(|folder| folder.scope == AssetScope::Home)
+            .map(|folder| folder.dir.to_path_buf())
+            .collect::<Vec<_>>(),
+        vec![project_dot_chaos]
     );
 
     Ok(())
 }
 
 #[tokio::test]
-async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<()> {
+async fn project_folders_disabled_when_untrusted_or_unknown() -> std::io::Result<()> {
     let tmp = tempdir()?;
     let project_root = tmp.path().join("project");
     let nested = project_root.join("child");
     tokio::fs::create_dir_all(nested.join(".chaos")).await?;
-    tokio::fs::write(
-        nested.join(".chaos").join(CONFIG_TOML_FILE),
-        "foo = \"child\"\n",
-    )
-    .await?;
-
-    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
-
-    let chaos_home_untrusted = tmp.path().join("home_untrusted");
-    tokio::fs::create_dir_all(&chaos_home_untrusted).await?;
-    make_config_for_test(
-        &chaos_home_untrusted,
-        &project_root,
-        TrustLevel::Untrusted,
-        None,
-    )
-    .await?;
-    chaos_sysctl::edit::ConfigEditsBuilder::new(&chaos_home_untrusted)
-        .set_model(Some("user"), None)
-        .apply()
-        .await
-        .map_err(std::io::Error::other)?;
-
-    let layers_untrusted = load_config_layers_state(
-        &chaos_home_untrusted,
-        Some(cwd.clone()),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await?;
-    let project_layers_untrusted: Vec<_> = layers_untrusted
-        .get_layers(
-            super::ConfigLayerStackOrdering::HighestPrecedenceFirst,
-            true,
-        )
-        .into_iter()
-        .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
-        .collect();
-    assert_eq!(project_layers_untrusted.len(), 1);
-    assert!(
-        project_layers_untrusted[0].disabled_reason.is_some(),
-        "expected untrusted project layer to be disabled"
-    );
-    assert_eq!(
-        project_layers_untrusted[0].config.get("foo"),
-        Some(&TomlValue::String("child".to_string()))
-    );
-    assert_eq!(
-        layers_untrusted.effective_config().get("model"),
-        Some(&TomlValue::String("user".to_string()))
-    );
-
-    let chaos_home_unknown = tmp.path().join("home_unknown");
-    tokio::fs::create_dir_all(&chaos_home_unknown).await?;
-    chaos_sysctl::edit::ConfigEditsBuilder::new(&chaos_home_unknown)
-        .set_model(Some("user"), None)
-        .apply()
-        .await
-        .map_err(std::io::Error::other)?;
-
-    let layers_unknown = load_config_layers_state(
-        &chaos_home_unknown,
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await?;
-    let project_layers_unknown: Vec<_> = layers_unknown
-        .get_layers(
-            super::ConfigLayerStackOrdering::HighestPrecedenceFirst,
-            true,
-        )
-        .into_iter()
-        .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
-        .collect();
-    assert_eq!(project_layers_unknown.len(), 1);
-    assert!(
-        project_layers_unknown[0].disabled_reason.is_some(),
-        "expected unknown-trust project layer to be disabled"
-    );
-    assert_eq!(
-        project_layers_unknown[0].config.get("foo"),
-        Some(&TomlValue::String("child".to_string()))
-    );
-    assert_eq!(
-        layers_unknown.effective_config().get("model"),
-        Some(&TomlValue::String("user".to_string()))
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn project_local_mcp_servers_in_config_toml_are_rejected_when_project_is_trusted()
--> std::io::Result<()> {
-    let tmp = tempdir()?;
-    let project_root = tmp.path().join("project");
-    let nested = project_root.join("child");
-    let dot_codex = project_root.join(".chaos");
-    let chaos_home = tmp.path().join("home");
-    tokio::fs::create_dir_all(&nested).await?;
-    tokio::fs::create_dir_all(&dot_codex).await?;
-    tokio::fs::create_dir_all(&chaos_home).await?;
     tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
-    tokio::fs::write(
-        dot_codex.join(CONFIG_TOML_FILE),
-        r#"
-[mcp_servers.sentry]
-url = "https://mcp.sentry.dev/mcp"
-enabled = false
-"#,
-    )
-    .await?;
-    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None).await?;
 
-    let err = ConfigBuilder::default()
-        .chaos_home(chaos_home)
-        .fallback_cwd(Some(nested))
-        .build()
-        .await
-        .expect_err("expected error");
+    let cases = [
+        ("untrusted", Some(TrustLevel::Untrusted)),
+        ("unknown", None),
+    ];
+    for (name, trust_level) in cases {
+        let chaos_home = tmp.path().join(format!("home_{name}"));
+        tokio::fs::create_dir_all(&chaos_home).await?;
+        match trust_level {
+            Some(trust_level) => {
+                make_config_for_test(&chaos_home, &project_root, trust_level, None).await?;
+            }
+            None => bootstrap_sqlite(&chaos_home).map_err(std::io::Error::other)?,
+        }
+        chaos_sysctl::edit::ConfigEditsBuilder::new(&chaos_home)
+            .set_model(Some("user"), None)
+            .apply()
+            .await
+            .map_err(std::io::Error::other)?;
 
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("legacy top-level `mcp_servers`"));
+        let layers = load_layers(&chaos_home, &nested).await?;
+        let project_folders: Vec<_> = layers
+            .asset_folders()
+            .iter()
+            .filter(|folder| folder.scope == AssetScope::Project)
+            .collect();
+        assert_eq!(
+            project_folders.len(),
+            1,
+            "expected one project folder for {name}"
+        );
+        assert_eq!(project_folders[0].dir.as_path(), nested.join(".chaos"));
+        assert!(
+            !project_folders[0].is_enabled(),
+            "expected {name} project folder to be disabled"
+        );
+        assert!(
+            project_folders[0]
+                .disabled_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("rules")),
+            "reason should explain what is skipped: {:?}",
+            project_folders[0].disabled_reason
+        );
+        assert_eq!(
+            layers.effective_config().get("model"),
+            Some(&TomlValue::String("user".to_string()))
+        );
+    }
 
     Ok(())
 }
@@ -874,26 +585,15 @@ async fn project_root_dot_mcp_json_is_ignored_when_project_is_untrusted() -> std
 }
 
 #[tokio::test]
-async fn cli_override_for_project_local_mcp_server_in_config_toml_is_rejected()
--> std::io::Result<()> {
+async fn cli_override_for_project_local_mcp_server_is_rejected() -> std::io::Result<()> {
     let tmp = tempdir()?;
     let project_root = tmp.path().join("project");
     let nested = project_root.join("child");
-    let dot_codex = project_root.join(".chaos");
     let chaos_home = tmp.path().join("home");
     tokio::fs::create_dir_all(&nested).await?;
-    tokio::fs::create_dir_all(&dot_codex).await?;
     tokio::fs::create_dir_all(&chaos_home).await?;
     tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
-    tokio::fs::write(
-        dot_codex.join(CONFIG_TOML_FILE),
-        r#"
-[mcp_servers.sentry]
-url = "https://mcp.sentry.dev/mcp"
-enabled = false
-"#,
-    )
-    .await?;
+    bootstrap_sqlite(&chaos_home).map_err(std::io::Error::other)?;
 
     let err = ConfigBuilder::default()
         .chaos_home(chaos_home)
@@ -908,71 +608,6 @@ enabled = false
 
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert!(err.to_string().contains("top-level `mcp_servers`"));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::Result<()> {
-    let tmp = tempdir()?;
-    let project_root = tmp.path().join("project");
-    let nested = project_root.join("child");
-    tokio::fs::create_dir_all(nested.join(".chaos")).await?;
-    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
-    tokio::fs::write(nested.join(".chaos").join(CONFIG_TOML_FILE), "foo =").await?;
-
-    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
-    let cases = [
-        ("untrusted", Some(TrustLevel::Untrusted)),
-        ("unknown", None),
-    ];
-
-    for (name, trust_level) in cases {
-        let chaos_home = tmp.path().join(format!("home_{name}"));
-        tokio::fs::create_dir_all(&chaos_home).await?;
-        if let Some(trust_level) = trust_level {
-            make_config_for_test(&chaos_home, &project_root, trust_level, None).await?;
-        }
-        crate::user_settings::install_persistence();
-        chaos_sysctl::edit::ConfigEditsBuilder::new(&chaos_home)
-            .set_model(Some("user"), None)
-            .apply()
-            .await
-            .map_err(std::io::Error::other)?;
-
-        let layers = load_config_layers_state(
-            &chaos_home,
-            Some(cwd.clone()),
-            &[] as &[(String, TomlValue)],
-            LoaderOverrides::default(),
-        )
-        .await?;
-        let project_layers: Vec<_> = layers
-            .get_layers(
-                super::ConfigLayerStackOrdering::HighestPrecedenceFirst,
-                true,
-            )
-            .into_iter()
-            .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
-            .collect();
-        assert_eq!(
-            project_layers.len(),
-            1,
-            "expected one project layer for {name}"
-        );
-        assert!(
-            project_layers[0].disabled_reason.is_some(),
-            "expected {name} project layer to be disabled"
-        );
-        assert_eq!(
-            project_layers[0].config,
-            TomlValue::Table(toml::map::Map::new())
-        );
-        assert_eq!(
-            layers.effective_config().get("model"),
-            Some(&TomlValue::String("user".to_string()))
-        );
-    }
 
     Ok(())
 }
@@ -1014,16 +649,6 @@ async fn project_root_markers_supports_alternate_markers() -> std::io::Result<()
     tokio::fs::create_dir_all(project_root.join(".chaos")).await?;
     tokio::fs::create_dir_all(nested.join(".chaos")).await?;
     tokio::fs::write(project_root.join(".hg"), "hg").await?;
-    tokio::fs::write(
-        project_root.join(".chaos").join(CONFIG_TOML_FILE),
-        "foo = \"root\"\n",
-    )
-    .await?;
-    tokio::fs::write(
-        nested.join(".chaos").join(CONFIG_TOML_FILE),
-        "foo = \"child\"\n",
-    )
-    .await?;
 
     let chaos_home = tmp.path().join("home");
     tokio::fs::create_dir_all(&chaos_home).await?;
@@ -1035,49 +660,26 @@ async fn project_root_markers_supports_alternate_markers() -> std::io::Result<()
     )
     .await?;
 
-    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
-    let layers = load_config_layers_state(
-        &chaos_home,
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides::default(),
-    )
-    .await?;
+    let layers = load_layers(&chaos_home, &nested).await?;
 
-    let project_layers: Vec<_> = layers
-        .layers_high_to_low()
-        .into_iter()
-        .filter_map(|layer| match &layer.name {
-            super::ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(project_layers.len(), 2);
-    assert_eq!(project_layers[0].as_path(), nested.join(".chaos").as_path());
     assert_eq!(
-        project_layers[1].as_path(),
-        project_root.join(".chaos").as_path()
+        project_asset_dirs(&layers),
+        vec![project_root.join(".chaos"), nested.join(".chaos")],
+        "the .hg marker must anchor the project root"
     );
-
-    let merged = layers.effective_config();
-    let foo = merged
-        .get("foo")
-        .and_then(TomlValue::as_str)
-        .expect("foo entry");
-    assert_eq!(foo, "child");
 
     Ok(())
 }
 
 mod requirements_exec_policy_tests {
-    use crate::config_loader::ConfigLayerEntry;
+    use crate::config_loader::AssetFolder;
+    use crate::config_loader::AssetScope;
     use crate::config_loader::ConfigLayerStack;
     use crate::config_loader::ConfigRequirements;
     use crate::config_loader::ConfigRequirementsToml;
     use crate::config_loader::ConfigRequirementsWithSources;
     use crate::config_loader::RequirementSource;
     use crate::exec_policy::load_exec_policy;
-    use chaos_ipc::api::ConfigLayerSource;
     use chaos_realpath::AbsolutePathBuf;
     use chaos_selinux::Decision;
     use chaos_selinux::Evaluation;
@@ -1090,7 +692,6 @@ mod requirements_exec_policy_tests {
     use pretty_assertions::assert_eq;
     use std::path::Path;
     use tempfile::tempdir;
-    use toml::Value as TomlValue;
     use toml::from_str;
 
     fn tokens(cmd: &[&str]) -> Vec<String> {
@@ -1107,12 +708,12 @@ mod requirements_exec_policy_tests {
     ) -> ConfigLayerStack {
         let dot_codex_folder = AbsolutePathBuf::from_absolute_path(dot_codex_folder)
             .expect("absolute dot_codex_folder");
-        let layer = ConfigLayerEntry::new(
-            ConfigLayerSource::Project { dot_codex_folder },
-            TomlValue::Table(Default::default()),
-        );
-        ConfigLayerStack::new(vec![layer], requirements, ConfigRequirementsToml::default())
+        ConfigLayerStack::new(Vec::new(), requirements, ConfigRequirementsToml::default())
             .expect("ConfigLayerStack")
+            .with_asset_folders(vec![AssetFolder::new(
+                AssetScope::Project,
+                dot_codex_folder,
+            )])
     }
 
     fn requirements_from_toml(toml_str: &str) -> ConfigRequirements {

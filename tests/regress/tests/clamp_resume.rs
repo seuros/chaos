@@ -41,6 +41,7 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
     let work = root.path().join("work");
     std::fs::create_dir_all(&home)?;
     std::fs::create_dir_all(&work)?;
+    chaos_kern::test_support::bootstrap_sqlite(&home)?;
     // An authoritative catalog prevents even background provider discovery in CI.
     let catalog_path = home.join("models.json");
     let mut model = chaos_kern::test_support::test_model_info("claude-haiku-4-5");

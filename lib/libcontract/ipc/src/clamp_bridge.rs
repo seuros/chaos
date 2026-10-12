@@ -21,7 +21,18 @@ pub enum ClampBridgeRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClampBridgeResponse {
-    Tools { tools: Vec<Tool> },
-    ToolResult { output: ResponseInputItem },
-    Error { message: String },
+    Tools {
+        tools: Vec<Tool>,
+    },
+    ToolResult {
+        output: ResponseInputItem,
+        /// Text steered into the running turn since the last tool call. Under
+        /// clamp the whole external run is one kernel sample, so a steer would
+        /// otherwise wait for the turn to end; it rides on this tool result.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        notices: Vec<String>,
+    },
+    Error {
+        message: String,
+    },
 }

@@ -76,6 +76,12 @@ pub struct Cli {
     #[usage(long = "output-last-message", short = 'o', value_name = "FILE", global)]
     pub last_message_file: Option<PathBuf>,
 
+    /// File a host may write a JSON steer notice to (`{"text": ..., "expires_at": unix_secs}`)
+    /// while the turn runs. Exec claims it by rename and injects its text into the
+    /// active turn without interrupting it.
+    #[usage(long = "steer-file", value_name = "FILE", global)]
+    pub steer_file: Option<PathBuf>,
+
     /// Initial instructions for the agent. If not provided as an argument (or
     /// if `-` is used), instructions are read from stdin.
     #[usage(value_name = "PROMPT", value_hint = usage::ValueHint::Other)]

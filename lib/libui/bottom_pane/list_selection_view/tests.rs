@@ -201,9 +201,7 @@ fn renders_blank_line_between_subtitle_and_items() {
 
 fn theme_picker_subtitle_uses_fallback_text_in_94x35_terminal() {
     let tx = make_app_event_sender();
-    let home = dirs::home_dir().expect("home directory should be available");
-    let chaos_home = home.join(".chaos");
-    let params = crate::theme_picker::build_theme_picker_params(None, Some(&chaos_home), Some(94));
+    let params = crate::theme_picker::build_theme_picker_params(None, Some(94));
     let view = ListSelectionView::new(params, tx);
 
     let rendered = render_lines_in_area(&view, 94, 35);
@@ -211,7 +209,7 @@ fn theme_picker_subtitle_uses_fallback_text_in_94x35_terminal() {
 }
 
 fn theme_picker_enables_side_content_background_preservation() {
-    let params = crate::theme_picker::build_theme_picker_params(None, None, Some(120));
+    let params = crate::theme_picker::build_theme_picker_params(None, Some(120));
     assert!(
         params.preserve_side_content_bg,
         "theme picker should preserve side-content backgrounds to keep diff preview styling",

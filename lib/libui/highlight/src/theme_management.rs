@@ -1,10 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::io::Cursor;
 use std::sync::RwLock;
 use syntect::highlighting::{Highlighter, Theme, ThemeSet};
 use syntect::parsing::Scope;
 use two_face::theme::EmbeddedThemeName;
 
-use super::singletons::{CHAOS_HOME, LIGHT_BG, THEME, THEME_OVERRIDE};
+use super::singletons::{CUSTOM_THEMES, LIGHT_BG, THEME, THEME_OVERRIDE};
 use crate::DiffScopeBackgroundRgbs;
 
 /// All 32 bundled theme names in kebab-case, ordered alphabetically.
@@ -92,14 +93,24 @@ pub(super) fn parse_theme_name(name: &str) -> Option<EmbeddedThemeName> {
     }
 }
 
-/// Build the expected path for a custom theme file.
-pub(super) fn custom_theme_path(name: &str, chaos_home: &Path) -> PathBuf {
-    chaos_home.join("themes").join(format!("{name}.tmTheme"))
+/// Parse a `.tmTheme` property list from memory.
+pub fn parse_tmtheme(source: &str) -> Option<Theme> {
+    ThemeSet::load_from_reader(&mut Cursor::new(source.as_bytes())).ok()
 }
 
-/// Try to load a custom `.tmTheme` file from `{chaos_home}/themes/{name}.tmTheme`.
-pub(super) fn load_custom_theme(name: &str, chaos_home: &Path) -> Option<Theme> {
-    ThemeSet::get_theme(custom_theme_path(name, chaos_home)).ok()
+/// Install the custom themes for this process (write-once, like the theme
+/// override). Returns `false` when they were already installed.
+pub fn set_custom_themes(themes: BTreeMap<String, Theme>) -> bool {
+    let installed = CUSTOM_THEMES.set(themes).is_ok();
+    if installed && THEME.get().is_some() {
+        set_syntax_theme(build_default_theme());
+    }
+    installed
+}
+
+/// A custom theme by name. Built-ins shadow custom themes with the same name.
+fn custom_theme(name: &str) -> Option<Theme> {
+    CUSTOM_THEMES.get()?.get(name).cloned()
 }
 
 pub(super) fn adaptive_default_theme_selection() -> (EmbeddedThemeName, &'static str) {
@@ -122,16 +133,14 @@ pub fn adaptive_default_theme_name() -> &'static str {
 }
 
 /// Build the theme from current override/default-theme settings.
-pub(super) fn resolve_theme_with_override(name: Option<&str>, chaos_home: Option<&Path>) -> Theme {
+pub(super) fn resolve_theme_with_override(name: Option<&str>) -> Theme {
     let ts = two_face::theme::extra();
 
     if let Some(name) = name {
         if let Some(theme_name) = parse_theme_name(name) {
             return ts.get(theme_name).clone();
         }
-        if let Some(home) = chaos_home
-            && let Some(theme) = load_custom_theme(name, home)
-        {
+        if let Some(theme) = custom_theme(name) {
             return theme;
         }
         tracing::debug!("Theme \"{name}\" not recognized; using default theme");
@@ -143,10 +152,7 @@ pub(super) fn resolve_theme_with_override(name: Option<&str>, chaos_home: Option
 /// Build the theme from current override/default-theme settings.
 pub(super) fn build_default_theme() -> Theme {
     let name = THEME_OVERRIDE.get().and_then(|name| name.as_deref());
-    let chaos_home = CHAOS_HOME
-        .get()
-        .and_then(|chaos_home| chaos_home.as_deref());
-    resolve_theme_with_override(name, chaos_home)
+    resolve_theme_with_override(name)
 }
 
 pub(super) fn theme_lock() -> &'static RwLock<Theme> {
@@ -185,51 +191,30 @@ pub fn current_syntax_theme() -> Theme {
 /// unknown/invalid theme names or duplicate override persistence.
 pub fn set_theme_override(
     name: Option<String>,
-    chaos_home: Option<PathBuf>,
     is_light_background: Option<bool>,
 ) -> Option<String> {
-    let warning = validate_theme_name(name.as_deref(), chaos_home.as_deref());
+    let warning = validate_theme_name(name.as_deref());
     let override_set_ok = THEME_OVERRIDE.set(name.clone()).is_ok();
-    let chaos_home_set_ok = CHAOS_HOME.set(chaos_home.clone()).is_ok();
     let _ = LIGHT_BG.set(is_light_background);
     if THEME.get().is_some() {
-        set_syntax_theme(resolve_theme_with_override(
-            name.as_deref(),
-            chaos_home.as_deref(),
-        ));
+        set_syntax_theme(resolve_theme_with_override(name.as_deref()));
     }
-    if !override_set_ok || !chaos_home_set_ok {
+    if !override_set_ok {
         tracing::debug!("set_theme_override called more than once; OnceLock values unchanged");
     }
     warning
 }
 
-/// Check whether a theme name resolves to a bundled theme or a custom
-/// `.tmTheme` file.  Returns a user-facing warning when it does not.
-pub fn validate_theme_name(name: Option<&str>, chaos_home: Option<&Path>) -> Option<String> {
+/// Check whether a theme name resolves to a bundled or stored custom theme.
+/// Returns a user-facing warning when it does not.
+pub fn validate_theme_name(name: Option<&str>) -> Option<String> {
     let name = name?;
-    let custom_theme_path_display = chaos_home
-        .map(|home| custom_theme_path(name, home).display().to_string())
-        .unwrap_or_else(|| format!("$CHAOS_HOME/themes/{name}.tmTheme"));
-    if parse_theme_name(name).is_some() {
+    if parse_theme_name(name).is_some() || custom_theme(name).is_some() {
         return None;
-    }
-    if let Some(home) = chaos_home {
-        let custom_path = custom_theme_path(name, home);
-        if custom_path.is_file() {
-            if load_custom_theme(name, home).is_some() {
-                return None;
-            }
-            return Some(format!(
-                "Custom theme \"{name}\" at {custom_theme_path_display} could not \
-                 be loaded (invalid .tmTheme format). Falling back to the default theme."
-            ));
-        }
     }
     Some(format!(
         "Theme \"{name}\" not found. Using the default theme. \
-         To use a custom theme, place a .tmTheme file at \
-         {custom_theme_path_display}."
+         Import a custom theme with `chaos themes import <file.tmTheme>`."
     ))
 }
 
@@ -243,28 +228,21 @@ pub fn configured_theme_name() -> String {
         if parse_theme_name(name).is_some() {
             return name.clone();
         }
-        if let Some(Some(home)) = CHAOS_HOME.get()
-            && load_custom_theme(name, home).is_some()
-        {
+        if custom_theme(name).is_some() {
             return name.clone();
         }
     }
     adaptive_default_theme_name().to_string()
 }
 
-/// Resolve a theme name to a `Theme` (bundled or custom). Returns `None`
-/// when the name is unknown and no matching `.tmTheme` file exists.
-pub fn resolve_theme_by_name(name: &str, chaos_home: Option<&Path>) -> Option<Theme> {
+/// Resolve a theme name to a `Theme` (bundled or stored custom). Returns
+/// `None` when the name is unknown.
+pub fn resolve_theme_by_name(name: &str) -> Option<Theme> {
     let ts = two_face::theme::extra();
     if let Some(embedded) = parse_theme_name(name) {
         return Some(ts.get(embedded).clone());
     }
-    if let Some(home) = chaos_home
-        && let Some(theme) = load_custom_theme(name, home)
-    {
-        return Some(theme);
-    }
-    None
+    custom_theme(name)
 }
 
 /// Query the active syntax theme for diff-scope background colors.
@@ -284,9 +262,8 @@ fn scope_background_rgb(highlighter: &Highlighter<'_>, scope_name: &str) -> Opti
     Some((bg.r, bg.g, bg.b))
 }
 
-/// List all available theme names: bundled themes + custom `.tmTheme` files
-/// found in `{chaos_home}/themes/`.
-pub fn list_available_themes(chaos_home: Option<&Path>) -> Vec<ThemeEntry> {
+/// List all available theme names: bundled themes plus stored custom themes.
+pub fn list_available_themes() -> Vec<ThemeEntry> {
     let mut entries: Vec<ThemeEntry> = BUILTIN_THEME_NAMES
         .iter()
         .map(|name| ThemeEntry {
@@ -295,23 +272,13 @@ pub fn list_available_themes(chaos_home: Option<&Path>) -> Vec<ThemeEntry> {
         })
         .collect();
 
-    if let Some(home) = chaos_home {
-        let themes_dir = home.join("themes");
-        if let Ok(read_dir) = std::fs::read_dir(&themes_dir) {
-            for entry in read_dir.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("tmTheme")
-                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                {
-                    let name = stem.to_string();
-                    let is_valid_theme = ThemeSet::get_theme(&path).is_ok();
-                    if is_valid_theme && !entries.iter().any(|e| e.name == name) {
-                        entries.push(ThemeEntry {
-                            name,
-                            is_custom: true,
-                        });
-                    }
-                }
+    if let Some(custom) = CUSTOM_THEMES.get() {
+        for name in custom.keys() {
+            if !entries.iter().any(|entry| &entry.name == name) {
+                entries.push(ThemeEntry {
+                    name: name.clone(),
+                    is_custom: true,
+                });
             }
         }
     }

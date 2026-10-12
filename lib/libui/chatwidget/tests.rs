@@ -5849,7 +5849,8 @@ async fn backtab_mode_switch_refreshes_wpn_statusline_effort() {
         session_id: "session".to_string(),
         cwd: temp.path().to_string_lossy().to_string(),
         provider: "test".to_string(),
-        user_scripts_dir: Some(temp.path().join("no_user_scripts")),
+        user_scripts: Vec::new(),
+        project_scripts_enabled: false,
     })
     .unwrap();
     chat.set_halluacinate_handle(Some(handle.clone()));
@@ -8557,7 +8558,8 @@ async fn default_halluacinate_status_line_renderer_renders_default_line() {
         session_id: "session".to_string(),
         cwd: temp.path().to_string_lossy().to_string(),
         provider: "test".to_string(),
-        user_scripts_dir: Some(temp.path().join("no_user_scripts")),
+        user_scripts: Vec::new(),
+        project_scripts_enabled: false,
     })
     .unwrap();
     chat.set_halluacinate_handle(Some(handle.clone()));

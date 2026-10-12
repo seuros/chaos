@@ -143,6 +143,10 @@ enum Subcommand {
     Modes(documents_cmd::DocumentsCommand),
     /// Manage stored custom prompts (`/prompts:<name>`).
     Prompts(documents_cmd::DocumentsCommand),
+    /// Manage stored syntax themes (`.tmTheme`) for the `/theme` picker.
+    Themes(documents_cmd::DocumentsCommand),
+    /// Manage stored halluacinate Lua scripts.
+    Scripts(documents_cmd::DocumentsCommand),
     /// Register shared workspaces/projects and manage installation-local checkouts.
     Workspace(planning_cmd::WorkspaceCommand),
     /// Inspect, attach, and maintain durable database plans.
@@ -467,6 +471,12 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         Some(Subcommand::Prompts(command)) => {
             documents_cmd::run(chaos_kern::user_documents::DocumentKind::Prompt, command).await?
+        }
+        Some(Subcommand::Themes(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Theme, command).await?
+        }
+        Some(Subcommand::Scripts(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Script, command).await?
         }
         Some(Subcommand::Workspace(command)) => planning_cmd::workspace(command).await?,
         Some(Subcommand::Plan(command)) => planning_cmd::plan(command).await?,

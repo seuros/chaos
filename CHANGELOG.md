@@ -51,6 +51,11 @@ should. There is no patch level; the build timestamp is the patch.
   in the runtime database. `$CHAOS_HOME/modes/` and `$CHAOS_HOME/prompts/`
   are no longer read. A stored mode that fails to parse is skipped with a
   warning instead of failing session start.
+- `chaos themes` and `chaos scripts`: custom `.tmTheme` syntax themes and
+  halluacinate Lua scripts live in the runtime database. `$CHAOS_HOME/themes/`
+  and `~/.config/chaos/scripts/` are no longer read. Project `.chaos/scripts/`
+  now load only when the project is trusted; previously any clone's scripts
+  ran at session start.
 
 ### Fixed
 - PostgreSQL mounts now enforce the same per-partition log retention as

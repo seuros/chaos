@@ -11,12 +11,13 @@
 //! | `SYNTAX_SET` | `OnceLock<SyntaxSet>` | Grammar database, immutable after init |
 //! | `THEME` | `OnceLock<RwLock<Theme>>` | Active color theme, swappable at runtime |
 //! | `THEME_OVERRIDE` | `OnceLock<Option<String>>` | Persisted user preference (write-once) |
-//! | `CHAOS_HOME` | `OnceLock<Option<PathBuf>>` | Root for custom `.tmTheme` discovery |
+//! | `CUSTOM_THEMES` | `OnceLock<BTreeMap<String, Theme>>` | Stored custom themes (set once) |
 //! | `LIGHT_BG` | `OnceLock<Option<bool>>` | Terminal background lightness hint |
 //!
-//! **Lifecycle:** call [`set_theme_override`] once at startup (after the final
-//! config is resolved) to persist the user preference and seed the `THEME`
-//! lock.  After that, [`set_syntax_theme`] and [`current_syntax_theme`] can
+//! **Lifecycle:** call [`set_custom_themes`] with the themes read from the
+//! runtime database, then [`set_theme_override`] once at startup (after the
+//! final config is resolved) to persist the user preference and seed the
+//! `THEME` lock.  After that, [`set_syntax_theme`] and [`current_syntax_theme`] can
 //! swap/snapshot the theme for live preview.  All highlighting functions read
 //! the theme via `theme_lock()`.
 //!
@@ -34,10 +35,12 @@ pub use highlight_engine::{
     exceeds_highlight_limits, highlight_bash_to_lines, highlight_code_to_lines,
     highlight_code_to_styled_spans,
 };
+pub use syntect::highlighting::Theme;
 pub use theme_management::{
     ThemeEntry, adaptive_default_theme_name, configured_theme_name, current_syntax_theme,
-    diff_scope_background_rgbs_for_theme, list_available_themes, resolve_theme_by_name,
-    set_syntax_theme, set_theme_override, validate_theme_name,
+    diff_scope_background_rgbs_for_theme, list_available_themes, parse_tmtheme,
+    resolve_theme_by_name, set_custom_themes, set_syntax_theme, set_theme_override,
+    validate_theme_name,
 };
 
 // NOTE: We intentionally do NOT emit a runtime diagnostic when an ANSI-family

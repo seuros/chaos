@@ -20,17 +20,25 @@ use tracing;
 
 use crate::handle::ScriptTool;
 
+/// A user script stored in the runtime database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptSource {
+    pub name: String,
+    pub source: String,
+}
+
 /// Read-only session info injected into every script's `chaos` table.
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
     pub session_id: String,
     pub cwd: String,
     pub provider: String,
-    /// Override for the user-layer scripts directory.
-    ///
-    /// Production code passes `None` (falls back to `$XDG_CONFIG_HOME/chaos/scripts/`).
-    /// Tests pass `Some(empty_temp_dir)` to prevent real user scripts from loading.
-    pub user_scripts_dir: Option<std::path::PathBuf>,
+    /// User-layer scripts, already read from the runtime database. Loaded in
+    /// name order before project scripts.
+    pub user_scripts: Vec<ScriptSource>,
+    /// Whether `<cwd>/.chaos/scripts` may run. Project scripts are executable
+    /// code shipped by a repository, so only trusted projects enable them.
+    pub project_scripts_enabled: bool,
 }
 
 /// Shared mutable state collected from script registration calls.

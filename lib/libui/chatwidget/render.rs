@@ -20,7 +20,6 @@ use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::TokenUsageInfo;
 use chaos_kern::git_info::current_branch_name;
 use chaos_kern::git_info::get_git_repo_root;
-use chaos_pwd::find_chaos_home;
 use jiff::Timestamp;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -256,14 +255,12 @@ impl ChatWidget {
     }
 
     pub(super) fn open_theme_picker(&mut self) {
-        let chaos_home = find_chaos_home().ok();
         let terminal_width = self
             .last_rendered_width
             .get()
             .and_then(|width| u16::try_from(width).ok());
         let params = crate::theme_picker::build_theme_picker_params(
             self.config.tui_theme.as_deref(),
-            chaos_home.as_deref(),
             terminal_width,
         );
         self.bottom_pane.show_selection_view(params);

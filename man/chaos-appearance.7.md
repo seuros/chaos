@@ -158,7 +158,11 @@ block code remain independent of role overrides. Markers and tool output keep
 their own styles, using shared palette colors where applicable.
 
 The existing `[tui] theme` setting and `/theme` picker still select **syntax
-highlighting** colors; they do not replace these appearance overrides.
+highlighting** colors; they do not replace these appearance overrides. Custom
+syntax themes are `.tmTheme` documents stored in the runtime database:
+`chaos themes import <file.tmTheme>` makes the file stem selectable in `/theme`;
+`chaos themes list|show|export|remove|enable|disable` manage them.
+`$CHAOS_HOME/themes/` is no longer read.
 
 Unknown appearance keys and invalid colors are configuration errors.
 Font families and sizes are controlled by the terminal; ChaOS only sets colors

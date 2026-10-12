@@ -196,7 +196,7 @@ async fn theme_warning_uses_final_config() -> std::io::Result<()> {
 
     // Theme override must use the final config (not initial_config).
     // This mirrors the real call site in run_ratatui_app.
-    if let Some(w) = validate_theme_name(config.tui_theme.as_deref(), Some(temp_dir.path())) {
+    if let Some(w) = validate_theme_name(config.tui_theme.as_deref()) {
         config.startup_warnings.push(w);
     }
 

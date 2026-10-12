@@ -15,6 +15,9 @@
 pub use chaos_highlight::DiffScopeBackgroundRgbs;
 #[cfg(feature = "syntax")]
 #[allow(unused_imports)]
+pub use chaos_highlight::Theme;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
 pub use chaos_highlight::ThemeEntry;
 #[cfg(feature = "syntax")]
 #[allow(unused_imports)]
@@ -45,7 +48,13 @@ pub use chaos_highlight::highlight_code_to_styled_spans;
 pub use chaos_highlight::list_available_themes;
 #[cfg(feature = "syntax")]
 #[allow(unused_imports)]
+pub use chaos_highlight::parse_tmtheme;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
 pub use chaos_highlight::resolve_theme_by_name;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::set_custom_themes;
 #[cfg(feature = "syntax")]
 #[allow(unused_imports)]
 pub use chaos_highlight::set_syntax_theme;
@@ -57,12 +66,9 @@ pub use chaos_highlight::validate_theme_name;
 /// terminal background lightness from console's palette detection, preserving
 /// the original two-argument call signature used throughout the codebase.
 #[cfg(feature = "syntax")]
-pub fn set_theme_override(
-    name: Option<String>,
-    chaos_home: Option<std::path::PathBuf>,
-) -> Option<String> {
+pub fn set_theme_override(name: Option<String>) -> Option<String> {
     let is_light = crate::terminal_palette::default_bg().map(crate::color::is_light);
-    chaos_highlight::set_theme_override(name, chaos_home, is_light)
+    chaos_highlight::set_theme_override(name, is_light)
 }
 
 // -- Stubs when the `syntax` feature is disabled ------------------------------
@@ -74,8 +80,6 @@ pub use self::stubs::*;
 mod stubs {
     use ratatui::text::Line;
     use ratatui::text::Span;
-    use std::path::Path;
-    use std::path::PathBuf;
 
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
     pub struct DiffScopeBackgroundRgbs {
@@ -88,14 +92,19 @@ mod stubs {
         pub is_custom: bool,
     }
 
-    pub fn set_theme_override(
-        _name: Option<String>,
-        _codex_home: Option<PathBuf>,
-    ) -> Option<String> {
+    pub fn set_theme_override(_name: Option<String>) -> Option<String> {
         None
     }
 
-    pub fn validate_theme_name(_name: Option<&str>, _codex_home: Option<&Path>) -> Option<String> {
+    pub fn set_custom_themes(_themes: std::collections::BTreeMap<String, Theme>) -> bool {
+        true
+    }
+
+    pub fn parse_tmtheme(_source: &str) -> Option<Theme> {
+        None
+    }
+
+    pub fn validate_theme_name(_name: Option<&str>) -> Option<String> {
         None
     }
 
@@ -117,11 +126,11 @@ mod stubs {
         Theme
     }
 
-    pub fn resolve_theme_by_name(_name: &str, _codex_home: Option<&Path>) -> Option<Theme> {
+    pub fn resolve_theme_by_name(_name: &str) -> Option<Theme> {
         None
     }
 
-    pub fn list_available_themes(_codex_home: Option<&Path>) -> Vec<ThemeEntry> {
+    pub fn list_available_themes() -> Vec<ThemeEntry> {
         Vec::new()
     }
 

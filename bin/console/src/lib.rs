@@ -591,13 +591,39 @@ async fn run_ratatui_app(
 
     libui::theme::set_appearance(config.appearance.clone());
 
+    // Custom themes come from the runtime database; install them before the
+    // override so a stored name resolves.
+    match chaos_kern::user_documents::enabled(
+        &config.chaos_home,
+        chaos_kern::user_documents::DocumentKind::Theme,
+    )
+    .await
+    {
+        Ok(documents) => {
+            let mut themes = std::collections::BTreeMap::new();
+            for document in documents {
+                match crate::render::highlight::parse_tmtheme(&document.source) {
+                    Some(theme) => {
+                        themes.insert(document.name, theme);
+                    }
+                    None => config.startup_warnings.push(format!(
+                        "Stored theme `{}` is not a valid .tmTheme; re-import or remove it \
+                         with `chaos themes`.",
+                        document.name
+                    )),
+                }
+            }
+            crate::render::highlight::set_custom_themes(themes);
+        }
+        Err(err) => config
+            .startup_warnings
+            .push(format!("Custom themes could not be loaded: {err:#}")),
+    }
+
     // Configure syntax highlighting theme from the final config — onboarding
     // and resume/fork can both reload config with a different tui_theme, so
     // this must happen after the last possible reload.
-    if let Some(w) = crate::render::highlight::set_theme_override(
-        config.tui_theme.clone(),
-        find_chaos_home().ok(),
-    ) {
+    if let Some(w) = crate::render::highlight::set_theme_override(config.tui_theme.clone()) {
         config.startup_warnings.push(w);
     }
 

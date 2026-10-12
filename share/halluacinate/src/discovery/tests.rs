@@ -16,10 +16,7 @@ fn discovers_project_scripts() {
     fs::write(scripts_dir.join("a_first.lua"), "-- first").unwrap();
     fs::write(scripts_dir.join("not_lua.txt"), "-- ignored").unwrap();
 
-    // Pass a non-existent path as the user-layer override so real user
-    // scripts (e.g. ~/.config/chaos/scripts/project_info.lua) are never
-    // loaded.
-    let found = discover_scripts(tmp.path(), Some(&tmp.path().join("no_user_scripts")));
+    let found = discover_project_scripts(tmp.path());
     let names: Vec<&str> = found
         .iter()
         .map(|p| p.file_name().unwrap().to_str().unwrap())
@@ -30,6 +27,6 @@ fn discovers_project_scripts() {
 
 fn missing_dir_returns_empty() {
     let tmp = tempfile::tempdir().unwrap();
-    let found = discover_scripts(tmp.path(), Some(&tmp.path().join("no_user_scripts")));
+    let found = discover_project_scripts(tmp.path());
     assert!(found.is_empty());
 }

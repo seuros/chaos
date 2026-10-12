@@ -19,8 +19,6 @@
 //! - `ThemePreviewNarrowRenderable` -- compact 4-line snippet stacked below the
 //!   list when side-by-side does not fit.
 
-use std::path::Path;
-
 use crate::app_event::AppEvent;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
@@ -35,7 +33,6 @@ use crate::diff_render::push_wrapped_diff_line_with_style_context;
 use crate::diff_render::push_wrapped_diff_line_with_syntax_and_style_context;
 use crate::render::highlight;
 use crate::render::renderable::Renderable;
-use crate::status::format_directory_display;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -280,22 +277,11 @@ fn subtitle_available_width(terminal_width: Option<u16>) -> usize {
     }
 }
 
-fn theme_picker_subtitle(chaos_home: Option<&Path>, terminal_width: Option<u16>) -> String {
-    let themes_dir = chaos_home.map(|home| home.join("themes"));
-    let themes_dir_display = themes_dir
-        .as_deref()
-        .map(|path| format_directory_display(path, /*max_width*/ None));
-    let available_width = subtitle_available_width(terminal_width);
-
-    if let Some(path) = themes_dir_display
-        && path.starts_with('~')
-    {
-        let subtitle = format!("Custom .tmTheme files can be added to the {path} directory.");
-        if UnicodeWidthStr::width(subtitle.as_str()) <= available_width {
-            return subtitle;
-        }
+fn theme_picker_subtitle(terminal_width: Option<u16>) -> String {
+    let subtitle = "Import custom .tmTheme files with `chaos themes import <file>`.";
+    if UnicodeWidthStr::width(subtitle) <= subtitle_available_width(terminal_width) {
+        return subtitle.to_string();
     }
-
     PREVIEW_FALLBACK_SUBTITLE.to_string()
 }
 
@@ -311,14 +297,12 @@ fn theme_picker_subtitle(chaos_home: Option<&Path>, terminal_width: Option<u16>)
 /// highlights the most likely intended entry.
 pub fn build_theme_picker_params(
     current_name: Option<&str>,
-    chaos_home: Option<&Path>,
     terminal_width: Option<u16>,
 ) -> SelectionViewParams {
     // Snapshot the current theme so we can restore on cancel.
     let original_theme = highlight::current_syntax_theme();
 
-    let entries = highlight::list_available_themes(chaos_home);
-    let chaos_home_owned = chaos_home.map(Path::to_path_buf);
+    let entries = highlight::list_available_themes();
 
     // Resolve the effective theme name: honor explicit config only when it is
     // currently available; otherwise fall back to configured/default selection
@@ -367,10 +351,9 @@ pub fn build_theme_picker_params(
     // so preview ordering stays aligned if item construction/sorting changes.
     let preview_theme_names: Vec<Option<String>> =
         items.iter().map(|item| item.search_value.clone()).collect();
-    let preview_home = chaos_home_owned.clone();
     let on_selection_changed = Some(Box::new(move |idx: usize, _tx: &_| {
         if let Some(Some(name)) = preview_theme_names.get(idx)
-            && let Some(theme) = highlight::resolve_theme_by_name(name, preview_home.as_deref())
+            && let Some(theme) = highlight::resolve_theme_by_name(name)
         {
             highlight::set_syntax_theme(theme);
         }
@@ -384,10 +367,7 @@ pub fn build_theme_picker_params(
         as Box<dyn Fn(&crate::app_event_sender::AppEventSender) + Send + Sync>);
     SelectionViewParams {
         title: Some("Select Syntax Theme".to_string()),
-        subtitle: Some(theme_picker_subtitle(
-            chaos_home_owned.as_deref(),
-            terminal_width,
-        )),
+        subtitle: Some(theme_picker_subtitle(terminal_width)),
         footer_hint: Some(standard_popup_hint_line()),
         items,
         is_searchable: true,

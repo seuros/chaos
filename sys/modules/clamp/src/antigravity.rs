@@ -300,6 +300,7 @@ impl AntigravityTransport {
         // following `--input-format` as its prompt.
         command.args(["--input-format", "stream-json"]);
 
+        let started_at = SystemTime::now();
         let mut child = command.spawn().map_err(AntigravityError::Spawn)?;
         let mut stdin = child.stdin.take().ok_or_else(|| {
             AntigravityError::Protocol("Antigravity stdin was not captured".to_string())
@@ -342,7 +343,23 @@ impl AntigravityTransport {
         };
 
         if !invocation.status.success() {
-            if text_indicates_auth_failure(&invocation.stderr_tail) {
+            // In print mode agy writes its diagnostics to a per-invocation log
+            // file under the managed home, not to stderr, so an empty tail
+            // used to surface as a bare exit code ("status 1") even when agy
+            // had said exactly why, e.g. an unknown model with its list of
+            // available ones.
+            let logged = if invocation.stderr_tail.trim().is_empty() {
+                self.config
+                    .home
+                    .as_deref()
+                    .and_then(|home| agy_log_errors_since(home, started_at))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if text_indicates_auth_failure(&invocation.stderr_tail)
+                || text_indicates_auth_failure(&logged)
+            {
                 return Err(AntigravityError::AuthenticationUnavailable);
             }
             // The tail is carried into the error: an exit code alone says
@@ -353,6 +370,7 @@ impl AntigravityTransport {
                 |code| code.to_string(),
             );
             let tail = invocation.stderr_tail.trim();
+            let tail = if tail.is_empty() { logged.trim() } else { tail };
             return Err(AntigravityError::InvocationFailed(if tail.is_empty() {
                 status
             } else {
@@ -854,6 +872,78 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(not(unix))]
 fn is_executable(_path: &Path) -> bool {
     true
+}
+
+/// Prefix glog adds when agy logs before its logger is initialised.
+const AGY_EARLY_LOG_PREFIX: &str = "ERROR: logging before google.Init: ";
+/// Upper bound on the diagnostic text lifted from an agy log.
+const AGY_LOG_ERROR_LIMIT: usize = 2 * 1024;
+
+/// Returns the error-level lines (and their unprefixed continuation lines,
+/// such as agy's "Available models:" list) from the newest agy log written
+/// at or after `since`, or `None` when there is no such log or no error in it.
+/// Info and warning lines are skipped: they carry account details and noise.
+fn agy_log_errors_since(home: &Path, since: SystemTime) -> Option<String> {
+    let log_dir = home.join(".gemini/antigravity-cli/log");
+    let since = since
+        .checked_sub(Duration::from_secs(1))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let newest = std::fs::read_dir(&log_dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("cli-") && name.ends_with(".log")
+        })
+        .filter_map(|entry| {
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            (modified >= since).then(|| (modified, entry.path()))
+        })
+        .max_by_key(|(modified, _)| *modified)?
+        .1;
+    let bytes = std::fs::read(newest).ok()?;
+    let start = bytes.len().saturating_sub(4 * STDERR_CLASSIFICATION_LIMIT);
+    let text = String::from_utf8_lossy(&bytes[start..]);
+    agy_log_error_lines(&text)
+}
+
+fn agy_log_error_lines(text: &str) -> Option<String> {
+    // Each error-level line opens a group that also takes its unprefixed
+    // continuation lines. Only the last group is returned: agy logs harmless
+    // errors early on (e.g. "admin controls not applicable") and exits on the
+    // last one.
+    let mut last_group: Option<Vec<String>> = None;
+    let mut in_error = false;
+    for line in text.lines() {
+        let body = line.strip_prefix(AGY_EARLY_LOG_PREFIX).unwrap_or(line);
+        let bytes = body.as_bytes();
+        let is_glog = bytes.len() > 5
+            && matches!(bytes[0], b'I' | b'W' | b'E' | b'F')
+            && bytes[1..5].iter().all(u8::is_ascii_digit);
+        if is_glog {
+            in_error = matches!(bytes[0], b'E' | b'F');
+            if in_error {
+                // Drop the glog header ("E1013 19:41:07.548929 1 file.go:265]").
+                let message = body.split_once("] ").map_or(body, |(_, rest)| rest);
+                last_group = Some(vec![message.trim().to_string()]);
+            }
+        } else if in_error
+            && !line.trim().is_empty()
+            && let Some(group) = last_group.as_mut()
+        {
+            group.push(line.trim().to_string());
+        }
+    }
+    let joined = last_group?.join("\n");
+    if joined.len() <= AGY_LOG_ERROR_LIMIT {
+        return Some(joined);
+    }
+    let mut end = AGY_LOG_ERROR_LIMIT;
+    while !joined.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(joined[..end].to_string())
 }
 
 /// Classifies a failed invocation's stderr tail. Markers are phrases rather

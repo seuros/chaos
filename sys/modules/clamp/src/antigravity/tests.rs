@@ -419,3 +419,81 @@ fn managed_config_initializes_placeholders_but_rejects_invalid_existing_data() {
     );
     assert!(read_json_object_or_empty(directory.path()).is_err());
 }
+
+const AGY_UNKNOWN_MODEL_LOG: &str = "ERROR: logging before google.Init: I1013 19:41:04.749298       1 server_oauth.go:190] applyAuthResult: email=someone@example.com, authMethod=consumer, quotaProject=
+ERROR: logging before google.Init: E1013 19:41:04.749499      97 errorreport.go:223] admin controls not applicable
+ERROR: logging before google.Init: W1013 19:41:05.807560       1 model_config_manager.go:76] Failed to resolve model flag gemini-4-argon-medium
+ERROR: logging before google.Init: E1013 19:41:07.548929       1 printmode.go:265] Print mode: invalid model selection (--model \"gemini-4-argon-medium\" --effort \"\"): model gemini-4-argon-medium is not recognized as a known model or custom model in settings
+Available models:
+  Gemini 3.8 Flash (High)
+  Gemini 3.8 Flash (Low)
+ERROR: logging before google.Init: I1013 19:41:07.549056       1 manager.go:751] CLI store manager shutting down
+";
+
+#[test]
+fn agy_log_errors_keep_only_the_last_error_and_its_continuation() {
+    let lifted = agy_log_error_lines(AGY_UNKNOWN_MODEL_LOG).expect("an error is found");
+    assert_eq!(
+        lifted,
+        "Print mode: invalid model selection (--model \"gemini-4-argon-medium\" --effort \"\"): model gemini-4-argon-medium is not recognized as a known model or custom model in settings\nAvailable models:\nGemini 3.8 Flash (High)\nGemini 3.8 Flash (Low)"
+    );
+    assert!(
+        !lifted.contains("someone@example.com"),
+        "info lines stay out"
+    );
+    assert!(
+        !lifted.contains("admin controls"),
+        "earlier errors stay out"
+    );
+    assert_eq!(
+        agy_log_error_lines("I1013 19:41:04.1 1 x.go:1] fine\n"),
+        None
+    );
+}
+
+#[tokio::test]
+async fn failed_invocation_with_silent_stderr_reports_the_agy_log_error() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let dir = directory.path();
+    let log_body = dir.join("log-body.txt");
+    std::fs::write(&log_body, AGY_UNKNOWN_MODEL_LOG).expect("write log body");
+    let script = dir.join("agy");
+    std::fs::write(
+        &script,
+        format!(
+            r#"#!/bin/sh
+cat > /dev/null
+mkdir -p "$HOME/.gemini/antigravity-cli/log"
+cp "{}" "$HOME/.gemini/antigravity-cli/log/cli-20261013_194104.log"
+exit 1
+"#,
+            log_body.display()
+        ),
+    )
+    .expect("write fake agy");
+    let mut permissions = std::fs::metadata(&script)
+        .expect("fake agy metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&script, permissions).expect("make fake agy executable");
+
+    let config = AntigravityConfig {
+        cli_path: Some(script),
+        home: Some(dir.join("home")),
+        cwd: Some(dir.to_path_buf()),
+        model: "gemini-4-argon-medium".to_string(),
+        print_timeout: Duration::from_secs(5),
+        bridge: Some(test_bridge(dir)),
+        ..Default::default()
+    };
+    let mut transport = AntigravityTransport::new(config).expect("create transport");
+    let error = transport.run_turn("hello").await.expect_err("agy exits 1");
+    let message = error.to_string();
+    assert!(
+        message.contains("status 1: Print mode: invalid model selection"),
+        "{message}"
+    );
+    assert!(message.contains("Available models:"), "{message}");
+}

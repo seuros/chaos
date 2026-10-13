@@ -237,6 +237,45 @@ async fn a_running_process_keeps_storage_when_the_bootstrap_file_disappears() ->
 }
 
 #[tokio::test]
+async fn stale_rule_snapshot_cannot_overwrite_a_concurrent_import() -> anyhow::Result<()> {
+    use crate::user_settings::rules;
+    let home = tempfile::tempdir()?;
+    crate::test_support::bootstrap_sqlite(home.path())?;
+    let deny_rm = "prefix_rule {pattern = {'rm'}, decision = 'forbidden'}\n";
+    let deny_ls = "prefix_rule {pattern = {'ls'}, decision = 'forbidden'}\n";
+
+    // Writer B reads first; writer A then imports and commits.
+    let stale = rules::snapshot(home.path()).await?;
+    rules::put_user_rule(home.path(), "a", deny_rm).await?;
+
+    // B commits its list built from the stale read: it must not win.
+    let mut rules_from_b = stale.rules.clone();
+    rules_from_b.push(rules::UserRule {
+        name: "b".into(),
+        source: deny_ls.into(),
+    });
+    let err = rules::commit(home.path(), &stale, &rules_from_b)
+        .await
+        .expect_err("stale revision must be rejected");
+    assert!(err.to_string().contains("revision conflict"), "{err:#}");
+    assert_eq!(
+        rules::list_user_rules(home.path())
+            .await?
+            .iter()
+            .map(|rule| rule.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a"]
+    );
+
+    // The same race on removal: B's stale removal cannot drop A's rule.
+    let stale = rules::snapshot(home.path()).await?;
+    rules::put_user_rule(home.path(), "b", deny_ls).await?;
+    assert!(rules::commit(home.path(), &stale, &[]).await.is_err());
+    assert_eq!(rules::list_user_rules(home.path()).await?.len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
 async fn stored_rules_round_trip_by_name() -> anyhow::Result<()> {
     use crate::user_settings::rules;
     let home = tempfile::tempdir()?;

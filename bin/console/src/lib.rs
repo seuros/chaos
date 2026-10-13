@@ -101,7 +101,8 @@ use libui::tui;
 const DEFAULT_LOG_FILTER: &str = "chaos_kern=info,chaos_console=info,libui=warn,\
 chaos_mcp_runtime=info,mcp_guest=info,chaos_snitch::startup=info";
 
-const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
+const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,\
+chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_snitch=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_halluacinate=debug,\
 chaos_mcp_runtime=debug,mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
@@ -448,7 +449,8 @@ async fn run_ratatui_app(
             process_id: None,
             process_name: None,
             exit_reason: ExitReason::Fatal(format!(
-                "No saved session found with ID {id_str}. Run `chaos {action}` without an ID to choose from existing sessions."
+                "No saved session found with ID {id_str}. Run `chaos {action}` without an ID \
+                 to choose from existing sessions."
             )),
         })
     };
@@ -592,7 +594,9 @@ async fn run_ratatui_app(
     libui::theme::set_appearance(config.appearance.clone());
 
     // Custom themes come from the runtime database; install them before the
-    // override so a stored name resolves.
+    // override so a stored name resolves. Without the syntax feature the
+    // parser is a stub, and every stored theme would be reported as invalid.
+    #[cfg(feature = "syntax")]
     match chaos_kern::user_documents::enabled(
         &config.chaos_home,
         chaos_kern::user_documents::DocumentKind::Theme,

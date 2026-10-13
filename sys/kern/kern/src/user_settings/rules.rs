@@ -74,34 +74,58 @@ pub async fn list_user_rules(home: &Path) -> anyhow::Result<Vec<UserRule>> {
     parse_policy_sources(&runtime.user_policy_sources().await?)
 }
 
+/// The rules together with the settings revision that guards their
+/// replacement.
+pub(super) struct RulesSnapshot {
+    settings: chaos_proc::SettingsSnapshot,
+    pub(super) rules: Vec<UserRule>,
+}
+
+/// Read the revision first, then the document. Every write to the policy
+/// document bumps the settings revision in the same transaction, so a commit
+/// bound to this revision fails if anyone else wrote after this read; reading
+/// in the other order would let a concurrent import be silently overwritten.
+pub(super) async fn snapshot(home: &Path) -> anyhow::Result<RulesSnapshot> {
+    let runtime = open(home).await?;
+    let settings = runtime.settings_snapshot().await?;
+    let rules = parse_policy_sources(&runtime.user_policy_sources().await?)?;
+    Ok(RulesSnapshot { settings, rules })
+}
+
 /// Store or replace the rule named `name`.
 pub async fn put_user_rule(home: &Path, name: &str, source: &str) -> anyhow::Result<()> {
     validate_user_rule(name, source)?;
-    let mut rules = list_user_rules(home).await?;
+    let snapshot = snapshot(home).await?;
+    let mut rules = snapshot.rules.clone();
     rules.retain(|rule| rule.name != name);
     rules.push(UserRule {
         name: name.to_owned(),
         source: source.to_owned(),
     });
     rules.sort_by(|a, b| a.name.cmp(&b.name));
-    commit(home, &rules).await
+    commit(home, &snapshot, &rules).await
 }
 
 pub async fn remove_user_rule(home: &Path, name: &str) -> anyhow::Result<()> {
-    let mut rules = list_user_rules(home).await?;
+    let snapshot = snapshot(home).await?;
+    let mut rules = snapshot.rules.clone();
     let before = rules.len();
     rules.retain(|rule| rule.name != name);
     ensure!(rules.len() < before, "no stored rule named `{name}`");
-    commit(home, &rules).await
+    commit(home, &snapshot, &rules).await
 }
 
-async fn commit(home: &Path, rules: &[UserRule]) -> anyhow::Result<()> {
+/// Replace the document, compare-and-swapping on the snapshot's revision.
+pub(super) async fn commit(
+    home: &Path,
+    snapshot: &RulesSnapshot,
+    rules: &[UserRule],
+) -> anyhow::Result<()> {
     let runtime = open(home).await?;
-    let snapshot = runtime.settings_snapshot().await?;
     runtime
         .commit_settings_import(
-            snapshot.revision,
-            &snapshot.settings,
+            snapshot.settings.revision,
+            &snapshot.settings.settings,
             None,
             &[],
             Some(&serde_json::to_value(rules)?),

@@ -61,6 +61,12 @@ should. There is no patch level; the build timestamp is the patch.
   ran at session start.
 
 ### Fixed
+- `chaos rules import`/`remove` bind the write to the settings revision read
+  before the rules document, so two concurrent edits can no longer silently
+  drop one another's restriction; the loser gets a revision conflict.
+- `chaos themes import` validates with the tmTheme loader the console uses,
+  so an import that succeeds is a theme that appears; a bad replacement
+  leaves the stored theme untouched.
 - Applying a stored agent role no longer drops the other stored roles from
   the resulting config, so nested agents can still select them.
 - The message-history generation token now reads the SQLite file name from

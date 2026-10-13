@@ -37,10 +37,12 @@ pub fn validate(kind: DocumentKind, name: &str, source: &str) -> anyhow::Result<
             );
         }
         DocumentKind::Theme => {
-            ensure!(
-                source.contains("<plist"),
-                "theme documents are tmTheme property lists"
-            );
+            // The same loader the console uses at startup, so an import that
+            // succeeds is a theme that will appear.
+            syntect::highlighting::ThemeSet::load_from_reader(&mut std::io::Cursor::new(
+                source.as_bytes(),
+            ))
+            .map_err(|err| anyhow::anyhow!("not a valid .tmTheme property list: {err}"))?;
         }
         DocumentKind::Script => {
             ensure!(!source.trim().is_empty(), "script must not be empty");
@@ -124,3 +126,6 @@ pub async fn set_enabled(
         .set_document_enabled(kind, name, document.revision, enabled)
         .await
 }
+
+#[cfg(test)]
+mod tests;

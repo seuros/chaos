@@ -345,24 +345,8 @@ impl AntigravityTransport {
         };
 
         if !invocation.status.success() {
-            // In print mode agy writes its diagnostics to a per-invocation log
-            // file under the managed home, not to stderr, so an empty tail
-            // used to surface as a bare exit code ("status 1") even when agy
-            // had said exactly why, e.g. an unknown model with its list of
-            // available ones.
-            let logged = if invocation.stderr_tail.trim().is_empty() {
-                self.config
-                    .home
-                    .as_deref()
-                    .zip(logs_before.as_ref())
-                    .and_then(|(home, before)| agy_log_errors_for_invocation(home, before))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            if text_indicates_auth_failure(&invocation.stderr_tail)
-                || text_indicates_auth_failure(&logged)
-            {
+            // Classification is driven by this child's own stderr only.
+            if text_indicates_auth_failure(&invocation.stderr_tail) {
                 return Err(AntigravityError::AuthenticationUnavailable);
             }
             // The tail is carried into the error: an exit code alone says
@@ -373,11 +357,28 @@ impl AntigravityTransport {
                 |code| code.to_string(),
             );
             let tail = invocation.stderr_tail.trim();
-            let tail = if tail.is_empty() { logged.trim() } else { tail };
-            return Err(AntigravityError::InvocationFailed(if tail.is_empty() {
-                status
-            } else {
-                format!("{status}: {tail}")
+            if !tail.is_empty() {
+                return Err(AntigravityError::InvocationFailed(format!(
+                    "{status}: {tail}"
+                )));
+            }
+            // In print mode agy writes its diagnostics to a log file under the
+            // managed home, not to stderr, so a silent tail used to surface as a
+            // bare "status 1" even when agy had said why (e.g. an unknown model
+            // and the list of available ones). The log cannot be tied to this
+            // child with certainty, so it is offered as a labelled candidate,
+            // never fed to classification.
+            let candidate = self
+                .config
+                .home
+                .as_deref()
+                .zip(logs_before.as_ref())
+                .and_then(|(home, before)| candidate_agy_log_diagnostic(home, before));
+            return Err(AntigravityError::InvocationFailed(match candidate {
+                Some(candidate) => {
+                    format!("{status}; candidate recent agy log diagnostic: {candidate}")
+                }
+                None => status,
             }));
         }
 
@@ -902,12 +903,13 @@ fn agy_log_files(home: &Path) -> std::collections::BTreeSet<PathBuf> {
         .collect()
 }
 
-/// Returns the last error group from the one agy log this invocation created,
-/// or `None` when attribution is ambiguous: no new log (agy wrote none, or
-/// wrote into a pre-existing file), or more than one (another invocation
-/// shares the managed home). A wrong diagnostic is worse than none, since the
-/// lifted text also feeds the authentication classifier.
-fn agy_log_errors_for_invocation(
+/// Returns the last error group from the single agy log created since
+/// `before` was taken, or `None` when there is no new log or more than one.
+/// This narrows the choice but does not prove ownership: if this child wrote
+/// no log while an overlapping invocation in the same home wrote exactly one,
+/// that one is returned. Callers must present the result as a candidate and
+/// must not classify on it.
+fn candidate_agy_log_diagnostic(
     home: &Path,
     before: &std::collections::BTreeSet<PathBuf>,
 ) -> Option<String> {

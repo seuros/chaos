@@ -492,7 +492,9 @@ exit 1
     let error = transport.run_turn("hello").await.expect_err("agy exits 1");
     let message = error.to_string();
     assert!(
-        message.contains("status 1: Print mode: invalid model selection"),
+        message.contains(
+            "status 1; candidate recent agy log diagnostic: Print mode: invalid model selection"
+        ),
         "{message}"
     );
     assert!(message.contains("Available models:"), "{message}");
@@ -513,7 +515,7 @@ fn agy_log_attribution_ignores_logs_that_predate_the_invocation() {
     write_agy_log(home, "cli-20261013_194000.log", AGY_UNKNOWN_MODEL_LOG);
     let before = agy_log_files(home);
     // The child wrote no log of its own: the earlier failure must not be lifted.
-    assert_eq!(agy_log_errors_for_invocation(home, &before), None);
+    assert_eq!(candidate_agy_log_diagnostic(home, &before), None);
 }
 
 #[test]
@@ -527,7 +529,7 @@ fn agy_log_attribution_gives_up_when_two_new_logs_overlap() {
         "cli-20261013_194105.log",
         "E1013 19:41:05.000000 1 x.go:1] another turn's failure\n",
     );
-    assert_eq!(agy_log_errors_for_invocation(home, &before), None);
+    assert_eq!(candidate_agy_log_diagnostic(home, &before), None);
 }
 
 #[test]
@@ -541,7 +543,7 @@ fn agy_log_attribution_lifts_the_single_new_log() {
     );
     let before = agy_log_files(home);
     write_agy_log(home, "cli-20261013_194104.log", AGY_UNKNOWN_MODEL_LOG);
-    let lifted = agy_log_errors_for_invocation(home, &before).expect("attributed");
+    let lifted = candidate_agy_log_diagnostic(home, &before).expect("attributed");
     assert!(
         lifted.starts_with("Print mode: invalid model selection"),
         "{lifted}"
@@ -603,5 +605,68 @@ async fn failed_invocation_does_not_borrow_a_stale_log_error() {
     assert_eq!(
         error.to_string(),
         "Antigravity invocation failed with status 1"
+    );
+}
+
+#[test]
+fn candidate_diagnostic_can_belong_to_an_overlapping_run_and_says_so() {
+    // This child wrote no log; an overlapping invocation wrote exactly one.
+    // The helper cannot tell, which is why callers label its result a
+    // candidate instead of claiming it.
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let home = directory.path();
+    let before = agy_log_files(home);
+    write_agy_log(
+        home,
+        "cli-20261013_194105.log",
+        "E1013 19:41:05.000000 1 x.go:1] another turn's failure\n",
+    );
+    assert_eq!(
+        candidate_agy_log_diagnostic(home, &before).as_deref(),
+        Some("another turn's failure")
+    );
+}
+
+#[tokio::test]
+async fn auth_looking_log_text_does_not_drive_classification() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let dir = directory.path();
+    let script = dir.join("agy");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+cat > /dev/null
+mkdir -p "$HOME/.gemini/antigravity-cli/log"
+printf 'E1013 19:41:05.000000 1 x.go:1] not authenticated\n' > "$HOME/.gemini/antigravity-cli/log/cli-20261013_194105.log"
+exit 1
+"#,
+    )
+    .expect("write fake agy");
+    let mut permissions = std::fs::metadata(&script)
+        .expect("fake agy metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&script, permissions).expect("make fake agy executable");
+
+    let config = AntigravityConfig {
+        cli_path: Some(script),
+        home: Some(dir.join("home")),
+        cwd: Some(dir.to_path_buf()),
+        model: "gemini-test".to_string(),
+        print_timeout: Duration::from_secs(5),
+        bridge: Some(test_bridge(dir)),
+        ..Default::default()
+    };
+    let mut transport = AntigravityTransport::new(config).expect("create transport");
+    let error = transport.run_turn("hello").await.expect_err("agy exits 1");
+    assert!(
+        matches!(error, AntigravityError::InvocationFailed(_)),
+        "log text must not classify: {error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "Antigravity invocation failed with status 1; candidate recent agy log diagnostic: not authenticated"
     );
 }

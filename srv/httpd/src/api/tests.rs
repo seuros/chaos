@@ -1,41 +1,12 @@
 use super::*;
-use chaos_kern::ChaosAuth;
-use chaos_kern::config::ConfigBuilder;
-use chaos_kern::test_support::auth_manager_from_auth_with_home;
-use chaos_kern::test_support::process_table_with_models_provider_and_home;
+use crate::test_support::{counting_body, server_state};
 use rama::futures::stream;
+use rama::http::body::util::BodyExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::Poll;
-use std::time::Duration;
-use tokio::sync::Semaphore;
 
 #[tokio::test]
 async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
-    let home = tempfile::tempdir().unwrap();
-    chaos_kern::test_support::bootstrap_sqlite(home.path()).unwrap();
-    let config = ConfigBuilder::default()
-        .chaos_home(home.path().to_path_buf())
-        .fallback_cwd(Some(home.path().to_path_buf()))
-        .build()
-        .await
-        .unwrap();
-    let auth = ChaosAuth::from_api_key("test");
-    let process_table = process_table_with_models_provider_and_home(
-        auth.clone(),
-        config.model_provider.clone(),
-        home.path().to_path_buf(),
-    );
-    let state = Arc::new(ServerState {
-        config: Arc::new(config),
-        process_table: Arc::new(process_table),
-        auth_manager: auth_manager_from_auth_with_home(auth, home.path().to_path_buf()),
-        bearer_token: Arc::from("test-token"),
-        semaphore: Arc::new(Semaphore::new(1)),
-        max_concurrent: 1,
-        timeout: Duration::from_secs(1),
-        body_limit: 8,
-        monitor: monitor::MonitorState::new(),
-    });
+    let (_home, state) = server_state(8, false).await;
     for (method, path, bearer, expected) in [
         ("GET", "/api/health", None, StatusCode::OK),
         ("GET", "/monitor", None, StatusCode::OK),
@@ -97,13 +68,17 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
             .unwrap()
     };
     let polls = Arc::new(AtomicUsize::new(0));
-    let chunked_body = || {
-        let polls = polls.clone();
-        Body::from_stream(stream::poll_fn(move |_| {
-            polls.fetch_add(1, Ordering::SeqCst);
-            Poll::Ready(Some(Ok::<_, Infallible>("1234")))
-        }))
-    };
+    let chunked_body = || counting_body(&polls);
+    for content_type in ["text/plain", "application/json-patch+json"] {
+        let mut invalid = trigger(chunked_body());
+        invalid
+            .headers_mut()
+            .insert("content-type", content_type.parse().unwrap());
+        assert_eq!(
+            handle(state.clone(), invalid).await.status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
     // Both header preflight and capacity rejection must leave the stream
     // entirely unread. In particular, 429 cannot depend on JSON parsing.
     let mut oversized = trigger(chunked_body());
@@ -139,12 +114,23 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
             .status(),
         StatusCode::BAD_REQUEST
     );
+    let mut parameters = trigger(Body::from("{}"));
+    parameters.headers_mut().insert(
+        "content-type",
+        "Application/JSON; charset=utf-8".parse().unwrap(),
+    );
+    let response = handle(state.clone(), parameters).await;
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(body["error"], "missing required field: request");
 
     tokio::time::pause();
     let stalled = Body::from_stream(stream::pending::<Result<String, Infallible>>());
-    assert_eq!(
-        handle(state.clone(), trigger(stalled)).await.status(),
-        StatusCode::REQUEST_TIMEOUT
-    );
+    let response = handle(state.clone(), trigger(stalled)).await;
+    assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(body["status"], "timeout");
+    assert_eq!(body["error"], "request body deadline exceeded");
     assert_eq!(state.semaphore.available_permits(), 1);
 }

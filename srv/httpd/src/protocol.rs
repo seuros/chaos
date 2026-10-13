@@ -78,18 +78,16 @@ pub struct ApiErrorResponse {
 
 impl ApiErrorResponse {
     pub fn error(message: impl Into<String>) -> Self {
-        Self {
-            status: "error",
-            error: message.into(),
-            process_id: None,
-            caller_session_id: None,
-            conversation_id: None,
-        }
+        Self::new("error", message)
     }
 
     pub fn timeout(message: impl Into<String>) -> Self {
+        Self::new("timeout", message)
+    }
+
+    fn new(status: &'static str, message: impl Into<String>) -> Self {
         Self {
-            status: "timeout",
+            status,
             error: message.into(),
             process_id: None,
             caller_session_id: None,

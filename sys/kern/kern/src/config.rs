@@ -1292,7 +1292,7 @@ async fn load_global_mcp_servers_from_runtime_db(
     {
         Ok(servers) => {
             for config in servers.values() {
-                ensure_mcp_credentials_migrated(config)?;
+                ensure_mcp_credentials_externalized(config)?;
             }
             Ok(servers)
         }
@@ -1321,7 +1321,7 @@ async fn load_global_mcp_server_from_runtime_db(
     {
         Ok(server) => {
             if let Some(config) = &server {
-                ensure_mcp_credentials_migrated(config)?;
+                ensure_mcp_credentials_externalized(config)?;
             }
             Ok(server)
         }
@@ -1334,13 +1334,13 @@ async fn load_global_mcp_server_from_runtime_db(
     }
 }
 
-fn ensure_mcp_credentials_migrated(config: &McpServerConfig) -> std::io::Result<()> {
+fn ensure_mcp_credentials_externalized(config: &McpServerConfig) -> std::io::Result<()> {
     ensure_mcp_endpoint_has_no_credentials(config)?;
     let value = serde_json::to_value(config).map_err(std::io::Error::other)?;
     if chaos_sysctl::secrets::has_literals(&value) {
         return Err(std::io::Error::other(
             "MCP configuration contains literal credentials/environment values; \
-             run `chaos config migrate`",
+             replace them with credential/environment references",
         ));
     }
     Ok(())

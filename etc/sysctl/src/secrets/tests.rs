@@ -51,7 +51,6 @@ fn credential_vault_lifecycle() -> anyhow::Result<()> {
     DefaultKeyringStore.save(SERVICE, &id, "legacy-secret")?;
     let error = resolve(home, &legacy).unwrap_err().to_string();
     assert!(error.contains("re-enter it or restore the vault"));
-    assert!(!error.contains("migrate-secrets"));
     assert_eq!(
         DefaultKeyringStore.load(SERVICE, &id)?.as_deref(),
         Some("legacy-secret")

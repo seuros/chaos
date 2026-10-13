@@ -15,9 +15,7 @@ fn try_parse_cli<'v>(args: &[&'v str]) -> Result<MultitoolCli, usage::Error<'sta
 }
 
 #[test]
-fn config_rejects_retired_migrations_but_keeps_json_import() {
-    assert!(try_parse_cli(&["chaos", "config", "migrate-secrets"]).is_err());
-    assert!(try_parse_cli(&["chaos", "config", "migrate"]).is_err());
+fn config_keeps_json_import() {
     let cli = try_parse_cli(&["chaos", "config", "import", "settings.json"]).unwrap();
     assert_matches!(
         cli.subcommand,

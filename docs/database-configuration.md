@@ -98,14 +98,14 @@ Changing storage destinations requires a restart. Recovery commands validate
 literal URLs with the existing storage/egress validators and never resolve
 credential references merely to save an offline edit.
 
-## Upgrading from TOML-era installs
+## Settings in the bootstrap file
 
-47.14.0 removed `chaos config migrate` and every TOML configuration layer. If a
-pre-47.14 bootstrap file still carries settings, startup names the first
-offending key; move it with `chaos config set <key> <json>` and delete it from
-the file. A `sqlite_home` key must be replaced with an explicit
-`sqlite:///path/chaos.sqlite` storage URL; `CHAOS_SQLITE_HOME` is gone too. `/etc/chaos/config.toml` and
-`.chaos/config.toml` files are no longer read; admin network tables move to
+There are no TOML configuration layers. If a bootstrap file still carries
+settings, startup names the first offending key; move it with
+`chaos config set <key> <json>` and delete it from the file. A `sqlite_home`
+key must be replaced with an explicit `sqlite:///path/chaos.sqlite` storage URL;
+there is no `CHAOS_SQLITE_HOME`. `/etc/chaos/config.toml` and
+`.chaos/config.toml` files are not read; admin network tables live in
 `requirements.toml`. Settings already in the database are unaffected.
 
 ## Credential vault and macOS prompts
@@ -121,8 +121,7 @@ ciphertext fail closed; an existing vault never gets a replacement unlock key.
 
 The `keyring:chaos-settings/UUID` reference syntax addresses records inside this
 home-local vault. References alone are not portable between homes. Back up the
-encrypted vault **and** its OS-held key. Vault schema v2 is not writable by
-pre-47.8 ChaOS versions.
+encrypted vault **and** its OS-held key.
 
 macOS can still ask for authorization after restart or binary-signature changes.
 Locking Keychain does not erase a running process's already unlocked key;

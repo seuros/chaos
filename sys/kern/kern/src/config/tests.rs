@@ -1406,3 +1406,17 @@ fn hook_approval_policy_requires_explicit_opt_in() {
     }
     assert!(toml::from_str::<ConfigToml>("hook_approval_policy = 'typo'").is_err());
 }
+
+// anyhow chains reach the CLI boxed inside `io::Error`. Whether the root cause
+// survives that round trip is a property of those two crates, not of us.
+#[test]
+fn error_chain_recovers_the_root_cause_through_io_error() {
+    let root = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Connection refused");
+    let wrapped = std::io::Error::other(
+        anyhow::Error::new(root).context("authoritative settings storage is unavailable"),
+    );
+    assert_eq!(
+        crate::config::error_chain(&wrapped),
+        "authoritative settings storage is unavailable: Connection refused"
+    );
+}

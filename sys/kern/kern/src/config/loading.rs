@@ -128,6 +128,22 @@ impl ConfigBuilder {
     }
 }
 
+/// Render an error with its causes as `outer: middle: root`. `{err}` on an
+/// `io::Error` shows only the outermost message.
+pub fn error_chain(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut rendered = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let message = cause.to_string();
+        if !rendered.contains(&message) {
+            rendered.push_str(": ");
+            rendered.push_str(&message);
+        }
+        source = cause.source();
+    }
+    rendered
+}
+
 fn strip_toml_global_mcp_servers(value: &mut TomlValue) {
     let Some(table) = value.as_table_mut() else {
         return;
@@ -162,7 +178,7 @@ pub async fn load_config_or_exit(
     {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("Error loading configuration: {err}");
+            eprintln!("Error loading configuration: {}", error_chain(&err));
             std::process::exit(1);
         }
     }

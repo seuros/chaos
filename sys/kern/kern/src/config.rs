@@ -87,6 +87,7 @@ pub use chaos_sysctl::ConstraintResult;
 pub(crate) use validation::filter_mcp_servers_by_requirements;
 
 pub use loading::ConfigBuilder;
+pub use loading::error_chain;
 pub use loading::load_config_or_exit;
 pub use machine_warnings::MachineWarningsConfig;
 pub use network_proxy_spec::NetworkProxySpec;

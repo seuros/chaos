@@ -300,7 +300,9 @@ impl AntigravityTransport {
         // following `--input-format` as its prompt.
         command.args(["--input-format", "stream-json"]);
 
-        let started_at = SystemTime::now();
+        // Logs that exist before this child starts cannot be its own; the
+        // snapshot is how a failed run's diagnostic is attributed to it.
+        let logs_before = self.config.home.as_deref().map(agy_log_files);
         let mut child = command.spawn().map_err(AntigravityError::Spawn)?;
         let mut stdin = child.stdin.take().ok_or_else(|| {
             AntigravityError::Protocol("Antigravity stdin was not captured".to_string())
@@ -352,7 +354,8 @@ impl AntigravityTransport {
                 self.config
                     .home
                     .as_deref()
-                    .and_then(|home| agy_log_errors_since(home, started_at))
+                    .zip(logs_before.as_ref())
+                    .and_then(|(home, before)| agy_log_errors_for_invocation(home, before))
                     .unwrap_or_default()
             } else {
                 String::new()
@@ -878,34 +881,79 @@ fn is_executable(_path: &Path) -> bool {
 const AGY_EARLY_LOG_PREFIX: &str = "ERROR: logging before google.Init: ";
 /// Upper bound on the diagnostic text lifted from an agy log.
 const AGY_LOG_ERROR_LIMIT: usize = 2 * 1024;
+/// Upper bound on how much of an agy log is read from disk.
+const AGY_LOG_READ_LIMIT: u64 = 64 * 1024;
 
-/// Returns the error-level lines (and their unprefixed continuation lines,
-/// such as agy's "Available models:" list) from the newest agy log written
-/// at or after `since`, or `None` when there is no such log or no error in it.
-/// Info and warning lines are skipped: they carry account details and noise.
-fn agy_log_errors_since(home: &Path, since: SystemTime) -> Option<String> {
-    let log_dir = home.join(".gemini/antigravity-cli/log");
-    let since = since
-        .checked_sub(Duration::from_secs(1))
-        .unwrap_or(SystemTime::UNIX_EPOCH);
-    let newest = std::fs::read_dir(&log_dir)
-        .ok()?
+/// The regular `cli-*.log` files currently in the managed agy log directory.
+fn agy_log_files(home: &Path) -> std::collections::BTreeSet<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(home.join(".gemini/antigravity-cli/log")) else {
+        return std::collections::BTreeSet::new();
+    };
+    entries
         .filter_map(Result::ok)
         .filter(|entry| {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            name.starts_with("cli-") && name.ends_with(".log")
+            name.starts_with("cli-")
+                && name.ends_with(".log")
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
         })
-        .filter_map(|entry| {
-            let modified = entry.metadata().ok()?.modified().ok()?;
-            (modified >= since).then(|| (modified, entry.path()))
-        })
-        .max_by_key(|(modified, _)| *modified)?
-        .1;
-    let bytes = std::fs::read(newest).ok()?;
-    let start = bytes.len().saturating_sub(4 * STDERR_CLASSIFICATION_LIMIT);
-    let text = String::from_utf8_lossy(&bytes[start..]);
-    agy_log_error_lines(&text)
+        .map(|entry| entry.path())
+        .collect()
+}
+
+/// Returns the last error group from the one agy log this invocation created,
+/// or `None` when attribution is ambiguous: no new log (agy wrote none, or
+/// wrote into a pre-existing file), or more than one (another invocation
+/// shares the managed home). A wrong diagnostic is worse than none, since the
+/// lifted text also feeds the authentication classifier.
+fn agy_log_errors_for_invocation(
+    home: &Path,
+    before: &std::collections::BTreeSet<PathBuf>,
+) -> Option<String> {
+    let mut created = agy_log_files(home)
+        .into_iter()
+        .filter(|path| !before.contains(path));
+    let log = created.next()?;
+    if created.next().is_some() {
+        return None;
+    }
+    agy_log_error_lines(&read_bounded_tail(&log, AGY_LOG_READ_LIMIT)?)
+}
+
+/// Reads at most the last `limit` bytes of a regular file without loading the
+/// rest, and never more than `limit` even if the file grows meanwhile.
+fn read_bounded_tail(path: &Path, limit: u64) -> Option<String> {
+    use std::io::Read;
+    use std::io::Seek;
+    use std::io::SeekFrom;
+
+    let mut file = std::fs::File::open(path).ok()?;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+    file.seek(SeekFrom::Start(metadata.len().saturating_sub(limit)))
+        .ok()?;
+    let mut bytes = Vec::new();
+    file.take(limit).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Whether `line` opens a glog record: severity, MMDD, a space and hh:mm:ss
+/// ("E1013 19:41:07.548929 1 file.go:265] ..."). Checking the clock too keeps
+/// a continuation line such as "E12345: ..." from being read as a header.
+fn is_glog_header(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.len() >= 14
+        && matches!(bytes[0], b'I' | b'W' | b'E' | b'F')
+        && bytes[1..5].iter().all(u8::is_ascii_digit)
+        && bytes[5] == b' '
+        && bytes[6..8].iter().all(u8::is_ascii_digit)
+        && bytes[8] == b':'
+        && bytes[9..11].iter().all(u8::is_ascii_digit)
+        && bytes[11] == b':'
+        && bytes[12..14].iter().all(u8::is_ascii_digit)
 }
 
 fn agy_log_error_lines(text: &str) -> Option<String> {
@@ -917,12 +965,8 @@ fn agy_log_error_lines(text: &str) -> Option<String> {
     let mut in_error = false;
     for line in text.lines() {
         let body = line.strip_prefix(AGY_EARLY_LOG_PREFIX).unwrap_or(line);
-        let bytes = body.as_bytes();
-        let is_glog = bytes.len() > 5
-            && matches!(bytes[0], b'I' | b'W' | b'E' | b'F')
-            && bytes[1..5].iter().all(u8::is_ascii_digit);
-        if is_glog {
-            in_error = matches!(bytes[0], b'E' | b'F');
+        if is_glog_header(body) {
+            in_error = matches!(body.as_bytes()[0], b'E' | b'F');
             if in_error {
                 // Drop the glog header ("E1013 19:41:07.548929 1 file.go:265]").
                 let message = body.split_once("] ").map_or(body, |(_, rest)| rest);

@@ -1,5 +1,11 @@
 #[derive(Debug, thiserror::Error)]
 pub enum JournalError {
+    #[error("execution record not found")]
+    ExecutionNotFound,
+
+    #[error("execution conflict: {0}")]
+    ExecutionConflict(String),
+
     #[error("database: {0}")]
     Db(#[from] sqlx::Error),
 

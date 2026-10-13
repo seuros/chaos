@@ -29,6 +29,16 @@ pub enum JournalClient {
 }
 
 impl JournalClient {
+    pub async fn execution(
+        &self,
+        request: crate::ExecutionRequest,
+    ) -> Result<crate::ExecutionResponse, JournalClientError> {
+        match self {
+            Self::Rpc(client) => client.execution(request).await,
+            Self::Postgres(store) => store.execution(request).await.map_err(store_error),
+        }
+    }
+
     pub fn rpc(client: JournalRpcClient) -> Self {
         Self::Rpc(client)
     }

@@ -75,6 +75,13 @@ impl PostgresJournalStore {
 }
 
 impl JournalStore for PostgresJournalStore {
+    async fn execution(
+        &self,
+        request: crate::ExecutionRequest,
+    ) -> Result<crate::ExecutionResponse, JournalError> {
+        self.execute_ledger(request).await
+    }
+
     async fn create_process(
         &self,
         input: CreateProcessInput,

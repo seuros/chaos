@@ -15,6 +15,12 @@ use crate::model::OwnerId;
 use crate::model::ProcessRecord;
 
 pub trait JournalStore {
+    /// Transactional control-plane identity, idempotency and fenced ownership.
+    fn execution(
+        &self,
+        request: crate::ExecutionRequest,
+    ) -> impl Future<Output = Result<crate::ExecutionResponse, JournalError>> + Send;
+
     fn create_process(
         &self,
         input: CreateProcessInput,

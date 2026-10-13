@@ -65,6 +65,50 @@ async fn client_round_trip_over_unix_socket() {
     assert_eq!(created.process_id, process_id);
     assert_eq!(created.next_seq, 0);
 
+    // Exercise both the backend-neutral facade and the new RPC envelope through
+    // the existing real Unix-socket fixture.
+    let client = crate::JournalClient::rpc(client);
+    let session_id = uuid::Uuid::new_v4();
+    let crate::ExecutionResponse::Claimed { lease, .. } = client
+        .execution(crate::ExecutionRequest::Claim {
+            session_id,
+            scope: "rpc-test".into(),
+            owner_id: "rpc-owner".into(),
+            ttl_ms: 30_000,
+        })
+        .await
+        .expect("claim execution session")
+    else {
+        panic!("expected execution lease");
+    };
+    client
+        .execution(crate::ExecutionRequest::BindProcess {
+            lease: lease.clone(),
+            process_id,
+        })
+        .await
+        .expect("bind execution process");
+    let turn_id = uuid::Uuid::new_v4();
+    let accept = crate::ExecutionRequest::Accept {
+        lease: lease.clone(),
+        turn_id,
+        fingerprint: "a".repeat(64),
+    };
+    client.execution(accept).await.unwrap();
+    assert!(matches!(
+        client
+            .execution(crate::ExecutionRequest::Accept {
+                lease: lease.clone(),
+                turn_id,
+                fingerprint: "b".repeat(64),
+            })
+            .await,
+        Err(crate::JournalClientError::Remote(crate::ErrorPayload {
+            code: crate::ErrorCode::ExecutionConflict,
+            retryable: false,
+            ..
+        }))
+    ));
     server_task.abort();
     let _ = server_task.await;
     let _ = tokio::fs::remove_file(&socket_path).await;
